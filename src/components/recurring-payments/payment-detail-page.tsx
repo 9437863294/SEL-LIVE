@@ -7,6 +7,7 @@ import { collection, doc, onSnapshot, orderBy, query, serverTimestamp, Timestamp
 import { getDownloadURL, ref as storageRef, uploadBytes } from 'firebase/storage';
 import { AlertTriangle, ArrowLeft, BellRing, CheckCircle2, Edit3, ExternalLink, FileText, History, Loader2, MessageSquare, Pencil, Printer, ReceiptText, Send, ShieldCheck, Trash2, UploadCloud, WalletCards } from 'lucide-react';
 import { db } from '@/lib/firebase';
+import { personOptionLabel } from '@/lib/people-directory';
 import { storage } from '@/lib/firebase-storage';
 import { useAuth } from '@/components/auth/AuthProvider';
 import { useAuthorization } from '@/hooks/useAuthorization';
@@ -424,7 +425,7 @@ function EditTransactionDialog({
               <Select name="paidBy" defaultValue={transaction.paidBy}>
                 <SelectTrigger><SelectValue /></SelectTrigger>
                 <SelectContent>
-                  {users.map(entry => <SelectItem value={entry.id} key={entry.id}>{entry.name}</SelectItem>)}
+                  {users.map(entry => <SelectItem value={entry.id} key={entry.id}>{personOptionLabel(entry)}</SelectItem>)}
                 </SelectContent>
               </Select>
             </FieldRow>

@@ -56,6 +56,8 @@ type LocationRow = {
   name: string;
   email: string;
   role: string;
+  /** The greytHR job title, resolved by the API route; empty for an account with no HR record. */
+  designation?: string;
   status: 'Active' | 'Inactive';
   photoURL?: string;
   enabled: boolean;
@@ -336,7 +338,9 @@ export default function LocationTrackingSettingsPage() {
   const filteredRows = useMemo(() => {
     const query = search.trim().toLowerCase();
     if (!query) return rows;
-    return rows.filter((row) => `${row.name} ${row.email} ${row.role}`.toLowerCase().includes(query));
+    return rows.filter((row) =>
+      `${row.name} ${row.email} ${row.designation ?? ''} ${row.role}`.toLowerCase().includes(query),
+    );
   }, [rows, search]);
 
   const enabledCount = rows.filter((row) => row.enabled).length;
@@ -429,7 +433,7 @@ export default function LocationTrackingSettingsPage() {
                           <Avatar className="h-9 w-9"><AvatarImage src={row.photoURL} alt={row.name} /><AvatarFallback>{initials(row.name)}</AvatarFallback></Avatar>
                           <div className="min-w-0">
                             <p className="truncate font-semibold group-hover:text-primary group-hover:underline">{row.name || 'Unnamed user'}</p>
-                            <p className="truncate text-xs text-muted-foreground">{row.role || row.email}</p>
+                            <p className="truncate text-xs text-muted-foreground">{row.designation || row.role || row.email}</p>
                           </div>
                           {row.status === 'Inactive' && <Badge variant="secondary">Inactive</Badge>}
                           <History className="ml-auto h-4 w-4 shrink-0 text-muted-foreground group-hover:text-primary" />

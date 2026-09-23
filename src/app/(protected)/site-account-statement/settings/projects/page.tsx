@@ -7,6 +7,8 @@ import {
 import { db } from '@/lib/firebase';
 import { SAS_COLLECTIONS, type SASProject } from '@/lib/site-account-statement';
 import type { Project, User } from '@/lib/types';
+import { personOptionLabel } from '@/lib/people-directory';
+import { withDesignations } from '@/lib/people-directory-client';
 import { useFieldControl } from '@/components/site-account-statement/use-field-control';
 import { ControlledToggleLabel } from '@/components/site-account-statement/controlled-field';
 import { useAuthorization } from '@/hooks/useAuthorization';
@@ -101,7 +103,7 @@ export default function ProjectSettingsPage() {
       ]);
       setRows(sasSnap.docs.map(d => ({ id: d.id, ...d.data() } as SASProject)));
       setCentralProjects(projSnap.docs.map(d => ({ id: d.id, ...d.data() } as Project)).filter(p => p.status === 'Active'));
-      setUsers(userSnap.docs.map(d => ({ id: d.id, ...d.data() } as User)).filter(u => u.status === 'Active').sort((a, b) => a.name.localeCompare(b.name)));
+      setUsers(await withDesignations(userSnap.docs.map(d => ({ id: d.id, ...d.data() } as User)).filter(u => u.status === 'Active').sort((a, b) => a.name.localeCompare(b.name))));
     } finally {
       setLoading(false);
     }
@@ -462,7 +464,7 @@ export default function ProjectSettingsPage() {
                   <SelectItem value="_none_">— No assignment —</SelectItem>
                   {users.map(u => (
                     <SelectItem key={u.id} value={u.id}>
-                      {u.name}{u.email ? ` (${u.email})` : ''}
+                      {personOptionLabel(u)}
                     </SelectItem>
                   ))}
                 </SelectContent>
@@ -484,7 +486,7 @@ export default function ProjectSettingsPage() {
                   <SelectItem value="_none_">— None —</SelectItem>
                   {users.filter(u => u.id !== form.assignedPersonId).map(u => (
                     <SelectItem key={u.id} value={u.id}>
-                      {u.name}{u.email ? ` (${u.email})` : ''}
+                      {personOptionLabel(u)}
                     </SelectItem>
                   ))}
                 </SelectContent>
@@ -506,7 +508,7 @@ export default function ProjectSettingsPage() {
                   <SelectItem value="_none_">— None —</SelectItem>
                   {users.filter(u => u.id !== form.assignedPersonId && u.id !== form.altUserId).map(u => (
                     <SelectItem key={u.id} value={u.id}>
-                      {u.name}{u.email ? ` (${u.email})` : ''}
+                      {personOptionLabel(u)}
                     </SelectItem>
                   ))}
                 </SelectContent>

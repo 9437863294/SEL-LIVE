@@ -16,6 +16,7 @@ import { Switch } from '@/components/ui/switch';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import type { Department, Employee, Project, User } from '@/lib/types';
+import { personOptionLabel } from '@/lib/people-directory';
 import {
   ACCOMMODATION_ARRANGEMENTS,
   TOUR_TYPES,
@@ -409,7 +410,7 @@ export default function TourRequestForm() {
             <Select value={reportingManagerId} onValueChange={setReportingManagerId}>
               <SelectTrigger><SelectValue placeholder="Select approver" /></SelectTrigger>
               <SelectContent>
-                {users.map((entry: User) => <SelectItem key={entry.id} value={entry.id}>{entry.name}</SelectItem>)}
+                {users.map((entry: User) => <SelectItem key={entry.id} value={entry.id}>{personOptionLabel(entry)}</SelectItem>)}
               </SelectContent>
             </Select>
           </div>
@@ -419,7 +420,7 @@ export default function TourRequestForm() {
             <Select value={hodId} onValueChange={setHodId}>
               <SelectTrigger><SelectValue placeholder="Select HOD" /></SelectTrigger>
               <SelectContent>
-                {users.map((entry: User) => <SelectItem key={entry.id} value={entry.id}>{entry.name}</SelectItem>)}
+                {users.map((entry: User) => <SelectItem key={entry.id} value={entry.id}>{personOptionLabel(entry)}</SelectItem>)}
               </SelectContent>
             </Select>
           </div>
@@ -473,7 +474,7 @@ export default function TourRequestForm() {
             <Select value={projectManagerId} onValueChange={setProjectManagerId}>
               <SelectTrigger><SelectValue placeholder="Select project manager" /></SelectTrigger>
               <SelectContent>
-                {users.map((entry: User) => <SelectItem key={entry.id} value={entry.id}>{entry.name}</SelectItem>)}
+                {users.map((entry: User) => <SelectItem key={entry.id} value={entry.id}>{personOptionLabel(entry)}</SelectItem>)}
               </SelectContent>
             </Select>
           </div>

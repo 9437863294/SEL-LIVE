@@ -25,6 +25,8 @@ import {
 } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import type { Project } from "@/lib/types";
+import { personOptionLabel } from "@/lib/people-directory";
+import { withDesignations } from "@/lib/people-directory-client";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -159,7 +161,9 @@ export default function ProjectMappingsPage() {
   const [editingMapping, setEditingMapping] = useState<ProjectMapping | null>(null);
   const [form, setForm] = useState<MappingForm>(emptyForm);
   const [wizardStep, setWizardStep] = useState(0);
-  const [staff, setStaff] = useState<Array<{ id: string; name: string; role?: string }>>([]);
+  const [staff, setStaff] = useState<
+    Array<{ id: string; name: string; role?: string; designation?: string | null }>
+  >([]);
 
   const canView = can("View", PERMISSION_RESOURCE);
   const canAdd = can("Add", PERMISSION_RESOURCE);
@@ -195,13 +199,30 @@ export default function ProjectMappingsPage() {
       setGlobalProjects(projects);
       setMappings(projectMappings);
       setStaff(
-        usersSnapshot.docs
-          .map((userDoc) => {
-            const data = userDoc.data() as { name?: string; role?: string; status?: string };
-            return { id: userDoc.id, name: data.name ?? "", role: data.role, status: data.status };
-          })
-          .filter((member) => member.name && member.status !== "Inactive")
-          .sort((a, b) => a.name.localeCompare(b.name)),
+        // Designations joined on so the manager and site-in-charge pickers name a job title rather
+        // than the login's permission bundle — see `src/lib/people-directory.ts`.
+        await withDesignations(
+          usersSnapshot.docs
+            .map((userDoc) => {
+              const data = userDoc.data() as {
+                name?: string;
+                email?: string;
+                role?: string;
+                status?: string;
+                employeeId?: string;
+              };
+              return {
+                id: userDoc.id,
+                name: data.name ?? "",
+                email: data.email,
+                role: data.role,
+                employeeId: data.employeeId,
+                status: data.status,
+              };
+            })
+            .filter((member) => member.name && member.status !== "Inactive")
+            .sort((a, b) => a.name.localeCompare(b.name)),
+        ),
       );
     } catch (error) {
       console.error("Failed to load project mappings:", error);
@@ -736,7 +757,7 @@ export default function ProjectMappingsPage() {
                     </SelectTrigger>
                     <SelectContent>
                       {staff.map((member) => (
-                        <SelectItem key={member.id} value={member.id}>{member.name}</SelectItem>
+                        <SelectItem key={member.id} value={member.id}>{personOptionLabel(member)}</SelectItem>
                       ))}
                     </SelectContent>
                   </Select>
@@ -754,7 +775,7 @@ export default function ProjectMappingsPage() {
                     </SelectTrigger>
                     <SelectContent>
                       {staff.map((member) => (
-                        <SelectItem key={member.id} value={member.id}>{member.name}</SelectItem>
+                        <SelectItem key={member.id} value={member.id}>{personOptionLabel(member)}</SelectItem>
                       ))}
                     </SelectContent>
                   </Select>

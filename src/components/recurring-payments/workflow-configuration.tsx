@@ -6,6 +6,8 @@ import { collection, doc, getDoc, getDocs, serverTimestamp, setDoc } from 'fireb
 import { ArrowLeft, GripVertical, Loader2, Plus, Save, Trash2 } from 'lucide-react';
 import { db } from '@/lib/firebase';
 import type { User } from '@/lib/types';
+import { personOptionLabel } from '@/lib/people-directory';
+import { withDesignations } from '@/lib/people-directory-client';
 import { DEFAULT_RECURRING_WORKFLOW, RecurringAmountAssignee, RecurringWorkflowStep } from '@/lib/recurring-payments';
 import { useToast } from '@/hooks/use-toast';
 import { Button } from '@/components/ui/button';
@@ -26,7 +28,7 @@ export default function RecurringWorkflowConfiguration() {
   const [steps,setSteps]=useState<RecurringWorkflowStep[]>([]);
   const [users,setUsers]=useState<User[]>([]);
   const [loading,setLoading]=useState(true); const [saving,setSaving]=useState(false);
-  useEffect(()=>{(async()=>{try{const [workflowSnap,userSnap]=await Promise.all([getDoc(doc(db,'workflows','recurring-payments-workflow')),getDocs(collection(db,'users'))]);setSteps(workflowSnap.exists()&&workflowSnap.data().steps?.length?workflowSnap.data().steps:DEFAULT_RECURRING_WORKFLOW);setUsers(userSnap.docs.map(d=>({id:d.id,...d.data()} as User)).filter(u=>u.status!=='Inactive'));}finally{setLoading(false)}})()},[]);
+  useEffect(()=>{(async()=>{try{const [workflowSnap,userSnap]=await Promise.all([getDoc(doc(db,'workflows','recurring-payments-workflow')),getDocs(collection(db,'users'))]);setSteps(workflowSnap.exists()&&workflowSnap.data().steps?.length?workflowSnap.data().steps:DEFAULT_RECURRING_WORKFLOW);setUsers(await withDesignations(userSnap.docs.map(d=>({id:d.id,...d.data()} as User)).filter(u=>u.status!=='Inactive')));}finally{setLoading(false)}})()},[]);
 
   const update=(id:string,patch:Partial<RecurringWorkflowStep>)=>setSteps(current=>current.map(step=>step.id===id?{...step,...patch}:step));
   const addStep=()=>setSteps(current=>[...current,{id:crypto.randomUUID(),name:`New Step ${current.length+1}`,description:'',tat:8,assignmentType:'User-based',assignedTo:[],actions:['Approve'],uploadRequired:false}]);
@@ -53,5 +55,5 @@ function AssignmentEditor({step,users,onChange}:{step:RecurringWorkflowStep;user
   const change=(id:string,patch:Partial<RecurringAmountAssignee>)=>onChange(ranges.map(r=>r.id===id?{...r,...patch}:r));
   return <div className="space-y-3"><div className="flex items-center justify-between"><Label>Amount-based assignees</Label><Button type="button" size="sm" variant="outline" onClick={()=>onChange([...ranges,{id:crypto.randomUUID(),minAmount:0,maxAmount:null,userId:''}])}><Plus className="mr-1 h-3 w-3"/>Range</Button></div>{ranges.map(r=><div key={r.id} className="grid grid-cols-[1fr_1fr_1.5fr_auto] gap-2 rounded-lg border p-2"><Input type="number" min="0" placeholder="Min" value={r.minAmount} onChange={e=>change(r.id,{minAmount:Number(e.target.value)})}/><Input type="number" min="0" placeholder="No max" value={r.maxAmount??''} onChange={e=>change(r.id,{maxAmount:e.target.value?Number(e.target.value):null})}/><UserSelect users={users} value={r.userId} onChange={userId=>change(r.id,{userId})}/><Button variant="ghost" size="icon" onClick={()=>onChange(ranges.filter(x=>x.id!==r.id))}><Trash2 className="h-4 w-4"/></Button></div>)}</div>;
 }
-function UserSelect({users,value,onChange,allowNone=false}:{users:User[];value:string;onChange:(value:string)=>void;allowNone?:boolean}){return <Select value={value||undefined} onValueChange={v=>onChange(v==='none'?'':v)}><SelectTrigger><SelectValue placeholder="Select user"/></SelectTrigger><SelectContent>{allowNone&&<SelectItem value="none">None</SelectItem>}{users.map(user=><SelectItem value={user.id} key={user.id}>{user.name}</SelectItem>)}</SelectContent></Select>}
+function UserSelect({users,value,onChange,allowNone=false}:{users:User[];value:string;onChange:(value:string)=>void;allowNone?:boolean}){return <Select value={value||undefined} onValueChange={v=>onChange(v==='none'?'':v)}><SelectTrigger><SelectValue placeholder="Select user"/></SelectTrigger><SelectContent>{allowNone&&<SelectItem value="none">None</SelectItem>}{users.map(user=><SelectItem value={user.id} key={user.id}>{personOptionLabel(user)}</SelectItem>)}</SelectContent></Select>}
 function Field({label,children}:{label:string;children:React.ReactNode}){return <div className="space-y-1.5"><Label>{label}</Label>{children}</div>}

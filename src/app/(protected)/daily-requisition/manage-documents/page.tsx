@@ -9,6 +9,7 @@ import { useToast } from '@/hooks/use-toast';
 import { db } from '@/lib/firebase';
 import { collection, getDocs, orderBy, query, doc, updateDoc, Timestamp } from 'firebase/firestore';
 import type { DailyRequisitionEntry, User } from '@/lib/types';
+import { withDesignations } from '@/lib/people-directory-client';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useAuthorization } from '@/hooks/useAuthorization';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
@@ -88,7 +89,7 @@ export default function ManageDocumentsPage() {
       });
 
       setRequisitions(entries);
-      setUsers(usersSnap.docs.map((doc) => ({ id: doc.id, ...doc.data() } as User)));
+      setUsers(await withDesignations(usersSnap.docs.map((doc) => ({ id: doc.id, ...doc.data() } as User))));
     } catch (error) {
       console.error('Error fetching requisitions:', error);
       toast({ title: 'Error', description: 'Failed to load requisition entries.', variant: 'destructive' });

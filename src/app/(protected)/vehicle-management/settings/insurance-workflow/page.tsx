@@ -5,6 +5,7 @@ import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { doc, getDoc, serverTimestamp, setDoc } from 'firebase/firestore';
 import { ArrowDown, ArrowLeft, ArrowUp, GitBranch, Loader2, Plus, RotateCcw, Save, ShieldCheck, Trash2, Users } from 'lucide-react';
 import { db } from '@/lib/firebase';
+import { personOptionLabel } from '@/lib/people-directory';
 import { useAuth } from '@/components/auth/AuthProvider';
 import { useAuthorization } from '@/hooks/useAuthorization';
 import { useToast } from '@/hooks/use-toast';
@@ -223,7 +224,7 @@ function SettingSwitch({ label, description, checked, onCheckedChange, disabled 
 }
 
 function UserSelect({ users, value, onChange, disabled, allowNone = false }: { users: ReturnType<typeof useAuth>['users']; value: string; onChange: (value: string) => void; disabled: boolean; allowNone?: boolean }) {
-  return <Select value={value || NO_VALUE} onValueChange={(next) => onChange(next === NO_VALUE ? '' : next)} disabled={disabled}><SelectTrigger className="bg-white"><SelectValue placeholder="Select user" /></SelectTrigger><SelectContent>{allowNone && <SelectItem value={NO_VALUE}>Not assigned</SelectItem>}{users.map((user) => <SelectItem key={user.id} value={user.id}>{user.name || user.email} {user.role ? `(${user.role})` : ''}</SelectItem>)}</SelectContent></Select>;
+  return <Select value={value || NO_VALUE} onValueChange={(next) => onChange(next === NO_VALUE ? '' : next)} disabled={disabled}><SelectTrigger className="bg-white"><SelectValue placeholder="Select user" /></SelectTrigger><SelectContent>{allowNone && <SelectItem value={NO_VALUE}>Not assigned</SelectItem>}{users.map((user) => <SelectItem key={user.id} value={user.id}>{personOptionLabel(user)}</SelectItem>)}</SelectContent></Select>;
 }
 
 function RoleSelect({ roles, value, onChange, disabled }: { roles: string[]; value: string; onChange: (value: string) => void; disabled: boolean }) {

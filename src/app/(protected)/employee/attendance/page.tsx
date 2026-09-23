@@ -12,22 +12,30 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
-import { ArrowLeft, Clock, Download, RefreshCw, Search, UserCheck, Users } from 'lucide-react';
+import { Clock, Download, RefreshCw, Search, UserCheck, Users } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { AuroraBackdrop } from '@/components/effects/AuroraBackdrop';
 import {
   HrAccessDenied,
+  HrAlertNotice,
   HrDataList,
   HrEmptyState,
   HrFilterCard,
-  HrKpiCard,
   HrLoader,
-  HrPageHeader,
   type HrListColumn,
-  type HrTone,
 } from '@/components/hr/hr-ui';
+import {
+  EmployeeErrorBanner,
+  EmployeeHeader,
+  EmployeeKpiCard,
+  EmployeeListFooter,
+  EmployeePageShell,
+  EmployeeStatusPill,
+  EmployeeSubNav,
+  EMP_REGISTER_HEIGHT,
+  type EmpTone,
+} from '@/components/employee/employee-ui';
 import { useAuthorization } from '@/hooks/useAuthorization';
 import { attendanceLabel } from '@/lib/greythr';
 import { exportRowsToExcel } from '@/lib/report-excel';
@@ -129,7 +137,7 @@ export default function AttendanceRegisterPage() {
     const allRows = report?.rows ?? [];
     const dayTypes = report?.dayTypes ?? [];
     const total = (type: string) => allRows.reduce((sum, row) => sum + (row.summary.days?.[type] ?? 0), 0);
-    const cards: Array<{ label: string; value: string | number; hint: string; tone: HrTone }> = [];
+    const cards: Array<{ label: string; value: string | number; hint: string; tone: EmpTone }> = [];
     if (dayTypes.includes('present') && allRows.length) {
       cards.push({
         label: 'Avg present days',
@@ -220,48 +228,47 @@ export default function AttendanceRegisterPage() {
 
   if (authLoading || loading) {
     return (
-      <div className="relative min-h-[calc(100dvh-4rem)] overflow-hidden px-4 py-3 sm:px-5">
-        <AuroraBackdrop />
+      <EmployeePageShell>
         <HrLoader label="Loading the attendance register…" />
-      </div>
+      </EmployeePageShell>
     );
   }
 
   if (!canView) {
     return (
-      <div className="relative min-h-[calc(100dvh-4rem)] overflow-hidden px-4 py-3 sm:px-5">
-        <AuroraBackdrop />
+      <EmployeePageShell>
         <HrAccessDenied what="the attendance register" />
-      </div>
+      </EmployeePageShell>
     );
   }
 
   return (
-    <div className="relative min-h-[calc(100dvh-4rem)] overflow-hidden px-4 py-3 sm:px-5">
-      <AuroraBackdrop />
-
-      <div className="mb-1 flex items-center gap-2">
-        <Link href="/employee">
-          <Button variant="ghost" size="icon" className="rounded-full bg-white/70 shadow-sm backdrop-blur">
-            <ArrowLeft className="h-4 w-4" />
-          </Button>
-        </Link>
-      </div>
-
-      <HrPageHeader
+    <EmployeePageShell>
+      <EmployeeHeader
+        icon={Clock}
+        tone="blue"
+        eyebrow="Employee management"
         title="Attendance register"
-        description={
-          report?.period
-            ? `${report.period.start} to ${report.period.end}, from greytHR's synced monthly summary. Not a day-by-day muster.`
-            : "greytHR's synced monthly attendance summary, for everyone at once."
+        backHref="/employee"
+        backLabel="Back to Employee Management"
+        description="greytHR's synced monthly attendance summary, for everyone at once. Not a day-by-day muster — that data is not fetched."
+        status={
+          <>
+            {report?.period && (
+              <EmployeeStatusPill tone="blue" icon={Clock}>
+                {report.period.start} → {report.period.end}
+              </EmployeeStatusPill>
+            )}
+            <EmployeeStatusPill tone="slate">Read-only</EmployeeStatusPill>
+          </>
         }
         actions={
           <>
-            <Button variant="outline" size="sm" onClick={() => void handleExport()} disabled={filtered.length === 0}>
+            <Button variant="outline" size="sm" className="bg-white/80" onClick={() => void handleExport()} disabled={filtered.length === 0}>
               <Download className="mr-1.5 h-4 w-4" />
               Export
             </Button>
-            <Button variant="outline" size="sm" onClick={() => void load(true)} disabled={refreshing}>
+            <Button variant="outline" size="sm" className="bg-white/80" onClick={() => void load(true)} disabled={refreshing}>
               <RefreshCw className={refreshing ? 'mr-1.5 h-4 w-4 animate-spin' : 'mr-1.5 h-4 w-4'} />
               Refresh
             </Button>
@@ -269,36 +276,55 @@ export default function AttendanceRegisterPage() {
         }
       />
 
-      {error && (
-        <div className="mb-4 rounded-xl border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm text-destructive">
-          {error}
-        </div>
-      )}
+      <EmployeeSubNav current="attendance" />
 
-      <div className="mb-4 grid grid-cols-2 gap-2.5 sm:grid-cols-4">
-        <HrKpiCard
+      {error && <EmployeeErrorBanner onRetry={() => void load(true)}>{error}</EmployeeErrorBanner>}
+
+      <div className="mb-3 grid grid-cols-2 gap-2.5 sm:grid-cols-4">
+        <EmployeeKpiCard
           label="Employees"
           value={report?.count ?? 0}
           hint={report?.missing ? `${report.missing} more not covered yet` : undefined}
           icon={Users}
           tone="indigo"
+          index={0}
         />
-        <HrKpiCard label="Late-in days" value={lateInTotal} hint="across everyone, this period" icon={Clock} tone="amber" />
-        {extraKpis.map((kpi) => (
-          <HrKpiCard key={kpi.label} label={kpi.label} value={kpi.value} hint={kpi.hint} tone={kpi.tone} />
+        <EmployeeKpiCard
+          label="Late-in days"
+          value={lateInTotal}
+          hint="across everyone, this period"
+          icon={Clock}
+          tone="amber"
+          index={1}
+        />
+        {extraKpis.map((kpi, position) => (
+          <EmployeeKpiCard
+            key={kpi.label}
+            label={kpi.label}
+            value={kpi.value}
+            hint={kpi.hint}
+            tone={kpi.tone}
+            index={2 + position}
+          />
         ))}
       </div>
 
+      {/* A tinted notice rather than the grey paragraph this used to be — see the same change on the
+          leave register. An employee missing from the register is a gap in the data, not a footnote. */}
       {report && report.missing > 0 && (
-        <p className="mb-3 text-xs text-muted-foreground">
-          {report.missing} employee{report.missing === 1 ? '' : 's'} have no attendance summary on
-          record — usually because the &quot;Attendance summary&quot; group was enabled after their
-          last sync. Run a sync from{' '}
-          <Link href="/employee/sync" className="underline">
-            greytHR Sync
-          </Link>{' '}
-          to pick them up.
-        </p>
+        <div className="mb-3">
+          <HrAlertNotice
+            tone="blue"
+            title={`${report.missing} employee${report.missing === 1 ? '' : 's'} not covered`}
+          >
+            No attendance summary on record — usually because the &quot;Attendance summary&quot; group
+            was enabled after their last sync. Run a sync from{' '}
+            <Link href="/employee/sync" className="font-medium underline">
+              greytHR Sync
+            </Link>{' '}
+            to pick them up.
+          </HrAlertNotice>
+        </div>
       )}
 
       <HrFilterCard summary={`${filtered.length} of ${report?.count ?? 0} employees`}>
@@ -337,6 +363,8 @@ export default function AttendanceRegisterPage() {
         <HrDataList
           rows={visibleRows}
           columns={columns}
+          dense
+          maxHeightClassName={EMP_REGISTER_HEIGHT}
           empty={
             <HrEmptyState
               icon={UserCheck}
@@ -346,20 +374,14 @@ export default function AttendanceRegisterPage() {
           }
         />
 
-        {rows.length > 0 && (
-          <div className="flex flex-col items-center gap-2 pb-2 text-center">
-            <p className="text-xs text-muted-foreground">
-              Showing <span className="font-medium text-slate-700">{visibleRows.length}</span> of {rows.length} employee
-              {rows.length === 1 ? '' : 's'}
-            </p>
-            {visibleRows.length < rows.length && (
-              <Button variant="outline" size="sm" onClick={() => setVisibleCount((count) => count + PAGE_SIZE)}>
-                Show {Math.min(PAGE_SIZE, rows.length - visibleRows.length)} more
-              </Button>
-            )}
-          </div>
-        )}
+        <EmployeeListFooter
+          shown={visibleRows.length}
+          total={rows.length}
+          noun="employee"
+          pageSize={PAGE_SIZE}
+          onMore={() => setVisibleCount((count) => count + PAGE_SIZE)}
+        />
       </div>
-    </div>
+    </EmployeePageShell>
   );
 }

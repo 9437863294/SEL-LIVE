@@ -461,6 +461,38 @@ current as people are promoted. **The sync never grants a role itself.**
 Project-scoped access from `cat::Project Name` is available but **off by default** — it is a
 permission grant driven by an external system, so it is opt-in.
 
+### Designation is what a person picker shows — `role` is not
+
+`users.role` names the **permission bundle** an administrator attached to a login ("Admin", "Site
+User", "Approver"). The designation is the **job title** HR maintains. They answer different
+questions, and every "choose a person" control in the application answers the second one: an
+approver dropdown that reads *Ramesh Kumar — Site Engineer* is useful, one that reads *Ramesh Kumar
+— Site User* is not.
+
+`src/lib/people-directory.ts` holds the rule, `people-directory-client.ts` the one cached read of
+the `employees` mirror behind it:
+
+| Function | What it gives a control |
+| --- | --- |
+| `personSubtitle(person)` | The line under a name — designation → role → email |
+| `personOptionLabel(person)` | `"Name — Designation"`, for a single-line `<SelectItem>` |
+| `personSearchText(person)` | Name, email, role, designation, department and employee number |
+| `attachDesignations(users, index)` | The join, applied to a whole directory |
+
+`AuthProvider` performs the join once for `useAuth().users`, so anything reading that directory —
+chat, E-Approval, Tour & Travel, Recurring Payments — already has `user.designation`. The dozen
+settings screens that load `users` themselves call `await withDesignations(...)` instead.
+
+Three things this deliberately does **not** change:
+
+1. **Routing and permissions still read `role`.** The designation is a label. `roleByUserId` in the
+   HR approval policy and every `can(...)` check are untouched.
+2. **Screens whose subject is roles still show roles.** Access Management's Roles column, its base-role
+   badges and the role editor all read `users.role` — that is what they are for.
+3. **An unlinked account keeps its old label.** Contractors, service accounts and anyone not yet
+   linked fall back to `role`, and a failed `employees` read falls back everywhere at once, so the
+   worst case is exactly the behaviour that shipped before this existed.
+
 ### Linking employees to users
 
 The model is one sentence: **one employee → at most one login, and not every employee needs one.**

@@ -7,6 +7,8 @@ import {
 import { db } from '@/lib/firebase';
 import { SFR_COLLECTIONS, type SFRProject } from '@/lib/site-fund-request';
 import type { Project, User } from '@/lib/types';
+import { personOptionLabel } from '@/lib/people-directory';
+import { withDesignations } from '@/lib/people-directory-client';
 import { useAuthorization } from '@/hooks/useAuthorization';
 import { useToast } from '@/hooks/use-toast';
 import { Button } from '@/components/ui/button';
@@ -95,12 +97,12 @@ export default function SFRProjectAccessPage() {
           .map(d => ({ id: d.id, ...d.data() } as Project))
           .filter(p => p.status === 'Active'),
       );
-      setUsers(
+      setUsers(await withDesignations(
         userSnap.docs
           .map(d => ({ id: d.id, ...d.data() } as User))
           .filter(u => u.status === 'Active')
           .sort((a, b) => a.name.localeCompare(b.name)),
-      );
+      ));
     } finally {
       setLoading(false);
     }
@@ -519,7 +521,7 @@ export default function SFRProjectAccessPage() {
                 <SelectContent>
                   <SelectItem value="_none_">— Select a person —</SelectItem>
                   {users.map(u => (
-                    <SelectItem key={u.id} value={u.id}>{u.name}</SelectItem>
+                    <SelectItem key={u.id} value={u.id}>{personOptionLabel(u)}</SelectItem>
                   ))}
                 </SelectContent>
               </Select>
@@ -545,7 +547,7 @@ export default function SFRProjectAccessPage() {
                   {users
                     .filter(u => u.id !== form.assignedPersonId)
                     .map(u => (
-                      <SelectItem key={u.id} value={u.id}>{u.name}</SelectItem>
+                      <SelectItem key={u.id} value={u.id}>{personOptionLabel(u)}</SelectItem>
                     ))}
                 </SelectContent>
               </Select>
@@ -571,7 +573,7 @@ export default function SFRProjectAccessPage() {
                   {users
                     .filter(u => u.id !== form.assignedPersonId && u.id !== form.altUserId)
                     .map(u => (
-                      <SelectItem key={u.id} value={u.id}>{u.name}</SelectItem>
+                      <SelectItem key={u.id} value={u.id}>{personOptionLabel(u)}</SelectItem>
                     ))}
                 </SelectContent>
               </Select>

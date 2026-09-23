@@ -34,6 +34,7 @@ import {
   type HrRequirement,
 } from '@/lib/hr-requirement';
 import { HrControlError, actOnRequirement } from '@/lib/hr-requirement-service';
+import { personOptionLabel } from '@/lib/people-directory';
 import {
   HrAlertNotice,
   HrEmptyState,
@@ -370,7 +371,7 @@ function DecisionDialog({
   onDone,
 }: {
   target: { requirement: HrRequirement; action: ApprovalAction } | null;
-  users: Array<{ id: string; name: string; role?: string }>;
+  users: Array<{ id: string; name: string; role?: string; designation?: string | null; email?: string | null }>;
   onClose: () => void;
   onDone: (message: string) => void;
 }) {
@@ -466,8 +467,7 @@ function DecisionDialog({
                 <SelectContent className="max-h-64">
                   {users.map(row => (
                     <SelectItem key={row.id} value={row.id}>
-                      {row.name}
-                      {row.role ? ` · ${row.role}` : ''}
+                      {personOptionLabel(row, undefined, { separator: ' · ' })}
                     </SelectItem>
                   ))}
                 </SelectContent>

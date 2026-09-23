@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { addDoc, collection, deleteDoc, doc, serverTimestamp, setDoc, updateDoc } from 'firebase/firestore';
 import { Loader2, Plus, Save, Trash2 } from 'lucide-react';
 import { db } from '@/lib/firebase';
+import { personOptionLabel } from '@/lib/people-directory';
 import { useAuthorization } from '@/hooks/useAuthorization';
 import { useToast } from '@/hooks/use-toast';
 import { Button } from '@/components/ui/button';
@@ -841,7 +842,7 @@ function ApprovalMatrixTab({ organizationId, canEdit }: { organizationId: string
                               >
                                 <SelectTrigger className="h-8"><SelectValue placeholder="Select user" /></SelectTrigger>
                                 <SelectContent>
-                                  {users.map(entry => <SelectItem key={entry.id} value={entry.id}>{entry.name}</SelectItem>)}
+                                  {users.map(entry => <SelectItem key={entry.id} value={entry.id}>{personOptionLabel(entry)}</SelectItem>)}
                                 </SelectContent>
                               </Select>
                             ) : stage.assignmentType === 'Role-based' ? (

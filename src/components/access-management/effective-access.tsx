@@ -39,6 +39,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { HrEmptyState, HrField } from '@/components/hr/hr-ui';
 import { cn } from '@/lib/utils';
+import { personOptionLabel } from '@/lib/people-directory';
 import type { User } from '@/lib/types';
 import {
   canAccessModule,
@@ -94,8 +95,7 @@ export function EffectiveAccessViewer({
                 .sort((a, b) => (a.name || '').localeCompare(b.name || ''))
                 .map((entry) => (
                   <SelectItem key={entry.id} value={entry.id}>
-                    {entry.name || entry.email}
-                    {entry.role ? ` · ${entry.role}` : ''}
+                    {personOptionLabel(entry, undefined, { separator: ' · ' })}
                     {entry.status === 'Inactive' ? ' (inactive)' : ''}
                   </SelectItem>
                 ))}

@@ -15,22 +15,30 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
-import { ArrowLeft, CalendarClock, Download, RefreshCw, Search, Users } from 'lucide-react';
+import { CalendarClock, Download, RefreshCw, Search, Users } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { AuroraBackdrop } from '@/components/effects/AuroraBackdrop';
 import {
   HrAccessDenied,
+  HrAlertNotice,
   HrDataList,
   HrEmptyState,
   HrFilterCard,
-  HrKpiCard,
   HrLoader,
-  HrPageHeader,
   type HrListColumn,
 } from '@/components/hr/hr-ui';
+import {
+  EmployeeErrorBanner,
+  EmployeeHeader,
+  EmployeeKpiCard,
+  EmployeeListFooter,
+  EmployeePageShell,
+  EmployeeStatusPill,
+  EmployeeSubNav,
+  EMP_REGISTER_HEIGHT,
+} from '@/components/employee/employee-ui';
 import { useAuthorization } from '@/hooks/useAuthorization';
 import { exportRowsToExcel } from '@/lib/report-excel';
 import { fetchLeaveRegister, type LeaveRegisterResponse, type LeaveRegisterRow } from '@/lib/greythr-sync-client';
@@ -183,44 +191,47 @@ export default function LeaveRegisterPage() {
 
   if (authLoading || loading) {
     return (
-      <div className="relative min-h-[calc(100dvh-4rem)] overflow-hidden px-4 py-3 sm:px-5">
-        <AuroraBackdrop />
+      <EmployeePageShell>
         <HrLoader label="Loading the leave register…" />
-      </div>
+      </EmployeePageShell>
     );
   }
 
   if (!canView) {
     return (
-      <div className="relative min-h-[calc(100dvh-4rem)] overflow-hidden px-4 py-3 sm:px-5">
-        <AuroraBackdrop />
+      <EmployeePageShell>
         <HrAccessDenied what="the leave register" />
-      </div>
+      </EmployeePageShell>
     );
   }
 
   return (
-    <div className="relative min-h-[calc(100dvh-4rem)] overflow-hidden px-4 py-3 sm:px-5">
-      <AuroraBackdrop />
-
-      <div className="mb-1 flex items-center gap-2">
-        <Link href="/employee">
-          <Button variant="ghost" size="icon" className="rounded-full bg-white/70 shadow-sm backdrop-blur">
-            <ArrowLeft className="h-4 w-4" />
-          </Button>
-        </Link>
-      </div>
-
-      <HrPageHeader
+    <EmployeePageShell>
+      <EmployeeHeader
+        icon={CalendarClock}
+        tone="cyan"
+        eyebrow="Employee management"
         title="Leave register"
-        description={`Every employee's leave balance, from greytHR's own record${report?.year ? ` for ${report.year}` : ''}. Read-only — applying or approving leave still happens in greytHR.`}
+        backHref="/employee"
+        backLabel="Back to Employee Management"
+        description="Every employee's leave balance, from greytHR's own record. Read-only — applying or approving leave still happens in greytHR."
+        status={
+          <>
+            {report?.year && (
+              <EmployeeStatusPill tone="cyan" icon={CalendarClock}>
+                Year {report.year}
+              </EmployeeStatusPill>
+            )}
+            <EmployeeStatusPill tone="slate">Read-only</EmployeeStatusPill>
+          </>
+        }
         actions={
           <>
-            <Button variant="outline" size="sm" onClick={() => void handleExport()} disabled={filtered.length === 0}>
+            <Button variant="outline" size="sm" className="bg-white/80" onClick={() => void handleExport()} disabled={filtered.length === 0}>
               <Download className="mr-1.5 h-4 w-4" />
               Export
             </Button>
-            <Button variant="outline" size="sm" onClick={() => void load(true)} disabled={refreshing}>
+            <Button variant="outline" size="sm" className="bg-white/80" onClick={() => void load(true)} disabled={refreshing}>
               <RefreshCw className={refreshing ? 'mr-1.5 h-4 w-4 animate-spin' : 'mr-1.5 h-4 w-4'} />
               Refresh
             </Button>
@@ -228,42 +239,49 @@ export default function LeaveRegisterPage() {
         }
       />
 
-      {error && (
-        <div className="mb-4 rounded-xl border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm text-destructive">
-          {error}
-        </div>
-      )}
+      <EmployeeSubNav current="leave" />
 
-      <div className={`mb-4 grid grid-cols-2 gap-2.5 ${kpiGridCols}`}>
-        <HrKpiCard label="Employees" value={report?.count ?? 0} icon={Users} tone="indigo" />
-        <HrKpiCard
+      {error && <EmployeeErrorBanner onRetry={() => void load(true)}>{error}</EmployeeErrorBanner>}
+
+      <div className={`mb-3 grid grid-cols-2 gap-2.5 ${kpiGridCols}`}>
+        <EmployeeKpiCard label="Employees" value={report?.count ?? 0} icon={Users} tone="indigo" index={0} />
+        <EmployeeKpiCard
           label="Total balance"
           value={report?.totalBalance ?? 0}
           hint="days, across everyone"
           icon={CalendarClock}
           tone="emerald"
+          index={1}
         />
-        {typeKpis.map((type) => (
-          <HrKpiCard
+        {typeKpis.map((type, position) => (
+          <EmployeeKpiCard
             key={type}
             label={type}
             value={report?.totalsByType[type] ?? 0}
             hint="total days outstanding"
-            tone="amber"
+            tone={position === 0 ? 'amber' : 'violet'}
+            index={2 + position}
           />
         ))}
       </div>
 
+      {/* A tinted notice rather than the grey paragraph this used to be: "1,100 of your employees
+          are missing from this register" is not a footnote, and at `text-muted-foreground` on the
+          aurora backdrop it read as one. */}
       {report && report.missing > 0 && (
-        <p className="mb-3 text-xs text-muted-foreground">
-          {report.missing} employee{report.missing === 1 ? '' : 's'} have no leave balance on record —
-          usually because the &quot;Leave balances&quot; group was enabled after their last sync. Run a
-          sync from{' '}
-          <Link href="/employee/sync" className="underline">
-            greytHR Sync
-          </Link>{' '}
-          to pick them up.
-        </p>
+        <div className="mb-3">
+          <HrAlertNotice
+            tone="blue"
+            title={`${report.missing} employee${report.missing === 1 ? '' : 's'} not covered`}
+          >
+            No leave balance on record — usually because the &quot;Leave balances&quot; group was
+            enabled after their last sync. Run a sync from{' '}
+            <Link href="/employee/sync" className="font-medium underline">
+              greytHR Sync
+            </Link>{' '}
+            to pick them up.
+          </HrAlertNotice>
+        </div>
       )}
 
       <HrFilterCard summary={`${filtered.length} of ${report?.count ?? 0} employees`}>
@@ -302,6 +320,8 @@ export default function LeaveRegisterPage() {
         <HrDataList
           rows={visibleRows}
           columns={columns}
+          dense
+          maxHeightClassName={EMP_REGISTER_HEIGHT}
           empty={
             <HrEmptyState
               icon={CalendarClock}
@@ -311,20 +331,14 @@ export default function LeaveRegisterPage() {
           }
         />
 
-        {rows.length > 0 && (
-          <div className="flex flex-col items-center gap-2 pb-2 text-center">
-            <p className="text-xs text-muted-foreground">
-              Showing <span className="font-medium text-slate-700">{visibleRows.length}</span> of {rows.length} employee
-              {rows.length === 1 ? '' : 's'}
-            </p>
-            {visibleRows.length < rows.length && (
-              <Button variant="outline" size="sm" onClick={() => setVisibleCount((count) => count + PAGE_SIZE)}>
-                Show {Math.min(PAGE_SIZE, rows.length - visibleRows.length)} more
-              </Button>
-            )}
-          </div>
-        )}
+        <EmployeeListFooter
+          shown={visibleRows.length}
+          total={rows.length}
+          noun="employee"
+          pageSize={PAGE_SIZE}
+          onMore={() => setVisibleCount((count) => count + PAGE_SIZE)}
+        />
       </div>
-    </div>
+    </EmployeePageShell>
   );
 }

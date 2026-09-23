@@ -18,6 +18,8 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Input } from '@/components/ui/input';
 import { useToast } from '@/hooks/use-toast';
 import { db } from '@/lib/firebase';
+import { personOptionLabel } from '@/lib/people-directory';
+import { withDesignations } from '@/lib/people-directory-client';
 import { doc, getDoc, setDoc, collection, getDocs } from 'firebase/firestore';
 import type {
   WorkflowStep,
@@ -127,7 +129,7 @@ export default function MvacWorkflowConfigurationPage() {
         getDocs(collection(db, 'roles')),
       ]);
 
-      setUsers(usersSnap.docs.map((d) => ({ id: d.id, ...(d.data() as any) } as User)));
+      setUsers(await withDesignations(usersSnap.docs.map((d) => ({ id: d.id, ...(d.data() as any) } as User))));
       setProjects(projectsSnap.docs.map((d) => ({ id: d.id, ...(d.data() as any) } as Project)));
       setDepartments(deptsSnap.docs.map((d) => ({ id: d.id, ...(d.data() as any) } as Department)));
       setRoles(rolesSnap.docs.map((d) => ({ id: d.id, ...(d.data() as any) } as Role)));
@@ -546,7 +548,7 @@ export default function MvacWorkflowConfigurationPage() {
                               <SelectContent>
                                 {users.map((u) => (
                                   <SelectItem key={u.id} value={u.id}>
-                                    {u.name}
+                                    {personOptionLabel(u)}
                                   </SelectItem>
                                 ))}
                               </SelectContent>
@@ -570,7 +572,7 @@ export default function MvacWorkflowConfigurationPage() {
                                 <SelectItem value="none">None</SelectItem>
                                 {users.map((u) => (
                                   <SelectItem key={u.id} value={u.id}>
-                                    {u.name}
+                                    {personOptionLabel(u)}
                                   </SelectItem>
                                 ))}
                               </SelectContent>
@@ -618,7 +620,7 @@ export default function MvacWorkflowConfigurationPage() {
                                             <SelectContent>
                                               {users.map((u) => (
                                                 <SelectItem key={u.id} value={u.id}>
-                                                  {u.name}
+                                                  {personOptionLabel(u)}
                                                 </SelectItem>
                                               ))}
                                             </SelectContent>
@@ -639,7 +641,7 @@ export default function MvacWorkflowConfigurationPage() {
                                               <SelectItem value="none">None</SelectItem>
                                               {users.map((u) => (
                                                 <SelectItem key={u.id} value={u.id}>
-                                                  {u.name}
+                                                  {personOptionLabel(u)}
                                                 </SelectItem>
                                               ))}
                                             </SelectContent>
@@ -747,7 +749,7 @@ export default function MvacWorkflowConfigurationPage() {
                                       disabled={!canEditPage}
                                     />
                                     <Label htmlFor={`notify-${step.id}-${u.id}`} className="cursor-pointer font-normal text-sm">
-                                      {u.name}
+                                      {personOptionLabel(u)}
                                     </Label>
                                   </div>
                                 );
@@ -769,7 +771,7 @@ export default function MvacWorkflowConfigurationPage() {
                             <SelectContent>
                               <SelectItem value="none">No escalation</SelectItem>
                               {users.map((u) => (
-                                <SelectItem key={u.id} value={u.id}>{u.name}</SelectItem>
+                                <SelectItem key={u.id} value={u.id}>{personOptionLabel(u)}</SelectItem>
                               ))}
                             </SelectContent>
                           </Select>

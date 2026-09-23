@@ -8,6 +8,7 @@ import { collection, doc, getDoc, getDocs } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import { useAuthorization } from '@/hooks/useAuthorization';
 import type { ActionLog, InsuranceTask, Project, User, WorkflowStep } from '@/lib/types';
+import { withDesignations } from '@/lib/people-directory-client';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -49,7 +50,7 @@ export default function MyTasksSummaryPage() {
       setAllTasks(tasks);
       setFilteredTasks(tasks);
       setProjects(projectsSnap.docs.map((d) => ({ id: d.id, ...d.data() } as Project)));
-      setUsers(usersSnap.docs.map((d) => ({ id: d.id, ...d.data() } as User)));
+      setUsers(await withDesignations(usersSnap.docs.map((d) => ({ id: d.id, ...d.data() } as User))));
       if (wfDoc.exists()) setWorkflow(wfDoc.data() as { steps: WorkflowStep[] });
     } catch (err) {
       console.error('Error fetching summary data', err);

@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { collection, doc, getDoc, onSnapshot, query, where } from "firebase/firestore";
 import { Clock, Download, Loader2, Printer } from "lucide-react";
 import { db } from "@/lib/firebase";
+import { personOptionLabel } from '@/lib/people-directory';
 import { useAuth } from "@/components/auth/AuthProvider";
 import { useAuthorization } from "@/hooks/useAuthorization";
 import {
@@ -331,7 +332,7 @@ export default function PendingWorkReport() {
               <SelectTrigger className="h-8 text-sm"><SelectValue placeholder="All owners" /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">All owners</SelectItem>
-                {users.map((entry) => <SelectItem value={entry.id} key={entry.id}>{entry.name}</SelectItem>)}
+                {users.map((entry) => <SelectItem value={entry.id} key={entry.id}>{personOptionLabel(entry)}</SelectItem>)}
               </SelectContent>
             </Select>
           </Field>

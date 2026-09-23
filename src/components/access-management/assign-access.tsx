@@ -39,6 +39,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { hrDialog, HrEmptyState } from '@/components/hr/hr-ui';
 import { useToast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
+import { personOptionLabel, personSearchText } from '@/lib/people-directory';
 import type { User } from '@/lib/types';
 import {
   buildCopyAccessRequest,
@@ -762,7 +763,7 @@ function CopyAccessDialog({
       .filter(
         (user) =>
           !query ||
-          [user.name, user.email, user.role].filter(Boolean).join(' ').toLowerCase().includes(query),
+          personSearchText(user).includes(query),
       );
   }, [directory.users, sourceSearch]);
 
@@ -794,14 +795,14 @@ function CopyAccessDialog({
             <Input
               value={sourceSearch}
               onChange={(event) => setSourceSearch(event.target.value)}
-              placeholder="Search by name, email or role…"
+              placeholder="Search by name, email, designation or role…"
             />
             <Select value={sourceId} onValueChange={setSourceId}>
               <SelectTrigger><SelectValue placeholder="Select a user" /></SelectTrigger>
               <SelectContent>
                 {sourceCandidates.slice(0, 400).map((user) => (
                   <SelectItem key={user.id} value={user.id}>
-                    {user.name || user.email} {user.role ? `· ${user.role}` : ''}
+                    {personOptionLabel(user, undefined, { separator: ' · ' })}
                   </SelectItem>
                 ))}
               </SelectContent>

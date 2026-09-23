@@ -7,6 +7,7 @@ import { collection, getDocs } from 'firebase/firestore';
 import { AlertTriangle, ArrowLeft, Download, Loader2, ShieldAlert } from 'lucide-react';
 import { db } from '@/lib/firebase';
 import type { Requisition, Project, Department, User } from '@/lib/types';
+import { withDesignations } from '@/lib/people-directory-client';
 import { useAuthorization } from '@/hooks/useAuthorization';
 import { useSFRProjectAccess } from '@/hooks/useSFRProjectAccess';
 import { Button } from '@/components/ui/button';
@@ -74,7 +75,7 @@ export default function OverdueRequestsPage() {
         setRequests(filteredByAccess);
         setProjects(projSnap.docs.map(d => ({ id: d.id, ...d.data() } as Project)));
         setDepartments(deptSnap.docs.map(d => ({ id: d.id, ...d.data() } as Department)));
-        setUsers(userSnap.docs.map(d => ({ id: d.id, ...d.data() } as User)));
+        setUsers(await withDesignations(userSnap.docs.map(d => ({ id: d.id, ...d.data() } as User))));
       } catch (err) {
         console.error('Failed to load overdue report', err);
       } finally {

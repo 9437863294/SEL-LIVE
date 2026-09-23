@@ -10,20 +10,25 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
-import { ArrowLeft, Building2, RefreshCw, UserMinus, UserPlus, Users } from 'lucide-react';
+import { BarChart3, Building2, CloudOff, RefreshCw, UserMinus, UserPlus, Users } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { AuroraBackdrop } from '@/components/effects/AuroraBackdrop';
 import {
   HrAccessDenied,
   HrBarList,
   HrEmptyState,
   HrFilterCard,
-  HrKpiCard,
   HrLoader,
-  HrPageHeader,
   HrSection,
 } from '@/components/hr/hr-ui';
+import {
+  EmployeeErrorBanner,
+  EmployeeHeader,
+  EmployeeKpiCard,
+  EmployeePageShell,
+  EmployeeStatusPill,
+  EmployeeSubNav,
+} from '@/components/employee/employee-ui';
 import { useAuthorization } from '@/hooks/useAuthorization';
 import { isWorkingState } from '@/lib/greythr';
 import { fetchEmployeeRoster, type EmployeeRosterResponse, type RosterEmployeeRow } from '@/lib/greythr-sync-client';
@@ -156,56 +161,55 @@ export default function EmployeeReportsPage() {
 
   if (authLoading || loading) {
     return (
-      <div className="relative min-h-[calc(100dvh-4rem)] overflow-hidden px-4 py-3 sm:px-5">
-        <AuroraBackdrop />
+      <EmployeePageShell>
         <HrLoader label="Building reports from the roster…" />
-      </div>
+      </EmployeePageShell>
     );
   }
 
   if (!canView) {
     return (
-      <div className="relative min-h-[calc(100dvh-4rem)] overflow-hidden px-4 py-3 sm:px-5">
-        <AuroraBackdrop />
+      <EmployeePageShell>
         <HrAccessDenied what="employee reports" />
-      </div>
+      </EmployeePageShell>
     );
   }
 
   return (
-    <div className="relative min-h-[calc(100dvh-4rem)] overflow-hidden px-4 py-3 sm:px-5">
-      <AuroraBackdrop />
-
-      <div className="mb-1 flex items-center gap-2">
-        <Link href="/employee">
-          <Button variant="ghost" size="icon" className="rounded-full bg-white/70 shadow-sm backdrop-blur">
-            <ArrowLeft className="h-4 w-4" />
-          </Button>
-        </Link>
-      </div>
-
-      <HrPageHeader
+    <EmployeePageShell>
+      <EmployeeHeader
+        icon={BarChart3}
+        tone="violet"
+        eyebrow="Employee management"
         title="Reports"
+        backHref="/employee"
+        backLabel="Back to Employee Management"
         description="Headcount, movement and category breakdowns — built from the corrected roster, not a separate count that can drift from it."
+        status={
+          rows.length > 0 ? (
+            report?.liveRoster ? (
+              <EmployeeStatusPill tone="emerald" pulse>
+                Verified against greytHR
+              </EmployeeStatusPill>
+            ) : (
+              <EmployeeStatusPill tone="amber" icon={CloudOff}>
+                Stored mirror only
+              </EmployeeStatusPill>
+            )
+          ) : undefined
+        }
+        meta={scopeActive ? `Scoped to ${scoped.length} of ${rows.length} records` : undefined}
         actions={
-          <Button variant="outline" size="sm" onClick={() => void load(true)} disabled={refreshing}>
+          <Button variant="outline" size="sm" className="bg-white/80" onClick={() => void load(true)} disabled={refreshing}>
             <RefreshCw className={refreshing ? 'mr-1.5 h-4 w-4 animate-spin' : 'mr-1.5 h-4 w-4'} />
             Refresh
           </Button>
         }
       />
 
-      {error && (
-        <div className="mb-4 rounded-xl border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm text-destructive">
-          {error}
-        </div>
-      )}
+      <EmployeeSubNav current="reports" />
 
-      {!report?.liveRoster && !error && rows.length > 0 && (
-        <p className="mb-4 text-xs text-amber-700">
-          greytHR could not be reached live for this report — figures reflect the stored mirror only.
-        </p>
-      )}
+      {error && <EmployeeErrorBanner onRetry={() => void load(true)}>{error}</EmployeeErrorBanner>}
 
       {rows.length === 0 && !error ? (
         <HrEmptyState
@@ -267,15 +271,22 @@ export default function EmployeeReportsPage() {
           ) : (
             <>
               <div className="mb-4 grid grid-cols-2 gap-2.5 sm:grid-cols-4">
-                <HrKpiCard label="Total records" value={scoped.length} icon={Users} tone="indigo" />
-                <HrKpiCard label="Currently working" value={working.length} icon={UserPlus} tone="emerald" />
-                <HrKpiCard label="Departed" value={departed.length} icon={UserMinus} tone="rose" />
-                <HrKpiCard
+                <EmployeeKpiCard label="Total records" value={scoped.length} icon={Users} tone="indigo" index={0} />
+                <EmployeeKpiCard
+                  label="Currently working"
+                  value={working.length}
+                  icon={UserPlus}
+                  tone="emerald"
+                  index={1}
+                />
+                <EmployeeKpiCard label="Departed" value={departed.length} icon={UserMinus} tone="rose" index={2} />
+                <EmployeeKpiCard
                   label="Departments"
                   value={byDepartment.length}
                   hint={`${byLocation.length} location${byLocation.length === 1 ? '' : 's'}`}
                   icon={Building2}
                   tone="blue"
+                  index={3}
                 />
               </div>
 
@@ -357,6 +368,6 @@ export default function EmployeeReportsPage() {
           )}
         </>
       ) : null}
-    </div>
+    </EmployeePageShell>
   );
 }

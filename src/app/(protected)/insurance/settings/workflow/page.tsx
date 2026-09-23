@@ -12,6 +12,8 @@ import { useToast } from '@/hooks/use-toast';
 import { db } from '@/lib/firebase';
 import { doc, getDoc, setDoc, collection, getDocs } from 'firebase/firestore';
 import type { WorkflowStep, User, Project, Department, AmountBasedCondition } from '@/lib/types';
+import { personOptionLabel } from '@/lib/people-directory';
+import { withDesignations } from '@/lib/people-directory-client';
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -91,7 +93,7 @@ export default function InsuranceWorkflowConfigurationPage() {
                 getDocs(collection(db, 'departments')),
                 getDoc(doc(db, 'workflows', 'insurance-workflow')),
             ]);
-            setUsers(usersSnap.docs.map(doc => ({ id: doc.id, ...doc.data() } as User)));
+            setUsers(await withDesignations(usersSnap.docs.map(doc => ({ id: doc.id, ...doc.data() } as User))));
             setProjects(projectsSnap.docs.map(doc => ({ id: doc.id, ...doc.data() } as Project)));
             setDepartments(departmentsSnap.docs.map(doc => ({ id: doc.id, ...doc.data() } as Department)));
 
@@ -373,7 +375,7 @@ export default function InsuranceWorkflowConfigurationPage() {
                                                         >
                                                             <SelectTrigger><SelectValue placeholder="Select a user" /></SelectTrigger>
                                                             <SelectContent>
-                                                                {users.map(user => (<SelectItem key={user.id} value={user.id}>{user.name}</SelectItem>))}
+                                                                {users.map(user => (<SelectItem key={user.id} value={user.id}>{personOptionLabel(user)}</SelectItem>))}
                                                             </SelectContent>
                                                         </Select>
                                                     </div>
@@ -390,7 +392,7 @@ export default function InsuranceWorkflowConfigurationPage() {
                                                             <SelectTrigger><SelectValue placeholder="Select a user (optional)" /></SelectTrigger>
                                                             <SelectContent>
                                                                 <SelectItem value="none">None</SelectItem>
-                                                                {users.map(user => (<SelectItem key={user.id} value={user.id}>{user.name}</SelectItem>))}
+                                                                {users.map(user => (<SelectItem key={user.id} value={user.id}>{personOptionLabel(user)}</SelectItem>))}
                                                             </SelectContent>
                                                         </Select>
                                                     </div>
@@ -423,7 +425,7 @@ export default function InsuranceWorkflowConfigurationPage() {
                                                                             >
                                                                                 <SelectTrigger><SelectValue placeholder="Select primary user" /></SelectTrigger>
                                                                                 <SelectContent>
-                                                                                    {users.map(user => (<SelectItem key={user.id} value={user.id}>{user.name}</SelectItem>))}
+                                                                                    {users.map(user => (<SelectItem key={user.id} value={user.id}>{personOptionLabel(user)}</SelectItem>))}
                                                                                 </SelectContent>
                                                                             </Select>
                                                                         </TableCell>
@@ -434,7 +436,7 @@ export default function InsuranceWorkflowConfigurationPage() {
                                                                             >
                                                                                 <SelectTrigger><SelectValue placeholder="Select alternative user" /></SelectTrigger>
                                                                                 <SelectContent>
-                                                                                    {users.map(user => (<SelectItem key={user.id} value={user.id}>{user.name}</SelectItem>))}
+                                                                                    {users.map(user => (<SelectItem key={user.id} value={user.id}>{personOptionLabel(user)}</SelectItem>))}
                                                                                 </SelectContent>
                                                                             </Select>
                                                                         </TableCell>
@@ -468,8 +470,8 @@ export default function InsuranceWorkflowConfigurationPage() {
                                                                     {condition.type === 'Between' && <><span>&</span><Input type="number" value={condition.amount2} onChange={(e) => handleAmountConditionChange(step.id, condition.id, 'amount2', e.target.valueAsNumber || 0)} /></>}
                                                                 </div>
                                                                 <div className="col-span-2 flex gap-2">
-                                                                    <Select value={condition.userId} onValueChange={(value) => handleAmountConditionChange(step.id, condition.id, 'userId', value)}><SelectTrigger><SelectValue placeholder="Primary" /></SelectTrigger><SelectContent>{users.map(user => (<SelectItem key={user.id} value={user.id}>{user.name}</SelectItem>))}</SelectContent></Select>
-                                                                    <Select value={condition.alternativeUserId} onValueChange={(value) => handleAmountConditionChange(step.id, condition.id, 'alternativeUserId', value)}><SelectTrigger><SelectValue placeholder="Alternative" /></SelectTrigger><SelectContent>{users.map(user => (<SelectItem key={user.id} value={user.id}>{user.name}</SelectItem>))}</SelectContent></Select>
+                                                                    <Select value={condition.userId} onValueChange={(value) => handleAmountConditionChange(step.id, condition.id, 'userId', value)}><SelectTrigger><SelectValue placeholder="Primary" /></SelectTrigger><SelectContent>{users.map(user => (<SelectItem key={user.id} value={user.id}>{personOptionLabel(user)}</SelectItem>))}</SelectContent></Select>
+                                                                    <Select value={condition.alternativeUserId} onValueChange={(value) => handleAmountConditionChange(step.id, condition.id, 'alternativeUserId', value)}><SelectTrigger><SelectValue placeholder="Alternative" /></SelectTrigger><SelectContent>{users.map(user => (<SelectItem key={user.id} value={user.id}>{personOptionLabel(user)}</SelectItem>))}</SelectContent></Select>
                                                                     <Button variant="ghost" size="icon" onClick={() => handleDeleteAmountCondition(step.id, condition.id)}><Trash2 className="h-4 w-4 text-destructive" /></Button>
                                                                 </div>
                                                             </div>
@@ -573,7 +575,7 @@ export default function InsuranceWorkflowConfigurationPage() {
                                                         <SelectContent>
                                                             <SelectItem value="none">No escalation</SelectItem>
                                                             {users.map((u) => (
-                                                                <SelectItem key={u.id} value={u.id}>{u.name}</SelectItem>
+                                                                <SelectItem key={u.id} value={u.id}>{personOptionLabel(u)}</SelectItem>
                                                             ))}
                                                         </SelectContent>
                                                     </Select>

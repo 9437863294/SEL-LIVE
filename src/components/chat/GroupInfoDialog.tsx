@@ -3,6 +3,7 @@
 import { useMemo, useState } from 'react';
 import { LogOut, Pencil, Search, ShieldCheck, UserMinus, UserPlus, UsersRound } from 'lucide-react';
 import type { User } from '@/lib/types';
+import { personSubtitle } from '@/lib/people-directory';
 import type { ChatConversation } from '@/lib/chat';
 import { getInitials } from '@/lib/chat';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
@@ -117,7 +118,7 @@ export function GroupInfoDialog({
             <div className="overflow-hidden rounded-xl border">
               {members.map((member) => {
                 const memberIsAdmin = conversation.createdBy === member.id || conversation.adminIds?.includes(member.id);
-                return <div key={member.id} className="flex items-center gap-3 border-b px-3 py-3 last:border-0"><MemberAvatar user={member} /><div className="min-w-0 flex-1"><p className="truncate text-sm font-semibold">{member.id === currentUser.id ? 'You' : member.name}</p><p className="truncate text-xs text-muted-foreground">{member.role || member.email}</p></div>{memberIsAdmin && <span className="flex items-center gap-1 text-[10px] font-semibold text-primary"><ShieldCheck className="h-3 w-3" /> Admin</span>}{isAdmin && member.id !== currentUser.id && !memberIsAdmin && <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive" onClick={() => void onRemoveMember(member.id)}><UserMinus className="h-4 w-4" /></Button>}</div>;
+                return <div key={member.id} className="flex items-center gap-3 border-b px-3 py-3 last:border-0"><MemberAvatar user={member} /><div className="min-w-0 flex-1"><p className="truncate text-sm font-semibold">{member.id === currentUser.id ? 'You' : member.name}</p><p className="truncate text-xs text-muted-foreground">{personSubtitle(member) || member.email}</p></div>{memberIsAdmin && <span className="flex items-center gap-1 text-[10px] font-semibold text-primary"><ShieldCheck className="h-3 w-3" /> Admin</span>}{isAdmin && member.id !== currentUser.id && !memberIsAdmin && <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive" onClick={() => void onRemoveMember(member.id)}><UserMinus className="h-4 w-4" /></Button>}</div>;
               })}
             </div>
             <Button variant="ghost" className="mt-4 w-full justify-start text-destructive hover:text-destructive" onClick={() => void onLeave()}><LogOut className="mr-2 h-4 w-4" /> Leave group</Button>

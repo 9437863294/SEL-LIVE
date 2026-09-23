@@ -642,6 +642,48 @@ main {
   }
 }
 
+/* ── Employee Management entrance animations ── */
+
+/*
+  The fourth module to want this, and namespaced like the other three (vm-, am-, wd-) rather than
+  folded into one shared name: those live on screens this work never touched, and renaming an
+  animation used by the home dashboard to tidy up the employee module would be a change to the
+  home dashboard. Same reduced-motion branch as the others, scoped to these two classes.
+*/
+@keyframes emp-card-in {
+  /* Fade and rise, never scale. Every surface in the module is `bg-white/85 backdrop-blur-sm`,
+     and scaling a blurred surface resamples the blur each frame — it reads as a flash rather than
+     a movement. The same constraint am-card-in and wd-card-in are written to. */
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes emp-accent-grow {
+  /* The tone-coloured bar across the top of a card, drawn on from the left once the card lands. */
+  from { transform: scaleX(0); }
+  to { transform: scaleX(1); }
+}
+
+@layer utilities {
+  .animate-emp-card-in {
+    /* `both`, so a card with a stagger delay holds its opening frame instead of appearing,
+       vanishing, then animating — which is what `forwards` alone does to a delayed animation. */
+    animation: emp-card-in 0.42s cubic-bezier(0.22, 1, 0.36, 1) both;
+  }
+
+  .animate-emp-accent {
+    transform-origin: left;
+    animation: emp-accent-grow 0.5s cubic-bezier(0.22, 1, 0.36, 1) both;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-emp-card-in,
+  .animate-emp-accent {
+    animation: none;
+  }
+}
+
 /* ─── Mobile: compact vm-panel card padding ──────────────────────── */
 @media (max-width: 640px) {
   .vm-module-root {

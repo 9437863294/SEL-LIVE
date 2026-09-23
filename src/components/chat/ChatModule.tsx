@@ -31,6 +31,7 @@ import {
 import { getDownloadURL, ref as storageRef, uploadBytesResumable, type UploadTaskSnapshot } from 'firebase/storage';
 import { useSearchParams } from 'next/navigation';
 import type { User } from '@/lib/types';
+import { personSubtitle } from '@/lib/people-directory';
 import type { Role } from '@/lib/types';
 import { db } from '@/lib/firebase';
 import { storage } from '@/lib/firebase-storage';
@@ -1404,7 +1405,7 @@ function ConversationHeader({
     ? `${conversation.memberIds.length} members`
     : otherUser?.isOnline
       ? 'Online'
-      : otherUser?.role || 'Direct message');
+      : personSubtitle(otherUser) || 'Direct message');
 
   return (
     <div className="flex h-16 shrink-0 items-center gap-3 border-b bg-background/95 px-3 backdrop-blur sm:px-5">

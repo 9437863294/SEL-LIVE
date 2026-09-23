@@ -35,6 +35,7 @@ import {
 } from "firebase/firestore";
 import { getDownloadURL, ref as storageRef, uploadBytes } from "firebase/storage";
 import { db } from "@/lib/firebase";
+import { personOptionLabel } from "@/lib/people-directory";
 import { storage } from "@/lib/firebase-storage";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/components/auth/AuthProvider";
@@ -500,10 +501,25 @@ export default function MdlPage() {
   // keeps them in the list — dropping them would silently unassign the drawing the next time
   // anyone saved an unrelated field on it.
   const assigneeOptions = useMemo(() => {
-    const options = assignableUsers.map((candidate) => ({ id: candidate.id, name: candidate.name }));
+    const options = assignableUsers.map((candidate) => ({
+      id: candidate.id,
+      name: candidate.name,
+      // Carried so the dropdown can say "Ramesh Kumar — Site Engineer"; the inactive placeholder
+      // pushed on below has no HR record to read and keeps showing just the name.
+      designation: candidate.designation ?? null,
+      role: candidate.role,
+      email: candidate.email,
+    }));
     const assigned = editTarget?.sub;
     if (assigned?.assignedToId && !options.some((option) => option.id === assigned.assignedToId)) {
-      options.unshift({ id: assigned.assignedToId, name: `${assigned.assignedToName || "Unknown user"} (inactive)` });
+      options.unshift({
+        id: assigned.assignedToId,
+        name: `${assigned.assignedToName || "Unknown user"} (inactive)`,
+        // No HR record to read for somebody who has left, so the option stays a bare name.
+        designation: null,
+        role: "",
+        email: "",
+      });
     }
     return options;
   }, [assignableUsers, editTarget]);
@@ -1441,7 +1457,7 @@ export default function MdlPage() {
                     <SelectContent>
                       <SelectItem value={UNASSIGNED}>Unassigned</SelectItem>
                       {assigneeOptions.map((candidate) => (
-                        <SelectItem key={candidate.id} value={candidate.id}>{candidate.name}</SelectItem>
+                        <SelectItem key={candidate.id} value={candidate.id}>{personOptionLabel(candidate)}</SelectItem>
                       ))}
                     </SelectContent>
                   </Select>

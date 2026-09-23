@@ -14,6 +14,7 @@ import {
   Target,
 } from "lucide-react";
 import { db } from "@/lib/firebase";
+import { personOptionLabel } from '@/lib/people-directory';
 import { useAuth } from "@/components/auth/AuthProvider";
 import { useAuthorization } from "@/hooks/useAuthorization";
 import {
@@ -607,7 +608,7 @@ function ReportRouteView({ kind }: { kind: ReportKind }) {
                   <SelectItem value="all">All owners</SelectItem>
                   {users.map((entry) => (
                     <SelectItem value={entry.id} key={entry.id}>
-                      {entry.name}
+                      {personOptionLabel(entry)}
                     </SelectItem>
                   ))}
                 </SelectContent>

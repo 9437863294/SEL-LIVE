@@ -18,7 +18,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
-import { ArrowLeft, Clock, Download, Layers, Loader2, RefreshCw, Search, Tags, Trash2, Users, X } from 'lucide-react';
+import { Briefcase, Clock, Download, Layers, Loader2, RefreshCw, Search, Tags, Trash2, Users, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { useToast } from '@/hooks/use-toast';
@@ -44,19 +44,26 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from '@/components/ui/alert-dialog';
-import { AuroraBackdrop } from '@/components/effects/AuroraBackdrop';
 import {
   HrAccessDenied,
   HrAlertNotice,
   HrDataList,
   HrEmptyState,
   HrFilterCard,
-  HrKpiCard,
   HrLoader,
-  HrPageHeader,
   hrDialog,
   type HrListColumn,
 } from '@/components/hr/hr-ui';
+import {
+  EmployeeHeader,
+  EmployeeKpiCard,
+  EmployeeListFooter,
+  EmployeePageShell,
+  EmployeeStatusPill,
+  EmployeeSubNav,
+  EMP_CARD_CLASS,
+  EMP_REGISTER_HEIGHT,
+} from '@/components/employee/employee-ui';
 
 /** One flattened category row: an employee plus one of their effective-dated values. */
 type PositionRow = {
@@ -355,45 +362,50 @@ export default function EmployeePositionDetailsPage() {
 
   if (isAuthLoading) {
     return (
-      <div className="relative min-h-[calc(100dvh-4rem)] overflow-hidden px-4 py-3 sm:px-5">
-        <AuroraBackdrop />
+      <EmployeePageShell>
         <HrLoader label="Checking your access…" />
-      </div>
+      </EmployeePageShell>
     );
   }
 
   if (!canView) {
     return (
-      <div className="relative min-h-[calc(100dvh-4rem)] overflow-hidden px-4 py-3 sm:px-5">
-        <AuroraBackdrop />
-        <div className="mb-4 flex items-center gap-2">
-          <Link href="/employee">
-            <Button variant="ghost" size="icon" className="rounded-full bg-white/70 shadow-sm backdrop-blur">
-              <ArrowLeft className="h-5 w-5" />
-            </Button>
-          </Link>
-          <h1 className="text-xl font-semibold text-slate-800">All Employee Position Details</h1>
-        </div>
+      <EmployeePageShell>
+        <EmployeeHeader
+          icon={Briefcase}
+          tone="violet"
+          eyebrow="Employee management"
+          title="Position details"
+          backHref="/employee"
+          backLabel="Back to Employee Management"
+        />
         <HrAccessDenied what="employee position details" />
-      </div>
+      </EmployeePageShell>
     );
   }
 
   return (
-    <div className="relative min-h-[calc(100dvh-4rem)] overflow-hidden px-4 py-3 sm:px-5">
-      <AuroraBackdrop />
-
-      <div className="mb-1 flex items-center gap-2">
-        <Link href="/employee">
-          <Button variant="ghost" size="icon" className="rounded-full bg-white/70 shadow-sm backdrop-blur">
-            <ArrowLeft className="h-5 w-5" />
-          </Button>
-        </Link>
-      </div>
-
-      <HrPageHeader
-        title="All Employee Position Details"
-        description="Browse the effective-dated department, designation, grade, location and project history mirrored from greytHR."
+    <EmployeePageShell>
+      <EmployeeHeader
+        icon={Briefcase}
+        tone="violet"
+        eyebrow="Employee management"
+        title="Position details"
+        backHref="/employee"
+        backLabel="Back to Employee Management"
+        description="The effective-dated department, designation, grade, location and project history mirrored from greytHR — one row per employee per category value."
+        status={
+          lastSynced ? (
+            <EmployeeStatusPill tone="emerald" icon={Clock}>
+              Synced {formatDistanceToNow(lastSynced.at, { addSuffix: true })}
+            </EmployeeStatusPill>
+          ) : (
+            <EmployeeStatusPill tone="amber" icon={Clock}>
+              No sync recorded
+            </EmployeeStatusPill>
+          )
+        }
+        meta={lastSynced ? `Written by ${lastSynced.source}.` : undefined}
         actions={
           <>
             <Button
@@ -466,21 +478,35 @@ export default function EmployeePositionDetailsPage() {
       />
 
       <div className="mb-3 grid grid-cols-2 gap-2.5 sm:grid-cols-4">
-        <HrKpiCard label="Employees" value={isLoading ? '—' : allPositions.length} icon={Users} tone="indigo" />
-        <HrKpiCard
+        <EmployeeKpiCard
+          label="Employees"
+          value={isLoading ? '—' : allPositions.length}
+          icon={Users}
+          tone="indigo"
+          index={0}
+        />
+        <EmployeeKpiCard
           label="Position records"
           value={isLoading ? '—' : rows.length}
           hint={filtersActive ? 'Matching your filters' : 'All category values'}
           icon={Layers}
           tone="blue"
+          index={1}
         />
-        <HrKpiCard label="Categories" value={isLoading ? '—' : uniqueCategories.length} icon={Tags} tone="violet" />
-        <HrKpiCard
+        <EmployeeKpiCard
+          label="Categories"
+          value={isLoading ? '—' : uniqueCategories.length}
+          icon={Tags}
+          tone="violet"
+          index={2}
+        />
+        <EmployeeKpiCard
           label="Last synced"
           value={lastSynced ? formatDistanceToNow(lastSynced.at, { addSuffix: true }) : 'Unknown'}
           hint={lastSynced ? `By ${lastSynced.source}` : 'No sync run recorded by either flow'}
           icon={Clock}
           tone={lastSynced ? 'emerald' : 'amber'}
+          index={3}
         />
       </div>
 
@@ -528,7 +554,7 @@ export default function EmployeePositionDetailsPage() {
       {isLoading || isDeleting ? (
         <HrLoader label={isDeleting ? 'Clearing records and resyncing…' : 'Loading position details…'} />
       ) : loadError ? (
-        <Card className="border-white/60 bg-white/80 shadow-sm">
+        <Card className={EMP_CARD_CLASS}>
           <CardContent className="flex flex-col items-center gap-3 py-12 text-center">
             <Layers className="h-10 w-10 text-muted-foreground/40" />
             <p className="text-sm text-muted-foreground">{loadError}</p>
@@ -540,6 +566,8 @@ export default function EmployeePositionDetailsPage() {
           <HrDataList
             rows={visibleRows}
             columns={COLUMNS}
+            dense
+            maxHeightClassName={EMP_REGISTER_HEIGHT}
             empty={
               <HrEmptyState
                 icon={Layers}
@@ -560,21 +588,15 @@ export default function EmployeePositionDetailsPage() {
             }
           />
 
-          {rows.length > 0 && (
-            <div className="flex flex-col items-center gap-2 pb-2 text-center">
-              <p className="text-xs text-muted-foreground">
-                Showing <span className="font-medium text-slate-700">{visibleRows.length}</span> of {rows.length} record
-                {rows.length === 1 ? '' : 's'}
-              </p>
-              {visibleRows.length < rows.length && (
-                <Button variant="outline" size="sm" onClick={() => setVisibleCount(count => count + PAGE_SIZE)}>
-                  Show {Math.min(PAGE_SIZE, rows.length - visibleRows.length)} more
-                </Button>
-              )}
-            </div>
-          )}
+          <EmployeeListFooter
+            shown={visibleRows.length}
+            total={rows.length}
+            noun="record"
+            pageSize={PAGE_SIZE}
+            onMore={() => setVisibleCount(count => count + PAGE_SIZE)}
+          />
         </div>
       )}
-    </div>
+    </EmployeePageShell>
   );
 }

@@ -9,6 +9,8 @@ import { HR_PERMISSION_MODULE } from './module-layout-shell';
 import { DEFAULT_HR_SETTINGS, type HrSettings } from '@/lib/hr-requirement';
 import { loadHrSettings, type HrActor } from '@/lib/hr-requirement-service';
 import type { Department, Employee, Project, User } from '@/lib/types';
+import { attachDesignations } from '@/lib/people-directory';
+import { loadEmployeeFactsIndex } from '@/lib/people-directory-client';
 
 /**
  * The reference data every HR screen needs: settings, masters, departments, projects, users and the
@@ -60,12 +62,16 @@ export function useHrConfig(): HrConfig {
 
     let cancelled = false;
     (async () => {
-      const [hrSettings, departmentSnapshot, projectSnapshot, userSnapshot] = await Promise.all([
-        loadHrSettings(organizationId),
-        getDocs(collection(db, 'departments')),
-        getDocs(collection(db, 'projects')),
-        getDocs(collection(db, 'users')),
-      ]);
+      const [hrSettings, departmentSnapshot, projectSnapshot, userSnapshot, employeeFacts] =
+        await Promise.all([
+          loadHrSettings(organizationId),
+          getDocs(collection(db, 'departments')),
+          getDocs(collection(db, 'projects')),
+          getDocs(collection(db, 'users')),
+          // The greytHR job titles these screens label people with. `roleByUserId` below stays on
+          // `role` on purpose — the approval policy matches on the permission bundle, not the title.
+          loadEmployeeFactsIndex(),
+        ]);
       if (cancelled) return;
 
       setSettings(hrSettings);
@@ -82,10 +88,13 @@ export function useHrConfig(): HrConfig {
           .sort((a, b) => (a.projectName || '').localeCompare(b.projectName || '')),
       );
       setUsers(
-        userSnapshot.docs
-          .map(entry => ({ id: entry.id, ...entry.data() }) as User)
-          .filter(row => row.status !== 'Inactive')
-          .sort((a, b) => (a.name || '').localeCompare(b.name || '')),
+        attachDesignations(
+          userSnapshot.docs
+            .map(entry => ({ id: entry.id, ...entry.data() }) as User)
+            .filter(row => row.status !== 'Inactive')
+            .sort((a, b) => (a.name || '').localeCompare(b.name || '')),
+          employeeFacts,
+        ),
       );
       setLoaded(true);
     })().catch(() => {

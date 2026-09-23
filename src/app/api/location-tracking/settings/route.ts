@@ -25,14 +25,37 @@ export async function GET(request: Request) {
   try {
     await requireLocationOtpSession(request, 'View');
     const firestore = getFirebaseAdminFirestore();
-    const [usersSnapshot, settingsSnapshot, locationsSnapshot] = await Promise.all([
+    const [usersSnapshot, settingsSnapshot, locationsSnapshot, employeesSnapshot] = await Promise.all([
       firestore.collection('users').get(),
       firestore.collection(LOCATION_SETTINGS_COLLECTION).get(),
       firestore.collection('userLocations').get(),
+      // The greytHR mirror, for each row's job title. The client renders it under the name where it
+      // used to render `role`, which is a permission bundle and says nothing about who the person
+      // is. Failing soft: a row with no HR record falls back to its role, as it always did.
+      firestore.collection('employees').get().catch(() => null),
     ]);
 
     const settingsByUser = new Map(settingsSnapshot.docs.map((snapshot) => [snapshot.id, snapshot.data()]));
     const locationsByUser = new Map(locationsSnapshot.docs.map((snapshot) => [snapshot.id, snapshot.data()]));
+
+    /*
+     * The employee master keyed every way the join can arrive: `users.employeeId` has been written
+     * from the document id, greytHR's numeric id and the employee number, and email is the fallback
+     * for accounts created before the linking screen existed. Mirrors `buildEmployeeFactsIndex` in
+     * `src/lib/people-directory.ts`, which this route cannot import because it runs on the Admin SDK.
+     */
+    const designationByKey = new Map<string, string>();
+    for (const snapshot of employeesSnapshot?.docs ?? []) {
+      const employee = snapshot.data();
+      const designation = String(employee.designation || '').trim();
+      if (!designation) continue;
+      for (const key of [snapshot.id, employee.employeeId, employee.employeeNo]) {
+        const id = String(key ?? '').trim();
+        if (id && !designationByKey.has(id)) designationByKey.set(id, designation);
+      }
+      const email = String(employee.email || '').trim().toLowerCase();
+      if (email && !designationByKey.has(email)) designationByKey.set(email, designation);
+    }
     const users = usersSnapshot.docs
       .map((snapshot) => {
         const data = snapshot.data();
@@ -45,6 +68,11 @@ export async function GET(request: Request) {
           name: String(data.name || ''),
           email: String(data.email || ''),
           role: String(data.role || ''),
+          designation:
+            designationByKey.get(String(data.employeeId ?? '').trim()) ??
+            designationByKey.get(String(data.employeeNo ?? '').trim()) ??
+            designationByKey.get(String(data.email || '').trim().toLowerCase()) ??
+            '',
           status: data.status === 'Inactive' ? 'Inactive' : 'Active',
           photoURL: typeof data.photoURL === 'string' ? data.photoURL : '',
           enabled: setting?.enabled === true,

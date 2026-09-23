@@ -3,147 +3,207 @@
 /**
  * The Employee Management hub.
  *
- * Every tile here is gated on its own permission rather than on the page as a whole: a user who may
- * read the roster but not run a sync should see Manage Employee and not see Sync with GreytHR, which
- * is a different statement from "you cannot open Employee Management". Cards the user cannot use are
- * removed rather than disabled — a greyed-out tile still tells them a capability exists and invites a
- * support ticket. When nothing is left to show, the page says so plainly.
+ * ── What was wrong with the old one ─────────────────────────────────────────────────────────────
  *
- * ── Why sections, not one flat grid ─────────────────────────────────────────────────────────────
+ * Eleven identical cards in one grid, each carrying a two- or three-line description, above a strip
+ * of four plain KPI boxes. Three problems, all of them structural rather than cosmetic:
  *
- * Eight-plus tiles in one grid reads as an unordered list; an administrator has to read every label
- * to find what they want. Grouped by what the tile is *for* — see who's here, see their time-off and
- * attendance, keep the data current, handle pay — the page can be scanned by section instead of by
- * tile, and a KPI strip up top answers "how many, how current" before anyone opens anything.
+ *  1. *No hierarchy.* "Manage Employee", opened every day, was rendered exactly like "Pay Slip
+ *     Config", which does not exist yet. A reader had to read all eleven labels to find the one
+ *     they came for.
+ *  2. *Numbers with no consequence.* The KPI strip printed "Last sync — 18 days ago" in the same
+ *     neutral grey as everything else. An eighteen-day-old mirror is the single most important fact
+ *     on this page and it read as decoration. It is now a toned pill next to the sync destination,
+ *     it turns amber and then rose as it ages, and it brings its own notice explaining what to do.
+ *  3. *Wasted space.* Eleven cards at ~100px each, plus a lone unlabelled back arrow on a row of its
+ *     own, plus a ragged final row wherever a group had two members. The same eleven destinations
+ *     now occupy a little over half the height: three feature cards for the screens people actually
+ *     open, and two even blocks of compact rows for the rest.
+ *
+ * ── What is on the page ─────────────────────────────────────────────────────────────────────────
+ *
+ * A hero band carrying the one figure that describes the module (how many people are on record) and
+ * the four facts that qualify it, then anything that needs attention, then the destinations grouped
+ * by what the reader is trying to do — see `EMPLOYEE_GROUPS` for why those three groups and not the
+ * four the old hub used.
+ *
+ * Gating is unchanged and deliberate: every destination is filtered on its own permission, and the
+ * ones a user cannot use are removed rather than greyed out. When nothing is left, the page says so
+ * plainly instead of showing an empty frame.
  */
 
 import Link from 'next/link';
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { formatDistanceToNow } from 'date-fns';
 import {
   ArrowLeft,
-  BarChart3,
-  Briefcase,
+  ArrowRight,
   CalendarClock,
   Clock,
   DownloadCloud,
-  FileText,
-  IndianRupee,
-  Link2,
   RefreshCw,
-  Tags,
-  UserCheck,
-  Users,
+  ShieldAlert,
 } from 'lucide-react';
-import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Card, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
-import { Skeleton } from '@/components/ui/skeleton';
-import { AuroraBackdrop } from '@/components/effects/AuroraBackdrop';
-import { HrAccessDenied, HrKpiCard, HrLoader, HrPageHeader } from '@/components/hr/hr-ui';
-import { useAuthorization } from '@/hooks/useAuthorization';
+import { Card } from '@/components/ui/card';
+import { HrAccessDenied, HrLoader } from '@/components/hr/hr-ui';
+import { CountUp } from '@/components/effects/CountUp';
+import {
+  EMPLOYEE_GROUPS,
+  EMPLOYEE_NAV,
+  EMP_CARD_CLASS,
+  EmployeePageShell,
+  EmployeeSectionLabel,
+  EmployeeSpotlightCard,
+  EmployeeStatusPill,
+  EmployeeToolRow,
+  useEmployeeAccess,
+  type EmpTone,
+} from '@/components/employee/employee-ui';
+import { fetchSyncReport, type SyncReport } from '@/lib/greythr-sync-client';
 import { cn } from '@/lib/utils';
 import type { LucideIcon } from 'lucide-react';
-import { fetchSyncReport, type SyncReport } from '@/lib/greythr-sync-client';
-import { formatDistanceToNow } from 'date-fns';
 
-/** How often the "Last synced" phrase is recomputed, so it ages instead of freezing on mount. */
+/** How often the relative phrases are recomputed, so they age instead of freezing on mount. */
 const STAMP_REFRESH_MS = 60 * 1000;
 
-interface HubCard {
-  icon: LucideIcon;
-  text: string;
-  description: string;
-  href: string;
-  /** Whether the signed-in user holds the permission this card needs. */
-  permitted: boolean;
-  /** Not built yet: rendered, labelled, and deliberately not a link. */
-  comingSoon?: boolean;
-  badge?: React.ReactNode;
+/** Beyond a day the mirror is worth a warning; beyond a week it is worth an alarm. */
+const WARN_AFTER_HOURS = 24;
+const ALERT_AFTER_HOURS = 7 * 24;
+
+/* ------------------------------------------------------------------------------------------------
+ * Sync freshness
+ * ---------------------------------------------------------------------------------------------- */
+
+interface Freshness {
+  tone: EmpTone;
+  /** For the pill beside the sync card: "Synced 4 hours ago". */
+  pill: string;
+  /** Hours since the last successful run; null when there has never been one, or is not known. */
+  ageHours: number | null;
+  /**
+   * Whether the report was read at all.
+   *
+   * Three states, not two. Without a report we do not *know* when the last sync was — the usual
+   * reasons are a failed read or a viewer whose permissions do not include the sync, and saying
+   * "never synced" to either of them would be a guess presented as a fact, in rose, about the one
+   * thing on this page people act on.
+   */
+  known: boolean;
 }
 
-interface HubSection {
-  title: string;
-  description?: string;
-  cards: HubCard[];
-}
+function readFreshness(report: SyncReport | null): Freshness {
+  if (!report) return { tone: 'slate', pill: 'Sync status unavailable', ageHours: null, known: false };
 
-function EmployeeSettingsCard({ item }: { item: HubCard }) {
-  const cardContent = (
-    <Card
-      className={cn(
-        'flex h-full flex-col rounded-xl border-white/60 bg-white/80 shadow-sm backdrop-blur-sm transition-all duration-300 ease-in-out',
-        item.comingSoon ? 'cursor-default opacity-70' : 'cursor-pointer hover:border-primary/50 hover:shadow-lg',
-      )}
-    >
-      <CardHeader className="flex-row items-start gap-4 space-y-0 p-4">
-        <div className={cn('rounded-lg p-3', item.comingSoon ? 'bg-slate-100' : 'bg-primary/10')}>
-          <item.icon className={cn('h-6 w-6', item.comingSoon ? 'text-slate-400' : 'text-primary')} />
-        </div>
-        <div className="flex-1">
-          <CardTitle className="flex flex-wrap items-center gap-1.5 text-base font-bold">
-            {item.text}
-            {item.comingSoon && (
-              <Badge variant="outline" className="border-slate-200 bg-slate-50 text-[10px] font-medium text-slate-500">
-                Coming soon
-              </Badge>
-            )}
-          </CardTitle>
-          <CardDescription className="mt-1 text-sm">{item.description}</CardDescription>
-          {/*
-            A `<div>`, not a `<p>` — the badge can be a loading `<Skeleton>` (a `<div>`), and a `<p>`
-            cannot legally contain one. That mismatch is what broke hydration here before.
-          */}
-          {item.badge && <div className="mt-2 text-xs text-muted-foreground">{item.badge}</div>}
-        </div>
-      </CardHeader>
-    </Card>
-  );
+  const stamp = report.settings.lastSuccessfulRunAt;
+  const parsed = stamp ? new Date(stamp) : null;
 
-  if (item.comingSoon) {
-    // Not a link and not focusable: nothing here responds to a click, so it should not look or
-    // behave as though it might.
-    return (
-      <div className="h-full" aria-disabled="true">
-        {cardContent}
-      </div>
-    );
+  if (!parsed || Number.isNaN(parsed.getTime())) {
+    return { tone: 'rose', pill: 'Never synced', ageHours: null, known: true };
   }
 
+  const ageHours = (Date.now() - parsed.getTime()) / 3_600_000;
+  const phrase = `Synced ${formatDistanceToNow(parsed, { addSuffix: true })}`;
+  const tone: EmpTone =
+    ageHours >= ALERT_AFTER_HOURS ? 'rose' : ageHours >= WARN_AFTER_HOURS ? 'amber' : 'emerald';
+
+  return { tone, pill: phrase, ageHours, known: true };
+}
+
+/**
+ * The freshness pill, restyled for the gradient hero.
+ *
+ * Not the `chip` entry from `EMP_TONES`: those are pale fills with dark text, made for a white
+ * card, and on the gradient they read as a sticker pasted onto it. These are translucent washes of the same hues over
+ * white text — the tone still carries the meaning, the surface still looks like one surface.
+ */
+const HERO_PILL_TONE: Record<EmpTone, string> = {
+  emerald: 'border-emerald-300/40 bg-emerald-400/20 text-white',
+  amber: 'border-amber-200/50 bg-amber-300/25 text-white',
+  rose: 'border-rose-200/50 bg-rose-400/25 text-white',
+  slate: 'border-white/25 bg-white/10 text-white/85',
+  indigo: 'border-white/25 bg-white/10 text-white/85',
+  violet: 'border-white/25 bg-white/10 text-white/85',
+  blue: 'border-white/25 bg-white/10 text-white/85',
+  cyan: 'border-white/25 bg-white/10 text-white/85',
+  teal: 'border-white/25 bg-white/10 text-white/85',
+};
+
+/* ------------------------------------------------------------------------------------------------
+ * Hero
+ * ---------------------------------------------------------------------------------------------- */
+
+/** One of the four qualifying figures beside the hero number. */
+function HeroStat({
+  label,
+  value,
+  hint,
+}: {
+  label: string;
+  value: React.ReactNode;
+  hint?: string;
+}) {
   return (
-    <Link href={item.href} className="no-underline h-full">
-      {cardContent}
-    </Link>
+    <div className="min-w-0 rounded-xl bg-white/10 px-3 py-2 backdrop-blur-sm">
+      <dt className="truncate text-[10px] font-semibold uppercase tracking-wider text-white/65">{label}</dt>
+      <dd className="mt-0.5 truncate text-base font-semibold leading-tight text-white">{value}</dd>
+      {hint && <p className="mt-0.5 truncate text-[10px] text-white/60">{hint}</p>}
+    </div>
   );
 }
 
-function HubSectionBlock({ section }: { section: HubSection }) {
-  if (section.cards.length === 0) return null;
+/* ------------------------------------------------------------------------------------------------
+ * Attention notices
+ * ---------------------------------------------------------------------------------------------- */
+
+interface Notice {
+  id: string;
+  tone: 'amber' | 'rose';
+  icon: LucideIcon;
+  title: string;
+  detail: string;
+  action?: { label: string; href: string };
+}
+
+const NOTICE_TONE = {
+  amber: { shell: 'border-amber-200 bg-amber-50/80', chip: 'bg-amber-100 text-amber-700', title: 'text-amber-900', body: 'text-amber-800' },
+  rose: { shell: 'border-rose-200 bg-rose-50/80', chip: 'bg-rose-100 text-rose-700', title: 'text-rose-900', body: 'text-rose-800' },
+} as const;
+
+function NoticeRow({ notice, index }: { notice: Notice; index: number }) {
+  const tone = NOTICE_TONE[notice.tone];
   return (
-    <section className="mb-6">
-      <div className="mb-2.5">
-        <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-500">{section.title}</h2>
-        {section.description && <p className="text-xs text-muted-foreground">{section.description}</p>}
+    <div
+      style={{ animationDelay: `${120 + index * 60}ms` }}
+      className={cn('animate-emp-card-in flex items-start gap-3 rounded-xl border px-3 py-2.5', tone.shell)}
+    >
+      <span className={cn('flex h-8 w-8 shrink-0 items-center justify-center rounded-full', tone.chip)}>
+        <notice.icon className="h-4 w-4" />
+      </span>
+      <div className="min-w-0 flex-1">
+        <p className={cn('text-sm font-semibold', tone.title)}>{notice.title}</p>
+        <p className={cn('text-xs leading-snug', tone.body)}>{notice.detail}</p>
       </div>
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-4">
-        {section.cards.map((item) => (
-          <EmployeeSettingsCard key={item.text} item={item} />
-        ))}
-      </div>
-    </section>
+      {notice.action && (
+        <Button asChild variant="outline" size="sm" className="shrink-0 bg-white/80 max-sm:hidden">
+          <Link href={notice.action.href}>{notice.action.label}</Link>
+        </Button>
+      )}
+    </div>
   );
 }
 
-export default function EmployeeSettingsPage() {
-  const { can, isLoading: isAuthLoading } = useAuthorization();
+/* ------------------------------------------------------------------------------------------------
+ * The page
+ * ---------------------------------------------------------------------------------------------- */
 
-  const canView = can('View', 'Settings.Employee Management');
-  const canSync = can('Sync from GreytHR', 'Settings.Employee Management');
-  const canLink = can('View', 'Settings.User Management');
+export default function EmployeeHubPage() {
+  const access = useEmployeeAccess();
 
   /**
-   * The KPI strip's numbers, from the same cheap Firestore-only report `/employee/sync` reads —
-   * deliberately not the live-roster roster route, which is a real greytHR round trip and too heavy
-   * to pay on every visit to a hub page nobody opens to wait.
+   * The hero's figures, from the same Firestore-only report `/employee/sync` reads — deliberately
+   * not the live-roster route, which is a real greytHR round trip and far too heavy to pay on every
+   * visit to a page of links that nobody opens in order to wait.
    */
   const [report, setReport] = useState<SyncReport | null>(null);
   const [statsLoading, setStatsLoading] = useState(true);
@@ -152,225 +212,334 @@ export default function EmployeeSettingsPage() {
     try {
       setReport(await fetchSyncReport());
     } catch {
-      // The hub still works with no stats — the cards below are what matters, and a failed read
-      // here should not block them or show an alarming error on a page that is mostly links.
+      // The hub still works with no figures — the destinations below are the point, and a failed
+      // read here should not block them or raise an alarm on a page that is mostly navigation.
     } finally {
       setStatsLoading(false);
     }
   }, []);
 
   useEffect(() => {
-    if (isAuthLoading) return;
-    if (!canView) {
+    if (access.isLoading) return;
+    if (!access.canView) {
       setStatsLoading(false);
       return;
     }
     void loadStats();
-  }, [isAuthLoading, canView, loadStats]);
+  }, [access.isLoading, access.canView, loadStats]);
 
+  // Re-renders once a minute so "synced 59 minutes ago" becomes "an hour ago" on its own, and so a
+  // page left open overnight crosses the warning threshold rather than lying about it.
   const [tick, setTick] = useState(0);
   useEffect(() => {
     if (!report?.settings.lastSuccessfulRunAt) return;
-    const interval = setInterval(() => setTick((value) => value + 1), STAMP_REFRESH_MS);
+    const interval = setInterval(() => setTick(value => value + 1), STAMP_REFRESH_MS);
     return () => clearInterval(interval);
   }, [report?.settings.lastSuccessfulRunAt]);
 
-  const lastSyncedLabel = useMemo(() => {
-    void tick; // Recomputes the relative phrase as time passes; the timestamp itself does not change.
-    const stamp = report?.settings.lastSuccessfulRunAt;
-    if (!stamp) return null;
-    const parsed = new Date(stamp);
-    return Number.isNaN(parsed.getTime()) ? null : `Last synced ${formatDistanceToNow(parsed, { addSuffix: true })}`;
-  }, [report?.settings.lastSuccessfulRunAt, tick]);
+  const freshness = useMemo(() => {
+    void tick; // The stamp does not change; how long ago it was does.
+    return readFreshness(report);
+  }, [report, tick]);
 
-  const sections = useMemo<HubSection[]>(
-    () => [
-      {
-        title: 'Directory',
-        description: 'Who works here, and the numbers behind it.',
-        cards: [
-          {
-            icon: Users,
-            text: 'Manage Employee',
-            description: 'The full roster, current and departed, corrected against greytHR live.',
-            href: '/employee/manage',
-            permitted: canView,
-          },
-          {
-            icon: UserCheck,
-            text: 'Current Employees (Live)',
-            description: "Who greytHR says is currently employed, fetched fresh — bypasses the stored mirror entirely.",
-            href: '/employee/current',
-            permitted: canView,
-          },
-          {
-            icon: BarChart3,
-            text: 'Reports',
-            description: 'Headcount, movement and category breakdowns, built from the same corrected roster.',
-            href: '/employee/reports',
-            permitted: canView,
-          },
-        ],
-      },
-      {
-        title: 'Time & leave',
-        description: "Registers of what greytHR already holds — read-only; applying or approving still happens in greytHR.",
-        cards: [
-          {
-            icon: CalendarClock,
-            text: 'Leave register',
-            description: 'Every employee’s leave balance by type, organisation-wide.',
-            href: '/employee/leave',
-            permitted: canView,
-          },
-          {
-            icon: Clock,
-            text: 'Attendance register',
-            description: "Everyone's synced monthly attendance summary, in one table.",
-            href: '/employee/attendance',
-            permitted: canView,
-          },
-        ],
-      },
-      {
-        title: 'Sync & setup',
-        description: 'Keep the mirror correct, and connect logins to the people they belong to.',
-        cards: [
-          {
-            icon: DownloadCloud,
-            text: 'Sync with GreytHR',
-            description: 'Schedule, run and review the sync that keeps the mirror current.',
-            href: '/employee/sync',
-            permitted: canSync,
-            badge: statsLoading ? <Skeleton className="h-3 w-32" /> : lastSyncedLabel,
-          },
-          {
-            icon: Tags,
-            text: 'Manage Category',
-            description: 'View synced departments and designations.',
-            href: '/employee/category',
-            permitted: canView,
-          },
-          {
-            icon: Briefcase,
-            text: 'Employee Position Details',
-            description: 'Effective-dated category history for one employee.',
-            href: '/employee/position-details',
-            permitted: canView,
-          },
-          {
-            icon: Link2,
-            text: 'greytHR Linking',
-            description: 'Reconcile platform logins with greytHR employees — who is linked, who is not.',
-            href: '/settings/access-management/greythr-linking',
-            permitted: canLink,
-          },
-        ],
-      },
-      {
-        title: 'Payroll',
-        cards: [
-          {
-            icon: IndianRupee,
-            text: 'Employee Salary',
-            description: 'View and manage employee salary details.',
-            href: '/employee/salary',
-            permitted: canView,
-          },
-          {
-            icon: FileText,
-            text: 'Pay Slip Config',
-            description:
-              'Blocked on the salary-row migration — greytHR’s monthly salary sync still writes into the employee mirror rather than its own collection. See docs/greythr-integration.md §11a.',
-            href: '#',
-            permitted: canView,
-            comingSoon: true,
-          },
-        ],
-      },
-    ],
-    [canView, canSync, canLink, statsLoading, lastSyncedLabel],
-  );
+  const mirror = report?.mirror;
+  const schedule = report?.settings.schedule;
+  const departed = mirror ? Math.max(0, mirror.employees - mirror.working) : 0;
 
-  const visibleSections = sections
-    .map((section) => ({ ...section, cards: section.cards.filter((card) => card.permitted) }))
-    .filter((section) => section.cards.length > 0);
+  const notices = useMemo<Notice[]>(() => {
+    if (!report) return [];
+    const list: Notice[] = [];
+    const syncHref = '/employee/sync';
 
-  const totalVisible = visibleSections.reduce((sum, section) => sum + section.cards.length, 0);
+    if (!report.configured) {
+      list.push({
+        id: 'credentials',
+        tone: 'rose',
+        icon: ShieldAlert,
+        title: 'greytHR credentials are not configured',
+        detail:
+          'Nothing can be fetched until the server has them, so every figure on this page is whatever was last written.',
+        action: access.canSync ? { label: 'Sync console', href: syncHref } : undefined,
+      });
+    }
+
+    if (freshness.ageHours === null) {
+      list.push({
+        id: 'never',
+        tone: 'rose',
+        icon: Clock,
+        title: 'No sync has ever completed successfully',
+        detail: 'The roster, registers and reports below are all built from the mirror, and it is empty or stale.',
+        action: access.canSync ? { label: 'Run one', href: syncHref } : undefined,
+      });
+    } else if (freshness.ageHours >= WARN_AFTER_HOURS) {
+      list.push({
+        id: 'stale',
+        tone: freshness.ageHours >= ALERT_AFTER_HOURS ? 'rose' : 'amber',
+        icon: Clock,
+        title: freshness.pill.replace('Synced', 'Last successful sync was'),
+        detail:
+          'Joiners and leavers since then are missing or wrongly listed everywhere except Current Employees, which asks greytHR directly.',
+        action: access.canSync ? { label: 'Sync now', href: syncHref } : undefined,
+      });
+    }
+
+    if (!report.settings.baselineCompletedAt) {
+      list.push({
+        id: 'baseline',
+        tone: 'amber',
+        icon: RefreshCw,
+        title: 'No full baseline has completed',
+        detail:
+          'Incremental runs only fetch what greytHR says changed, so they can maintain a complete mirror but never build one. The next full run fetches everybody.',
+        action: access.canSync ? { label: 'Sync console', href: syncHref } : undefined,
+      });
+    }
+
+    if (schedule && !schedule.enabled) {
+      list.push({
+        id: 'schedule',
+        tone: 'amber',
+        icon: CalendarClock,
+        title: 'Automatic sync is switched off',
+        detail: 'The mirror changes only when somebody runs the sync by hand.',
+        action: access.canSync ? { label: 'Turn it on', href: syncHref } : undefined,
+      });
+    }
+
+    // Three is the point at which a list of warnings stops being read. The rest are all visible on
+    // the sync console, which every one of these links to.
+    return list.slice(0, 3);
+  }, [report, freshness, schedule, access.canSync]);
+
+  /* ── Destinations ── */
+
+  const permitted = useMemo(() => EMPLOYEE_NAV.filter(item => access.permits(item)), [access]);
+
+  /** The live figure under each feature card. Null for anything the report could not answer. */
+  const spotlightFooter = (key: string): React.ReactNode => {
+    if (key === 'manage') {
+      if (!mirror) return statsLoading ? 'Counting records…' : null;
+      return (
+        <>
+          <span className="font-medium text-slate-700">{mirror.employees.toLocaleString()} records</span>
+          <span aria-hidden className="text-slate-300">
+            ·
+          </span>
+          <span>{mirror.working.toLocaleString()} still working</span>
+        </>
+      );
+    }
+    if (key === 'current') {
+      return (
+        <>
+          <EmployeeStatusPill tone="emerald" pulse>
+            Live from greytHR
+          </EmployeeStatusPill>
+          <span>Fetched on open</span>
+        </>
+      );
+    }
+    if (key === 'sync') {
+      return (
+        <>
+          <EmployeeStatusPill tone={statsLoading ? 'slate' : freshness.tone} icon={Clock}>
+            {statsLoading ? 'Checking…' : freshness.pill}
+          </EmployeeStatusPill>
+          {schedule && <span>{schedule.enabled ? `${schedule.frequency} schedule` : 'Schedule off'}</span>}
+        </>
+      );
+    }
+    return null;
+  };
+
+  const groups = EMPLOYEE_GROUPS.map(group => ({
+    ...group,
+    items: permitted.filter(item => item.group === group.key),
+  })).filter(group => group.items.length > 0);
+
+  const primaries = groups.find(group => group.key === 'primary')?.items ?? [];
+  const rowGroups = groups.filter(group => group.key !== 'primary');
+
+  if (access.isLoading) {
+    return (
+      <EmployeePageShell>
+        <HrLoader label="Checking your access…" />
+      </EmployeePageShell>
+    );
+  }
+
+  if (permitted.length === 0) {
+    return (
+      <EmployeePageShell>
+        <HrAccessDenied what="Employee Management" />
+      </EmployeePageShell>
+    );
+  }
 
   return (
-    <div className="relative min-h-[calc(100dvh-4rem)] overflow-hidden px-4 py-3 sm:px-5">
-      <AuroraBackdrop />
+    <EmployeePageShell>
+      {/* ── Hero ───────────────────────────────────────────────────────────────────────────────
+          A gradient band rather than another white card, for one reason: this page is a list of
+          links, and a list of links with no focal point reads as a menu. The figure in it is the
+          module's headline — how many people this system holds records for — and the four beside it
+          are the facts that qualify it. They replace the old page's separate KPI strip, which
+          printed the same numbers a second time in plainer boxes. */}
+      <section className="animate-emp-card-in relative mb-3 overflow-hidden rounded-2xl bg-gradient-to-br from-sky-600 via-indigo-600 to-violet-700 p-4 text-white shadow-lg sm:p-5">
+        {/* Two soft highlights, so the gradient reads as light falling on a surface rather than as a
+            flat block of colour. */}
+        <div aria-hidden className="pointer-events-none absolute -right-20 -top-28 h-72 w-72 rounded-full bg-white/15 blur-3xl" />
+        <div aria-hidden className="pointer-events-none absolute -bottom-32 left-1/4 h-64 w-64 rounded-full bg-cyan-300/25 blur-3xl" />
 
-      <div className="mb-1 flex items-center gap-2">
-        <Link href="/settings">
-          <Button variant="ghost" size="icon" className="rounded-full bg-white/70 shadow-sm backdrop-blur">
-            <ArrowLeft className="h-5 w-5" />
-          </Button>
-        </Link>
+        <div className="relative grid gap-4 lg:grid-cols-[1fr_auto] lg:items-end lg:gap-6">
+          <div className="min-w-0">
+            {/* A breadcrumb, not the bare round arrow that used to sit on a row of its own above
+                the title. Same destination, no wasted row, and it says where it goes. */}
+            <div className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-[0.16em] text-white/65">
+              <Link
+                href="/settings"
+                className="inline-flex items-center gap-1 rounded-full px-1.5 py-0.5 transition-colors hover:bg-white/15 hover:text-white"
+              >
+                <ArrowLeft className="h-3 w-3" />
+                Settings
+              </Link>
+              <span aria-hidden>/</span>
+              <span className="text-white/90">Employee</span>
+            </div>
+
+            <h1 className="mt-2 text-xl font-semibold tracking-tight sm:text-2xl">Employee Management</h1>
+
+            {/* The headline figure, and the stats beside it, are the roster's — so they are shown to
+                somebody who may read the roster. A user who holds only the linking permission gets
+                the heading and the one destination they can open, not a row of em dashes. */}
+            {access.canView && (
+              <div className="mt-2 flex items-end gap-3">
+                <p className="text-4xl font-semibold leading-none sm:text-5xl">
+                  {statsLoading || !mirror ? '—' : <CountUp value={mirror.employees} />}
+                </p>
+                <p className="pb-1 text-sm text-white/75">
+                  employee records
+                  <br className="hidden sm:block" /> mirrored from greytHR
+                </p>
+              </div>
+            )}
+
+            <p className="mt-3 max-w-2xl text-sm text-white/80">
+              The roster and its greytHR sync, leave and attendance registers, category masters,
+              position history and salary — each opening only for the permissions you hold.
+            </p>
+
+            <div className="mt-3 flex flex-wrap items-center gap-2">
+              <span
+                className={cn(
+                  'inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] font-medium',
+                  HERO_PILL_TONE[statsLoading ? 'slate' : freshness.tone],
+                )}
+              >
+                <Clock className="h-3 w-3" />
+                {statsLoading ? 'Checking sync status…' : freshness.pill}
+                {freshness.known && freshness.ageHours !== null && freshness.ageHours >= WARN_AFTER_HOURS && (
+                  <span className="font-semibold">· needs a run</span>
+                )}
+              </span>
+              {access.canSync && (
+                <Button asChild size="sm" variant="secondary" className="bg-white text-slate-800 hover:bg-white/90">
+                  <Link href="/employee/sync">
+                    <DownloadCloud className="mr-1.5 h-4 w-4" />
+                    Sync console
+                    <ArrowRight className="ml-1.5 h-3.5 w-3.5" />
+                  </Link>
+                </Button>
+              )}
+            </div>
+          </div>
+
+          {access.canView && (
+            <dl className="grid grid-cols-2 gap-2 sm:grid-cols-4 lg:min-w-[20rem] lg:grid-cols-2">
+              <HeroStat
+                label="Still working"
+                value={statsLoading || !mirror ? '—' : mirror.working.toLocaleString()}
+                hint="Currently employed"
+              />
+              <HeroStat
+                label="Departed"
+                value={statsLoading || !mirror ? '—' : departed.toLocaleString()}
+                hint="Exited or inactive"
+              />
+              <HeroStat
+                label="Full baseline"
+                value={statsLoading ? '—' : report?.settings.baselineCompletedAt ? 'Complete' : 'Never'}
+                hint={
+                  statsLoading
+                    ? undefined
+                    : report?.settings.baselineCompletedAt
+                      ? 'Every employee fetched once'
+                      : 'Next full run fetches all'
+                }
+              />
+              <HeroStat
+                label="Salary rows"
+                value={statsLoading || !mirror ? '—' : mirror.salaryRows.toLocaleString()}
+                hint="Monthly documents held"
+              />
+            </dl>
+          )}
+        </div>
+      </section>
+
+      {/* ── Anything that needs doing ────────────────────────────────────────────────────────── */}
+      {notices.length > 0 && (
+        <div className={cn('mb-3 grid gap-2', notices.length > 1 && 'lg:grid-cols-2')}>
+          {notices.map((notice, index) => (
+            <NoticeRow key={notice.id} notice={notice} index={index} />
+          ))}
+        </div>
+      )}
+
+      {/* ── Start here ───────────────────────────────────────────────────────────────────────── */}
+      {primaries.length > 0 && (
+        <section className="mb-4">
+          <EmployeeSectionLabel
+            icon={EMPLOYEE_GROUPS[0].icon}
+            title={EMPLOYEE_GROUPS[0].title}
+            hint={EMPLOYEE_GROUPS[0].blurb}
+          />
+          <div className={cn('grid gap-3', primaries.length === 3 ? 'sm:grid-cols-2 lg:grid-cols-3' : 'sm:grid-cols-2')}>
+            {primaries.map((item, index) => (
+              <EmployeeSpotlightCard key={item.key} item={item} index={index} footer={spotlightFooter(item.key)} />
+            ))}
+          </div>
+        </section>
+      )}
+
+      {/* ── Everything else, as rows ─────────────────────────────────────────────────────────── */}
+      <div className="grid gap-4 lg:grid-cols-2">
+        {rowGroups.map(group => (
+          <section key={group.key} className="min-w-0">
+            <EmployeeSectionLabel
+              icon={group.icon}
+              title={group.title}
+              hint={`${group.items.length} ${group.items.length === 1 ? 'screen' : 'screens'}`}
+            />
+            <Card className={cn('rounded-2xl p-1.5', EMP_CARD_CLASS)}>
+              <div className="grid gap-0.5">
+                {group.items.map((item, index) => (
+                  <EmployeeToolRow key={item.key} item={item} index={index} />
+                ))}
+              </div>
+            </Card>
+            <p className="mt-1.5 px-3 text-[11px] text-muted-foreground">{group.blurb}</p>
+          </section>
+        ))}
       </div>
 
-      <HrPageHeader
-        title="Employee Management"
-        description="The employee roster, its greytHR sync, leave, attendance, categories, position details and salary — each opening only for the permissions you hold."
-        actions={
-          canView ? (
-            <Button asChild variant="outline" size="sm">
-              <Link href="/employee/sync">
-                <RefreshCw className="mr-1.5 h-4 w-4" />
-                Sync status
-              </Link>
-            </Button>
-          ) : undefined
-        }
-      />
-
-      {isAuthLoading ? (
-        <HrLoader label="Checking your access…" />
-      ) : totalVisible === 0 ? (
-        <HrAccessDenied what="Employee Management" />
-      ) : (
-        <>
-          {canView && (
-            <div className="mb-6 grid grid-cols-2 gap-2.5 sm:grid-cols-4">
-              {/*
-                `HrKpiCard` renders `value` inside a `<p>`, so the loading placeholder has to be text
-                — an ellipsis, not a `<Skeleton>` (a `<div>`). That exact mismatch is the hydration
-                bug fixed on this same page last time; reusing `HrKpiCard` here must not reintroduce it.
-              */}
-              <HrKpiCard
-                label="Employee records"
-                value={statsLoading ? '…' : report?.mirror.employees ?? '—'}
-                icon={Users}
-                tone="indigo"
-              />
-              <HrKpiCard
-                label="Still working"
-                value={statsLoading ? '…' : report?.mirror.working ?? '—'}
-                icon={UserCheck}
-                tone={report && report.mirror.employees > 0 && report.mirror.working === 0 ? 'rose' : 'emerald'}
-              />
-              <HrKpiCard
-                label="Full baseline"
-                value={statsLoading ? '…' : report?.settings.baselineCompletedAt ? 'Complete' : 'Never'}
-                hint={report && !report.settings.baselineCompletedAt ? 'Next sync fetches everybody' : undefined}
-                icon={RefreshCw}
-                tone={report?.settings.baselineCompletedAt ? 'emerald' : 'amber'}
-              />
-              <HrKpiCard
-                label="Last sync"
-                value={statsLoading ? '…' : (lastSyncedLabel?.replace('Last synced ', '') ?? 'Never')}
-                icon={Clock}
-                tone="blue"
-              />
-            </div>
-          )}
-
-          {visibleSections.map((section) => (
-            <HubSectionBlock key={section.title} section={section} />
-          ))}
-        </>
-      )}
-    </div>
+      {/*
+        No KPI strip under any of this, on purpose. The old page printed "Employee records", "Still
+        working", "Full baseline" and "Last sync" as four plain boxes *above* eleven cards; those
+        four figures are now the hero's, where they qualify the headline number instead of restating
+        it. Adding them back at the foot would reintroduce exactly the duplication this redesign
+        removed.
+      */}
+    </EmployeePageShell>
   );
 }

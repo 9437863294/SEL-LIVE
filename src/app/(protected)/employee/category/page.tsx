@@ -12,26 +12,30 @@
  */
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import Link from 'next/link';
 import { formatDistanceToNow } from 'date-fns';
-import { ArrowLeft, Clock, Layers, Loader2, RefreshCw, Search, Tags } from 'lucide-react';
+import { Clock, Layers, Loader2, RefreshCw, Search, Tags } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
-import { AuroraBackdrop } from '@/components/effects/AuroraBackdrop';
 import {
   HrAlertNotice,
   HrDataList,
   HrEmptyState,
   HrFilterCard,
-  HrKpiCard,
   HrLoader,
-  HrPageHeader,
   HrAccessDenied,
   type HrListColumn,
 } from '@/components/hr/hr-ui';
+import {
+  EmployeeHeader,
+  EmployeeKpiCard,
+  EmployeePageShell,
+  EmployeeStatusPill,
+  EmployeeSubNav,
+  EMP_CARD_CLASS,
+} from '@/components/employee/employee-ui';
 import { useToast } from '@/hooks/use-toast';
 import { db } from '@/lib/firebase';
 import { collection, doc, getDoc, getDocs, orderBy, query } from 'firebase/firestore';
@@ -235,52 +239,70 @@ export default function ManageCategoryPage() {
 
   if (isAuthLoading) {
     return (
-      <div className="relative min-h-[calc(100dvh-4rem)] overflow-hidden px-4 py-3 sm:px-5">
-        <AuroraBackdrop />
+      <EmployeePageShell>
         <HrLoader label="Checking your access…" />
-      </div>
+      </EmployeePageShell>
     );
   }
 
   if (!canView) {
     return (
-      <div className="relative min-h-[calc(100dvh-4rem)] overflow-hidden px-4 py-3 sm:px-5">
-        <AuroraBackdrop />
-        <div className="mb-4 flex items-center gap-2">
-          <Link href="/employee">
-            <Button variant="ghost" size="icon" className="rounded-full bg-white/70 shadow-sm backdrop-blur">
-              <ArrowLeft className="h-5 w-5" />
-            </Button>
-          </Link>
-          <h1 className="text-xl font-semibold text-slate-800">Synced Categories</h1>
-        </div>
+      <EmployeePageShell>
+        <EmployeeHeader
+          icon={Tags}
+          tone="teal"
+          eyebrow="Employee management"
+          title="Synced Categories"
+          backHref="/employee"
+          backLabel="Back to Employee Management"
+        />
         <HrAccessDenied what="the greytHR category master" />
-      </div>
+      </EmployeePageShell>
     );
   }
 
   return (
-    <div className="relative min-h-[calc(100dvh-4rem)] overflow-hidden px-4 py-3 sm:px-5">
-      <AuroraBackdrop />
-
-      <div className="mb-1 flex items-center gap-2">
-        <Link href="/employee">
-          <Button variant="ghost" size="icon" className="rounded-full bg-white/70 shadow-sm backdrop-blur">
-            <ArrowLeft className="h-5 w-5" />
-          </Button>
-        </Link>
-      </div>
-
-      <HrPageHeader
+    <EmployeePageShell>
+      <EmployeeHeader
+        icon={Tags}
+        tone="teal"
+        eyebrow="Employee management"
         title="Synced Categories"
+        backHref="/employee"
+        backLabel="Back to Employee Management"
         description="Department, Designation, Grade, Location, Project and the other category masters mirrored from greytHR. Read-only here — greytHR owns the values."
+        status={
+          lastSynced ? (
+            <EmployeeStatusPill tone={lastSynced.successful ? 'emerald' : 'amber'} icon={Clock}>
+              {lastSynced.successful ? 'Synced' : 'Last attempt'} {formatDistanceToNow(lastSynced.at, { addSuffix: true })}
+            </EmployeeStatusPill>
+          ) : (
+            <EmployeeStatusPill tone="slate" icon={Clock}>
+              No sync run recorded
+            </EmployeeStatusPill>
+          )
+        }
         actions={syncButton}
       />
 
+      <EmployeeSubNav current="category" />
+
       <div className="mb-3 grid grid-cols-2 gap-2.5 sm:grid-cols-3">
-        <HrKpiCard label="Category types" value={isLoading ? '—' : types.length} icon={Layers} tone="indigo" />
-        <HrKpiCard label="Values mirrored" value={isLoading ? '—' : totalValues} icon={Tags} tone="blue" />
-        <HrKpiCard
+        <EmployeeKpiCard
+          label="Category types"
+          value={isLoading ? '—' : types.length}
+          icon={Layers}
+          tone="indigo"
+          index={0}
+        />
+        <EmployeeKpiCard
+          label="Values mirrored"
+          value={isLoading ? '—' : totalValues}
+          icon={Tags}
+          tone="teal"
+          index={1}
+        />
+        <EmployeeKpiCard
           label="Last synced"
           value={lastSynced ? formatDistanceToNow(lastSynced.at, { addSuffix: true }) : 'Unknown'}
           hint={
@@ -292,6 +314,7 @@ export default function ManageCategoryPage() {
           }
           icon={Clock}
           tone={lastSynced?.successful ? 'emerald' : 'amber'}
+          index={2}
         />
       </div>
 
@@ -311,7 +334,7 @@ export default function ManageCategoryPage() {
       {isLoading ? (
         <HrLoader label="Loading categories…" />
       ) : loadError ? (
-        <Card className="border-white/60 bg-white/80 shadow-sm">
+        <Card className={EMP_CARD_CLASS}>
           <CardContent className="flex flex-col items-center gap-3 py-12 text-center">
             <Tags className="h-10 w-10 text-muted-foreground/40" />
             <p className="text-sm text-muted-foreground">{loadError}</p>
@@ -353,7 +376,7 @@ export default function ManageCategoryPage() {
               }
             />
           ) : (
-            <Card className="border-white/60 bg-white/80 shadow-sm backdrop-blur-sm">
+            <Card className={EMP_CARD_CLASS}>
               <CardContent className="p-2 sm:p-3">
                 <Accordion
                   type="multiple"
@@ -398,6 +421,6 @@ export default function ManageCategoryPage() {
           action={canSync ? syncButton : undefined}
         />
       )}
-    </div>
+    </EmployeePageShell>
   );
 }

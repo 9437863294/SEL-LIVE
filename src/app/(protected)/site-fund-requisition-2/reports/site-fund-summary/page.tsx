@@ -30,6 +30,8 @@ import {
 import { db } from '@/lib/firebase';
 import { collection, getDocs, doc, getDoc } from 'firebase/firestore';
 import type { Requisition, Project, User, WorkflowStep, ActionLog } from '@/lib/types';
+import { personOptionLabel } from '@/lib/people-directory';
+import { withDesignations } from '@/lib/people-directory-client';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useAuthorization } from '@/hooks/useAuthorization';
 import { format, getYear } from 'date-fns';
@@ -97,7 +99,7 @@ export default function SiteFundSummaryPage() {
           setFilteredRequisitions(requisitionsData);
 
           setProjects(projectsSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Project)));
-          setUsers(usersSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as User)));
+          setUsers(await withDesignations(usersSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as User))));
           
           if(workflowDoc.exists()) {
             setWorkflow(workflowDoc.data() as { steps: WorkflowStep[] });
@@ -402,7 +404,7 @@ export default function SiteFundSummaryPage() {
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="all">All Applicants</SelectItem>
-                  {getFilterOptions('applicant').map(u => <SelectItem key={u.id} value={u.id}>{u.name}</SelectItem>)}
+                  {getFilterOptions('applicant').map(u => <SelectItem key={u.id} value={u.id}>{personOptionLabel(u)}</SelectItem>)}
                 </SelectContent>
               </Select>
             </div>

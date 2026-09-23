@@ -3,6 +3,7 @@
 import { useMemo, useState } from 'react';
 import { Check, MessageCircle, Search, UsersRound } from 'lucide-react';
 import type { User } from '@/lib/types';
+import { personSearchText, personSubtitle } from '@/lib/people-directory';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
@@ -52,7 +53,7 @@ export function NewConversationDialog({
       .filter((candidate) => candidate.id !== currentUserId && candidate.status !== 'Inactive')
       .filter((candidate) => {
         if (!normalized) return true;
-        return `${candidate.name} ${candidate.email} ${candidate.role}`
+        return personSearchText(candidate)
           .toLowerCase()
           .includes(normalized);
       })
@@ -135,7 +136,7 @@ export function NewConversationDialog({
                     <div className="min-w-0 flex-1">
                       <p className="truncate text-sm font-semibold">{candidate.name}</p>
                       <p className="truncate text-xs text-muted-foreground">
-                        {candidate.role || candidate.email}
+                        {personSubtitle(candidate) || candidate.email}
                       </p>
                     </div>
                     <MessageCircle className="h-4 w-4 text-muted-foreground" />
@@ -190,7 +191,7 @@ export function NewConversationDialog({
                       <div className="min-w-0 flex-1">
                         <p className="truncate text-sm font-semibold">{candidate.name}</p>
                         <p className="truncate text-xs text-muted-foreground">
-                          {candidate.role || candidate.email}
+                          {personSubtitle(candidate) || candidate.email}
                         </p>
                       </div>
                       {selected && <Check className="h-4 w-4 text-primary" />}

@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useToast } from '@/hooks/use-toast';
+import { personOptionLabel } from '@/lib/people-directory';
 import type { EApprovalProjectMode, EApprovalProjectRouting, EApprovalProjectRoleHolder } from '@/lib/e-approval';
 import {
   listEApprovalProjectRouting,
@@ -295,7 +296,7 @@ export function ProjectRoutingPanel({
                 <SelectItem value="NONE">Not set</SelectItem>
                 {directory.users.map((user) => (
                   <SelectItem key={user.id} value={user.id}>
-                    {user.name} — {user.role}
+                    {personOptionLabel(user)}
                   </SelectItem>
                 ))}
               </SelectContent>
@@ -353,7 +354,7 @@ export function ProjectRoutingPanel({
                     <SelectItem value="NONE">Not set</SelectItem>
                     {directory.users.map((user) => (
                       <SelectItem key={user.id} value={user.id}>
-                        {user.name} — {user.role}
+                        {personOptionLabel(user)}
                       </SelectItem>
                     ))}
                   </SelectContent>

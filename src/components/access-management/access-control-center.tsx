@@ -47,6 +47,7 @@ import {
 import { useAuth } from '@/components/auth/AuthProvider';
 import { useAuthorization } from '@/hooks/useAuthorization';
 import { useAccessDirectory } from '@/hooks/useAccessDirectory';
+import { employeeFactsFor } from '@/lib/people-directory';
 import { useToast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
 import { exportRowsToExcel } from '@/lib/report-excel';
@@ -79,7 +80,6 @@ import { AccessOverview } from './access-overview';
 import {
   EMPTY_USER_FILTER,
   UserFilterBar,
-  employeeForUser,
   filterUsers,
   type UserDirectoryContext,
   type UserFilterState,
@@ -447,7 +447,7 @@ function UsersTab({
   onAssign: (seed: { userIds?: string[]; roleIds?: string[]; templateIds?: string[] }) => void;
 }) {
   const { toast } = useToast();
-  const { directory, accessByUser, departments, projects, designations, employees } = state;
+  const { directory, accessByUser, departments, projects, designations, employees, employeeIndex } = state;
   const [filter, setFilter] = useState<UserFilterState>(USERS_TAB_FILTER);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [removeOpen, setRemoveOpen] = useState(false);
@@ -491,10 +491,10 @@ function UsersTab({
         .map((user) => {
           const access = accessByUser[user.id];
           const grant = directory.grants[user.id];
-          const employee = employeeForUser(user, employees);
+          const employee = employeeFactsFor(user, employeeIndex);
           return { id: user.id, user, access, grant, employee };
         }),
-    [filtered, accessByUser, directory.grants, employees],
+    [filtered, accessByUser, directory.grants, employeeIndex],
   );
 
   /**

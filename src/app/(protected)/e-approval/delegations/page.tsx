@@ -13,6 +13,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Textarea } from '@/components/ui/textarea';
 import { useToast } from '@/hooks/use-toast';
+import { personOptionLabel } from '@/lib/people-directory';
 import {
   canManageEApprovalDelegationFor,
   E_APPROVAL_BASE_PATH,
@@ -309,7 +310,7 @@ export default function EApprovalDelegationsPage() {
                     <SelectContent>
                       {directory.users.map((row) => (
                         <SelectItem key={row.id} value={row.id}>
-                          {row.name} {row.id === serviceActor?.userId ? '(me)' : ''}
+                          {personOptionLabel(row)} {row.id === serviceActor?.userId ? '(me)' : ''}
                         </SelectItem>
                       ))}
                     </SelectContent>
@@ -341,7 +342,7 @@ export default function EApprovalDelegationsPage() {
                     .filter((row) => row.id !== fromUserId)
                     .map((row) => (
                       <SelectItem key={row.id} value={row.id}>
-                        {row.name} — {row.role}
+                        {personOptionLabel(row)}
                       </SelectItem>
                     ))}
                 </SelectContent>
@@ -367,7 +368,7 @@ export default function EApprovalDelegationsPage() {
                   <SelectItem value="ALL">All approval types</SelectItem>
                   {directory.types.map((row) => (
                     <SelectItem key={row.id} value={row.id}>
-                      {row.name}
+                      {personOptionLabel(row)}
                     </SelectItem>
                   ))}
                 </SelectContent>

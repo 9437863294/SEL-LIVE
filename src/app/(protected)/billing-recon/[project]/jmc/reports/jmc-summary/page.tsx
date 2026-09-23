@@ -31,6 +31,8 @@ import {
 import { db } from '@/lib/firebase';
 import { collection, getDocs, doc, getDoc, query, where } from 'firebase/firestore';
 import type { JmcEntry, Project, User, WorkflowStep, ActionLog } from '@/lib/types';
+import { personOptionLabel } from '@/lib/people-directory';
+import { withDesignations } from '@/lib/people-directory-client';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useAuthorization } from '@/hooks/useAuthorization';
 import { useParams } from 'next/navigation';
@@ -113,7 +115,7 @@ export default function JmcSummaryPage() {
         setFilteredTasks(tasksData);
 
         setProjects(allProjects);
-        setUsers(usersSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as User)));
+        setUsers(await withDesignations(usersSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as User))));
         
         if(workflowDoc.exists()) {
           setWorkflow(workflowDoc.data() as { steps: WorkflowStep[] });
@@ -361,7 +363,7 @@ export default function JmcSummaryPage() {
               <SelectContent>
                 <SelectItem value="all">All Applicants</SelectItem>
                 {(getFilterOptions('applicant') as User[]).map(user => (
-                  <SelectItem key={user.id} value={user.id}>{user.name}</SelectItem>
+                  <SelectItem key={user.id} value={user.id}>{personOptionLabel(user)}</SelectItem>
                 ))}
               </SelectContent>
             </Select>

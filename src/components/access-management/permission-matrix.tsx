@@ -37,6 +37,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { HrDataList, HrEmptyState, type HrListColumn } from '@/components/hr/hr-ui';
 import { useToast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
+import { personOptionLabel } from '@/lib/people-directory';
 import { exportRowsToExcel } from '@/lib/report-excel';
 import {
   buildPermissionMatrix,
@@ -196,7 +197,7 @@ export function PermissionMatrixView({ state }: { state: AccessDirectoryState })
                       .sort((a, b) => (a.name || '').localeCompare(b.name || ''))
                       .map((user) => (
                         <SelectItem key={user.id} value={user.id}>
-                          {user.name || user.email}
+                          {personOptionLabel(user, undefined, { separator: ' · ' })}
                         </SelectItem>
                       ))}
               </SelectContent>

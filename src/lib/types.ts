@@ -59,6 +59,21 @@ export interface User {
   employeeNo?: string;
   greytHR?: UserGreytHRLink;
   /**
+   * The person's current job title and department, from the greytHR-synced `employees` record
+   * this login is linked to.
+   *
+   * **Derived, never persisted.** Joined on read by `attachDesignations`
+   * (`src/lib/people-directory.ts`) so every person picker in the application can label a row
+   * with who somebody *is* rather than with `role`, which names a permission bundle an
+   * administrator attached to the login. Nothing writes these back: every write to
+   * `users/{uid}` in this codebase sets named fields rather than spreading a user object.
+   *
+   * Absent for contractors, service accounts and anyone not yet linked — those rows fall back
+   * to `role`, which is what they showed before this existed.
+   */
+  designation?: string | null;
+  department?: string | null;
+  /**
    * Why — and, for a temporary one, until when — the account is deactivated. Written by Access
    * Management's "Disable account"; a legacy Inactive user, or one deactivated from User Management,
    * has none. Cleared on reactivation.

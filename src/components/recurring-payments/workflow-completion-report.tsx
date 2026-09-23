@@ -20,6 +20,7 @@ import {
 import { exportWorkbook } from "@/lib/report-excel";
 import { addBusinessHours } from "@/lib/working-hours";
 import type { Holiday, WorkingHours } from "@/lib/types";
+import { personOptionLabel } from '@/lib/people-directory';
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -376,7 +377,7 @@ export default function WorkflowCompletionReport() {
               <SelectTrigger className="h-8 text-sm"><SelectValue placeholder="All owners" /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">All owners</SelectItem>
-                {users.map(entry => <SelectItem value={entry.id} key={entry.id}>{entry.name}</SelectItem>)}
+                {users.map(entry => <SelectItem value={entry.id} key={entry.id}>{personOptionLabel(entry)}</SelectItem>)}
               </SelectContent>
             </Select>
           </FilterField>

@@ -39,6 +39,7 @@ import {
   WalletCards,
 } from "lucide-react";
 import { db } from "@/lib/firebase";
+import { personOptionLabel } from '@/lib/people-directory';
 import { storage } from "@/lib/firebase-storage";
 import { useAuth } from "@/components/auth/AuthProvider";
 import { useAuthorization } from "@/hooks/useAuthorization";
@@ -489,7 +490,7 @@ function PaymentRegisterView() {
               <SelectItem value="all">All owners</SelectItem>
               {users.map((x) => (
                 <SelectItem value={x.id} key={x.id}>
-                  {x.name}
+                  {personOptionLabel(x)}
                 </SelectItem>
               ))}
             </SelectContent>

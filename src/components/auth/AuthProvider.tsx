@@ -38,6 +38,8 @@ import {
   listenToUserAccessGrant,
   reactivateLapsedDeactivations,
 } from '@/lib/access-control-service';
+import { attachDesignations, resolveDesignation, type EmployeeFactsIndex } from '@/lib/people-directory';
+import { loadEmployeeFactsIndex } from '@/lib/people-directory-client';
 import { useToast } from '@/hooks/use-toast';
 import { PinSetupDialog } from './PinSetupDialog';
 import {
@@ -122,6 +124,17 @@ const AuthContext = createContext<AuthContextType>({
   clearSavedUsers: () => {},
   loadSavedUsers: () => {},
 });
+
+/**
+ * The designation fields to merge onto a user, or nothing when the employee master has no record
+ * for them. Returns a patch rather than a whole user so the caller's spread keeps every other field
+ * it already had, including the ones loaded after this ran.
+ */
+function pickDesignation(person: User, index: EmployeeFactsIndex): Partial<User> {
+  const resolved = resolveDesignation(person, index);
+  if (resolved.source !== 'greythr') return {};
+  return { designation: resolved.label, department: resolved.department };
+}
 
 /* ---------------- provider ---------------- */
 
@@ -385,12 +398,27 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
         setUser(userData);
 
-        // The full directory is needed by admin/chat screens, never by first paint.
-        // Load it in the background so it can't gate the app shell.
-        void getDocs(collection(db, 'users'))
-          .then((allUsersSnap) => {
-            setUsers(
-              allUsersSnap.docs.map((d) => ({ id: d.id, ...d.data() } as User))
+        /*
+         * The full directory is needed by admin/chat screens, never by first paint.
+         * Load it in the background so it can't gate the app shell.
+         *
+         * The employee master rides along because every person picker in the application labels its
+         * rows with a designation, and `users` does not carry one — see `src/lib/people-directory.ts`
+         * for why `role` is the wrong thing to show there. It is joined here, once, rather than in
+         * each picker: thirty controls each reading `employees` is thirty copies of a 400-document
+         * collection. `Promise.all` over both, with the employee read already swallowing its own
+         * failures, so a designation problem can never cost us the user list itself.
+         */
+        void Promise.all([getDocs(collection(db, 'users')), loadEmployeeFactsIndex()])
+          .then(([allUsersSnap, employeeFacts]) => {
+            const directory = allUsersSnap.docs.map((d) => ({ id: d.id, ...d.data() } as User));
+            setUsers(attachDesignations(directory, employeeFacts));
+            // The signed-in user is set from its own document above and is not in that array's
+            // identity, so it needs the same join or "my designation" would render as my role.
+            setUser((current) =>
+              current
+                ? { ...current, ...pickDesignation(current, employeeFacts) }
+                : current,
             );
           })
           .catch((err) => console.error('Failed to load users directory', err));

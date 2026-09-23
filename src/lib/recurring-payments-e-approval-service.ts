@@ -82,6 +82,8 @@ export interface RecurringPaymentActorUser {
   name?: string;
   email?: string | null;
   role?: string;
+  /** Joined from the greytHR employee master by `AuthProvider`; absent for unlinked accounts. */
+  designation?: string | null;
   organizationId?: string;
 }
 
@@ -101,7 +103,9 @@ export function recurringPaymentEApprovalActor(
     userId: user.id,
     userName: user.name || user.email || 'User',
     userEmail: user.email ?? null,
-    designation: user.role,
+    // Job title for the request header, permission bundle for the routing — see the same split in
+    // `useEApprovalActorStandalone`.
+    designation: user.designation || user.role,
     role: user.role,
     organizationId: user.organizationId,
   };

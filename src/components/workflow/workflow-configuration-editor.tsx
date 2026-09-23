@@ -18,6 +18,8 @@ import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react
 import { ArrowDown, ArrowUp, Loader2, Plus, Save, Trash2 } from "lucide-react";
 import { collection, doc, getDoc, getDocs, setDoc } from "firebase/firestore";
 import { db } from "@/lib/firebase";
+import { personOptionLabel } from '@/lib/people-directory';
+import { withDesignations } from '@/lib/people-directory-client';
 import type {
   AssignedTo,
   Department,
@@ -138,7 +140,7 @@ export function WorkflowConfigurationEditor({
           .map((step, index) => ({ ...step, id: String(step.id || index + 1) })),
       );
 
-      setUsers(userSnapshot.docs.map((entry) => ({ id: entry.id, ...entry.data() } as User)));
+      setUsers(await withDesignations(userSnapshot.docs.map((entry) => ({ id: entry.id, ...entry.data() } as User))));
       setProjects(projectSnapshot.docs.map((entry) => ({ id: entry.id, ...entry.data() } as Project)));
       setDepartments(
         departmentSnapshot.docs.map((entry) => ({ id: entry.id, ...entry.data() } as Department)),
@@ -453,7 +455,7 @@ export function WorkflowConfigurationEditor({
                             <SelectItem value={NONE}>Unassigned</SelectItem>
                             {users.map((candidate) => (
                               <SelectItem key={candidate.id} value={candidate.id}>
-                                {candidate.name}
+                                {personOptionLabel(candidate)}
                               </SelectItem>
                             ))}
                           </SelectContent>
@@ -473,7 +475,7 @@ export function WorkflowConfigurationEditor({
                             <SelectItem value={NONE}>None</SelectItem>
                             {users.map((candidate) => (
                               <SelectItem key={candidate.id} value={candidate.id}>
-                                {candidate.name}
+                                {personOptionLabel(candidate)}
                               </SelectItem>
                             ))}
                           </SelectContent>
@@ -507,7 +509,7 @@ export function WorkflowConfigurationEditor({
                                   <SelectItem value={NONE}>Unassigned</SelectItem>
                                   {users.map((candidate) => (
                                     <SelectItem key={candidate.id} value={candidate.id}>
-                                      {candidate.name}
+                                      {personOptionLabel(candidate)}
                                     </SelectItem>
                                   ))}
                                 </SelectContent>
@@ -526,7 +528,7 @@ export function WorkflowConfigurationEditor({
                                   <SelectItem value={NONE}>None</SelectItem>
                                   {users.map((candidate) => (
                                     <SelectItem key={candidate.id} value={candidate.id}>
-                                      {candidate.name}
+                                      {personOptionLabel(candidate)}
                                     </SelectItem>
                                   ))}
                                 </SelectContent>

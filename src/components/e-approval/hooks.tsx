@@ -49,7 +49,10 @@ export function useEApprovalActorStandalone(enabled = true) {
             userId: user.id,
             userName: user.name || user.email || 'User',
             userEmail: user.email ?? null,
-            designation: user.role,
+            // The job title, not the permission bundle. It is stamped onto every request header and
+            // every comment ("Raised by Sarika Palo, Site Engineer"), so it has to be what HR says
+            // the person is — `role` only stands in when there is no linked greytHR record.
+            designation: user.designation || user.role,
             role: user.role,
             organizationId: user.organizationId,
           }

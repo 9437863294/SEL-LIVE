@@ -32,6 +32,7 @@ import {
   Search,
 } from "lucide-react";
 import { db } from "@/lib/firebase";
+import { personOptionLabel } from '@/lib/people-directory';
 import { useAuth } from "@/components/auth/AuthProvider";
 import { useAuthorization } from "@/hooks/useAuthorization";
 import { useToast } from "@/hooks/use-toast";
@@ -717,7 +718,7 @@ export default function RecurringMasterRegister() {
               <SelectItem value={ALL}>All owners</SelectItem>
               {users.map((item) => (
                 <SelectItem value={item.id} key={item.id}>
-                  {item.name}
+                  {personOptionLabel(item)}
                 </SelectItem>
               ))}
             </SelectContent>

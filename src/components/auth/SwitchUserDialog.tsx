@@ -18,6 +18,8 @@ import { useToast } from '@/hooks/use-toast';
 import { db, auth } from '@/lib/firebase';
 import { collection, getDocs } from 'firebase/firestore';
 import type { User } from '@/lib/types';
+import { attachDesignations, personSearchText, personSubtitle } from '@/lib/people-directory';
+import { loadEmployeeFactsIndex } from '@/lib/people-directory-client';
 import {
   Loader2,
   Search,
@@ -161,12 +163,18 @@ export function SwitchUserDialog({ isOpen, onOpenChange }: SwitchUserDialogProps
     const fetchUsers = async () => {
       setIsLoading(true);
       try {
-        const usersSnapshot = await getDocs(collection(db, 'users'));
+        const [usersSnapshot, employeeFacts] = await Promise.all([
+          getDocs(collection(db, 'users')),
+          // Job titles for the rows. An impersonation list identifies *people*, so it reads
+          // "Sarika Palo — Site Engineer" rather than naming the permission bundle attached to the
+          // login; `attachDesignations` leaves an unlinked account showing its role.
+          loadEmployeeFactsIndex(),
+        ]);
         const usersData = usersSnapshot.docs
           .map(doc => ({ id: doc.id, ...doc.data() } as User))
           .filter(user => user.id !== currentUser?.id); // Exclude current user
-        
-        setUsers(usersData);
+
+        setUsers(attachDesignations(usersData, employeeFacts));
       } catch (error) {
         console.error('Error fetching users:', error);
         toast({ 
@@ -421,11 +429,7 @@ export function SwitchUserDialog({ isOpen, onOpenChange }: SwitchUserDialogProps
     
     if (!search) return users;
     
-    return users.filter(user => 
-      user.name?.toLowerCase().includes(search) || 
-      user.email?.toLowerCase().includes(search) ||
-      user.role?.toLowerCase().includes(search)
-    );
+    return users.filter(user => personSearchText(user).includes(search));
   }, [users, searchTerm]);
 
   const lockoutSecondsLeft = lockoutEndTime
@@ -618,12 +622,12 @@ export function SwitchUserDialog({ isOpen, onOpenChange }: SwitchUserDialogProps
                         <p className="truncate text-xs text-muted-foreground">{user.email}</p>
                       </div>
 
-                      {user.role && (
+                      {personSubtitle(user) && (
                         <Badge
                           variant="secondary"
                           className="max-w-[5rem] shrink-0 px-2 py-0 text-[10px] font-medium capitalize sm:max-w-[8rem]"
                         >
-                          <span className="truncate">{user.role}</span>
+                          <span className="truncate">{personSubtitle(user)}</span>
                         </Badge>
                       )}
 

@@ -32,6 +32,11 @@ import {
   loadAccessDirectory,
   type AccessDirectory,
 } from '@/lib/access-control-service';
+import {
+  attachDesignations,
+  buildEmployeeFactsIndex,
+  type EmployeeFactsIndex,
+} from '@/lib/people-directory';
 
 const EMPTY_DIRECTORY: AccessDirectory = {
   users: [],
@@ -52,6 +57,8 @@ export const REGISTRY_NODES: RegistryNode[] = flattenPermissionRegistry(permissi
 
 export interface AccessDirectoryState {
   directory: AccessDirectory;
+  /** The employee master keyed for the user→employee join. See `src/lib/people-directory.ts`. */
+  employeeIndex: EmployeeFactsIndex<Employee>;
   /** Effective access per user id, resolved from the directory. */
   accessByUser: Record<string, EffectiveAccess>;
   /** Organisation masters the assignment screens filter and scope by. */
@@ -137,6 +144,29 @@ export function useAccessDirectory(enabled = true): AccessDirectoryState {
     void refresh();
   }, [enabled, refresh]);
 
+  /**
+   * The employee master indexed by every key the join can use — greytHR's employee id, the employee
+   * number, and email as the fallback for accounts created before the linking screen existed.
+   *
+   * Built here rather than in each tab because four of them want the same lookup, and because the
+   * email-only map the pickers used to build silently missed every site user who has no email
+   * address: they showed up with a blank department and designation, which reads as "greytHR has no
+   * record of this person" when in fact the record was linked all along.
+   */
+  const employeeIndex = useMemo(() => buildEmployeeFactsIndex(employees), [employees]);
+
+  /**
+   * The directory with each user's current job title joined on.
+   *
+   * `users.role` is a permission bundle; the designation is who the person is. Every screen that
+   * *names* a person wants the second, and attaching it once here means none of them has to do the
+   * join — or get it wrong — on its own. See `src/lib/people-directory.ts`.
+   */
+  const directoryWithDesignations = useMemo<AccessDirectory>(
+    () => ({ ...directory, users: attachDesignations(directory.users, employeeIndex) }),
+    [directory, employeeIndex],
+  );
+
   const accessByUser = useMemo(() => effectiveAccessForAll(directory), [directory]);
 
   const designations = useMemo(() => {
@@ -171,7 +201,8 @@ export function useAccessDirectory(enabled = true): AccessDirectoryState {
   );
 
   return {
-    directory,
+    directory: directoryWithDesignations,
+    employeeIndex,
     accessByUser,
     departments,
     projects,

@@ -39,6 +39,7 @@ import {
   type RegistryNode,
   type UserAccessGrant,
 } from '@/lib/access-control';
+import { buildEmployeeFactsIndex, employeeFactsFor, personSubtitle } from '@/lib/people-directory';
 import { RiskBadges, RoleBadge } from './access-ui';
 
 /* ------------------------------------------------------------------------------------------------
@@ -77,30 +78,14 @@ export interface UserDirectoryContext {
   employees: Employee[];
 }
 
-/**
- * The employee record behind a user, matched on email.
- *
- * `users` and `employees` are separate collections with no foreign key — `employees` is a GreytHR
- * mirror and predates the app's own accounts. Email is the only field both reliably carry, so it is
- * the join, and a user with no matching employee simply has no department or designation to filter
- * on rather than being excluded.
- */
-export function employeeForUser(user: User, employees: Employee[]): Employee | undefined {
-  const email = (user.email || '').trim().toLowerCase();
-  if (!email) return undefined;
-  return employees.find((employee) => (employee.email || '').trim().toLowerCase() === email);
-}
-
 export function filterUsers(context: UserDirectoryContext, filter: UserFilterState): User[] {
   const term = filter.term.trim().toLowerCase();
-  const employeeIndex = new Map(
-    context.employees.map((employee) => [(employee.email || '').trim().toLowerCase(), employee]),
-  );
+  const employeeIndex = buildEmployeeFactsIndex(context.employees);
 
   return context.users.filter((user) => {
     if (filter.status !== 'all' && (user.status ?? 'Active') !== filter.status) return false;
 
-    const employee = employeeIndex.get((user.email || '').trim().toLowerCase());
+    const employee = employeeFactsFor(user, employeeIndex);
     const grant = context.grants[user.id];
     const access = context.accessByUser[user.id];
 
@@ -443,10 +428,7 @@ export function UserPicker({
   const selected = useMemo(() => new Set(selectedIds), [selectedIds]);
   const windowed = filtered.slice(0, USER_WINDOW);
 
-  const employeeIndex = useMemo(
-    () => new Map(context.employees.map((employee) => [(employee.email || '').trim().toLowerCase(), employee])),
-    [context.employees],
-  );
+  const employeeIndex = useMemo(() => buildEmployeeFactsIndex(context.employees), [context.employees]);
 
   const toggle = (userId: string) => {
     onSelectionChange(
@@ -478,11 +460,17 @@ export function UserPicker({
       mobile: 'title',
       cell: (user) => {
         const access = context.accessByUser[user.id];
-        const employee = employeeIndex.get((user.email || '').trim().toLowerCase());
+        const employee = employeeFactsFor(user, employeeIndex);
         return (
           <div className="min-w-0">
             <div className="flex flex-wrap items-center gap-1.5 sm:flex-nowrap sm:whitespace-nowrap">
               <span className="font-semibold text-slate-800">{user.name || user.email}</span>
+              {/* Job title, not role: the Roles column two along already says what they may do. */}
+              {personSubtitle(user, employeeIndex) && (
+                <span className="truncate text-xs font-normal text-muted-foreground">
+                  {personSubtitle(user, employeeIndex)}
+                </span>
+              )}
               {(user.status ?? 'Active') !== 'Active' && (
                 <Badge variant="outline" className="border-slate-200 bg-white text-[10px] text-slate-500">
                   Inactive
@@ -497,8 +485,9 @@ export function UserPicker({
               )}
             </div>
             {/* The contact line lives here on a phone (a card's two-column detail grid would truncate it). */}
+            {/* The contact line, minus the designation the title line above now carries. */}
             <p className="mt-0.5 break-words text-xs font-normal text-muted-foreground sm:hidden">
-              {[user.email, employee?.employeeId, employee?.department, employee?.designation].filter(Boolean).join(' · ')}
+              {[user.email, employee?.employeeId, employee?.department].filter(Boolean).join(' · ')}
             </p>
           </div>
         );
@@ -509,7 +498,7 @@ export function UserPicker({
       mobile: 'omit',
       className: 'max-w-[16rem] truncate text-xs text-muted-foreground',
       cell: (user) => {
-        const employee = employeeIndex.get((user.email || '').trim().toLowerCase());
+        const employee = employeeFactsFor(user, employeeIndex);
         return [user.email, employee?.employeeId, employee?.department, employee?.designation].filter(Boolean).join(' · ');
       },
     },

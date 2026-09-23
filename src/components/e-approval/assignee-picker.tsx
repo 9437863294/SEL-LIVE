@@ -15,6 +15,7 @@ import {
   type EApprovalDepartmentMode,
   type EApprovalProjectMode,
 } from '@/lib/e-approval';
+import { personSubtitle, personSearchText } from '@/lib/people-directory';
 import type { EApprovalDirectory } from './hooks';
 
 /**
@@ -24,6 +25,12 @@ import type { EApprovalDirectory } from './hooks';
  * Names are captured alongside ids at selection time, because the engine denormalises them onto the
  * step: history has to still read "Approved by Sarika Palo (Finance Manager)" after that user is
  * deactivated, and a step that stored only an id would render as a blank.
+ *
+ * What is captured alongside the name is the person's **designation** — their job title, from the
+ * greytHR-synced employee record — and not `users.role`, which is the permission bundle an
+ * administrator attached to the login. The two are different facts and only one of them belongs in a
+ * sentence a human reads. Rows with no linked HR record still show the role, because a blank line
+ * under a name looks like a bug (see `src/lib/people-directory.ts`).
  *
  * Two entries in each of the Department and Project lists carry **no id on purpose** — "the request's
  * own department", "the request's own project". Those are the ones that make a workflow reusable: a
@@ -90,12 +97,7 @@ export function AssigneePicker({
   const filteredUsers = useMemo(() => {
     const term = search.trim().toLowerCase();
     const rows = term
-      ? directory.users.filter(
-          (row) =>
-            row.name?.toLowerCase().includes(term) ||
-            row.email?.toLowerCase().includes(term) ||
-            row.role?.toLowerCase().includes(term),
-        )
+      ? directory.users.filter((row) => personSearchText(row).includes(term))
       : directory.users;
     return rows.slice(0, 60);
   }, [directory.users, search]);
@@ -340,7 +342,14 @@ export function AssigneePicker({
                     <button
                       key={row.id}
                       type="button"
-                      onClick={() => add({ kind: 'User', userId: row.id, userName: row.name, designation: row.role })}
+                      onClick={() =>
+                        add({
+                          kind: 'User',
+                          userId: row.id,
+                          userName: row.name,
+                          designation: personSubtitle(row),
+                        })
+                      }
                       className={cn(
                         'flex w-full items-center justify-between gap-2 rounded px-2 py-1.5 text-left text-xs hover:bg-muted',
                         chosen && 'opacity-50',
@@ -348,7 +357,9 @@ export function AssigneePicker({
                     >
                       <span className="min-w-0">
                         <span className="block truncate font-medium">{row.name}</span>
-                        <span className="block truncate text-[10px] text-muted-foreground">{row.role}</span>
+                        <span className="block truncate text-[10px] text-muted-foreground">
+                          {personSubtitle(row)}
+                        </span>
                       </span>
                       {chosen && <Check className="h-3.5 w-3.5 shrink-0 text-emerald-600" />}
                     </button>
