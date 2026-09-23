@@ -211,7 +211,8 @@ function TemplateManager({
                   map={(template.permissions ?? {}) as PermissionMap}
                   registry={registry}
                   emptyLabel="No direct permissions — roles only"
-                  max={5}
+                  // Even, so the summary's two-column grid has no half-width last row.
+                  max={4}
                 />
 
                 <p className="text-[11px] text-muted-foreground">

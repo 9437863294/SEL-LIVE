@@ -325,7 +325,7 @@ Enforced in both halves, deliberately:
    API routes are still safe — they run under the Admin SDK and check permissions themselves —
    but the admin screens read Firestore directly.
 
-3. **Grant permissions.** In Role Management, the new `Windows Agent` module. Nobody holds any of
+3. **Grant permissions.** In Access Management, the new `Windows Agent` module. Nobody holds any of
    them on day one, deliberately. A sensible starting split:
 
    | Role | Grant |

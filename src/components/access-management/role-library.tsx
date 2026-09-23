@@ -59,7 +59,14 @@ import {
 import { setRoleStatus, type AccessActor } from '@/lib/access-control-service';
 import type { AccessDirectoryState } from '@/hooks/useAccessDirectory';
 import { PermissionMapSummary } from './permission-tree';
-import { AccessCard, RiskBadges } from './access-ui';
+import {
+  ACCESS_ACTION_CLASS,
+  ACCESS_ACTION_ICON,
+  ACCESS_ACTION_TONES,
+  ACCESS_STICKY_TOOLBAR_CLASS,
+  AccessCard,
+  RiskBadges,
+} from './access-ui';
 
 /** The tab the builder returns to, so a round trip lands where it started. */
 const ROLES_TAB = '/settings/access-management?tab=roles';
@@ -141,8 +148,21 @@ export function RoleLibrary({
 
   return (
     <div className="space-y-3">
-      <div className="flex flex-col gap-2 rounded-xl border border-white/70 bg-white/80 p-3 shadow-sm backdrop-blur lg:flex-row lg:items-center">
-        <div className="relative flex-1">
+      {/* Pinned under the tab strip — filtering 28 roles from halfway down the list should not mean
+          scrolling back to the top. The count line comes along because it is the readout for these
+          controls, and reads as stale if it scrolls away while they stay. */}
+      <div className={cn(ACCESS_STICKY_TOOLBAR_CLASS, 'space-y-1.5')}>
+      {/*
+        Two rows on a phone, one from `lg` up.
+
+        It used to stack: search, then two filters, then a full-width module filter, then a
+        full-width New role — four rows, which together with the page header and the tab picker
+        filled a phone screen before a single role card. The grid puts search and New role on one
+        row and the three filters on the next; `lg:order-last` keeps New role at the end of the
+        desktop row without a second copy of the button.
+      */}
+      <div className="grid grid-cols-[1fr_auto] gap-2 rounded-xl border border-white/70 bg-white/80 p-2.5 shadow-sm backdrop-blur lg:flex lg:items-center lg:p-3">
+        <div className="relative lg:flex-1">
           <Search className="pointer-events-none absolute left-3 top-2.5 h-4 w-4 text-slate-400" />
           <Input
             value={term}
@@ -151,7 +171,20 @@ export function RoleLibrary({
             className="pl-9"
           />
         </div>
-        <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:w-auto">
+        {canManage && (
+          <Button asChild className="shrink-0 lg:order-last">
+            <Link href={builderHref()}>
+              <Plus className="h-4 w-4" />
+              {/* "New role" is worth the width on a desktop row; beside a search box on a phone the
+                  noun is already obvious from the screen you are on. The spacing is the Button's
+                  own `gap`, so there are no margins here to double it. */}
+              <span>
+                New<span className="hidden lg:inline">&nbsp;role</span>
+              </span>
+            </Link>
+          </Button>
+        )}
+        <div className="col-span-2 grid grid-cols-3 gap-2 lg:col-span-1 lg:flex lg:w-auto">
           <Select value={statusFilter} onValueChange={(value) => setStatusFilter(value as typeof statusFilter)}>
             <SelectTrigger><SelectValue /></SelectTrigger>
             <SelectContent>
@@ -169,7 +202,7 @@ export function RoleLibrary({
             </SelectContent>
           </Select>
           <Select value={moduleFilter} onValueChange={setModuleFilter}>
-            <SelectTrigger className="col-span-2 sm:col-span-1"><SelectValue placeholder="Module" /></SelectTrigger>
+            <SelectTrigger><SelectValue placeholder="Module" /></SelectTrigger>
             <SelectContent>
               <SelectItem value="all">Any module</SelectItem>
               {modules.map((moduleName) => (
@@ -178,20 +211,18 @@ export function RoleLibrary({
             </SelectContent>
           </Select>
         </div>
-        {canManage && (
-          <Button asChild>
-            <Link href={builderHref()}>
-              <Plus className="mr-1.5 h-4 w-4" />
-              New role
-            </Link>
-          </Button>
-        )}
       </div>
 
       <p className="px-1 text-xs text-muted-foreground">
-        {filtered.length} of {directory.roles.length} roles · the registry offers {registryTotal} grantable
-        permissions across {modules.length} modules
+        {filtered.length} of {directory.roles.length} roles
+        {/* The registry totals are context, not the answer to "did my filter work" — they wrap to a
+            second line on a phone, so they wait for the width to say them. */}
+        <span className="hidden sm:inline">
+          {' '}
+          · the registry offers {registryTotal} grantable permissions across {modules.length} modules
+        </span>
       </p>
+      </div>
 
       {filtered.length === 0 ? (
         <HrEmptyState
@@ -200,7 +231,13 @@ export function RoleLibrary({
           description="Try clearing the module or status filter."
         />
       ) : (
-        <div className="grid gap-2.5 sm:grid-cols-2 xl:grid-cols-3">
+        // `auto-rows-fr` gives every row the same height rather than each row sizing to its own
+        // tallest card, so the whole grid is uniform instead of only each row internally.
+        //
+        // Four across from `2xl` (1536px). Not from `xl` (1280px): four cards there are ~300px
+        // wide, which is under what the four action buttons and the two-column module grid need
+        // without truncating both.
+        <div className="grid auto-rows-fr gap-2.5 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
           {filtered.map((role) => {
             const usage = roleUsage[role.name];
             const disabled = role.status === 'Inactive' || role.status === 'Disabled';
@@ -208,11 +245,17 @@ export function RoleLibrary({
             const conflicts = detectSodConflicts(role.permissions ?? {});
 
             return (
+              // `h-full` + a flex column is what makes the row of cards one height: the grid
+              // already stretches them, but without it the card's own content decides its height
+              // and the action rows sit at three different places across a row.
               <AccessCard
                 key={role.id}
-                className={cn('transition-shadow hover:shadow-md', disabled && 'opacity-70')}
+                className={cn(
+                  'flex h-full flex-col transition-all duration-200 hover:-translate-y-0.5 hover:shadow-md',
+                  disabled && 'opacity-70',
+                )}
               >
-                <CardContent className="space-y-2.5 p-3.5">
+                <CardContent className="flex flex-1 flex-col gap-2.5 p-3.5">
                   <div className="flex items-start justify-between gap-2">
                     <div className="min-w-0">
                       <p className="truncate text-sm font-semibold text-slate-800">{role.name}</p>
@@ -253,26 +296,44 @@ export function RoleLibrary({
                     <RiskBadges privileges={privileges} conflicts={conflicts} />
                   </div>
 
-                  <PermissionMapSummary map={role.permissions ?? {}} registry={registry} max={6} />
+                  {/* A floor, not a fixed height: one module should not make a card noticeably
+                      shorter than its neighbours, but a role reaching eight still gets its second
+                      row rather than being clipped. */}
+                  <div className="min-h-[2.75rem]">
+                    {/* Four, not six. Every card is now as tall as the tallest one (`auto-rows-fr`),
+                        so the widest role's chip list sets the dead space in all 28 — and past about
+                        four the chips stop being a summary anyway. The rest are a click away. */}
+                    <PermissionMapSummary
+                      map={role.permissions ?? {}}
+                      registry={registry}
+                      max={4}
+                      emptyLabel="No permissions granted."
+                    />
+                  </div>
 
-                  {/* Every button stretches on a phone (and shows its label — the icon-only pair had
-                      hover-only titles), the compact desktop row from `sm` up. */}
-                  <div className="flex flex-wrap gap-1.5 border-t border-slate-100 pt-2.5 [&>*]:flex-1 sm:[&>*]:flex-none">
+                  {/* `mt-auto` is the other half of the equal-height card: the actions sit on the
+                      bottom edge of every card in the row, however much sits above them. */}
+                  <div className="mt-auto flex gap-1.5 border-t border-slate-100 pt-2.5">
                     <Button
                       variant="outline"
                       size="sm"
-                      className="h-8 flex-1 text-xs"
+                      className={cn(ACCESS_ACTION_CLASS, ACCESS_ACTION_TONES.indigo)}
                       onClick={() => onAssignRole(role.id)}
                       disabled={disabled}
                     >
-                      <ShieldCheck className="mr-1 h-3.5 w-3.5" />
+                      <ShieldCheck className={ACCESS_ACTION_ICON} />
                       Assign
                     </Button>
                     {canManage && (
                       <>
-                        <Button asChild variant="outline" size="sm" className="h-8 text-xs">
+                        <Button
+                          asChild
+                          variant="outline"
+                          size="sm"
+                          className={cn(ACCESS_ACTION_CLASS, ACCESS_ACTION_TONES.sky)}
+                        >
                           <Link href={builderHref({ roleId: role.id })}>
-                            <Pencil className="mr-1 h-3.5 w-3.5" />
+                            <Pencil className={ACCESS_ACTION_ICON} />
                             Edit
                           </Link>
                         </Button>
@@ -280,41 +341,43 @@ export function RoleLibrary({
                           asChild
                           variant="outline"
                           size="sm"
-                          className="h-8 text-xs"
-                          title="Duplicate this role"
+                          className={cn(ACCESS_ACTION_CLASS, ACCESS_ACTION_TONES.violet)}
                         >
                           <Link
                             href={builderHref({ duplicateFrom: role.id })}
                             aria-label={`Duplicate ${role.name}`}
                           >
-                            <CopyPlus className="h-3.5 w-3.5" />
-                            <span className="ml-1 sm:hidden">Duplicate</span>
+                            <CopyPlus className={ACCESS_ACTION_ICON} />
+                            Copy
                           </Link>
                         </Button>
                         {/*
                           A protected role gets a lock, not a disable button — offering the button
                           and refusing inside the dialog teaches administrators the control is broken.
+                          It keeps the row's shape so the other three stay aligned card to card.
                         */}
                         {isProtectedRole(role.name) && !disabled ? (
                           <span
                             title="Protected role — cannot be disabled"
                             aria-label={`${role.name} is protected and cannot be disabled`}
-                            className="flex h-8 items-center justify-center px-2.5 text-slate-400"
+                            className="flex h-8 flex-1 items-center justify-center gap-1 rounded-md border border-slate-200 bg-slate-50/80 px-2 text-xs font-medium text-slate-400"
                           >
                             <Lock className="h-3.5 w-3.5" />
-                            <span className="ml-1 text-[11px] sm:hidden">Protected</span>
+                            Locked
                           </span>
                         ) : (
                           <Button
-                            variant="ghost"
+                            variant="outline"
                             size="sm"
-                            className="h-8 text-xs"
-                            title={disabled ? 'Re-enable this role' : 'Disable this role'}
+                            className={cn(
+                              ACCESS_ACTION_CLASS,
+                              disabled ? ACCESS_ACTION_TONES.emerald : ACCESS_ACTION_TONES.rose,
+                            )}
                             aria-label={disabled ? `Re-enable ${role.name}` : `Disable ${role.name}`}
                             onClick={() => setDisabling(role)}
                           >
-                            <ShieldOff className={cn('h-3.5 w-3.5', !disabled && 'text-destructive')} />
-                            <span className="ml-1 sm:hidden">{disabled ? 'Re-enable' : 'Disable'}</span>
+                            <ShieldOff className={ACCESS_ACTION_ICON} />
+                            {disabled ? 'Enable' : 'Disable'}
                           </Button>
                         )}
                       </>

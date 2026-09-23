@@ -133,7 +133,7 @@ const MODULE_ROUTES: Record<string, string> = {
   [ACTIVITY_MODULES.SITE_FUND_REQUISITION]: '/site-fund-request',
   [ACTIVITY_MODULES.STORE_STOCK]: '/store-stock-management',
   [ACTIVITY_MODULES.SUBCONTRACTORS]: '/subcontractors-management',
-  [ACTIVITY_MODULES.USER_MANAGEMENT]: '/settings/user-management',
+  [ACTIVITY_MODULES.USER_MANAGEMENT]: '/settings/access-management',
   [ACTIVITY_MODULES.VEHICLE_MANAGEMENT]: '/vehicle-management',
   [ACTIVITY_MODULES.VENDOR_MANAGEMENT]: '/vendor-management',
   [ACTIVITY_MODULES.WINDOWS_AGENT]: '/windows-agent',

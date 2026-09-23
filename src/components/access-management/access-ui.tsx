@@ -142,6 +142,7 @@ export function AccessPageShell({
   aside,
   width = 'full',
   className,
+  fill = false,
 }: {
   children: React.ReactNode;
   backHref?: string;
@@ -150,13 +151,36 @@ export function AccessPageShell({
   aside?: React.ReactNode;
   width?: keyof typeof SHELL_WIDTH;
   className?: string;
+  /**
+   * Fit the shell to the viewport instead of growing with its content, so a register scrolls in its
+   * own frame and the page behind it does not move. See `ACCESS_SCROLL_FRAME_CLASS`.
+   *
+   * The app header (`components/app/Header.tsx`) is `sticky top-0` and therefore still takes its
+   * `h-14` / `md:h-16` out of the flow, which is what the subtraction below is for. Get it wrong in
+   * either direction and you either clip the bottom of the frame or reintroduce a page scrollbar.
+   */
+  fill?: boolean;
 }) {
   return (
-    <div className="hr-module-root relative min-h-[calc(100dvh-4rem)] overflow-x-clip px-4 py-3 sm:px-5">
+    <div
+      className={cn(
+        'hr-module-root relative overflow-x-clip px-4 py-3 sm:px-5',
+        fill
+          ? 'flex h-[calc(100dvh-3.5rem)] flex-col overflow-y-hidden md:h-[calc(100dvh-4rem)]'
+          : 'min-h-[calc(100dvh-4rem)]',
+      )}
+    >
       <AuroraBackdrop />
-      <div className={cn('relative', SHELL_WIDTH[width], className)}>
+      <div
+        className={cn(
+          'relative',
+          fill && 'flex min-h-0 flex-1 flex-col',
+          SHELL_WIDTH[width],
+          className,
+        )}
+      >
         {(backHref || aside) && (
-          <div className="mb-1 flex flex-wrap items-center gap-2">
+          <div className="mb-1 flex shrink-0 flex-wrap items-center gap-2">
             {backHref && <AccessBackLink href={backHref} label={backLabel} />}
             {aside}
           </div>
@@ -173,6 +197,71 @@ export function AccessPageShell({
  */
 export const ACCESS_STICKY_BAR_CLASS =
   'hr-sticky-actions sticky bottom-0 -mx-1 flex flex-col gap-2 border-t border-white/70 bg-white/85 px-1 py-3 backdrop-blur-sm sm:flex-row sm:items-center';
+
+/**
+ * The scrolling frame inside a filled shell, and the toolbar that pins to the top of it.
+ *
+ * The lists on this screen are long — 28 roles, ~1,300 users — and everything that drives them (the
+ * page title, the tab strip, the search and filters) sat above the scroll. Filtering a list you were
+ * halfway down meant scrolling back to the top of the *page* to reach the control, then back down to
+ * see the effect.
+ *
+ * So the page does not scroll: `AccessPageShell fill` fits it to the viewport, and only the tab's
+ * own content scrolls, inside this frame. Everything above the frame — header, tabs — is simply
+ * always there, with no sticky offsets to keep in sync.
+ *
+ * ── Why this is a plain overflow container ────────────────────────────────────────────────────
+ *
+ * Not `<ScrollArea>`: its viewport wrapper swallows the native scrollbar, so a long register gives
+ * no scroll affordance at all unless every caller remembers the right props. A native
+ * `overflow-y-auto` gets the platform scrollbar, keyboard paging and trackpad momentum for free.
+ * `min-h-0` is the load-bearing half — without it a flex child refuses to shrink below its content
+ * and the frame grows instead of scrolling. `overscroll-contain` stops a flick at the end of the
+ * list from chaining out to the document.
+ *
+ * A toolbar marked `ACCESS_STICKY_TOOLBAR_CLASS` sticks to the top of the frame it is inside, so
+ * `top-0` is the whole offset — it is relative to this scroll container, not the viewport.
+ */
+export const ACCESS_SCROLL_FRAME_CLASS = 'min-h-0 flex-1 overflow-y-auto overscroll-contain -mx-1 px-1';
+
+/**
+ * The module's action buttons — one shape, a palette of hues.
+ *
+ * Every row of actions in this module is a set of peers: the role card's Assign / Edit / Copy /
+ * Disable, the user profile's Add access / Suspend / Disable account. They used to be a mix of
+ * solid, outline, ghost and bare-icon buttons of three different widths, which made the row read as
+ * a hierarchy that does not exist. `flex-1` divides the row evenly whatever the labels say, so the
+ * set is the same size on every card and every profile.
+ *
+ * Tones are named by hue rather than by verb because the same colour means different things on
+ * different screens — what is constant is that rose is always the destructive one and it is the
+ * only red in its row, so it is identifiable before it is read.
+ */
+export const ACCESS_ACTION_CLASS =
+  'group h-8 flex-1 justify-center gap-1 px-2 text-xs font-medium transition-all duration-200 ' +
+  'hover:-translate-y-0.5 hover:shadow-sm active:translate-y-0 active:shadow-none ' +
+  'disabled:pointer-events-none disabled:opacity-50 disabled:hover:translate-y-0';
+
+export const ACCESS_ACTION_TONES = {
+  indigo:
+    'border-indigo-200 bg-indigo-50/80 text-indigo-700 hover:border-indigo-300 hover:bg-indigo-100 hover:text-indigo-800',
+  sky: 'border-sky-200 bg-sky-50/80 text-sky-700 hover:border-sky-300 hover:bg-sky-100 hover:text-sky-800',
+  violet:
+    'border-violet-200 bg-violet-50/80 text-violet-700 hover:border-violet-300 hover:bg-violet-100 hover:text-violet-800',
+  amber:
+    'border-amber-200 bg-amber-50/80 text-amber-700 hover:border-amber-300 hover:bg-amber-100 hover:text-amber-800',
+  emerald:
+    'border-emerald-200 bg-emerald-50/80 text-emerald-700 hover:border-emerald-300 hover:bg-emerald-100 hover:text-emerald-800',
+  rose: 'border-rose-200 bg-rose-50/80 text-rose-700 hover:border-rose-300 hover:bg-rose-100 hover:text-rose-800',
+  /** Not an action — the placeholder that keeps a row's shape when one slot is unavailable. */
+  slate: 'border-slate-200 bg-slate-50/80 text-slate-400',
+} as const;
+
+/** The icon lifts with its button — `group-hover`, so it follows the button and not its own box. */
+export const ACCESS_ACTION_ICON = 'h-3.5 w-3.5 transition-transform duration-200 group-hover:scale-110';
+
+export const ACCESS_STICKY_TOOLBAR_CLASS =
+  'sticky top-0 z-20 -mx-1 bg-white/85 px-1 pb-1.5 pt-1 backdrop-blur-sm';
 
 /**
  * A hover tooltip on a desktop, a tap-to-open popover on a phone.

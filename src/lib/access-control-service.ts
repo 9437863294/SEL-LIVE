@@ -711,6 +711,69 @@ export async function revokeAccess(input: RevokeAccessInput): Promise<RevokeAcce
   return { batchId, usersUpdated: writes.length, permissionsRemoved, permissionsRetained, failures };
 }
 
+/**
+ * Edit a user's own record — the identity fields, not the additive layer (§25).
+ *
+ * This is the half that used to live in the separate User Management screen. The split was real:
+ * everything else in this file *adds* access on top of `users.role`, and deliberately never touches
+ * it. Merging the two screens did not merge the two ideas — a base role still lives on the user
+ * document and is still the one thing an additive grant cannot express, so it gets its own write
+ * with its own guard rather than being folded into `grantAccess`.
+ *
+ * `email` is absent on purpose. It is the Identity Toolkit login, not a profile field, and changing
+ * it here would desynchronise the Firebase account from the Firestore record.
+ */
+export async function updateUserIdentity(
+  user: User,
+  changes: { name?: string; mobile?: string; role?: string },
+  directory: Pick<AccessDirectory, 'users' | 'roles' | 'grants' | 'scopeGrants'>,
+  actor: AccessActor,
+): Promise<{ ok: boolean; message?: string }> {
+  const roleChanged = changes.role !== undefined && changes.role !== user.role;
+
+  // A base role is usually where administrator capability comes from, so moving somebody off one
+  // can strand the whole system with nobody able to manage users and roles. The old screen only
+  // warned you about changing your *own* role; this checks the actual outcome for everybody, which
+  // also covers the case the old warning missed — demoting the last administrator who isn't you.
+  if (roleChanged) {
+    const survives = checkAdministrationSurvives(
+      {
+        ...directory,
+        users: directory.users.map((candidate) =>
+          candidate.id === user.id ? { ...candidate, role: changes.role as string } : candidate,
+        ),
+      },
+      [],
+    );
+    if (!survives.safe) return { ok: false, message: survives.message };
+  }
+
+  const payload = stripUndefined({
+    name: changes.name?.trim(),
+    mobile: changes.mobile?.trim(),
+    role: changes.role,
+  });
+  if (Object.keys(payload).length === 0) return { ok: true };
+
+  await updateDoc(doc(db, ACCESS_COLLECTIONS.users, user.id), payload);
+
+  void logUserActivity({
+    userId: actor.userId,
+    userName: actor.userName,
+    module: 'User Management',
+    action: 'Update User',
+    recordId: user.id,
+    recordRef: user.id,
+    details: {
+      updatedUserName: changes.name ?? user.name,
+      updatedUserEmail: user.email,
+      ...(roleChanged ? { baseRoleFrom: user.role ?? null, baseRoleTo: changes.role } : {}),
+    },
+  });
+
+  return { ok: true };
+}
+
 /** Suspend or resume the whole additive layer for one user, leaving their base role alone. */
 export async function setAccessLayerStatus(
   user: User,

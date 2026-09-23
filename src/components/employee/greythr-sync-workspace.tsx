@@ -862,7 +862,7 @@ export function GreytHRSyncWorkspace() {
                           Matches platform accounts to greytHR employees on every run, using the greytHR
                           employee id, employee number or official email. Name and phone matches are never
                           applied automatically — those stay in the review queue in{' '}
-                          <Link href="/settings/user-management/greythr-linking" className="underline">
+                          <Link href="/settings/access-management/greythr-linking" className="underline">
                             greytHR linking
                           </Link>
                           . Worth leaving on: the exit policy above can only act on an account it can

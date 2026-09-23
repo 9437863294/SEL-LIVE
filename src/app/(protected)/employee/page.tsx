@@ -262,7 +262,7 @@ export default function EmployeeSettingsPage() {
             icon: Link2,
             text: 'greytHR Linking',
             description: 'Reconcile platform logins with greytHR employees — who is linked, who is not.',
-            href: '/settings/user-management/greythr-linking',
+            href: '/settings/access-management/greythr-linking',
             permitted: canLink,
           },
         ],

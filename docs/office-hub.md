@@ -35,7 +35,7 @@ below follows from it.
 | Concern | Reused from | Why it matters |
 | --- | --- | --- |
 | Sign-in, session, live permissions | `src/components/auth/AuthProvider.tsx` | A user's Office Hub access comes from the same role documents and additive grants as everything else. An administrator granting a role does not have to know this module exists. |
-| Permissions | `src/lib/access-control.ts`, `src/lib/permissions.ts` | `Office Hub` is a normal entry in `permissionModules`, editable in Role Management. |
+| Permissions | `src/lib/access-control.ts`, `src/lib/permissions.ts` | `Office Hub` is a normal entry in `permissionModules`, editable in Access Management. |
 | Employees | `employees` collection (greytHR-synced) | Office Hub **never becomes a second employee master**. |
 | Logins | `users` collection | The participant directory is driven by `users` joined to `employees` — see §4 below. |
 | Departments, projects | `departments`, `projects` | Read by id; names denormalised for display only. |
@@ -211,8 +211,8 @@ in a different zone shows a note with the viewer's local time.
 
 ## 7. Permissions
 
-`Office Hub` is a normal `permissionModules` entry, so it is granted through Role Management and the
-access-management layer like anything else.
+`Office Hub` is a normal `permissionModules` entry, so it is granted through the Access Management screen
+like anything else.
 
 ```
 Office Hub
@@ -412,7 +412,7 @@ object, so a file referenced by published minutes cannot vanish from them.
 
 ### 5. Grant somebody access
 
-Settings → Role Management → pick a role → tick the `Office Hub` permissions. Start with the
+Settings → Access Management → Roles → pick a role → tick the `Office Hub` permissions. Start with the
 Super Admin row from §7 so there is somebody who can configure the module.
 
 ### 6. Configure the office
@@ -700,7 +700,7 @@ paths worth walking by hand after deploying.
 
 - [ ] A signed-out user hitting `/office-hub` is redirected to sign in.
 - [ ] A user with no `Office Hub` permission sees "Access Denied", not a blank page.
-- [ ] Removing a permission in Role Management takes effect **without a re-login** (the role listener is live).
+- [ ] Removing a permission in Access Management takes effect **without a re-login** (the role listener is live).
 - [ ] The nav hides sections the user cannot open; the Guide stays visible.
 
 ### Meetings

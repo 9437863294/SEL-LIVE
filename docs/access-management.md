@@ -43,7 +43,8 @@ to `roles` come from the Role Builder, which is an explicit role-editing action.
 | [`src/lib/access-control-server.ts`](../src/lib/access-control-server.ts) | Admin-SDK route guard: `authenticateAccess`, `requireAccess`. |
 | [`src/hooks/useAccessDirectory.ts`](../src/hooks/useAccessDirectory.ts) | One load of users, roles, grants, scope rules and templates for the whole screen. |
 | [`src/components/access-management/`](../src/components/access-management/) | The UI. |
-| [`tests/access-control-domain.test.mjs`](../tests/access-control-domain.test.mjs) | 73 tests, including the non-negotiable §49 scenario. |
+| [`src/components/access-management/user-identity.tsx`](../src/components/access-management/user-identity.tsx) | The **Account** card on a user profile — the identity fields the merged User Management screen used to own. See §2a. |
+| [`tests/access-control-domain.test.mjs`](../tests/access-control-domain.test.mjs) | 83 tests, including the non-negotiable §49 scenario. |
 
 Same split as `e-approval-policy.ts` / `e-approval-service.ts` and `hr-policy.ts` /
 `hr-requirement-service.ts`: rules stay unit-testable without an emulator, persistence stays boring.
@@ -52,7 +53,7 @@ Same split as `e-approval-policy.ts` / `e-approval-service.ts` and `hr-policy.ts
 
 | Collection | Written by this layer | Shape |
 | --- | --- | --- |
-| `users/{uid}` | **No** — read only, except user creation which writes the same five fields User Management does | unchanged |
+| `users/{uid}` | **Identity fields only** — `name`, `mobile`, `role`, `status`, and the fields written at user creation. The additive layer never touches them; see §2a. | unchanged |
 | `roles/{id}` | Role Builder only | `+ description? status? type? duplicatedFrom*?` — all optional |
 | `accessGrants/{userId}` | Yes | `additionalRoles[] directPermissions[] departmentIds[] designations[] projectAccess[] temporaryAccess[] status` |
 | `accessScopeGrants/{type_id}` | Yes | Department / Designation / Project → roles and permissions |
@@ -62,6 +63,36 @@ Same split as `e-approval-policy.ts` / `e-approval-service.ts` and `hr-policy.ts
 
 **A user with no `accessGrants` document has exactly their base role's permissions** — which is
 every user in the system on the day this shipped.
+
+---
+
+## 2a. The user record — and the screen this one absorbed
+
+There used to be a second screen, `/settings/user-management`, listing the same users with the same
+role and status filters and linking to the same greytHR console. It is gone; this module is the only
+place users are administered. The old URLs redirect (see `next.config.ts`).
+
+The merge did **not** merge the two ideas behind them. §1 still holds: the additive layer cannot take
+permissions away, and it does not write `users.role`. What the old screen uniquely did — editing the
+user record itself — now lives on that user's access profile as the **Account** card
+(`user-identity.tsx`), and it writes through `updateUserIdentity`, not `grantAccess`:
+
+| Field | Written by | Guard |
+| --- | --- | --- |
+| `name`, `mobile` | `updateUserIdentity` | `Settings.User Management · Edit` |
+| `role` (the base role) | `updateUserIdentity` | the above, **plus** `checkAdministrationSurvives` re-run with the new role applied |
+| `status` | `deactivateUserAccount` / `reactivateUserAccount` | `checkAdministrationSurvives` |
+| everything else | `grantAccess` / `revokeAccess` | the additive layer's own permissions |
+
+The base-role guard is stricter than the one it replaced. The old screen warned you only when you
+changed **your own** role away from one that could still manage users. This re-derives who would hold
+administrator capability *after* the change and refuses if the answer is nobody — which also catches
+demoting the last administrator who is not you, a case the old warning let through. The self-change
+confirmation is kept on top of it, because locking only yourself out is recoverable but easy to do by
+accident.
+
+`email` is deliberately not editable anywhere: it is the Identity Toolkit login, and changing it on
+the Firestore record alone would desynchronise the two.
 
 ---
 

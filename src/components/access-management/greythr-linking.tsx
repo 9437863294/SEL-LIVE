@@ -381,7 +381,7 @@ export function GreytHRLinkingWorkspace() {
   ];
 
   return (
-    <AccessPageShell width="wide" backHref="/settings/user-management" backLabel="Back to User Management">
+    <AccessPageShell width="wide" backHref="/settings/access-management" backLabel="Back to Access Management">
       <HrPageHeader
         title="greytHR linking"
         description="Match every platform login to its greytHR employee record. HR data flows in; roles and permissions stay here."

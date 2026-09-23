@@ -3,7 +3,7 @@
 
 import Link from 'next/link';
 import {
-  Activity, Home, Briefcase, Construction, Clock, Users, ShieldCheck, Hash,
+  Activity, Home, Briefcase, Construction, Clock, Users, Hash,
   Palette, MailCheck, LogIn, MapPinned, Package, Settings2, KeyRound,
 } from 'lucide-react';
 import { Card, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
@@ -69,35 +69,9 @@ const settingsItemsBase: SettingsItemConfig[] = [
     },
   },
   {
-    icon: Users,
-    text: 'User Management',
-    description: 'Manage user accounts and their roles.',
-    href: '/settings/user-management',
-    permission: 'View',
-    colorScheme: {
-      bg: 'from-blue-500/8 to-blue-600/4',
-      iconBg: 'bg-blue-100 dark:bg-blue-900/40',
-      iconColor: 'text-blue-600 dark:text-blue-400',
-      border: 'border-blue-200/60 dark:border-blue-800/30 hover:border-blue-400/60',
-    },
-  },
-  {
-    icon: ShieldCheck,
-    text: 'Role Management',
-    description: 'Define roles and their specific permissions.',
-    href: '/settings/role-management',
-    permission: 'View',
-    colorScheme: {
-      bg: 'from-red-500/8 to-red-600/4',
-      iconBg: 'bg-red-100 dark:bg-red-900/40',
-      iconColor: 'text-red-600 dark:text-red-400',
-      border: 'border-red-200/60 dark:border-red-800/30 hover:border-red-400/60',
-    },
-  },
-  {
     icon: KeyRound,
     text: 'Access Management',
-    description: 'Add roles, permissions, projects and temporary access on top of what users already have.',
+    description: 'User accounts, roles and permissions, plus the projects and temporary access granted on top of them.',
     href: '/settings/access-management',
     permission: 'View',
     colorScheme: {
@@ -273,8 +247,6 @@ export default function SettingsPage() {
     '/settings/department': 'Settings.Manage Department',
     '/settings/project': 'Settings.Manage Project',
     '/employee': 'Settings.Employee Management',
-    '/settings/user-management': 'Settings.User Management',
-    '/settings/role-management': 'Settings.Role Management',
     '/settings/access-management': 'Settings.Access Management',
     '/settings/location-tracking': 'Settings.Location Tracking',
     '/settings/serial-no-configuration': 'Settings.Serial No. Config',

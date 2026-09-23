@@ -66,8 +66,18 @@ import type { AccessDirectoryState } from '@/hooks/useAccessDirectory';
 import { UserEffectiveAccessPanel } from './effective-access';
 import { RemovalPreviewDialog } from './assignment-preview';
 import { AuditHistory } from './audit-history';
-import { AccessBackLink, AccessCard, PermissionPairList, RoleBadge } from './access-ui';
+import {
+  ACCESS_ACTION_CLASS,
+  ACCESS_ACTION_ICON,
+  ACCESS_ACTION_TONES,
+  ACCESS_SCROLL_FRAME_CLASS,
+  AccessBackLink,
+  AccessCard,
+  PermissionPairList,
+  RoleBadge,
+} from './access-ui';
 import { AccessChecklist, AccessChecklistSaveBar, type PendingChange } from './access-checklist';
+import { UserIdentityCard } from './user-identity';
 
 export function UserAccessProfile({
   userId,
@@ -75,6 +85,7 @@ export function UserAccessProfile({
   actor,
   canRevoke,
   canAssign,
+  canEditIdentity,
 }: {
   userId: string;
   state: AccessDirectoryState;
@@ -82,6 +93,8 @@ export function UserAccessProfile({
   canRevoke: boolean;
   /** Whether this administrator may grant new direct permissions from the checklist below. */
   canAssign: boolean;
+  /** `Settings.User Management · Edit` — editing the user record itself, not their access. */
+  canEditIdentity: boolean;
 }) {
   const { toast } = useToast();
   const { directory, accessByUser, departments, projects, employees, registry, isLoading } = state;
@@ -255,22 +268,38 @@ export function UserAccessProfile({
   };
 
   return (
-    <div className="space-y-3">
-      <div className="flex flex-wrap items-start justify-between gap-2">
+    // A height-bounded column, like the Control Center: the identity row, the alerts and the tab
+    // strip are fixed, and the active tab's content is the only thing that scrolls.
+    <div className="flex min-h-0 flex-1 flex-col gap-3">
+      <div className="flex shrink-0 flex-wrap items-start justify-between gap-2">
         <div className="flex min-w-0 items-start gap-2">
           <AccessBackLink href="/settings/access-management" label="Back to Access Control Center" />
           <div className="min-w-0">
             <h1 className="break-words text-lg font-semibold tracking-tight text-slate-800 sm:text-xl">
               {user.name || user.email}
             </h1>
-            <p className="text-sm text-muted-foreground">Access profile · everything this user can do, and why</p>
+            {/* The page does not scroll, so this subtitle would cost a row of the panel below it on
+                a phone — and the name plus the tab strip already say what the screen is. */}
+            <p className="hidden text-sm text-muted-foreground sm:block">
+              Access profile · everything this user can do, and why
+            </p>
           </div>
         </div>
-        {/* Full-width on a phone, natural width from `sm` up. */}
-        <div className="flex w-full flex-wrap gap-2 sm:w-auto [&>*]:flex-1 sm:[&>*]:flex-none">
-          <Button asChild size="sm">
+        {/*
+          The three actions as one set of peers, same shape and size as the role card's row — they
+          used to be a solid button followed by two outlines of different widths, which implied a
+          ranking between "add access" and "disable the account" that is not real. Rose is the
+          destructive one and the only red here.
+        */}
+        <div className="flex w-full flex-wrap gap-1.5 sm:w-auto">
+          <Button
+            asChild
+            variant="outline"
+            size="sm"
+            className={cn(ACCESS_ACTION_CLASS, ACCESS_ACTION_TONES.indigo, 'sm:min-w-[7.5rem] sm:flex-none')}
+          >
             <Link href={`/settings/access-management?assignTo=${user.id}`}>
-              <ShieldPlus className="mr-1.5 h-4 w-4" />
+              <ShieldPlus className={ACCESS_ACTION_ICON} />
               Add access
             </Link>
           </Button>
@@ -279,17 +308,21 @@ export function UserAccessProfile({
               variant="outline"
               size="sm"
               onClick={() => setSuspendOpen(true)}
-              className={layerSuspended ? undefined : 'text-amber-700'}
+              className={cn(
+                ACCESS_ACTION_CLASS,
+                layerSuspended ? ACCESS_ACTION_TONES.emerald : ACCESS_ACTION_TONES.amber,
+                'sm:min-w-[7.5rem] sm:flex-none',
+              )}
             >
               {layerSuspended ? (
                 <>
-                  <PlayCircle className="mr-1.5 h-4 w-4" />
-                  Resume additional access
+                  <PlayCircle className={ACCESS_ACTION_ICON} />
+                  Resume access
                 </>
               ) : (
                 <>
-                  <PauseCircle className="mr-1.5 h-4 w-4" />
-                  Suspend additional access
+                  <PauseCircle className={ACCESS_ACTION_ICON} />
+                  Suspend access
                 </>
               )}
             </Button>
@@ -303,20 +336,20 @@ export function UserAccessProfile({
               variant="outline"
               size="sm"
               onClick={openAccountDialog}
-              className={
-                accountInactive
-                  ? 'text-emerald-700'
-                  : 'border-destructive/30 text-destructive hover:bg-destructive/5 hover:text-destructive'
-              }
+              className={cn(
+                ACCESS_ACTION_CLASS,
+                accountInactive ? ACCESS_ACTION_TONES.emerald : ACCESS_ACTION_TONES.rose,
+                'sm:min-w-[7.5rem] sm:flex-none',
+              )}
             >
               {accountInactive ? (
                 <>
-                  <UserCheck className="mr-1.5 h-4 w-4" />
-                  Reactivate account
+                  <UserCheck className={ACCESS_ACTION_ICON} />
+                  Reactivate
                 </>
               ) : (
                 <>
-                  <UserX className="mr-1.5 h-4 w-4" />
+                  <UserX className={ACCESS_ACTION_ICON} />
                   Disable account
                 </>
               )}
@@ -326,7 +359,7 @@ export function UserAccessProfile({
       </div>
 
       {accountInactive && (
-        <div className="rounded-xl border border-rose-200 bg-rose-50/80 px-3 py-2.5 text-sm text-rose-900">
+        <div className="shrink-0 rounded-xl border border-rose-200 bg-rose-50/80 px-3 py-2.5 text-sm text-rose-900">
           <p className="font-semibold">
             {user.deactivation?.until
               ? `This account is disabled until ${formatGrantDate(user.deactivation.until)}.`
@@ -343,7 +376,7 @@ export function UserAccessProfile({
       )}
 
       {layerSuspended && (
-        <div className="rounded-xl border border-amber-200 bg-amber-50/80 px-3 py-2.5 text-sm text-amber-900">
+        <div className="shrink-0 rounded-xl border border-amber-200 bg-amber-50/80 px-3 py-2.5 text-sm text-amber-900">
           <p className="font-semibold">Additional access is suspended for this user.</p>
           <p className="text-xs">
             Everything granted through this layer is inactive. Their base role — {user.role || 'none'} —
@@ -352,14 +385,14 @@ export function UserAccessProfile({
         </div>
       )}
 
-      <Tabs defaultValue="access">
-        <TabsList className="flex h-auto w-full sm:inline-flex sm:h-10 sm:w-auto">
+      <Tabs defaultValue="access" className="flex min-h-0 flex-1 flex-col">
+        <TabsList className="flex h-auto w-full shrink-0 sm:inline-flex sm:h-10 sm:w-auto">
           <TabsTrigger value="access" className="flex-1 shrink-0 text-xs sm:flex-none">Effective access</TabsTrigger>
           <TabsTrigger value="grants" className="flex-1 shrink-0 text-xs sm:flex-none">Grants</TabsTrigger>
           <TabsTrigger value="history" className="flex-1 shrink-0 text-xs sm:flex-none">History</TabsTrigger>
         </TabsList>
 
-        <TabsContent value="access" className="mt-3 space-y-3">
+        <TabsContent value="access" className={cn('mt-3 space-y-3', ACCESS_SCROLL_FRAME_CLASS)}>
           <AccessCard>
             <CardHeader className="px-4 py-3">
               <CardTitle className="text-sm">Employee information</CardTitle>
@@ -400,27 +433,16 @@ export function UserAccessProfile({
           />
         </TabsContent>
 
-        <TabsContent value="grants" className="mt-3 space-y-3">
+        <TabsContent value="grants" className={cn('mt-3 space-y-3', ACCESS_SCROLL_FRAME_CLASS)}>
           {/* Base role — read-only here, deliberately */}
-          <AccessCard>
-            <CardHeader className="px-4 py-3">
-              <CardTitle className="text-sm">Base role</CardTitle>
-              <CardDescription className="text-xs">
-                The user's primary role, stored on their own record. Changed in User Management, never
-                from here — this screen only ever adds on top of it.
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="flex flex-wrap items-center gap-2 px-4 pb-4">
-              {user.role ? (
-                <RoleBadge name={user.role} kind="base" />
-              ) : (
-                <span className="text-xs text-muted-foreground">No primary role assigned.</span>
-              )}
-              <Button asChild variant="outline" size="sm" className="h-7 text-xs">
-                <Link href="/settings/user-management">Change in User Management</Link>
-              </Button>
-            </CardContent>
-          </AccessCard>
+          <UserIdentityCard
+            user={user}
+            roles={directory.roles}
+            directory={directory}
+            actor={actor}
+            canEdit={canEditIdentity}
+            onSaved={state.refresh}
+          />
 
           {/* Additional roles */}
           <GrantSection
@@ -594,7 +616,7 @@ export function UserAccessProfile({
           </GrantSection>
         </TabsContent>
 
-        <TabsContent value="history" className="mt-3">
+        <TabsContent value="history" className={cn('mt-3', ACCESS_SCROLL_FRAME_CLASS)}>
           <AuditHistory state={state} initialUserId={userId} />
         </TabsContent>
       </Tabs>
@@ -723,7 +745,7 @@ function GreytHRConnectionCard({ user }: { user: User }) {
             </Button>
           )}
           <Button asChild variant="outline" size="sm">
-            <Link href="/settings/user-management/greythr-linking">
+            <Link href="/settings/access-management/greythr-linking">
               {connected ? 'Manage link' : 'Link an employee'}
             </Link>
           </Button>

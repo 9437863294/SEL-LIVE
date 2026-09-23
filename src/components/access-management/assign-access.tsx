@@ -308,10 +308,14 @@ export function AssignAccess({
         wrapped 44px buttons it took ~270px of a phone's viewport before any content — and the
         bottom is where a thumb is anyway. On a phone the three secondary actions leave the bar
         for an ordinary row above the two panels; the bar keeps the selection summary and the one
-        button that commits. From `lg` up it is the top bar it always was, offset by the 4rem
-        app header.
+        button that commits. From `lg` up it is the top bar it always was.
+
+        `lg:top-0`, not `lg:top-16`: this tab scrolls inside the Control Center's frame rather than
+        with the page, so the offset is measured from the top of that frame. The 4rem it used to
+        subtract was the app header's, which is no longer between this bar and the scrollport —
+        keeping it would just open a 4rem gap above the bar.
       */}
-      <div className="hr-sticky-actions sticky bottom-0 z-20 -mx-1 rounded-xl border border-white/70 bg-white/85 px-3 py-2.5 shadow-sm backdrop-blur max-lg:order-last lg:bottom-auto lg:top-16">
+      <div className="hr-sticky-actions sticky bottom-0 z-20 -mx-1 rounded-xl border border-white/70 bg-white/85 px-3 py-2.5 shadow-sm backdrop-blur max-lg:order-last lg:bottom-auto lg:top-0">
         <div className="flex items-center gap-2 lg:justify-between">
           <div className="flex min-w-0 flex-1 flex-wrap items-center gap-1.5 text-sm lg:gap-2">
             <Badge variant="outline" className="gap-1 border-indigo-200 bg-indigo-50 text-indigo-700">

@@ -51,7 +51,7 @@ const settingsItemsBase = [
     icon: Users,
     title: 'User Role Configuration',
     description: 'Configure module permissions and assign access through roles.',
-    href: '/settings/role-management',
+    href: '/settings/access-management',
     permission: 'Edit User Rights'
   },
 ];

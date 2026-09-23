@@ -207,7 +207,7 @@ one `undefined` rejects the *entire* batch of 400.
 | [`src/lib/greythr-linking.ts`](../src/lib/greythr-linking.ts) | Field ownership and user ↔ employee reconciliation. Pure. |
 | [`src/lib/greythr-link-service.ts`](../src/lib/greythr-link-service.ts) | Admin-SDK link/unlink/bulk, transactional. |
 | [`src/app/api/greythr/link/route.ts`](../src/app/api/greythr/link/route.ts) | The linking API. |
-| [`src/components/access-management/greythr-linking.tsx`](../src/components/access-management/greythr-linking.tsx) | The console at `/settings/user-management/greythr-linking`. |
+| [`src/components/access-management/greythr-linking.tsx`](../src/components/access-management/greythr-linking.tsx) | The console at `/settings/access-management/greythr-linking`. |
 | [`src/lib/greythr-live-roster.ts`](../src/lib/greythr-live-roster.ts) | The mirror-free CURRENT roster, shared by `/employee/current` and the Add User picker's live top-up. |
 | [`src/app/api/greythr/employees/current/route.ts`](../src/app/api/greythr/employees/current/route.ts) | "What does greytHR say, right now" — no mirror in the middle. |
 | [`src/app/api/greythr/employees/leave/route.ts`](../src/app/api/greythr/employees/leave/route.ts) | The organisation-wide leave register. |
@@ -545,7 +545,7 @@ What a mappings collection *would* legitimately give you is history. That is kep
 
 ## 8b. The linking console
 
-`/settings/user-management/greythr-linking`, reachable from User Management. Every platform login
+`/settings/access-management/greythr-linking`, reachable from Access Management. Every platform login
 reconciled against the employee mirror, **worst rows first** — an administrator opening this screen
 wants the conflicts, not the 800 rows that are already fine.
 
@@ -600,8 +600,7 @@ still does.
 
 ## 8a. Creating a user from a greytHR employee
 
-Both user-creation dialogs — **Access Management → Add user** and **Settings → User Management →
-Add User** — default to *From greytHR employee*:
+User creation — **Access Management → Add user** — defaults to *From greytHR employee*:
 
 - lists **active employees who do not already have a login**, searchable by name, employee no.,
   email, department, designation or project
@@ -612,10 +611,10 @@ Add User** — default to *From greytHR employee*:
 
 *Enter manually* remains for contractors and anyone not in the HR system.
 
-Access Management's drawer additionally prefills department, designation, location and project and
-seeds access membership from them; User Management's dialog has no such fields, so it prefills name,
-email and mobile and stores the link. Both write the same `employeeId` / `employeeNo`, so an account
-created from either screen is linked identically.
+The add-user form prefills department, designation, location and project and seeds access
+membership from them, and stores `employeeId` / `employeeNo` to establish the link above. The
+separate User Management dialog that used to do a thinner version of this is gone — its screen was
+merged into Access Management.
 
 Account creation is performed by the protected server endpoint, not by the browser. It verifies
 `Settings.User Management -> Add`, validates active roles and the selected employee against the

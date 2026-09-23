@@ -114,7 +114,9 @@ export default function UserLogsPage() {
     return (
         <div className="w-full">
             <div className="mb-6 flex items-center gap-4">
-                <Link href="/settings/user-management">
+                {/* Back to this user's access profile, which is where the link in was, rather than
+                    to the register — the logs answer a question you asked about one person. */}
+                <Link href={`/settings/access-management/users/${userId}`}>
                     <Button variant="ghost" size="icon">
                         <ArrowLeft className="h-6 w-6" />
                     </Button>

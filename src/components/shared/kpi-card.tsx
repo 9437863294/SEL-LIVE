@@ -149,18 +149,35 @@ export function KpiCard({
 export function PageHeader({
   title,
   description,
+  descriptionClassName,
   actions,
+  className,
 }: {
   title: string;
   description?: string;
+  /**
+   * Extra classes for the description line — in practice `hidden sm:block`, for a screen whose
+   * header competes with its own content on a phone. A long subtitle is orientation for somebody
+   * arriving on a desktop; on a 600px-tall viewport it is two lines between the user and the list
+   * they came for.
+   */
+  descriptionClassName?: string;
   actions?: React.ReactNode;
+  className?: string;
 }) {
   return (
     // Stacked on a phone with full-width actions, side by side from `sm` up.
-    <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+    <div
+      className={cn(
+        'mb-4 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between',
+        className,
+      )}
+    >
       <div className="min-w-0">
         <h1 className="text-lg font-semibold tracking-tight text-slate-800 sm:text-xl">{title}</h1>
-        {description && <p className="mt-0.5 text-sm text-muted-foreground">{description}</p>}
+        {description && (
+          <p className={cn('mt-0.5 text-sm text-muted-foreground', descriptionClassName)}>{description}</p>
+        )}
       </div>
       {actions && <div className="flex flex-wrap items-center gap-2 [&>*]:flex-1 sm:[&>*]:flex-none">{actions}</div>}
     </div>

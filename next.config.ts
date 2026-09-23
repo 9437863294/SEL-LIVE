@@ -18,6 +18,34 @@ const nextConfig: NextConfig = {
         destination: '/expenses/settings/department-serial-no',
         permanent: true,
       },
+      // Role Management is gone. Access Management edits the same `roles` collection with the same
+      // permission registry, so every old route has an exact counterpart there; these keep saved
+      // links, bookmarks and the odd hard-coded href landing on it instead of a 404.
+      { source: '/settings/role-management', destination: '/settings/access-management', permanent: true },
+      {
+        source: '/settings/role-management/add',
+        destination: '/settings/access-management/roles/new',
+        permanent: true,
+      },
+      {
+        source: '/settings/role-management/edit/:roleId',
+        destination: '/settings/access-management/roles/:roleId',
+        permanent: true,
+      },
+      // User Management is gone the same way. The register it offered is the Users tab, and editing
+      // the user record itself — the one thing the additive layer would not touch — now lives on
+      // that user's access profile, so the per-user routes have exact counterparts.
+      { source: '/settings/user-management', destination: '/settings/access-management', permanent: true },
+      {
+        source: '/settings/user-management/greythr-linking',
+        destination: '/settings/access-management/greythr-linking',
+        permanent: true,
+      },
+      {
+        source: '/settings/user-management/:userId/logs',
+        destination: '/settings/access-management/users/:userId/logs',
+        permanent: true,
+      },
     ];
   },
   images: {

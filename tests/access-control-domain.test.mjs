@@ -892,6 +892,27 @@ test('wouldStrandAdministration protects the last administrator (§31)', () => {
   assert.equal(wouldStrandAdministration(admins, ['a1']), true, 'only an inactive admin would remain');
 });
 
+// `updateUserIdentity` guards a base-role change by re-deriving who the administrators *would* be
+// with the new role applied, then asking this with nothing being removed — "is anyone left at all".
+// The empty removal list is the load-bearing part, so it gets its own case.
+test('wouldStrandAdministration with no removals answers "is anyone left" (base-role change)', () => {
+  assert.equal(
+    wouldStrandAdministration([{ userId: 'a1', status: 'Active' }], []),
+    false,
+    'an active administrator remains, so the change is safe',
+  );
+  assert.equal(
+    wouldStrandAdministration([], []),
+    true,
+    'demoting the last administrator leaves nobody, even though nothing was "removed"',
+  );
+  assert.equal(
+    wouldStrandAdministration([{ userId: 'a1', status: 'Inactive' }], []),
+    true,
+    'a deactivated administrator does not keep the system administrable',
+  );
+});
+
 test('countRoleUsage counts base and additional holders separately (§4)', () => {
   const users = [
     { id: 'u1', role: 'HR Executive' },

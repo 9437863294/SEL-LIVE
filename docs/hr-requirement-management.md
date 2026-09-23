@@ -796,7 +796,7 @@ and checklist that HR recording a verbal acceptance does.
 2. Set `CRON_SECRET` so the sweep is not publicly callable.
 3. Add a **HR & Recruitment** row to the `modules` collection with `icon: "Users"` — `ModuleCard`
    maps that title to `/hr`.
-4. Grant the module's permissions from Role Management; the tree is in `src/lib/permissions.ts`.
+4. Grant the module's permissions from Access Management; the tree is in `src/lib/permissions.ts`.
 5. In HR Settings, fill the masters (grades, designations, qualifications) and the **CTC bands** —
    with no bands configured, nothing is checked against a salary ceiling and §9's alert never fires.
 6. Load the default approval matrix from Settings → Approval matrix, then switch off what does not

@@ -84,7 +84,13 @@ import {
   type UserDirectoryContext,
   type UserFilterState,
 } from './pickers';
-import { AccessCard, AccessPageShell, RiskBadges, RoleBadge } from './access-ui';
+import {
+  ACCESS_SCROLL_FRAME_CLASS,
+  AccessCard,
+  AccessPageShell,
+  RiskBadges,
+  RoleBadge,
+} from './access-ui';
 
 type TabId =
   | 'overview'
@@ -191,6 +197,8 @@ export function AccessControlCenter() {
   const tabStripRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
     const active = tabStripRef.current?.querySelector<HTMLElement>('[role="tab"][data-state="active"]');
+    // `block: 'nearest'` matters more now that the page itself does not scroll: the strip is always
+    // in view vertically, so this only ever scrolls the strip sideways.
     active?.scrollIntoView({ block: 'nearest', inline: 'nearest' });
   }, [tab]);
 
@@ -254,18 +262,31 @@ export function AccessControlCenter() {
 
   return (
     <AccessPageShell
+      fill
       backHref="/settings"
       backLabel="Back to settings"
       aside={
-        <Badge variant="outline" className="gap-1 border-emerald-200 bg-emerald-50 text-[10px] text-emerald-700">
+        // Reassurance for somebody arriving on this screen, not something they act on — and on a
+        // phone it was a whole row of the little height there is. Desktop only.
+        <Badge
+          variant="outline"
+          className="hidden gap-1 border-emerald-200 bg-emerald-50 text-[10px] text-emerald-700 sm:inline-flex"
+        >
           <ShieldCheck className="h-3 w-3" />
           Additive only — existing permissions are never replaced
         </Badge>
       }
     >
+      {/* `shrink-0` on the two fixed rows: they are flex children of a height-bounded column, and
+          without it the browser shrinks *them* to fit rather than scrolling the frame below. */}
+      <div className="shrink-0">
       <HrPageHeader
+        className="mb-2 sm:mb-4"
         title="Access Control Center"
         description="Users, roles, permissions, departments, designations, projects, reports and approval rights — from one screen."
+        // The page does not scroll, so every row above the frame is a row taken off the list. On a
+        // phone that budget is small enough that a two-line subtitle costs a whole role card.
+        descriptionClassName="hidden sm:block"
         actions={
           <>
             <Button variant="outline" size="sm" onClick={() => void state.refresh()} disabled={state.isRefreshing}>
@@ -287,40 +308,49 @@ export function AccessControlCenter() {
           {state.error}
         </div>
       )}
+      </div>
 
-      <Tabs value={tab} onValueChange={(value) => setTab(value as TabId)}>
-        {/* A select on a phone: ten tabs in a horizontal strip show three at a time and hide the
-            rest behind a swipe nobody is told about, whereas a select names all ten in one row.
-            The strip from `sm` up fills the page width — ten equal tabs (`flex-1`) — and still
-            scrolls sideways (`min-w-max`) where a narrow window cannot fit them. Same idiom as
-            `ModulePicker`. */}
-        <div className="sm:hidden">
-          <Select value={tab} onValueChange={(value) => setTab(value as TabId)}>
-            <SelectTrigger aria-label="Section" className="bg-white/85 font-medium">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent className="max-h-[70dvh]">
-              {TAB_ITEMS.map((item) => (
-                <SelectItem key={item.id} value={item.id}>
-                  {item.label}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
-        <div ref={tabStripRef} className="hidden sm:block">
-          <ScrollArea className="w-full pb-1" showHorizontalScrollbar>
-            <TabsList className="flex h-auto w-full min-w-max sm:h-10">
-              {TAB_ITEMS.map((item) => (
-                <TabsTrigger key={item.id} value={item.id} className="flex-1 text-xs">
-                  {item.label}
-                </TabsTrigger>
-              ))}
-            </TabsList>
-          </ScrollArea>
+      {/* The tabs own the remaining height: the strip is fixed and the active tab's content is the
+          only thing that scrolls. See `ACCESS_SCROLL_FRAME_CLASS`. */}
+      <Tabs
+        value={tab}
+        onValueChange={(value) => setTab(value as TabId)}
+        className="flex min-h-0 flex-1 flex-col"
+      >
+        <div className="shrink-0">
+          {/* A select on a phone: ten tabs in a horizontal strip show three at a time and hide the
+              rest behind a swipe nobody is told about, whereas a select names all ten in one row.
+              The strip from `sm` up fills the page width — ten equal tabs (`flex-1`) — and still
+              scrolls sideways (`min-w-max`) where a narrow window cannot fit them. Same idiom as
+              `ModulePicker`. */}
+          <div className="sm:hidden">
+            <Select value={tab} onValueChange={(value) => setTab(value as TabId)}>
+              <SelectTrigger aria-label="Section" className="bg-white/85 font-medium">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent className="max-h-[70dvh]">
+                {TAB_ITEMS.map((item) => (
+                  <SelectItem key={item.id} value={item.id}>
+                    {item.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <div ref={tabStripRef} className="hidden sm:block">
+            <ScrollArea className="w-full pb-1" showHorizontalScrollbar>
+              <TabsList className="flex h-auto w-full min-w-max sm:h-10">
+                {TAB_ITEMS.map((item) => (
+                  <TabsTrigger key={item.id} value={item.id} className="flex-1 text-xs">
+                    {item.label}
+                  </TabsTrigger>
+                ))}
+              </TabsList>
+            </ScrollArea>
+          </div>
         </div>
 
-        <TabsContent value="overview" className="mt-3">
+        <TabsContent value="overview" className={cn('mt-3', ACCESS_SCROLL_FRAME_CLASS)}>
           <AccessOverview
             state={state}
             onNavigate={setTab}
@@ -330,7 +360,7 @@ export function AccessControlCenter() {
           />
         </TabsContent>
 
-        <TabsContent value="users" className="mt-3">
+        <TabsContent value="users" className={cn('mt-3', ACCESS_SCROLL_FRAME_CLASS)}>
           <UsersTab
             state={state}
             actor={actor}
@@ -340,7 +370,7 @@ export function AccessControlCenter() {
           />
         </TabsContent>
 
-        <TabsContent value="roles" className="mt-3">
+        <TabsContent value="roles" className={cn('mt-3', ACCESS_SCROLL_FRAME_CLASS)}>
           <RoleLibrary
             state={state}
             actor={actor}
@@ -349,11 +379,11 @@ export function AccessControlCenter() {
           />
         </TabsContent>
 
-        <TabsContent value="permissions" className="mt-3">
+        <TabsContent value="permissions" className={cn('mt-3', ACCESS_SCROLL_FRAME_CLASS)}>
           <PermissionRegistryTab state={state} />
         </TabsContent>
 
-        <TabsContent value="assign" className="mt-3">
+        <TabsContent value="assign" className={cn('mt-3', ACCESS_SCROLL_FRAME_CLASS)}>
           <AssignAccess
             key={assignSeed.key}
             state={state}
@@ -365,15 +395,15 @@ export function AccessControlCenter() {
           />
         </TabsContent>
 
-        <TabsContent value="matrix" className="mt-3">
+        <TabsContent value="matrix" className={cn('mt-3', ACCESS_SCROLL_FRAME_CLASS)}>
           <PermissionMatrixView state={state} />
         </TabsContent>
 
-        <TabsContent value="effective" className="mt-3">
+        <TabsContent value="effective" className={cn('mt-3', ACCESS_SCROLL_FRAME_CLASS)}>
           <EffectiveAccessViewer key={effectiveSeed.key} state={state} initialUserId={effectiveSeed.userId} />
         </TabsContent>
 
-        <TabsContent value="templates" className="mt-3">
+        <TabsContent value="templates" className={cn('mt-3', ACCESS_SCROLL_FRAME_CLASS)}>
           <TemplatesAndScopes
             state={state}
             actor={actor}
@@ -382,11 +412,11 @@ export function AccessControlCenter() {
           />
         </TabsContent>
 
-        <TabsContent value="reports" className="mt-3">
+        <TabsContent value="reports" className={cn('mt-3', ACCESS_SCROLL_FRAME_CLASS)}>
           <AccessReports key={reportSeed.key} state={state} initialReport={reportSeed.report} />
         </TabsContent>
 
-        <TabsContent value="audit" className="mt-3">
+        <TabsContent value="audit" className={cn('mt-3', ACCESS_SCROLL_FRAME_CLASS)}>
           <AuditHistory state={state} />
         </TabsContent>
       </Tabs>

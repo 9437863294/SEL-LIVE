@@ -419,21 +419,43 @@ export function PermissionMapSummary({
       const moduleName = known.get(resource) ?? resource.split('.')[0];
       grouped.set(moduleName, (grouped.get(moduleName) ?? 0) + actions.length);
     }
-    return [...grouped.entries()].sort((a, b) => b[1] - a[1]);
+    // Drop the modules the role does not actually reach.
+    //
+    // A saved permission map keeps the key with an empty array — `"Bank Balance": []` — when every
+    // action under it has been unticked, so a role granting nothing outside Vehicle Management still
+    // listed a dozen `Module · 0` chips. They read as "this role touches Bank Balance" when they mean
+    // the exact opposite, and they crowded out the modules that carry the permissions. A summary of
+    // what a role grants should only name what it grants.
+    return [...grouped.entries()].filter(([, count]) => count > 0).sort((a, b) => b[1] - a[1]);
   }, [map, registry]);
 
   if (!byModule.length) return <p className="text-xs text-muted-foreground">{emptyLabel}</p>;
 
   const shown = byModule.slice(0, max);
   return (
-    <div className="flex flex-wrap gap-1.5">
+    // A two-column grid, not a wrapping row: chip width followed the length of the module name, so
+    // "HR & Recruitment" and "Bank Guarantee Management" produced a different ragged arrangement on
+    // every card. Fixed columns make the block the same shape whatever the names are, and put the
+    // counts in a line you can read down. Callers pass an even `max` so the last row is not a
+    // half-width orphan.
+    <div className="grid grid-cols-2 gap-1.5">
       {shown.map(([moduleName, count]) => (
-        <Badge key={moduleName} variant="outline" className="text-[10px] text-slate-600">
-          {moduleName} · {count}
+        <Badge
+          key={moduleName}
+          variant="outline"
+          // The name is truncated to hold the column, so the full text has to stay reachable.
+          title={`${moduleName} · ${count}`}
+          className="flex w-full min-w-0 items-center justify-between gap-1.5 text-[10px] font-normal text-slate-600"
+        >
+          <span className="truncate">{moduleName}</span>
+          <span className="shrink-0 font-semibold tabular-nums text-slate-500">{count}</span>
         </Badge>
       ))}
       {byModule.length > shown.length && (
-        <Badge variant="outline" className="text-[10px] text-muted-foreground">
+        <Badge
+          variant="outline"
+          className="col-span-2 flex w-full justify-center text-[10px] font-normal text-muted-foreground"
+        >
           +{byModule.length - shown.length} more modules
         </Badge>
       )}

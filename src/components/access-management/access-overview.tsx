@@ -258,7 +258,7 @@ export function AccessOverview({
       description:
         'Department, designation and joining date come from greytHR. Until a login is linked, its profile data has to be maintained by hand — the linking console proposes the confident matches for you.',
       actionLabel: 'Open greytHR linking',
-      actionHref: '/settings/user-management/greythr-linking',
+      actionHref: '/settings/access-management/greythr-linking',
     });
   }
   if (dashboard.privilegedUsers > 0) {

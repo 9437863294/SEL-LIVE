@@ -93,10 +93,13 @@ export default function ModuleCard({
       case "Site Account Statement":
         return "/site-account-statement";
       // Nested Settings Pages
+      // User Management and Role Management no longer have screens of their own — Access Management
+      // absorbed both. Their permission nodes stay (roles still hold them, and they still grant the
+      // work), so all three titles resolve to the one screen.
       case "User Management":
-        return "/settings/user-management";
       case "Role Management":
-        return "/settings/role-management";
+      case "Access Management":
+        return "/settings/access-management";
       case "Serial No. Config":
         return "/settings/serial-no-configuration";
       case "Working Hrs":

@@ -56,13 +56,19 @@ export default function UserAccessProfilePage() {
 
   return (
     // No back link here: the profile renders its own, alongside the user's name and its actions.
-    <AccessPageShell>
+    // `fill` for the same reason the Control Center uses it — the header and tabs stay put and the
+    // tab's own content scrolls, rather than the whole page moving under a header you still need.
+    <AccessPageShell fill>
       <UserAccessProfile
         userId={userId}
         state={state}
         actor={actor}
         canRevoke={canRevokeAccess(can)}
         canAssign={canAssignAccess(can)}
+        // Editing the user record is the permission the old User Management screen required, kept
+        // as-is by the merge: being able to assign access does not imply being able to rename
+        // somebody or move their base role.
+        canEditIdentity={can('Edit', 'Settings.User Management')}
       />
     </AccessPageShell>
   );
