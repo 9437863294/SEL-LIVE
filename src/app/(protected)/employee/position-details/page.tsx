@@ -39,6 +39,7 @@ import { Badge } from '@/components/ui/badge';
 import type { EmployeePosition } from '@/lib/types';
 import { useAuthorization } from '@/hooks/useAuthorization';
 import { fetchEmployeeRoster } from '@/lib/greythr-sync-client';
+import { isWorkingState, type EmploymentState } from '@/lib/greythr';
 import { exportRowsToExcel } from '@/lib/report-excel';
 import { cn } from '@/lib/utils';
 import { Input } from '@/components/ui/input';
@@ -143,6 +144,27 @@ function toDate(value: unknown): Date | null {
  * grid of values belonging to nobody.
  */
 const EMPLOYEE_COLUMN = 'Employee';
+
+/**
+ * Who the register is about.
+ *
+ * `active` is the default because the question this screen answers — what is this person's
+ * designation, department, project — is almost always about somebody who still works here, and two
+ * thirds of the mirror is leavers. The other two are one click away and the control states which is
+ * in force, so nothing is hidden silently.
+ */
+type StatusFilter = 'active' | 'left' | 'all';
+
+/** The employment-state column, named once so both views and the picker agree on it. */
+const STATUS_COLUMN = 'Status';
+
+const STATUS_LABEL: Record<StatusFilter, string> = {
+  active: 'Currently working',
+  left: 'Departed',
+  all: 'Everyone',
+};
+
+const DEFAULT_FILTERS = { employeeId: '', category: 'all', status: 'active' as StatusFilter };
 
 /** The current value of a category is the one greytHR left open-ended. */
 const isCurrentEntry = (entry: PositionRow): boolean => !entry.effectiveTo;
@@ -249,11 +271,15 @@ export default function EmployeePositionDetailsPage() {
    * the Name column, never the rows.
    */
   const [namesById, setNamesById] = useState<Map<string, string>>(new Map());
+  /**
+   * Employment state per employee, from the same roster fetch that supplies the names.
+   *
+   * Keyed by both employee number and greytHR id for the reason the name map is: position documents
+   * use whichever was known at sync time.
+   */
+  const [stateById, setStateById] = useState<Map<string, EmploymentState>>(new Map());
 
-  const [filters, setFilters] = useState({
-    employeeId: '',
-    category: 'all',
-  });
+  const [filters, setFilters] = useState(DEFAULT_FILTERS);
 
   const canView = can('View', 'Settings.Employee Management');
   const canSync = can('Sync from GreytHR', 'Settings.Employee Management');
@@ -311,14 +337,18 @@ export default function EmployeePositionDetailsPage() {
       .then(report => {
         if (cancelled) return;
         const map = new Map<string, string>();
+        const states = new Map<string, EmploymentState>();
         for (const row of report.employees) {
-          if (!row.name) continue;
           // Position documents are keyed by employee number, falling back to the raw greytHR id
-          // when the number was unknown at sync time — so both keys resolve to the name.
+          // when the number was unknown at sync time — so both keys resolve.
+          if (row.employeeNo) states.set(String(row.employeeNo), row.employmentState);
+          states.set(String(row.employeeId), row.employmentState);
+          if (!row.name) continue;
           if (row.employeeNo) map.set(String(row.employeeNo), row.name);
           map.set(String(row.employeeId), row.name);
         }
         setNamesById(map);
+        setStateById(states);
       })
       .catch(() => {});
     return () => {
@@ -371,12 +401,21 @@ export default function EmployeePositionDetailsPage() {
     }
   };
 
-  const handleFilterChange = (field: keyof typeof filters, value: string) => {
+  /**
+   * Generic over the field, so each filter keeps its own type.
+   *
+   * It took `value: string` before, which was harmless while every filter was a string — `status` is
+   * a three-value union, and a plain string would have let a typo through the compiler and shown an
+   * empty register at runtime.
+   */
+  const handleFilterChange = <K extends keyof typeof filters>(field: K, value: (typeof filters)[K]) => {
     setFilters(prev => ({ ...prev, [field]: value }));
   };
 
   const clearFilters = () => {
-    setFilters({ employeeId: '', category: 'all' });
+    // Back to the defaults, which includes Currently working — not to Everyone. Clearing a filter
+    // should restore the screen you opened, not a wider one you never chose.
+    setFilters(DEFAULT_FILTERS);
   };
 
   const uniqueCategories = useMemo(() => {
@@ -389,14 +428,14 @@ export default function EmployeePositionDetailsPage() {
     return Array.from(categories).sort();
   }, [allPositions]);
 
-  const filteredPositions = useMemo(() => {
+  /** Everything the search and category filters leave — before employment status is considered. */
+  const positionsBeforeStatus = useMemo(() => {
     const term = filters.employeeId.trim().toLowerCase();
     return allPositions
       .map(pos => {
-        const filteredCategoryList = pos.categoryList.filter(cat => {
-          const categoryMatch = filters.category === 'all' || cat.category === filters.category;
-          return categoryMatch;
-        });
+        const filteredCategoryList = pos.categoryList.filter(
+          cat => filters.category === 'all' || cat.category === filters.category,
+        );
         return { ...pos, categoryList: filteredCategoryList };
       })
       .filter(pos => {
@@ -406,7 +445,30 @@ export default function EmployeePositionDetailsPage() {
           (namesById.get(String(pos.employeeId)) ?? '').toLowerCase().includes(term);
         return employeeMatch && pos.categoryList.length > 0;
       });
-  }, [allPositions, filters, namesById]);
+  }, [allPositions, filters.employeeId, filters.category, namesById]);
+
+  const filteredPositions = useMemo(() => {
+    if (filters.status === 'all') return positionsBeforeStatus;
+    return positionsBeforeStatus.filter(pos => {
+      const state = stateById.get(String(pos.employeeId));
+      // An employee the roster does not mention has no state to test, so neither Currently working
+      // nor Departed can honestly claim them. They are counted below and offered a way back in
+      // rather than disappearing without explanation.
+      if (!state) return false;
+      return filters.status === 'active' ? isWorkingState(state) : !isWorkingState(state);
+    });
+  }, [positionsBeforeStatus, filters.status, stateById]);
+
+  /**
+   * Employees the status filter removed only because the roster has no state for them.
+   *
+   * Worth its own count: "hidden because they left" is the filter working, and "hidden because we do
+   * not know" is a gap in the mirror wearing the same clothes.
+   */
+  const unknownStateCount = useMemo(() => {
+    if (filters.status === 'all') return 0;
+    return positionsBeforeStatus.filter(pos => !stateById.get(String(pos.employeeId))).length;
+  }, [positionsBeforeStatus, filters.status, stateById]);
 
   /** The register, flattened one row per (employee, category value). */
   const rows = useMemo<PositionRow[]>(
@@ -487,6 +549,7 @@ export default function EmployeePositionDetailsPage() {
           groups.map(group => ({
             'Employee ID': group.employeeId,
             Name: group.name || `Employee ${group.employeeId}`,
+            Status: stateById.get(group.employeeId) ?? 'Unknown',
             // One column per category, matching the table — and only the categories on screen, so a
             // hidden column is absent from the workbook too.
             ...Object.fromEntries(
@@ -511,6 +574,7 @@ export default function EmployeePositionDetailsPage() {
         rows.map(row => ({
           'Employee ID': row.employeeId,
           Name: row.name,
+          'Employment status': stateById.get(row.employeeId) ?? 'Unknown',
           Category: row.category,
           Value: row.value,
           'Effective from': row.effectiveFrom,
@@ -534,7 +598,12 @@ export default function EmployeePositionDetailsPage() {
   }, [filters.employeeId, filters.category]);
 
   const visibleGroups = useMemo(() => groups.slice(0, visibleCount), [groups, visibleCount]);
-  const filtersActive = filters.employeeId !== '' || filters.category !== 'all';
+  // Measured against the defaults, not against "everything": the register opens already narrowed to
+  // people who still work here, and Clear restores that rather than widening past it.
+  const filtersActive =
+    filters.employeeId !== DEFAULT_FILTERS.employeeId ||
+    filters.category !== DEFAULT_FILTERS.category ||
+    filters.status !== DEFAULT_FILTERS.status;
 
   /** One expanded employee at a time, so a long history never fights another for the screen. */
   const [openId, setOpenId] = useState<string | null>(null);
@@ -585,6 +654,35 @@ export default function EmployeePositionDetailsPage() {
         </span>
       ),
     },
+    {
+      header: STATUS_COLUMN,
+      mobile: 'aside',
+      cell: group => {
+        const state = stateById.get(group.employeeId);
+        if (!state) {
+          return (
+            <Badge variant="outline" className="border-slate-200 bg-white text-[10px] font-normal text-slate-500">
+              Unknown
+            </Badge>
+          );
+        }
+        const working = isWorkingState(state);
+        return (
+          <Badge
+            variant="outline"
+            className={cn(
+              'text-[10px] font-normal',
+              working
+                ? 'border-emerald-200 bg-emerald-50 text-emerald-700'
+                : 'border-slate-200 bg-slate-50 text-slate-600',
+            )}
+            title={state}
+          >
+            {state}
+          </Badge>
+        );
+      },
+    },
     ...uniqueCategories.map<HrListColumn<EmployeeGroup>>(category => ({
       header: category,
       mobile: 'detail',
@@ -627,6 +725,35 @@ export default function EmployeePositionDetailsPage() {
           </span>
         </span>
       ),
+    },
+    {
+      header: STATUS_COLUMN,
+      mobile: 'aside',
+      cell: group => {
+        const state = stateById.get(group.employeeId);
+        if (!state) {
+          return (
+            <Badge variant="outline" className="border-slate-200 bg-white text-[10px] font-normal text-slate-500">
+              Unknown
+            </Badge>
+          );
+        }
+        const working = isWorkingState(state);
+        return (
+          <Badge
+            variant="outline"
+            className={cn(
+              'text-[10px] font-normal',
+              working
+                ? 'border-emerald-200 bg-emerald-50 text-emerald-700'
+                : 'border-slate-200 bg-slate-50 text-slate-600',
+            )}
+            title={state}
+          >
+            {state}
+          </Badge>
+        );
+      },
     },
     {
       header: 'Current position',
@@ -847,11 +974,9 @@ export default function EmployeePositionDetailsPage() {
 
       <HrFilterCard
         summary={
-          filtersActive
-            ? `${groups.length} employee(s) · ${rows.length} record(s) matching${
-                filters.category !== 'all' ? ` · ${filters.category}` : ''
-              }`
-            : `${groups.length} employee(s) · ${rows.length} position record(s)`
+          `${groups.length} employee(s) · ${rows.length} record(s) · ${STATUS_LABEL[
+            filters.status
+          ].toLowerCase()}${filters.category !== 'all' ? ` · ${filters.category}` : ''}`
         }
         actions={
           filtersActive ? (
@@ -872,6 +997,19 @@ export default function EmployeePositionDetailsPage() {
               onChange={e => handleFilterChange('employeeId', e.target.value)}
             />
           </div>
+          <Select
+            value={filters.status}
+            onValueChange={value => handleFilterChange('status', value as StatusFilter)}
+          >
+            <SelectTrigger className="w-full sm:w-[190px]">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="active">{STATUS_LABEL.active}</SelectItem>
+              <SelectItem value="left">{STATUS_LABEL.left}</SelectItem>
+              <SelectItem value="all">{STATUS_LABEL.all}</SelectItem>
+            </SelectContent>
+          </Select>
           <Select value={filters.category} onValueChange={value => handleFilterChange('category', value)}>
             <SelectTrigger className="w-full sm:w-[240px]">
               <SelectValue placeholder="Filter by Category" />
@@ -929,6 +1067,26 @@ export default function EmployeePositionDetailsPage() {
               locked={[EMPLOYEE_COLUMN]}
             />
           </div>
+        </div>
+      )}
+
+      {/* Hidden by the status filter for want of a state, not because of one — see
+          `unknownStateCount`. */}
+      {!isLoading && unknownStateCount > 0 && (
+        <div className="mb-3">
+          <HrAlertNotice tone="amber" title={`${unknownStateCount} employee(s) hidden — no employment state`}>
+            They hold position records, but the roster has no employment state for them, so neither
+            &quot;{STATUS_LABEL.active}&quot; nor &quot;{STATUS_LABEL.left}&quot; can honestly include
+            them. Choose{' '}
+            <button
+              type="button"
+              onClick={() => handleFilterChange('status', 'all')}
+              className="font-medium underline"
+            >
+              {STATUS_LABEL.all}
+            </button>{' '}
+            to see them, or run a full sync so the roster covers them.
+          </HrAlertNotice>
         </div>
       )}
 

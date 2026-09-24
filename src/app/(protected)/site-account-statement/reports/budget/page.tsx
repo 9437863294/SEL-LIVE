@@ -9,6 +9,14 @@ import {
   type SASExpense, type SASPayment, type SASProject,
 } from '@/lib/site-account-statement';
 import { loadScopedLedger } from '@/lib/site-account-statement-queries';
+import {
+  currentPeriod,
+  describeRange,
+  periodsBetween,
+  selectablePeriods,
+  type PeriodRange,
+} from '@/lib/site-account-statement-period-range';
+import { PeriodRangePicker } from '@/components/site-account-statement/period-range-picker';
 import { useAuthorization } from '@/hooks/useAuthorization';
 import { useAuth } from '@/components/auth/AuthProvider';
 import { Button } from '@/components/ui/button';
@@ -29,23 +37,8 @@ import ExcelJS from 'exceljs';
 const MODULE = 'Site Account Statement';
 
 // ── Period helpers ─────────────────────────────────────────────────────────────
-function currentFYStart(): number {
-  const now = new Date();
-  return now.getMonth() >= 3 ? now.getFullYear() : now.getFullYear() - 1;
-}
 
-function fyLabel(y: number) { return `${y}-${String(y + 1).slice(-2)}`; }
-function currentMonthStr(): string {
-  const now = new Date();
-  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
-}
 
-function getFYMonths(fyStartYear: number): string[] {
-  const months: string[] = [];
-  for (let m = 4; m <= 12; m++) months.push(`${fyStartYear}-${String(m).padStart(2, '0')}`);
-  for (let m = 1; m <= 3; m++) months.push(`${fyStartYear + 1}-${String(m).padStart(2, '0')}`);
-  return months;
-}
 
 function monthLabel(m: string): string {
   const [y, mo] = m.split('-').map(Number);
@@ -123,8 +116,15 @@ export default function BudgetReportsPage() {
 
   // ── Filters (persistent across tabs) ──────────────────────────────────────
   const [filterProjectId, setFilterProjectId] = useState('');
-  const [filterFY,        setFilterFY]        = useState<string>(String(currentFYStart()));
-  const [filterMonth,     setFilterMonth]     = useState<string>(currentMonthStr()); // '' = all months
+  /*
+   * One month range replaces the old "pick an FY, then pick a month within it" pair.
+   *
+   * That pair could only ask for a single month or a whole financial year, and never for
+   * anything crossing an FY boundary — so "April to September" or "the last six months" in
+   * January were simply not expressible, and people exported twice and added the columns up by
+   * hand. A range answers all three and collapses to the old behaviour when both ends match.
+   */
+  const [range, setRange] = useState<PeriodRange>(() => ({ from: currentPeriod(), to: currentPeriod() }));
 
   // ── Tab-specific filters ───────────────────────────────────────────────────
   const [filterStatus,   setFilterStatus]   = useState('');  // Tab 1
@@ -149,13 +149,8 @@ export default function BudgetReportsPage() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => { if (!isAuthLoading) void loadAll(); }, [isAuthLoading, user?.id, canViewAll]);
 
-  // When FY changes, set filterMonth to current month if it's in the new FY, else clear to show all
-  useEffect(() => {
-    const months = getFYMonths(parseInt(filterFY || String(currentFYStart())));
-    const cur = currentMonthStr();
-    setFilterMonth(months.includes(cur) ? cur : '');
-    setExpandedRows(new Set());
-  }, [filterFY]);
+  // The effect that used to keep the month select inside the chosen FY went with the two selects
+  // it existed to reconcile. A range needs no such correction: it is already a pair of months.
 
   async function loadAll() {
     setLoading(true);
@@ -204,34 +199,17 @@ export default function BudgetReportsPage() {
 
   const visibleProjectIds = useMemo(() => new Set(visibleProjects.map(p => p.id)), [visibleProjects]);
 
-  // ── FY options (from data + current FY) ───────────────────────────────────
-  const availableFYs = useMemo(() => {
-    const set = new Set<number>([currentFYStart()]);
-    budgets.filter(b => b.budgetType === 'monthly' && b.period)
-      .forEach(b => {
-        const [y, mo] = b.period!.split('-').map(Number);
-        set.add(mo >= 4 ? y : y - 1);
-      });
-    expenses.forEach(e => {
-      if (e.expenseDate) {
-        const [y, mo] = e.expenseDate.split('-').map(Number);
-        set.add(mo >= 4 ? y : y - 1);
-      }
-    });
-    return [...set].sort((a, b) => b - a);
+
+  // ── Months the report covers ──────────────────────────────────────────────
+  const activeMonths = useMemo(() => periodsBetween(range.from, range.to), [range.from, range.to]);
+
+  /** Months offered in the range pickers — everything the data touches, plus the current FY. */
+  const monthOptions = useMemo(() => {
+    const seen: string[] = [];
+    budgets.forEach(b => { if (b.budgetType === 'monthly' && b.period) seen.push(b.period); });
+    expenses.forEach(e => { if (e.expenseDate) seen.push(e.expenseDate.slice(0, 7)); });
+    return selectablePeriods(seen);
   }, [budgets, expenses]);
-
-  // ── FY months ─────────────────────────────────────────────────────────────
-  const fyMonths = useMemo(
-    () => getFYMonths(parseInt(filterFY || String(currentFYStart()))),
-    [filterFY]
-  );
-
-  // ── Active months (respects month filter; '' = all FY months) ─────────────
-  const activeMonths = useMemo(
-    () => filterMonth ? fyMonths.filter(m => m === filterMonth) : fyMonths,
-    [fyMonths, filterMonth]
-  );
 
   // ── Build Budget Utilization rows ─────────────────────────────────────────
   const utilRows = useMemo((): UtilRow[] => {
@@ -392,7 +370,7 @@ export default function BudgetReportsPage() {
           approval:  r.approval ? 'Yes' : 'No',
         });
       });
-      await downloadWorkbook(wb, `budget-utilization-FY${filterFY}.xlsx`);
+      await downloadWorkbook(wb, `budget-utilization-${range.from}_to_${range.to}.xlsx`);
     } finally { setExporting(false); }
   }
 
@@ -420,7 +398,7 @@ export default function BudgetReportsPage() {
           pct:      r.pctUsed !== null ? `${r.pctUsed.toFixed(1)}%` : '—',
         });
       });
-      await downloadWorkbook(wb, `over-budget-alert-FY${filterFY}.xlsx`);
+      await downloadWorkbook(wb, `over-budget-alert-${range.from}_to_${range.to}.xlsx`);
     } finally { setExporting(false); }
   }
 
@@ -450,7 +428,7 @@ export default function BudgetReportsPage() {
           pctUsed:  r.pctUsed !== null ? `${r.pctUsed.toFixed(1)}%` : '—',
         });
       });
-      await downloadWorkbook(wb, `budget-vs-actual-category-FY${filterFY}.xlsx`);
+      await downloadWorkbook(wb, `budget-vs-actual-category-${range.from}_to_${range.to}.xlsx`);
     } finally { setExporting(false); }
   }
 
@@ -480,7 +458,7 @@ export default function BudgetReportsPage() {
           status:  r.approval ? 'Uploaded' : 'Pending',
         });
       });
-      await downloadWorkbook(wb, `approval-status-FY${filterFY}.xlsx`);
+      await downloadWorkbook(wb, `approval-status-${range.from}_to_${range.to}.xlsx`);
     } finally { setExporting(false); }
   }
 
@@ -520,7 +498,7 @@ export default function BudgetReportsPage() {
     );
   }
 
-  const fyInt = parseInt(filterFY || String(currentFYStart()));
+  const rangeLabel = describeRange(range);
 
   return (
     <div className="space-y-4">
@@ -533,7 +511,7 @@ export default function BudgetReportsPage() {
             Budget Reports
           </h1>
           <p className="text-sm text-muted-foreground mt-0.5">
-            FY {fyLabel(fyInt)}{filterMonth ? ` · ${monthLabel(filterMonth)}` : ''} · Budget utilization, alerts, category breakdown, and approval tracking
+            {rangeLabel} · Budget utilization, alerts, category breakdown, and approval tracking
           </p>
         </div>
       </div>
@@ -552,34 +530,15 @@ export default function BudgetReportsPage() {
           </SelectContent>
         </Select>
 
-        <Select value={filterFY} onValueChange={v => setFilterFY(v)}>
-          <SelectTrigger className="h-8 text-xs w-full sm:w-auto min-w-[100px]">
-            <SelectValue placeholder="FY" />
-          </SelectTrigger>
-          <SelectContent>
-            {availableFYs.map(fy => (
-              <SelectItem key={fy} value={String(fy)}>FY {fyLabel(fy)}</SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
+        <PeriodRangePicker
+          range={range}
+          options={monthOptions}
+          onChange={next => { setRange(next); setExpandedRows(new Set()); }}
+          compact
+        />
 
-        <Select value={filterMonth || '_all'} onValueChange={v => { setFilterMonth(v === '_all' ? '' : v); setExpandedRows(new Set()); }}>
-          <SelectTrigger className="h-8 text-xs w-full sm:w-auto min-w-[130px]">
-            <SelectValue placeholder="All Months" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="_all">All Months</SelectItem>
-            {fyMonths.map(m => (
-              <SelectItem key={m} value={m}>
-                {monthLabel(m)}{m === currentMonthStr() ? ' (Current)' : ''}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-
-        <span className="text-xs text-muted-foreground ml-auto">
-          {visibleProjects.length} project{visibleProjects.length !== 1 ? 's' : ''} visible
-          {filterMonth && <> · {monthLabel(filterMonth)}</>}
+        <span className="ml-auto text-xs text-muted-foreground">
+          {visibleProjects.length} project{visibleProjects.length !== 1 ? 's' : ''} visible · {rangeLabel}
         </span>
       </div>
 
@@ -904,7 +863,7 @@ export default function BudgetReportsPage() {
                 <CardContent className="flex flex-col items-center gap-3 py-12">
                   <CheckCircle2 className="h-10 w-10 text-emerald-500/70" />
                   <p className="text-sm text-muted-foreground">
-                    No over-budget months found for FY {fyLabel(fyInt)}.
+                    No over-budget months found for {rangeLabel}.
                   </p>
                   <p className="text-xs text-muted-foreground">All projects are within budget.</p>
                 </CardContent>
@@ -997,7 +956,7 @@ export default function BudgetReportsPage() {
                 <CardContent className="flex flex-col items-center gap-3 py-12">
                   <Target className="h-10 w-10 text-muted-foreground/40" />
                   <p className="text-sm text-muted-foreground">
-                    No category budget or expense data found for FY {fyLabel(fyInt)}.
+                    No category budget or expense data found for {rangeLabel}.
                   </p>
                   <p className="text-xs text-muted-foreground">
                     Set category budgets from the Site Fund Budget page to see this report.
@@ -1106,7 +1065,7 @@ export default function BudgetReportsPage() {
               <Card className="bg-white/80">
                 <CardContent className="flex flex-col items-center gap-3 py-12">
                   <FileText className="h-10 w-10 text-muted-foreground/40" />
-                  <p className="text-sm text-muted-foreground">No budget data found for FY {fyLabel(fyInt)}.</p>
+                  <p className="text-sm text-muted-foreground">No budget data found for {rangeLabel}.</p>
                 </CardContent>
               </Card>
             ) : (

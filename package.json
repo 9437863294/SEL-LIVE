@@ -43,7 +43,7 @@
     "test:session": "node --experimental-strip-types --test tests/session-policy.test.mjs",
     "test:people-directory": "node --experimental-strip-types --test tests/people-directory.test.mjs",
     "typecheck:access-control": "tsc -p tsconfig.access-control.json",
-    "test:site-account-statement": "node --experimental-strip-types --test tests/site-account-statement-scope.test.mjs tests/site-account-statement-date-policy.test.mjs tests/site-account-statement-sort.test.mjs",
+    "test:site-account-statement": "node --experimental-strip-types --test tests/site-account-statement-scope.test.mjs tests/site-account-statement-date-policy.test.mjs tests/site-account-statement-sort.test.mjs tests/site-account-statement-period-range.test.mjs",
     "test:greythr": "node --experimental-strip-types --test tests/greythr-domain.test.mjs tests/greythr-linking.test.mjs",
     "typecheck:greythr": "tsc -p tsconfig.greythr.json",
     "firebase:admin-env": "node scripts/set-firebase-admin-env.mjs",
