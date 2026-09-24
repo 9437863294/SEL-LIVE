@@ -31,6 +31,7 @@ export const ACTIVITY_MODULES = {
   INSURANCE: 'Insurance',
   LETTER_OF_CREDIT: 'Letter of Credit',
   LOAN: 'Loan',
+  MAIL_HUB: 'Mail Hub',
   OFFICE_HUB: 'Office Hub',
   PROCUREMENT: 'Procurement',
   PROJECT_MANAGEMENT: 'Project Management',

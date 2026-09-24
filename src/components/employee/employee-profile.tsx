@@ -373,7 +373,7 @@ export function EmployeeProfile({ employeeId }: { employeeId: string }) {
         <HrEmptyState
           icon={UserRound}
           title="Employee not found"
-          description="No employee matched this id, in the local mirror or in greytHR."
+          description="No employee matched this id."
           action={
             <Button variant="outline" size="sm" onClick={() => void load()}>
               Try again

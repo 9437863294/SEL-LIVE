@@ -9,6 +9,7 @@
 import type {
   MailAccount,
   MailAddress,
+  MailAttachmentMeta,
   MailFolderRole,
   MailFollowUp,
   MailImapServerPreset,
@@ -576,6 +577,29 @@ export function validateAttachment(
   return { ok: true };
 }
 
+/** Largest attachment the ERP will relay to a browser. Bigger files are opened in the provider. */
+export const MAX_DOWNLOAD_BYTES = 50 * 1024 * 1024;
+
+export function attachmentMetaFrom(
+  entry: { providerAttachmentId: string; filename: string; contentType: string; size: number; inline: boolean; contentId: string | null },
+  index: number,
+): MailAttachmentMeta {
+  const filename = sanitizeFilename(entry.filename);
+  const verdict = validateAttachment({ filename: entry.filename, contentType: entry.contentType, size: entry.size }, { maxBytes: MAX_DOWNLOAD_BYTES });
+  return {
+    id: `a${index}`,
+    providerAttachmentId: entry.providerAttachmentId,
+    filename,
+    contentType: entry.contentType || 'application/octet-stream',
+    size: entry.size,
+    inline: entry.inline,
+    contentId: entry.contentId,
+    blocked: !verdict.ok,
+    blockedReason: verdict.ok ? null : verdict.reason,
+    scanStatus: 'not-scanned',
+  };
+}
+
 export type PreviewKind = 'image' | 'pdf' | 'text' | 'none';
 
 /** Types the browser may render inline. SVG is excluded — it is a document that can carry script. */
@@ -859,6 +883,19 @@ export function resolveImapPreset(
 export function imapLogin(preset: Pick<MailImapServerPreset, 'usernameStyle'>, emailAddress: string, override?: string | null): string {
   if (override?.trim()) return override.trim();
   return preset.usernameStyle === 'local-part' ? normalizeEmail(emailAddress).split('@')[0] : normalizeEmail(emailAddress);
+}
+
+/* ── redirects ────────────────────────────────────────────────────────────────────────────── */
+
+/**
+ * A post-OAuth destination inside Mail Hub, or the fallback. An open redirect on an OAuth callback
+ * is a URL people are trained to trust, so anything that is not a local `/mail` path is refused.
+ */
+export function safeMailReturnTo(candidate: string | null | undefined, fallback = '/mail/settings/accounts'): string {
+  const value = (candidate ?? '').trim();
+  if (!value.startsWith('/mail') || value.startsWith('//')) return fallback;
+  if (value.includes('\\') || /[\r\n]/.test(value) || value.includes('://')) return fallback;
+  return value;
 }
 
 /* ── compose validation ───────────────────────────────────────────────────────────────────── */

@@ -34,8 +34,11 @@ import {
  * schedule on every tick. A tick that is not due returns `skipped` in a few milliseconds and costs
  * one Firestore read — which is the price of having the schedule be data rather than a redeploy.
  *
- * The same reasoning applies on Firebase App Hosting, where there is no built-in cron at all: point
- * a Cloud Scheduler job at this URL hourly and the behaviour is identical.
+ * The same reasoning applies on Firebase App Hosting, where there is no built-in cron at all. What
+ * calls this route on this deployment is `.github/workflows/greythr-sync.yml`, hourly at :05;
+ * `scripts/setup-cloud-scheduler.sh` sets up the GCP-native equivalent for whoever has gcloud.
+ * `vercel.json` also declares the cron and is inert here — it reads as configuration but calls
+ * nothing, which is why this endpoint went 19 runs without a single scheduled one.
  */
 
 export const runtime = 'nodejs';

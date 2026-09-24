@@ -116,6 +116,9 @@ JOBS=(
   "insurance-workflow|/api/vehicle-management/insurance-workflow|30 0 * * *"
   "fixed-deposit-controls|/api/fixed-deposit/daily-controls|45 0 * * *"
   "hr-sla|/api/hr/sla|0 1 * * *"
+  # Mail Hub: sync, scheduled sends, reminders, watch renewal, retention (docs/mail-hub.md).
+  # Every minute; each tick drains a queue and is safe to overlap.
+  "mail-hub-worker|/api/mail-hub/worker|* * * * *"
 )
 
 echo

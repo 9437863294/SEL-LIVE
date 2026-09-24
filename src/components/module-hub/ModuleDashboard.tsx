@@ -37,6 +37,7 @@ const moduleIcons: Record<string, string> = {
   "Site Account Statement": "LedgerChart",
   "Tour, Travel & Expense": "Plane",
   "Office Hub": "CalendarCheck",
+  "Mail Hub": "MailOpen",
 };
 
 /**
@@ -56,6 +57,8 @@ const HIDDEN_FROM_DASHBOARD = new Set<string>([
 ]);
 
 const moduleDescriptions: Record<string, string> = {
+  "Mail Hub":
+    "Your mailboxes and shared team inboxes, linked to projects, vendors, POs and approvals.",
   "Office Hub":
     "Schedule meetings, run them, and turn what was decided into tracked tasks.",
   "Site Fund Requisition": "Handle site fund requests and approvals.",

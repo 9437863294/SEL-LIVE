@@ -850,7 +850,6 @@ export default function EmployeePositionDetailsPage() {
         title="Position details"
         backHref="/employee"
         backLabel="Back to Employee Management"
-        description="The effective-dated department, designation, grade, location and project history mirrored from greytHR — one row per employee per category value."
         status={
           lastSynced ? (
             <EmployeeStatusPill tone="emerald" icon={Clock}>
@@ -862,7 +861,6 @@ export default function EmployeePositionDetailsPage() {
             </EmployeeStatusPill>
           )
         }
-        meta={lastSynced ? `Written by ${lastSynced.source}.` : undefined}
         actions={
           <>
             <Button

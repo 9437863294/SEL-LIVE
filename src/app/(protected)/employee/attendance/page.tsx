@@ -260,7 +260,6 @@ export default function AttendanceRegisterPage() {
         title="Attendance register"
         backHref="/employee"
         backLabel="Back to Employee Management"
-        description="greytHR's synced monthly attendance summary, for everyone at once. Not a day-by-day muster — that data is not fetched."
         status={
           <>
             {report?.period && (

@@ -400,7 +400,6 @@ export default function CurrentEmployeesLivePage() {
         title="Current employees"
         backHref="/employee"
         backLabel="Back to Employee Management"
-        description="Fetched directly from greytHR's CURRENT roster on every load — not the stored employee mirror. Use this when Manage Employee looks wrong."
         status={
           /*
             Three states, because the page now has three. Freshly fetched from greytHR is the only
@@ -424,7 +423,7 @@ export default function CurrentEmployeesLivePage() {
         }
         meta={
           fetchedAt
-            ? `Roster stored ${formatDistanceToNow(new Date(fetchedAt), { addSuffix: true })} · replaced by each greytHR sync`
+            ? `Roster stored ${formatDistanceToNow(new Date(fetchedAt), { addSuffix: true })}`
             : undefined
         }
         actions={

@@ -1,0 +1,112 @@
+# Calls the greytHR sync endpoint hourly, so the schedule set in the app actually fires.
+#
+# Why this exists: `vercel.json` registers this job as a cron, but the app deploys to Firebase App
+# Hosting, which never reads that file and has no cron of its own. The endpoint was therefore never
+# called — 19 runs on this installation, every one started by hand — while the sync console showed
+# "Daily at 02:00 · enabled". The setting was real; nothing was asking.
+#
+# The route decides for itself whether a run is due (`isSyncDue` against the stored schedule), so
+# this workflow ticks hourly and does not need to know the frequency. A tick that is not due returns
+# `{"ok":true,"skipped":true}` in well under a second and costs one Firestore read, which is the
+# price of having the schedule be data an administrator can change rather than a redeploy.
+#
+# Optional repository secret (Settings → Secrets and variables → Actions):
+#   CRON_SECRET   sent as `Authorization: Bearer …`. The route treats an unset secret as "no secret
+#                 configured" and accepts any caller, so today the endpoint is open to the internet.
+#                 To close it, set the same value in BOTH places — this secret, and the App Hosting
+#                 backend's environment (Firebase console → App Hosting → Environment). Setting it
+#                 on the server alone makes this workflow fail with 401.
+#
+# Optional repository variable:
+#   APP_BASE_URL  defaults to https://seltech.store
+#
+# Two things to know about GitHub's scheduler: it runs only from the default branch, and it is
+# best-effort — a tick can be several minutes late or, rarely, skipped. Neither matters here, because
+# the next tick re-checks whether a run is due. GitHub also disables scheduled workflows in
+# repositories with no activity for 60 days.
+#
+# If you would rather run this in GCP, one Cloud Scheduler job replaces this file:
+#
+#   gcloud scheduler jobs create http greythr-sync \
+#     --location=asia-south1 --schedule="5 * * * *" --time-zone=Etc/UTC \
+#     --uri=https://seltech.store/api/greythr/sync --http-method=GET \
+#     --attempt-deadline=330s
+
+name: greytHR sync (scheduled)
+
+on:
+  schedule:
+    # Hourly at :05 — the slot vercel.json used, kept so behaviour is unchanged from what was
+    # intended. GitHub cron is UTC, as Vercel's was.
+    - cron: '5 * * * *'
+  workflow_dispatch:
+
+# Nothing is checked out and nothing is written back.
+permissions: {}
+
+# A full resync pages through four greytHR endpoints for ~1,300 employees and can run for minutes.
+# Overlapping ticks would race each other's Firestore writes, so a tick waits rather than doubling
+# up — and is not cancelled, because a half-finished sync is worse than a late one.
+concurrency:
+  group: greythr-sync
+  cancel-in-progress: false
+
+jobs:
+  tick:
+    name: Tick the sync endpoint
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Ask whether a sync is due, and run it if so
+        env:
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+          BASE_URL: ${{ vars.APP_BASE_URL || 'https://seltech.store' }}
+        run: |
+          # Deliberately not `set -e`: the interesting part of a failed tick is the response body,
+          # and aborting the instant curl returns non-zero would discard it. Each step below checks
+          # its own status instead.
+          set -uo pipefail
+
+          args=(
+            --silent --show-error
+            # Report the body on a 4xx/5xx as well: the route answers with JSON explaining itself,
+            # and a bare "curl: (22)" in the log would throw that away.
+            --fail-with-body
+            # The route allows itself 300s (`maxDuration`) for a full resync.
+            --max-time 330
+          )
+          if [ -n "${CRON_SECRET:-}" ]; then
+            args+=(--header "Authorization: Bearer ${CRON_SECRET}")
+          fi
+
+          echo "Ticking ${BASE_URL}/api/greythr/sync"
+
+          # No --retry, on purpose. curl retries HTTP 5xx as well as connection failures, so a
+          # greytHR outage would mean three full sync attempts per tick — and three × 330s exceeds
+          # this job's timeout, killing the last one mid-write. A tick lost to a blip costs nothing:
+          # the next hour's tick finds the run still due and performs it.
+          body="$(curl "${args[@]}" "${BASE_URL}/api/greythr/sync")"
+          status=$?
+
+          # Pretty-printed when it is JSON; echoed raw when it is not, which is how an HTML error
+          # page from in front of the app would arrive.
+          echo "${body}" | jq . || echo "${body}"
+
+          if [ "${status}" -ne 0 ]; then
+            echo "::error::Could not reach the sync endpoint (curl exit ${status})."
+            exit 1
+          fi
+
+          # A 200 carrying ok:false is a sync that started and failed — it has to show up red here,
+          # or this workflow becomes one more thing that looks healthy while nothing works.
+          if [ "$(jq -r '.ok' <<<"${body}")" != "true" ]; then
+            echo "::error::The sync endpoint reported a failure — see the body above."
+            exit 1
+          fi
+
+          # Put the outcome on the run summary, so the Actions list is readable without opening logs.
+          jq -r '
+            if .skipped then "**Skipped** — \(.reason)"
+            else "**Ran** — fetched \(.employeesFetched), created \(.employeesCreated), updated \(.employeesUpdated), flagged for review \(.flaggedForReview)"
+            end
+          ' <<<"${body}" >> "${GITHUB_STEP_SUMMARY}"

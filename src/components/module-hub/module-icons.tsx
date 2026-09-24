@@ -322,6 +322,18 @@ export function DocumentIcon(props: ModuleIconProps) {
   );
 }
 
+/** Mail Hub — an open envelope with a letter rising out of it. */
+export function OpenEnvelopeIcon(props: ModuleIconProps) {
+  return (
+    <Base {...props}>
+      <path d="M3.5 10.2 12 4l8.5 6.2V19a1.5 1.5 0 0 1-1.5 1.5H5A1.5 1.5 0 0 1 3.5 19Z" />
+      <path d="M3.8 10.4 12 15.6l8.2-5.2" />
+      <path d="M7 12.3V7.8h10v4.5" />
+      <line x1="9.3" y1="10" x2="14.7" y2="10" />
+    </Base>
+  );
+}
+
 /** Office Hub — a calendar page with a ticked day, for meetings that end in action. */
 export function CalendarBoardIcon(props: ModuleIconProps) {
   return (

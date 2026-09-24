@@ -5,6 +5,7 @@ import { getAuth } from 'firebase-admin/auth';
 import { getFirestore } from 'firebase-admin/firestore';
 import { getDatabase } from 'firebase-admin/database';
 import { getMessaging } from 'firebase-admin/messaging';
+import { getStorage } from 'firebase-admin/storage';
 
 function getAdminApp() {
   if (getApps().length > 0) return getApp();
@@ -70,4 +71,11 @@ export function getFirebaseAdminMessaging() {
 
 export function getFirebaseAdminDatabase() {
   return getDatabase(getAdminApp());
+}
+
+/** The default bucket, or the one named by the Storage bucket variables. */
+export function getFirebaseAdminBucket() {
+  const bucket =
+    process.env.FIREBASE_STORAGE_BUCKET || process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET || undefined;
+  return getStorage(getAdminApp()).bucket(bucket);
 }

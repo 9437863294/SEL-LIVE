@@ -263,7 +263,7 @@ export const EMPLOYEE_NAV: EmployeeNavItem[] = [
     key: 'manage',
     label: 'Manage Employee',
     short: 'Roster',
-    description: 'The full roster, current and departed, corrected against greytHR.',
+    description: 'The full roster, current and departed.',
     href: '/employee/manage',
     icon: Users,
     tone: 'indigo',
@@ -274,7 +274,7 @@ export const EMPLOYEE_NAV: EmployeeNavItem[] = [
     key: 'current',
     label: 'Current Employees',
     short: 'Live',
-    description: 'Who greytHR says is employed right now — fetched fresh, not from the mirror.',
+    description: 'Who greytHR says is employed right now.',
     href: '/employee/current',
     icon: UserCheck,
     tone: 'emerald',
@@ -329,7 +329,7 @@ export const EMPLOYEE_NAV: EmployeeNavItem[] = [
     key: 'sync',
     label: 'Sync with GreytHR',
     short: 'Sync',
-    description: 'Schedule, run and review the sync that keeps the mirror current.',
+    description: 'Schedule, run and review the greytHR sync.',
     href: '/employee/sync',
     icon: DownloadCloud,
     tone: 'blue',
@@ -340,7 +340,7 @@ export const EMPLOYEE_NAV: EmployeeNavItem[] = [
     key: 'category',
     label: 'Manage Category',
     short: 'Categories',
-    description: 'The department, designation, grade and project masters, as mirrored.',
+    description: 'The department, designation, grade and project masters.',
     href: '/employee/category',
     icon: Tags,
     tone: 'teal',
@@ -658,9 +658,27 @@ export function EmployeeSubNav({ current, className }: { current: EmployeeNavKey
   const items = EMPLOYEE_NAV.filter(item => !item.navHidden && !item.comingSoon && access.permits(item));
   if (items.length === 0) return null;
 
+  /**
+   * Whether the pills stretch to fill the row on a wide screen.
+   *
+   * With the full set — eleven destinations — the strip sized to its labels stopped about three
+   * quarters of the way across a desktop, which reads as a row that failed to finish rather than as
+   * navigation. Stretching them divides the width evenly instead.
+   *
+   * Only above `xl`, and only when there are enough of them. Below that the labels need more room
+   * than an equal share gives and the strip is better off scrolling; and three pills stretched
+   * across 1,400px would be three enormous buttons, which is a worse answer than a short row. A
+   * viewer whose permissions leave them four destinations gets the compact strip.
+   */
+  const stretch = items.length + 1 >= 6;
+
   const pill = (isCurrent: boolean) =>
     cn(
       'inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full border px-3 text-xs font-medium transition-colors max-sm:h-9 sm:h-8',
+      // `xl:shrink xl:grow xl:basis-0` rather than `xl:flex-1`: `flex-1` and the `shrink-0` above set
+      // the same property, and which one wins would depend on Tailwind's output order. Naming the
+      // three parts inside a media variant is unambiguous.
+      stretch && 'xl:shrink xl:grow xl:basis-0 xl:justify-center',
       isCurrent
         ? 'border-slate-900 bg-slate-900 text-white shadow-sm'
         : 'border-white/70 bg-white/70 text-slate-600 shadow-sm backdrop-blur-sm hover:border-slate-300 hover:bg-white hover:text-slate-900',

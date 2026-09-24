@@ -761,6 +761,92 @@ service cloud.firestore {
     }
 
     /* ══════════════════════════════════════════════════════════════════════════════════════════
+     * Mail Hub (docs/mail-hub.md)
+     *
+     * **Every Mail Hub collection is closed to every client, including its owner.** The browser
+     * reaches mail only through /api/mail-hub/*, which applies `src/lib/mail-hub/permissions.ts`:
+     * a personal mailbox is readable by the user who connected it and by nobody else — no role, no
+     * administrator — and a shared mailbox needs an ERP membership *and* the email provider's grant.
+     *
+     * Those rules cannot be expressed here. "Owner only" would need `request.auth.uid` to equal
+     * the ERP user id, which is not true for every user in this database; the provider-grant half
+     * lives with Google, Microsoft or the mail server. So instead of an approximation, the rules
+     * deny everything and the Admin SDK — which bypasses them — is the only accessor. Credentials
+     * (`mailHubCredentials`) are additionally sealed with a key that is not in Firestore at all.
+     *
+     * If the console ruleset ends in a catch-all "signed-in users may read anything", these blocks
+     * must be copied in **before** Mail Hub is enabled — the Permissions & sharing page has a
+     * "Check security rules" button that tries each collection from the browser and reports any
+     * that answer.
+     */
+    match /mailHubAccounts/{docId} {
+      allow read, write: if false;
+    }
+    match /mailHubCredentials/{docId} {
+      allow read, write: if false;
+    }
+    match /mailHubOAuthStates/{docId} {
+      allow read, write: if false;
+    }
+    match /mailHubFolders/{docId} {
+      allow read, write: if false;
+    }
+    match /mailHubMessages/{docId} {
+      allow read, write: if false;
+    }
+    match /mailHubBodies/{docId} {
+      allow read, write: if false;
+    }
+    match /mailHubThreads/{docId} {
+      allow read, write: if false;
+    }
+    match /mailHubSyncCursors/{docId} {
+      allow read, write: if false;
+    }
+    match /mailHubSharedMailboxes/{docId} {
+      allow read, write: if false;
+    }
+    match /mailHubMailboxMembers/{docId} {
+      allow read, write: if false;
+    }
+    match /mailHubLinks/{docId} {
+      allow read, write: if false;
+    }
+    match /mailHubNotes/{docId} {
+      allow read, write: if false;
+    }
+    match /mailHubFollowUps/{docId} {
+      allow read, write: if false;
+    }
+    match /mailHubTemplates/{docId} {
+      allow read, write: if false;
+    }
+    match /mailHubSignatures/{docId} {
+      allow read, write: if false;
+    }
+    match /mailHubRoutingRules/{docId} {
+      allow read, write: if false;
+    }
+    match /mailHubUserSettings/{docId} {
+      allow read, write: if false;
+    }
+    match /mailHubSettings/{docId} {
+      allow read, write: if false;
+    }
+    match /mailHubOutbound/{docId} {
+      allow read, write: if false;
+    }
+    match /mailHubUploads/{docId} {
+      allow read, write: if false;
+    }
+    match /mailHubAuditEvents/{docId} {
+      allow read, write: if false;
+    }
+    match /mailHubJobs/{docId} {
+      allow read, write: if false;
+    }
+
+    /* ══════════════════════════════════════════════════════════════════════════════════════════
      * Windows Agent (docs/windows-agent.md)
      *
      * The shape of this section is unlike the others in this file, and the reason is worth stating

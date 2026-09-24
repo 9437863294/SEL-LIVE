@@ -269,8 +269,17 @@ hour later each day as each run's own timestamp pushes the next window out. The 
 one-minute tolerance, because a cron that fires at 02:00:03 one day and 01:59:58 the next would
 otherwise skip a whole day.
 
-**On Firebase App Hosting** there is no built-in cron — point a Cloud Scheduler job at the same URL
-hourly and the behaviour is identical.
+**On Firebase App Hosting** there is no built-in cron. Two things can supply the tick, and either
+gives identical behaviour:
+
+| Caller | Covers | Needs |
+| --- | --- | --- |
+| [`.github/workflows/greythr-sync.yml`](../.github/workflows/greythr-sync.yml) | this endpoint, hourly at :05 | nothing — it runs on push to the default branch |
+| [`scripts/setup-cloud-scheduler.sh`](../scripts/setup-cloud-scheduler.sh) | all the scheduled jobs | `gcloud`, authenticated with project rights |
+
+The workflow is what currently drives it, because it needs no local tooling. Running both is
+wasteful rather than harmful: the second caller of an hour finds nothing due and returns in
+milliseconds.
 
 ### ⚠️ This deployment *is* on App Hosting, so the `vercel.json` crons never fired
 
@@ -294,9 +303,15 @@ of 182 employees as departed. The mirror was not wrong because the derivation wa
 because nothing had rebuilt it since before the derivation was fixed, and `shouldForceFullResync`
 only self-heals *on a run that happens*.
 
-`scripts/setup-cloud-scheduler.sh` creates the six jobs on Cloud Scheduler. `vercel.json` is left in
+`scripts/setup-cloud-scheduler.sh` creates the jobs on Cloud Scheduler. `vercel.json` is left in
 place deliberately — it remains correct configuration if this app is ever also deployed to Vercel,
 and every one of these routes is idempotent, so two runners would be wasteful rather than harmful.
+
+**Of the six, only `/api/greythr/sync` is being called today**, by the GitHub Actions workflow above.
+The other five are still inert. They were left that way on purpose rather than by oversight: their
+first run after a long silence has outward effects — escalation emails, generated recurring
+payments, an insurance sweep — so switching them on is a decision to take deliberately, not a side
+effect of fixing the employee sync.
 
 Two things the script cannot do for you:
 

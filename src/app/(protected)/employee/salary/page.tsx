@@ -523,7 +523,6 @@ export default function EmployeeSalaryPage() {
         title="Employee Salary"
         backHref="/employee"
         backLabel="Back to Employee Management"
-        description={`Gross, deductions and net pay for ${monthLabel}, as last synced from greytHR.`}
         status={
           !isAuthLoading && canView ? (
             lastSynced ? (

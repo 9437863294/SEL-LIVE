@@ -260,6 +260,27 @@ export function GreytHRSyncWorkspace() {
    * workforce and 180 leavers reports "3 still working" and reads as unremarkable. Comparing against
    * the stored current roster catches both, and names the gap.
    */
+  /**
+   * Whether the schedule has ever actually fired.
+   *
+   * Turning "Run automatically" on records a *preference*; it does not make anything happen. The
+   * route decides whether a run is due, but something external has to call `GET /api/greythr/sync`
+   * for it to be asked — and every run record says which did: `trigger: 'cron' | 'manual'`.
+   *
+   * On this installation the answer is nineteen runs and not one scheduled tick, because the only
+   * cron configuration in the repository is `vercel.json` and this app deploys to Firebase App
+   * Hosting, which never reads that file. A console that displays "Daily at 02:00 · enabled" over a
+   * scheduler nothing is driving is stating a plan as though it were a fact.
+   *
+   * Judged over the runs the report carries rather than all of history: a tenant that has just run
+   * twenty manual syncs could push a genuine cron run out of the window, so the wording below says
+   * "recent runs" rather than "ever".
+   */
+  const recentRuns = report?.runs ?? [];
+  const cronRunCount = recentRuns.filter((run) => run.trigger === 'cron').length;
+  const scheduleEnabled = report?.settings.schedule.enabled === true;
+  const schedulerNeverFired = scheduleEnabled && recentRuns.length > 0 && cronRunCount === 0;
+
   const rosterCount = report?.currentRoster.count ?? 0;
   const mirrorWorking = report?.mirror.working ?? 0;
   const mirrorGap = rosterCount > 0 ? rosterCount - mirrorWorking : 0;
@@ -275,7 +296,6 @@ export function GreytHRSyncWorkspace() {
           title="greytHR Employee Sync"
           backHref="/employee"
           backLabel="Back to Employee Management"
-          description="Keeps designation, department, project and employment status in step with greytHR — and controls what happens to a platform login when somebody leaves."
           status={
             /* Three states, not two. Without a report we do not *know* whether the credentials are
                set — saying they are missing would be a guess, and a misleading one: the usual reason
@@ -334,12 +354,37 @@ export function GreytHRSyncWorkspace() {
 
         {connection && !connection.ok && <EmployeeErrorBanner>{connection.message}</EmployeeErrorBanner>}
 
+        {schedulerNeverFired && (
+          <div className="mb-3 flex items-start gap-3 rounded-xl border border-rose-200 bg-rose-50/80 px-3 py-2.5">
+            <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-rose-100 text-rose-700">
+              <CalendarClock className="h-4 w-4" />
+            </span>
+            <div className="min-w-0 flex-1 text-rose-900">
+              <p className="text-sm font-semibold">
+                The schedule is on, but nothing is triggering it
+              </p>
+              <p className="text-xs leading-snug text-rose-800">
+                All {recentRuns.length} recent run{recentRuns.length === 1 ? '' : 's'} started by hand, none
+                on the schedule. Automatic runs need something calling{' '}
+                <code className="rounded bg-rose-100 px-1">GET /api/greythr/sync</code> hourly — set up a
+                scheduled job for it.
+              </p>
+            </div>
+          </div>
+        )}
+
         <Tabs defaultValue="status">
-          {/* A flex row rather than a four-column grid: the module's phone ruleset lets a tab strip
-              scroll sideways, which a grid of fixed columns would squeeze into wrapped labels instead. */}
-          <TabsList className="flex w-full sm:inline-flex sm:w-auto">
-            <TabsTrigger value="status" className="flex-1 text-xs sm:flex-none">Status</TabsTrigger>
-            <TabsTrigger value="review" className="flex-1 text-xs sm:flex-none">
+          {/*
+            The strip spans the row at every width, four equal segments.
+
+            It used to be `sm:inline-flex sm:w-auto`, so on a desktop it shrank to fit its four
+            labels and left its tinted background stopping a quarter of the way across — reading as
+            a panel that had failed to load rather than as a tab bar. Equal flex segments also mean
+            the Review tab's count badge cannot shove the other three sideways as it changes.
+          */}
+          <TabsList className="flex w-full">
+            <TabsTrigger value="status" className="flex-1 text-xs">Status</TabsTrigger>
+            <TabsTrigger value="review" className="flex-1 text-xs">
               Review
               {(shownRun?.flaggedForReview ?? 0) > 0 && (
                 <Badge variant="outline" className="ml-1.5 border-amber-200 bg-amber-50 text-[10px] text-amber-800">
@@ -347,8 +392,8 @@ export function GreytHRSyncWorkspace() {
                 </Badge>
               )}
             </TabsTrigger>
-            <TabsTrigger value="schedule" className="flex-1 text-xs sm:flex-none">Schedule</TabsTrigger>
-            <TabsTrigger value="history" className="flex-1 text-xs sm:flex-none">History</TabsTrigger>
+            <TabsTrigger value="schedule" className="flex-1 text-xs">Schedule</TabsTrigger>
+            <TabsTrigger value="history" className="flex-1 text-xs">History</TabsTrigger>
           </TabsList>
 
           {/* ── Status ── */}
@@ -467,7 +512,9 @@ export function GreytHRSyncWorkspace() {
               </Card>
             )}
 
-            <div className="grid grid-cols-2 gap-2.5 lg:grid-cols-4">
+            {/* Five cards, so five columns — at four the fifth sat alone on a second row, the
+                ragged tail this module has been removing everywhere else. */}
+            <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-3 lg:grid-cols-5">
               <EmployeeKpiCard
                 index={0}
                 label="Employees checked"
@@ -642,8 +689,19 @@ export function GreytHRSyncWorkspace() {
                       Automatic refresh
                     </CardTitle>
                     <CardDescription className="text-xs">
-                      The scheduler ticks hourly and runs the sync when your chosen frequency is due, so
-                      changing this takes effect immediately — no redeploy.
+                      {/* Conditional, because the unqualified claim is false wherever nothing is
+                          calling the endpoint — which is the state this installation is in. */}
+                      {schedulerNeverFired ? (
+                        <>
+                          These settings decide when a run is <em>due</em> — but nothing is triggering the
+                          scheduler, so none will start on its own. See the notice above.
+                        </>
+                      ) : (
+                        <>
+                          The scheduler ticks hourly and runs the sync when your chosen frequency is due,
+                          so changing this takes effect immediately — no redeploy.
+                        </>
+                      )}
                     </CardDescription>
                   </CardHeader>
                   <CardContent className="space-y-3 px-4 pb-4">

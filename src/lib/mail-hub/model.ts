@@ -133,6 +133,11 @@ export interface MailAccount {
   displayName: string | null;
   /** Gmail user id, Graph user id, or `imap:<host>:<login>`. */
   providerAccountId: string | null;
+  /**
+   * The provider login that authorised this connection. Equal to `emailAddress` except for a
+   * Microsoft 365 shared mailbox reached through a delegate's own login (`Mail.ReadWrite.Shared`).
+   */
+  loginIdentity: string | null;
   status: MailAccountStatus;
   statusReason: string | null;
   capabilities: MailProviderCapabilities;
@@ -556,6 +561,13 @@ export interface MailImapServerPreset {
   usernameStyle: 'email' | 'local-part';
   /** Only addresses at these domains may connect through this preset. Empty = any. */
   allowedDomains: string[];
+  /**
+   * The SMTP server refuses a From the login is not authorised for (Postfix
+   * `reject_sender_login_mismatch`, Exchange). Only then can shared-mailbox sending be verified.
+   */
+  smtpEnforcesSender?: boolean;
+  /** File a copy in Sent after SMTP submission. Off for servers that already do (Exchange, Gmail). */
+  appendSentCopy?: boolean;
 }
 
 export const DEFAULT_MAIL_ADMIN_SETTINGS: MailHubAdminSettings = {
@@ -604,9 +616,18 @@ export interface MailOutbound {
   cc: MailAddress[];
   bcc: MailAddress[];
   subject: string;
+  /** Final outgoing HTML (body + signature + quote), rebuilt on every save. */
   html: string;
   text: string;
+  /** The composer's parts, so a draft reopens as it was written rather than as one blob. */
+  composerBodyHtml: string;
+  signatureId: string | null;
+  includeQuote: boolean;
   attachments: MailOutboundAttachment[];
+  /** Forwarding: attachments of the source message, fetched from the provider at send time. */
+  forwardedAttachments: { attachmentId: string; filename: string; contentType: string; size: number }[];
+  /** The mailbox the source message (and thread) belongs to — the shared account when replying from one. */
+  sourceAccountId: string | null;
   mode: MailComposeMode;
   /** The message being replied to or forwarded. */
   sourceMessageId: string | null;

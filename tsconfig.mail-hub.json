@@ -1,0 +1,19 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "incremental": false
+  },
+  "include": [
+    "next-env.d.ts",
+    "src/env.d.ts",
+    "src/app/(protected)/mail/**/*.ts",
+    "src/app/(protected)/mail/**/*.tsx",
+    "src/app/api/mail-hub/**/*.ts",
+    "src/components/mail-hub/**/*.ts",
+    "src/components/mail-hub/**/*.tsx",
+    "src/lib/mail-hub/**/*.ts"
+  ],
+  "exclude": [
+    "node_modules"
+  ]
+}

@@ -231,7 +231,6 @@ export default function LeaveRegisterPage() {
         title="Leave register"
         backHref="/employee"
         backLabel="Back to Employee Management"
-        description="Every employee's leave balance, from greytHR's own record. Read-only — applying or approving leave still happens in greytHR."
         status={
           <>
             {report?.year && (

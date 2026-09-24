@@ -14,6 +14,7 @@ import {
   IdBadgeIcon,
   KanbanIcon,
   LedgerChartIcon,
+  OpenEnvelopeIcon,
   PlaneIcon,
   ReceiptIcon,
   ReconDocsIcon,
@@ -73,6 +74,8 @@ export const moduleIconRegistry: Record<string, ModuleIconEntry> = {
   // is a signed note, and the seal reads that way at 16px where a tick does not.
   Stamp: { Icon: EnvelopeSealIcon, gradient: "from-sky-500 to-indigo-600" },
   CalendarCheck: { Icon: CalendarBoardIcon, gradient: "from-indigo-500 to-sky-600" },
+  // Mail Hub. Sky-to-indigo, the same accent as the module's own shell.
+  MailOpen: { Icon: OpenEnvelopeIcon, gradient: "from-sky-500 to-indigo-600" },
   Settings: { Icon: GearIcon, gradient: "from-slate-500 to-slate-700" },
   // Tour, Travel & Expense. Sky/cyan matches the module's own theme (see module-layout-shell.tsx).
   Plane: { Icon: PlaneIcon, gradient: "from-sky-500 to-cyan-600" },

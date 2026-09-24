@@ -26,8 +26,10 @@ import type {
 } from '../model.ts';
 
 export class ProviderError extends Error {
-  constructor(message: string, readonly detail: string | null = null) {
+  readonly detail: string | null;
+  constructor(message: string, detail: string | null = null) {
     super(message);
+    this.detail = detail;
     this.name = 'ProviderError';
   }
 }
@@ -40,15 +42,19 @@ export class ProviderAuthError extends ProviderError {
 }
 
 export class ProviderRateLimitError extends ProviderError {
-  constructor(readonly retryAfterMs: number, message = 'The provider is rate-limiting requests.') {
+  readonly retryAfterMs: number;
+  constructor(retryAfterMs: number, message = 'The provider is rate-limiting requests.') {
     super(message);
+    this.retryAfterMs = retryAfterMs;
     this.name = 'ProviderRateLimitError';
   }
 }
 
 export class ProviderCursorExpiredError extends ProviderError {
-  constructor(readonly scope: string, message = 'The sync cursor is no longer valid.') {
+  readonly scope: string;
+  constructor(scope: string, message = 'The sync cursor is no longer valid.') {
     super(message);
+    this.scope = scope;
     this.name = 'ProviderCursorExpiredError';
   }
 }
@@ -122,6 +128,8 @@ export interface ProviderMessageHeader {
   isFlagged: boolean;
   isDraft: boolean;
   attachments: ProviderAttachmentMeta[];
+  /** Set when the listing knows there are attachments without listing them (Gmail metadata, Graph). */
+  hasAttachments?: boolean;
   sizeBytes: number | null;
   providerVersion: string | null;
 }
@@ -170,6 +178,8 @@ export interface ProviderMessageBody {
   html: string | null;
   text: string | null;
   attachments: ProviderAttachmentMeta[];
+  /** Content-ID → `data:` URI for small inline images the provider returned with the body. */
+  inlineImages?: Record<string, string>;
 }
 
 export interface ProviderAttachmentContent {
@@ -233,12 +243,13 @@ export interface MailProviderAdapter {
 
   send(input: ProviderSendInput): Promise<{ providerMessageId: string | null }>;
   /** Whether a message with this Message-ID is already in the sent mail — the duplicate-send check. */
-  findSentByMessageId(messageIdHeader: string): Promise<boolean>;
+  findSentByMessageId(messageIdHeader: string, sendAsMailbox?: string | null): Promise<boolean>;
   saveDraft?(raw: Uint8Array, existingDraftId: string | null): Promise<{ providerDraftId: string }>;
   deleteDraft?(providerDraftId: string): Promise<void>;
   search?(query: string, limit: number): Promise<ProviderMessageHeader[]>;
 
-  watch?(input: { notificationUrl: string; clientState: string }): Promise<ProviderWatchResult>;
+  /** Start or renew change notifications. Renewal extends `existingSubscriptionId` when it still exists. */
+  watch?(input: { notificationUrl: string | null; clientState: string; existingSubscriptionId: string | null }): Promise<ProviderWatchResult>;
   stopWatch?(subscriptionId: string | null): Promise<void>;
   /** Revoke the grant at the provider. Returns whether the provider confirmed it. */
   revoke(): Promise<boolean>;

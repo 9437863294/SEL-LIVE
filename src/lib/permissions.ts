@@ -873,6 +873,26 @@ export const permissionModules = {
     Templates: ["View", "Add", "Edit", "Delete"],
     Settings: ["View", "Edit"],
   },
+  // Mail Hub — connected mailboxes, shared team inboxes and their ERP workflows (docs/mail-hub.md).
+  //
+  // What is deliberately *not* here: any permission that reads somebody else's personal mailbox.
+  // A connected personal mailbox is readable by the person who connected it and nobody else, and no
+  // grant below — including Settings › Administer — changes that (`src/lib/mail-hub/permissions.ts`).
+  // Shared mailboxes need "Shared Mail › Read" *and* a membership *and* the email provider's own grant
+  // to the member's account; each alone is refused. Nobody holds any of these on day one.
+  "Mail Hub": {
+    "View Module": [],
+    Accounts: ["Connect"],
+    Compose: ["Send"],
+    "Shared Mail": ["Read", "Assign", "Send"],
+    Templates: ["View", "Manage"],
+    Reports: ["View"],
+    // Shared mailboxes, memberships, company mail servers and retention — never reading mail.
+    Settings: ["Administer"],
+    // Offers AI suggestions; each person still has to switch them on for themselves.
+    AI: ["Use"],
+    Audit: ["View"],
+  },
   "Site Account Statement": {
     "View Module": [],
     "All Projects": ["View"],

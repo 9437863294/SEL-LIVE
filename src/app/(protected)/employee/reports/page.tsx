@@ -184,7 +184,6 @@ export default function EmployeeReportsPage() {
         title="Reports"
         backHref="/employee"
         backLabel="Back to Employee Management"
-        description="Headcount, movement and category breakdowns — built from the corrected roster, not a separate count that can drift from it."
         status={
           rows.length > 0 ? (
             report?.liveRoster ? (

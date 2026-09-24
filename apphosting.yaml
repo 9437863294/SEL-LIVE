@@ -110,3 +110,18 @@ env:
   # OFFICE_HUB_GOOGLE_TOKEN_KEY encrypts the stored Google refresh tokens. Keep
   # it: rotating it does not break the app, but it makes every stored token
   # unreadable, so every organizer must reconnect Google.
+
+  # ── Mail Hub (docs/mail-hub.md, docs/mail-hub.env.example) ─────────
+  #
+  # Deliberately NOT declared here either, for the same reason as Office Hub
+  # above: a secret: reference that does not exist yet fails the whole deploy.
+  # Add them in the backend environment configuration once the secrets exist:
+  #
+  #   MAIL_HUB_KMS_KEY_NAME or MAIL_HUB_TOKEN_KEY   (required; key store for mailbox credentials)
+  #   MAIL_HUB_STATE_SECRET                          (OAuth state / Graph clientState HMAC)
+  #   CRON_SECRET                                    (the worker refuses to run without it)
+  #   MAIL_HUB_GOOGLE_CLIENT_ID/SECRET, MAIL_HUB_MICROSOFT_CLIENT_ID/SECRET/TENANT, MAIL_HUB_GMAIL_*
+  #
+  # Redirect URIs to register: https://seltech.store/api/mail-hub/oauth/gmail/callback and
+  # https://seltech.store/api/mail-hub/oauth/microsoft/callback. Mail Hub offers only the
+  # providers whose variables are present, so the app deploys and runs without any of them.

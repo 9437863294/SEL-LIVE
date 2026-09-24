@@ -641,7 +641,6 @@ export default function ManageEmployeePage() {
         title="Manage Employee"
         backHref="/employee"
         backLabel="Back to Employee Management"
-        description="The complete greytHR roster, current and departed — verified against greytHR on load."
         status={
           report ? (
             report.liveRoster ? (

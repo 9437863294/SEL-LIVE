@@ -20,6 +20,8 @@ import 'server-only';
  * accepts, never narrow it.
  */
 
+import type { DocumentSnapshot } from 'firebase-admin/firestore';
+
 import { getFirebaseAdminAuth, getFirebaseAdminFirestore } from './firebase-admin';
 import {
   canAccessModule,
@@ -94,6 +96,24 @@ export async function authenticateAccess(request: Request): Promise<AccessReques
   }
   if (!userSnapshot.exists) throw new AccessDeniedError('The signed-in user is not registered.');
 
+  return accessContextForUserSnapshot(userSnapshot);
+}
+
+/**
+ * The same resolution for a user id the server already trusts — a signed OAuth state, a queued job
+ * acting for its owner — where there is no bearer token to verify. Callers must have established
+ * *who* by other means; this only answers *what they may do now*.
+ */
+export async function authenticateUserById(userId: string): Promise<AccessRequestContext> {
+  const snapshot = await getFirebaseAdminFirestore().collection('users').doc(userId).get();
+  if (!snapshot.exists) throw new AccessDeniedError('The user is not registered.');
+  return accessContextForUserSnapshot(snapshot);
+}
+
+async function accessContextForUserSnapshot(
+  userSnapshot: DocumentSnapshot,
+): Promise<AccessRequestContext> {
+  const firestore = getFirebaseAdminFirestore();
   const userData = userSnapshot.data() || {};
   // A temporary deactivation whose date has passed counts as active here even before the document
   // has been put right — the client lifts it at the user's next sign-in (see AuthProvider).

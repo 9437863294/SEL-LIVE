@@ -92,6 +92,8 @@ export default function ModuleCard({
         return "/driver-management";
       case "Site Account Statement":
         return "/site-account-statement";
+      case "Mail Hub":
+        return "/mail";
       // Nested Settings Pages
       // User Management and Role Management no longer have screens of their own — Access Management
       // absorbed both. Their permission nodes stay (roles still hold them, and they still grant the

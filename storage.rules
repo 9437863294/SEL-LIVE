@@ -84,6 +84,15 @@ service firebase.storage {
       allow update, delete: if false;
     }
 
+    // Mail Hub compose attachments: mail-hub/uploads/{userId}/{uploadId}/{fileName}.
+    //
+    // Written and read only by the server (Admin SDK) — uploads go through /api/mail-hub/uploads,
+    // which validates and scans them, and are read back only to be sent. No browser, including the
+    // uploader's, reads this path directly. It must also stay out of the catch-all below.
+    match /mail-hub/{allPaths=**} {
+      allow read, write: if false;
+    }
+
     // Allow read/write access to all authenticated users for all files
     // This is a permissive rule, you may want to restrict it further
     // for example, only allow users to read/write their own files.
@@ -91,6 +100,7 @@ service firebase.storage {
       allow read, write: if request.auth != null
         && !allPaths.matches('chat/.*')
         && !allPaths.matches('office-hub/.*')
+        && !allPaths.matches('mail-hub/.*')
         && !allPaths.matches('organizations/[^/]+/fixed-deposits/.*')
         && !allPaths.matches('fixed-deposits/[^/]+/.*')
         && !allPaths.matches('organizations/[^/]+/letters-of-credit/.*')

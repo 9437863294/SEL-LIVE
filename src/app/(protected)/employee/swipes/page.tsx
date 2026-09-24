@@ -545,7 +545,6 @@ export default function SwipeRegisterPage() {
         title="Daily swipes"
         backHref="/employee"
         backLabel="Back to Employee Management"
-        description="First in, last out, hours worked and what greytHR flagged — day by day, for the month you pick."
         status={
           <>
             <EmployeeStatusPill tone="violet" icon={CalendarDays}>
@@ -564,7 +563,7 @@ export default function SwipeRegisterPage() {
         }
         meta={
           report?.period?.start
-            ? `${report.period.start} to ${report.period.end} · one first-in and one last-out per day, which is all greytHR's API publishes`
+            ? `${report.period.start} to ${report.period.end}`
             : undefined
         }
         actions={

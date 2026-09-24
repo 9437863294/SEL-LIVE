@@ -286,7 +286,6 @@ export default function ManageCategoryPage() {
         title="Synced Categories"
         backHref="/employee"
         backLabel="Back to Employee Management"
-        description="Department, Designation, Grade, Location, Project and the other category masters mirrored from greytHR. Read-only here — greytHR owns the values."
         status={
           lastSynced ? (
             <EmployeeStatusPill tone={lastSynced.successful ? 'emerald' : 'amber'} icon={Clock}>
@@ -297,13 +296,6 @@ export default function ManageCategoryPage() {
               No sync run recorded
             </EmployeeStatusPill>
           )
-        }
-        meta={
-          /* Was a whole blue callout band. The point it makes — that this list maintains itself —
-             belongs next to the timestamp it qualifies, not in a panel of its own. */
-          lastSynced
-            ? 'The hourly greytHR sync rewrites these values on every run, so that timestamp is the honest age of this list. Sync from GreytHR is a top-up, not the only path.'
-            : 'The hourly greytHR sync writes these values on every run.'
         }
         actions={syncButton}
       />

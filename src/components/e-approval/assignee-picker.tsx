@@ -441,7 +441,21 @@ export function AssigneePicker({
             * the other tabs use, inside which a sticky header never sticks.
             */}
           {kind === 'User' ? (
-            <div className="mt-1.5">
+            /*
+              The phone cap, which `maxHeightClassName` cannot give.
+
+              That prop lands on `DataList`'s *desktop* container — the one that is `sm:block` — so
+              under `sm` the card list it renders instead had no height at all and every employee in
+              the company unrolled down the page, pushing the rest of the create form and its buttons
+              out of reach. That is the right default for the registers `DataList` was built for,
+              where the page scrolling the cards is what you want; it is wrong for a picker, whose
+              whole job is to sit inside a form without displacing it. So the cap goes here rather
+              than in the shared component, where it would change every register in the app.
+
+              Released above `sm` so the table's own scroll container is the only one — two nested
+              scrollers, one of them pinning a sticky header, is how the header ends up sliding away.
+            */
+            <div className="mt-1.5 max-h-64 overflow-y-auto overscroll-contain sm:max-h-none sm:overflow-visible">
               <HrDataList
                 rows={filteredUsers}
                 columns={personColumns}
