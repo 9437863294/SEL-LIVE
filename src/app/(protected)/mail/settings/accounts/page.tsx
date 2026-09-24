@@ -1,5 +1,6 @@
 'use client';
 
+import Link from 'next/link';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { useEffect, useState } from 'react';
 import { CheckCircle2, Globe, Loader2, Mail, Plug, RefreshCw, Server, ShieldCheck, Unplug, Users } from 'lucide-react';
@@ -101,6 +102,11 @@ export default function MailAccountsPage() {
   };
 
   const accounts = data.accounts.filter((account) => account.status !== 'disconnected' || account.access.canManage);
+  const hasMailbox = accounts.some((account) => account.kind === 'personal' && account.status !== 'disconnected');
+  // Providers switched off in Mail Hub settings are not offered at all. One that is switched on but
+  // not configured on this server is shown only to administrators, with what is missing — to
+  // everybody else it would be an option they cannot use.
+  const offered = data.providers.filter((entry) => entry.enabled && (entry.available || caps.canAdministerConnections));
 
   return (
     <div className="space-y-4">
@@ -110,18 +116,20 @@ export default function MailAccountsPage() {
         <div role="status" className={cn('flex items-start gap-2 rounded-lg border px-3 py-2 text-sm', notice.tone === 'good' ? 'border-emerald-200 bg-emerald-50 text-emerald-900' : 'border-rose-200 bg-rose-50 text-rose-900')}>
           {notice.tone === 'good' ? <CheckCircle2 className="mt-0.5 h-4 w-4" /> : <Unplug className="mt-0.5 h-4 w-4" />}
           <span className="flex-1">{notice.text}</span>
+          {notice.tone === 'good' && hasMailbox && <Link href="/mail/inbox" className="text-xs font-medium underline">Open inbox</Link>}
           <button type="button" className="text-xs underline" onClick={() => setNotice(null)}>Dismiss</button>
         </div>
       )}
 
-      {caps.canConnectAccount && (
+      {caps.canConnectAccount && !hasMailbox && (
         <Card>
           <CardHeader className="pb-3">
             <CardTitle className="flex items-center gap-2 text-base"><Plug className="h-4 w-4" /> Connect email account</CardTitle>
-            <CardDescription>You can connect more than one.</CardDescription>
+            <CardDescription>Choose your mail provider. You can connect more than one.</CardDescription>
           </CardHeader>
-          <CardContent className="grid gap-3 md:grid-cols-3">
-            {data.providers.map((entry) => {
+          <CardContent className={cn('grid gap-3', offered.length > 1 && 'md:grid-cols-2', offered.length > 2 && 'lg:grid-cols-3')}>
+            {offered.length === 0 && <NoProviders admin={caps.canAdministerConnections} />}
+            {offered.map((entry) => {
               const Icon = PROVIDER_ICON[entry.provider];
               return (
                 <div key={entry.provider} className={cn('flex flex-col gap-2 rounded-xl border p-3', !entry.available && 'bg-slate-50')}>
@@ -144,13 +152,13 @@ export default function MailAccountsPage() {
         </Card>
       )}
 
+      {accounts.length > 0 && (
       <Card>
         <CardHeader className="pb-3">
           <CardTitle className="text-base">Connected mailboxes</CardTitle>
           <CardDescription>Sync runs in the background. Push-enabled mailboxes update within moments; others are checked every few minutes.</CardDescription>
         </CardHeader>
         <CardContent className="space-y-3">
-          {accounts.length === 0 && <p className="text-sm text-muted-foreground">No mailboxes connected yet.</p>}
           {accounts.map((account) => (
             <div key={account.id} className="rounded-xl border p-3">
               <div className="flex flex-col gap-2 sm:flex-row sm:items-start">
@@ -206,8 +214,26 @@ export default function MailAccountsPage() {
           ))}
         </CardContent>
       </Card>
+      )}
 
-      {caps.canAdministerConnections && (
+      {caps.canConnectAccount && hasMailbox && offered.some((entry) => entry.available) && (
+        <div className="flex flex-wrap items-center gap-2 rounded-xl border bg-white px-3 py-2.5">
+          <span className="flex items-center gap-2 text-sm font-medium text-slate-700"><Plug className="h-4 w-4" /> Connect another account</span>
+          <div className="ml-auto flex flex-wrap gap-2">
+            {offered.filter((entry) => entry.available).map((entry) => {
+              const Icon = PROVIDER_ICON[entry.provider];
+              return (
+                <Button key={entry.provider} size="sm" variant="outline" onClick={() => connect(entry.provider)} disabled={busy === entry.provider}>
+                  {busy === entry.provider ? <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : <Icon className="mr-1.5 h-3.5 w-3.5" />}
+                  {entry.label}
+                </Button>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {caps.canAdministerConnections && offered.some((entry) => entry.available) && (
         <Card>
           <CardHeader className="pb-3">
             <CardTitle className="flex items-center gap-2 text-base"><Users className="h-4 w-4" /> Connect a shared mailbox</CardTitle>
@@ -216,7 +242,7 @@ export default function MailAccountsPage() {
             </CardDescription>
           </CardHeader>
           <CardContent className="flex flex-wrap gap-2">
-            {data.providers.filter((entry) => entry.available).map((entry) => (
+            {offered.filter((entry) => entry.available).map((entry) => (
               <Button key={entry.provider} variant="outline" onClick={() => (entry.provider === 'imap' ? setImapOpen({ kind: 'shared' }) : setSharedOpen(entry.provider))}>
                 {entry.label}
               </Button>
@@ -249,6 +275,19 @@ export default function MailAccountsPage() {
         </AlertDialogContent>
       </AlertDialog>
     </div>
+  );
+}
+
+function NoProviders({ admin }: { admin: boolean }) {
+  return (
+    <p className="text-sm text-muted-foreground">
+      No email provider is switched on yet.{' '}
+      {admin ? (
+        <>Turn one on under <Link href="/mail/settings/permissions" className="font-medium text-indigo-700 underline">Permissions &amp; sharing › Connection settings</Link>.</>
+      ) : (
+        'Ask your Mail Hub administrator to enable one.'
+      )}
+    </p>
   );
 }
 

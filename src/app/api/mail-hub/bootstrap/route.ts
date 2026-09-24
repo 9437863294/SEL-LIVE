@@ -33,9 +33,11 @@ export const GET = mailRoute(
       return {
         provider: entry.provider,
         label: MAIL_PROVIDER_LABELS[entry.provider],
+        // Switched off in Mail Hub settings: the Accounts page does not offer it at all.
+        enabled,
         available: enabled && entry.available && !needsPreset,
         problems: context.caps.canAdministerConnections
-          ? [...(enabled ? [] : ['Disabled in Mail Hub settings.']), ...entry.problems, ...(needsPreset ? ['No IMAP/SMTP server has been configured yet.'] : [])]
+          ? [...entry.problems, ...(needsPreset ? ['No IMAP/SMTP server has been configured yet.'] : [])]
           : [],
       };
     });

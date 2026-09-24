@@ -91,7 +91,7 @@ export interface Bootstrap {
   capabilities: MailHubCapabilities;
   accounts: AccountRow[];
   folders: Record<string, MailFolder[]>;
-  providers: { provider: 'gmail' | 'microsoft' | 'imap'; label: string; available: boolean; problems: string[] }[];
+  providers: { provider: 'gmail' | 'microsoft' | 'imap'; label: string; enabled: boolean; available: boolean; problems: string[] }[];
   imapServers: Pick<MailImapServerPreset, 'id' | 'label' | 'allowedDomains' | 'usernameStyle'>[];
   settings: MailUserSettings;
   signatures: (MailSignature & { editable: boolean })[];
