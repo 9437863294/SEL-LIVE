@@ -40,6 +40,7 @@
     "test:e-approval": "node --experimental-strip-types --test tests/e-approval-domain.test.mjs tests/e-approval-liveness.test.mjs tests/e-approval-workflow.test.mjs tests/e-approval-analytics.test.mjs tests/e-approval-dashboard.test.mjs tests/e-approval-activity.test.mjs tests/e-approval-pdf-signing.test.mjs tests/e-approval-rich-text.test.mjs tests/recurring-payments-e-approval.test.mjs tests/e-approval-print-fit.test.mjs tests/e-approval-designation.test.mjs",
     "typecheck:e-approval": "tsc -p tsconfig.e-approval.json",
     "test:access-control": "node --experimental-strip-types --test tests/access-control-domain.test.mjs",
+    "test:session": "node --experimental-strip-types --test tests/session-policy.test.mjs",
     "test:people-directory": "node --experimental-strip-types --test tests/people-directory.test.mjs",
     "typecheck:access-control": "tsc -p tsconfig.access-control.json",
     "test:site-account-statement": "node --experimental-strip-types --test tests/site-account-statement-scope.test.mjs tests/site-account-statement-date-policy.test.mjs tests/site-account-statement-sort.test.mjs",

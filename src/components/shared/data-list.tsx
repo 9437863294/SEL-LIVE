@@ -106,6 +106,7 @@ export function DataList<T extends { id: string }>({
   onRowClick,
   maxHeightClassName,
   expandedId,
+  expandedIds,
   renderExpanded,
   dense,
 }: {
@@ -155,6 +156,8 @@ export function DataList<T extends { id: string }>({
    * panel at the foot of the card on a phone.
    */
   expandedId?: string | null;
+  /** Several rows open at once — takes precedence over `expandedId` when given. */
+  expandedIds?: ReadonlySet<string>;
   renderExpanded?: (row: T) => React.ReactNode;
   /**
    * Tighter desktop cells (`px-3 py-1.5`, a shorter header) for a register that is scanned rather
@@ -176,7 +179,7 @@ export function DataList<T extends { id: string }>({
       <div className="space-y-2.5 sm:hidden">
         {rows.map(row => {
           const href = cardHref?.(row);
-          const isExpanded = !!renderExpanded && expandedId === row.id;
+          const isExpanded = !!renderExpanded && (expandedIds ? expandedIds.has(row.id) : expandedId === row.id);
           const body = (
             <>
               <div className="mb-2 flex items-start justify-between gap-2">
@@ -310,7 +313,7 @@ export function DataList<T extends { id: string }>({
           </TableHeader>
           <TableBody>
             {rows.map(row => {
-              const isExpanded = !!renderExpanded && expandedId === row.id;
+              const isExpanded = !!renderExpanded && (expandedIds ? expandedIds.has(row.id) : expandedId === row.id);
               return (
                 <Fragment key={row.id}>
                   <TableRow

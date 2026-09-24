@@ -8,9 +8,13 @@ import {
   setDoc,
   updateDoc,
 } from 'firebase/firestore';
-import { db } from '@/lib/firebase';
+import { auth, db } from '@/lib/firebase';
+import type { SessionPolicy } from '@/lib/session-policy';
 
 export const USER_SESSIONS_COLLECTION = 'userSessions';
+
+/** Who ended a session. `policy` is the session controller acting on `settings/sessionPolicy`. */
+export type SessionTerminator = 'user' | 'admin' | 'timeout' | 'policy';
 
 export interface SessionGeo {
   ipAddress: string | null;
@@ -39,7 +43,7 @@ export interface UserSession extends SessionGeo {
   lastActiveAt: { seconds: number; nanoseconds: number } | null;
   isActive: boolean;
   terminatedAt?: { seconds: number; nanoseconds: number } | null;
-  terminatedBy?: 'user' | 'admin' | 'timeout' | null;
+  terminatedBy?: SessionTerminator | null;
   terminatedByUserId?: string | null;
   terminatedByUserName?: string | null;
 }
@@ -124,23 +128,48 @@ async function fetchGeo(): Promise<SessionGeo> {
   }
 }
 
+export type SessionOpenResult =
+  | { status: 'created' }
+  | { status: 'resumed'; previousLastActiveMs: number | null; startedMs: number | null }
+  /** The id in this browser names a session someone else already ended. Sign out; do not revive it. */
+  | { status: 'terminated'; terminatedBy: SessionTerminator | null }
+  | { status: 'error' };
+
 export async function createOrResumeSession(
   sessionId: string,
   user: { id: string; name: string; email: string; role?: string }
-): Promise<void> {
-  if (!sessionId || typeof window === 'undefined') return;
+): Promise<SessionOpenResult> {
+  if (!sessionId || typeof window === 'undefined') return { status: 'error' };
   try {
     const sessionRef = doc(db, USER_SESSIONS_COLLECTION, sessionId);
     const snap = await getDoc(sessionRef);
     const ua = navigator.userAgent;
     const { browser, os, deviceType, deviceLabel } = parseUserAgent(ua);
+    const data = snap.exists() ? snap.data() : null;
 
-    if (snap.exists() && snap.data()?.isActive === true) {
+    /*
+     * A signed-out tab clears localStorage, so a session id that survives here and points at an
+     * ended session means the session was ended *from somewhere else* — an administrator, another
+     * of the user's devices, or the policy — while this tab was closed. This used to fall through to
+     * the `setDoc` below and recreate the session under the same id, which quietly undid the
+     * termination the moment the user reopened the app.
+     */
+    if (data && data.isActive === false && data.userId === user.id) {
+      return { status: 'terminated', terminatedBy: (data.terminatedBy as SessionTerminator) ?? null };
+    }
+
+    if (data && data.isActive === true) {
       await updateDoc(sessionRef, {
         lastActiveAt: serverTimestamp(),
         userName: user.name || '',
         userRole: user.role || '',
       });
+      void refreshGeo(sessionRef);
+      return {
+        status: 'resumed',
+        previousLastActiveMs: data.lastActiveAt?.seconds != null ? data.lastActiveAt.seconds * 1000 : null,
+        startedMs: data.startedAt?.seconds != null ? data.startedAt.seconds * 1000 : null,
+      };
     } else {
       await setDoc(sessionRef, {
         userId: user.id,
@@ -160,16 +189,21 @@ export async function createOrResumeSession(
         terminatedByUserId: null,
         terminatedByUserName: null,
       });
+      void refreshGeo(sessionRef);
+      return { status: 'created' };
     }
-
-    // Geo is telemetry, not a precondition for having a session. Resolve it after
-    // the session row exists so sign-in never waits on a third-party IP lookup.
-    void fetchGeo()
-      .then((geo) => updateDoc(sessionRef, { ...geo }))
-      .catch(() => {});
   } catch (err) {
     console.error('Failed to create/resume session', err);
+    return { status: 'error' };
   }
+}
+
+// Geo is telemetry, not a precondition for having a session. Resolve it after
+// the session row exists so sign-in never waits on a third-party IP lookup.
+function refreshGeo(sessionRef: ReturnType<typeof doc>): Promise<void> {
+  return fetchGeo()
+    .then((geo) => updateDoc(sessionRef, { ...geo }))
+    .catch(() => {});
 }
 
 export async function updateSessionActivity(sessionId: string): Promise<void> {
@@ -185,13 +219,19 @@ export async function updateSessionActivity(sessionId: string): Promise<void> {
 
 export async function terminateSession(
   sessionId: string,
-  terminatedBy: 'user' | 'admin' | 'timeout',
+  terminatedBy: SessionTerminator,
   byUserId?: string,
   byUserName?: string
 ): Promise<void> {
   if (!sessionId) return;
   try {
-    await updateDoc(doc(db, USER_SESSIONS_COLLECTION, sessionId), {
+    const ref = doc(db, USER_SESSIONS_COLLECTION, sessionId);
+    // Never overwrite an ending that already happened. A tab reacting to an administrator's sign-out
+    // runs this too, and without the check it rewrote the record as `terminatedBy: 'user'` — erasing
+    // who actually ended the session from the history the administrator is looking at.
+    const snap = await getDoc(ref);
+    if (!snap.exists() || snap.data()?.isActive === false) return;
+    await updateDoc(ref, {
       isActive: false,
       terminatedAt: serverTimestamp(),
       terminatedBy,
@@ -205,18 +245,62 @@ export async function terminateSession(
 
 export function listenToSession(
   sessionId: string,
-  onTerminated: () => void
+  onTerminated: (terminatedBy: SessionTerminator | null) => void
 ): () => void {
   if (!sessionId) return () => {};
   return onSnapshot(
     doc(db, USER_SESSIONS_COLLECTION, sessionId),
     (snap) => {
       if (snap.exists() && snap.data()?.isActive === false) {
-        onTerminated();
+        onTerminated((snap.data()?.terminatedBy as SessionTerminator) ?? null);
       }
     },
     (err) => {
       console.error('Session snapshot listener error', err);
     }
   );
+}
+
+// ─── session controller API ──────────────────────────────────────────────────
+
+export type SessionControlAction =
+  | { action: 'enforce'; currentSessionId: string }
+  | { action: 'terminate'; sessionIds: string[] }
+  | { action: 'terminate-user'; userId: string; currentSessionId?: string }
+  | { action: 'terminate-others'; currentSessionId: string }
+  | { action: 'terminate-all'; currentSessionId: string }
+  | { action: 'sweep-stale'; currentSessionId?: string }
+  | { action: 'update-policy'; policy: Partial<SessionPolicy> };
+
+export interface SessionControlResult {
+  ok: boolean;
+  policy: SessionPolicy;
+  /** Sessions this call ended. */
+  terminated: number;
+  /** Set by `enforce` when the caller's own current session was ended by the policy. */
+  currentTerminated?: boolean;
+}
+
+async function sessionControlRequest(init: RequestInit): Promise<SessionControlResult> {
+  const firebaseUser = auth.currentUser;
+  if (!firebaseUser) throw new Error('Not signed in.');
+  const idToken = await firebaseUser.getIdToken();
+  const res = await fetch('/api/session/control', {
+    ...init,
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${idToken}`, ...init.headers },
+    cache: 'no-store',
+  });
+  const body = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(body?.error || `Session request failed (${res.status}).`);
+  return body as SessionControlResult;
+}
+
+/** Run one session-controller action on the server (Admin SDK, audited). */
+export function sessionControl(payload: SessionControlAction): Promise<SessionControlResult> {
+  return sessionControlRequest({ method: 'POST', body: JSON.stringify(payload) });
+}
+
+/** Read the current session policy. */
+export function fetchSessionPolicy(): Promise<SessionControlResult> {
+  return sessionControlRequest({ method: 'GET' });
 }

@@ -36,6 +36,7 @@ import {
   CalendarClock,
   ChevronRight,
   Clock,
+  Columns3,
   DownloadCloud,
   FileText,
   Fingerprint,
@@ -51,6 +52,14 @@ import {
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
+import {
+  DropdownMenu,
+  DropdownMenuCheckboxItem,
+  DropdownMenuContent,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 import { AuroraBackdrop } from '@/components/effects/AuroraBackdrop';
 import { CountUp } from '@/components/effects/CountUp';
 import { SpotlightCard } from '@/components/effects/SpotlightCard';
@@ -1001,6 +1010,91 @@ export function EmployeeListFooter({
         </Button>
       )}
     </div>
+  );
+}
+
+/**
+ * A show/hide menu for a register's columns.
+ *
+ * Built because Position Details' column-wise view has one column per category — eleven at this
+ * tenant, plus the employee — and a twelve-column table is only useful if a reader can put away the
+ * eight they are not looking at. Kept here rather than in that page because every register in this
+ * module is a candidate for it.
+ *
+ * The caller owns the hidden set and locks whichever column identifies the row: a table whose first
+ * column can be hidden becomes a grid of values belonging to nobody. `locked` columns are listed
+ * with a ticked, disabled box rather than omitted, so the menu still describes the whole table.
+ */
+export function EmployeeColumnPicker({
+  columns,
+  hidden,
+  onChange,
+  locked = [],
+  label = 'Columns',
+}: {
+  /** Column keys, in table order. `HrListColumn.header` is the natural key. */
+  columns: string[];
+  /** The keys currently hidden. */
+  hidden: Set<string>;
+  onChange: (hidden: Set<string>) => void;
+  locked?: string[];
+  label?: string;
+}) {
+  const lockedSet = new Set(locked);
+  const shown = columns.filter(column => !hidden.has(column)).length;
+
+  const toggle = (column: string) => {
+    if (lockedSet.has(column)) return;
+    const next = new Set(hidden);
+    if (next.has(column)) next.delete(column);
+    else next.add(column);
+    onChange(next);
+  };
+
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <Button variant="outline" size="sm" className="bg-white/80">
+          <Columns3 className="mr-1.5 h-4 w-4" />
+          {label}
+          {/* The count, so a reader who has hidden eight columns is reminded why the table looks
+              short — a filter with no visible state is a filter people forget they set. */}
+          <span className="ml-1.5 rounded-full bg-slate-100 px-1.5 text-[10px] font-semibold tabular-nums text-slate-600">
+            {shown}/{columns.length}
+          </span>
+        </Button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end" className="max-h-[60vh] w-56 overflow-y-auto">
+        <DropdownMenuLabel className="text-xs">Show columns</DropdownMenuLabel>
+        <DropdownMenuSeparator />
+        {columns.map(column => (
+          <DropdownMenuCheckboxItem
+            key={column}
+            checked={!hidden.has(column)}
+            disabled={lockedSet.has(column)}
+            // Radix closes the menu on select by default, which makes turning three columns off
+            // three trips through the trigger.
+            onSelect={event => event.preventDefault()}
+            onCheckedChange={() => toggle(column)}
+            className="text-xs"
+          >
+            {column}
+          </DropdownMenuCheckboxItem>
+        ))}
+        {hidden.size > 0 && (
+          <>
+            <DropdownMenuSeparator />
+            <button
+              type="button"
+              onClick={() => onChange(new Set())}
+              className="w-full px-2 py-1.5 text-left text-xs font-medium text-slate-600 hover:bg-slate-50"
+            >
+              Show all {columns.length}
+            </button>
+          </>
+        )}
+      </DropdownMenuContent>
+    </DropdownMenu>
   );
 }
 

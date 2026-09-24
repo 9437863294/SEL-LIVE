@@ -46,9 +46,17 @@ import {
   createOrResumeSession,
   getOrCreateSessionId,
   listenToSession,
+  sessionControl,
   terminateSession,
   updateSessionActivity,
 } from '@/lib/session-manager';
+import {
+  DEFAULT_SESSION_POLICY,
+  effectiveIdleMinutes,
+  resumeHasExpired,
+  terminationMessage,
+  type SessionPolicy,
+} from '@/lib/session-policy';
 import { unregisterCurrentPushDevice } from '@/lib/chat-push-client';
 import { unregisterWebPushDevice } from '@/lib/web-push-client';
 import { stopNativeAndroidUserLocation } from '@/lib/native-user-location';
@@ -170,6 +178,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   // Holds the configured session duration so resetTimeouts doesn't depend on `user`
   // directly (which would create an infinite render loop via onAuthStateChanged).
   const sessionDurationMinutesRef = useRef<number>(60);
+  // The user's own Login Expiry preference, kept apart so the policy cap can be re-applied to it.
+  const sessionPreferenceMinutesRef = useRef<number>(60);
+  const sessionPolicyRef = useRef<SessionPolicy>(DEFAULT_SESSION_POLICY);
 
   const { toast } = useToast();
 
@@ -429,28 +440,72 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           void (async () => {
             try {
               const sessionId = getOrCreateSessionId();
-              await createOrResumeSession(sessionId, {
+              const opened = await createOrResumeSession(sessionId, {
                 id: userData.id,
                 name: userData.name || '',
                 email: userData.email || '',
                 role: userData.role || '',
               });
 
-              // Replace any existing listener
-              if (sessionUnsubscribeRef.current) sessionUnsubscribeRef.current();
-              sessionUnsubscribeRef.current = listenToSession(sessionId, async () => {
-                // Unsubscribe before acting to prevent re-entry
+              const endHere = async (reason: string | null) => {
                 if (sessionUnsubscribeRef.current) {
                   sessionUnsubscribeRef.current();
                   sessionUnsubscribeRef.current = null;
                 }
                 toast({
-                  title: 'Session Terminated',
-                  description: 'An administrator has signed you out from this device.',
+                  title: reason === 'timeout' ? 'Session Expired' : 'Session Terminated',
+                  description: terminationMessage(reason),
                   variant: 'destructive',
                 });
                 await handleSignOut(false);
+              };
+
+              // Ended elsewhere while this tab was closed — do not bring it back.
+              if (opened.status === 'terminated') {
+                await endHere(opened.terminatedBy);
+                return;
+              }
+
+              // Replace any existing listener
+              if (sessionUnsubscribeRef.current) sessionUnsubscribeRef.current();
+              sessionUnsubscribeRef.current = listenToSession(sessionId, (reason) => {
+                // endHere unsubscribes first, which prevents re-entry
+                void endHere(reason);
               });
+
+              // Apply the organisation's session policy. Best-effort: if the controller is
+              // unreachable the session carries on under the defaults, exactly as before it existed.
+              try {
+                const result = await sessionControl({ action: 'enforce', currentSessionId: sessionId });
+                sessionPolicyRef.current = result.policy;
+                sessionPreferenceMinutesRef.current = userData.theme?.sessionDuration || 60;
+                sessionDurationMinutesRef.current = effectiveIdleMinutes(
+                  sessionPreferenceMinutesRef.current,
+                  result.policy,
+                );
+                resetTimeouts();
+                if (result.currentTerminated) {
+                  // The listener above has already seen the write and is signing out.
+                  return;
+                }
+                if (
+                  opened.status === 'resumed' &&
+                  resumeHasExpired(
+                    opened.previousLastActiveMs,
+                    Date.now(),
+                    sessionDurationMinutesRef.current,
+                    result.policy,
+                  )
+                ) {
+                  if (sessionUnsubscribeRef.current) {
+                    sessionUnsubscribeRef.current();
+                    sessionUnsubscribeRef.current = null;
+                  }
+                  await handleSignOut(true);
+                }
+              } catch (err) {
+                console.warn('Session policy not applied', err);
+              }
             } catch (err) {
               console.error('Session setup failed', err);
             }
@@ -538,7 +593,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         return null;
       }
     },
-    [extendSession, handleSignOut, shouldRemember, toast]
+    [extendSession, handleSignOut, resetTimeouts, shouldRemember, toast]
   );
 
   const refreshUserData = useCallback(async () => {
@@ -549,7 +604,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   /* ---------- keep session-duration ref in sync ---------- */
 
   useEffect(() => {
-    sessionDurationMinutesRef.current = user?.theme?.sessionDuration || 60;
+    sessionPreferenceMinutesRef.current = user?.theme?.sessionDuration || 60;
+    sessionDurationMinutesRef.current = effectiveIdleMinutes(
+      sessionPreferenceMinutesRef.current,
+      sessionPolicyRef.current,
+    );
   }, [user?.theme?.sessionDuration]);
 
   /* ---------- subscribe to Firebase auth ---------- */

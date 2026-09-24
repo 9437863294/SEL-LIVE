@@ -36,9 +36,11 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Skeleton } from '@/components/ui/skeleton';
 import { Switch } from '@/components/ui/switch';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { LOCATION_OTP_EXPIRY_KEY, LOCATION_OTP_TOKEN_KEY } from '@/lib/location-tracking-client';
 
-const ACCESS_TOKEN_KEY = 'sel_location_tracking_otp_token';
-const ACCESS_EXPIRY_KEY = 'sel_location_tracking_otp_expires';
+// Shared with Session Management, which reuses this unlock to show GPS.
+const ACCESS_TOKEN_KEY = LOCATION_OTP_TOKEN_KEY;
+const ACCESS_EXPIRY_KEY = LOCATION_OTP_EXPIRY_KEY;
 
 const INTERVAL_OPTIONS = [
   { value: 30, label: '30 seconds' },

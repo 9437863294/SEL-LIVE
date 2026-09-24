@@ -17,7 +17,20 @@
  */
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Briefcase, Clock, Download, Layers, Loader2, RefreshCw, Search, Tags, Trash2, Users, X } from 'lucide-react';
+import {
+  Briefcase,
+  Clock,
+  Columns3,
+  Download,
+  Layers,
+  Loader2,
+  RefreshCw,
+  Search,
+  Tags,
+  Trash2,
+  Users,
+  X,
+} from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { useToast } from '@/hooks/use-toast';
@@ -27,6 +40,7 @@ import type { EmployeePosition } from '@/lib/types';
 import { useAuthorization } from '@/hooks/useAuthorization';
 import { fetchEmployeeRoster } from '@/lib/greythr-sync-client';
 import { exportRowsToExcel } from '@/lib/report-excel';
+import { cn } from '@/lib/utils';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { db } from '@/lib/firebase';
@@ -54,6 +68,7 @@ import {
   type HrListColumn,
 } from '@/components/hr/hr-ui';
 import {
+  EmployeeColumnPicker,
   EmployeeHeader,
   EmployeeKpiCard,
   EmployeeListFooter,
@@ -75,18 +90,36 @@ type PositionRow = {
   effectiveTo: string | null;
 };
 
+/**
+ * One employee and their whole position history — the register's row.
+ *
+ * `entries` is every effective-dated value the filters left for them, so the expanded grid and the
+ * summary on the row can never disagree about what is being counted.
+ */
+type EmployeeGroup = {
+  id: string;
+  employeeId: string;
+  name: string;
+  entries: PositionRow[];
+  /** Distinct category names, for the row's summary. */
+  categories: string[];
+  /** Entries with no end date — what this person's position is *now*. */
+  current: PositionRow[];
+  /** The most recent `effectiveFrom`, so a row can say when it last changed. */
+  latestFrom: string;
+};
+
 /** Which flow wrote the timestamp on screen. Naming it stops "last synced" reading as a single truth. */
 type SyncStamp = { at: Date; source: 'the hourly greytHR sync' | 'the manual sync on this page' };
 
 /**
- * How many rows are put in the DOM at once.
+ * How many employees are put in the DOM at once.
  *
- * The register is one row per employee *per category value* — roughly ten thousand at full company
- * size — and the responsive list renders a mobile card and a table row for each. Rendering the lot
- * froze the page, so it grows on request instead; the filters above are the fast way to the row you
- * actually want.
+ * Was three hundred *rows*, which at one row per category value was fifty-odd people. Now that a row
+ * is an employee — with their entries rendered only when the row is opened — the same budget covers
+ * the whole company, so the window is a guard rather than a routine limit.
  */
-const PAGE_SIZE = 300;
+const PAGE_SIZE = 150;
 
 /** ISO strings today; a legacy Firestore `Timestamp` would otherwise render as `Invalid Date`. */
 function toDate(value: unknown): Date | null {
@@ -103,35 +136,100 @@ function toDate(value: unknown): Date | null {
   return null;
 }
 
-const COLUMNS: Array<HrListColumn<PositionRow>> = [
-  {
-    header: 'Name',
-    cell: row => <span className="font-medium text-slate-800">{row.name || '—'}</span>,
-    mobile: 'title',
-  },
-  {
-    header: 'Employee ID',
-    cell: row => <span className="tabular-nums text-slate-700">{row.employeeId}</span>,
-    mobile: 'title',
-  },
-  {
-    header: 'Category',
-    cell: row => <Badge variant="outline" className="border-indigo-200 bg-indigo-50 font-normal text-indigo-700">{row.category}</Badge>,
-    mobile: 'aside',
-  },
-  {
-    header: 'Value',
-    cell: row => <Badge variant="secondary" className="font-normal">{row.value}</Badge>,
-  },
-  {
-    header: 'Effective From',
-    cell: row => <span className="whitespace-nowrap tabular-nums">{row.effectiveFrom || '—'}</span>,
-  },
-  {
-    header: 'Effective To',
-    cell: row => <span className="whitespace-nowrap tabular-nums text-muted-foreground">{row.effectiveTo || 'N/A'}</span>,
-  },
-];
+/**
+ * The column that identifies the row, in both views.
+ *
+ * Named once because the column picker locks it: a table whose first column can be hidden becomes a
+ * grid of values belonging to nobody.
+ */
+const EMPLOYEE_COLUMN = 'Employee';
+
+/** The current value of a category is the one greytHR left open-ended. */
+const isCurrentEntry = (entry: PositionRow): boolean => !entry.effectiveTo;
+
+/**
+ * One employee's effective-dated values, as a table.
+ *
+ * Rendered only for the row a reader opened — the whole point of grouping the register by employee.
+ *
+ * Sorted by category, then by the value in force, then newest first. That ordering is what lets the
+ * Category column repeat its label on every row rather than blanking the repeats: the groups stay
+ * contiguous, so the column reads as a group heading *and* survives being scanned from any row,
+ * which a blanked cell does not.
+ */
+function PositionEntries({ entries }: { entries: PositionRow[] }) {
+  const ordered = [...entries].sort((a, b) => {
+    const byCategory = a.category.localeCompare(b.category);
+    if (byCategory !== 0) return byCategory;
+    // An open-ended row is the newest there is, whatever its start date says.
+    if (isCurrentEntry(a) !== isCurrentEntry(b)) return isCurrentEntry(a) ? -1 : 1;
+    return String(b.effectiveFrom).localeCompare(String(a.effectiveFrom));
+  });
+
+  if (!ordered.length) {
+    return <p className="px-4 py-3 text-xs text-muted-foreground">No position records for this employee.</p>;
+  }
+
+  return (
+    <div className="overflow-x-auto px-3 py-3">
+      <table className="w-full min-w-[32rem] text-xs">
+        <thead>
+          <tr className="text-left text-[10px] font-semibold uppercase tracking-wide text-slate-500">
+            <th className="px-2 py-1.5">Category</th>
+            <th className="px-2 py-1.5">Value</th>
+            <th className="px-2 py-1.5">Effective from</th>
+            <th className="px-2 py-1.5">Effective to</th>
+            <th className="px-2 py-1.5 text-right">Status</th>
+          </tr>
+        </thead>
+        <tbody className="divide-y divide-slate-100">
+          {ordered.map((entry, index) => {
+            const current = isCurrentEntry(entry);
+            // A hairline above the first row of each category, so the groups read without needing
+            // the label to disappear on the repeats.
+            const startsCategory = index === 0 || ordered[index - 1].category !== entry.category;
+            return (
+              <tr
+                key={entry.id}
+                className={cn(current && 'bg-emerald-50/40', startsCategory && index > 0 && 'border-t-slate-200')}
+              >
+                <td className="whitespace-nowrap px-2 py-1.5">
+                  <Badge
+                    variant="outline"
+                    className="border-indigo-200 bg-indigo-50 text-[10px] font-normal text-indigo-700"
+                  >
+                    {entry.category}
+                  </Badge>
+                </td>
+                <td className="px-2 py-1.5 font-medium text-slate-800">{entry.value || '—'}</td>
+                <td className="whitespace-nowrap px-2 py-1.5 tabular-nums text-slate-700">
+                  {entry.effectiveFrom || '—'}
+                </td>
+                <td className="whitespace-nowrap px-2 py-1.5 tabular-nums text-muted-foreground">
+                  {/* greytHR leaves the end date empty for the value in force; the old "N/A" read as
+                      missing data rather than as "still applies". */}
+                  {entry.effectiveTo || <span className="font-medium text-emerald-700">present</span>}
+                </td>
+                <td className="whitespace-nowrap px-2 py-1.5 text-right">
+                  {current ? (
+                    <Badge
+                      variant="outline"
+                      className="border-emerald-200 bg-emerald-50 text-[10px] font-normal text-emerald-700"
+                    >
+                      Current
+                    </Badge>
+                  ) : (
+                    <span className="text-[10px] text-muted-foreground">Superseded</span>
+                  )}
+                </td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+    </div>
+  );
+}
 
 export default function EmployeePositionDetailsPage() {
   const { toast } = useToast();
@@ -327,9 +425,87 @@ export default function EmployeePositionDetailsPage() {
     [filteredPositions, namesById],
   );
 
+  /**
+   * The register: one entry per employee, their history attached.
+   *
+   * Named employees first and then by id, the same order the other registers in the module use — a
+   * block of bare ids interleaved through an alphabetical list reads as corruption, and at the end
+   * it reads as the queue of people the mirror cannot name yet.
+   */
+  const groups = useMemo<EmployeeGroup[]>(() => {
+    const byEmployee = new Map<string, EmployeeGroup>();
+    for (const row of rows) {
+      const existing = byEmployee.get(row.employeeId);
+      if (existing) {
+        existing.entries.push(row);
+        continue;
+      }
+      byEmployee.set(row.employeeId, {
+        id: row.employeeId,
+        employeeId: row.employeeId,
+        name: row.name,
+        entries: [row],
+        categories: [],
+        current: [],
+        latestFrom: '',
+      });
+    }
+
+    const list = [...byEmployee.values()];
+    for (const group of list) {
+      group.categories = [...new Set(group.entries.map(entry => entry.category).filter(Boolean))].sort((a, b) =>
+        a.localeCompare(b),
+      );
+      group.current = group.entries.filter(isCurrentEntry);
+      group.latestFrom = group.entries.reduce(
+        (latest, entry) => (String(entry.effectiveFrom) > latest ? String(entry.effectiveFrom) : latest),
+        '',
+      );
+    }
+
+    return list.sort((a, b) => {
+      if (Boolean(a.name) !== Boolean(b.name)) return a.name ? -1 : 1;
+      if (a.name) return a.name.localeCompare(b.name);
+      return Number(a.employeeId) - Number(b.employeeId);
+    });
+  }, [rows]);
+
+  /**
+   * The export follows whichever view is on screen.
+   *
+   * A reader who has pivoted to one column per category and then exports expects that shape, not a
+   * ten-thousand-row history — and the history export is still one click away in the other view.
+   * Both respect the filters, because exporting more than the screen shows is how a spreadsheet ends
+   * up disagreeing with the page it came from.
+   */
   const handleExport = async () => {
     if (!rows.length) return;
     try {
+      if (view === 'columns') {
+        await exportRowsToExcel(
+          'Employee positions by category',
+          groups.map(group => ({
+            'Employee ID': group.employeeId,
+            Name: group.name || `Employee ${group.employeeId}`,
+            // One column per category, matching the table — and only the categories on screen, so a
+            // hidden column is absent from the workbook too.
+            ...Object.fromEntries(
+              uniqueCategories
+                .filter(category => !hiddenPivot.has(category))
+                .map(category => [
+                  category,
+                  group.current
+                    .filter(entry => entry.category === category)
+                    .map(entry => entry.value)
+                    .join(', '),
+                ]),
+            ),
+          })),
+          { filename: 'employee-positions-by-category.xlsx' },
+        );
+        return;
+      }
+
       await exportRowsToExcel(
         'Employee position details',
         rows.map(row => ({
@@ -339,6 +515,7 @@ export default function EmployeePositionDetailsPage() {
           Value: row.value,
           'Effective from': row.effectiveFrom,
           'Effective to': row.effectiveTo ?? '',
+          Status: row.effectiveTo ? 'Superseded' : 'Current',
         })),
         { filename: 'employee-position-details.xlsx' },
       );
@@ -356,8 +533,162 @@ export default function EmployeePositionDetailsPage() {
     setVisibleCount(PAGE_SIZE);
   }, [filters.employeeId, filters.category]);
 
-  const visibleRows = useMemo(() => rows.slice(0, visibleCount), [rows, visibleCount]);
+  const visibleGroups = useMemo(() => groups.slice(0, visibleCount), [groups, visibleCount]);
   const filtersActive = filters.employeeId !== '' || filters.category !== 'all';
+
+  /** One expanded employee at a time, so a long history never fights another for the screen. */
+  const [openId, setOpenId] = useState<string | null>(null);
+
+  /**
+   * Which shape the register takes.
+   *
+   * `grouped` is one row per employee, expanding to their history. `columns` is one row per
+   * employee with a column per category, showing the value in force. Same data, two questions: the
+   * first is about one person over time, the second about everybody right now.
+   */
+  const [view, setView] = useState<'grouped' | 'columns'>('grouped');
+
+  /**
+   * Hidden columns, tracked per view.
+   *
+   * Separately, because the two views share no columns beyond Employee — carrying one set across
+   * would hide "Records" in the grouped view because somebody hid "Grade" in the other.
+   */
+  const [hiddenGrouped, setHiddenGrouped] = useState<Set<string>>(new Set());
+  const [hiddenPivot, setHiddenPivot] = useState<Set<string>>(new Set());
+
+  // A narrowed filter should not leave a row open that is no longer in the list.
+  useEffect(() => {
+    setOpenId(null);
+  }, [filters.employeeId, filters.category]);
+
+  /**
+   * One column per category, in the order the category list is in.
+   *
+   * The cell is the value greytHR left open-ended. An employee with no open-ended value for a
+   * category gets an em dash rather than their most recent closed one: "was a Site Engineer until
+   * March" is not an answer to "what is their designation", and quietly showing a superseded value
+   * as current is the kind of wrong this module has been fixing all day.
+   */
+  const pivotColumns: Array<HrListColumn<EmployeeGroup>> = [
+    {
+      header: EMPLOYEE_COLUMN,
+      mobile: 'title',
+      cell: group => (
+        <span className="block">
+          <span className={cn('font-medium', group.name ? 'text-slate-800' : 'text-slate-500')}>
+            {group.name || `Employee ${group.employeeId}`}
+          </span>
+          <span className="block text-[11px] font-normal tabular-nums text-muted-foreground">
+            ID {group.employeeId}
+          </span>
+        </span>
+      ),
+    },
+    ...uniqueCategories.map<HrListColumn<EmployeeGroup>>(category => ({
+      header: category,
+      mobile: 'detail',
+      cell: group => {
+        const current = group.current.filter(entry => entry.category === category);
+        if (!current.length) {
+          // Distinguishes "greytHR has nothing in force" from "this employee has no record at all",
+          // which a bare dash in both cases would not.
+          const everHad = group.entries.some(entry => entry.category === category);
+          return (
+            <span className="text-xs text-muted-foreground" title={everHad ? 'Only superseded values on record' : undefined}>
+              {everHad ? 'ended' : '—'}
+            </span>
+          );
+        }
+        return (
+          <span className="flex flex-wrap gap-1">
+            {current.map(entry => (
+              <span key={entry.id} className="whitespace-nowrap text-sm text-slate-800">
+                {entry.value}
+              </span>
+            ))}
+          </span>
+        );
+      },
+    })),
+  ];
+
+  const columns: Array<HrListColumn<EmployeeGroup>> = [
+    {
+      header: EMPLOYEE_COLUMN,
+      mobile: 'title',
+      cell: group => (
+        <span className="block">
+          <span className={cn('font-medium', group.name ? 'text-slate-800' : 'text-slate-500')}>
+            {group.name || `Employee ${group.employeeId}`}
+          </span>
+          <span className="block text-[11px] font-normal tabular-nums text-muted-foreground">
+            ID {group.employeeId}
+          </span>
+        </span>
+      ),
+    },
+    {
+      header: 'Current position',
+      mobile: 'detail',
+      cell: group => {
+        if (!group.current.length) {
+          return <span className="text-xs text-muted-foreground">Nothing open-ended</span>;
+        }
+        return (
+          <span className="flex flex-wrap gap-1">
+            {group.current.slice(0, 3).map(entry => (
+              <Badge
+                key={entry.id}
+                variant="secondary"
+                className="max-w-[12rem] truncate text-[10px] font-normal"
+                title={`${entry.category}: ${entry.value}`}
+              >
+                {entry.value}
+              </Badge>
+            ))}
+            {group.current.length > 3 && (
+              <Badge variant="outline" className="text-[10px] font-normal text-muted-foreground">
+                +{group.current.length - 3}
+              </Badge>
+            )}
+          </span>
+        );
+      },
+    },
+    {
+      header: 'Categories',
+      align: 'right',
+      mobile: 'detail',
+      className: 'hidden sm:table-cell',
+      cell: group => <span className="tabular-nums text-slate-700">{group.categories.length}</span>,
+    },
+    {
+      header: 'Records',
+      align: 'right',
+      mobile: 'aside',
+      cell: group => (
+        <Badge variant="outline" className="border-indigo-200 bg-indigo-50 font-semibold text-indigo-700">
+          {group.entries.length}
+        </Badge>
+      ),
+    },
+    {
+      header: 'Last change',
+      align: 'right',
+      mobile: 'detail',
+      className: 'hidden md:table-cell',
+      cell: group => (
+        <span className="whitespace-nowrap tabular-nums text-muted-foreground">{group.latestFrom || '—'}</span>
+      ),
+    },
+  ];
+
+  const activeColumns = view === 'grouped' ? columns : pivotColumns;
+  const hidden = view === 'grouped' ? hiddenGrouped : hiddenPivot;
+  const setHidden = view === 'grouped' ? setHiddenGrouped : setHiddenPivot;
+  const columnKeys = activeColumns.map(column => column.header);
+  const shownColumns = activeColumns.filter(column => !hidden.has(column.header));
 
   if (isAuthLoading) {
     return (
@@ -481,7 +812,10 @@ export default function EmployeePositionDetailsPage() {
       <div className="mb-3 grid grid-cols-2 gap-2.5 sm:grid-cols-4">
         <EmployeeKpiCard
           label="Employees"
-          value={isLoading ? '—' : allPositions.length}
+          value={isLoading ? '—' : groups.length}
+          // The filtered count, with the total beside it: a KPI that ignores the filters below it is
+          // the "two numbers about the same fact" problem this module has already had once.
+          hint={filtersActive ? `of ${allPositions.length} with position records` : 'With position records'}
           icon={Users}
           tone="indigo"
           index={0}
@@ -514,8 +848,10 @@ export default function EmployeePositionDetailsPage() {
       <HrFilterCard
         summary={
           filtersActive
-            ? `${rows.length} record(s) matching${filters.category !== 'all' ? ` · ${filters.category}` : ''}`
-            : `${rows.length} record(s) across ${allPositions.length} employee(s)`
+            ? `${groups.length} employee(s) · ${rows.length} record(s) matching${
+                filters.category !== 'all' ? ` · ${filters.category}` : ''
+              }`
+            : `${groups.length} employee(s) · ${rows.length} position record(s)`
         }
         actions={
           filtersActive ? (
@@ -552,6 +888,50 @@ export default function EmployeePositionDetailsPage() {
         </div>
       </HrFilterCard>
 
+      {/* ── View, and which columns of it ────────────────────────────────────────────────────
+          A segmented switch rather than two screens: it is one register read two ways, and the
+          filters, counts and export above apply to both. */}
+      {!isLoading && !isDeleting && !loadError && groups.length > 0 && (
+        <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+          <div className="inline-flex rounded-full border border-white/70 bg-white/70 p-0.5 shadow-sm backdrop-blur-sm">
+            {(
+              [
+                ['grouped', 'Grouped by employee', Users],
+                ['columns', 'Column per category', Columns3],
+              ] as const
+            ).map(([value, label, Icon]) => (
+              <button
+                key={value}
+                type="button"
+                onClick={() => setView(value)}
+                aria-pressed={view === value}
+                className={cn(
+                  'inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-medium transition-colors',
+                  view === value ? 'bg-slate-900 text-white shadow-sm' : 'text-slate-600 hover:text-slate-900',
+                )}
+              >
+                <Icon className="h-3.5 w-3.5" />
+                {label}
+              </button>
+            ))}
+          </div>
+
+          <div className="flex items-center gap-2">
+            {view === 'columns' && (
+              <span className="hidden text-[11px] text-muted-foreground sm:inline">
+                Showing each employee&apos;s value in force
+              </span>
+            )}
+            <EmployeeColumnPicker
+              columns={columnKeys}
+              hidden={hidden}
+              onChange={setHidden}
+              locked={[EMPLOYEE_COLUMN]}
+            />
+          </div>
+        </div>
+      )}
+
       {isLoading || isDeleting ? (
         <HrLoader label={isDeleting ? 'Clearing records and resyncing…' : 'Loading position details…'} />
       ) : loadError ? (
@@ -565,8 +945,18 @@ export default function EmployeePositionDetailsPage() {
       ) : (
         <div className="space-y-2.5">
           <HrDataList
-            rows={visibleRows}
-            columns={COLUMNS}
+            rows={visibleGroups}
+            columns={shownColumns}
+            // Expansion belongs to the grouped view. In the column view the row already shows every
+            // category, so a click that opened a history under it would be answering a question the
+            // reader did not ask — and the pivot's own row is wide enough as it is.
+            onRowClick={
+              view === 'grouped'
+                ? group => setOpenId(current => (current === group.id ? null : group.id))
+                : undefined
+            }
+            expandedId={view === 'grouped' ? openId : null}
+            renderExpanded={view === 'grouped' ? group => <PositionEntries entries={group.entries} /> : undefined}
             dense
             maxHeightClassName={EMP_REGISTER_HEIGHT}
             empty={
@@ -590,9 +980,9 @@ export default function EmployeePositionDetailsPage() {
           />
 
           <EmployeeListFooter
-            shown={visibleRows.length}
-            total={rows.length}
-            noun="record"
+            shown={visibleGroups.length}
+            total={groups.length}
+            noun="employee"
             pageSize={PAGE_SIZE}
             onMore={() => setVisibleCount(count => count + PAGE_SIZE)}
           />
