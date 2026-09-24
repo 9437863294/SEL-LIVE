@@ -89,7 +89,8 @@ function keyWrappers(): KeyWrapper[] {
   if (current) wrappers.push(new LocalKeyWrapper(current, process.env.MAIL_HUB_TOKEN_KEY_VERSION?.trim() || 'v1'));
   const previous = parseKeyMaterial(process.env.MAIL_HUB_TOKEN_KEY_PREVIOUS);
   if (previous) wrappers.push(new LocalKeyWrapper(previous, process.env.MAIL_HUB_TOKEN_KEY_PREVIOUS_VERSION?.trim() || 'v0'));
-  cachedWrappers = wrappers;
+  // An empty result is not cached: a key added to the environment later must take effect without a restart.
+  if (wrappers.length) cachedWrappers = wrappers;
   return wrappers;
 }
 
