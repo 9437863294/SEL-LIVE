@@ -109,6 +109,7 @@ namespace Sel.Agent.Service
         private Timer _watchdog;
         private Timer _housekeeping;
         private ControlPipe _controlPipe;
+        private AgentUpdater _updater;
         private readonly object _gate = new object();
         private readonly System.Collections.Generic.Dictionary<uint, LaunchRecord> _launches =
             new System.Collections.Generic.Dictionary<uint, LaunchRecord>();
@@ -156,6 +157,12 @@ namespace Sel.Agent.Service
             // for why the decision is the server's and not the caller's.
             _controlPipe = new ControlPipe(ApproveServiceStop, Stop, message => Log(message));
             _controlPipe.Start();
+
+            // §43's automatic update. The policy that governs it — autoUpdateEnabled — is applied
+            // by the version route, which is the only side of this with a policy to read: this
+            // service has no user session and so no way to fetch one. See the note there.
+            _updater = new AgentUpdater(() => true, Log);
+            _updater.Start();
         }
 
         protected override void OnStop()
@@ -164,6 +171,7 @@ namespace Sel.Agent.Service
             if (_watchdog != null) { _watchdog.Dispose(); _watchdog = null; }
             if (_housekeeping != null) { _housekeeping.Dispose(); _housekeeping = null; }
             if (_controlPipe != null) { _controlPipe.Dispose(); _controlPipe = null; }
+            if (_updater != null) { _updater.Dispose(); _updater = null; }
         }
 
         /// <summary>

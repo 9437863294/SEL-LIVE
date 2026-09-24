@@ -1,7 +1,11 @@
 import { getFirebaseAdminFirestore } from '@/lib/firebase-admin';
 import { WINDOWS_AGENT_COLLECTIONS } from '@/lib/windows-agent';
 import { compareVersions } from '@/lib/windows-agent-rules';
-import { agentErrorResponse, authenticateDevice } from '@/lib/windows-agent-server';
+import {
+  agentErrorResponse,
+  authenticateDevice,
+  resolveEffectivePolicy,
+} from '@/lib/windows-agent-server';
 
 export const runtime = 'nodejs';
 
@@ -68,6 +72,32 @@ export async function GET(request: Request) {
           releaseNotes: String(data.releaseNotes || ''),
         };
         forced = mandatory;
+      }
+    }
+
+    /**
+     * `autoUpdateEnabled` is applied here rather than on the PC.
+     *
+     * The agent's updater runs as SYSTEM in the service, which has no user session and so no way
+     * to fetch a policy of its own — and every other part of this decision (the ring, the
+     * withdrawn flag, the minimum supported version) is already made here. Splitting the last
+     * one across the wire would mean two places to look when a machine will not update.
+     *
+     * A mandatory build is offered regardless. Switching auto-update off is a statement about
+     * routine releases, not about a security fix.
+     */
+    if (best && !forced) {
+      const policy = await resolveEffectivePolicy({
+        userId: authenticated.device.lastSeenUserId ?? null,
+        deviceId: authenticated.deviceId,
+        departmentIds: authenticated.device.departmentId ? [authenticated.device.departmentId] : [],
+      }).catch(() => null);
+
+      if (policy && policy.settings.autoUpdateEnabled === false) {
+        return Response.json(
+          { update: null, mandatory: false, current },
+          { headers: { 'Cache-Control': 'no-store' } },
+        );
       }
     }
 

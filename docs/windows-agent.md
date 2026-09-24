@@ -1109,6 +1109,63 @@ Neither collection is client-writable. Every write goes through `/api/work-calls
 
 ---
 
+## 7f. Releasing an update from your end
+
+Publish a build in SEL LIVE and the fleet installs it. Nobody visits a PC.
+
+```
+1. Build       pwsh windows/SEL.Agent.Installer/build.ps1 -Sign -CertificateThumbprint <yours>
+2. Host it     anywhere over https
+3. Publish     /windows-agent/versions — version, packageUrl, packageSha256,
+               signatureSubject, and the rings it is released to
+4. Wait        each PC checks 15 minutes after its service starts, then every 6 hours
+```
+
+**The service does the updating, not the desktop agent**, and all three reasons point the same
+way: it runs as SYSTEM so there is no UAC prompt, it runs whether or not anybody is signed in,
+and it is the component that survives the agent being replaced underneath it. It asks
+`/api/windows-agent/version` with its own device credential rather than taking a URL from the
+agent — otherwise a process running as the signed-in user would be handing SYSTEM something to
+execute.
+
+**Before anything runs, two checks, both mandatory:**
+
+| | |
+|---|---|
+| SHA-256 | Must equal what SEL LIVE published. This is what defends against a compromised package host: the hash arrives over an authenticated connection, the file does not |
+| Authenticode | `WinVerifyTrust` must pass *and* the certificate subject must contain what you published. Verified, not merely read — `CreateFromSignedFile` happily returns the signer of a forged file |
+
+A machine behind a proxy that blocks CRL endpoints re-verifies without revocation checking and
+says so in the log. The signature and the signer are still proved; only "has this certificate
+been revoked since" goes unanswered, and refusing every update for a check that could not be
+*performed* would disable auto-update exactly where it is most needed.
+
+**The install is handed to the Task Scheduler**, as a one-shot SYSTEM task two minutes out that
+deletes itself afterwards. The installer's first act is to stop `SELLiveAgent` — and a process
+started by the service belongs to the service's job object, so running it directly would kill the
+installer half way through replacing its own files. The same lesson as
+`CREATE_BREAKAWAY_FROM_JOB` in the session launcher, applied before it cost a second morning.
+
+**Two things throttle it.** The first check waits fifteen minutes after the service starts, plus
+up to an hour of jitter — four hundred machines switched on within ten minutes of each other
+would otherwise all pull a 120 MB installer at once, which is a self-inflicted outage of the
+office link. And `autoUpdateEnabled` is applied by the *server*, in the version route, because
+the service has no user session and therefore no policy to read.
+
+> **You need a code-signing certificate.** The version route refuses to offer any package without
+> a `signatureSubject`, so with today's unsigned builds **nothing will ever be offered** and the
+> fleet will stay where it is. That rule is deliberate — whoever controls the package URL
+> otherwise controls code execution as SYSTEM on every office PC — and it predates this work.
+> An OV code-signing certificate is the unblock. If you would rather accept unsigned packages,
+> that is a one-line change in `src/app/api/windows-agent/version/route.ts`, and it should be a
+> decision you make knowingly rather than one I make for you.
+
+A mandatory build — one below `minimumSupportedVersion` — is offered even to a device whose ring
+is `HELD` and even where `autoUpdateEnabled` is off, and the log says it overrode the policy.
+Switching auto-update off is a statement about routine releases, not about a security fix.
+
+---
+
 ## 8. Staged rollout
 
 Do not switch on the access gate fleet-wide. The default policy has it **off**, which is
@@ -1228,9 +1285,10 @@ Stated so nobody discovers them during a rollout.
   see §3 for why that is not worth COM automation to fix.
 - **No reporting line is modelled** in this database, so `View Team` resolves to the viewer's own
   department members.
-- **Auto-update downloads and verifies but does not self-install.** The version check, hash and
-  signature verification are implemented; running the installer unattended is left to your
-  existing software-deployment tooling, which is better at it and already has the rollback story.
+- ~~Auto-update downloads and verifies but does not self-install~~ — **done**, and the claim it
+  replaces was generous: nothing was downloaded and nothing was verified. The contract and the
+  server side existed, the heartbeat delivered an available version, and no code anywhere acted
+  on it. §7f.
 - **The setup .exe needs internet for WebView2, though not for .NET.** The framework is embedded
   in full; WebView2 ships as its 2 MB downloader, because the offline runtime is 188 MB and the
   feature it enables has a working fallback. An air-gapped site either builds with
