@@ -46,7 +46,14 @@
  *     categories are only useful if the list populates itself.
  */
 
-import { OFFICE_HUB_DEFAULT_TIME_ZONE, clockToMinutes, utcToZonedParts } from './office-hub-time.ts';
+import {
+  OFFICE_HUB_DEFAULT_TIME_ZONE,
+  clockToMinutes,
+  isClockTime,
+  isIsoDate,
+  utcToZonedParts,
+  zonedTimeToUtc,
+} from './office-hub-time.ts';
 import type {
   ActivityClassification,
   AgentActivitySpan,
@@ -233,6 +240,26 @@ export function workDateOf(
   timeZone: string = WINDOWS_AGENT_TIME_ZONE,
 ): IsoDate {
   return utcToZonedParts(instant, timeZone).date;
+}
+
+/**
+ * The instant an office-local clock time falls on, on a given work date. The inverse of
+ * {@link workDateOf}.
+ *
+ * What turns "the lunch break is 13:00 to 13:45" into two instants the resolution engine can
+ * compare against spans. Every span it will be ranked against is stored in UTC, so the
+ * conversion has to happen once, here, with the office's zone — doing it with the browser's
+ * local time would place the break an hour out for anybody travelling, and five and a half hours
+ * out on a server.
+ */
+export function instantOfClock(
+  workDate: IsoDate,
+  clock: string,
+  timeZone: string = WINDOWS_AGENT_TIME_ZONE,
+): string | null {
+  if (!isIsoDate(workDate) || !isClockTime(clock)) return null;
+  const instant = zonedTimeToUtc(workDate, clock, timeZone);
+  return Number.isNaN(instant.getTime()) ? null : instant.toISOString();
 }
 
 /**

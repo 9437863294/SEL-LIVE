@@ -279,6 +279,41 @@ Document names are also sanitised server-side: a path is reduced to its last seg
 `C:\Users\ashish\Personal\Resignation.docx` is stored as `Resignation.docx` — §13 asked which file,
 not where somebody keeps their private folders.
 
+### The lunch break
+
+Configured on `/windows-agent/policies`, **on by default**, 13:00–13:45. It is the one optional
+behaviour in this module that defaults to on, because an installation that has never opened that
+screen still has lunch — and without a window, the hour everybody spends away from their desk is
+reported as `UNEXPLAINED_IDLE`. A report that is wrong about the single most predictable thing in
+the day is worse than one that says nothing.
+
+| Setting | |
+|---|---|
+| `lunchBreakEnabled` | On by default |
+| `lunchBreakStart` / `lunchBreakEnd` | `HH:mm`, organisation-local, the same clock as the workday |
+
+**It is a claim, not a subtraction**, and that distinction is the whole design. The resolution
+engine ranks `BREAK` below every kind of real work, so:
+
+| What happened between 13:00 and 13:45 | What the day reports |
+|---|---|
+| Away from the desk | Break 45m |
+| Locked the PC and went out | Break 45m — a break explains a lock |
+| Worked in Excel 13:10–13:40 | Work 30m, break 15m |
+| In a meeting 13:15–13:45 | Meeting 30m, break 15m |
+| Agent not running | Nothing. A break cannot invent time that was never recorded |
+
+Cutting the window out of the totals instead would take work away from whoever worked through it
+and hide the fact that they did. This way nobody has to be granted an exception for being on the
+phone at 13:30.
+
+**It is not paid time.** `recordedWorkSeconds` excludes `BREAK`, so the window comes out of the
+working-hours total as an unpaid break should — and is still reported on its own line rather than
+quietly folded into anything.
+
+Scoped like every other policy setting, so a site office on a different shift gets its own window
+by department, user or device without touching the company default.
+
 ### Administrator directives, and why they expire
 
 **Force sign-out** and **Force re-authentication** on the device page are stored as instants on the

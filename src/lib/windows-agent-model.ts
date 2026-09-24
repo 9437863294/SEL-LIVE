@@ -670,6 +670,32 @@ export interface AgentPolicySettings {
   workdayEnd?: string;
   /** Minutes of grace before `workdayStart` counts as late. */
   lateLoginGraceMinutes?: number;
+
+  /**
+   * The lunch break, so an hour away from the desk is not reported as unexplained idle.
+   *
+   * ── Why this has to be configured, and what happens without it ────────────────────────────────
+   *
+   * Everybody in the company stops for lunch, and the agent has no way to know that: a still
+   * keyboard between one and two looks exactly like a still keyboard at eleven. Until this
+   * existed, every employee's day carried an hour of `UNEXPLAINED_IDLE` that nobody could
+   * explain — which makes the report less useful the more honest it tries to be, and makes
+   * somebody who took their lunch look like somebody who disappeared.
+   *
+   * ── What the window does, and what it does not ────────────────────────────────────────────────
+   *
+   * It is a *claim*, not an override. The resolution engine ranks `BREAK` below every kind of
+   * real work, so somebody who works through lunch is still credited with the work — the break
+   * only explains the time nothing else accounts for. That is why it can be left on for
+   * everybody rather than needing a per-person exception for whoever is on the phone at 13:30.
+   *
+   * It is also not paid time: `recordedWorkSeconds` excludes `BREAK`, so the window comes out of
+   * the working-hours total exactly as an unpaid break should.
+   */
+  lunchBreakEnabled?: boolean;
+  /** `HH:mm`, organisation-local, same clock as `workdayStart`. */
+  lunchBreakStart?: string;
+  lunchBreakEnd?: string;
   /**
    * Whether the tray menu's "Pause tracking" is offered at all. §26: an employee may not silently
    * stop a mandatory session, but an organisation that wants to allow it can.

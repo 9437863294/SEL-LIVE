@@ -421,3 +421,74 @@ export function recordedWorkSeconds(totals: Record<WorkActivityCategory, number>
     totals.WEBSITE
   );
 }
+
+
+/* ------------------------------------------------------------------------------------------------
+ * The configured break (§AN)
+ * ---------------------------------------------------------------------------------------------- */
+
+/** Just enough of the policy to place a break on a day. */
+export interface BreakWindowPolicy {
+  lunchBreakEnabled?: boolean;
+  /** `HH:mm`, organisation-local. */
+  lunchBreakStart?: string;
+  lunchBreakEnd?: string;
+}
+
+/**
+ * Turn the configured lunch break into a claim for one work date.
+ *
+ * ── Why a claim and not a subtraction ──────────────────────────────────────────────────────────
+ *
+ * The obvious implementation is to cut the window out of the day's totals. That is wrong twice
+ * over: it removes work from anybody who worked through lunch, and it hides the fact that they
+ * did. As a claim it competes on the same footing as everything else — `BREAK` ranks below every
+ * category of real work, so an application in the foreground at 13:20 keeps its time and the
+ * break only explains what is left. Somebody who ate at their desk shows work; somebody who went
+ * out shows a break; nobody shows an hour of unexplained idle.
+ *
+ * ── Why it is emitted for the whole window regardless ──────────────────────────────────────────
+ *
+ * There is no attempt to detect whether the break was taken. Detecting it would mean guessing
+ * from idleness, and the guess would be wrong in both directions — a long call at the desk looks
+ * idle, a quick sandwich in front of the screen does not. The window says when the break *is*;
+ * the resolver decides what it explains.
+ *
+ * Returns an empty array when the break is switched off or the times are unusable, so a caller
+ * can always spread the result without checking.
+ *
+ * @param workDate The office-local date, `YYYY-MM-DD`, as `workDateOf` stamps it.
+ * @param toInstant Converts `YYYY-MM-DD` and `HH:mm` in the office's zone to a UTC instant.
+ *   Passed in rather than imported so this module stays free of the timezone helpers and can be
+ *   tested with a fixed offset.
+ */
+export function breakClaims(
+  policy: BreakWindowPolicy | null | undefined,
+  workDate: string,
+  toInstant: (workDate: string, clock: string) => string | null,
+): ActivityClaim[] {
+  if (!policy || policy.lunchBreakEnabled === false) return [];
+
+  const start = typeof policy.lunchBreakStart === 'string' ? policy.lunchBreakStart : null;
+  const end = typeof policy.lunchBreakEnd === 'string' ? policy.lunchBreakEnd : null;
+  if (!start || !end) return [];
+
+  const startAt = toInstant(workDate, start);
+  const endAt = toInstant(workDate, end);
+  if (!startAt || !endAt) return [];
+
+  // A break that ends before it starts is a typo, not an overnight break. Emitting it would
+  // produce a negative interval that the resolver would reject anyway, with a worse message.
+  if (Date.parse(endAt) <= Date.parse(startAt)) return [];
+
+  return [
+    {
+      source: 'MANUAL',
+      category: 'BREAK',
+      startAt,
+      endAt,
+      contextName: 'Lunch break',
+      detail: start + '–' + end,
+    },
+  ];
+}

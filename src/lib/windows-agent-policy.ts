@@ -71,6 +71,12 @@ export const DEFAULT_AGENT_POLICY: Required<AgentPolicySettings> = {
   autoUpdateEnabled: true,
   workdayStart: '09:00',
   workdayEnd: '18:00',
+  // On by default, unlike every other optional behaviour here. An installation that has
+  // never opened this screen still has lunch, and reporting it as unexplained idle is the
+  // wrong default — see the field's note in the model.
+  lunchBreakEnabled: true,
+  lunchBreakStart: '13:00',
+  lunchBreakEnd: '13:45',
   lateLoginGraceMinutes: 15,
   allowUserPauseTracking: false,
   // Off, with the timings already sensible for whoever switches it on. Ten minutes is long
@@ -171,7 +177,12 @@ export function sanitizePolicySettings(raw: unknown): AgentPolicySettings {
       continue;
     }
 
-    if (key === 'workdayStart' || key === 'workdayEnd') {
+    if (
+      key === 'workdayStart'
+      || key === 'workdayEnd'
+      || key === 'lunchBreakStart'
+      || key === 'lunchBreakEnd'
+    ) {
       if (typeof value === 'string' && CLOCK_PATTERN.test(value)) out[key] = value;
       continue;
     }

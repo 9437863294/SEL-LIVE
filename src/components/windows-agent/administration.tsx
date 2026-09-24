@@ -102,6 +102,18 @@ const SETTING_LABELS: Record<keyof AgentPolicySettings, { label: string; help: s
   workdayStart: { label: 'Workday starts', help: 'Used to flag late sign-ins. Never used to block one.' },
   workdayEnd: { label: 'Workday ends', help: 'Reporting only.' },
   lateLoginGraceMinutes: { label: 'Late grace (minutes)', help: 'Minutes after the start before a sign-in is flagged late.' },
+  lunchBreakEnabled: {
+    label: 'Lunch break',
+    help: 'On by default. Without it, an hour away from the desk every day is reported as unexplained idle — which is the report being wrong about the one thing everybody does.',
+  },
+  lunchBreakStart: {
+    label: 'Lunch starts',
+    help: 'Organisation-local, the same clock as the workday above.',
+  },
+  lunchBreakEnd: {
+    label: 'Lunch ends',
+    help: 'The window only explains time nothing else accounts for: somebody working through lunch still gets credited with the work, and the break shrinks to whatever is left.',
+  },
   allowUserPauseTracking: { label: 'Let employees pause tracking', help: 'Adds "Pause tracking" to the tray menu.' },
   rawActivityRetentionDays: {
     label: 'Keep raw activity for (days)',
