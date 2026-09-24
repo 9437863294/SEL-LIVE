@@ -209,8 +209,27 @@ export function AssigneePicker({
     {
       header: 'Emp ID',
       mobile: 'detail',
-      className: 'font-mono text-[11px]',
-      cell: (row) => resolveDesignation(row).employeeCode ?? <span className="font-sans text-muted-foreground/70">—</span>,
+      /*
+       * Sized to its contents instead of taking an equal quarter of the table.
+       *
+       * `w-px` with `whitespace-nowrap` is the shrink-to-fit idiom for the kit's auto-layout
+       * `w-full` table: the browser cannot honour a 1px width without clipping the text, so it
+       * gives the column exactly the width of its longest value and hands the slack to the three
+       * columns people actually read across. A code like "E1597" is six characters and fixed —
+       * every pixel beyond that was dead space between the location and the right edge.
+       *
+       * The monospace face stays on the cell rather than going here, because `className` is applied
+       * to the header too and "EMP ID" was rendering in a different face from the other three.
+       */
+      className: 'w-px whitespace-nowrap',
+      cell: (row) => {
+        const { employeeCode } = resolveDesignation(row);
+        return employeeCode ? (
+          <span className="font-mono text-[11px]">{employeeCode}</span>
+        ) : (
+          <span className="text-muted-foreground/70">—</span>
+        );
+      },
     },
   ];
 

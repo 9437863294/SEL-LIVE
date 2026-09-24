@@ -2142,20 +2142,56 @@ const ACCOUNT_LEVEL_ACTIONS = new Set<AccessAuditAction>([
   'Create User',
 ]);
 
-export function describeAuditEntry(entry: AccessAuditEntry): string {
-  const parts: string[] = [];
+export interface AuditEntrySummary {
+  /** What changed: "Added Project Manager", "Removed 4 permission(s)". */
+  headline: string;
+  /** Who it was done to. */
+  target: string;
+  /**
+   * Existing permissions displaced by the change, or `null` where the question does not apply
+   * (a revoke, or an account-level action). Usually `0` — which is the whole point of stating it.
+   */
+  removed: number | null;
+}
+
+/**
+ * The same description as `describeAuditEntry`, but in pieces.
+ *
+ * A compact feed — the Overview's Recent activity list — has one truncated line per row, and the
+ * single-string form spends it badly: every additive row begins with the same verb and ends with
+ * the same "— existing permissions removed: 0", so six consecutive rows truncate to six visually
+ * identical strings with the part that distinguishes them cut off. Splitting lets that feed put the
+ * headline on one line and the target and author on another, and drop a tail that is the same on
+ * every row.
+ *
+ * The prose form below is built from this, so the two cannot drift.
+ */
+export function describeAuditEntryParts(entry: AccessAuditEntry): AuditEntrySummary {
+  let headline: string;
   if (entry.roleNames.length) {
-    parts.push(`${entry.action === 'Revoke Access' ? 'Removed' : 'Added'} ${entry.roleNames.join(', ')}`);
+    headline = `${entry.action === 'Revoke Access' ? 'Removed' : 'Added'} ${entry.roleNames.join(', ')}`;
   } else if (entry.permissionsAdded.length) {
-    parts.push(`Added ${entry.permissionsAdded.length} permission(s)`);
+    headline = `Added ${entry.permissionsAdded.length} permission(s)`;
   } else if (entry.permissionsRemoved.length) {
-    parts.push(`Removed ${entry.permissionsRemoved.length} permission(s)`);
+    headline = `Removed ${entry.permissionsRemoved.length} permission(s)`;
   } else {
-    parts.push(entry.action);
+    headline = entry.action;
   }
-  parts.push(`for ${entry.targetUserName}`);
-  if (entry.action !== 'Revoke Access' && !ACCOUNT_LEVEL_ACTIONS.has(entry.action)) {
-    parts.push(`— existing permissions removed: ${entry.permissionsRemoved.length}`);
-  }
-  return parts.join(' ');
+
+  // The removal count is the additive layer's promise made checkable, so it is stated even when —
+  // especially when — it is zero. It does not apply to a revoke (removal is the point) or to an
+  // account action (which touches no permissions).
+  const statesRemoval = entry.action !== 'Revoke Access' && !ACCOUNT_LEVEL_ACTIONS.has(entry.action);
+
+  return {
+    headline,
+    target: entry.targetUserName,
+    removed: statesRemoval ? entry.permissionsRemoved.length : null,
+  };
+}
+
+export function describeAuditEntry(entry: AccessAuditEntry): string {
+  const { headline, target, removed } = describeAuditEntryParts(entry);
+  const line = `${headline} for ${target}`;
+  return removed === null ? line : `${line} — existing permissions removed: ${removed}`;
 }

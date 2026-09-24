@@ -22,6 +22,7 @@ import {
   daysUntilExpiry,
   deactivationHasLapsed,
   describeAuditEntry,
+  describeAuditEntryParts,
   detectPrivilegedAccess,
   detectSodConflicts,
   diffPermissionMaps,
@@ -995,6 +996,43 @@ test('describeAuditEntry reads as prose and states the removal count', () => {
     changedAt: NOW,
   });
   assert.equal(line, 'Added Project Manager for Rahul Kumar — existing permissions removed: 0');
+});
+
+// The Overview's activity feed renders the pieces separately so six rows do not truncate to six
+// identical strings. The prose form above is built from these, so this pins that they agree.
+test('describeAuditEntryParts splits the same description into headline, target and removal', () => {
+  const grant = {
+    targetUserId: 'u1',
+    targetUserName: 'Rahul Kumar',
+    action: 'Grant Access',
+    roleNames: ['Project Manager'],
+    permissionsAdded: ['a::View'],
+    permissionsRemoved: [],
+    permissionsSkipped: [],
+    sourceKind: 'Additional Role',
+    changedBy: 'admin-1',
+    changedByName: 'Debaprasad',
+    changedAt: NOW,
+  };
+  assert.deepEqual(describeAuditEntryParts(grant), {
+    headline: 'Added Project Manager',
+    target: 'Rahul Kumar',
+    removed: 0,
+  });
+  // Recomposing the parts must reproduce the prose form exactly.
+  assert.equal(
+    describeAuditEntry(grant),
+    'Added Project Manager for Rahul Kumar — existing permissions removed: 0',
+  );
+
+  // A revoke removes by definition, so the count is not applicable rather than zero.
+  const revoke = { ...grant, action: 'Revoke Access', permissionsAdded: [], permissionsRemoved: ['a::View'] };
+  assert.deepEqual(describeAuditEntryParts(revoke), {
+    headline: 'Removed Project Manager',
+    target: 'Rahul Kumar',
+    removed: null,
+  });
+  assert.equal(describeAuditEntry(revoke), 'Removed Project Manager for Rahul Kumar');
 });
 
 test('permissionKey round-trips through the source map', () => {

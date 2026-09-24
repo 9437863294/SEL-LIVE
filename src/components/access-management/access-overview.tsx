@@ -55,7 +55,7 @@ import { SpotlightCard } from '@/components/effects/SpotlightCard';
 import { CountUp } from '@/components/effects/CountUp';
 import { cn } from '@/lib/utils';
 import {
-  describeAuditEntry,
+  describeAuditEntryParts,
   detectPrivilegedAccess,
   detectSodConflicts,
   expiringTemporaryGrants,
@@ -120,7 +120,10 @@ export function AccessOverview({
         .map((user) => ({ user, access: accessByUser[user.id] }))
         .filter((row) => row.access)
         .sort((a, b) => (b.access?.permissionCount ?? 0) - (a.access?.permissionCount ?? 0))
-        .slice(0, 8),
+        // Six, matching Recent activity. The three panels in this row are now one height, so the
+        // longest list sets it for all of them — and eight made the other two mostly empty space.
+        // This is a "first place to look", not the register; Effective Access has the full list.
+        .slice(0, 6),
     [directory.users, accessByUser],
   );
 
@@ -484,7 +487,10 @@ export function AccessOverview({
       {/* ---- People and grants ---- */}
       <section className="space-y-2">
         <SectionLabel icon={Users} title="Worth a look" />
-        <div className="grid gap-2.5 lg:grid-cols-2 xl:grid-cols-3">
+        {/* `auto-rows-fr` so the three panels are one height whatever they happen to contain —
+            "nothing expiring" next to eight users read as a broken layout rather than as two
+            answers. */}
+        <div className="grid auto-rows-fr gap-2.5 lg:grid-cols-2 xl:grid-cols-3">
           <ChartCard
             delay={840}
             spotlight="rgba(217, 119, 6, 0.14)"
@@ -583,6 +589,7 @@ export function AccessOverview({
                 {recentEntries.map((entry, index) => {
                   const Icon = activityIcon(entry.action);
                   const removal = REMOVAL_ACTIONS.has(entry.action);
+                  const summary = describeAuditEntryParts(entry);
                   return (
                     <button
                       key={entry.id ?? `${entry.targetUserId}-${entry.changedAt}-${index}`}
@@ -598,12 +605,29 @@ export function AccessOverview({
                       >
                         <Icon className="h-3.5 w-3.5" />
                       </span>
+                      {/*
+                        Two lines, not one truncated sentence.
+
+                        The single-string form put the same verb at the front of every additive row
+                        and the same "— existing permissions removed: 0" at the back, so six rows
+                        truncated to six near-identical strings with the distinguishing part — who
+                        it was done to — cut off in the middle. The headline gets the line, the
+                        person and the author get the line below, and the time is pushed right where
+                        it can be scanned down the column.
+                      */}
                       <span className="min-w-0 flex-1">
-                        <span className="block truncate text-sm text-slate-800">{describeAuditEntry(entry)}</span>
-                        <span className="block text-[11px] text-muted-foreground">
-                          {formatGrantDate(entry.changedAt)}{' '}
-                          {new Date(entry.changedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} ·{' '}
-                          {entry.changedByName}
+                        <span className="flex items-baseline justify-between gap-2">
+                          <span className="truncate text-sm font-medium text-slate-800">{summary.headline}</span>
+                          <span className="shrink-0 text-[11px] tabular-nums text-muted-foreground">
+                            {new Date(entry.changedAt).toLocaleTimeString([], {
+                              hour: '2-digit',
+                              minute: '2-digit',
+                            })}
+                          </span>
+                        </span>
+                        <span className="block truncate text-[11px] text-muted-foreground">
+                          for <span className="text-slate-600">{summary.target}</span> ·{' '}
+                          {formatGrantDate(entry.changedAt)} · by {entry.changedByName}
                         </span>
                       </span>
                     </button>
@@ -1067,8 +1091,20 @@ function OpenLink({ label, onClick }: { label: string; onClick: () => void }) {
   );
 }
 
+/**
+ * The "nothing to show" state inside a panel.
+ *
+ * Centred in whatever height is left rather than sitting at the top, because these three panels are
+ * now all the same height: a one-line note pinned to the top of a tall card reads as something that
+ * failed to load, while the same line centred in it reads as an answer. "Nothing expiring" is good
+ * news and should look deliberate.
+ */
 function EmptyNote({ children }: { children: React.ReactNode }) {
-  return <p className="py-4 text-center text-xs text-muted-foreground">{children}</p>;
+  return (
+    <div className="flex flex-1 items-center justify-center py-6">
+      <p className="max-w-[24ch] text-center text-xs text-muted-foreground">{children}</p>
+    </div>
+  );
 }
 
 /** A card with a titled header, an "open" link on the right, and a body that fills the rest. */
@@ -1092,10 +1128,13 @@ function ChartCard({
   spotlight: string;
 }) {
   return (
+    // `h-full` all the way down, so a row of these is one height: the card already asked for it,
+    // but the Spotlight wrapper between it and the grid cell was auto-height and swallowed the
+    // request — which is why a panel with one line sat next to a panel with eight.
     <SpotlightCard
       spotlightColor={spotlight}
       style={{ animationDelay: `${delay}ms`, animationFillMode: 'both' }}
-      className="animate-am-card-in rounded-lg"
+      className="animate-am-card-in h-full rounded-lg"
     >
       <AccessCard className="flex h-full flex-col transition-shadow duration-300 hover:shadow-lg">
         <CardHeader className="flex-row items-start justify-between gap-2 space-y-0 px-4 py-3">
@@ -1108,7 +1147,7 @@ function ChartCard({
           </div>
           {action}
         </CardHeader>
-        <CardContent className="flex-1 px-4 pb-4">{children}</CardContent>
+        <CardContent className="flex flex-1 flex-col px-4 pb-4">{children}</CardContent>
       </AccessCard>
     </SpotlightCard>
   );
