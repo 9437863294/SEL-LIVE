@@ -155,11 +155,12 @@ export default function MailAccountsPage() {
             <div key={account.id} className="rounded-xl border p-3">
               <div className="flex flex-col gap-2 sm:flex-row sm:items-start">
                 <div className="min-w-0 flex-1">
-                  <p className="flex flex-wrap items-center gap-2 font-medium">
+                  {/* A div, not a <p>: the shadcn Badge renders a <div>, which a paragraph cannot contain. */}
+                  <div className="flex flex-wrap items-center gap-2 font-medium">
                     <span className="truncate">{account.sharedMailboxName ?? account.emailAddress}</span>
                     <AccountStatusBadge account={account} />
                     {account.kind === 'shared' && <span className="flex items-center gap-1 text-xs text-muted-foreground"><Users className="h-3 w-3" /> shared</span>}
-                  </p>
+                  </div>
                   <p className="text-xs text-muted-foreground">
                     {account.provider === 'gmail' ? 'Google' : account.provider === 'microsoft' ? 'Microsoft 365' : 'IMAP/SMTP'}
                     {account.loginIdentity && account.loginIdentity !== account.emailAddress ? ` · via ${account.loginIdentity}` : ''}
