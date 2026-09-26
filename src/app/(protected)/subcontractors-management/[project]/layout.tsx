@@ -44,7 +44,6 @@ export default function ProjectLayout({
   const pathname = usePathname();
   const { can } = useAuthorization();
   const [currentProject, setCurrentProject] = React.useState<Project | null>(null);
-  const [mobileMenuOpen, setMobileMenuOpen] = React.useState(false);
 
   React.useEffect(() => {
     const fetchProject = async () => {
@@ -71,6 +70,8 @@ export default function ProjectLayout({
       icon: FolderOpen,
       label: 'Projects',
       permission: can('View Module', 'Subcontractors Management'),
+      // The module root: in the bottom bar's pop-up it must not light up on every screen under it.
+      exact: true,
     },
     {
       href: `/subcontractors-management/${projectSlug}/manage`,
@@ -101,7 +102,8 @@ export default function ProjectLayout({
   const visibleNavItems = navItems.filter((item) => item.permission);
 
   // The phone's bottom bar: the project's dashboard, its work orders and bills, raising a bill in
-  // the middle, and "More" opening the sidebar's own sheet. Each tab only if the sidebar shows it.
+  // the middle, and "More" opening the bar's pop-up of the sidebar's screens. Each tab only if the
+  // sidebar shows it.
   const projectBase = `/subcontractors-management/${projectSlug}`;
   const isVisible = (href: string) => visibleNavItems.some((item) => item.href === href);
   const bottomTabs: ModuleNavTab[] = [
@@ -139,8 +141,8 @@ export default function ProjectLayout({
           subtitle={currentProject?.projectName || undefined}
           icon={HardHat}
           gradient="from-sky-600 to-blue-600"
-          mobileOpen={mobileMenuOpen}
-          onMobileOpenChange={setMobileMenuOpen}
+          // Phones reach these same screens from the bottom bar's "More".
+          mobileSections={false}
           groups={[
             {
               label: 'Screens',
@@ -166,7 +168,6 @@ export default function ProjectLayout({
       <ModuleBottomNav
         tabs={bottomTabs}
         pages={visibleNavItems}
-        onMore={() => setMobileMenuOpen(true)}
         moduleName="Subcontractors Management"
       />
     </PmShell>

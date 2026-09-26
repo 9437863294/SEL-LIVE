@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, type ReactNode } from 'react';
+import { useEffect, type ReactNode } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import {
@@ -14,7 +14,6 @@ import {
   Component,
   ListTree,
   MapPin,
-  Menu,
   PackagePlus,
   PackageSearch,
   Plus,
@@ -22,16 +21,7 @@ import {
   Settings,
   type LucideIcon,
 } from 'lucide-react';
-import { ModuleBottomNav, type ModuleNavTab } from '@/components/navigation/ModuleBottomNav';
-import { Button } from '@/components/ui/button';
-import {
-  Sheet,
-  SheetContent,
-  SheetDescription,
-  SheetHeader,
-  SheetTitle,
-  SheetTrigger,
-} from '@/components/ui/sheet';
+import { ModuleBottomNav, type ModuleMoreLink, type ModuleNavTab } from '@/components/navigation/ModuleBottomNav';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { useSidebarDefault } from '@/components/theme/use-sidebar-default';
 import { cn } from '@/lib/utils';
@@ -146,15 +136,22 @@ const settingsItem: NavigationItem = {
 };
 
 // The phone's bottom bar leads with the overview, stock by item, posting a receipt or issue, and
-// transfers; the rest of the menu follows them, and "More" opens the full menu. The sidebar above
-// is not permission-filtered (each page gates itself), so neither are these.
+// transfers; the rest of the menu follows them, and "More" opens the bar's pop-up of every page,
+// under the sidebar's headings. The sidebar above is not permission-filtered (each page gates
+// itself), so neither are these.
 const bottomTabs: ModuleNavTab[] = [
   { href: '/store-stock-management/inventory', label: 'Home', icon: Boxes, exact: true },
   { href: '/store-stock-management/inventory/item-wise', label: 'Stock', icon: PackageSearch, ariaLabel: 'Item-wise inventory' },
   { href: '/store-stock-management/inventory/movements', label: 'New', icon: Plus, emphasized: true, ariaLabel: 'Post a receipt, issue or adjustment' },
   { href: '/store-stock-management/inventory/transfers', label: 'Transfers', icon: Repeat2 },
 ];
-const bottomPages = [...operations, ...masters, settingsItem];
+const bottomPages: ModuleMoreLink[] = [
+  ...operations.map((item) => ({ ...item, group: 'operations' })),
+  ...masters.map((item) => ({ ...item, group: 'masters' })),
+  // Pinned to the sidebar's foot rather than listed under a heading, so it gets one of its own.
+  { ...settingsItem, group: 'configuration' },
+];
+const bottomGroupLabels = { operations: 'Operations', masters: 'Master data', configuration: 'Configuration' };
 
 const STORAGE_KEY = 'inventory-sidebar-expanded';
 
@@ -162,10 +159,25 @@ function isItemActive(pathname: string, item: NavigationItem) {
   return item.exact ? pathname === item.href : pathname.startsWith(item.href);
 }
 
+/** A row above the pop-up's page tiles, for a destination outside this module. */
+function MoreSheetLink({ href, label }: { href: string; label: string }) {
+  return (
+    <Link
+      href={href}
+      prefetch={false}
+      className="flex items-center gap-3 rounded-2xl border border-border/60 bg-muted/30 px-3 py-2.5 text-sm font-medium text-foreground/80 transition-colors hover:bg-muted/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+    >
+      <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-background shadow-sm">
+        <ArrowLeft className="h-4 w-4" aria-hidden="true" />
+      </span>
+      {label}
+    </Link>
+  );
+}
+
 export function InventoryModuleShell({ children }: { children: ReactNode }) {
   const pathname = usePathname() || '';
   const [isExpanded, setIsExpanded] = useSidebarDefault(true);
-  const [mobileOpen, setMobileOpen] = useState(false);
 
   // A toggle remembered from an earlier visit is the user's own choice for this rail, so it
   // outranks their account-wide sidebar default (restoring through the setter settles it).
@@ -227,32 +239,6 @@ export function InventoryModuleShell({ children }: { children: ReactNode }) {
     );
   };
 
-  const mobileLink = (item: NavigationItem) => {
-    const active = isItemActive(pathname, item);
-    const Icon = item.icon;
-    return (
-      <Link
-        key={item.href}
-        href={item.href}
-        prefetch={false}
-        onClick={() => setMobileOpen(false)}
-        aria-current={active ? 'page' : undefined}
-        className={cn(
-          'flex items-center gap-3 rounded-xl px-3 py-2.5 transition-colors',
-          active ? cn('bg-gradient-to-r text-white shadow-sm', item.activeGradient) : 'text-slate-700 hover:bg-slate-100',
-        )}
-      >
-        <span className={cn('flex h-9 w-9 shrink-0 items-center justify-center rounded-lg', active ? 'bg-white/20' : item.iconBackground)}>
-          <Icon className={cn('h-4 w-4', active ? 'text-white' : item.iconClassName)} />
-        </span>
-        <span className="min-w-0">
-          <span className="block truncate text-sm font-semibold">{item.label}</span>
-          <span className={cn('block truncate text-xs', active ? 'text-white/75' : 'text-muted-foreground')}>{item.description}</span>
-        </span>
-      </Link>
-    );
-  };
-
   return (
     <div className="min-h-[calc(100vh-4rem)] w-full bg-gradient-to-br from-slate-50/80 via-background to-blue-50/40">
       <TooltipProvider delayDuration={100}>
@@ -309,47 +295,31 @@ export function InventoryModuleShell({ children }: { children: ReactNode }) {
       </TooltipProvider>
 
       <div className={cn('min-w-0 transition-[margin] duration-300', isExpanded ? 'md:ml-64' : 'md:ml-[4.5rem]')}>
+        {/* Phones: the module's name only. Its pages are on the bottom bar, all of them under "More". */}
         <div className="border-b bg-white/90 px-4 py-3 backdrop-blur md:hidden">
-          <div className="flex items-center justify-between gap-3">
-            <div className="flex min-w-0 items-center gap-3">
-              <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-emerald-600 to-teal-700">
-                <Building2 className="h-4 w-4 text-white" />
-              </div>
-              <div className="min-w-0">
-                <p className="truncate text-sm font-bold">Property Inventory</p>
-                <p className="truncate text-xs text-muted-foreground">Store & stock control</p>
-              </div>
+          <div className="flex min-w-0 items-center gap-3">
+            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-emerald-600 to-teal-700">
+              <Building2 className="h-4 w-4 text-white" />
             </div>
-            <Sheet open={mobileOpen} onOpenChange={setMobileOpen}>
-              <SheetTrigger asChild>
-                <Button variant="outline" size="sm"><Menu className="mr-2 h-4 w-4" />Menu</Button>
-              </SheetTrigger>
-              <SheetContent side="left" className="w-[88vw] max-w-sm bg-slate-50 p-0">
-                <SheetHeader className="border-b bg-white px-5 py-5 text-left">
-                  <SheetTitle className="flex items-center gap-2"><Building2 className="h-5 w-5 text-emerald-700" />Property Inventory</SheetTitle>
-                  <SheetDescription>Navigate inventory operations and master data.</SheetDescription>
-                </SheetHeader>
-                <div className="max-h-[calc(100vh-7rem)] overflow-y-auto p-3 pb-8">
-                  <p className="mb-2 px-2 text-[10px] font-bold uppercase tracking-[0.14em] text-slate-400">Operations</p>
-                  <nav className="space-y-1" aria-label="Mobile inventory operations">{operations.map(mobileLink)}</nav>
-                  <div className="my-4 border-t" />
-                  <p className="mb-2 px-2 text-[10px] font-bold uppercase tracking-[0.14em] text-slate-400">Master data</p>
-                  <nav className="space-y-1" aria-label="Mobile inventory master data">{masters.map(mobileLink)}</nav>
-                  <div className="my-4 border-t" />
-                  {mobileLink(settingsItem)}
-                  <Link href="/store-stock-management" prefetch={false} onClick={() => setMobileOpen(false)} className="mt-2 flex items-center gap-3 rounded-xl px-3 py-3 text-sm font-medium text-muted-foreground hover:bg-slate-100 hover:text-foreground">
-                    <ArrowLeft className="h-4 w-4" />Back to stock management
-                  </Link>
-                </div>
-              </SheetContent>
-            </Sheet>
+            <div className="min-w-0">
+              <p className="truncate text-sm font-bold">Property Inventory</p>
+              <p className="truncate text-xs text-muted-foreground">Store & stock control</p>
+            </div>
           </div>
         </div>
 
         <main className="mx-auto w-full max-w-[1600px] px-4 py-5 sm:px-6 lg:px-8">{children}</main>
       </div>
 
-      <ModuleBottomNav tabs={bottomTabs} pages={bottomPages} onMore={() => setMobileOpen(true)} moduleName="Property Inventory" hideAbove="md" />
+      <ModuleBottomNav
+        tabs={bottomTabs}
+        pages={bottomPages}
+        groupLabels={bottomGroupLabels}
+        // The sidebar's way out, which is not an inventory page, heads the pop-up.
+        moreContent={<MoreSheetLink href="/store-stock-management" label="Back to stock management" />}
+        moduleName="Property Inventory"
+        hideAbove="md"
+      />
     </div>
   );
 }

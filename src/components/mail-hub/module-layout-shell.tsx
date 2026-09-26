@@ -1,15 +1,16 @@
 'use client';
 
 /**
- * Mail Hub's chrome: sidebar on a desktop, slide-out sheet on a phone — the same shape as Office
- * Hub's shell so the two modules feel like one application. The sidebar lists the folders and, under
- * them, each connected mailbox with a status dot, so a mailbox that needs reconnecting is visible
- * from every page rather than only on Settings.
+ * Mail Hub's chrome: sidebar on a desktop, the floating bottom bar and its "More" pop-up on a phone
+ * — the same shape as Office Hub's shell so the two modules feel like one application. The sidebar
+ * lists the folders and, under them, each connected mailbox with a status dot, so a mailbox that
+ * needs reconnecting is visible from every page rather than only on Settings; on a phone the
+ * mailboxes head the pop-up.
  */
 
 import Link from 'next/link';
 import { usePathname, useSearchParams } from 'next/navigation';
-import { useState, type ReactNode } from 'react';
+import { useState, type ReactElement, type ReactNode } from 'react';
 import {
   Archive,
   BarChart3,
@@ -20,7 +21,6 @@ import {
   LayoutTemplate,
   ListChecks,
   Mail,
-  Menu,
   PenLine,
   Search,
   Send,
@@ -42,7 +42,7 @@ import {
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
-import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle, SheetTrigger } from '@/components/ui/sheet';
+import { SheetClose } from '@/components/ui/sheet';
 import { Skeleton } from '@/components/ui/skeleton';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import { MAIL_HUB_BASE_PATH } from '@/lib/mail-hub/model';
@@ -87,7 +87,6 @@ function Shell({ children }: { children: ReactNode }) {
   const pathname = usePathname() ?? '';
   const search = useSearchParams();
   const { data, loading, error, openComposer, composer } = useMailHub();
-  const [open, setOpen] = useState(false);
   const iconsOnly = useSidebarIconsOnly();
   /** The mailbox whose folder flyout is open, in icons mode (where the folders have no room). */
   const [mailboxFlyout, setMailboxFlyout] = useState<string | null>(null);
@@ -140,8 +139,9 @@ function Shell({ children }: { children: ReactNode }) {
   const activeFolder = search?.get('folder');
 
   // The phone's bottom bar: the overview, the inbox with its unread count, follow-ups and search,
-  // and "More" opening the menu sheet. Compose stays the header's button — it is a dialog, not a
-  // page, and the bar gets out of the dialog's way (it sits under the overlay, and hides while typing).
+  // and "More" opening the pop-up of every page, the mailboxes above them. Compose stays the
+  // header's button — it is a dialog, not a page, and the bar gets out of the dialog's way (it sits
+  // under the overlay, and hides while typing).
   const unread = personal.reduce(
     (sum, account) => sum + ((data.folders[account.id] ?? []).find((folder) => folder.role === 'inbox')?.unreadCount ?? 0),
     0,
@@ -153,37 +153,62 @@ function Shell({ children }: { children: ReactNode }) {
     { href: `${MAIL_HUB_BASE_PATH}/search`, label: 'Search', icon: Search },
   ];
 
-  /** A mailbox's own link and its custom folders — under the folders in labels mode, in a flyout in icons mode. */
-  const mailboxLinks = (account: (typeof personal)[number], onNavigate?: () => void) => {
+  /**
+   * A mailbox's own link and its custom folders — under the folders in labels mode, in a flyout in
+   * icons mode, and at the top of the phone's "More" pop-up (`inPopup`). There each link also closes
+   * the pop-up: from the inbox, another mailbox changes only the query, and the pop-up closes by
+   * itself only when the path changes.
+   */
+  const mailboxLinks = (account: (typeof personal)[number], onNavigate?: () => void, inPopup = false) => {
     const custom = (data.folders[account.id] ?? []).filter((folder) => folder.role === 'custom').slice(0, 12);
+    const closing = (link: ReactElement) => (inPopup ? <SheetClose key={link.key} asChild>{link}</SheetClose> : link);
     return (
       <>
-        <Link
-          href={`${MAIL_HUB_BASE_PATH}/inbox?account=${account.id}`}
-          onClick={onNavigate}
-          className={cn('flex items-center gap-2 rounded-lg px-2.5 py-1.5 text-xs text-slate-600 hover:bg-white/70', activeAccount === account.id && !activeFolder && 'bg-white font-semibold text-slate-900')}
-          title={account.recovery?.title ?? account.emailAddress}
-        >
-          <span role="img" aria-label={statusDotLabel(account.status)} title={statusDotLabel(account.status)} className={cn('h-2 w-2 shrink-0 rounded-full', statusDot(account.status))} />
-          <span className="truncate">{account.emailAddress}</span>
-        </Link>
-        {custom.map((folder) => (
+        {closing(
           <Link
-            key={folder.id}
-            href={`${MAIL_HUB_BASE_PATH}/inbox?account=${account.id}&folder=${folder.id}`}
+            href={`${MAIL_HUB_BASE_PATH}/inbox?account=${account.id}`}
             onClick={onNavigate}
-            className={cn('ml-4 flex items-center justify-between gap-2 rounded-md px-2.5 py-1 text-xs text-slate-500 hover:bg-white/70', activeFolder === folder.id && 'bg-white font-semibold text-slate-900')}
+            className={cn('flex items-center gap-2 rounded-lg px-2.5 py-1.5 text-xs text-slate-600 hover:bg-white/70', activeAccount === account.id && !activeFolder && 'bg-white font-semibold text-slate-900')}
+            title={account.recovery?.title ?? account.emailAddress}
           >
-            <span className="truncate">{folder.name}</span>
-            {folder.unreadCount ? <span className="text-[10px] text-slate-400">{folder.unreadCount}</span> : null}
-          </Link>
-        ))}
+            <span role="img" aria-label={statusDotLabel(account.status)} title={statusDotLabel(account.status)} className={cn('h-2 w-2 shrink-0 rounded-full', statusDot(account.status))} />
+            <span className="truncate">{account.emailAddress}</span>
+          </Link>,
+        )}
+        {custom.map((folder) =>
+          closing(
+            <Link
+              key={folder.id}
+              href={`${MAIL_HUB_BASE_PATH}/inbox?account=${account.id}&folder=${folder.id}`}
+              onClick={onNavigate}
+              className={cn('ml-4 flex items-center justify-between gap-2 rounded-md px-2.5 py-1 text-xs text-slate-500 hover:bg-white/70', activeFolder === folder.id && 'bg-white font-semibold text-slate-900')}
+            >
+              <span className="truncate">{folder.name}</span>
+              {folder.unreadCount ? <span className="text-[10px] text-slate-400">{folder.unreadCount}</span> : null}
+            </Link>,
+          ),
+        )}
       </>
     );
   };
 
-  // `compact` is the desktop sidebar in icons mode; the phone sheet always passes labels.
-  const nav = (onNavigate?: () => void, compact = false) => {
+  // What the old phone menu listed beyond the pages: the mailboxes, each with its status dot and
+  // custom folders, which nothing else on a phone offers. It heads the bottom bar's "More" pop-up.
+  // (Compose is the mobile header's button, so it is not repeated here.)
+  const mailboxMenu =
+    personal.length > 0 ? (
+      <div>
+        <p className="mb-2 px-1 text-[10px] font-bold uppercase tracking-[0.14em] text-muted-foreground">Mailboxes</p>
+        <div className="space-y-1 rounded-2xl border border-border/60 bg-muted/30 p-1.5">
+          {personal.map((account) => (
+            <div key={account.id}>{mailboxLinks(account, undefined, true)}</div>
+          ))}
+        </div>
+      </div>
+    ) : undefined;
+
+  // The desktop sidebar; `compact` is its icons mode. Phones use the bottom bar's pop-up.
+  const nav = (compact = false) => {
     let last = '';
     return (
       <>
@@ -194,13 +219,13 @@ function Shell({ children }: { children: ReactNode }) {
                 size="icon"
                 aria-label="Compose"
                 className="mx-auto mb-2 flex h-9 w-9 bg-gradient-to-r from-sky-500 to-indigo-600 text-white hover:opacity-95"
-                onClick={() => { openComposer({ mode: 'new' }); onNavigate?.(); }}
+                onClick={() => openComposer({ mode: 'new' })}
               >
                 <PenLine className="h-4 w-4" />
               </Button>
             </SidebarNavTooltip>
           ) : (
-            <Button className="mb-2 w-full gap-2 bg-gradient-to-r from-sky-500 to-indigo-600 text-white hover:opacity-95" onClick={() => { openComposer({ mode: 'new' }); onNavigate?.(); }}>
+            <Button className="mb-2 w-full gap-2 bg-gradient-to-r from-sky-500 to-indigo-600 text-white hover:opacity-95" onClick={() => openComposer({ mode: 'new' })}>
               <PenLine className="h-4 w-4" /> Compose <kbd className="ml-auto hidden rounded bg-white/20 px-1 text-[10px] lg:inline">c</kbd>
             </Button>
           ))}
@@ -224,7 +249,6 @@ function Shell({ children }: { children: ReactNode }) {
               <SidebarNavTooltip label={section.label} enabled={compact}>
                 <Link
                   href={section.href}
-                  onClick={onNavigate}
                   aria-current={active ? 'page' : undefined}
                   title={compact ? section.label : undefined}
                   className={cn(
@@ -267,7 +291,7 @@ function Shell({ children }: { children: ReactNode }) {
                     </PopoverTrigger>
                   </SidebarNavTooltip>
                   <PopoverContent side="right" align="start" className="w-64 space-y-0.5 p-2">
-                    {mailboxLinks(account, () => { setMailboxFlyout(null); onNavigate?.(); })}
+                    {mailboxLinks(account, () => setMailboxFlyout(null))}
                   </PopoverContent>
                 </Popover>
               ))}
@@ -277,7 +301,7 @@ function Shell({ children }: { children: ReactNode }) {
               <p className="px-2.5 pb-1 text-[10px] font-bold uppercase tracking-[0.14em] text-slate-400">Mailboxes</p>
               {personal.map((account) => (
                 <div key={account.id} className="mb-1">
-                  {mailboxLinks(account, onNavigate)}
+                  {mailboxLinks(account)}
                 </div>
               ))}
             </div>
@@ -292,20 +316,6 @@ function Shell({ children }: { children: ReactNode }) {
       <div className="mb-2 lg:hidden">
         <Card>
           <CardContent className="flex items-center gap-2 px-2.5 py-2">
-            <Sheet open={open} onOpenChange={setOpen}>
-              <SheetTrigger asChild>
-                <Button variant="outline" className="h-10 shrink-0 gap-2 bg-white/90 px-3 text-sm">
-                  <Menu className="h-4 w-4" /> Menu
-                </Button>
-              </SheetTrigger>
-              <SheetContent side="left" className="flex w-[88vw] max-w-[300px] flex-col bg-slate-50 p-0">
-                <SheetHeader className="border-b px-4 py-3 text-left">
-                  <SheetTitle className="text-sm">Mail Hub</SheetTitle>
-                  <SheetDescription className="text-[11px]">Tap a section to open it</SheetDescription>
-                </SheetHeader>
-                <div className="flex-1 overflow-y-auto p-2 pb-8">{nav(() => setOpen(false))}</div>
-              </SheetContent>
-            </Sheet>
             <div className="flex min-w-0 flex-1 items-center gap-2">
               <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-gradient-to-br from-sky-500 to-indigo-600">
                 <Mail className="h-4 w-4 text-white" />
@@ -344,14 +354,14 @@ function Shell({ children }: { children: ReactNode }) {
                 </Link>
               </SidebarNavTooltip>
               <CardContent className="max-h-[calc(100vh-var(--app-header-offset,4rem)-6rem)] overflow-y-auto p-2">
-                <nav aria-label="Mail Hub sections">{nav(undefined, iconsOnly)}</nav>
+                <nav aria-label="Mail Hub sections">{nav(iconsOnly)}</nav>
               </CardContent>
             </Card>
           </aside>
         </TooltipProvider>
         <main className="min-w-0 w-full">{children}</main>
       </div>
-      <ModuleBottomNav tabs={bottomTabs} pages={sections} onMore={() => setOpen(true)} moduleName="Mail Hub" />
+      <ModuleBottomNav tabs={bottomTabs} pages={sections} groupLabels={GROUP_LABELS} moreContent={mailboxMenu} moduleName="Mail Hub" />
       {composer && <Composer />}
     </div>
   );

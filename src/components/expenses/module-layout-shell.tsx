@@ -7,7 +7,8 @@
  * here — every page used to add `px-4 sm:px-6 lg:px-8` of its own on top of the shell's `p-6`,
  * which stacked into ~56px of dead margin down each side and left the create form floating in the
  * middle of the screen. And there was no mobile treatment at all: a 56px rail sat pinned to the
- * left of a phone screen with no way to collapse it, so the nav is now a drawer below `lg`.
+ * left of a phone screen with no way to collapse it, so below `lg` the nav is now the floating
+ * bottom bar, whose "More" pop-up also carries the report list while Reports is open.
  *
  * The layout and colour language follow the Recurring Payments shell, which is the pattern the
  * rest of the app has converged on — a sidebar card with a gradient brand header, per-item colour
@@ -19,23 +20,15 @@ import * as React from 'react';
 import { useState } from 'react';
 import Link from 'next/link';
 import { usePathname, useSearchParams } from 'next/navigation';
-import { BarChart3, ChevronDown, ChevronRight, IndianRupee, LayoutDashboard, Layers, Menu, Plus, Settings } from 'lucide-react';
+import { BarChart3, ChevronDown, ChevronRight, IndianRupee, LayoutDashboard, Layers, Plus, Settings, type LucideIcon } from 'lucide-react';
 import { EXPENSE_REPORTS, EXPENSE_REPORT_GROUPS } from '@/lib/expenses-reports';
 import { useAuth } from '@/components/auth/AuthProvider';
 import { ModuleBottomNav, type ModuleNavTab } from '@/components/navigation/ModuleBottomNav';
 import { SIDEBAR_ICONS_GRID, SidebarNavTooltip, useSidebarIconsOnly } from '@/components/navigation/use-sidebar-mode';
-import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { TooltipProvider } from '@/components/ui/tooltip';
-import {
-  Sheet,
-  SheetContent,
-  SheetDescription,
-  SheetHeader,
-  SheetTitle,
-  SheetTrigger,
-} from '@/components/ui/sheet';
+import { SheetClose } from '@/components/ui/sheet';
 import { useAuthorization } from '@/hooks/useAuthorization';
 import { cn } from '@/lib/utils';
 
@@ -45,7 +38,7 @@ type NavItem = {
   href: string;
   label: string;
   caption: string;
-  icon: React.ElementType;
+  icon: LucideIcon;
   /** Idle icon chip. */
   color: string;
   bg: string;
@@ -73,6 +66,13 @@ const reportChildren: NavChild[] = [
 
 const CHILD_GROUP_ORDER = [...EXPENSE_REPORT_GROUPS, 'Custom'];
 
+/** Headings for each `group` in the phone's "More" pop-up; the sidebar draws the same groups as dividers. */
+const GROUP_LABELS: Record<string, string> = {
+  overview: 'Overview',
+  registers: 'Registers',
+  admin: 'Configuration',
+};
+
 /** Sub-routes with a nav entry of their own; anything else under /expenses belongs to Overview. */
 const NAMED_SUB_ROUTES = ['/expenses/all', '/expenses/reports', '/expenses/settings'];
 
@@ -91,7 +91,6 @@ export default function ExpensesLayoutShell({ children }: { children: React.Reac
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const safePathname = pathname || '';
-  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   /** Sections the user has folded by hand while still on them. */
   const [collapsedSections, setCollapsedSections] = useState<string[]>([]);
   const iconsOnly = useSidebarIconsOnly();
@@ -163,8 +162,9 @@ export default function ExpensesLayoutShell({ children }: { children: React.Reac
     );
 
   // The phone's bottom bar: Overview and the consolidated register, raising a request in the
-  // middle, and "More" opening the full menu (settings, the report list). Each tab only if its
-  // sidebar entry is visible too, and none until permissions resolve so the bar does not grow.
+  // middle, and "More" opening the bar's pop-up of every page (and, on Reports, the report list —
+  // see `moreContent` below). Each tab only if its sidebar entry is visible too, and none until
+  // permissions resolve so the bar does not grow.
   const isVisible = (href: string) => navItems.some(item => item.href === href);
   const bottomTabs: ModuleNavTab[] = authLoading
     ? []
@@ -230,8 +230,64 @@ export default function ExpensesLayoutShell({ children }: { children: React.Reac
       );
     });
 
-  // `compact` is the desktop sidebar in icons mode; the phone sheet always passes labels.
-  const navigationLinks = (onNavigate?: () => void, compact = false) => {
+  /**
+   * On a phone there is no sidebar to nest a section's children under, so while that section is
+   * open the "More" pop-up leads with them, as chips. Each is a `SheetClose`: picking another
+   * report only changes the query string, and the bar closes its pop-up by itself only when the
+   * path changes.
+   */
+  const activeParent = authLoading
+    ? undefined
+    : navItems.find(item => !!item.children?.length && matchesPath(safePathname, item.href));
+  const parentChildren = activeParent?.children ?? [];
+  const parentSelected = activeParent?.childParam ? searchParams?.get(activeParent.childParam) : null;
+  const moreContent = activeParent ? (
+    <section aria-label={`${activeParent.label} list`}>
+      <p className="mb-2 px-1 text-[10px] font-bold uppercase tracking-[0.14em] text-muted-foreground">
+        {activeParent.label}
+      </p>
+      <div className="space-y-2.5 rounded-2xl border border-border/60 bg-muted/30 p-3">
+        {CHILD_GROUP_ORDER.map(group => {
+          const inGroup = parentChildren.filter(child => child.group === group);
+          if (!inGroup.length) return null;
+          return (
+            <div key={group}>
+              <p className="px-1 pb-1.5 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+                {group}
+              </p>
+              <div className="flex flex-wrap gap-1.5">
+                {inGroup.map(child => {
+                  // Same rule as the sidebar: the first entry is what the page falls back to.
+                  const isSelected = parentSelected
+                    ? parentSelected === child.id
+                    : child.id === parentChildren[0].id;
+                  return (
+                    <SheetClose key={child.id} asChild>
+                      <Link
+                        href={`${activeParent.href}?${activeParent.childParam}=${child.id}`}
+                        aria-current={isSelected ? 'true' : undefined}
+                        className={cn(
+                          'inline-flex min-h-9 items-center rounded-full border px-3 text-xs font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
+                          isSelected
+                            ? 'border-primary/40 bg-primary/10 text-primary'
+                            : 'border-border/60 bg-background text-foreground/80 hover:bg-muted/60',
+                        )}
+                      >
+                        {child.label}
+                      </Link>
+                    </SheetClose>
+                  );
+                })}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </section>
+  ) : undefined;
+
+  // `compact` is the desktop sidebar in icons mode.
+  const navigationLinks = (compact: boolean) => {
     let lastGroup = '';
     return navItems.map(item => {
       const active = matchesPath(safePathname, item.href);
@@ -250,7 +306,6 @@ export default function ExpensesLayoutShell({ children }: { children: React.Reac
           <SidebarNavTooltip label={item.label} enabled={compact}>
             <Link
               href={item.href}
-              onClick={onNavigate}
               aria-current={active ? 'page' : undefined}
               aria-expanded={item.children && !compact ? expanded : undefined}
               title={compact ? item.label : undefined}
@@ -316,7 +371,7 @@ export default function ExpensesLayoutShell({ children }: { children: React.Reac
 
           {expanded && !compact && (
             <div className="mt-1 max-h-[46vh] space-y-0.5 overflow-y-auto border-l-2 border-slate-200 pl-2 lg:ml-3">
-              {childGroups(item, selectedChild, onNavigate)}
+              {childGroups(item, selectedChild)}
             </div>
           )}
 
@@ -336,10 +391,7 @@ export default function ExpensesLayoutShell({ children }: { children: React.Reac
               </SidebarNavTooltip>
               <PopoverContent side="right" align="start" className="w-64 p-2">
                 <div className="max-h-[60vh] space-y-0.5 overflow-y-auto">
-                  {childGroups(item, selectedChild, () => {
-                    setChildFlyoutOpen(false);
-                    onNavigate?.();
-                  })}
+                  {childGroups(item, selectedChild, () => setChildFlyoutOpen(false))}
                 </div>
               </PopoverContent>
             </Popover>
@@ -362,26 +414,6 @@ export default function ExpensesLayoutShell({ children }: { children: React.Reac
       <div className="mb-3 lg:hidden print:hidden">
         <Card className="border border-white/60 bg-white/80 shadow-sm backdrop-blur-sm">
           <CardContent className="flex items-center gap-3 px-3 py-2.5">
-            <Sheet open={mobileMenuOpen} onOpenChange={setMobileMenuOpen}>
-              <SheetTrigger asChild>
-                <Button variant="outline" className="h-10 shrink-0 gap-2 bg-white/90 px-3 text-sm font-medium">
-                  <Menu className="h-4 w-4" /> Menu
-                </Button>
-              </SheetTrigger>
-              <SheetContent
-                side="left"
-                className="z-[60] flex w-[88vw] max-w-[300px] flex-col border-r border-slate-200 bg-slate-50 p-0"
-              >
-                <SheetHeader className="shrink-0 border-b border-slate-200/60 px-4 py-3 text-left">
-                  <SheetTitle className="sr-only">Expenses navigation</SheetTitle>
-                  <SheetDescription className="sr-only">Tap a section to navigate</SheetDescription>
-                  {brand}
-                </SheetHeader>
-                <div className="flex-1 space-y-0.5 overflow-y-auto p-2 pb-8">
-                  {navigationLinks(() => setMobileMenuOpen(false))}
-                </div>
-              </SheetContent>
-            </Sheet>
             {brand}
           </CardContent>
         </Card>
@@ -404,7 +436,7 @@ export default function ExpensesLayoutShell({ children }: { children: React.Reac
                 )}
               </div>
               <CardContent className="max-h-[calc(100vh-var(--app-header-offset,4rem)-9rem)] space-y-0.5 overflow-y-auto p-2">
-                {navigationLinks(undefined, iconsOnly)}
+                {navigationLinks(iconsOnly)}
               </CardContent>
             </Card>
           </aside>
@@ -420,7 +452,13 @@ export default function ExpensesLayoutShell({ children }: { children: React.Reac
         </main>
       </div>
 
-      <ModuleBottomNav tabs={bottomTabs} pages={authLoading ? undefined : navItems} onMore={() => setMobileMenuOpen(true)} moduleName="Expenses" />
+      <ModuleBottomNav
+        tabs={bottomTabs}
+        pages={authLoading ? undefined : navItems}
+        groupLabels={GROUP_LABELS}
+        moreContent={moreContent}
+        moduleName="Expenses"
+      />
     </div>
   );
 }

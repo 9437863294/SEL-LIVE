@@ -100,6 +100,100 @@ export function slotLayout(width: number, padding: number, count: number, pinned
   };
 }
 
+/** How the bar sizes its tabs around their labels. */
+export interface LabelFit {
+  /** Clear space kept between two neighbouring labels. */
+  gap: number;
+  /** No label box is wider than this; longer labels end in "…". */
+  maxLabel: number;
+  /** Narrowest a slot may get, however short the labels — it is still a thumb's tap target. */
+  minSlot: number;
+  /** Fewest strip tabs to show, however long the labels. */
+  minInView: number;
+  /**
+   * Share of neighbouring label pairs that should fit in full. The rest — the odd "Insurance
+   * Workflow" among "Trips" and "Fuel" — end in "…" rather than cost every page of the bar a tab.
+   */
+  coverage: number;
+}
+
+/** The value `share` of the way through `values` once sorted (linear between neighbours). */
+function quantile(values: readonly number[], share: number): number {
+  if (!values.length) return 0;
+  const sorted = [...values].sort((a, b) => a - b);
+  const at = clamp(share, 0, 1) * (sorted.length - 1);
+  const low = Math.floor(at);
+  const high = Math.min(sorted.length - 1, low + 1);
+  return lerp(sorted[low], sorted[high], at - low);
+}
+
+/**
+ * How many strip tabs to show at once: the most, up to `maxInView`, whose slots are wide enough for
+ * `coverage` of the neighbouring label pairs to sit side by side in full.
+ *
+ * Two centred labels one slot apart clear each other when half of each, plus the gap, fits in the
+ * slot. Widths are the labels as rendered — font, weight, the user's text size — so a bar of short
+ * names shows six, and long names or large text show fewer. Whatever the count, `labelBoxes` keeps
+ * every pair from overlapping; this only decides how often a label has to end in "…".
+ */
+export function fitInView(
+  width: number,
+  padding: number,
+  strip: readonly number[],
+  pinned: readonly number[],
+  maxInView: number,
+  fit: LabelFit,
+): number {
+  const count = strip.length;
+  if (count === 0) return 0;
+  const clip = (w: number) => Math.min(Math.max(0, w), fit.maxLabel);
+  const pairs: number[] = [];
+  for (let i = 0; i + 1 < count; i++) pairs.push((clip(strip[i]) + clip(strip[i + 1])) / 2);
+  if (pinned.length) pairs.push((clip(strip[count - 1]) + clip(pinned[0])) / 2);
+  // A lone tab is its own "pair".
+  if (!pairs.length) pairs.push(clip(strip[0]));
+  const needed = Math.max(fit.minSlot, quantile(pairs, fit.coverage) + fit.gap);
+  const inner = Math.max(0, width - padding * 2);
+  const slots = Math.floor(inner / needed + 1e-9);
+  const upper = Math.max(1, Math.min(maxInView, count));
+  return clamp(slots - pinned.length, Math.min(fit.minInView, upper), upper);
+}
+
+/**
+ * Width of every label's box, strip tabs then pinned items, such that no two labels that can end up
+ * side by side ever overlap — whatever the slot width, the scroll position or the label lengths.
+ *
+ * Each label may use half a slot less half the gap on a side, plus whatever a shorter neighbour
+ * leaves unused. Worked through for a pair: two long labels get half the room each; a short one
+ * keeps its own width and the long one gets the rest; two short ones fit anyway. The neighbours
+ * checked are the tabs either side in the strip, and "More" for every strip tab — any of them can
+ * scroll to the end beside it; and for "More", the longest strip tab.
+ */
+export function labelBoxes(slot: number, strip: readonly number[], pinned: readonly number[], fit: LabelFit): number[] {
+  const clip = (w: number) => Math.min(Math.max(0, w), fit.maxLabel);
+  const room = Math.max(0, slot - fit.gap);
+  // How much of the shared room a label may take beside this neighbour.
+  const beside = (neighbour: number) => Math.max(room / 2, room - clip(neighbour) / 2);
+  const box = (neighbours: number[]) =>
+    Math.max(0, Math.min(fit.maxLabel, 2 * Math.min(fit.maxLabel / 2, ...neighbours.map(beside))));
+  const longestStrip = strip.length ? Math.max(...strip.map(clip)) : 0;
+  const stripBoxes = strip.map((_, i) =>
+    box([
+      ...(i > 0 ? [strip[i - 1]] : []),
+      ...(i + 1 < strip.length ? [strip[i + 1]] : []),
+      ...(pinned.length ? [pinned[0]] : []),
+    ]),
+  );
+  const pinnedBoxes = pinned.map((_, j) =>
+    box([
+      ...(strip.length && j === 0 ? [longestStrip] : []),
+      ...(j > 0 ? [pinned[j - 1]] : []),
+      ...(j + 1 < pinned.length ? [pinned[j + 1]] : []),
+    ]),
+  );
+  return [...stripBoxes, ...pinnedBoxes];
+}
+
 /** Furthest the strip can scroll. */
 export function maxScroll(layout: SlotLayout) {
   return Math.max(0, layout.contentWidth - layout.trackWidth);

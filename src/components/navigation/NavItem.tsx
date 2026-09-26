@@ -52,8 +52,9 @@ export function NavItem({
         <Icon aria-hidden="true" focusable="false" />
         <NotificationBadge count={item.badge} />
       </span>
+      {/* The inner span is what the bar measures: its natural width, even while the box cuts it short. */}
       <span className="fbn-label" aria-hidden="true">
-        {item.label}
+        <span className="fbn-label-text">{item.label}</span>
       </span>
     </>
   );

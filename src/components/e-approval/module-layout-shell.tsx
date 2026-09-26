@@ -2,7 +2,6 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { useState } from 'react';
 import {
   BadgeCheck,
   BarChart3,
@@ -15,7 +14,6 @@ import {
   Gauge,
   History,
   Inbox,
-  Menu,
   Plus,
   ShieldAlert,
   Settings,
@@ -30,9 +28,7 @@ import {
   SidebarNavTooltip,
   useSidebarIconsOnly,
 } from '@/components/navigation/use-sidebar-mode';
-import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle, SheetTrigger } from '@/components/ui/sheet';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import { cn } from '@/lib/utils';
 import { E_APPROVAL_BASE_PATH } from '@/lib/e-approval';
@@ -110,7 +106,6 @@ function EApprovalLayoutShellInner({ children }: { children: React.ReactNode }) 
    */
   const isPrintRoute = pathname.includes('/print');
   const permissions = useEApprovalPermissions();
-  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const iconsOnly = useSidebarIconsOnly();
 
   const gates: Record<NavKey, boolean> = {
@@ -132,8 +127,9 @@ function EApprovalLayoutShellInner({ children }: { children: React.ReactNode }) 
     .find((item) => pathname === item.href || (item.href !== E_APPROVAL_BASE_PATH && pathname.startsWith(item.href)));
 
   // The phone's bottom bar: the inbox and the files I raised either side of creating one, and
-  // "More" opening the full menu below. Each tab only if its sidebar entry is visible too — and
-  // none until permissions resolve, so the bar does not appear two tabs short and then grow.
+  // "More" opening the bar's pop-up of every page, grouped as the sidebar groups them. Each tab
+  // only if its sidebar entry is visible too — and none until permissions resolve, so the bar
+  // does not appear two tabs short and then grow.
   const isVisible = (href: string) => availableSections.some((item) => item.href === href);
   const bottomTabs: ModuleNavTab[] = permissions.isLoading
     ? []
@@ -150,8 +146,8 @@ function EApprovalLayoutShellInner({ children }: { children: React.ReactNode }) 
           : []),
       ];
 
-  // `compact` is the desktop sidebar in icons mode; the phone sheet always passes labels.
-  const navigationLinks = (onNavigate?: () => void, compact = false) => {
+  // `compact` is the desktop sidebar in icons mode.
+  const navigationLinks = (compact: boolean) => {
     let lastGroup = '';
     return availableSections.map((item, index) => {
       const active = currentSection?.href === item.href;
@@ -176,7 +172,6 @@ function EApprovalLayoutShellInner({ children }: { children: React.ReactNode }) 
           <SidebarNavTooltip label={item.label} enabled={compact}>
             <Link
               href={item.href}
-              onClick={onNavigate}
               aria-current={active ? 'page' : undefined}
               title={compact ? item.label : undefined}
               className={cn(
@@ -235,27 +230,6 @@ function EApprovalLayoutShellInner({ children }: { children: React.ReactNode }) 
       <div className="mb-2 sm:mb-3 lg:hidden">
         <Card>
           <CardContent className="flex items-center gap-2 px-2.5 py-2 sm:gap-3 sm:px-3 sm:py-2.5">
-            <Sheet open={mobileMenuOpen} onOpenChange={setMobileMenuOpen}>
-              <SheetTrigger asChild>
-                <Button variant="outline" className="h-10 shrink-0 gap-2 bg-white/90 px-3 text-sm font-medium">
-                  <Menu className="h-4 w-4" /> Menu
-                </Button>
-              </SheetTrigger>
-              <SheetContent side="left" className="flex w-[88vw] max-w-[300px] flex-col border-r border-white/70 bg-slate-50 p-0">
-                <SheetHeader className="shrink-0 border-b border-slate-200/60 px-4 py-3 text-left">
-                  <div className="flex items-center gap-2.5">
-                    <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-gradient-to-br from-sky-500 to-indigo-600 shadow">
-                      <Stamp className="h-4 w-4 text-white" />
-                    </div>
-                    <div>
-                      <SheetTitle className="text-sm font-semibold">E-Approval</SheetTitle>
-                      <SheetDescription className="text-[11px]">Tap a section to navigate</SheetDescription>
-                    </div>
-                  </div>
-                </SheetHeader>
-                <div className="flex-1 overflow-y-auto p-2 pb-8">{navigationLinks(() => setMobileMenuOpen(false))}</div>
-              </SheetContent>
-            </Sheet>
             <div className="flex min-w-0 items-center gap-2">
               <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-gradient-to-br from-sky-500 to-indigo-600 shadow-sm">
                 <Stamp className="h-4 w-4 text-white" />
@@ -289,7 +263,7 @@ function EApprovalLayoutShellInner({ children }: { children: React.ReactNode }) 
                   </div>
                 </div>
               </div>
-              <CardContent className="max-h-[calc(100vh-var(--app-header-offset,4rem)-8rem)] overflow-y-auto p-2">{navigationLinks(undefined, iconsOnly)}</CardContent>
+              <CardContent className="max-h-[calc(100vh-var(--app-header-offset,4rem)-8rem)] overflow-y-auto p-2">{navigationLinks(iconsOnly)}</CardContent>
             </Card>
           </aside>
         </TooltipProvider>
@@ -300,7 +274,7 @@ function EApprovalLayoutShellInner({ children }: { children: React.ReactNode }) 
       <ModuleBottomNav
         tabs={bottomTabs}
         pages={permissions.isLoading ? undefined : availableSections}
-        onMore={() => setMobileMenuOpen(true)}
+        groupLabels={groupLabels}
         moduleName="E-Approval"
       />
     </div>

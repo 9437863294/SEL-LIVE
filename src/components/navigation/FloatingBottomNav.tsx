@@ -9,6 +9,7 @@ import {
   useRef,
   useState,
   useSyncExternalStore,
+  type CSSProperties,
   type KeyboardEvent,
   type MouseEvent,
 } from 'react';
@@ -20,8 +21,10 @@ import {
   bumpedBarPath,
   bumpedTopEdgePath,
   easeOutBack,
+  fitInView,
   indicatorCenter,
   indicatorTarget,
+  labelBoxes,
   lerp,
   notchHalfWidth,
   notchedBarPath,
@@ -30,6 +33,7 @@ import {
   type BarFrame,
   type BarMetrics,
   type BumpSpec,
+  type LabelFit,
   type NotchSpec,
 } from './geometry';
 import { DEFAULT_FLOATING_NAV_THEME, floatingNavThemeMeta, type FloatingNavTheme } from './themes';
@@ -56,10 +60,14 @@ const BUMP: BumpSpec = { rise: 12, halfWidth: 36 };
 const TRAVEL_MS = 480;
 /** How far either side of the active tab the neon rim stays lit. */
 const RIM_REACH = 110;
-/** Strip tabs in view at once; any past this scroll. */
+/** Most strip tabs in view at once; any past this scroll. Fewer show when their labels need the room. */
 const DEFAULT_MAX_IN_VIEW = 6;
-/** Slots narrower than this (seven to a phone) set their labels a size smaller so they do not touch. */
-const DENSE_SLOT = 52;
+/**
+ * Keep 6px between neighbouring labels; cap a label at 60px; slots of at least 40px; never fewer
+ * than three tabs; and show as many as leave three in five neighbouring label pairs whole — a long
+ * label beside a short one borrows its room, so in practice only long-beside-long ends in "…".
+ */
+const LABEL_FIT: LabelFit = { gap: 6, maxLabel: 60, minSlot: 40, minInView: 3, coverage: 0.6 };
 
 const HIDE_CLASS = { md: 'md:hidden', lg: 'lg:hidden', xl: 'xl:hidden' } as const;
 const BREAKPOINT_PX = { md: 768, lg: 1024, xl: 1280 } as const;
@@ -319,7 +327,7 @@ export function FloatingBottomNav({
   const slotEls = useRef<(HTMLElement | null)[]>([]);
   const frameRef = useRef<BarFrame | null>(null);
   const travelRef = useRef<Travel | null>(null);
-  const drawnRef = useRef({ width: 0, count: 0 });
+  const drawnRef = useRef({ width: 0, count: 0, slot: 0 });
   const rafRef = useRef(0);
   const [width, setWidth] = useState(0);
 
@@ -333,10 +341,56 @@ export function FloatingBottomNav({
     return () => observer.disconnect();
   }, []);
 
+  // Every label's natural width as rendered — its font, weight and the user's text size — which
+  // decides how many tabs fit side by side without their labels touching. Read again whenever the
+  // labels change, and once web fonts arrive (a fallback font measures differently).
+  const count = ordered.length;
+  const labelKey = ordered.map((item) => item.label).join('\u0000');
+  const [labelWidths, setLabelWidths] = useState<number[] | null>(null);
+  useIsoLayoutEffect(() => {
+    if (!showLabels) return;
+    let cancelled = false;
+    const measure = () => {
+      if (cancelled) return;
+      const next = Array.from({ length: count }, (_, i) => {
+        const text = slotEls.current[i]?.querySelector<HTMLElement>('.fbn-label-text');
+        // offsetWidth is layout size, untouched by the bar's entrance scale; +1 for its rounding.
+        return text ? text.offsetWidth + 1 : 0;
+      });
+      setLabelWidths((prev) => (prev && prev.length === next.length && prev.every((w, i) => w === next[i]) ? prev : next));
+    };
+    measure();
+    const fonts = typeof document !== 'undefined' ? document.fonts : undefined;
+    void fonts?.ready.then(measure);
+    fonts?.addEventListener('loadingdone', measure);
+    return () => {
+      cancelled = true;
+      fonts?.removeEventListener('loadingdone', measure);
+    };
+  }, [labelKey, count, showLabels]);
+
+  const pinnedCount = count - stripCount;
+  // Labels only under the active tab never meet a neighbour, and unmeasured ones are unknown.
+  const measured = showLabels && labelWidths !== null && labelWidths.length === count ? labelWidths : null;
+  const inViewCount = useMemo(() => {
+    const cap = Math.max(1, maxInView);
+    if (!measured) return cap;
+    return fitInView(width, PADDING, measured.slice(0, stripCount), measured.slice(stripCount), cap, LABEL_FIT);
+  }, [measured, width, stripCount, maxInView]);
   const layout = useMemo(
-    () => slotLayout(width, PADDING, stripCount, ordered.length - stripCount, Math.max(1, maxInView)),
-    [width, stripCount, ordered.length, maxInView],
+    () => slotLayout(width, PADDING, stripCount, pinnedCount, Math.max(1, inViewCount)),
+    [width, stripCount, pinnedCount, inViewCount],
   );
+  // Each label's box, sized against its neighbours so no two can overlap (see `labelBoxes`).
+  const labelBoxWidths = useMemo(
+    () => (measured && layout.slot > 0 ? labelBoxes(layout.slot, measured.slice(0, stripCount), measured.slice(stripCount), LABEL_FIT) : null),
+    [measured, layout.slot, stripCount],
+  );
+  const slotStyle = (i: number, extra?: CSSProperties): CSSProperties => ({
+    width: layout.slot,
+    ...(labelBoxWidths ? ({ '--fbn-label-w': `${labelBoxWidths[i]}px` } as CSSProperties) : null),
+    ...extra,
+  });
 
   /** Draw one frame. `lifted` says whether the active icon should ride up into the button. */
   const paint = useCallback(
@@ -415,8 +469,10 @@ export function FloatingBottomNav({
   useIsoLayoutEffect(() => {
     if (width <= 0 || ordered.length === 0) return;
     const previous = frameRef.current;
-    const resized = drawnRef.current.width !== width || drawnRef.current.count !== ordered.length;
-    drawnRef.current = { width, count: ordered.length };
+    // A new slot width (the bar resized, or its labels re-measured) moves every tab: jump, not glide.
+    const resized =
+      drawnRef.current.width !== width || drawnRef.current.count !== ordered.length || drawnRef.current.slot !== layout.slot;
+    drawnRef.current = { width, count: ordered.length, slot: layout.slot };
     const instant = !previous || resized || reducedMotion;
 
     // Keep the active tab in view: already there on arrival, scrolled to after a change elsewhere.
@@ -518,7 +574,6 @@ export function FloatingBottomNav({
         data-position={position}
         data-hidden={hidden ? 'true' : 'false'}
         data-measured={width > 0 ? 'true' : 'false'}
-        data-dense={layout.slot > 0 && layout.slot < DENSE_SLOT ? 'true' : 'false'}
       >
         <nav ref={stageRef} className="fbn-stage" aria-label={ariaLabel}>
           <svg
@@ -565,7 +620,7 @@ export function FloatingBottomNav({
                   item={item}
                   active={i === activeIndex}
                   slotRef={slotRef(i)}
-                  style={{ width: layout.slot }}
+                  style={slotStyle(i)}
                   onSelect={onSelect}
                   onKeyDown={onKeyDown}
                 />
@@ -580,10 +635,9 @@ export function FloatingBottomNav({
                 item={item}
                 active={i === activeIndex}
                 slotRef={slotRef(i)}
-                style={{
-                  width: layout.slot,
+                style={slotStyle(i, {
                   transform: `translate3d(${layout.trackLeft + layout.trackWidth + j * layout.slot}px, 0, 0)`,
-                }}
+                })}
                 onSelect={onSelect}
                 onKeyDown={onKeyDown}
               />

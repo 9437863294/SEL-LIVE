@@ -1,11 +1,13 @@
 'use client';
 
 /**
- * The module's chrome: sidebar on a desktop, a slide-out sheet on a phone (§53, §54).
+ * The module's chrome: sidebar on a desktop; on a phone, the floating bottom bar, whose "More"
+ * opens the same grouped pop-up of pages every module uses (§53, §54).
  *
  * Modelled on `@/components/e-approval/module-layout-shell` so that a user who knows their way
  * around one module knows their way around this one — the nav grouping, the active-link treatment
- * and the mobile sheet all behave identically. What differs is the section list and its gating.
+ * and the phone's bottom bar all behave identically. What differs is the section list and its
+ * gating.
  *
  * Two behaviours worth knowing:
  *
@@ -21,7 +23,6 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { useState } from 'react';
 import {
   BarChart3,
   BookOpen,
@@ -33,7 +34,6 @@ import {
   Gavel,
   LayoutTemplate,
   ListTodo,
-  Menu,
   Plus,
   Search,
   Settings,
@@ -49,9 +49,7 @@ import {
   SidebarNavTooltip,
   useSidebarIconsOnly,
 } from '@/components/navigation/use-sidebar-mode';
-import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle, SheetTrigger } from '@/components/ui/sheet';
 import { Skeleton } from '@/components/ui/skeleton';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import { cn } from '@/lib/utils';
@@ -127,7 +125,6 @@ export default function OfficeHubLayoutShell({ children }: { children: React.Rea
 function OfficeHubLayoutShellInner({ children }: { children: React.ReactNode }) {
   const pathname = usePathname() ?? '';
   const { capabilities, isLoading } = useOfficeHub();
-  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const iconsOnly = useSidebarIconsOnly();
 
   // Before the access check, so a print route never renders module chrome at all.
@@ -161,9 +158,9 @@ function OfficeHubLayoutShellInner({ children }: { children: React.ReactNode }) 
     );
 
   // The phone's bottom bar: the dashboard, the two working registers either side of scheduling a
-  // meeting (or, for someone who may only raise tasks, a new task), and "More" opening the menu
-  // sheet. Each register tab only if its sidebar entry is visible; the create tab on the same
-  // capability its page checks.
+  // meeting (or, for someone who may only raise tasks, a new task), and "More" opening the bar's
+  // pop-up of every page. Each register tab only if its sidebar entry is visible; the create tab
+  // on the same capability its page checks.
   const isAvailable = (href: string) => available.some((section) => section.href === href);
   const createTab: ModuleNavTab | null = capabilities.canCreateMeeting
     ? { href: `${OFFICE_HUB_BASE_PATH}/meetings/new`, label: 'New', icon: Plus, emphasized: true, ariaLabel: 'Schedule a meeting' }
@@ -179,8 +176,8 @@ function OfficeHubLayoutShellInner({ children }: { children: React.ReactNode }) 
     ...(isAvailable(`${OFFICE_HUB_BASE_PATH}/tasks`) ? [{ href: `${OFFICE_HUB_BASE_PATH}/tasks`, label: 'Tasks', icon: ListTodo }] : []),
   ];
 
-  // `compact` is the desktop sidebar in icons mode; the phone sheet always passes labels.
-  const navigation = (onNavigate?: () => void, compact = false) => {
+  // `compact` is the desktop sidebar in icons mode.
+  const navigation = (compact: boolean) => {
     let lastGroup = '';
     return available.map((section, index) => {
       const active = current?.href === section.href;
@@ -204,7 +201,6 @@ function OfficeHubLayoutShellInner({ children }: { children: React.ReactNode }) 
           <SidebarNavTooltip label={section.label} enabled={compact}>
             <Link
               href={section.href}
-              onClick={onNavigate}
               aria-current={active ? 'page' : undefined}
               title={compact ? section.label : undefined}
               className={cn(
@@ -271,30 +267,6 @@ function OfficeHubLayoutShellInner({ children }: { children: React.ReactNode }) 
       <div className="mb-2 sm:mb-3 lg:hidden">
         <Card>
           <CardContent className="flex items-center gap-2 px-2.5 py-2 sm:gap-3 sm:px-3 sm:py-2.5">
-            <Sheet open={mobileMenuOpen} onOpenChange={setMobileMenuOpen}>
-              <SheetTrigger asChild>
-                <Button variant="outline" className="h-10 shrink-0 gap-2 bg-white/90 px-3 text-sm font-medium">
-                  <Menu className="h-4 w-4" /> Menu
-                </Button>
-              </SheetTrigger>
-              <SheetContent
-                side="left"
-                className="flex w-[88vw] max-w-[300px] flex-col border-r border-white/70 bg-slate-50 p-0"
-              >
-                <SheetHeader className="shrink-0 border-b border-slate-200/60 px-4 py-3 text-left">
-                  <div className="flex items-center gap-2.5">
-                    <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-gradient-to-br from-sky-500 to-indigo-600 shadow">
-                      <CalendarDays className="h-4 w-4 text-white" />
-                    </div>
-                    <div>
-                      <SheetTitle className="text-sm font-semibold">Office Hub</SheetTitle>
-                      <SheetDescription className="text-[11px]">Tap a section to navigate</SheetDescription>
-                    </div>
-                  </div>
-                </SheetHeader>
-                <div className="flex-1 overflow-y-auto p-2 pb-8">{navigation(() => setMobileMenuOpen(false))}</div>
-              </SheetContent>
-            </Sheet>
             <div className="flex min-w-0 flex-1 items-center gap-2">
               <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-gradient-to-br from-sky-500 to-indigo-600 shadow-sm">
                 <CalendarDays className="h-4 w-4 text-white" />
@@ -345,7 +317,7 @@ function OfficeHubLayoutShellInner({ children }: { children: React.ReactNode }) 
                 <OfficeHubCommandPalette />
               </div>
               <CardContent className="max-h-[calc(100vh-var(--app-header-offset,4rem)-10rem)] overflow-y-auto p-2">
-                <nav aria-label="Office Hub sections">{navigation(undefined, iconsOnly)}</nav>
+                <nav aria-label="Office Hub sections">{navigation(iconsOnly)}</nav>
               </CardContent>
             </Card>
           </aside>
@@ -361,7 +333,7 @@ function OfficeHubLayoutShellInner({ children }: { children: React.ReactNode }) 
         </main>
       </div>
 
-      <ModuleBottomNav tabs={bottomTabs} pages={available} onMore={() => setMobileMenuOpen(true)} moduleName="Office Hub" />
+      <ModuleBottomNav tabs={bottomTabs} pages={available} groupLabels={GROUP_LABELS} moduleName="Office Hub" />
     </div>
   );
 }

@@ -2,7 +2,6 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { useState } from 'react';
 import {
   CarFront,
   ClipboardCheck,
@@ -10,7 +9,6 @@ import {
   Gauge,
   ListFilter,
   LocateFixed,
-  Menu,
   ReceiptText,
   Route,
   ShieldAlert,
@@ -21,9 +19,7 @@ import { useAuthorization } from '@/hooks/useAuthorization';
 import { useCurrentDriverProfile } from '@/components/vehicle-management/hooks';
 import { ModuleBottomNav, type ModuleNavTab } from '@/components/navigation/ModuleBottomNav';
 import { SIDEBAR_ICONS_GRID, SidebarNavTooltip, useSidebarIconsOnly } from '@/components/navigation/use-sidebar-mode';
-import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle, SheetTrigger } from '@/components/ui/sheet';
 import { Skeleton } from '@/components/ui/skeleton';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import { cn } from '@/lib/utils';
@@ -41,6 +37,13 @@ const sections = [
   { href: '/driver-management/employee-trips', label: 'Employee Trips',  resource: 'Employee Trip Log', icon: ReceiptText, color: 'text-teal-600',  bg: 'bg-teal-50',    group: 'trips' },
   { href: '/driver-management/trip-management', label: 'Trip Management', resource: 'Trip Management', icon: LocateFixed, color: 'text-blue-600',   bg: 'bg-blue-50',    group: 'trips' },
 ];
+
+// Headings for the phone's "More" pop-up. The sidebar marks the same groups with hairlines only.
+const groupLabels: Record<string, string> = {
+  core: 'Control Center',
+  driver: 'Driver',
+  trips: 'Trips',
+};
 
 const legacyResourceMap: Record<string, string[]> = {
   'Driver Mobile Hub':      ['Vehicle Management.Driver Mobile'],
@@ -78,7 +81,6 @@ export default function DriverManagementLayoutShell({ children }: { children: Re
   const safePathname = pathname ?? '';
   const { can } = useAuthorization();
   const { driver, isLoading: isDriverLoading } = useCurrentDriverProfile();
-  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const iconsOnly = useSidebarIconsOnly();
 
   const isAssignedDriver = Boolean(driver?.id && (driver?.assignedVehicleId || driver?.assignedVehicleNumber));
@@ -110,8 +112,8 @@ export default function DriverManagementLayoutShell({ children }: { children: Re
   const availableSections = sections.filter((item) => canViewSection(item.resource));
   const bottomTabs = bottomTabPriority.filter((tab) => availableSections.some((item) => item.href === tab.href));
 
-  // `compact` is the desktop sidebar in icons mode; the phone sheet always passes labels.
-  const navigationLinks = (onNavigate?: () => void, compact = false) => {
+  // The desktop sidebar's rows; `compact` is its icons mode. Phones use the bottom bar's pop-up.
+  const navigationLinks = (compact = false) => {
     let lastGroup = '';
     return availableSections.map((item) => {
       const active =
@@ -127,7 +129,6 @@ export default function DriverManagementLayoutShell({ children }: { children: Re
           <SidebarNavTooltip label={item.label} enabled={compact}>
             <Link
               href={item.href}
-              onClick={onNavigate}
               aria-current={active ? 'page' : undefined}
               title={compact ? item.label : undefined}
               className={cn(
@@ -183,7 +184,8 @@ export default function DriverManagementLayoutShell({ children }: { children: Re
     <div className="relative w-full px-4 py-5 sm:px-6 lg:px-8">
       <div className="pointer-events-none absolute inset-0 -z-10 overflow-hidden rounded-3xl vm-gradient-atmosphere" />
 
-      {/* Mobile header */}
+      {/* Mobile header — the driver app's only title bar (AppShell drops the app header in the
+          Android WebView). Navigation is the bottom bar and its "More" pop-up. */}
       <div className="mb-3 lg:hidden">
         <Card className="vm-panel-strong">
           <CardContent className="flex items-center justify-between px-4 py-3">
@@ -196,27 +198,6 @@ export default function DriverManagementLayoutShell({ children }: { children: Re
                 <p className="text-xs text-muted-foreground">Control Center</p>
               </div>
             </div>
-            <Sheet open={mobileMenuOpen} onOpenChange={setMobileMenuOpen}>
-              <SheetTrigger asChild>
-                <Button size="sm" variant="outline" className="bg-white/90 gap-1.5">
-                  <Menu className="h-4 w-4" /> Menu
-                </Button>
-              </SheetTrigger>
-              <SheetContent side="left" className="w-[88vw] max-w-[320px] border-r border-white/70 bg-slate-50/95 p-0 backdrop-blur-xl flex flex-col">
-                <SheetHeader className="shrink-0 border-b border-white/80 px-4 py-4 text-left">
-                  <div className="flex items-center gap-2.5">
-                    <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-gradient-to-br from-cyan-500 to-blue-600">
-                      <Truck className="h-4 w-4 text-white" />
-                    </div>
-                    <div>
-                      <SheetTitle className="text-sm">Driver Management</SheetTitle>
-                      <SheetDescription className="text-xs">Navigate between sections</SheetDescription>
-                    </div>
-                  </div>
-                </SheetHeader>
-                <div className="flex-1 overflow-y-auto p-3 pb-8">{navigationLinks(() => setMobileMenuOpen(false))}</div>
-              </SheetContent>
-            </Sheet>
           </CardContent>
         </Card>
       </div>
@@ -242,7 +223,7 @@ export default function DriverManagementLayoutShell({ children }: { children: Re
                 </div>
               </div>
               <CardContent className="p-2 overflow-y-auto max-h-[calc(100vh-var(--app-header-offset,4rem)-8rem)]">
-                {navigationLinks(undefined, iconsOnly)}
+                {navigationLinks(iconsOnly)}
               </CardContent>
             </Card>
           </aside>
@@ -251,7 +232,7 @@ export default function DriverManagementLayoutShell({ children }: { children: Re
         <main className="min-w-0 vm-reveal">{children}</main>
       </div>
 
-      <ModuleBottomNav tabs={bottomTabs} pages={availableSections} onMore={() => setMobileMenuOpen(true)} moduleName="Driver Management" />
+      <ModuleBottomNav tabs={bottomTabs} pages={availableSections} groupLabels={groupLabels} moduleName="Driver Management" />
     </div>
   );
 }

@@ -1,10 +1,16 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import Link from "next/link";
-import { ChevronLeft, ChevronRight, Menu, type LucideIcon } from "lucide-react";
+import {
+  ChevronLeft,
+  ChevronRight,
+  ChevronsUpDown,
+  LayoutGrid,
+  Search,
+  type LucideIcon,
+} from "lucide-react";
 import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
 import {
   Sheet,
   SheetContent,
@@ -54,6 +60,228 @@ export type SidebarLinkItem = {
   disabled?: boolean;
 };
 
+/** One tile in the phone's sections pop-up: a view switched to in place, or a screen opened. */
+export type SectionsSheetEntry = {
+  key: string;
+  label: string;
+  icon: LucideIcon;
+  /** The desktop row's accent (`text-*-600` / `bg-*-100`), kept on the tile's icon chip. */
+  color: string;
+  bg: string;
+  count?: number;
+  active?: boolean;
+  /** For a view: the tile is a button that selects it. */
+  onSelect?: () => void;
+  /** For a screen: the tile is a link to it. */
+  href?: string;
+  disabled?: boolean;
+};
+
+export type SectionsSheetGroup = { label?: string; entries: SectionsSheetEntry[] };
+
+const TILE_CLASS =
+  "relative flex min-h-[5.25rem] flex-col items-center justify-center gap-2 rounded-2xl border p-2 text-center text-[11px] font-medium leading-tight transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring";
+
+/**
+ * A page's own sidebar, on a phone: a compact "Sections" pill naming the current view, which opens
+ * a bottom pop-up of tiles drawn like the bottom bar's "More" sheet (`ModuleMoreSheet`) — so a
+ * page's views are picked the same way as a module's pages. Picking a tile switches to it and
+ * closes the pop-up. It replaces the slide-in side sheet phones used to get.
+ */
+export function SectionsSheet({
+  title,
+  description,
+  icon: HeaderIcon,
+  groups,
+  className,
+}: {
+  title: string;
+  description?: string;
+  icon: LucideIcon;
+  /** Shown in order; a group's `label` becomes its heading. */
+  groups: SectionsSheetGroup[];
+  /** Classes for the trigger pill. */
+  className?: string;
+}) {
+  const contentRef = useRef<HTMLDivElement>(null);
+  const [open, setOpen] = useState(false);
+  const [query, setQuery] = useState("");
+
+  const all = groups.flatMap((group) => group.entries);
+  const current = all.find((entry) => entry.active);
+  // A long list gets a filter; a short one is quicker to scan than to search — as in "More".
+  const searchable = all.length > 9;
+  const needle = query.trim().toLowerCase();
+  const shown = groups
+    .map((group) => ({
+      ...group,
+      entries: needle
+        ? group.entries.filter((entry) =>
+            `${entry.label} ${group.label ?? ""}`.toLowerCase().includes(needle),
+          )
+        : group.entries,
+    }))
+    .filter((group) => group.entries.length > 0);
+
+  const handleOpenChange = (next: boolean) => {
+    setOpen(next);
+    // Each opening starts from the full list.
+    if (next) setQuery("");
+  };
+
+  if (!all.length) return null;
+
+  const tileInner = (entry: SectionsSheetEntry) => (
+    <>
+      <span
+        className={cn(
+          "flex h-9 w-9 items-center justify-center rounded-xl",
+          entry.active ? "bg-primary text-primary-foreground" : entry.bg,
+        )}
+      >
+        <entry.icon className={cn("h-4 w-4", !entry.active && entry.color)} aria-hidden="true" />
+      </span>
+      <span className="line-clamp-2">{entry.label}</span>
+      {Boolean(entry.count) && (
+        <span
+          className={cn(
+            "absolute right-1.5 top-1.5 min-w-[1.25rem] rounded-full px-1.5 py-px text-[10px] font-semibold tabular-nums",
+            entry.active ? "bg-primary text-primary-foreground" : "bg-background text-muted-foreground shadow-sm",
+          )}
+        >
+          {entry.count}
+        </span>
+      )}
+    </>
+  );
+
+  const tile = (entry: SectionsSheetEntry) => {
+    if (entry.disabled) {
+      return (
+        <span
+          key={entry.key}
+          aria-disabled="true"
+          title={`${entry.label} — you do not have permission to open this`}
+          className={cn(TILE_CLASS, "cursor-not-allowed border-border/60 bg-muted/30 text-foreground/80 opacity-50")}
+        >
+          {tileInner(entry)}
+        </span>
+      );
+    }
+    const tone = entry.active
+      ? "border-primary/40 bg-primary/10 text-primary"
+      : "border-border/60 bg-muted/30 text-foreground/80 hover:bg-muted/60";
+    if (entry.href) {
+      return (
+        <Link
+          key={entry.key}
+          href={entry.href}
+          onClick={() => setOpen(false)}
+          aria-current={entry.active ? "page" : undefined}
+          className={cn(TILE_CLASS, tone)}
+        >
+          {tileInner(entry)}
+        </Link>
+      );
+    }
+    return (
+      <button
+        key={entry.key}
+        type="button"
+        aria-pressed={Boolean(entry.active)}
+        onClick={() => {
+          entry.onSelect?.();
+          setOpen(false);
+        }}
+        className={cn(TILE_CLASS, tone)}
+      >
+        {tileInner(entry)}
+      </button>
+    );
+  };
+
+  return (
+    <Sheet open={open} onOpenChange={handleOpenChange}>
+      <SheetTrigger asChild>
+        <button
+          type="button"
+          className={cn(
+            "inline-flex h-9 max-w-full items-center gap-2 rounded-full border border-border/70 bg-background pl-3 pr-2.5 text-sm shadow-sm transition-colors hover:bg-muted/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+            className,
+          )}
+        >
+          <LayoutGrid className="h-4 w-4 shrink-0 text-primary" aria-hidden="true" />
+          <span className="shrink-0 font-medium text-muted-foreground">Sections</span>
+          {current && (
+            <>
+              <span aria-hidden="true" className="text-muted-foreground/60">
+                ·
+              </span>
+              <span className="truncate font-semibold text-foreground">{current.label}</span>
+            </>
+          )}
+          <ChevronsUpDown className="h-3.5 w-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />
+        </button>
+      </SheetTrigger>
+      <SheetContent
+        ref={contentRef}
+        side="bottom"
+        // Focus the sheet, not its search box: on a phone a focused input throws the keyboard up
+        // over the very tiles the person opened the sheet to tap.
+        onOpenAutoFocus={(event) => {
+          event.preventDefault();
+          contentRef.current?.focus({ preventScroll: true });
+        }}
+        className="max-h-[82dvh] overflow-y-auto rounded-t-[1.75rem] px-4 pb-[calc(env(safe-area-inset-bottom)+1.25rem)] pt-3 focus:outline-none"
+      >
+        <div className="mx-auto mb-3 h-1.5 w-10 rounded-full bg-muted" aria-hidden="true" />
+        <SheetHeader className="pr-8 text-left">
+          <SheetTitle className="flex items-center gap-2 text-base">
+            <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-primary/10">
+              <HeaderIcon className="h-4 w-4 text-primary" aria-hidden="true" />
+            </span>
+            <span className="min-w-0 truncate">{title}</span>
+          </SheetTitle>
+          <SheetDescription className="text-xs">
+            {description ?? "Every section of this screen"}
+          </SheetDescription>
+        </SheetHeader>
+        {searchable && (
+          <div className="relative mt-3">
+            <Search
+              className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground"
+              aria-hidden="true"
+            />
+            <input
+              type="search"
+              value={query}
+              onChange={(event) => setQuery(event.target.value)}
+              placeholder={`Search ${all.length} sections`}
+              aria-label={`Search ${title} sections`}
+              className="h-10 w-full rounded-xl border border-border/70 bg-muted/40 pl-9 pr-3 text-sm outline-none transition-colors placeholder:text-muted-foreground focus:border-primary/50 focus:bg-background focus-visible:ring-2 focus-visible:ring-ring"
+            />
+          </div>
+        )}
+        {needle && shown.length === 0 && (
+          <p className="mt-6 text-center text-sm text-muted-foreground">
+            No section matches “{query.trim()}”.
+          </p>
+        )}
+        {shown.map((group, index) => (
+          <section key={group.label ?? `group-${index}`} className="mt-4">
+            {group.label && (
+              <p className="mb-2 px-1 text-[10px] font-bold uppercase tracking-[0.14em] text-muted-foreground">
+                {group.label}
+              </p>
+            )}
+            <div className="grid grid-cols-3 gap-2 sm:grid-cols-4">{group.entries.map(tile)}</div>
+          </section>
+        ))}
+      </SheetContent>
+    </Sheet>
+  );
+}
+
 /**
  * A view-switcher sidebar for one page's own sub-views (e.g. MDL's Pending Tasks / Register /
  * Calendar / Gantt / Reports), driven purely by `activeValue`/`onChange` so the caller keeps
@@ -100,9 +328,7 @@ export default function SidebarTabsList({
   links?: SidebarLinkItem[];
   linksLabel?: string;
 }) {
-  const [mobileOpen, setMobileOpen] = useState(false);
   const [isExpanded, setIsExpanded] = useSidebarDefault(true);
-  const current = items.find((item) => item.value === activeValue);
   const hasGroups = Boolean(links?.length);
 
   /** The shared row shell. Both the view buttons and the screen links render through it, so a
@@ -172,18 +398,14 @@ export default function SidebarTabsList({
     </>
   );
 
-  /** One view row. `expanded` is passed rather than read from state so the mobile sheet — which
-   *  is always expanded — can reuse it unchanged. */
-  const navRow = (item: SidebarTabItem, expanded: boolean, onNavigate?: () => void) => {
+  /** One view row: icon and label, or (`expanded` false) the icon alone for the collapsed rail. */
+  const navRow = (item: SidebarTabItem, expanded: boolean) => {
     const isActive = item.value === activeValue;
     return (
       <button
         key={item.value}
         type="button"
-        onClick={() => {
-          onChange(item.value);
-          onNavigate?.();
-        }}
+        onClick={() => onChange(item.value)}
         aria-current={isActive ? "page" : undefined}
         className={rowClass(isActive, expanded)}
       >
@@ -194,7 +416,7 @@ export default function SidebarTabsList({
 
   /** One screen row. A link, not a button, so it opens in a new tab and shows its target on hover
    *  like any other navigation. */
-  const navLink = (link: SidebarLinkItem, expanded: boolean, onNavigate?: () => void) => {
+  const navLink = (link: SidebarLinkItem, expanded: boolean) => {
     const isActive = Boolean(link.active);
     if (link.disabled) {
       return (
@@ -213,7 +435,6 @@ export default function SidebarTabsList({
         key={link.href}
         href={link.href}
         aria-current={isActive ? "page" : undefined}
-        onClick={onNavigate}
         className={rowClass(isActive, expanded)}
       >
         {rowInner(link, isActive, expanded)}
@@ -232,45 +453,56 @@ export default function SidebarTabsList({
       <div aria-hidden className="mx-1 my-1 h-px bg-border/40" />
     );
 
-  /** The whole nav, shared by the desktop panel and the mobile sheet. */
-  const navBody = (expanded: boolean, onNavigate?: () => void) => (
+  /** The whole nav, expanded — the desktop panel's body. */
+  const navBody = (expanded: boolean) => (
     <>
       {hasGroups && groupLabel(itemsLabel, expanded, true)}
-      {items.map((item) => navRow(item, expanded, onNavigate))}
+      {items.map((item) => navRow(item, expanded))}
       {hasGroups && groupLabel(linksLabel, expanded, false)}
-      {links?.map((link) => navLink(link, expanded, onNavigate))}
+      {links?.map((link) => navLink(link, expanded))}
     </>
   );
 
+  // The same list for the phone's pop-up, grouped as the panel groups it.
+  const phoneGroups: SectionsSheetGroup[] = [
+    {
+      label: hasGroups ? itemsLabel : undefined,
+      entries: items.map((item) => ({
+        key: item.value,
+        label: item.label,
+        icon: item.icon,
+        color: item.color,
+        bg: item.bg,
+        count: item.count,
+        active: item.value === activeValue,
+        onSelect: () => onChange(item.value),
+      })),
+    },
+    ...(links?.length
+      ? [
+          {
+            label: linksLabel,
+            entries: links.map((link) => ({
+              key: link.href,
+              label: link.label,
+              icon: link.icon,
+              color: link.color,
+              bg: link.bg,
+              count: link.count,
+              active: link.active,
+              href: link.href,
+              disabled: link.disabled,
+            })),
+          },
+        ]
+      : []),
+  ];
+
   return (
     <>
-      {/* Mobile — a single trigger that opens the same list in a sheet. */}
+      {/* Phones — a "Sections" pill opening the same list as a pop-up of tiles. */}
       <div className="lg:hidden">
-        <Sheet open={mobileOpen} onOpenChange={setMobileOpen}>
-          <SheetTrigger asChild>
-            <Button variant="outline" className="h-9 w-full justify-start gap-2">
-              <Menu className="h-4 w-4 shrink-0" />
-              {current && <current.icon className={cn("h-4 w-4 shrink-0", current.color)} />}
-              <span className="truncate text-sm font-medium">{current?.label ?? title}</span>
-            </Button>
-          </SheetTrigger>
-          <SheetContent side="left" className="flex w-72 flex-col p-0">
-            <SheetHeader className="shrink-0 border-b border-border/40 px-4 py-3 text-left">
-              <div className="flex items-center gap-2">
-                <div className="rounded-lg bg-primary/10 p-1.5">
-                  <HeaderIcon className="h-4 w-4 text-primary" />
-                </div>
-                <SheetTitle className="text-sm font-semibold">{title}</SheetTitle>
-              </div>
-              <SheetDescription className="sr-only">
-                {description ?? `${title} navigation`}
-              </SheetDescription>
-            </SheetHeader>
-            <nav className="flex flex-1 flex-col gap-0.5 overflow-y-auto px-3 py-3">
-              {navBody(true, () => setMobileOpen(false))}
-            </nav>
-          </SheetContent>
-        </Sheet>
+        <SectionsSheet title={title} description={description} icon={HeaderIcon} groups={phoneGroups} />
       </div>
 
       {/* Desktop — a sticky panel that collapses to an icon rail. It sticks 1rem below the header's

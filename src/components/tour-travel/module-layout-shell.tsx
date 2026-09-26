@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useMemo } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import {
@@ -8,7 +8,6 @@ import {
   Coins,
   LayoutDashboard,
   Loader2,
-  Menu,
   Plane,
   Plus,
   ReceiptIndianRupee,
@@ -17,13 +16,12 @@ import {
   Undo2,
   UserRound,
   Wallet,
+  type LucideIcon,
 } from 'lucide-react';
 import { useAuthorization } from '@/hooks/useAuthorization';
 import { ModuleBottomNav, type ModuleNavTab } from '@/components/navigation/ModuleBottomNav';
 import { SIDEBAR_ICONS_GRID, SidebarNavTooltip, useSidebarIconsOnly } from '@/components/navigation/use-sidebar-mode';
-import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle, SheetTrigger } from '@/components/ui/sheet';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import { cn } from '@/lib/utils';
 
@@ -34,7 +32,7 @@ type NavItem = {
   href: string;
   label: string;
   resource: string;
-  icon: React.ElementType;
+  icon: LucideIcon;
   color: string;
   bg: string;
   group: string;
@@ -64,6 +62,15 @@ const navItems: NavItem[] = [
 // role migration, but they are kept out of the nav until they're built rather than shipped as
 // links to nothing.
 
+/** Headings for each `group` in the phone's "More" pop-up; the sidebar draws the same groups as dividers. */
+const GROUP_LABELS: Record<string, string> = {
+  overview: 'Overview',
+  tours: 'Tours',
+  control: 'Decisions',
+  money: 'Money',
+  settings: 'Configuration',
+};
+
 function matchesPath(pathname: string, href: string) {
   if (href === '/tour-travel') return pathname === href || pathname === '/tour-travel/dashboard';
   return pathname === href || pathname.startsWith(`${href}/`);
@@ -73,7 +80,6 @@ export default function TourTravelLayoutShell({ children }: { children: React.Re
   const pathname = usePathname();
   const safePathname = pathname || '';
   const { can, isLoading: authLoading } = useAuthorization();
-  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const iconsOnly = useSidebarIconsOnly();
 
   /**
@@ -100,8 +106,9 @@ export default function TourTravelLayoutShell({ children }: { children: React.Re
     visibleItems.some(item => matchesPath(safePathname, item.href));
 
   // The phone's bottom bar: my own travel, raising a tour in the middle, the approval queue, and
-  // "More" opening the full menu below. Dashboard, My Travel and the request form are open to
-  // every module user (see above); Approvals only if its sidebar entry is visible too.
+  // "More" opening the bar's pop-up of every visible page. Dashboard, My Travel and the request
+  // form are open to every module user (see above); Approvals only if its sidebar entry is visible
+  // too.
   const bottomTabs: ModuleNavTab[] = [
     { href: '/tour-travel', label: 'Home', icon: LayoutDashboard, match: path => matchesPath(path, '/tour-travel') },
     { href: '/tour-travel/my-travel', label: 'My Travel', icon: UserRound },
@@ -111,8 +118,8 @@ export default function TourTravelLayoutShell({ children }: { children: React.Re
       : []),
   ];
 
-  // `compact` is the desktop sidebar in icons mode; the phone sheet always passes labels.
-  const navigationLinks = (onNavigate?: () => void, compact = false) => {
+  // `compact` is the desktop sidebar in icons mode.
+  const navigationLinks = (compact: boolean) => {
     let lastGroup = '';
     return visibleItems.map(item => {
       const active = matchesPath(safePathname, item.href);
@@ -126,7 +133,6 @@ export default function TourTravelLayoutShell({ children }: { children: React.Re
           <SidebarNavTooltip label={item.label} enabled={compact}>
             <Link
               href={item.href}
-              onClick={onNavigate}
               aria-current={active ? 'page' : undefined}
               title={compact ? item.label : undefined}
               className={cn(
@@ -203,28 +209,6 @@ export default function TourTravelLayoutShell({ children }: { children: React.Re
       <div className="mb-3 lg:hidden">
         <Card className="border border-white/60 bg-white/80 shadow-sm backdrop-blur-sm">
           <CardContent className="flex items-center gap-3 px-3 py-2.5">
-            <Sheet open={mobileMenuOpen} onOpenChange={setMobileMenuOpen}>
-              <SheetTrigger asChild>
-                <Button variant="outline" className="h-10 shrink-0 gap-2 bg-white/90 px-3 text-sm font-medium">
-                  <Menu className="h-4 w-4" /> Menu
-                </Button>
-              </SheetTrigger>
-              <SheetContent side="left" className="z-[60] flex w-[88vw] max-w-[300px] flex-col border-r border-slate-200 bg-slate-50 p-0">
-                <SheetHeader className="shrink-0 border-b border-slate-200/60 px-4 py-3 text-left">
-                  <div className="flex items-center gap-2.5">
-                    <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-gradient-to-br from-sky-500 to-cyan-600 shadow">
-                      <Plane className="h-4 w-4 text-white" />
-                    </div>
-                    <div>
-                      <SheetTitle className="text-sm font-semibold">Tour &amp; Travel</SheetTitle>
-                      <SheetDescription className="text-[11px]">Tap a section to navigate</SheetDescription>
-                    </div>
-                  </div>
-                </SheetHeader>
-                <div className="flex-1 overflow-y-auto p-2 pb-8">{navigationLinks(() => setMobileMenuOpen(false))}</div>
-              </SheetContent>
-            </Sheet>
-
             <div className="flex min-w-0 items-center gap-2">
               <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-gradient-to-br from-sky-500 to-cyan-600 shadow-sm">
                 <Plane className="h-4 w-4 text-white" />
@@ -256,7 +240,7 @@ export default function TourTravelLayoutShell({ children }: { children: React.Re
                   </div>
                 </div>
               </div>
-              <CardContent className="max-h-[calc(100vh-var(--app-header-offset,4rem)-8rem)] overflow-y-auto p-2">{navigationLinks(undefined, iconsOnly)}</CardContent>
+              <CardContent className="max-h-[calc(100vh-var(--app-header-offset,4rem)-8rem)] overflow-y-auto p-2">{navigationLinks(iconsOnly)}</CardContent>
             </Card>
           </aside>
         </TooltipProvider>
@@ -264,7 +248,7 @@ export default function TourTravelLayoutShell({ children }: { children: React.Re
         <main className="tour-travel-content min-w-0">{currentPageAllowed ? children : pageAccessDenied}</main>
       </div>
 
-      <ModuleBottomNav tabs={bottomTabs} pages={visibleItems} onMore={() => setMobileMenuOpen(true)} moduleName="Tour & Travel" />
+      <ModuleBottomNav tabs={bottomTabs} pages={visibleItems} groupLabels={GROUP_LABELS} moduleName="Tour & Travel" />
     </div>
   );
 }

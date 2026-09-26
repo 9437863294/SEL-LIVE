@@ -15,7 +15,6 @@ import {
   LayoutDashboard,
   ListChecks,
   Loader2,
-  Menu,
   Plus,
   ReceiptIndianRupee,
   Repeat2,
@@ -24,6 +23,7 @@ import {
   Tags,
   Users,
   WalletCards,
+  type LucideIcon,
 } from 'lucide-react';
 import { db } from '@/lib/firebase';
 import { DEFAULT_RECURRING_WORKFLOW, type RecurringWorkflowStep } from '@/lib/recurring-payments';
@@ -31,16 +31,7 @@ import { useAuthorization } from '@/hooks/useAuthorization';
 import { ModuleBottomNav, type ModuleNavTab } from '@/components/navigation/ModuleBottomNav';
 import { SIDEBAR_ICONS_GRID, SidebarNavTooltip, useSidebarIconsOnly } from '@/components/navigation/use-sidebar-mode';
 import { useAssignedWorkflowSteps } from './use-assigned-workflow';
-import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import {
-  Sheet,
-  SheetContent,
-  SheetDescription,
-  SheetHeader,
-  SheetTitle,
-  SheetTrigger,
-} from '@/components/ui/sheet';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import { cn } from '@/lib/utils';
 
@@ -48,7 +39,7 @@ type NavItem = {
   href: string;
   label: string;
   resource: string;
-  icon: React.ElementType;
+  icon: LucideIcon;
   color: string;
   bg: string;
   group: string;
@@ -74,6 +65,18 @@ const managementItems: NavItem[] = [
   { href: '/recurring-payments/handbook', label: 'Handbook', resource: 'Dashboard', icon: BookOpen, color: 'text-teal-600', bg: 'bg-teal-50', group: 'help' },
 ];
 
+/** Section headings for the phone's "More" pop-up, keyed by each entry's `group`. */
+const GROUP_LABELS: Record<string, string> = {
+  overview: 'Overview',
+  payments: 'Payments',
+  workflow: 'Workflow',
+  control: 'Control',
+  masters: 'Masters',
+  insights: 'Insights',
+  settings: 'Settings',
+  help: 'Help',
+};
+
 const workflowPalette = [
   { color: 'text-violet-600', bg: 'bg-violet-50', icon: FileCheck2 },
   { color: 'text-amber-600', bg: 'bg-amber-50', icon: ClipboardCheck },
@@ -94,7 +97,6 @@ export default function RecurringPaymentsLayoutShell({ children }: { children: R
   const safePathname = pathname || '';
   const { can, isLoading: authLoading } = useAuthorization();
   const { assignedStepIds, hasAssignedWork, loading: assignmentsLoading } = useAssignedWorkflowSteps();
-  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [workflowSteps, setWorkflowSteps] = useState<RecurringWorkflowStep[]>(DEFAULT_RECURRING_WORKFLOW);
   const iconsOnly = useSidebarIconsOnly();
 
@@ -152,7 +154,7 @@ export default function RecurringPaymentsLayoutShell({ children }: { children: R
     : navItems.some((item) => matchesPath(safePathname, item.href));
 
   // The phone's bottom bar: the payment register and the approval centre either side of a new
-  // payment, and "More" opening the full menu below. Each tab only if its sidebar entry is
+  // payment, and "More" opening the pop-up of every page. Each tab only if its sidebar entry is
   // visible too. A create form sits under its register's route, so it is offered only where
   // that register is open to the user — otherwise the shell would refuse the page it leads to.
   const isVisible = (href: string) => navItems.some((item) => item.href === href);
@@ -175,8 +177,8 @@ export default function RecurringPaymentsLayoutShell({ children }: { children: R
       : []),
   ];
 
-  // `compact` is the desktop sidebar in icons mode; the phone sheet always passes labels.
-  const navigationLinks = (onNavigate?: () => void, compact = false) => {
+  // `compact` is the desktop sidebar in icons mode.
+  const navigationLinks = (compact = false) => {
     let lastGroup = '';
     return navItems.map((item) => {
       const active = matchesPath(safePathname, item.href);
@@ -190,7 +192,6 @@ export default function RecurringPaymentsLayoutShell({ children }: { children: R
           <SidebarNavTooltip label={item.label} enabled={compact}>
             <Link
               href={item.href}
-              onClick={onNavigate}
               aria-current={active ? 'page' : undefined}
               title={compact ? item.label : undefined}
               className={cn(
@@ -290,33 +291,6 @@ export default function RecurringPaymentsLayoutShell({ children }: { children: R
       <div className="mb-3 lg:hidden print:hidden">
         <Card className="border border-white/60 bg-white/80 shadow-sm backdrop-blur-sm">
           <CardContent className="flex items-center gap-3 px-3 py-2.5">
-            <Sheet open={mobileMenuOpen} onOpenChange={setMobileMenuOpen}>
-              <SheetTrigger asChild>
-                <Button variant="outline" className="h-10 shrink-0 gap-2 bg-white/90 px-3 text-sm font-medium">
-                  <Menu className="h-4 w-4" /> Menu
-                </Button>
-              </SheetTrigger>
-              <SheetContent
-                side="left"
-                className="z-[60] flex w-[88vw] max-w-[300px] flex-col border-r border-slate-200 bg-slate-50 p-0"
-              >
-                <SheetHeader className="shrink-0 border-b border-slate-200/60 px-4 py-3 text-left">
-                  <div className="flex items-center gap-2.5">
-                    <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-gradient-to-br from-emerald-500 to-teal-600 shadow">
-                      <Repeat2 className="h-4 w-4 text-white" />
-                    </div>
-                    <div>
-                      <SheetTitle className="text-sm font-semibold">Recurring Payments</SheetTitle>
-                      <SheetDescription className="text-[11px]">Tap a section to navigate</SheetDescription>
-                    </div>
-                  </div>
-                </SheetHeader>
-                <div className="flex-1 overflow-y-auto p-2 pb-8">
-                  {navigationLinks(() => setMobileMenuOpen(false))}
-                </div>
-              </SheetContent>
-            </Sheet>
-
             <div className="flex min-w-0 items-center gap-2">
               <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-gradient-to-br from-emerald-500 to-teal-600 shadow-sm">
                 <Repeat2 className="h-4 w-4 text-white" />
@@ -349,7 +323,7 @@ export default function RecurringPaymentsLayoutShell({ children }: { children: R
                 </div>
               </div>
               <CardContent className="max-h-[calc(100vh-var(--app-header-offset,4rem)-8rem)] overflow-y-auto p-2">
-                {navigationLinks(undefined, iconsOnly)}
+                {navigationLinks(iconsOnly)}
               </CardContent>
             </Card>
           </aside>
@@ -360,7 +334,7 @@ export default function RecurringPaymentsLayoutShell({ children }: { children: R
         </main>
       </div>
 
-      <ModuleBottomNav tabs={bottomTabs} pages={navItems} onMore={() => setMobileMenuOpen(true)} moduleName="Recurring Payments" />
+      <ModuleBottomNav tabs={bottomTabs} pages={navItems} groupLabels={GROUP_LABELS} moduleName="Recurring Payments" />
     </div>
   );
 }

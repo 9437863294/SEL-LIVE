@@ -2,7 +2,6 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { useState } from 'react';
 import {
   Activity,
   BadgeCheck,
@@ -18,7 +17,6 @@ import {
   Leaf,
   RefreshCw,
   Settings,
-  Menu,
   ScrollText,
   Shield,
   ShieldAlert,
@@ -34,9 +32,7 @@ import {
   SidebarNavTooltip,
   useSidebarIconsOnly,
 } from '@/components/navigation/use-sidebar-mode';
-import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle, SheetTrigger } from '@/components/ui/sheet';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import { cn } from '@/lib/utils';
 
@@ -90,7 +86,6 @@ export default function VehicleManagementLayoutShell({ children }: { children: R
   const pathname = usePathname();
   const safePathname = pathname ?? '';
   const { can } = useAuthorization();
-  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const iconsOnly = useSidebarIconsOnly();
 
   const canViewModule =
@@ -119,8 +114,8 @@ export default function VehicleManagementLayoutShell({ children }: { children: R
   const bottomTabs = bottomTabPriority.filter((tab) => availableSections.some((item) => item.href === tab.href));
   const isDriverAppRoute = safePathname.startsWith('/vehicle-management/driver-mobile');
 
-  // `compact` is the desktop sidebar in icons mode; the phone sheet always passes labels.
-  const navigationLinks = (onNavigate?: () => void, compact = false) => {
+  // The desktop sidebar's rows; `compact` is its icons mode. Phones use the bottom bar's pop-up.
+  const navigationLinks = (compact = false) => {
     let lastGroup = '';
     return availableSections.map((item, index) => {
       const active =
@@ -148,7 +143,6 @@ export default function VehicleManagementLayoutShell({ children }: { children: R
           <SidebarNavTooltip label={item.label} enabled={compact}>
             <Link
               href={item.href}
-              onClick={onNavigate}
               // Renewal History also lights Renewals Hub; only the page itself is current.
               aria-current={currentSection?.href === item.href ? 'page' : undefined}
               title={compact ? item.label : undefined}
@@ -205,33 +199,7 @@ export default function VehicleManagementLayoutShell({ children }: { children: R
       <div className="mb-2 sm:mb-3 lg:hidden">
         <Card className="vm-panel-strong">
           <CardContent className="flex items-center gap-2 px-2.5 py-2 sm:gap-3 sm:px-3 sm:py-2.5">
-            {/* Menu button — left side */}
-            <Sheet open={mobileMenuOpen} onOpenChange={setMobileMenuOpen}>
-              <SheetTrigger asChild>
-                <Button variant="outline" className="bg-white/90 gap-2 h-10 px-3 text-sm font-medium shrink-0">
-                  <Menu className="h-4 w-4" /> Menu
-                </Button>
-              </SheetTrigger>
-              <SheetContent side="left" className="w-[88vw] max-w-[300px] border-r border-white/70 bg-slate-50 p-0 flex flex-col">
-                <SheetHeader className="shrink-0 border-b border-slate-200/60 px-4 py-3 text-left">
-                  <div className="flex items-center gap-2.5">
-                    <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-gradient-to-br from-emerald-500 to-teal-600 shadow">
-                      <Truck className="h-4 w-4 text-white" />
-                    </div>
-                    <div>
-                      <SheetTitle className="text-sm font-semibold">Vehicle Management</SheetTitle>
-                      <SheetDescription className="text-[11px]">Tap a section to navigate</SheetDescription>
-                    </div>
-                  </div>
-                </SheetHeader>
-                {/* Scrollable nav list — flex-1 + overflow-y-auto makes it scroll within the sheet */}
-                <div className="flex-1 overflow-y-auto p-2 pb-8">
-                  {navigationLinks(() => setMobileMenuOpen(false))}
-                </div>
-              </SheetContent>
-            </Sheet>
-
-            {/* Logo + title — right of Menu button */}
+            {/* Logo + title + current section. Navigation is the bottom bar and its "More" pop-up. */}
             <div className="flex items-center gap-2 min-w-0">
               <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-gradient-to-br from-emerald-500 to-teal-600 shadow-sm">
                 <Truck className="h-4 w-4 text-white" />
@@ -266,7 +234,7 @@ export default function VehicleManagementLayoutShell({ children }: { children: R
                 </div>
               </div>
               <CardContent className="p-2 overflow-y-auto max-h-[calc(100vh-var(--app-header-offset,4rem)-8rem)]">
-                {navigationLinks(undefined, iconsOnly)}
+                {navigationLinks(iconsOnly)}
               </CardContent>
             </Card>
           </aside>
@@ -276,7 +244,7 @@ export default function VehicleManagementLayoutShell({ children }: { children: R
       </div>
 
       {!isDriverAppRoute && (
-        <ModuleBottomNav tabs={bottomTabs} pages={availableSections} onMore={() => setMobileMenuOpen(true)} moduleName="Vehicle Management" />
+        <ModuleBottomNav tabs={bottomTabs} pages={availableSections} groupLabels={groupLabels} moduleName="Vehicle Management" />
       )}
     </div>
   );

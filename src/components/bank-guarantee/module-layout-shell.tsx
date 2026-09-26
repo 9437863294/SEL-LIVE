@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useState, type ReactNode } from "react";
+import { type ReactNode } from "react";
 import {
   AlertOctagon,
   BadgeIndianRupee,
@@ -19,7 +19,6 @@ import {
   LayoutDashboard,
   LayoutList,
   Link2,
-  Menu,
   PencilRuler,
   Plus,
   Send,
@@ -41,7 +40,6 @@ import {
   SidebarNavTooltip,
   useSidebarIconsOnly,
 } from "@/components/navigation/use-sidebar-mode";
-import { Button } from "@/components/ui/button";
 import {
   Card,
   CardContent,
@@ -49,14 +47,6 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import {
-  Sheet,
-  SheetContent,
-  SheetDescription,
-  SheetHeader,
-  SheetTitle,
-  SheetTrigger,
-} from "@/components/ui/sheet";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 
@@ -196,7 +186,6 @@ export default function BankGuaranteeLayoutShell({
 }) {
   const pathname = usePathname() || "";
   const { can, isLoading } = useAuthorization();
-  const [open, setOpen] = useState(false);
   const iconsOnly = useSidebarIconsOnly();
   const moduleAccess =
     can("View Module", BG_PERMISSION_MODULE) ||
@@ -212,7 +201,7 @@ export default function BankGuaranteeLayoutShell({
         can("Request", `${BG_PERMISSION_MODULE}.${section.resource}`)),
   );
   // The phone's bottom bar: the dashboard, the register, raising a BG request in the middle,
-  // approvals, and "More" opening the full menu. Each tab only if its menu entry is visible too.
+  // approvals, and "More" opening the pop-up of every page. Each tab only if its menu entry is visible too.
   const isVisible = (href: string) =>
     visible.some((section) => section.href === href);
   const bottomTabs: ModuleNavTab[] = [
@@ -253,8 +242,8 @@ export default function BankGuaranteeLayoutShell({
         ]
       : []),
   ];
-  // `compact` is the desktop sidebar in icons mode; the phone sheet always passes labels.
-  const links = (close?: () => void, compact = false) =>
+  // `compact` is the desktop sidebar in icons mode.
+  const links = (compact = false) =>
     visible.map((section) => {
       const active =
         pathname === section.href ||
@@ -269,7 +258,6 @@ export default function BankGuaranteeLayoutShell({
         >
           <Link
             href={section.href}
-            onClick={close}
             aria-current={active ? "page" : undefined}
             title={compact ? section.label : undefined}
             className={cn(
@@ -317,40 +305,16 @@ export default function BankGuaranteeLayoutShell({
       <div className="pointer-events-none absolute inset-0 -z-10 rounded-3xl bg-gradient-to-br from-indigo-50/70 via-white to-violet-50/60" />
       <div className="mb-3 lg:hidden">
         <Card className="border-white/80 bg-white/90">
-          <CardContent className="flex items-center justify-between px-4 py-3">
-            <div className="flex items-center gap-2.5">
-              <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-gradient-to-br from-indigo-600 to-violet-700">
-                <ShieldCheck className="h-4 w-4 text-white" />
-              </span>
-              <div>
-                <p className="text-sm font-semibold">Bank Guarantee</p>
-                <p className="text-xs text-muted-foreground">
-                  Exposure & lifecycle control
-                </p>
-              </div>
+          <CardContent className="flex items-center gap-2.5 px-4 py-3">
+            <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-gradient-to-br from-indigo-600 to-violet-700">
+              <ShieldCheck className="h-4 w-4 text-white" />
+            </span>
+            <div>
+              <p className="text-sm font-semibold">Bank Guarantee</p>
+              <p className="text-xs text-muted-foreground">
+                Exposure & lifecycle control
+              </p>
             </div>
-            <Sheet open={open} onOpenChange={setOpen}>
-              <SheetTrigger asChild>
-                <Button size="sm" variant="outline">
-                  <Menu className="mr-1.5 h-4 w-4" />
-                  Menu
-                </Button>
-              </SheetTrigger>
-              <SheetContent
-                side="left"
-                className="w-[88vw] max-w-[340px] bg-slate-50 p-0"
-              >
-                <SheetHeader className="border-b px-4 py-4 text-left">
-                  <SheetTitle>Bank Guarantee Management</SheetTitle>
-                  <SheetDescription>
-                    Navigate the complete BG lifecycle
-                  </SheetDescription>
-                </SheetHeader>
-                <div className="max-h-[calc(100vh-90px)] space-y-1 overflow-y-auto p-2 pb-8">
-                  {links(() => setOpen(false))}
-                </div>
-              </SheetContent>
-            </Sheet>
           </CardContent>
         </Card>
       </div>
@@ -385,7 +349,7 @@ export default function BankGuaranteeLayoutShell({
                 </div>
               </div>
               <CardContent className="max-h-[calc(100vh-var(--app-header-offset,4rem)-8rem)] space-y-1 overflow-y-auto p-2">
-                {links(undefined, iconsOnly)}
+                {links(iconsOnly)}
               </CardContent>
             </Card>
           </aside>
@@ -396,7 +360,6 @@ export default function BankGuaranteeLayoutShell({
       <ModuleBottomNav
         tabs={bottomTabs}
         pages={visible}
-        onMore={() => setOpen(true)}
         moduleName="Bank Guarantee"
       />
     </div>

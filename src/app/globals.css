@@ -1652,8 +1652,11 @@ main {
   /* A few px past the slot on each side: the neighbouring labels are centred and shorter than
      their slots, so "Approvals" can borrow the space instead of truncating on a 360px phone. */
   position: absolute;
-  left: -4px;
-  right: -4px;
+  /* Centred on its slot, as wide as the bar allows (`--fbn-label-w`, from how many tabs fit): a
+     little past the slot where a short neighbour leaves room, never into a neighbour's label. */
+  left: 50%;
+  width: var(--fbn-label-w, calc(100% + 8px));
+  margin-left: calc(var(--fbn-label-w, calc(100% + 8px)) / -2);
   /* Text sits 8px off the bottom; the padding is room for the neon label's glow, which the
      ellipsis clipping would otherwise cut into a visible rectangle. */
   bottom: 5px;
@@ -1675,12 +1678,6 @@ main {
 .fbn-slot[data-active='true'] .fbn-label {
   color: var(--fbn-accent);
   font-weight: 600;
-}
-/* Seven slots to a phone: neighbouring labels would touch if they kept borrowing each other's room. */
-.fbn[data-dense='true'] .fbn-label {
-  left: -1px;
-  right: -1px;
-  font-size: 9.5px;
 }
 .fbn[data-shape='bump'] .fbn-slot[data-active='true'] .fbn-label {
   text-shadow: 0 0 6px var(--fbn-glow);

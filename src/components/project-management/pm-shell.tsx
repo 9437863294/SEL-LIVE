@@ -22,18 +22,15 @@
  *     cannot know its count, and a confident "0" that means "not loaded" is worse than no number.
  */
 
-import { useState, type ReactNode } from "react";
+import type { ReactNode } from "react";
 import Link from "next/link";
-import { ArrowRight, ChevronLeft, ChevronRight, Menu, type LucideIcon } from "lucide-react";
+import { ArrowRight, ChevronLeft, ChevronRight, type LucideIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
-  Sheet,
-  SheetContent,
-  SheetDescription,
-  SheetHeader,
-  SheetTitle,
-  SheetTrigger,
-} from "@/components/ui/sheet";
+  SectionsSheet,
+  type SectionsSheetEntry,
+  type SectionsSheetGroup,
+} from "@/components/project-management/sidebar-tabs-list";
 import {
   Tooltip,
   TooltipContent,
@@ -123,8 +120,7 @@ export function PmSidebar({
   footerLinks,
   activeValue,
   onChange,
-  mobileOpen: mobileOpenProp,
-  onMobileOpenChange,
+  mobileSections = true,
 }: {
   title: string;
   /** The project, under the screen name — the mockup's second line on the module mark. */
@@ -144,22 +140,13 @@ export function PmSidebar({
   activeValue?: string;
   onChange?: (value: string) => void;
   /**
-   * Control the phone sheet from outside — for a layout whose bottom bar's "More" should open this
-   * same list rather than a second copy of it. Left alone, the sheet keeps its own state.
+   * Below `lg`, where the sidebar is hidden, a "Sections" pill opens this same list as a pop-up of
+   * tiles. Turn it off where the module's bottom bar already lists these pages under "More", so a
+   * phone is not offered the same list twice.
    */
-  mobileOpen?: boolean;
-  onMobileOpenChange?: (open: boolean) => void;
+  mobileSections?: boolean;
 }) {
   const [isExpanded, setIsExpanded] = useSidebarDefault(true);
-  const [ownMobileOpen, setOwnMobileOpen] = useState(false);
-  const mobileOpen = mobileOpenProp ?? ownMobileOpen;
-  const setMobileOpen = (open: boolean) => {
-    if (mobileOpenProp === undefined) setOwnMobileOpen(open);
-    onMobileOpenChange?.(open);
-  };
-
-  const allViews = groups.flatMap((group) => ("views" in group ? group.views : []));
-  const current = allViews.find((view) => view.value === activeValue);
 
   const rowClass = (isActive: boolean, expanded: boolean, disabled = false) =>
     cn(
@@ -213,17 +200,14 @@ export function PmSidebar({
     </>
   );
 
-  const viewRow = (view: PmSidebarView, expanded: boolean, onNavigate?: () => void) => {
+  const viewRow = (view: PmSidebarView, expanded: boolean) => {
     const isActive = view.value === activeValue;
     return (
       <button
         key={view.value}
         type="button"
         aria-current={isActive ? "page" : undefined}
-        onClick={() => {
-          onChange?.(view.value);
-          onNavigate?.();
-        }}
+        onClick={() => onChange?.(view.value)}
         className={rowClass(isActive, expanded)}
       >
         {rowInner(view, isActive, expanded)}
@@ -231,7 +215,7 @@ export function PmSidebar({
     );
   };
 
-  const linkRow = (link: PmSidebarLink, expanded: boolean, onNavigate?: () => void) => {
+  const linkRow = (link: PmSidebarLink, expanded: boolean) => {
     if (link.disabled) {
       return (
         <span
@@ -249,7 +233,6 @@ export function PmSidebar({
         key={link.href}
         href={link.href}
         aria-current={link.active ? "page" : undefined}
-        onClick={onNavigate}
         className={rowClass(Boolean(link.active), expanded)}
       >
         {rowInner(link, Boolean(link.active), expanded)}
@@ -257,7 +240,7 @@ export function PmSidebar({
     );
   };
 
-  const groupBody = (expanded: boolean, onNavigate?: () => void) =>
+  const groupBody = (expanded: boolean) =>
     groups.map((group, index) => (
       <div key={group.label} className={index ? "mt-3" : undefined}>
         {expanded ? (
@@ -269,8 +252,8 @@ export function PmSidebar({
         ) : null}
         <div className="space-y-0.5">
           {"views" in group
-            ? group.views.map((view) => viewRow(view, expanded, onNavigate))
-            : group.links.map((link) => linkRow(link, expanded, onNavigate))}
+            ? group.views.map((view) => viewRow(view, expanded))
+            : group.links.map((link) => linkRow(link, expanded))}
         </div>
       </div>
     ));
@@ -296,36 +279,47 @@ export function PmSidebar({
     </div>
   );
 
+  // The same list for the phone's pop-up: each group under its own heading, the pinned footer
+  // links last.
+  const linkEntry = (link: PmSidebarLink): SectionsSheetEntry => ({
+    key: link.href,
+    label: link.label,
+    icon: link.icon,
+    color: link.color,
+    bg: link.bg,
+    count: link.count,
+    active: link.active,
+    href: link.href,
+    disabled: link.disabled,
+  });
+  const phoneGroups: SectionsSheetGroup[] = [
+    ...groups.map((group) => ({
+      label: group.label,
+      entries:
+        "views" in group
+          ? group.views.map((view) => ({
+              key: view.value,
+              label: view.label,
+              icon: view.icon,
+              color: view.color,
+              bg: view.bg,
+              count: view.count,
+              active: view.value === activeValue,
+              onSelect: () => onChange?.(view.value),
+            }))
+          : group.links.map(linkEntry),
+    })),
+    ...(footerLinks?.length ? [{ label: "Related", entries: footerLinks.map(linkEntry) }] : []),
+  ];
+
   return (
     <>
-      {/* Mobile — the same list in a sheet, opened from a single trigger. */}
-      <div className="border-b bg-card px-4 py-2 lg:hidden">
-        <Sheet open={mobileOpen} onOpenChange={setMobileOpen}>
-          <SheetTrigger asChild>
-            <Button variant="outline" size="sm" className="h-8 w-full justify-start gap-2">
-              <Menu className="h-4 w-4 shrink-0" />
-              {current && <current.icon className={cn("h-4 w-4 shrink-0", current.color)} />}
-              <span className="truncate text-sm font-medium">{current?.label ?? title}</span>
-            </Button>
-          </SheetTrigger>
-          <SheetContent side="left" className="flex w-72 flex-col p-0">
-            <SheetHeader className="shrink-0 border-b px-4 py-3 text-left">
-              <SheetTitle asChild>
-                <div>{moduleMark(true)}</div>
-              </SheetTitle>
-              <SheetDescription className="sr-only">{title} navigation</SheetDescription>
-            </SheetHeader>
-            <nav className="flex-1 overflow-y-auto px-2.5 py-3">
-              {groupBody(true, () => setMobileOpen(false))}
-            </nav>
-            {footerLinks?.length ? (
-              <div className="shrink-0 space-y-0.5 border-t px-2.5 py-2">
-                {footerLinks.map((link) => linkRow(link, true, () => setMobileOpen(false)))}
-              </div>
-            ) : null}
-          </SheetContent>
-        </Sheet>
-      </div>
+      {/* Phones — a "Sections" pill opening the same list as a pop-up of tiles. */}
+      {mobileSections && phoneGroups.some((group) => group.entries.length > 0) && (
+        <div className="border-b bg-card px-4 py-2 lg:hidden">
+          <SectionsSheet title={title} description={subtitle} icon={ModuleIcon} groups={phoneGroups} />
+        </div>
+      )}
 
       {/* Desktop — flush to the left edge, full height, collapsing to an icon rail. */}
       <aside
@@ -439,8 +433,9 @@ export function PmShell({
   sidebar?: ReactNode;
   children: ReactNode;
 }) {
+  // A column below `lg`, so the sidebar's phone strip sits above the content, not beside it.
   return (
-    <div className="flex min-h-[calc(100dvh-3.5rem)] md:min-h-[calc(100dvh-4rem)]">
+    <div className="flex min-h-[calc(100dvh-3.5rem)] flex-col md:min-h-[calc(100dvh-4rem)] lg:flex-row">
       {sidebar}
       <div className="flex min-w-0 flex-1 flex-col">{children}</div>
     </div>

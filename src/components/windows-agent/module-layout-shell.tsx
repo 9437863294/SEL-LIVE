@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { useEffect, useState } from 'react';
+import { useEffect } from 'react';
 import {
   Activity,
   BarChart3,
@@ -13,7 +13,6 @@ import {
   Gauge,
   HardDrive,
   KeyRound,
-  Menu,
   MonitorSmartphone,
   Package,
   PhoneCall,
@@ -27,16 +26,7 @@ import {
 import { ModuleBottomNav, type ModuleNavTab } from '@/components/navigation/ModuleBottomNav';
 import { useSidebarIconsOnly } from '@/components/navigation/use-sidebar-mode';
 import { useSidebarDefault } from '@/components/theme/use-sidebar-default';
-import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import {
-  Sheet,
-  SheetContent,
-  SheetDescription,
-  SheetHeader,
-  SheetTitle,
-  SheetTrigger,
-} from '@/components/ui/sheet';
+import { Card, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 import {
   Tooltip,
@@ -342,7 +332,6 @@ export default function WindowsAgentLayoutShell({ children }: { children: React.
 function ShellBody({ children }: { children: React.ReactNode }) {
   const { viewer, loading } = useWindowsAgent();
   const pathname = usePathname() || '';
-  const [sheetOpen, setSheetOpen] = useState(false);
   const [expanded, setExpanded] = useSidebarDefault(true);
   // Icons mode (Appearance, "Sidebar mode") is this rail's collapsed state, held there: the toggle
   // is hidden while it applies, and whatever the toggle last stored comes back in labels mode.
@@ -427,8 +416,6 @@ function ShellBody({ children }: { children: React.ReactNode }) {
   }
 
   const bottomTabs = BOTTOM_TABS.filter((tab) => visible.some((section) => section.href === tab.href));
-  // "More" (the grouped menu) only when there is more than a bar's worth; for most employees there is not.
-  const hasMoreSections = visible.length > 6;
 
   /**
    * One row. A tile, a label when there is room, and a tooltip that always has something to say.
@@ -449,7 +436,6 @@ function ShellBody({ children }: { children: React.ReactNode }) {
           <Link
             href={section.href}
             prefetch={false}
-            onClick={() => setSheetOpen(false)}
             aria-current={active ? 'page' : undefined}
             className={cn(
               'group relative flex items-center rounded-lg transition-all duration-200',
@@ -512,7 +498,7 @@ function ShellBody({ children }: { children: React.ReactNode }) {
 
   return (
     <TooltipProvider delayDuration={200}>
-      {/* ── Below lg: a title bar and a drawer ────────────────────────────────────────── */}
+      {/* ── Below lg: a title bar; navigation is the bottom bar and its "More" pop-up ──── */}
       <div className="flex items-center justify-between gap-3 border-b px-4 py-3 lg:hidden">
         <div className="flex items-center gap-2">
           <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary/10">
@@ -523,23 +509,6 @@ function ShellBody({ children }: { children: React.ReactNode }) {
             <p className="text-xs text-muted-foreground">Attendance &amp; activity</p>
           </div>
         </div>
-        <Sheet open={sheetOpen} onOpenChange={setSheetOpen}>
-          <SheetTrigger asChild>
-            <Button variant="outline" size="icon" aria-label="Open the Windows Agent menu">
-              <Menu className="h-4 w-4" />
-            </Button>
-          </SheetTrigger>
-          <SheetContent side="left" className="w-72 overflow-y-auto p-0">
-            <SheetHeader className="border-b px-4 py-3 text-left">
-              <SheetTitle className="text-sm">Windows Agent</SheetTitle>
-              <SheetDescription className="text-xs">
-                Attendance, activity and desktop alerts
-              </SheetDescription>
-            </SheetHeader>
-            {/* Always expanded in the drawer: it slid out because somebody wants to read it. */}
-            <div className="py-3">{renderNav(true)}</div>
-          </SheetContent>
-        </Sheet>
       </div>
 
       {/* ── lg and up: a sidebar that collapses to a rail ─────────────────────────────── */}
@@ -607,7 +576,7 @@ function ShellBody({ children }: { children: React.ReactNode }) {
         <ModuleBottomNav
           tabs={bottomTabs}
           pages={visible}
-          onMore={hasMoreSections ? () => setSheetOpen(true) : undefined}
+          groupLabels={GROUP_LABELS}
           moduleName="Windows Agent"
         />
       </div>

@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useMemo } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import {
@@ -17,7 +17,6 @@ import {
   LayoutDashboard,
   ListChecks,
   Loader2,
-  Menu,
   Plus,
   Settings,
   ShieldAlert,
@@ -26,13 +25,12 @@ import {
   UserPlus,
   UserRound,
   Users,
+  type LucideIcon,
 } from 'lucide-react';
 import { useAuthorization } from '@/hooks/useAuthorization';
 import { ModuleBottomNav, type ModuleNavTab } from '@/components/navigation/ModuleBottomNav';
 import { SIDEBAR_ICONS_GRID, SidebarNavTooltip, useSidebarIconsOnly } from '@/components/navigation/use-sidebar-mode';
-import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle, SheetTrigger } from '@/components/ui/sheet';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import { cn } from '@/lib/utils';
 
@@ -43,7 +41,7 @@ type NavItem = {
   href: string;
   label: string;
   resource: string;
-  icon: React.ElementType;
+  icon: LucideIcon;
   color: string;
   bg: string;
   group: string;
@@ -80,6 +78,16 @@ const navItems: NavItem[] = [
   { href: '/hr/settings', label: 'Settings', resource: 'Settings', icon: Settings, color: 'text-zinc-600', bg: 'bg-zinc-50', group: 'settings' },
 ];
 
+/** Headings for each `group` in the phone's "More" pop-up; the sidebar draws the same groups as dividers. */
+const GROUP_LABELS: Record<string, string> = {
+  overview: 'Overview',
+  manpower: 'Manpower',
+  recruitment: 'Recruitment',
+  talent: 'Talent',
+  reports: 'Reports',
+  settings: 'Settings',
+};
+
 /**
  * Two screens are open to anyone who can see the module, for the same reason the travel module opens
  * "My Travel" to everyone: an interviewer has to reach their own feedback form and an employee has to
@@ -99,7 +107,6 @@ export default function HrLayoutShell({ children }: { children: React.ReactNode 
   const pathname = usePathname();
   const safePathname = pathname || '';
   const { can, isLoading: authLoading } = useAuthorization();
-  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const iconsOnly = useSidebarIconsOnly();
 
   const visibleItems = useMemo(
@@ -120,7 +127,8 @@ export default function HrLayoutShell({ children }: { children: React.ReactNode 
     visibleItems.some(item => matchesPath(safePathname, item.href));
 
   // The phone's bottom bar: the day-to-day screens, raising a requirement in the middle, and
-  // "More" opening the full menu below. Each tab only if its sidebar entry is visible too.
+  // "More" opening the bar's pop-up of every visible page. Each tab only if its sidebar entry is
+  // visible too.
   const isVisible = (href: string) => visibleItems.some(item => item.href === href);
   const bottomTabs: ModuleNavTab[] = [
     { href: '/hr', label: 'Home', icon: LayoutDashboard, match: path => matchesPath(path, '/hr') },
@@ -131,8 +139,8 @@ export default function HrLayoutShell({ children }: { children: React.ReactNode 
     ...(isVisible('/hr/approvals') ? [{ href: '/hr/approvals', label: 'Approvals', icon: ClipboardCheck }] : []),
   ];
 
-  // `compact` is the desktop sidebar in icons mode; the phone sheet always passes labels.
-  const navigationLinks = (onNavigate?: () => void, compact = false) => {
+  // `compact` is the desktop sidebar in icons mode.
+  const navigationLinks = (compact: boolean) => {
     let lastGroup = '';
     return visibleItems.map(item => {
       const active = matchesPath(safePathname, item.href);
@@ -146,7 +154,6 @@ export default function HrLayoutShell({ children }: { children: React.ReactNode 
           <SidebarNavTooltip label={item.label} enabled={compact}>
             <Link
               href={item.href}
-              onClick={onNavigate}
               aria-current={active ? 'page' : undefined}
               title={compact ? item.label : undefined}
               className={cn(
@@ -223,28 +230,6 @@ export default function HrLayoutShell({ children }: { children: React.ReactNode 
       <div className="mb-3 lg:hidden">
         <Card className="border border-white/60 bg-white/80 shadow-sm backdrop-blur-sm">
           <CardContent className="flex items-center gap-3 px-3 py-2.5">
-            <Sheet open={mobileMenuOpen} onOpenChange={setMobileMenuOpen}>
-              <SheetTrigger asChild>
-                <Button variant="outline" className="h-10 shrink-0 gap-2 bg-white/90 px-3 text-sm font-medium">
-                  <Menu className="h-4 w-4" /> Menu
-                </Button>
-              </SheetTrigger>
-              <SheetContent side="left" className="z-[60] flex w-[88vw] max-w-[300px] flex-col border-r border-slate-200 bg-slate-50 p-0">
-                <SheetHeader className="shrink-0 border-b border-slate-200/60 px-4 py-3 text-left">
-                  <div className="flex items-center gap-2.5">
-                    <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-gradient-to-br from-indigo-500 to-violet-600 shadow">
-                      <Users className="h-4 w-4 text-white" />
-                    </div>
-                    <div>
-                      <SheetTitle className="text-sm font-semibold">HR &amp; Recruitment</SheetTitle>
-                      <SheetDescription className="text-[11px]">Tap a section to navigate</SheetDescription>
-                    </div>
-                  </div>
-                </SheetHeader>
-                <div className="flex-1 overflow-y-auto p-2 pb-8">{navigationLinks(() => setMobileMenuOpen(false))}</div>
-              </SheetContent>
-            </Sheet>
-
             <div className="flex min-w-0 items-center gap-2">
               <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-gradient-to-br from-indigo-500 to-violet-600 shadow-sm">
                 <Users className="h-4 w-4 text-white" />
@@ -276,7 +261,7 @@ export default function HrLayoutShell({ children }: { children: React.ReactNode 
                   </div>
                 </div>
               </div>
-              <CardContent className="max-h-[calc(100vh-var(--app-header-offset,4rem)-8rem)] overflow-y-auto p-2">{navigationLinks(undefined, iconsOnly)}</CardContent>
+              <CardContent className="max-h-[calc(100vh-var(--app-header-offset,4rem)-8rem)] overflow-y-auto p-2">{navigationLinks(iconsOnly)}</CardContent>
             </Card>
           </aside>
         </TooltipProvider>
@@ -284,7 +269,7 @@ export default function HrLayoutShell({ children }: { children: React.ReactNode 
         <main className="hr-content min-w-0">{currentPageAllowed ? children : pageAccessDenied}</main>
       </div>
 
-      <ModuleBottomNav tabs={bottomTabs} pages={visibleItems} onMore={() => setMobileMenuOpen(true)} moduleName="HR & Recruitment" />
+      <ModuleBottomNav tabs={bottomTabs} pages={visibleItems} groupLabels={GROUP_LABELS} moduleName="HR & Recruitment" />
     </div>
   );
 }

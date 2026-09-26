@@ -4,7 +4,9 @@ import {
   bumpedBarPath,
   bumpedTopEdgePath,
   easeOutBack,
+  fitInView,
   indicatorTarget,
+  labelBoxes,
   maxScroll,
   notchHalfWidth,
   notchedBarPath,
@@ -128,6 +130,66 @@ test('revealing a tab centres it on a whole slot, clamped to the ends, and leave
   assert.equal(revealScroll(layout, 0, slot * 4), 0, 'the first tab scrolls back to the start');
   assert.equal(revealScroll(layoutAt(366, 4), 3, 0), null, 'nothing to scroll');
   assert.equal(revealScroll(layout, layout.count, 0), null, 'More is never scrolled to');
+});
+
+const FIT = { gap: 6, maxLabel: 60, minSlot: 40, minInView: 3, coverage: 0.6 };
+// Label widths at the bar's 10px medium weight: Home, Renewals, Vehicles, Trips, Fuel, Service, Reports.
+const VEHICLE_PICKS = [25, 46, 40, 25, 19, 37, 38];
+// …then the rest of its menu: Renewal History, Vehicle Health, Insurance Workflow, Insurance, PUC,
+// Fitness, Road Tax, Permit, Driver Master, Documents, Settings.
+const VEHICLE_ALL = [...VEHICLE_PICKS, 72, 66, 90, 45, 21, 33, 42, 33, 64, 48, 40];
+const MORE_LABEL = [25];
+const fitAt = (width, strip, pinned = MORE_LABEL) => fitInView(width, PADDING, strip, pinned, IN_VIEW, FIT);
+
+test('how many tabs show adjusts to the labels: six when they are short, fewer when they are long', () => {
+  // Short names: the six-tab cap is what limits it, on every phone.
+  for (const width of WIDTHS) assert.equal(fitAt(width, Array(12).fill(20)), 6, `width ${width}`);
+  // A real module's names, a few of them long: the long ones are cut short rather than costing
+  // every screen of the bar a tab, so it still shows five on a 360px phone and six on a 430px one.
+  assert.equal(fitAt(336, VEHICLE_ALL), 5);
+  assert.equal(fitAt(406, VEHICLE_ALL), 6);
+  assert.equal(fitAt(336, VEHICLE_PICKS), 6, 'its first seven names are all short');
+  // Long names throughout (or large system text) give up tabs, never below three.
+  assert.equal(fitAt(336, Array(12).fill(58)), 3);
+  assert.equal(fitAt(336, Array(12).fill(400)), 3, 'a huge label is cut short, not allowed to empty the bar');
+  // A short list that fits is shown whole; an empty one shows nothing.
+  assert.equal(fitAt(336, [25, 46, 40]), 3);
+  assert.equal(fitAt(336, []), 0);
+});
+
+test('neighbouring labels never overlap, at any phone width, scroll position or label length', () => {
+  // A deterministic pseudo-random sweep: widths from a 6px word to a 200px sentence, slots from
+  // whatever the fit chose down to cramped ones it never would.
+  let seed = 7;
+  const rand = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
+  for (let run = 0; run < 600; run++) {
+    const width = 240 + Math.floor(rand() * 340);
+    const count = 1 + Math.floor(rand() * 16);
+    const strip = Array.from({ length: count }, () => 6 + rand() * (rand() < 0.2 ? 200 : 60));
+    const pinned = rand() < 0.8 ? [20 + rand() * 20] : [];
+    const inView = run % 3 === 0 ? 1 + Math.floor(rand() * 6) : fitInView(width, PADDING, strip, pinned, IN_VIEW, FIT);
+    const { slot } = slotLayout(width, PADDING, count, pinned.length, inView);
+    const boxes = labelBoxes(slot, strip, pinned, FIT);
+    const shown = (i) => Math.min(i < count ? strip[i] : pinned[i - count], boxes[i]);
+    const clear = (a, b) => (shown(a) + shown(b)) / 2 + FIT.gap <= slot + 1e-6 || slot <= FIT.gap;
+    for (let i = 0; i + 1 < count; i++) assert.ok(clear(i, i + 1), `run ${run}: tabs ${i}/${i + 1}`);
+    // Any strip tab can scroll to the end, beside More.
+    if (pinned.length) for (let i = 0; i < count; i++) assert.ok(clear(i, count), `run ${run}: tab ${i} beside More`);
+    assert.ok(boxes.every((b) => b >= 0 && b <= FIT.maxLabel + 1e-9), `run ${run}: boxes within 0…cap`);
+  }
+});
+
+test('a label borrows the room a short neighbour leaves, and splits it with a long one', () => {
+  const slot = 50;
+  const room = slot - FIT.gap;
+  // Short neighbours either side (and a short More): the long middle label may run past its slot.
+  const [, middle] = labelBoxes(slot, [20, 100, 20], [20], FIT);
+  assert.equal(middle, Math.min(FIT.maxLabel, 2 * (room - 20 / 2)));
+  // Between two long ones it gets exactly its share.
+  const [, squeezed] = labelBoxes(slot, [100, 100, 100], [], FIT);
+  assert.equal(squeezed, room);
+  // Nobody beside it: the cap is all that limits a lone label.
+  assert.deepEqual(labelBoxes(slot, [100], [], FIT), [FIT.maxLabel]);
 });
 
 test('the notch arc and its two fillets meet on both circles, so the outline has no corner', () => {
