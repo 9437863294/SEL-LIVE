@@ -20,10 +20,12 @@ import {
 import { useAuthorization } from '@/hooks/useAuthorization';
 import { useCurrentDriverProfile } from '@/components/vehicle-management/hooks';
 import { ModuleBottomNav, type ModuleNavTab } from '@/components/navigation/ModuleBottomNav';
+import { SIDEBAR_ICONS_GRID, SidebarNavTooltip, useSidebarIconsOnly } from '@/components/navigation/use-sidebar-mode';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle, SheetTrigger } from '@/components/ui/sheet';
 import { Skeleton } from '@/components/ui/skeleton';
+import { TooltipProvider } from '@/components/ui/tooltip';
 import { cn } from '@/lib/utils';
 
 // ─── Per-section color config ────────────────────────────────────────────────
@@ -76,6 +78,7 @@ export default function DriverManagementLayoutShell({ children }: { children: Re
   const { can } = useAuthorization();
   const { driver, isLoading: isDriverLoading } = useCurrentDriverProfile();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const iconsOnly = useSidebarIconsOnly();
 
   const isAssignedDriver = Boolean(driver?.id && (driver?.assignedVehicleId || driver?.assignedVehicleNumber));
 
@@ -108,7 +111,8 @@ export default function DriverManagementLayoutShell({ children }: { children: Re
     .filter((tab) => availableSections.some((item) => item.href === tab.href))
     .slice(0, 4);
 
-  const navigationLinks = (onNavigate?: () => void) => {
+  // `compact` is the desktop sidebar in icons mode; the phone sheet always passes labels.
+  const navigationLinks = (onNavigate?: () => void, compact = false) => {
     let lastGroup = '';
     return availableSections.map((item) => {
       const active =
@@ -121,26 +125,31 @@ export default function DriverManagementLayoutShell({ children }: { children: Re
       return (
         <div key={item.href}>
           {showDivider && <div className="my-1 h-px bg-white/40" />}
-          <Link
-            href={item.href}
-            onClick={onNavigate}
-            className={cn(
-              'group relative flex items-center gap-2.5 rounded-lg px-2.5 py-3 lg:py-2 text-sm font-medium transition-all duration-200',
-              active
-                ? 'bg-gradient-to-r from-cyan-500 to-blue-600 text-white shadow-[0_8px_24px_-8px_rgba(14,116,205,0.6)]'
-                : 'text-slate-600 hover:bg-white/70 hover:text-slate-900'
-            )}
-          >
-            <span
+          <SidebarNavTooltip label={item.label} enabled={compact}>
+            <Link
+              href={item.href}
+              onClick={onNavigate}
+              aria-current={active ? 'page' : undefined}
+              title={compact ? item.label : undefined}
               className={cn(
-                'flex h-7 w-7 shrink-0 items-center justify-center rounded-lg transition-all duration-200',
-                active ? 'bg-white/20' : cn('group-hover:scale-105', item.bg)
+                'group relative flex items-center gap-2.5 rounded-lg px-2.5 py-3 lg:py-2 text-sm font-medium transition-all duration-200',
+                active
+                  ? 'bg-gradient-to-r from-cyan-500 to-blue-600 text-white shadow-[0_8px_24px_-8px_rgba(14,116,205,0.6)]'
+                  : 'text-slate-600 hover:bg-white/70 hover:text-slate-900',
+                compact && 'justify-center'
               )}
             >
-              <Icon className={cn('h-3.5 w-3.5 transition-transform', active ? 'text-white scale-110' : item.color)} />
-            </span>
-            <span className="truncate">{item.label}</span>
-          </Link>
+              <span
+                className={cn(
+                  'flex h-7 w-7 shrink-0 items-center justify-center rounded-lg transition-all duration-200',
+                  active ? 'bg-white/20' : cn('group-hover:scale-105', item.bg)
+                )}
+              >
+                <Icon className={cn('h-3.5 w-3.5 transition-transform', active ? 'text-white scale-110' : item.color)} />
+              </span>
+              <span className={compact ? 'sr-only' : 'truncate'}>{item.label}</span>
+            </Link>
+          </SidebarNavTooltip>
         </div>
       );
     });
@@ -214,26 +223,31 @@ export default function DriverManagementLayoutShell({ children }: { children: Re
       </div>
 
       {/* Desktop grid */}
-      <div className="grid grid-cols-1 gap-4 lg:grid-cols-[240px_minmax(0,1fr)] lg:items-start">
-        <aside className="hidden lg:sticky lg:top-20 lg:block">
-          <Card className="overflow-hidden vm-panel-strong vm-reveal">
-            {/* Sidebar header */}
-            <div className="border-b border-white/50 bg-gradient-to-r from-cyan-500/10 to-blue-500/5 px-4 py-3">
-              <div className="flex items-center gap-2.5">
-                <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-gradient-to-br from-cyan-500 to-blue-600 shadow-sm">
-                  <Truck className="h-4 w-4 text-white" />
-                </div>
-                <div>
-                  <p className="text-sm font-semibold tracking-tight text-slate-800">Driver Management</p>
-                  <p className="text-[11px] text-muted-foreground">Control Center</p>
+      <div className={`grid grid-cols-1 gap-4 ${iconsOnly ? SIDEBAR_ICONS_GRID : 'lg:grid-cols-[240px_minmax(0,1fr)]'} lg:items-start`}>
+        <TooltipProvider delayDuration={150}>
+          <aside className="hidden lg:sticky lg:top-[calc(var(--app-header-offset,4rem)+1rem)] lg:block">
+            <Card className="overflow-hidden vm-panel-strong vm-reveal">
+              {/* Sidebar header */}
+              <div
+                className={cn('border-b border-white/50 bg-gradient-to-r from-cyan-500/10 to-blue-500/5 px-4 py-3', iconsOnly && 'px-2')}
+                title={iconsOnly ? 'Driver Management' : undefined}
+              >
+                <div className={cn('flex items-center gap-2.5', iconsOnly && 'justify-center')}>
+                  <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-gradient-to-br from-cyan-500 to-blue-600 shadow-sm">
+                    <Truck className="h-4 w-4 text-white" />
+                  </div>
+                  <div className={iconsOnly ? 'sr-only' : undefined}>
+                    <p className="text-sm font-semibold tracking-tight text-slate-800">Driver Management</p>
+                    <p className="text-[11px] text-muted-foreground">Control Center</p>
+                  </div>
                 </div>
               </div>
-            </div>
-            <CardContent className="p-2 overflow-y-auto max-h-[calc(100vh-12rem)]">
-              {navigationLinks()}
-            </CardContent>
-          </Card>
-        </aside>
+              <CardContent className="p-2 overflow-y-auto max-h-[calc(100vh-var(--app-header-offset,4rem)-8rem)]">
+                {navigationLinks(undefined, iconsOnly)}
+              </CardContent>
+            </Card>
+          </aside>
+        </TooltipProvider>
 
         <main className="min-w-0 vm-reveal">{children}</main>
       </div>

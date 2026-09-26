@@ -2,7 +2,6 @@
 'use client';
 
 import * as React from 'react';
-import { useState } from 'react';
 import Link from 'next/link';
 import { BarChart3, Briefcase, CalendarCheck, ChevronLeft, ChevronRight, CreditCard, LayoutDashboard, Plus } from 'lucide-react';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
@@ -10,9 +9,10 @@ import { cn } from '@/lib/utils';
 import { useAuthorization } from '@/hooks/useAuthorization';
 import { usePathname } from 'next/navigation';
 import { ModuleBottomNav, type ModuleNavTab } from '@/components/navigation/ModuleBottomNav';
+import { useSidebarDefault } from '@/components/theme/use-sidebar-default';
 
 export default function LoanLayoutShell({ children }: { children: React.ReactNode }) {
-  const [isExpanded, setIsExpanded] = useState(false);
+  const [isExpanded, setIsExpanded] = useSidebarDefault(false);
   const { can } = useAuthorization();
   const pathname = usePathname();
 
@@ -45,7 +45,7 @@ export default function LoanLayoutShell({ children }: { children: React.ReactNod
   return (
     <div className="flex w-full h-full">
       <aside className={cn(
-        'fixed left-0 top-16 h-[calc(100vh-4rem)] z-40 hidden md:flex flex-col border-r border-border/60 bg-background/95 backdrop-blur-sm transition-all duration-300 shadow-sm',
+        'fixed left-0 top-[var(--app-header-offset,4rem)] h-[calc(100vh-var(--app-header-offset,4rem))] z-40 hidden md:flex flex-col border-r border-border/60 bg-background/95 backdrop-blur-sm transition-all duration-300 shadow-sm',
         isExpanded ? 'w-56' : 'w-14',
       )}>
         <div className={cn('flex items-center gap-2 px-3 py-3 border-b border-border/40 shrink-0', !isExpanded && 'justify-center')}>

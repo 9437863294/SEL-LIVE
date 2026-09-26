@@ -7,6 +7,7 @@ import { Bar, BarChart, CartesianGrid, Cell, Legend, Pie, PieChart, ResponsiveCo
 import { db } from '@/lib/firebase';
 import { getVehicleComplianceRequirements, VEHICLE_COLLECTIONS, type VehicleComplianceRequirements } from '@/lib/vehicle-management';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { chartChrome } from '@/components/ui/chart';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -372,10 +373,10 @@ export default function VehicleManagementOverviewPage() {
             ) : (
               <ResponsiveContainer width="100%" height={230}>
                 <BarChart data={complianceChartData} layout="vertical" barCategoryGap={14} margin={{ left: 4, right: 16 }}>
-                  <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="#e1e0d9" />
-                  <XAxis type="number" allowDecimals={false} fontSize={11} stroke="#898781" />
-                  <YAxis type="category" dataKey="category" width={72} fontSize={12} stroke="#898781" tickLine={false} axisLine={false} />
-                  <Tooltip cursor={{ fill: 'rgba(0,0,0,0.03)' }} />
+                  <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke={chartChrome.grid} />
+                  <XAxis type="number" allowDecimals={false} fontSize={11} stroke={chartChrome.axis} />
+                  <YAxis type="category" dataKey="category" width={72} fontSize={12} stroke={chartChrome.axis} tickLine={false} axisLine={false} />
+                  <Tooltip cursor={chartChrome.cursor} {...chartChrome.tooltip} />
                   <Legend
                     wrapperStyle={{ fontSize: 12 }}
                     formatter={(value: string) =>
@@ -405,12 +406,12 @@ export default function VehicleManagementOverviewPage() {
             ) : (
               <ResponsiveContainer width="100%" height={230}>
                 <PieChart>
-                  <Pie isAnimationActive={false} data={vehicleStatusBreakdown} dataKey="count" nameKey="status" innerRadius={48} outerRadius={82} paddingAngle={2}>
+                  <Pie isAnimationActive={false} data={vehicleStatusBreakdown} dataKey="count" nameKey="status" innerRadius={48} outerRadius={82} paddingAngle={2} stroke={chartChrome.surface}>
                     {vehicleStatusBreakdown.map((entry) => (
                       <Cell key={entry.status} fill={VEHICLE_STATUS_COLORS[entry.status] || '#64748b'} />
                     ))}
                   </Pie>
-                  <Tooltip />
+                  <Tooltip {...chartChrome.tooltip} />
                   <Legend wrapperStyle={{ fontSize: 11 }} />
                 </PieChart>
               </ResponsiveContainer>

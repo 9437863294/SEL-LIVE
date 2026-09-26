@@ -93,6 +93,17 @@ service firebase.storage {
       allow read, write: if false;
     }
 
+    // Company branding images: branding/{logoLight|logoDark|favicon|appIcon}/{file}.
+    //
+    // Written only by the server (Admin SDK) after /api/appearance/admin/assets has checked the
+    // uploader's Company Branding permission and the image itself. Readable by anyone, because the
+    // sign-in page shows the logo before sign-in (the stored URLs carry download tokens anyway).
+    // It must stay out of the catch-all below, or any signed-in user could overwrite the logo.
+    match /branding/{allPaths=**} {
+      allow read: if true;
+      allow write: if false;
+    }
+
     // Allow read/write access to all authenticated users for all files
     // This is a permissive rule, you may want to restrict it further
     // for example, only allow users to read/write their own files.
@@ -101,6 +112,7 @@ service firebase.storage {
         && !allPaths.matches('chat/.*')
         && !allPaths.matches('office-hub/.*')
         && !allPaths.matches('mail-hub/.*')
+        && !allPaths.matches('branding/.*')
         && !allPaths.matches('organizations/[^/]+/fixed-deposits/.*')
         && !allPaths.matches('fixed-deposits/[^/]+/.*')
         && !allPaths.matches('organizations/[^/]+/letters-of-credit/.*')

@@ -234,7 +234,7 @@ export default function EApprovalExecutiveReportPage() {
                     <CartesianGrid horizontal={false} stroke={EA_VIZ.grid} />
                     <XAxis type="number" allowDecimals={false} fontSize={11} stroke={EA_VIZ.axis} tickLine={false} />
                     <YAxis type="category" dataKey="band" width={168} fontSize={10} stroke={EA_VIZ.axis} tickLine={false} axisLine={false} />
-                    <Tooltip cursor={{ fill: 'rgba(15,23,42,0.03)' }} {...eaTooltipStyle} />
+                    <Tooltip cursor={{ fill: EA_VIZ.cursor }} {...eaTooltipStyle} />
                     <Legend wrapperStyle={{ fontSize: 11 }} />
                     <Bar isAnimationActive={false} dataKey="pending" name="Pending" stackId="s" fill={EA_VIZ.series[0]} maxBarSize={20} stroke={EA_VIZ.surface} strokeWidth={2} />
                     <Bar isAnimationActive={false} dataKey="approved" name="Approved" stackId="s" fill={EA_VIZ.series[1]} radius={[0, 4, 4, 0]} maxBarSize={20} stroke={EA_VIZ.surface} strokeWidth={2} />

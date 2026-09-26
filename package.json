@@ -68,7 +68,8 @@
     "test:navigation": "node --experimental-strip-types --test tests/floating-nav-geometry.test.mjs",
     "typecheck:navigation": "tsc -p tsconfig.navigation.json",
     "theme:dark-compat": "node scripts/generate-dark-compat.mjs",
-    "test:theme": "node --experimental-strip-types --test tests/theme-preferences.test.mjs"
+    "test:theme": "node --experimental-strip-types --test tests/appearance-model.test.mjs tests/appearance-admin.test.mjs",
+    "typecheck:appearance": "tsc -p tsconfig.appearance.json"
   },
   "dependencies": {
     "@capacitor-community/background-geolocation": "^1.2.26",

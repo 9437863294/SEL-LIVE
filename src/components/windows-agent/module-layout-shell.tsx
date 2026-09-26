@@ -25,6 +25,8 @@ import {
 } from 'lucide-react';
 
 import { ModuleBottomNav, type ModuleNavTab } from '@/components/navigation/ModuleBottomNav';
+import { useSidebarIconsOnly } from '@/components/navigation/use-sidebar-mode';
+import { useSidebarDefault } from '@/components/theme/use-sidebar-default';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import {
@@ -322,7 +324,10 @@ const BOTTOM_TABS: ModuleNavTab[] = [
   { href: WINDOWS_AGENT_ROUTES.monitoringPolicy, label: 'Recorded', icon: ShieldCheck, ariaLabel: 'What is recorded' },
 ];
 
-/** Where the collapsed/expanded preference is kept. Per browser, not per user. */
+/**
+ * Where the user's own collapse toggle is kept. Per browser, not per user; the account-wide
+ * default is the appearance preference, which this outranks once somebody has clicked.
+ */
 const NAV_COLLAPSED_KEY = 'sel.windowsAgent.navCollapsed';
 
 export default function WindowsAgentLayoutShell({ children }: { children: React.ReactNode }) {
@@ -337,7 +342,11 @@ function ShellBody({ children }: { children: React.ReactNode }) {
   const { viewer, loading } = useWindowsAgent();
   const pathname = usePathname() || '';
   const [sheetOpen, setSheetOpen] = useState(false);
-  const [collapsed, setCollapsed] = useState(false);
+  const [expanded, setExpanded] = useSidebarDefault(true);
+  // Icons mode (Appearance, "Sidebar mode") is this rail's collapsed state, held there: the toggle
+  // is hidden while it applies, and whatever the toggle last stored comes back in labels mode.
+  const iconsOnly = useSidebarIconsOnly();
+  const collapsed = iconsOnly || !expanded;
 
   /**
    * Remember whether the sidebar was collapsed.
@@ -346,22 +355,29 @@ function ShellBody({ children }: { children: React.ReactNode }) {
    * reading `localStorage` during the first render makes the client's markup differ from the
    * server's, which React reports as a hydration error. Starting expanded and correcting on
    * mount costs one frame and is the supported way round it.
+   *
+   * Only a stored toggle is restored — with none, the user's sidebar preference decides — and it
+   * is written on a click rather than on every change, so the preference being applied is never
+   * mistaken next visit for something the user chose.
    */
   useEffect(() => {
     try {
-      setCollapsed(window.localStorage.getItem(NAV_COLLAPSED_KEY) === '1');
+      const saved = window.localStorage.getItem(NAV_COLLAPSED_KEY);
+      if (saved !== null) setExpanded(saved !== '1');
     } catch {
-      // Private browsing, or storage disabled by policy. Expanded is a fine default.
+      // Private browsing, or storage disabled by policy. The preference is a fine default.
     }
-  }, []);
+  }, [setExpanded]);
 
-  useEffect(() => {
+  const toggleCollapsed = () => {
+    const nextCollapsed = !collapsed;
+    setExpanded(!nextCollapsed);
     try {
-      window.localStorage.setItem(NAV_COLLAPSED_KEY, collapsed ? '1' : '0');
+      window.localStorage.setItem(NAV_COLLAPSED_KEY, nextCollapsed ? '1' : '0');
     } catch {
-      // As above — not remembering the preference is not worth an error.
+      // As above — not remembering the toggle is not worth an error.
     }
-  }, [collapsed]);
+  };
 
   // AppShell already strips the application header for a print route; this is a nested layout, so
   // without this the printed report would carry the module's sidebar too. `print:hidden` alone is
@@ -528,7 +544,7 @@ function ShellBody({ children }: { children: React.ReactNode }) {
       {/* ── lg and up: a sidebar that collapses to a rail ─────────────────────────────── */}
       <aside
         className={cn(
-          'fixed left-0 top-16 z-30 hidden h-[calc(100vh-4rem)] flex-col border-r',
+          'fixed left-0 top-[var(--app-header-offset,4rem)] z-30 hidden h-[calc(100vh-var(--app-header-offset,4rem))] flex-col border-r',
           'bg-background/95 shadow-sm backdrop-blur-sm transition-[width] duration-300 lg:flex',
           collapsed ? 'w-[4.25rem]' : 'w-64',
         )}
@@ -552,27 +568,29 @@ function ShellBody({ children }: { children: React.ReactNode }) {
 
         <div className="flex-1 overflow-y-auto py-3">{renderNav(!collapsed)}</div>
 
-        <div className="shrink-0 border-t p-2">
-          <button
-            type="button"
-            onClick={() => setCollapsed((value) => !value)}
-            aria-label={collapsed ? 'Expand the menu' : 'Collapse the menu'}
-            className={cn(
-              'flex w-full items-center gap-2 rounded-lg px-2 py-2 text-sm text-muted-foreground',
-              'transition-colors hover:bg-muted/60 hover:text-foreground',
-              collapsed && 'justify-center',
-            )}
-          >
-            {collapsed ? (
-              <ChevronRight className="h-4 w-4" aria-hidden />
-            ) : (
-              <>
-                <ChevronLeft className="h-4 w-4 shrink-0" aria-hidden />
-                <span>Collapse</span>
-              </>
-            )}
-          </button>
-        </div>
+        {iconsOnly ? null : (
+          <div className="shrink-0 border-t p-2">
+            <button
+              type="button"
+              onClick={toggleCollapsed}
+              aria-label={collapsed ? 'Expand the menu' : 'Collapse the menu'}
+              className={cn(
+                'flex w-full items-center gap-2 rounded-lg px-2 py-2 text-sm text-muted-foreground',
+                'transition-colors hover:bg-muted/60 hover:text-foreground',
+                collapsed && 'justify-center',
+              )}
+            >
+              {collapsed ? (
+                <ChevronRight className="h-4 w-4" aria-hidden />
+              ) : (
+                <>
+                  <ChevronLeft className="h-4 w-4 shrink-0" aria-hidden />
+                  <span>Collapse</span>
+                </>
+              )}
+            </button>
+          </div>
+        )}
       </aside>
 
       {/* min-w-0 is load-bearing: without it a wide table refuses to shrink and pushes the

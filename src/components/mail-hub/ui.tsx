@@ -76,6 +76,11 @@ export function AccountStatusBadge({ account }: { account: Pick<AccountRow, 'sta
   );
 }
 
+/** The words for a mailbox status, so the dot is never the only signal. */
+export function statusDotLabel(status: string) {
+  return status === 'active' ? 'Connected' : status === 'connecting' ? 'Connecting' : status === 'reauth_required' ? 'Needs signing in again' : status === 'error' ? 'Sync problem' : 'Not connected';
+}
+
 export function statusDot(status: string) {
   return status === 'active' ? 'bg-emerald-500' : status === 'connecting' ? 'bg-sky-500' : status === 'reauth_required' ? 'bg-rose-500' : status === 'error' ? 'bg-amber-500' : 'bg-slate-300';
 }

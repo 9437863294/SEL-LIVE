@@ -152,12 +152,12 @@ export default function EApprovalSlaReportPage() {
                       <CartesianGrid vertical={false} stroke={EA_VIZ.grid} />
                       <XAxis dataKey="level" fontSize={11} stroke={EA_VIZ.axis} tickLine={false} />
                       <YAxis allowDecimals={false} fontSize={11} stroke={EA_VIZ.axis} tickLine={false} axisLine={false} />
-                      <Tooltip cursor={{ fill: 'rgba(15,23,42,0.03)' }} {...eaTooltipStyle} />
+                      <Tooltip cursor={{ fill: EA_VIZ.cursor }} {...eaTooltipStyle} />
                       <Bar isAnimationActive={false} dataKey="approvals" name="Approvals" radius={[4, 4, 0, 0]} maxBarSize={48}>
                         {sla.byLevel.map((row) => (
                           <Cell key={row.level} fill={LEVEL_TONE[row.level] ?? EA_VIZ.status.warning} />
                         ))}
-                        <LabelList dataKey="approvals" position="top" fontSize={11} fill="#52514e" />
+                        <LabelList dataKey="approvals" position="top" fontSize={11} fill={EA_VIZ.label} />
                       </Bar>
                     </BarChart>
                   </ResponsiveContainer>
@@ -190,7 +190,7 @@ export default function EApprovalSlaReportPage() {
                     <CartesianGrid horizontal={false} stroke={EA_VIZ.grid} />
                     <XAxis type="number" domain={[0, 100]} fontSize={11} stroke={EA_VIZ.axis} tickLine={false} unit="%" />
                     <YAxis type="category" dataKey="label" width={150} fontSize={11} stroke={EA_VIZ.axis} tickLine={false} axisLine={false} />
-                    <Tooltip cursor={{ fill: 'rgba(15,23,42,0.03)' }} {...eaTooltipStyle} />
+                    <Tooltip cursor={{ fill: EA_VIZ.cursor }} {...eaTooltipStyle} />
                     <Bar isAnimationActive={false} dataKey="compliance" name="Compliance %" radius={[0, 4, 4, 0]} maxBarSize={20}>
                       {worst.map((row) => (
                         <Cell
@@ -208,7 +208,7 @@ export default function EApprovalSlaReportPage() {
                         dataKey="compliance"
                         position="right"
                         fontSize={11}
-                        fill="#52514e"
+                        fill={EA_VIZ.label}
                         formatter={(value: unknown) => `${value}%`}
                       />
                     </Bar>

@@ -107,7 +107,7 @@ export default function EApprovalAgingReportPage() {
                       interval={0}
                     />
                     <YAxis allowDecimals={false} fontSize={11} stroke={EA_VIZ.axis} tickLine={false} axisLine={false} />
-                    <Tooltip cursor={{ fill: 'rgba(15,23,42,0.03)' }} {...eaTooltipStyle} />
+                    <Tooltip cursor={{ fill: EA_VIZ.cursor }} {...eaTooltipStyle} />
                     <Bar isAnimationActive={false} dataKey="count" name="Approvals" radius={[4, 4, 0, 0]} maxBarSize={40}>
                       {aging.map((row, index) => (
                         <Cell key={row.bucket} fill={AGE_RAMP[index] ?? AGE_RAMP[AGE_RAMP.length - 1]} />
@@ -116,7 +116,7 @@ export default function EApprovalAgingReportPage() {
                         dataKey="count"
                         position="top"
                         fontSize={11}
-                        fill="#52514e"
+                        fill={EA_VIZ.label}
                         formatter={(value: unknown) => (Number(value) > 0 ? String(value) : '')}
                       />
                     </Bar>

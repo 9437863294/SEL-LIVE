@@ -401,6 +401,11 @@ function DayTimeline({ entries }: { entries: TimelineEntry[] }) {
         return 'bg-violet-400';
     }
   };
+  /** The row dot's name, so the classification is not carried by its colour alone. */
+  const nameFor = (classification: ActivityClassification): string =>
+    ({ ACTIVE: 'Active', IDLE: 'Idle', EXTENDED_IDLE: 'Idle (extended)', LOCKED: 'Locked', OFFLINE: 'Offline' })[
+      classification
+    ] ?? classification;
 
   return (
     <div className="space-y-4">
@@ -437,7 +442,12 @@ function DayTimeline({ entries }: { entries: TimelineEntry[] }) {
             <span className="w-16 shrink-0 tabular-nums text-muted-foreground">
               <ClockTime value={entry.startedAt} />
             </span>
-            <span className={cn('h-2 w-2 shrink-0 rounded-full', colourFor(entry.classification))} aria-hidden />
+            <span
+              className={cn('h-2 w-2 shrink-0 rounded-full', colourFor(entry.classification))}
+              role="img"
+              aria-label={nameFor(entry.classification)}
+              title={nameFor(entry.classification)}
+            />
             <span className="min-w-0 flex-1 truncate">{entry.label}</span>
             <CategoryBadge category={entry.category} className="hidden sm:inline-flex" />
             <span className="w-16 shrink-0 text-right tabular-nums text-muted-foreground">

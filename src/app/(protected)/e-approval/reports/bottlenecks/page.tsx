@@ -93,9 +93,9 @@ export default function EApprovalBottlenecksReportPage() {
                     <CartesianGrid horizontal={false} stroke={EA_VIZ.grid} />
                     <XAxis type="number" allowDecimals={false} fontSize={11} stroke={EA_VIZ.axis} tickLine={false} />
                     <YAxis type="category" dataKey="name" width={150} fontSize={11} stroke={EA_VIZ.axis} tickLine={false} axisLine={false} />
-                    <Tooltip cursor={{ fill: 'rgba(15,23,42,0.03)' }} {...eaTooltipStyle} />
+                    <Tooltip cursor={{ fill: EA_VIZ.cursor }} {...eaTooltipStyle} />
                     <Bar isAnimationActive={false} dataKey="pending" name="Pending" fill={EA_VIZ.series[0]} radius={[0, 4, 4, 0]} maxBarSize={20}>
-                      <LabelList dataKey="pending" position="right" fontSize={11} fill="#52514e" />
+                      <LabelList dataKey="pending" position="right" fontSize={11} fill={EA_VIZ.label} />
                     </Bar>
                   </BarChart>
                 </ResponsiveContainer>

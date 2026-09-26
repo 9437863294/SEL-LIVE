@@ -8,11 +8,11 @@
  *
  * ── The palettes, and why they are hard-coded here ──────────────────────────────────────────────
  *
- * The application defines `--chart-1` … `--chart-5` in `globals.css`, but **only inside the `.dark`
- * block** — in the light theme, which is the default, `hsl(var(--chart-1))` resolves to nothing and
- * the bars render invisible. Rather than depend on that (or "fix" a global token other modules may
- * be relying on), the hues below are the same shadcn values written explicitly, plus a dark set
- * re-stepped for a dark surface.
+ * The hues below are the shadcn `--chart-1` … `--chart-5` values written explicitly, plus a dark set
+ * re-stepped for a dark surface. They were fixed here when those tokens existed only inside `.dark`
+ * (so `hsl(var(--chart-1))` resolved to nothing in the light default); the tokens now exist in both
+ * modes, but these stay explicit because they are the validated set. Axis, grid, label and tooltip
+ * ink, by contrast, are theme tokens — see `AXIS_INK` below.
  *
  * Both sets were checked rather than eyeballed, against the light surface `#f9fafb` and the dark
  * surface `#09090b`:
@@ -81,22 +81,30 @@ export const OFFICE_HUB_ORDINAL = ['#9aa7fb', '#7b86f5', '#5b60e8', '#4438c9', '
 /** Off-scale neutral, for an ordinal chart's "not applicable" band. */
 export const OFFICE_HUB_OFF_SCALE = '#cbd5e1';
 
-/** Ink for labels and axes — text tokens, never the series colour. */
-const AXIS_INK = '#64748b';
-const LABEL_INK = '#334155';
-const GRID_INK = '#e2e8f0';
+/**
+ * Ink for labels and axes — text tokens, never the series colour.
+ *
+ * Theme tokens rather than hex, so the chart chrome follows the card into dark and high-contrast:
+ * these are Recharts props, which the dark-compat stylesheet cannot reach.
+ */
+const AXIS_INK = 'hsl(var(--muted-foreground))';
+const LABEL_INK = 'hsl(var(--foreground) / 0.8)';
+const GRID_INK = 'hsl(var(--border))';
+/** The card behind the chart — the ring round a line marker and the gap between stacked segments. */
+const SURFACE_INK = 'hsl(var(--card))';
 
 /** A recessive, consistent tooltip. Built here so all twelve charts share one. */
 const tooltipStyle = {
   contentStyle: {
     borderRadius: 8,
-    border: '1px solid #e2e8f0',
+    backgroundColor: 'hsl(var(--popover))',
+    border: '1px solid hsl(var(--border))',
     fontSize: 12,
     padding: '6px 10px',
     boxShadow: '0 4px 12px -4px rgba(15,23,42,0.15)',
   },
-  labelStyle: { color: LABEL_INK, fontWeight: 600, marginBottom: 2 },
-  itemStyle: { color: LABEL_INK },
+  labelStyle: { color: 'hsl(var(--popover-foreground))', fontWeight: 600, marginBottom: 2 },
+  itemStyle: { color: 'hsl(var(--popover-foreground))' },
 } as const;
 
 export function ChartFrame({
@@ -240,8 +248,8 @@ export function MonthlyTrendChart({
             strokeLinejoin="round"
             strokeLinecap="round"
             // ≥8px marker, with a 2px surface ring so it stays legible where it crosses the line.
-            dot={{ r: 4, fill: OFFICE_HUB_CATEGORICAL[0], stroke: '#ffffff', strokeWidth: 2 }}
-            activeDot={{ r: 6, fill: OFFICE_HUB_CATEGORICAL[0], stroke: '#ffffff', strokeWidth: 2 }}
+            dot={{ r: 4, fill: OFFICE_HUB_CATEGORICAL[0], stroke: SURFACE_INK, strokeWidth: 2 }}
+            activeDot={{ r: 6, fill: OFFICE_HUB_CATEGORICAL[0], stroke: SURFACE_INK, strokeWidth: 2 }}
           >
             <LabelList
               dataKey="count"
@@ -382,7 +390,7 @@ export function CompositionBar({
               stackId="composition"
               fill={OFFICE_HUB_CATEGORICAL[index % OFFICE_HUB_CATEGORICAL.length]}
               // A 2px gap in the surface colour between touching segments, consistently.
-              stroke="#ffffff"
+              stroke={SURFACE_INK}
               strokeWidth={2}
               radius={index === present.length - 1 ? [0, 4, 4, 0] : undefined}
             >

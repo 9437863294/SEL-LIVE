@@ -1134,5 +1134,69 @@ service cloud.firestore {
       allow write: if false;
     }
 
+    /**
+     * Appearance (src/lib/appearance). Adopt these blocks into the console ruleset the same way as
+     * the blocks above.
+     *
+     * Company appearance — `settings/appearance`, its `versions`, and `settings/appearanceDraft` —
+     * is written only by the /api/appearance/admin routes, with the Admin SDK, after they have
+     * resolved the caller's full effective access (roles plus additive grants) and checked Company
+     * Branding / Theme Management. Clients therefore write none of it. The published document is
+     * also served through the public /api/appearance/company route, which is what the app reads;
+     * allowing a direct `get` keeps the sign-in page working if a client ever reads it itself.
+     */
+    match /settings/appearance {
+      allow get: if true;
+      allow list, write: if false;
+      match /versions/{version} {
+        allow read, write: if false;
+      }
+    }
+    match /settings/appearanceDraft {
+      allow read, write: if false;
+    }
+
+    /**
+     * One user's own appearance preferences, keyed by auth uid. The app reads and writes them
+     * through /api/appearance/preferences, which validates every value; these rules repeat the
+     * essentials so a direct client write can neither touch another user's document nor store an
+     * unexpected field or value.
+     */
+    function appearanceChoice(data, field, allowed) {
+      return !(field in data) || data[field] in allowed;
+    }
+
+    function validAppearancePreferences(data) {
+      return data.keys().hasOnly([
+          'mode', 'accent', 'density', 'textSize', 'font', 'radius', 'motion', 'contrast',
+          'tableDensity', 'dashboardView', 'navStyle', 'layout', 'updatedAt', 'updatedAtIso'
+        ])
+        && appearanceChoice(data, 'mode', ['light', 'dark', 'system'])
+        && appearanceChoice(data, 'accent', ['violet', 'indigo', 'blue', 'teal', 'emerald', 'amber', 'rose', 'red', 'slate', 'brand'])
+        && appearanceChoice(data, 'density', ['comfortable', 'standard', 'compact'])
+        && appearanceChoice(data, 'textSize', ['small', 'default', 'large'])
+        && appearanceChoice(data, 'font', ['inter', 'roboto', 'atkinson', 'system'])
+        && appearanceChoice(data, 'radius', ['soft', 'standard', 'sharp'])
+        && appearanceChoice(data, 'motion', ['system', 'reduced'])
+        && appearanceChoice(data, 'contrast', ['standard', 'high'])
+        && appearanceChoice(data, 'tableDensity', ['comfortable', 'standard', 'compact'])
+        && appearanceChoice(data, 'dashboardView', ['last', 'work', 'modules'])
+        && appearanceChoice(data, 'navStyle', ['blue', 'teal', 'neon'])
+        && (!('layout' in data) || (data.layout is map
+          && data.layout.keys().hasOnly([
+            'sidebarDefault', 'sidebarMode', 'moduleGrouping', 'hiddenModules', 'pinnedModules',
+            'breadcrumbs', 'stickyHeader', 'dashboardCardDensity'
+          ])
+          && (!('hiddenModules' in data.layout) || (data.layout.hiddenModules is list && data.layout.hiddenModules.size() <= 60))
+          && (!('pinnedModules' in data.layout) || (data.layout.pinnedModules is list && data.layout.pinnedModules.size() <= 60))));
+    }
+
+    match /userAppearance/{uid} {
+      allow get: if signedIn() && request.auth.uid == uid;
+      allow list: if false;
+      allow create, update: if signedIn() && request.auth.uid == uid && validAppearancePreferences(request.resource.data);
+      allow delete: if false;
+    }
+
   }
 }

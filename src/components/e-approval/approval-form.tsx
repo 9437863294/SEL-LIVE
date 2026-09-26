@@ -1311,6 +1311,8 @@ export function ApprovalForm({
                       </span>
                       <span className={cn('text-xs', isDone ? 'text-slate-800' : 'text-muted-foreground')}>
                         {entry.label}
+                        {/* The tick is aria-hidden; this is what a screen reader hears instead. */}
+                        <span className="sr-only">{isDone ? ' — answered' : ' — not answered yet'}</span>
                       </span>
                     </li>
                   );
@@ -1428,7 +1430,10 @@ function StepCard({
       >
         <div className="flex flex-wrap items-start justify-between gap-2 border-b bg-muted/20 px-3 py-2.5 sm:px-4">
           <div className="min-w-0">
-            <h2 className="text-[15px] font-semibold leading-tight tracking-tight text-slate-900">{title}</h2>
+            <h2 className="text-[15px] font-semibold leading-tight tracking-tight text-slate-900">
+              {title}
+              {done && <span className="sr-only"> (answered)</span>}
+            </h2>
             {description && <p className="mt-1 text-xs leading-snug text-muted-foreground">{description}</p>}
           </div>
           {aside}

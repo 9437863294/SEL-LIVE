@@ -20,9 +20,11 @@ import {
 } from 'lucide-react';
 import { useAuthorization } from '@/hooks/useAuthorization';
 import { ModuleBottomNav, type ModuleNavTab } from '@/components/navigation/ModuleBottomNav';
+import { SIDEBAR_ICONS_GRID, SidebarNavTooltip, useSidebarIconsOnly } from '@/components/navigation/use-sidebar-mode';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle, SheetTrigger } from '@/components/ui/sheet';
+import { TooltipProvider } from '@/components/ui/tooltip';
 import { cn } from '@/lib/utils';
 
 /** The permission module name; must match the key in `permissionModules`. */
@@ -72,6 +74,7 @@ export default function TourTravelLayoutShell({ children }: { children: React.Re
   const safePathname = pathname || '';
   const { can, isLoading: authLoading } = useAuthorization();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const iconsOnly = useSidebarIconsOnly();
 
   /**
    * Every employee needs their own travel, whatever their role — a module that only opened for
@@ -108,7 +111,8 @@ export default function TourTravelLayoutShell({ children }: { children: React.Re
       : []),
   ];
 
-  const navigationLinks = (onNavigate?: () => void) => {
+  // `compact` is the desktop sidebar in icons mode; the phone sheet always passes labels.
+  const navigationLinks = (onNavigate?: () => void, compact = false) => {
     let lastGroup = '';
     return visibleItems.map(item => {
       const active = matchesPath(safePathname, item.href);
@@ -119,26 +123,31 @@ export default function TourTravelLayoutShell({ children }: { children: React.Re
       return (
         <div key={item.href}>
           {showDivider && <div className="my-1 h-px bg-white/40" />}
-          <Link
-            href={item.href}
-            onClick={onNavigate}
-            className={cn(
-              'group relative flex items-center gap-2.5 rounded-lg px-2.5 py-2.5 text-sm font-medium transition-all duration-200 lg:py-2',
-              active
-                ? 'bg-gradient-to-r from-sky-500 to-cyan-600 text-white shadow-[0_8px_24px_-8px_rgba(14,165,233,0.5)]'
-                : 'text-slate-600 hover:bg-white/70 hover:text-slate-900',
-            )}
-          >
-            <span
+          <SidebarNavTooltip label={item.label} enabled={compact}>
+            <Link
+              href={item.href}
+              onClick={onNavigate}
+              aria-current={active ? 'page' : undefined}
+              title={compact ? item.label : undefined}
               className={cn(
-                'flex h-7 w-7 shrink-0 items-center justify-center rounded-lg transition-all duration-200',
-                active ? 'bg-white/20' : cn('group-hover:scale-105', item.bg),
+                'group relative flex items-center gap-2.5 rounded-lg px-2.5 py-2.5 text-sm font-medium transition-all duration-200 lg:py-2',
+                active
+                  ? 'bg-gradient-to-r from-sky-500 to-cyan-600 text-white shadow-[0_8px_24px_-8px_rgba(14,165,233,0.5)]'
+                  : 'text-slate-600 hover:bg-white/70 hover:text-slate-900',
+                compact && 'justify-center',
               )}
             >
-              <Icon className={cn('h-3.5 w-3.5 transition-transform', active ? 'scale-110 text-white' : item.color)} />
-            </span>
-            <span className="truncate">{item.label}</span>
-          </Link>
+              <span
+                className={cn(
+                  'flex h-7 w-7 shrink-0 items-center justify-center rounded-lg transition-all duration-200',
+                  active ? 'bg-white/20' : cn('group-hover:scale-105', item.bg),
+                )}
+              >
+                <Icon className={cn('h-3.5 w-3.5 transition-transform', active ? 'scale-110 text-white' : item.color)} />
+              </span>
+              <span className={compact ? 'sr-only' : 'truncate'}>{item.label}</span>
+            </Link>
+          </SidebarNavTooltip>
         </div>
       );
     });
@@ -229,23 +238,28 @@ export default function TourTravelLayoutShell({ children }: { children: React.Re
         </Card>
       </div>
 
-      <div className="grid grid-cols-1 gap-4 lg:grid-cols-[240px_minmax(0,1fr)] lg:items-start">
-        <aside className="hidden lg:sticky lg:top-20 lg:block">
-          <Card className="overflow-hidden border border-white/60 bg-white/80 shadow-sm backdrop-blur-sm">
-            <div className="border-b border-white/50 bg-gradient-to-r from-sky-500/10 to-cyan-500/5 px-4 py-3">
-              <div className="flex items-center gap-2.5">
-                <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-gradient-to-br from-sky-500 to-cyan-600 shadow-sm">
-                  <Plane className="h-4 w-4 text-white" />
-                </div>
-                <div>
-                  <p className="text-sm font-semibold tracking-tight text-slate-800">Tour &amp; Travel</p>
-                  <p className="text-[11px] text-muted-foreground">Travel &amp; Expense Manager</p>
+      <div className={`grid grid-cols-1 gap-4 ${iconsOnly ? SIDEBAR_ICONS_GRID : 'lg:grid-cols-[240px_minmax(0,1fr)]'} lg:items-start`}>
+        <TooltipProvider delayDuration={150}>
+          <aside className="hidden lg:sticky lg:top-[calc(var(--app-header-offset,4rem)+1rem)] lg:block">
+            <Card className="overflow-hidden border border-white/60 bg-white/80 shadow-sm backdrop-blur-sm">
+              <div
+                className={cn('border-b border-white/50 bg-gradient-to-r from-sky-500/10 to-cyan-500/5 px-4 py-3', iconsOnly && 'px-2')}
+                title={iconsOnly ? 'Tour & Travel' : undefined}
+              >
+                <div className={cn('flex items-center gap-2.5', iconsOnly && 'justify-center')}>
+                  <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-gradient-to-br from-sky-500 to-cyan-600 shadow-sm">
+                    <Plane className="h-4 w-4 text-white" />
+                  </div>
+                  <div className={iconsOnly ? 'sr-only' : undefined}>
+                    <p className="text-sm font-semibold tracking-tight text-slate-800">Tour &amp; Travel</p>
+                    <p className="text-[11px] text-muted-foreground">Travel &amp; Expense Manager</p>
+                  </div>
                 </div>
               </div>
-            </div>
-            <CardContent className="max-h-[calc(100vh-12rem)] overflow-y-auto p-2">{navigationLinks()}</CardContent>
-          </Card>
-        </aside>
+              <CardContent className="max-h-[calc(100vh-var(--app-header-offset,4rem)-8rem)] overflow-y-auto p-2">{navigationLinks(undefined, iconsOnly)}</CardContent>
+            </Card>
+          </aside>
+        </TooltipProvider>
 
         <main className="tour-travel-content min-w-0">{currentPageAllowed ? children : pageAccessDenied}</main>
       </div>

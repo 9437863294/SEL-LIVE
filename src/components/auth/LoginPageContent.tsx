@@ -39,6 +39,7 @@ import {
 } from "lucide-react";
 import { Checkbox } from "@/components/ui/checkbox";
 import { useAuth } from "@/components/auth/AuthProvider";
+import { useAppearance } from "@/components/theme/ThemeProvider";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import type { SavedUser } from "@/lib/types";
 import { cn } from "@/lib/utils";
@@ -78,6 +79,7 @@ const getInitials = (name: string) =>
     .substring(0, 2)
     .toUpperCase();
 
+/** The SEL logo, shown until the company publishes one of its own. */
 const LOGO_URL =
   "https://firebasestorage.googleapis.com/v0/b/module-hub-uc7tw.firebasestorage.app/o/Logo%2FSEL%20%20logo2%20.png?alt=media&token=39b0f804-0610-4f3a-b26e-8ce334f94788";
 
@@ -102,18 +104,45 @@ const FEATURES = [
 
 // ─── sub-components ────────────────────────────────────────────────────────────
 
+// The page is dark whatever the theme, so it wants the logo drawn for dark backgrounds.
 function LogoBlock() {
+  const { branding } = useAppearance().company;
+  const logo = branding.logoDark ?? branding.logoLight;
   return (
     <div className="relative mx-auto h-20 w-[65%]">
       <Image
-        src={LOGO_URL}
-        alt="SEL Logo"
+        src={logo?.url ?? LOGO_URL}
+        alt={`${branding.companyName} logo`}
         fill
         sizes="260px"
         style={{ objectFit: "contain" }}
-        priority
+        preload
       />
     </div>
+  );
+}
+
+/**
+ * The hero headline with its highlighted phrase. The headline's last word goes onto the second
+ * line with the highlight — how "Powering every project / through live intelligence" was always
+ * set — so the default reads exactly as before and a custom one keeps the same shape.
+ */
+function Headline({ headline, highlight }: { headline: string; highlight: string }) {
+  const words = headline.split(" ").filter(Boolean);
+  const lead = words.slice(0, -1).join(" ");
+  const joiner = words[words.length - 1] ?? "";
+  return (
+    <h1 className="mb-4 text-3xl font-bold leading-tight tracking-tight text-white lg:text-4xl">
+      {lead && (
+        <>
+          {lead}
+          <br />
+        </>
+      )}
+      {joiner}
+      {joiner && highlight ? " " : null}
+      {highlight && <span className="text-cyan-300">{highlight}</span>}
+    </h1>
   );
 }
 
@@ -271,6 +300,8 @@ export function LoginPageContent() {
   const emailRef = useRef<HTMLInputElement>(null);
 
   const { setShouldRemember, savedUsers, loadSavedUsers, loading: authLoading } = useAuth();
+  // The company's published name and sign-in texts; today's wording until any are published.
+  const { branding } = useAppearance().company;
 
   // ── form state ──
   const [email, setEmail] = useState("");
@@ -918,16 +949,12 @@ export function LoginPageContent() {
                 <div className="flex h-9 w-9 items-center justify-center rounded-xl border border-cyan-300/40 bg-cyan-400/15 shadow-lg shadow-cyan-500/20">
                   <div className="h-2 w-2 rounded-full bg-cyan-200 animate-electric-flicker" />
                 </div>
-                <span className="text-lg font-semibold tracking-[0.18em] text-cyan-100">SEL LIVE</span>
+                <span className="text-lg font-semibold tracking-[0.18em] text-cyan-100">{branding.shortName.toUpperCase()}</span>
               </div>
 
-              <h1 className="mb-4 text-3xl font-bold leading-tight tracking-tight text-white lg:text-4xl">
-                Powering every project
-                <br />
-                through <span className="text-cyan-300">live intelligence</span>
-              </h1>
+              <Headline headline={branding.loginHeadline} highlight={branding.loginHighlight} />
               <p className="text-sm text-cyan-100/65 max-w-xs leading-relaxed">
-                Monitor execution, approvals, and field operations from one control layer built for engineering teams.
+                {branding.loginSubheadline}
               </p>
             </div>
 
@@ -955,7 +982,7 @@ export function LoginPageContent() {
               {renderContent()}
             </div>
             <p className="mt-8 text-center text-[11px] text-slate-500/70">
-              &copy; <CurrentYear /> Siddhartha Engineering Limited · All rights reserved
+              &copy; <CurrentYear /> {branding.companyName} · All rights reserved
             </p>
           </div>
         </div>

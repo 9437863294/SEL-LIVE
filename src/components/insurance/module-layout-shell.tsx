@@ -2,7 +2,6 @@
 'use client';
 
 import * as React from 'react';
-import { useState } from 'react';
 import Link from 'next/link';
 import {
   BarChart3, CalendarClock, ChevronLeft, ChevronRight, ClipboardCheck,
@@ -14,6 +13,7 @@ import { cn } from '@/lib/utils';
 import { usePathname } from 'next/navigation';
 import { useAuthorization } from '@/hooks/useAuthorization';
 import { ModuleBottomNav, type ModuleMoreLink, type ModuleNavTab } from '@/components/navigation/ModuleBottomNav';
+import { useSidebarDefault } from '@/components/theme/use-sidebar-default';
 
 type NavItem = {
   href: string;
@@ -36,7 +36,7 @@ type SubNavItem = {
 };
 
 export default function InsuranceLayoutShell({ children }: { children: React.ReactNode }) {
-  const [isExpanded, setIsExpanded] = useState(false);
+  const [isExpanded, setIsExpanded] = useSidebarDefault(false);
   const pathname = usePathname();
   const { can } = useAuthorization();
 
@@ -161,7 +161,7 @@ export default function InsuranceLayoutShell({ children }: { children: React.Rea
   return (
     <div className="flex w-full h-full">
       <aside className={cn(
-        'fixed left-0 top-16 h-[calc(100vh-4rem)] z-40 hidden md:flex flex-col border-r border-border/60 bg-background/95 backdrop-blur-sm transition-all duration-300 shadow-sm',
+        'fixed left-0 top-[var(--app-header-offset,4rem)] h-[calc(100vh-var(--app-header-offset,4rem))] z-40 hidden md:flex flex-col border-r border-border/60 bg-background/95 backdrop-blur-sm transition-all duration-300 shadow-sm',
         isExpanded ? 'w-56' : 'w-14',
       )}>
         {/* Header */}

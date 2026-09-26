@@ -269,7 +269,8 @@ export default function SettingsPage() {
     const enabled =
       item.href === '/settings/access-management'
         ? canOpenAccessManagement(can)
-        : can(action, module);
+        : // Appearance is personal — every user sets their own theme, text size and layout.
+          item.href === '/settings/appearance' || can(action, module);
     return { ...item, disabled: !enabled };
   });
 

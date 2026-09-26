@@ -12,6 +12,7 @@ import { ModuleBottomNav, type ModuleNavTab } from '@/components/navigation/Modu
 import { Button } from '@/components/ui/button';
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle, SheetTrigger } from '@/components/ui/sheet';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
+import { useSidebarDefault } from '@/components/theme/use-sidebar-default';
 import { cn } from '@/lib/utils';
 import { canOpenAccessManagement } from '@/lib/access-control';
 import { useAuthorization } from '@/hooks/useAuthorization';
@@ -30,7 +31,7 @@ type NavItem = {
 type NavGroup = { label: string; items: NavItem[] };
 
 export default function SettingsLayout({ children }: { children: React.ReactNode }) {
-  const [isExpanded, setIsExpanded] = useState(false);
+  const [isExpanded, setIsExpanded] = useSidebarDefault(false);
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const { can } = useAuthorization();
   const pathname = usePathname();
@@ -72,7 +73,7 @@ export default function SettingsLayout({ children }: { children: React.ReactNode
     {
       label: 'System',
       items: [
-        { href: '/settings/appearance', icon: Palette, label: 'Appearance', permission: can('View', 'Settings.Appearance'), iconBg: 'bg-pink-100', iconColor: 'text-pink-600', activeGradient: 'from-pink-500 to-rose-500' },
+        { href: '/settings/appearance', icon: Palette, label: 'Appearance', permission: true /* personal: every user sets their own appearance */, iconBg: 'bg-pink-100', iconColor: 'text-pink-600', activeGradient: 'from-pink-500 to-rose-500' },
         { href: '/settings/email-authorization', icon: MailCheck, label: 'Email Auth', permission: can('View', 'Settings.Email Authorization'), iconBg: 'bg-cyan-100', iconColor: 'text-cyan-600', activeGradient: 'from-cyan-500 to-sky-600' },
         { href: '/settings/login-expiry', icon: LogIn, label: 'Login Expiry', permission: can('View', 'Settings.Login Expiry'), iconBg: 'bg-orange-100', iconColor: 'text-orange-600', activeGradient: 'from-orange-500 to-amber-500' },
       ],
@@ -101,8 +102,9 @@ export default function SettingsLayout({ children }: { children: React.ReactNode
 
   return (
     <div className="flex w-full h-full">
+      {/* Hugs the header while it is on screen and reaches the top once a non-sticky one scrolls away. */}
       <aside className={cn(
-        'fixed left-0 top-16 h-[calc(100vh-4rem)] z-40 hidden lg:flex flex-col border-r border-border/60 bg-background/95 backdrop-blur-sm transition-all duration-300 shadow-sm',
+        'fixed left-0 top-[var(--app-header-offset,4rem)] h-[calc(100vh-var(--app-header-offset,4rem))] z-40 hidden lg:flex flex-col border-r border-border/60 bg-background/95 backdrop-blur-sm transition-all duration-300 shadow-sm',
         isExpanded ? 'w-56' : 'w-14',
       )}>
         {/* Header */}
@@ -188,8 +190,8 @@ export default function SettingsLayout({ children }: { children: React.ReactNode
           isExpanded ? 'lg:ml-56' : 'lg:ml-14',
         )}
       >
-        {/* Mobile navigation bar — only on screens below lg */}
-        <div className="lg:hidden flex items-center justify-between border-b border-border/40 bg-background/95 backdrop-blur-sm px-4 py-2.5 sticky top-16 z-30">
+        {/* Mobile navigation bar — only on screens below lg. Sticks under the header's visible height, like the sidebar. */}
+        <div className="lg:hidden flex items-center justify-between border-b border-border/40 bg-background/95 backdrop-blur-sm px-4 py-2.5 sticky top-[var(--app-header-offset,4rem)] z-30">
           <div className="flex items-center gap-2">
             <div className="rounded-md bg-primary/10 p-1.5">
               <Settings2 className="h-4 w-4 text-primary" />

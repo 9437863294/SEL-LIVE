@@ -8,6 +8,36 @@ import { cn } from "@/lib/utils"
 // Format: { THEME_NAME: CSS_SELECTOR }
 const THEMES = { light: "", dark: ".dark" } as const
 
+/**
+ * Token-driven chrome for a bare Recharts chart (one not wrapped in `ChartContainer`).
+ *
+ * Recharts' defaults (grid `#ccc`, ticks `#666`, a white tooltip) and any hex passed as a prop are
+ * SVG attributes / inline styles, out of reach of the dark-compat stylesheet — so axis, grid,
+ * cursor and tooltip take theme tokens here and follow light, dark and high contrast. Series
+ * colours are the caller's.
+ *
+ *   <CartesianGrid stroke={chartChrome.grid} />
+ *   <XAxis stroke={chartChrome.axis} />
+ *   <Tooltip cursor={chartChrome.cursor} {...chartChrome.tooltip} />
+ */
+const chartChrome = {
+  grid: "hsl(var(--border))",
+  axis: "hsl(var(--muted-foreground))",
+  /** The card behind the chart: pie-slice gaps, the ring round a line marker. */
+  surface: "hsl(var(--card))",
+  cursor: { fill: "hsl(var(--muted) / 0.6)" },
+  tooltip: {
+    contentStyle: {
+      backgroundColor: "hsl(var(--popover))",
+      color: "hsl(var(--popover-foreground))",
+      border: "1px solid hsl(var(--border))",
+      borderRadius: 8,
+      fontSize: 12,
+    },
+    labelStyle: { color: "hsl(var(--popover-foreground))", fontWeight: 600 },
+  },
+} as const
+
 export type ChartConfig = {
   [k in string]: {
     label?: React.ReactNode
@@ -356,6 +386,7 @@ function getPayloadConfigFromPayload(
 }
 
 export {
+  chartChrome,
   ChartContainer,
   ChartTooltip,
   ChartTooltipContent,

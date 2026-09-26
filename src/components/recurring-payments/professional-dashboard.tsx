@@ -48,6 +48,7 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import { chartChrome } from "@/components/ui/chart";
 import CollapsibleFilterCard from "./collapsible-filter-card";
 import { Input } from "@/components/ui/input";
 import {
@@ -584,10 +585,10 @@ export default function ProfessionalRecurringDashboard() {
                     <stop offset="95%" stopColor="#6366f1" stopOpacity={0} />
                   </linearGradient>
                 </defs>
-                <CartesianGrid strokeDasharray="3 3" vertical={false} />
-                <XAxis dataKey="month" />
-                <YAxis tickFormatter={compactCurrency} />
-                <Tooltip formatter={(value: number) => currency(value)} />
+                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke={chartChrome.grid} />
+                <XAxis dataKey="month" stroke={chartChrome.axis} />
+                <YAxis tickFormatter={compactCurrency} stroke={chartChrome.axis} />
+                <Tooltip {...chartChrome.tooltip} formatter={(value: number) => currency(value)} />
                 <Area
                   type="monotone"
                   dataKey="expected"
@@ -717,6 +718,7 @@ function ChartCard({
                 innerRadius={55}
                 outerRadius={90}
                 paddingAngle={2}
+                stroke={chartChrome.surface}
               >
                 {data.map((item, index) => (
                   <Cell
@@ -726,6 +728,7 @@ function ChartCard({
                 ))}
               </Pie>
               <Tooltip
+                {...chartChrome.tooltip}
                 formatter={(value: number) =>
                   typeof value === "number" && value > 1000
                     ? currency(value)

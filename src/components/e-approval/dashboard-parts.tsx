@@ -23,11 +23,21 @@ import type { EApprovalAgendaBucket, EApprovalCoverageNotice } from '@/lib/e-app
  * `status` is the fixed scale the rest of this ERP already uses (Vehicle Management, Insurance,
  * Fixed Deposit). Status colour never carries meaning alone here — every use ships an icon and a
  * label, which is also what covers amber sitting below 3:1 on white.
+ *
+ * `surface`, `grid`, `axis` and `cursor` are theme tokens rather than hex: they are chart chrome
+ * that has to follow the card into dark and high-contrast, and a Recharts prop is out of reach of
+ * the dark-compat stylesheet. The data hues stay fixed — they are mid-tone and read on both.
  */
 export const EA_VIZ = {
-  surface: '#ffffff',
-  grid: '#e2e8f0',
-  axis: '#94a3b8',
+  surface: 'hsl(var(--card))',
+  grid: 'hsl(var(--border))',
+  axis: 'hsl(var(--muted-foreground))',
+  /** Hover band behind a bar. */
+  cursor: 'hsl(var(--muted) / 0.6)',
+  /** Direct value labels drawn on the surface beside a mark. */
+  label: 'hsl(var(--foreground) / 0.8)',
+  /** A de-emphasised mark (the bars a drill-down is not about). */
+  muted: 'hsl(var(--muted-foreground) / 0.35)',
   series: ['#2563eb', '#ea580c'] as const,
   ramp: ['#86b6ef', '#5598e7', '#2a78d6', '#1c5cab', '#104281'] as const,
   status: {
@@ -446,10 +456,14 @@ export function EApprovalAgendaStrip({
 export const eaTooltipStyle = {
   contentStyle: {
     borderRadius: 8,
-    border: '1px solid #e2e8f0',
+    // `backgroundColor`, not `background`: Recharts' default sets the longhand, and mixing the two
+    // in one inline style is a React warning and an ordering bug.
+    backgroundColor: 'hsl(var(--popover))',
+    color: 'hsl(var(--popover-foreground))',
+    border: '1px solid hsl(var(--border))',
     fontSize: 12,
     padding: '6px 10px',
     boxShadow: '0 6px 16px -8px rgba(15,23,42,0.25)',
   },
-  labelStyle: { fontWeight: 600, color: '#0f172a', marginBottom: 2 },
+  labelStyle: { fontWeight: 600, color: 'hsl(var(--popover-foreground))', marginBottom: 2 },
 } as const;

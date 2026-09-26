@@ -19,6 +19,7 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
+import { useSidebarDefault } from "@/components/theme/use-sidebar-default";
 import { cn } from "@/lib/utils";
 
 export type SidebarTabItem = {
@@ -69,7 +70,8 @@ export type SidebarLinkItem = {
  *    that has its own header above it;
  *  - it opens expanded. Settings opens as an icon rail, which suits its seventeen grouped
  *    destinations; a five-item switcher whose labels are the only clue to what the views are is
- *    more useful with them showing.
+ *    more useful with them showing. That is only the fallback now: once the user's sidebar
+ *    preference is known it decides, as it does for every rail.
  */
 export default function SidebarTabsList({
   items,
@@ -99,7 +101,7 @@ export default function SidebarTabsList({
   linksLabel?: string;
 }) {
   const [mobileOpen, setMobileOpen] = useState(false);
-  const [isExpanded, setIsExpanded] = useState(true);
+  const [isExpanded, setIsExpanded] = useSidebarDefault(true);
   const current = items.find((item) => item.value === activeValue);
   const hasGroups = Boolean(links?.length);
 
@@ -271,10 +273,11 @@ export default function SidebarTabsList({
         </Sheet>
       </div>
 
-      {/* Desktop — a sticky panel that collapses to an icon rail. */}
+      {/* Desktop — a sticky panel that collapses to an icon rail. It sticks 1rem below the header's
+          visible height (`--app-header-offset`), so it follows a non-sticky header off screen. */}
       <aside
         className={cn(
-          "hidden self-start transition-all duration-300 lg:sticky lg:top-20 lg:flex lg:shrink-0 lg:flex-col",
+          "hidden self-start transition-all duration-300 lg:sticky lg:top-[calc(var(--app-header-offset,4rem)+1rem)] lg:flex lg:shrink-0 lg:flex-col",
           "overflow-hidden rounded-xl border border-border/60 bg-background/95 shadow-sm backdrop-blur-sm",
           isExpanded ? "lg:w-56" : "lg:w-14",
         )}

@@ -11,6 +11,7 @@ import {
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { cn } from '@/lib/utils';
 import { useAuthorization } from '@/hooks/useAuthorization';
+import { useSidebarDefault } from '@/components/theme/use-sidebar-default';
 import { collection, getDocs } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import type { Project } from '@/lib/types';
@@ -28,7 +29,7 @@ type NavItem = {
 };
 
 export default function ProjectLayout({ children }: { children: React.ReactNode }) {
-  const [isExpanded, setIsExpanded] = React.useState(false);
+  const [isExpanded, setIsExpanded] = useSidebarDefault(false);
   const params = useParams();
   const projectSlug = params?.project as string;
   const pathname = usePathname();
@@ -76,7 +77,7 @@ export default function ProjectLayout({ children }: { children: React.ReactNode 
   return (
     <div className="flex w-full h-full">
       <aside className={cn(
-        'fixed left-0 top-16 h-[calc(100vh-4rem)] z-40 flex flex-col border-r border-border/60 bg-background/95 backdrop-blur-sm transition-all duration-300 shadow-sm',
+        'fixed left-0 top-[var(--app-header-offset,4rem)] h-[calc(100vh-var(--app-header-offset,4rem))] z-40 flex flex-col border-r border-border/60 bg-background/95 backdrop-blur-sm transition-all duration-300 shadow-sm',
         isExpanded ? 'w-56' : 'w-14',
       )}>
         <div className={cn('flex items-center gap-2 px-3 py-3 border-b border-border/40 shrink-0', !isExpanded && 'justify-center')}>

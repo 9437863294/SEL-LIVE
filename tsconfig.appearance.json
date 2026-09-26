@@ -1,0 +1,30 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "incremental": false
+  },
+  "include": [
+    "next-env.d.ts",
+    "src/lib/appearance/**/*.ts",
+    "src/app/api/appearance/**/*.ts",
+    "src/components/appearance/**/*.tsx",
+    "src/components/theme/**/*.ts",
+    "src/components/theme/**/*.tsx",
+    "src/components/navigation/**/*.ts",
+    "src/components/navigation/**/*.tsx",
+    "src/components/ui/tabs.tsx",
+    "src/components/ui/card.tsx",
+    "src/components/ui/table.tsx",
+    "src/components/ui/button.tsx",
+    "src/components/ui/input.tsx",
+    "src/components/ui/select.tsx",
+    "src/app/layout.tsx",
+    "src/app/appearance-preview/**/*.tsx",
+    "src/app/(protected)/settings/appearance/**/*.tsx",
+    "src/app/(protected)/settings/layout.tsx",
+    "src/components/app/Header.tsx"
+  ],
+  "exclude": [
+    "node_modules"
+  ]
+}

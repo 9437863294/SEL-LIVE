@@ -17,15 +17,18 @@
  * panel keeps its state and Radix hides it with the `hidden` attribute instead. The launcher is
  * mounted the same way, so its drag-to-reorder state survives a trip to the work board too.
  *
- * **The chosen tab is remembered.** Somebody who lives in the launcher should not have to click
- * past the work board every morning. It is restored in an effect rather than read during the first
- * render on purpose: `localStorage` does not exist on the server, and seeding state from it would
- * make the server and client markup disagree.
+ * **The opening tab is the person's choice.** Somebody who lives in the launcher should not have to
+ * click past the work board every morning. "Default dashboard view" (Settings → Appearance) decides:
+ * `work` or `modules` always opens that tab; `last`, the out-of-the-box default, reopens whichever
+ * tab was used last. The remembered tab is read through `useSyncExternalStore` rather than seeded
+ * into state on the first render on purpose: `localStorage` does not exist on the server, and
+ * seeding state from it would make the server and client markup disagree.
  */
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useState, useSyncExternalStore } from 'react';
 import AppShell from '@/components/app/AppShell';
 import ModuleDashboard from '@/components/module-hub/ModuleDashboard';
+import { useAppearance } from '@/components/theme/ThemeProvider';
 import WorkDashboard from '@/components/work-dashboard/work-dashboard';
 import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
@@ -38,22 +41,47 @@ const TAB_STORAGE_KEY = 'home_tab';
 
 const isHomeTab = (value: unknown): value is HomeTab => value === 'work' || value === 'modules';
 
+function readStoredTab(): HomeTab | null {
+  try {
+    const stored = window.localStorage.getItem(TAB_STORAGE_KEY);
+    return isHomeTab(stored) ? stored : null;
+  } catch {
+    // Private browsing, or storage disabled by policy. The default tab is a fine answer.
+    return null;
+  }
+}
+
+// Nothing to listen to: the remembered tab only changes when this page writes it, and by then the
+// person's own pick is showing.
+const subscribeToNothing = () => () => {};
+
 export default function DashboardPage() {
-  const [tab, setTab] = useState<HomeTab>('work');
+  const { effective, ready } = useAppearance();
+  const dashboardView = effective.dashboardView;
   const [summary, setSummary] = useState<WorkSummary | null>(null);
 
-  useEffect(() => {
-    try {
-      const stored = window.localStorage.getItem(TAB_STORAGE_KEY);
-      if (isHomeTab(stored)) setTab(stored);
-    } catch {
-      // Private browsing, or storage disabled by policy. The default tab is a fine answer.
-    }
-  }, []);
+  // The remembered tab. `useSyncExternalStore` hands the server render and the hydrating client
+  // render the server snapshot (`undefined`, "not read yet"), so both draw "Your work" and the
+  // markup agrees; React re-renders with the real value straight after hydrating, and a client-side
+  // visit to this page reads it on the first render. A lazy `useState` read would disagree with the
+  // server markup, and copying it into state from an effect is the cascading render we avoid.
+  const storedTab = useSyncExternalStore<HomeTab | null | undefined>(subscribeToNothing, readStoredTab, () => undefined);
+  // What the preference asks for right now. Until `ready` that is this device's cached copy of the
+  // preference, which is almost always the final answer too; the server's copy settles it.
+  const preferred: HomeTab =
+    storedTab === undefined ? 'work' : dashboardView === 'last' ? (storedTab ?? 'work') : dashboardView;
+  // The opening tab, frozen on the first render with final preferences so a late answer never yanks
+  // the page sideways. Set during render (React's "adjust state when a prop changes"), not in an effect.
+  const [settled, setSettled] = useState<HomeTab | null>(null);
+  if (settled === null && ready && storedTab !== undefined) setSettled(preferred);
+  // Once the person picks a tab, only their own clicks move it.
+  const [picked, setPicked] = useState<HomeTab | null>(null);
+  const tab = picked ?? settled ?? preferred;
 
   const selectTab = useCallback((value: string) => {
     if (!isHomeTab(value)) return;
-    setTab(value);
+    setPicked(value);
+    // Remembered whatever the preference says, so switching to "last" later carries on from here.
     try {
       window.localStorage.setItem(TAB_STORAGE_KEY, value);
     } catch {

@@ -152,6 +152,9 @@
   .dark :where(.bg-slate-300\/10:not(.keep-light, .keep-light *)) {
     background-color: hsl(var(--dc-300) / 0.1);
   }
+  .dark :where(.bg-slate-300\/70:not(.keep-light, .keep-light *)) {
+    background-color: hsl(var(--dc-300) / 0.7);
+  }
   .dark :where(.text-black:not(.keep-light, .keep-light *)),
   .dark :where(.text-slate-900:not(.keep-light, .keep-light *)),
   .dark :where(.text-slate-950:not(.keep-light, .keep-light *)),
@@ -1485,6 +1488,9 @@
   .dark :where(.ring-fuchsia-50:not(.keep-light, .keep-light *)) {
     --tw-ring-color: rgb(217 70 239 / 0.260);
   }
+  .dark :where(.hover\:bg-fuchsia-100:not(.keep-light, .keep-light *)):hover {
+    background-color: rgb(217 70 239 / 0.240);
+  }
   .dark :where(.border-fuchsia-100:not(.keep-light, .keep-light *)) {
     border-color: rgb(217 70 239 / 0.320);
   }
@@ -1524,7 +1530,6 @@
   .dark :where(.bg-pink-50:not(.keep-light, .keep-light *)) {
     background-color: rgb(236 72 153 / 0.120);
   }
-  .dark :where(.hover\:bg-pink-50:not(.keep-light, .keep-light *)):hover,
   .dark :where(.hover\:bg-pink-50\/50:not(.keep-light, .keep-light *)):hover,
   .dark :where(.bg-pink-100:not(.keep-light, .keep-light *)) {
     background-color: rgb(236 72 153 / 0.180);
@@ -1554,9 +1559,6 @@
   .dark :where(.from-pink-50:not(.keep-light, .keep-light *)),
   .dark :where(.from-pink-100:not(.keep-light, .keep-light *)) {
     --tw-gradient-from: rgb(236 72 153 / 0.100) var(--tw-gradient-from-position);
-  }
-  .dark :where(.from-pink-50\/60:not(.keep-light, .keep-light *)) {
-    --tw-gradient-from: rgb(236 72 153 / 0.060) var(--tw-gradient-from-position);
   }
   .dark :where(.via-pink-50:not(.keep-light, .keep-light *)),
   .dark :where(.via-pink-100:not(.keep-light, .keep-light *)) {

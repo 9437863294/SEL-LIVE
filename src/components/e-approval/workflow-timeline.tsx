@@ -134,6 +134,10 @@ function NodeBody({ node, isLast, onSelectStep, now }: NodeProps) {
             'mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full ring-2',
             statusRing[step.status],
           )}
+          // Several states share a tint (and Skipped/Superseded an icon), so the name is on hover here
+          // and spoken in the step's button below — the marker alone is not the only carrier.
+          title={step.status}
+          aria-hidden
         >
           <Icon className="h-3.5 w-3.5" />
         </span>
@@ -152,6 +156,7 @@ function NodeBody({ node, isLast, onSelectStep, now }: NodeProps) {
         >
           <div className="flex flex-wrap items-center gap-1.5">
             <span className="text-sm font-semibold">{node.label}</span>
+            <span className="sr-only">({step.status})</span>
             {step.type !== 'APPROVAL' && (
               <Badge variant="outline" className="border-violet-200 bg-violet-50 text-[10px] text-violet-700">
                 {step.type === 'CLARIFICATION' ? 'Clarification' : step.type === 'REVIEW' ? 'Review' : 'Verification'}

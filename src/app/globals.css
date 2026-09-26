@@ -23,8 +23,19 @@
     --muted-foreground: 215.4 16.3% 46.9%;
     --accent: 210 40% 96.1%;
     --accent-foreground: 222.2 47.4% 11.2%;
-    --destructive: 0 84.2% 60.2%;
-    --destructive-foreground: 210 40% 98%;
+    --destructive: 0 72.2% 50.6%;
+    --destructive-foreground: 0 0% 98%;
+    --danger: 0 72.2% 50.6%;
+    --danger-foreground: 0 0% 98%;
+    --success: 142.4 71.8% 29.2%;
+    --success-foreground: 0 0% 100%;
+    --warning: 26 90.5% 37.1%;
+    --warning-foreground: 0 0% 100%;
+    --chart-1: 220 70% 50%;
+    --chart-2: 160 60% 45%;
+    --chart-3: 30 80% 55%;
+    --chart-4: 280 65% 60%;
+    --chart-5: 340 75% 55%;
     --border: 214.3 31.8% 91.4%;
     --input: 214.3 31.8% 91.4%;
     --ring: 222.2 84% 4.9%;
@@ -46,10 +57,16 @@
     --muted-foreground: 0 0% 63.9%;
     --accent: 240 3.7% 15.9%;
     --accent-foreground: 0 0% 98%;
-    --destructive: 0 62.8% 30.6%;
+    --destructive: 0 72.2% 50.6%;
     --destructive-foreground: 0 0% 98%;
-    --border: 240 3.7% 15.9%;
-    --input: 240 3.7% 15.9%;
+    --danger: 0 72.2% 50.6%;
+    --danger-foreground: 0 0% 98%;
+    --success: 142.1 70.6% 45.3%;
+    --success-foreground: 144 61% 7%;
+    --warning: 45.9 96.7% 64.5%;
+    --warning-foreground: 26 83% 14%;
+    --border: 240 4% 21%;
+    --input: 240 4% 21%;
     --ring: 263.4 90.2% 51.2%;
     --chart-1: 220 70% 50%;
     --chart-2: 160 60% 45%;
@@ -1805,4 +1822,143 @@ html[data-nav-style='neon'] {
     background: none !important;
     text-decoration: underline;
   }
+}
+
+/* ──────────────────────────────────────────────────────────────────────────────────────────────
+ * Appearance preferences (src/lib/appearance, applied by ThemeProvider as data-* on <html>)
+ *
+ * Colours come from the generated token stylesheet (`<style id="sel-appearance">`). Everything
+ * else a user can choose is here, keyed off attributes whose values come from fixed lists.
+ * ────────────────────────────────────────────────────────────────────────────────────────────── */
+
+/* Text size scales the root, so rem-sized spacing grows with the text and nothing clips. */
+html[data-text-size='small'] {
+  font-size: 93.75%;
+}
+html[data-text-size='large'] {
+  font-size: 112.5%;
+}
+
+/* Density: control heights and card padding used by the shared ui/ components. A module that sets
+   its own padding or height keeps it — these are only the shared defaults. */
+:root {
+  --control-h: 2.5rem;
+  --control-h-sm: 2.25rem;
+  --control-h-lg: 2.75rem;
+  --card-pad: 1.5rem;
+  --table-head-h: 3rem;
+  --table-cell-py: 1rem;
+  --table-cell-px: 1rem;
+}
+html[data-density='compact'] {
+  --control-h: 2.25rem;
+  --control-h-sm: 2rem;
+  --control-h-lg: 2.5rem;
+  --card-pad: 1rem;
+}
+html[data-density='comfortable'] {
+  --control-h: 2.75rem;
+  --control-h-sm: 2.5rem;
+  --control-h-lg: 3rem;
+  --card-pad: 1.75rem;
+}
+html[data-table-density='compact'] {
+  --table-head-h: 2.25rem;
+  --table-cell-py: 0.4rem;
+  --table-cell-px: 0.75rem;
+}
+html[data-table-density='comfortable'] {
+  --table-head-h: 3.25rem;
+  --table-cell-py: 1.25rem;
+}
+
+/* Border style: the radius token, plus the larger fixed radii modules use for cards. */
+html[data-radius='soft'] {
+  --radius: 0.8rem;
+}
+html[data-radius='sharp'] {
+  --radius: 0.25rem;
+}
+html[data-radius='sharp'] :where(.rounded-xl, .rounded-2xl, .rounded-3xl, .rounded-\[2rem\], .rounded-\[1\.75rem\]) {
+  border-radius: 0.375rem;
+}
+html[data-radius='sharp'] :where(.rounded-t-xl, .rounded-t-2xl, .rounded-t-3xl, .rounded-t-\[1\.75rem\]) {
+  border-top-left-radius: 0.375rem;
+  border-top-right-radius: 0.375rem;
+}
+
+/* Interface font. Inter is the default set in the base layer. */
+html[data-font='roboto'] {
+  --font-body: var(--font-roboto-face), ui-sans-serif, system-ui, sans-serif;
+}
+html[data-font='atkinson'] {
+  --font-body: var(--font-atkinson-face), ui-sans-serif, system-ui, sans-serif;
+}
+html[data-font='system'] {
+  --font-body: ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+}
+
+/* Reduced motion, chosen by the user. The device's own setting is honoured separately by the
+   `prefers-reduced-motion` rules throughout this sheet and by `useReducedMotion()` in JS. */
+html[data-motion='reduced'] {
+  scroll-behavior: auto;
+}
+html[data-motion='reduced'] *,
+html[data-motion='reduced'] *::before,
+html[data-motion='reduced'] *::after {
+  animation-duration: 0.01ms !important;
+  animation-iteration-count: 1 !important;
+  transition-duration: 0.01ms !important;
+  transition-delay: 0ms !important;
+  scroll-behavior: auto !important;
+}
+
+/* High contrast. The tokens do most of it; these catch fixed utilities and make focus louder. */
+html[data-contrast='high'] :focus-visible {
+  outline: 3px solid hsl(var(--foreground));
+  outline-offset: 2px;
+}
+html[data-contrast='high']:not(.dark) :where(.text-slate-300, .text-slate-400, .text-slate-500, .text-gray-300, .text-gray-400, .text-gray-500, .text-zinc-400, .text-zinc-500, .text-neutral-400, .text-neutral-500) {
+  color: hsl(0 0% 22%);
+}
+html[data-contrast='high']:not(.dark) :where(.border-slate-100, .border-slate-200, .border-gray-100, .border-gray-200, .border-white\/60, .border-white\/70) {
+  border-color: hsl(0 0% 40%);
+}
+html.dark[data-contrast='high'] :where(.text-slate-400, .text-slate-500, .text-gray-400, .text-gray-500, .text-zinc-400, .text-zinc-500, .text-neutral-400, .text-neutral-500) {
+  color: hsl(0 0% 82%);
+}
+html[data-contrast='high'] .tabs-indicator {
+  box-shadow: 0 0 0 2px hsl(var(--foreground));
+}
+
+/* Phones: the module roots and panels compacted shared card padding by matching the literal `p-6`
+   class; shared cards now pad from --card-pad (density), so the same compaction is set through it. */
+@media (max-width: 640px) {
+  .hr-module-root,
+  .tt-module-root,
+  .vm-module-root,
+  .vm-panel,
+  .vm-panel-strong {
+    --card-pad: 0.875rem;
+  }
+}
+
+/* Recharts' own defaults (grey #ccc grid, #666 ticks, a white tooltip) are invisible or glaring in
+   dark mode. Charts that set their own colours are unaffected; these only catch the defaults. */
+.recharts-cartesian-grid line[stroke='#ccc'] {
+  stroke: hsl(var(--border));
+}
+.recharts-cartesian-axis-tick-value[fill='#666'] {
+  fill: hsl(var(--muted-foreground));
+}
+.recharts-default-tooltip {
+  background-color: hsl(var(--popover)) !important;
+  border-color: hsl(var(--border)) !important;
+  color: hsl(var(--popover-foreground));
+}
+
+/* Rich text pasted from Word or Excel keeps its own cell and highlight backgrounds, which are
+   light; in dark mode its text would turn light too. Filled runs keep dark text instead. */
+.dark .ea-rich-text [style*='background'] {
+  color: #111827;
 }

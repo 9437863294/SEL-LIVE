@@ -33,15 +33,23 @@ import {
 } from 'lucide-react';
 
 import { ModuleBottomNav, type ModuleNavTab } from '@/components/navigation/ModuleBottomNav';
+import {
+  SIDEBAR_ICONS_DIVIDER,
+  SIDEBAR_ICONS_GRID,
+  SidebarNavTooltip,
+  useSidebarIconsOnly,
+} from '@/components/navigation/use-sidebar-mode';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle, SheetTrigger } from '@/components/ui/sheet';
 import { Skeleton } from '@/components/ui/skeleton';
+import { TooltipProvider } from '@/components/ui/tooltip';
 import { MAIL_HUB_BASE_PATH } from '@/lib/mail-hub/model';
 import { cn } from '@/lib/utils';
 import { Composer } from './composer';
 import { MailHubProvider, useMailHub } from './hooks';
-import { statusDot } from './ui';
+import { statusDot, statusDotLabel } from './ui';
 
 type Gate = 'always' | 'shared' | 'templates' | 'reports' | 'admin';
 
@@ -80,13 +88,16 @@ function Shell({ children }: { children: ReactNode }) {
   const search = useSearchParams();
   const { data, loading, error, openComposer, composer } = useMailHub();
   const [open, setOpen] = useState(false);
+  const iconsOnly = useSidebarIconsOnly();
+  /** The mailbox whose folder flyout is open, in icons mode (where the folders have no room). */
+  const [mailboxFlyout, setMailboxFlyout] = useState<string | null>(null);
 
   if (pathname.startsWith(`${MAIL_HUB_BASE_PATH}/link`)) return <>{children}</>;
 
   if (loading && !data) {
     return (
       <div className="w-full px-3 py-4 sm:px-6 lg:px-8">
-        <div className="grid grid-cols-1 gap-4 lg:grid-cols-[240px_minmax(0,1fr)]">
+        <div className={`grid grid-cols-1 gap-4 ${iconsOnly ? SIDEBAR_ICONS_GRID : 'lg:grid-cols-[240px_minmax(0,1fr)]'}`}>
           <Skeleton className="hidden h-[28rem] w-full rounded-xl lg:block" />
           <div className="space-y-3">
             <Skeleton className="h-9 w-64" />
@@ -142,70 +153,135 @@ function Shell({ children }: { children: ReactNode }) {
     { href: `${MAIL_HUB_BASE_PATH}/search`, label: 'Search', icon: Search },
   ];
 
-  const nav = (onNavigate?: () => void) => {
+  /** A mailbox's own link and its custom folders — under the folders in labels mode, in a flyout in icons mode. */
+  const mailboxLinks = (account: (typeof personal)[number], onNavigate?: () => void) => {
+    const custom = (data.folders[account.id] ?? []).filter((folder) => folder.role === 'custom').slice(0, 12);
+    return (
+      <>
+        <Link
+          href={`${MAIL_HUB_BASE_PATH}/inbox?account=${account.id}`}
+          onClick={onNavigate}
+          className={cn('flex items-center gap-2 rounded-lg px-2.5 py-1.5 text-xs text-slate-600 hover:bg-white/70', activeAccount === account.id && !activeFolder && 'bg-white font-semibold text-slate-900')}
+          title={account.recovery?.title ?? account.emailAddress}
+        >
+          <span role="img" aria-label={statusDotLabel(account.status)} title={statusDotLabel(account.status)} className={cn('h-2 w-2 shrink-0 rounded-full', statusDot(account.status))} />
+          <span className="truncate">{account.emailAddress}</span>
+        </Link>
+        {custom.map((folder) => (
+          <Link
+            key={folder.id}
+            href={`${MAIL_HUB_BASE_PATH}/inbox?account=${account.id}&folder=${folder.id}`}
+            onClick={onNavigate}
+            className={cn('ml-4 flex items-center justify-between gap-2 rounded-md px-2.5 py-1 text-xs text-slate-500 hover:bg-white/70', activeFolder === folder.id && 'bg-white font-semibold text-slate-900')}
+          >
+            <span className="truncate">{folder.name}</span>
+            {folder.unreadCount ? <span className="text-[10px] text-slate-400">{folder.unreadCount}</span> : null}
+          </Link>
+        ))}
+      </>
+    );
+  };
+
+  // `compact` is the desktop sidebar in icons mode; the phone sheet always passes labels.
+  const nav = (onNavigate?: () => void, compact = false) => {
     let last = '';
     return (
       <>
-        {caps.canSend && personal.length > 0 && (
-          <Button className="mb-2 w-full gap-2 bg-gradient-to-r from-sky-500 to-indigo-600 text-white hover:opacity-95" onClick={() => { openComposer({ mode: 'new' }); onNavigate?.(); }}>
-            <PenLine className="h-4 w-4" /> Compose <kbd className="ml-auto hidden rounded bg-white/20 px-1 text-[10px] lg:inline">c</kbd>
-          </Button>
-        )}
-        {sections.map((section) => {
+        {caps.canSend && personal.length > 0 &&
+          (compact ? (
+            <SidebarNavTooltip label="Compose" enabled>
+              <Button
+                size="icon"
+                aria-label="Compose"
+                className="mx-auto mb-2 flex h-9 w-9 bg-gradient-to-r from-sky-500 to-indigo-600 text-white hover:opacity-95"
+                onClick={() => { openComposer({ mode: 'new' }); onNavigate?.(); }}
+              >
+                <PenLine className="h-4 w-4" />
+              </Button>
+            </SidebarNavTooltip>
+          ) : (
+            <Button className="mb-2 w-full gap-2 bg-gradient-to-r from-sky-500 to-indigo-600 text-white hover:opacity-95" onClick={() => { openComposer({ mode: 'new' }); onNavigate?.(); }}>
+              <PenLine className="h-4 w-4" /> Compose <kbd className="ml-auto hidden rounded bg-white/20 px-1 text-[10px] lg:inline">c</kbd>
+            </Button>
+          ))}
+        {sections.map((section, index) => {
           const showGroup = section.group !== last;
           last = section.group;
           const active = current?.href === section.href && !activeFolder;
           const Icon = section.icon;
           return (
             <div key={section.href}>
-              {showGroup && <p className="px-2.5 pb-1 pt-3 text-[10px] font-bold uppercase tracking-[0.14em] text-slate-400 first:pt-1">{GROUP_LABELS[section.group]}</p>}
-              <Link
-                href={section.href}
-                onClick={onNavigate}
-                aria-current={active ? 'page' : undefined}
-                className={cn(
-                  'flex items-center gap-2.5 rounded-lg px-2.5 py-2 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500',
-                  active ? 'bg-gradient-to-r from-sky-500 to-indigo-600 text-white shadow' : 'text-slate-600 hover:bg-white/70 hover:text-slate-900',
-                )}
-              >
-                <Icon className="h-4 w-4 shrink-0" />
-                <span className="truncate">{section.label}</span>
-              </Link>
+              {showGroup &&
+                (compact ? (
+                  // No room for a heading: a hairline keeps the grouping, the name stays for screen readers.
+                  <>
+                    {index > 0 && <div className={SIDEBAR_ICONS_DIVIDER} aria-hidden />}
+                    <p className="sr-only">{GROUP_LABELS[section.group]}</p>
+                  </>
+                ) : (
+                  <p className="px-2.5 pb-1 pt-3 text-[10px] font-bold uppercase tracking-[0.14em] text-slate-400 first:pt-1">{GROUP_LABELS[section.group]}</p>
+                ))}
+              <SidebarNavTooltip label={section.label} enabled={compact}>
+                <Link
+                  href={section.href}
+                  onClick={onNavigate}
+                  aria-current={active ? 'page' : undefined}
+                  title={compact ? section.label : undefined}
+                  className={cn(
+                    'flex items-center gap-2.5 rounded-lg px-2.5 py-2 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500',
+                    active ? 'bg-gradient-to-r from-sky-500 to-indigo-600 text-white shadow' : 'text-slate-600 hover:bg-white/70 hover:text-slate-900',
+                    compact && 'relative justify-center',
+                  )}
+                >
+                  <Icon className="h-4 w-4 shrink-0" />
+                  <span className={compact ? 'sr-only' : 'truncate'}>{section.label}</span>
+                </Link>
+              </SidebarNavTooltip>
             </div>
           );
         })}
-        {personal.length > 0 && (
-          <div className="mt-3 border-t pt-2">
-            <p className="px-2.5 pb-1 text-[10px] font-bold uppercase tracking-[0.14em] text-slate-400">Mailboxes</p>
-            {personal.map((account) => {
-              const custom = (data.folders[account.id] ?? []).filter((folder) => folder.role === 'custom').slice(0, 12);
-              return (
+        {personal.length > 0 &&
+          (compact ? (
+            // Each mailbox as a chip carrying its status dot; its folders open in a flyout beside the rail.
+            <div className="mt-3 space-y-1 border-t pt-2">
+              <p className="sr-only">Mailboxes</p>
+              {personal.map((account) => (
+                <Popover
+                  key={account.id}
+                  open={mailboxFlyout === account.id}
+                  onOpenChange={(next) => setMailboxFlyout(next ? account.id : null)}
+                >
+                  <SidebarNavTooltip label={account.recovery?.title ?? account.emailAddress} enabled>
+                    <PopoverTrigger asChild>
+                      <button
+                        type="button"
+                        aria-label={`Mailbox ${account.emailAddress}`}
+                        className={cn(
+                          'relative mx-auto flex h-9 w-9 items-center justify-center rounded-lg text-slate-600 transition-colors hover:bg-white/70 hover:text-slate-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500',
+                          activeAccount === account.id && 'bg-white text-slate-900 shadow-sm ring-1 ring-slate-200',
+                        )}
+                      >
+                        <Mail className="h-4 w-4" />
+                        <span role="img" aria-label={statusDotLabel(account.status)} className={cn('absolute right-1 top-1 h-2 w-2 rounded-full ring-2 ring-white', statusDot(account.status))} />
+                      </button>
+                    </PopoverTrigger>
+                  </SidebarNavTooltip>
+                  <PopoverContent side="right" align="start" className="w-64 space-y-0.5 p-2">
+                    {mailboxLinks(account, () => { setMailboxFlyout(null); onNavigate?.(); })}
+                  </PopoverContent>
+                </Popover>
+              ))}
+            </div>
+          ) : (
+            <div className="mt-3 border-t pt-2">
+              <p className="px-2.5 pb-1 text-[10px] font-bold uppercase tracking-[0.14em] text-slate-400">Mailboxes</p>
+              {personal.map((account) => (
                 <div key={account.id} className="mb-1">
-                  <Link
-                    href={`${MAIL_HUB_BASE_PATH}/inbox?account=${account.id}`}
-                    onClick={onNavigate}
-                    className={cn('flex items-center gap-2 rounded-lg px-2.5 py-1.5 text-xs text-slate-600 hover:bg-white/70', activeAccount === account.id && !activeFolder && 'bg-white font-semibold text-slate-900')}
-                    title={account.recovery?.title ?? account.emailAddress}
-                  >
-                    <span className={cn('h-2 w-2 shrink-0 rounded-full', statusDot(account.status))} />
-                    <span className="truncate">{account.emailAddress}</span>
-                  </Link>
-                  {custom.map((folder) => (
-                    <Link
-                      key={folder.id}
-                      href={`${MAIL_HUB_BASE_PATH}/inbox?account=${account.id}&folder=${folder.id}`}
-                      onClick={onNavigate}
-                      className={cn('ml-4 flex items-center justify-between gap-2 rounded-md px-2.5 py-1 text-xs text-slate-500 hover:bg-white/70', activeFolder === folder.id && 'bg-white font-semibold text-slate-900')}
-                    >
-                      <span className="truncate">{folder.name}</span>
-                      {folder.unreadCount ? <span className="text-[10px] text-slate-400">{folder.unreadCount}</span> : null}
-                    </Link>
-                  ))}
+                  {mailboxLinks(account, onNavigate)}
                 </div>
-              );
-            })}
-          </div>
-        )}
+              ))}
+            </div>
+          ))}
       </>
     );
   };
@@ -248,23 +324,31 @@ function Shell({ children }: { children: ReactNode }) {
         </Card>
       </div>
 
-      <div className="grid grid-cols-1 gap-3 lg:grid-cols-[232px_minmax(0,1fr)] lg:items-start">
-        <aside className="hidden lg:sticky lg:top-20 lg:block">
-          <Card className="overflow-hidden">
-            <Link href={MAIL_HUB_BASE_PATH} className="flex items-center gap-2.5 border-b bg-gradient-to-r from-sky-500/10 to-indigo-500/5 px-4 py-3">
-              <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-gradient-to-br from-sky-500 to-indigo-600">
-                <Mail className="h-4 w-4 text-white" />
-              </div>
-              <div>
-                <p className="text-sm font-semibold text-slate-800">Mail Hub</p>
-                <p className="text-[11px] text-muted-foreground">Read · Link · Follow up</p>
-              </div>
-            </Link>
-            <CardContent className="max-h-[calc(100vh-10rem)] overflow-y-auto p-2">
-              <nav aria-label="Mail Hub sections">{nav()}</nav>
-            </CardContent>
-          </Card>
-        </aside>
+      <div className={`grid grid-cols-1 gap-3 ${iconsOnly ? SIDEBAR_ICONS_GRID : 'lg:grid-cols-[232px_minmax(0,1fr)]'} lg:items-start`}>
+        <TooltipProvider delayDuration={150}>
+          <aside className="hidden lg:sticky lg:top-[calc(var(--app-header-offset,4rem)+1rem)] lg:block">
+            <Card className="overflow-hidden">
+              <SidebarNavTooltip label="Mail Hub" enabled={iconsOnly}>
+                <Link
+                  href={MAIL_HUB_BASE_PATH}
+                  className={cn('flex items-center gap-2.5 border-b bg-gradient-to-r from-sky-500/10 to-indigo-500/5 px-4 py-3', iconsOnly && 'justify-center px-2')}
+                  title={iconsOnly ? 'Mail Hub' : undefined}
+                >
+                  <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-gradient-to-br from-sky-500 to-indigo-600">
+                    <Mail className="h-4 w-4 text-white" />
+                  </div>
+                  <div className={iconsOnly ? 'sr-only' : undefined}>
+                    <p className="text-sm font-semibold text-slate-800">Mail Hub</p>
+                    <p className="text-[11px] text-muted-foreground">Read · Link · Follow up</p>
+                  </div>
+                </Link>
+              </SidebarNavTooltip>
+              <CardContent className="max-h-[calc(100vh-var(--app-header-offset,4rem)-6rem)] overflow-y-auto p-2">
+                <nav aria-label="Mail Hub sections">{nav(undefined, iconsOnly)}</nav>
+              </CardContent>
+            </Card>
+          </aside>
+        </TooltipProvider>
         <main className="min-w-0 w-full">{children}</main>
       </div>
       <ModuleBottomNav tabs={bottomTabs} onMore={() => setOpen(true)} moduleName="Mail Hub" />

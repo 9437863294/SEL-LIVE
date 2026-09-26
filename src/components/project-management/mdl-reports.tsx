@@ -16,6 +16,7 @@ import {
   YAxis,
 } from "recharts";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { chartChrome } from "@/components/ui/chart";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import StatCard from "@/components/project-management/stat-card";
 import { cn } from "@/lib/utils";
@@ -169,12 +170,12 @@ export default function MdlReports({
             {statusData.length ? (
               <ResponsiveContainer>
                 <PieChart>
-                  <Pie data={statusData} dataKey="value" nameKey="name" outerRadius={85} label>
+                  <Pie stroke={chartChrome.surface} data={statusData} dataKey="value" nameKey="name" outerRadius={85} label>
                     {statusData.map((entry) => (
                       <Cell key={entry.name} fill={STATUS_COLORS[entry.name as MdlOverallStatus] ?? "#94a3b8"} />
                     ))}
                   </Pie>
-                  <Tooltip />
+                  <Tooltip {...chartChrome.tooltip} />
                   <Legend />
                 </PieChart>
               </ResponsiveContainer>
@@ -192,10 +193,10 @@ export default function MdlReports({
           <CardContent className="h-64">
             <ResponsiveContainer>
               <BarChart data={stageData}>
-                <CartesianGrid strokeDasharray="3 3" />
-                <XAxis dataKey="name" tick={{ fontSize: 12 }} />
-                <YAxis allowDecimals={false} tick={{ fontSize: 12 }} />
-                <Tooltip />
+                <CartesianGrid stroke={chartChrome.grid} strokeDasharray="3 3" />
+                <XAxis stroke={chartChrome.axis} dataKey="name" tick={{ fontSize: 12 }} />
+                <YAxis stroke={chartChrome.axis} allowDecimals={false} tick={{ fontSize: 12 }} />
+                <Tooltip {...chartChrome.tooltip} />
                 <Bar dataKey="count" fill="#6366f1" radius={[6, 6, 0, 0]} />
               </BarChart>
             </ResponsiveContainer>

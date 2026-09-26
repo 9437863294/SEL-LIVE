@@ -58,6 +58,7 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import { chartChrome } from "@/components/ui/chart";
 import {
   Select,
   SelectContent,
@@ -594,6 +595,7 @@ export default function BankGuaranteeDashboard() {
             <ResponsiveContainer>
               <PieChart>
                 <Pie
+                  stroke={chartChrome.surface}
                   data={statusData}
                   dataKey="value"
                   nameKey="name"
@@ -604,7 +606,7 @@ export default function BankGuaranteeDashboard() {
                     <Cell key={index} fill={colors[index % colors.length]} />
                   ))}
                 </Pie>
-                <Tooltip />
+                <Tooltip {...chartChrome.tooltip} />
                 <Legend />
               </PieChart>
             </ResponsiveContainer>
@@ -722,14 +724,16 @@ function Chart({
       <CardContent className="h-72">
         <ResponsiveContainer>
           <BarChart data={data}>
-            <CartesianGrid strokeDasharray="3 3" />
-            <XAxis dataKey="name" tick={{ fontSize: 10 }} />
+            <CartesianGrid stroke={chartChrome.grid} strokeDasharray="3 3" />
+            <XAxis stroke={chartChrome.axis} dataKey="name" tick={{ fontSize: 10 }} />
             <YAxis
+              stroke={chartChrome.axis}
               tickFormatter={(value) =>
                 `${Math.round(Number(value) / 100000)}L`
               }
             />
             <Tooltip
+              {...chartChrome.tooltip}
               formatter={(value) => formatBgCurrency(Number(value || 0))}
             />
             <Bar dataKey="amount" fill="#4f46e5" radius={[6, 6, 0, 0]} />

@@ -36,6 +36,11 @@ import {
   ModuleBottomNav,
   type ModuleNavTab,
 } from "@/components/navigation/ModuleBottomNav";
+import {
+  SIDEBAR_ICONS_GRID,
+  SidebarNavTooltip,
+  useSidebarIconsOnly,
+} from "@/components/navigation/use-sidebar-mode";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -52,6 +57,7 @@ import {
   SheetTitle,
   SheetTrigger,
 } from "@/components/ui/sheet";
+import { TooltipProvider } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 
 type Section = {
@@ -191,6 +197,7 @@ export default function BankGuaranteeLayoutShell({
   const pathname = usePathname() || "";
   const { can, isLoading } = useAuthorization();
   const [open, setOpen] = useState(false);
+  const iconsOnly = useSidebarIconsOnly();
   const moduleAccess =
     can("View Module", BG_PERMISSION_MODULE) ||
     sections.some((section) =>
@@ -246,7 +253,8 @@ export default function BankGuaranteeLayoutShell({
         ]
       : []),
   ];
-  const links = (close?: () => void) =>
+  // `compact` is the desktop sidebar in icons mode; the phone sheet always passes labels.
+  const links = (close?: () => void, compact = false) =>
     visible.map((section) => {
       const active =
         pathname === section.href ||
@@ -254,27 +262,37 @@ export default function BankGuaranteeLayoutShell({
           pathname.startsWith(section.href));
       const Icon = section.icon;
       return (
-        <Link
+        <SidebarNavTooltip
           key={section.href}
-          href={section.href}
-          onClick={close}
-          className={cn(
-            "group flex items-center gap-2.5 rounded-lg px-2.5 py-2 text-sm font-medium transition-all",
-            active
-              ? "bg-gradient-to-r from-indigo-600 to-violet-700 text-white shadow-md"
-              : "text-slate-600 hover:bg-white hover:text-slate-950",
-          )}
+          label={section.label}
+          enabled={compact}
         >
-          <span
+          <Link
+            href={section.href}
+            onClick={close}
+            aria-current={active ? "page" : undefined}
+            title={compact ? section.label : undefined}
             className={cn(
-              "flex h-7 w-7 shrink-0 items-center justify-center rounded-lg",
-              active ? "bg-white/20 text-white" : section.tone,
+              "group flex items-center gap-2.5 rounded-lg px-2.5 py-2 text-sm font-medium transition-all",
+              active
+                ? "bg-gradient-to-r from-indigo-600 to-violet-700 text-white shadow-md"
+                : "text-slate-600 hover:bg-white hover:text-slate-950",
+              compact && "relative justify-center",
             )}
           >
-            <Icon className="h-3.5 w-3.5" />
-          </span>
-          <span className="truncate">{section.label}</span>
-        </Link>
+            <span
+              className={cn(
+                "flex h-7 w-7 shrink-0 items-center justify-center rounded-lg",
+                active ? "bg-white/20 text-white" : section.tone,
+              )}
+            >
+              <Icon className="h-3.5 w-3.5" />
+            </span>
+            <span className={compact ? "sr-only" : "truncate"}>
+              {section.label}
+            </span>
+          </Link>
+        </SidebarNavTooltip>
       );
     });
   if (isLoading) return <div className="min-h-[50vh]" />;
@@ -336,27 +354,42 @@ export default function BankGuaranteeLayoutShell({
           </CardContent>
         </Card>
       </div>
-      <div className="grid grid-cols-1 gap-4 lg:grid-cols-[260px_minmax(0,1fr)] lg:items-start">
-        <aside className="hidden lg:sticky lg:top-20 lg:block">
-          <Card className="overflow-hidden border-white/80 bg-white/90 shadow-sm">
-            <div className="border-b bg-gradient-to-r from-indigo-500/10 to-violet-500/5 px-4 py-3">
-              <div className="flex items-center gap-2.5">
-                <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-gradient-to-br from-indigo-600 to-violet-700">
-                  <ShieldCheck className="h-4 w-4 text-white" />
-                </span>
-                <div>
-                  <p className="text-sm font-semibold">Bank Guarantee</p>
-                  <p className="text-[11px] text-muted-foreground">
-                    Exposure & lifecycle control
-                  </p>
+      <div
+        className={`grid grid-cols-1 gap-4 ${iconsOnly ? SIDEBAR_ICONS_GRID : "lg:grid-cols-[260px_minmax(0,1fr)]"} lg:items-start`}
+      >
+        <TooltipProvider delayDuration={150}>
+          <aside className="hidden lg:sticky lg:top-[calc(var(--app-header-offset,4rem)+1rem)] lg:block">
+            <Card className="overflow-hidden border-white/80 bg-white/90 shadow-sm">
+              <div
+                className={cn(
+                  "border-b bg-gradient-to-r from-indigo-500/10 to-violet-500/5 px-4 py-3",
+                  iconsOnly && "px-2",
+                )}
+                title={iconsOnly ? "Bank Guarantee" : undefined}
+              >
+                <div
+                  className={cn(
+                    "flex items-center gap-2.5",
+                    iconsOnly && "justify-center",
+                  )}
+                >
+                  <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-gradient-to-br from-indigo-600 to-violet-700">
+                    <ShieldCheck className="h-4 w-4 text-white" />
+                  </span>
+                  <div className={iconsOnly ? "sr-only" : undefined}>
+                    <p className="text-sm font-semibold">Bank Guarantee</p>
+                    <p className="text-[11px] text-muted-foreground">
+                      Exposure & lifecycle control
+                    </p>
+                  </div>
                 </div>
               </div>
-            </div>
-            <CardContent className="max-h-[calc(100vh-12rem)] space-y-1 overflow-y-auto p-2">
-              {links()}
-            </CardContent>
-          </Card>
-        </aside>
+              <CardContent className="max-h-[calc(100vh-var(--app-header-offset,4rem)-8rem)] space-y-1 overflow-y-auto p-2">
+                {links(undefined, iconsOnly)}
+              </CardContent>
+            </Card>
+          </aside>
+        </TooltipProvider>
         <main className="min-w-0">{children}</main>
       </div>
 

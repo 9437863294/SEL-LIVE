@@ -3,6 +3,7 @@
 
 import { useState, useEffect, useMemo } from 'react';
 import { Card, CardHeader, CardTitle, CardContent, CardDescription } from '@/components/ui/card';
+import { chartChrome } from '@/components/ui/chart';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -226,10 +227,10 @@ export default function AiForecastPage() {
                                     <stop offset="95%" stopColor="#82ca9d" stopOpacity={0}/>
                                 </linearGradient>
                             </defs>
-                            <XAxis dataKey="month" />
-                            <YAxis />
-                            <CartesianGrid strokeDasharray="3 3" />
-                            <Tooltip />
+                            <XAxis stroke={chartChrome.axis} dataKey="month" />
+                            <YAxis stroke={chartChrome.axis} />
+                            <CartesianGrid stroke={chartChrome.grid} strokeDasharray="3 3" />
+                            <Tooltip {...chartChrome.tooltip} />
                             <Area type="monotone" dataKey="historical" stroke="#8884d8" fillOpacity={1} fill="url(#colorHistorical)" />
                             <Area type="monotone" dataKey="predicted" stroke="#82ca9d" fillOpacity={1} fill="url(#colorPredicted)" />
                         </AreaChart>

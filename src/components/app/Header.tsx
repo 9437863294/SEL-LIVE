@@ -1,7 +1,7 @@
 
 'use client';
 
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useLayoutEffect, useMemo, useRef, type RefObject } from 'react';
 import Link from 'next/link';
 import Image from 'next/image';
 import { Bell, Settings, LogOut, User as UserIcon, Lock, Home, FileText, Inbox, Loader2, Users, LogIn, History as HistoryIcon, AlertTriangle, MessageCircle } from 'lucide-react';
@@ -37,6 +37,8 @@ import {
   type NormalizedNotification,
 } from '@/lib/notifications';
 import { moduleBadgeClass } from '@/lib/activity-modules';
+import { useAppearance } from '@/components/theme/ThemeProvider';
+import { BREADCRUMBS_BAR_ID } from '@/components/app/Breadcrumbs';
 
 // The header renders on every authenticated page, but these dialogs are only
 // reachable behind a click. Loading them eagerly put ~60KB of dialog code (and
@@ -92,6 +94,73 @@ type PendingTask = (Requisition & { taskType: 'requisition' }) | (JmcEntry & { t
  */
 const BELL_ALERT_LIMIT = 50;
 
+/** The SEL logo, shown until the company publishes one of its own. */
+const DEFAULT_LOGO_URL =
+  'https://firebasestorage.googleapis.com/v0/b/module-hub-uc7tw.firebasestorage.app/o/Logo%2FSEL%20%20logo2%20.png?alt=media&token=39b0f804-0610-4f3a-b26e-8ce334f94788';
+
+const HEADER_OFFSET_VAR = '--app-header-offset';
+
+/**
+ * Publishes how far down the viewport the app chrome currently reaches, in px, as
+ * `--app-header-offset` on <html>. Several module sidebars are `position: fixed` beneath the header
+ * and used to assume a permanent 64px one; with the header allowed to scroll away, and the
+ * breadcrumb bar sitting under it, they need the real figure.
+ *
+ * - Sticky: the header's full height, plus whatever of the breadcrumb bar has not scrolled under it.
+ * - Not sticky: whatever of header and breadcrumb bar is still on screen, down to 0.
+ *
+ * Heights come from a ResizeObserver (the impersonation banner, the md breakpoint), the scroll
+ * position from a passive listener written at most once a frame. `layoutKey` re-runs it when the
+ * breadcrumb bar may have appeared or gone. Removed on unmount, so the stylesheet default applies.
+ */
+function useHeaderOffset(headerRef: RefObject<HTMLElement | null>, sticky: boolean, layoutKey: string) {
+  useLayoutEffect(() => {
+    const header = headerRef.current;
+    if (!header) return;
+    const root = document.documentElement;
+    // AppShell renders the bar straight after the header, so it starts where the header ends.
+    const crumbs = document.getElementById(BREADCRUMBS_BAR_ID);
+    let headerHeight = header.offsetHeight;
+    let crumbsHeight = crumbs?.offsetHeight ?? 0;
+    let frame = 0;
+    let published = '';
+
+    const publish = () => {
+      frame = 0;
+      const scrolled = Math.max(0, window.scrollY);
+      const visible = sticky
+        ? headerHeight + Math.max(0, crumbsHeight - scrolled)
+        : Math.max(0, headerHeight + crumbsHeight - scrolled);
+      const value = `${visible}px`;
+      if (value === published) return;
+      published = value;
+      root.style.setProperty(HEADER_OFFSET_VAR, value);
+    };
+    const schedule = () => {
+      if (!frame) frame = window.requestAnimationFrame(publish);
+    };
+
+    publish();
+    const observer = new ResizeObserver(() => {
+      headerHeight = header.offsetHeight;
+      crumbsHeight = crumbs?.offsetHeight ?? 0;
+      schedule();
+    });
+    observer.observe(header);
+    if (crumbs) observer.observe(crumbs);
+    // A sticky header with nothing under it covers the same height at every scroll position.
+    const tracksScroll = !sticky || crumbs !== null;
+    if (tracksScroll) window.addEventListener('scroll', schedule, { passive: true });
+
+    return () => {
+      observer.disconnect();
+      if (tracksScroll) window.removeEventListener('scroll', schedule);
+      window.cancelAnimationFrame(frame);
+      root.style.removeProperty(HEADER_OFFSET_VAR);
+    };
+  }, [headerRef, sticky, layoutKey]);
+}
+
 
 export default function Header() {
   const pathname = usePathname();
@@ -122,7 +191,16 @@ export default function Header() {
 
   const [selectedRequisition, setSelectedRequisition] = useState<Requisition | null>(null);
   const [isViewDialogOpen, setIsViewDialogOpen] = useState(false);
-  
+
+  const { company, effective, resolvedMode } = useAppearance();
+  const { branding } = company;
+  const stickyHeader = effective.layout.stickyHeader;
+  // The dark-background logo in dark mode (else the light one); the SEL logo until one is published.
+  const brandLogo = resolvedMode === 'dark' ? branding.logoDark ?? branding.logoLight : branding.logoLight;
+  const logoSrc = brandLogo?.url ?? DEFAULT_LOGO_URL;
+  const headerRef = useRef<HTMLElement>(null);
+  useHeaderOffset(headerRef, stickyHeader, `${pathname}|${effective.layout.breadcrumbs}`);
+
   const canSwitchUser = can('Switch User', 'Settings.User Management');
   const canViewChat =
     can('View Module', 'Chat System') &&
@@ -419,24 +497,31 @@ export default function Header() {
   
   return (
     <>
-      <header className="sticky top-0 z-50 w-full border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
+      {/* Sticky unless the layout preference lets it scroll away with the page. */}
+      <header
+        ref={headerRef}
+        className={cn(
+          'z-50 w-full border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60',
+          stickyHeader ? 'sticky top-0' : 'relative',
+        )}
+      >
         <ImpersonationBanner />
         <div className="flex h-14 items-center px-3 md:h-16 md:px-6">
           <div className="flex items-center gap-2 md:gap-4">
               <Link href="/">
                 <div className="relative h-8 w-24 md:h-10 md:w-28">
                   <Image
-                    src="https://firebasestorage.googleapis.com/v0/b/module-hub-uc7tw.firebasestorage.app/o/Logo%2FSEL%20%20logo2%20.png?alt=media&token=39b0f804-0610-4f3a-b26e-8ce334f94788"
-                    alt="Company Logo"
+                    src={logoSrc}
+                    alt={`${branding.companyName} logo`}
                     fill
                     sizes="112px"
                     style={{ objectFit: 'contain' }}
-                    priority
+                    preload
                   />
                 </div>
               </Link>
               <div className="border-l pl-3 md:pl-4">
-                 <h1 className="text-sm font-semibold text-foreground hidden sm:block md:text-lg">Siddhartha Engineering Limited</h1>
+                 <h1 className="text-sm font-semibold text-foreground hidden sm:block md:text-lg">{branding.companyName}</h1>
               </div>
           </div>
 

@@ -33,6 +33,7 @@ import {
   SheetTrigger,
 } from '@/components/ui/sheet';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
+import { useSidebarDefault } from '@/components/theme/use-sidebar-default';
 import { cn } from '@/lib/utils';
 
 type NavigationItem = {
@@ -162,13 +163,15 @@ function isItemActive(pathname: string, item: NavigationItem) {
 
 export function InventoryModuleShell({ children }: { children: ReactNode }) {
   const pathname = usePathname() || '';
-  const [isExpanded, setIsExpanded] = useState(true);
+  const [isExpanded, setIsExpanded] = useSidebarDefault(true);
   const [mobileOpen, setMobileOpen] = useState(false);
 
+  // A toggle remembered from an earlier visit is the user's own choice for this rail, so it
+  // outranks their account-wide sidebar default (restoring through the setter settles it).
   useEffect(() => {
     const saved = window.localStorage.getItem(STORAGE_KEY);
     if (saved !== null) setIsExpanded(saved === 'true');
-  }, []);
+  }, [setIsExpanded]);
 
   const toggleExpanded = () => {
     setIsExpanded((current) => {
@@ -253,7 +256,7 @@ export function InventoryModuleShell({ children }: { children: ReactNode }) {
     <div className="min-h-[calc(100vh-4rem)] w-full bg-gradient-to-br from-slate-50/80 via-background to-blue-50/40">
       <TooltipProvider delayDuration={100}>
         <aside className={cn(
-          'fixed bottom-0 left-0 top-16 z-40 hidden flex-col border-r border-slate-200/80 bg-white/95 shadow-sm backdrop-blur transition-[width] duration-300 md:flex',
+          'fixed bottom-0 left-0 top-[var(--app-header-offset,4rem)] z-40 hidden flex-col border-r border-slate-200/80 bg-white/95 shadow-sm backdrop-blur transition-[width] duration-300 md:flex',
           isExpanded ? 'w-64' : 'w-[4.5rem]',
         )}>
           <div className={cn('flex h-[4.5rem] shrink-0 items-center border-b border-slate-200/70', isExpanded ? 'gap-3 px-4' : 'justify-center px-2')}>

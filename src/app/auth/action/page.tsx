@@ -16,10 +16,12 @@ import { CheckCircle2, Eye, EyeOff, Loader2, Mail, ShieldCheck, XCircle } from '
 import Link from 'next/link';
 import Image from 'next/image';
 import { cn } from '@/lib/utils';
+import { useAppearance } from '@/components/theme/ThemeProvider';
 
 // ─── constants ────────────────────────────────────────────────────────────────
 const BG_URL =
   "https://firebasestorage.googleapis.com/v0/b/module-hub-uc7tw.firebasestorage.app/o/Logo%2Frm378-062.jpg?alt=media&token=91cf2e4f-e362-4a09-a283-a6ae2d64b55f";
+// The SEL logo, shown until the company publishes one of its own.
 const LOGO_URL =
   "https://firebasestorage.googleapis.com/v0/b/module-hub-uc7tw.firebasestorage.app/o/Logo%2FSEL%20%20logo2%20.png?alt=media&token=39b0f804-0610-4f3a-b26e-8ce334f94788";
 
@@ -44,6 +46,9 @@ function passwordStrength(pw: string): { level: number; label: string; color: st
 
 // ─── shared card shell ────────────────────────────────────────────────────────
 function CardShell({ children }: { children: React.ReactNode }) {
+  // The card header is dark, so it wants the logo drawn for dark backgrounds.
+  const { branding } = useAppearance().company;
+  const logo = branding.logoDark ?? branding.logoLight;
   return (
     <div
       className="relative flex min-h-screen items-center justify-center bg-cover bg-center p-4"
@@ -59,16 +64,16 @@ function CardShell({ children }: { children: React.ReactNode }) {
             {/* Logo */}
             <div className="relative h-14 w-40">
               <Image
-                src={LOGO_URL}
-                alt="SEL Logo"
+                src={logo?.url ?? LOGO_URL}
+                alt={`${branding.companyName} logo`}
                 fill
                 sizes="160px"
                 style={{ objectFit: 'contain' }}
-                priority
+                preload
               />
             </div>
             <div className="text-center">
-              <p className="text-sm font-bold tracking-wide text-white">Siddhartha Engineering Limited</p>
+              <p className="text-sm font-bold tracking-wide text-white">{branding.companyName}</p>
               <p className="text-[10px] tracking-[0.22em] text-slate-500 uppercase mt-0.5">SEL PLATFORM</p>
             </div>
           </div>

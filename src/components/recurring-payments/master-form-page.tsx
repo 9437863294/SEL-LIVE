@@ -1390,7 +1390,7 @@ function SummarySidebar({
   previewCycle: { label: string; dueDate: string; expectedBillDate: string } | null;
 }) {
   return (
-    <Card className="lg:sticky lg:top-4">
+    <Card className="lg:sticky lg:top-[calc(var(--app-header-offset,4rem)+1rem)]">
       <CardHeader>
         <CardTitle className="text-base">Preview</CardTitle>
         <CardDescription>

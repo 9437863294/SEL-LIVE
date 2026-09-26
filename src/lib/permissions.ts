@@ -1012,6 +1012,12 @@ export const permissionModules = {
     "Working Hrs": ["View", "Edit"],
     "Serial No. Config": ["View", "Edit"],
     Appearance: ["View", "Edit"],
+    // Company-wide appearance (see src/lib/appearance). Personal appearance needs no permission —
+    // every user chooses their own. These two cover what everyone else sees: "Company Branding" for
+    // logos, names and the sign-in page, "Theme Management" for the published theme, where drafting
+    // and publishing are separate so a draft can be reviewed before it reaches the whole company.
+    "Company Branding": ["View", "Edit"],
+    "Theme Management": ["View", "Edit", "Publish"],
     "Email Authorization": ["View", "Send Request", "Revoke"],
     "Login Expiry": ["View", "Edit"],
     "Session Management": ["View", "Edit", "Delete"],

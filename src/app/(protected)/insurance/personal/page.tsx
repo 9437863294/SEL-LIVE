@@ -365,7 +365,7 @@ export default function PersonalInsurancePage() {
                       )}
                     >
                       <TableCell className="pr-0">
-                        <div className={cn('h-2 w-2 rounded-full mx-auto', {
+                        <div role="img" aria-label={cfg.label} title={cfg.label} className={cn('h-2 w-2 rounded-full mx-auto', {
                           'bg-red-500':     policy._status === 'overdue',
                           'bg-amber-400':   policy._status === 'due-soon',
                           'bg-emerald-400': policy._status === 'active',

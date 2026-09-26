@@ -523,7 +523,13 @@ export default function EmiSummaryPage() {
                   return (
                     <TableRow key={emi.id} className={`transition-colors ${isOverdue ? 'hover:bg-red-50/30 bg-red-50/10' : 'hover:bg-muted/20'}`}>
                       <TableCell className="pr-0">
-                        <div className={`h-2 w-2 rounded-full mx-auto ${isPaid ? 'bg-emerald-500' : isOverdue ? 'bg-red-500' : 'bg-amber-400'}`} />
+                        {/* Named, not only coloured: Paid vs Pending has no other text in the row. */}
+                        <div
+                          role="img"
+                          aria-label={isPaid ? 'Paid' : isOverdue ? 'Overdue' : 'Pending'}
+                          title={isPaid ? 'Paid' : isOverdue ? 'Overdue' : 'Pending'}
+                          className={`h-2 w-2 rounded-full mx-auto ${isPaid ? 'bg-emerald-500' : isOverdue ? 'bg-red-500' : 'bg-amber-400'}`}
+                        />
                       </TableCell>
                       <TableCell className="font-medium">{emi.loan.lenderName}</TableCell>
                       <TableCell className="font-mono text-xs">{emi.loan.accountNo}</TableCell>

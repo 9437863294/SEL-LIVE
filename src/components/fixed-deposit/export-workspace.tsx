@@ -554,7 +554,7 @@ export default function FDExportWorkspace() {
 
     <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_300px] lg:items-start">
       {/* ── summary rail ─────────────────────────────────────────────────── */}
-      <aside className="order-1 space-y-3 lg:sticky lg:top-20 lg:order-2">
+      <aside className="order-1 space-y-3 lg:sticky lg:top-[calc(var(--app-header-offset,4rem)+1rem)] lg:order-2">
         <Card className="border-white/80 bg-white/90 shadow-sm">
           <CardHeader className="pb-3"><CardTitle className="text-base">Export summary</CardTitle><CardDescription className="line-clamp-2">{scopeText}</CardDescription></CardHeader>
           <CardContent className="space-y-3">

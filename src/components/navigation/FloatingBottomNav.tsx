@@ -13,6 +13,7 @@ import {
   type MouseEvent,
 } from 'react';
 import { cn } from '@/lib/utils';
+import { useReducedMotion } from '@/components/theme/ThemeProvider';
 import { ActiveIndicator } from './ActiveIndicator';
 import { NavItem, type FloatingNavItem } from './NavItem';
 import {
@@ -109,13 +110,24 @@ function useAutoHide(enabled: boolean, resetKey: string | null) {
   const [typing, setTyping] = useState(false);
   const [actionBar, setActionBar] = useState(false);
 
-  useEffect(() => setScrolledAway(false), [resetKey]);
+  // Both resets are made during render, not in an effect, so the bar never paints a frame in the
+  // wrong state: a new tab brings it back, and switching auto-hide off forgets what it had seen, so
+  // turning it on again starts from a visible bar.
+  const [shownKey, setShownKey] = useState(resetKey);
+  if (shownKey !== resetKey) {
+    setShownKey(resetKey);
+    setScrolledAway(false);
+  }
+  const [wasEnabled, setWasEnabled] = useState(enabled);
+  if (wasEnabled !== enabled) {
+    setWasEnabled(enabled);
+    setScrolledAway(false);
+    setTyping(false);
+    setActionBar(false);
+  }
 
   useEffect(() => {
-    if (!enabled) {
-      setScrolledAway(false);
-      return;
-    }
+    if (!enabled) return;
     let anchor = window.scrollY;
     let frame = 0;
     const onScroll = () => {
@@ -141,10 +153,7 @@ function useAutoHide(enabled: boolean, resetKey: string | null) {
   }, [enabled]);
 
   useEffect(() => {
-    if (!enabled) {
-      setTyping(false);
-      return;
-    }
+    if (!enabled) return;
     // Only a touch keyboard takes screen space; a desktop window narrowed to phone width keeps its bar.
     const coarse = window.matchMedia('(pointer: coarse)');
     let timer = 0;
@@ -163,10 +172,7 @@ function useAutoHide(enabled: boolean, resetKey: string | null) {
   }, [enabled]);
 
   useEffect(() => {
-    if (!enabled) {
-      setActionBar(false);
-      return;
-    }
+    if (!enabled) return;
     let frame = 0;
     const check = () => {
       frame = 0;
@@ -184,6 +190,8 @@ function useAutoHide(enabled: boolean, resetKey: string | null) {
     };
   }, [enabled]);
 
+  // Nothing is hidden while auto-hide is off, whatever was last seen.
+  if (!enabled) return { hidden: false, actionBar: false };
   return { hidden: scrolledAway || typing || actionBar, actionBar };
 }
 
@@ -237,7 +245,12 @@ export function FloatingBottomNav({
 
   // A tapped link is marked active straight away rather than when the route finally changes.
   const [pending, setPending] = useState<string | null>(null);
-  useEffect(() => setPending(null), [activeItem]);
+  // The route catching up (or moving elsewhere) ends the wait — dropped during render, not in an effect.
+  const [seenActive, setSeenActive] = useState(activeItem);
+  if (seenActive !== activeItem) {
+    setSeenActive(activeItem);
+    setPending(null);
+  }
   useEffect(() => {
     if (!pending) return;
     const timer = window.setTimeout(() => setPending(null), 6000);
@@ -257,7 +270,8 @@ export function FloatingBottomNav({
   const activeIndex = resolvedItems.findIndex((item) => item.key === currentKey);
 
   const inView = useMediaQuery(hideAbove ? `(max-width: ${BREAKPOINT_PX[hideAbove] - 0.02}px)` : null, false);
-  const reducedMotion = useMediaQuery('(prefers-reduced-motion: reduce)', false);
+  // The user's own Reduced motion setting, or the device's.
+  const reducedMotion = useReducedMotion();
   const { hidden, actionBar } = useAutoHide(position === 'fixed' && autoHide && inView, currentKey);
 
   const stageRef = useRef<HTMLElement>(null);
@@ -266,6 +280,8 @@ export function FloatingBottomNav({
   const rimGlowRef = useRef<SVGPathElement>(null);
   const gradientRef = useRef<SVGLinearGradientElement>(null);
   const indicatorRef = useRef<HTMLSpanElement>(null);
+  // A removed tab's ref callback nulls its slot, so the array can run past `resolvedItems` with
+  // trailing nulls; `draw` and `onKeyDown` both skip empty slots.
   const slotEls = useRef<(HTMLElement | null)[]>([]);
   const frameRef = useRef<BarFrame | null>(null);
   const drawnWidthRef = useRef(0);
@@ -386,7 +402,6 @@ export function FloatingBottomNav({
   };
 
   const hideClass = hideAbove ? HIDE_CLASS[hideAbove] : undefined;
-  slotEls.current.length = resolvedItems.length;
 
   return (
     <>

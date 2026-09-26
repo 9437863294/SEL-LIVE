@@ -4,6 +4,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import dynamic from 'next/dynamic';
 import Header from '@/components/app/Header';
+import Breadcrumbs from '@/components/app/Breadcrumbs';
 import { useAuth } from '@/components/auth/AuthProvider';
 import { usePathname } from 'next/navigation';
 
@@ -83,7 +84,13 @@ export default function AppShell({
             ) : (
                 // Once authenticated, render the full application shell with header and footer.
                 <div className="flex flex-col min-h-screen">
-                    {!shouldUseDriverMobileShell && <Header />}
+                    {!shouldUseDriverMobileShell && (
+                        <>
+                            <Header />
+                            {/* Renders nothing unless the Breadcrumbs layout preference is on. */}
+                            <Breadcrumbs />
+                        </>
+                    )}
                     <div className="flex-grow">
                         {children}
                     </div>

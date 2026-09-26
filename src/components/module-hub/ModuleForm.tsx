@@ -190,7 +190,7 @@ export default function ModuleForm() {
             </Card>
           </div>
 
-          <div className="space-y-6 lg:sticky lg:top-24">
+          <div className="space-y-6 lg:sticky lg:top-[calc(var(--app-header-offset,4rem)+2rem)]">
             <Card>
               <CardHeader>
                 <CardTitle>AI Validation</CardTitle>

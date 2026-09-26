@@ -16,6 +16,7 @@ import {
   YAxis,
 } from "recharts";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { chartChrome } from "@/components/ui/chart";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import StatCard from "@/components/project-management/stat-card";
 import { cn } from "@/lib/utils";
@@ -202,12 +203,12 @@ export default function PoReports({
             {statusData.length ? (
               <ResponsiveContainer>
                 <PieChart>
-                  <Pie data={statusData} dataKey="value" nameKey="name" outerRadius={85} label>
+                  <Pie stroke={chartChrome.surface} data={statusData} dataKey="value" nameKey="name" outerRadius={85} label>
                     {statusData.map((entry) => (
                       <Cell key={entry.name} fill={STATUS_COLORS[entry.name as POStatus] ?? "#94a3b8"} />
                     ))}
                   </Pie>
-                  <Tooltip formatter={(value) => formatCurrency(Number(value))} />
+                  <Tooltip {...chartChrome.tooltip} formatter={(value) => formatCurrency(Number(value))} />
                   <Legend />
                 </PieChart>
               </ResponsiveContainer>
@@ -226,10 +227,10 @@ export default function PoReports({
             {monthlyTrend.length ? (
               <ResponsiveContainer>
                 <BarChart data={monthlyTrend}>
-                  <CartesianGrid strokeDasharray="3 3" />
-                  <XAxis dataKey="name" tick={{ fontSize: 11 }} />
-                  <YAxis tickFormatter={(value) => `${Math.round(Number(value) / 1000)}k`} tick={{ fontSize: 11 }} />
-                  <Tooltip formatter={(value) => formatCurrency(Number(value))} />
+                  <CartesianGrid stroke={chartChrome.grid} strokeDasharray="3 3" />
+                  <XAxis stroke={chartChrome.axis} dataKey="name" tick={{ fontSize: 11 }} />
+                  <YAxis stroke={chartChrome.axis} tickFormatter={(value) => `${Math.round(Number(value) / 1000)}k`} tick={{ fontSize: 11 }} />
+                  <Tooltip {...chartChrome.tooltip} formatter={(value) => formatCurrency(Number(value))} />
                   <Bar dataKey="amount" fill="#6366f1" radius={[6, 6, 0, 0]} />
                 </BarChart>
               </ResponsiveContainer>
@@ -249,10 +250,10 @@ export default function PoReports({
           {vendorComparison.length ? (
             <ResponsiveContainer>
               <BarChart data={vendorComparison}>
-                <CartesianGrid strokeDasharray="3 3" />
-                <XAxis dataKey="vendor" tick={{ fontSize: 11 }} />
-                <YAxis tickFormatter={(value) => `${Math.round(Number(value) / 1000)}k`} tick={{ fontSize: 11 }} />
-                <Tooltip formatter={(value) => formatCurrency(Number(value))} />
+                <CartesianGrid stroke={chartChrome.grid} strokeDasharray="3 3" />
+                <XAxis stroke={chartChrome.axis} dataKey="vendor" tick={{ fontSize: 11 }} />
+                <YAxis stroke={chartChrome.axis} tickFormatter={(value) => `${Math.round(Number(value) / 1000)}k`} tick={{ fontSize: 11 }} />
+                <Tooltip {...chartChrome.tooltip} formatter={(value) => formatCurrency(Number(value))} />
                 <Legend />
                 <Bar dataKey="budget" name="Budget Price" fill="#94a3b8" radius={[6, 6, 0, 0]} />
                 <Bar dataKey="purchase" name="Purchase Price" fill="#6366f1" radius={[6, 6, 0, 0]} />

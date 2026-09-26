@@ -43,10 +43,17 @@ import {
   Users,
 } from 'lucide-react';
 import { ModuleBottomNav, type ModuleNavTab } from '@/components/navigation/ModuleBottomNav';
+import {
+  SIDEBAR_ICONS_DIVIDER,
+  SIDEBAR_ICONS_GRID,
+  SidebarNavTooltip,
+  useSidebarIconsOnly,
+} from '@/components/navigation/use-sidebar-mode';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle, SheetTrigger } from '@/components/ui/sheet';
 import { Skeleton } from '@/components/ui/skeleton';
+import { TooltipProvider } from '@/components/ui/tooltip';
 import { cn } from '@/lib/utils';
 import { OFFICE_HUB_BASE_PATH } from '@/lib/office-hub';
 import { OfficeHubProvider, useOfficeHub } from './hooks';
@@ -121,6 +128,7 @@ function OfficeHubLayoutShellInner({ children }: { children: React.ReactNode }) 
   const pathname = usePathname() ?? '';
   const { capabilities, isLoading } = useOfficeHub();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const iconsOnly = useSidebarIconsOnly();
 
   // Before the access check, so a print route never renders module chrome at all.
   if (pathname.includes('/print')) return <>{children}</>;
@@ -171,42 +179,54 @@ function OfficeHubLayoutShellInner({ children }: { children: React.ReactNode }) 
     ...(isAvailable(`${OFFICE_HUB_BASE_PATH}/tasks`) ? [{ href: `${OFFICE_HUB_BASE_PATH}/tasks`, label: 'Tasks', icon: ListTodo }] : []),
   ];
 
-  const navigation = (onNavigate?: () => void) => {
+  // `compact` is the desktop sidebar in icons mode; the phone sheet always passes labels.
+  const navigation = (onNavigate?: () => void, compact = false) => {
     let lastGroup = '';
-    return available.map((section) => {
+    return available.map((section, index) => {
       const active = current?.href === section.href;
       const Icon = section.icon;
       const showGroup = section.group !== lastGroup;
       lastGroup = section.group;
       return (
         <div key={section.href}>
-          {showGroup && (
-            <p className="px-2.5 pb-1 pt-2 text-[10px] font-bold uppercase tracking-[0.14em] text-slate-400 first:pt-1">
-              {GROUP_LABELS[section.group]}
-            </p>
-          )}
-          <Link
-            href={section.href}
-            onClick={onNavigate}
-            aria-current={active ? 'page' : undefined}
-            className={cn(
-              'group relative flex items-center gap-2.5 rounded-lg px-2.5 py-2.5 text-sm font-medium transition-all duration-200 lg:py-2',
-              'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 focus-visible:ring-offset-1',
-              active
-                ? 'bg-gradient-to-r from-sky-500 to-indigo-600 text-white shadow-[0_8px_24px_-8px_rgba(79,70,229,0.5)]'
-                : 'text-slate-600 hover:bg-white/70 hover:text-slate-900',
-            )}
-          >
-            <span
+          {showGroup &&
+            (compact ? (
+              // No room for a heading: a hairline keeps the grouping, the name stays for screen readers.
+              <>
+                {index > 0 && <div className={SIDEBAR_ICONS_DIVIDER} aria-hidden />}
+                <p className="sr-only">{GROUP_LABELS[section.group]}</p>
+              </>
+            ) : (
+              <p className="px-2.5 pb-1 pt-2 text-[10px] font-bold uppercase tracking-[0.14em] text-slate-400 first:pt-1">
+                {GROUP_LABELS[section.group]}
+              </p>
+            ))}
+          <SidebarNavTooltip label={section.label} enabled={compact}>
+            <Link
+              href={section.href}
+              onClick={onNavigate}
+              aria-current={active ? 'page' : undefined}
+              title={compact ? section.label : undefined}
               className={cn(
-                'flex h-8 w-8 shrink-0 items-center justify-center rounded-lg ring-1 transition-all duration-200',
-                active ? 'bg-white/20 ring-white/30' : cn('ring-black/[0.03] group-hover:scale-105', section.bg),
+                'group relative flex items-center gap-2.5 rounded-lg px-2.5 py-2.5 text-sm font-medium transition-all duration-200 lg:py-2',
+                'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 focus-visible:ring-offset-1',
+                active
+                  ? 'bg-gradient-to-r from-sky-500 to-indigo-600 text-white shadow-[0_8px_24px_-8px_rgba(79,70,229,0.5)]'
+                  : 'text-slate-600 hover:bg-white/70 hover:text-slate-900',
+                compact && 'justify-center',
               )}
             >
-              <Icon className={cn('h-4 w-4 transition-transform', active ? 'scale-110 text-white' : section.color)} />
-            </span>
-            <span className="truncate">{section.label}</span>
-          </Link>
+              <span
+                className={cn(
+                  'flex h-8 w-8 shrink-0 items-center justify-center rounded-lg ring-1 transition-all duration-200',
+                  active ? 'bg-white/20 ring-white/30' : cn('ring-black/[0.03] group-hover:scale-105', section.bg),
+                )}
+              >
+                <Icon className={cn('h-4 w-4 transition-transform', active ? 'scale-110 text-white' : section.color)} />
+              </span>
+              <span className={compact ? 'sr-only' : 'truncate'}>{section.label}</span>
+            </Link>
+          </SidebarNavTooltip>
         </div>
       );
     });
@@ -215,7 +235,7 @@ function OfficeHubLayoutShellInner({ children }: { children: React.ReactNode }) 
   if (isLoading) {
     return (
       <div className="w-full px-3 py-4 sm:px-6 lg:px-8">
-        <div className="grid grid-cols-1 gap-4 lg:grid-cols-[240px_minmax(0,1fr)]">
+        <div className={`grid grid-cols-1 gap-4 ${iconsOnly ? SIDEBAR_ICONS_GRID : 'lg:grid-cols-[240px_minmax(0,1fr)]'}`}>
           <Skeleton className="hidden h-[28rem] w-full rounded-xl lg:block" />
           <div className="space-y-3">
             <Skeleton className="h-9 w-64" />
@@ -293,28 +313,43 @@ function OfficeHubLayoutShellInner({ children }: { children: React.ReactNode }) 
         </Card>
       </div>
 
-      <div className="grid grid-cols-1 gap-4 lg:grid-cols-[240px_minmax(0,1fr)] lg:items-start">
-        <aside className="hidden lg:sticky lg:top-20 lg:block">
-          <Card className="overflow-hidden">
-            <div className="border-b border-white/50 bg-gradient-to-r from-sky-500/10 to-indigo-500/5 px-4 py-3">
-              <div className="flex items-center gap-2.5">
-                <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-gradient-to-br from-sky-500 to-indigo-600 shadow-sm">
-                  <CalendarDays className="h-4 w-4 text-white" />
-                </div>
-                <div>
-                  <p className="text-sm font-semibold tracking-tight text-slate-800">Office Hub</p>
-                  <p className="text-[11px] text-muted-foreground">Meet · Decide · Assign</p>
+      <div className={`grid grid-cols-1 gap-4 ${iconsOnly ? SIDEBAR_ICONS_GRID : 'lg:grid-cols-[240px_minmax(0,1fr)]'} lg:items-start`}>
+        <TooltipProvider delayDuration={150}>
+          <aside className="hidden lg:sticky lg:top-[calc(var(--app-header-offset,4rem)+1rem)] lg:block">
+            <Card className="overflow-hidden">
+              <div
+                className={cn('border-b border-white/50 bg-gradient-to-r from-sky-500/10 to-indigo-500/5 px-4 py-3', iconsOnly && 'px-2')}
+                title={iconsOnly ? 'Office Hub' : undefined}
+              >
+                <div className={cn('flex items-center gap-2.5', iconsOnly && 'justify-center')}>
+                  <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-gradient-to-br from-sky-500 to-indigo-600 shadow-sm">
+                    <CalendarDays className="h-4 w-4 text-white" />
+                  </div>
+                  <div className={iconsOnly ? 'sr-only' : undefined}>
+                    <p className="text-sm font-semibold tracking-tight text-slate-800">Office Hub</p>
+                    <p className="text-[11px] text-muted-foreground">Meet · Decide · Assign</p>
+                  </div>
                 </div>
               </div>
-            </div>
-            <div className="border-b border-white/50 px-2 py-2">
-              <OfficeHubCommandPalette />
-            </div>
-            <CardContent className="max-h-[calc(100vh-14rem)] overflow-y-auto p-2">
-              <nav aria-label="Office Hub sections">{navigation()}</nav>
-            </CardContent>
-          </Card>
-        </aside>
+              {/*
+                In icons mode the palette's search / "+" pair is stacked and the search button's
+                caption is kept for screen readers only — the component itself is shared with the
+                phone header, so the rail reshapes it from here rather than growing it a prop.
+              */}
+              <div
+                className={cn(
+                  'border-b border-white/50 px-2 py-2',
+                  iconsOnly && '[&>div]:flex-col [&_button>span]:sr-only [&_kbd]:hidden',
+                )}
+              >
+                <OfficeHubCommandPalette />
+              </div>
+              <CardContent className="max-h-[calc(100vh-var(--app-header-offset,4rem)-10rem)] overflow-y-auto p-2">
+                <nav aria-label="Office Hub sections">{navigation(undefined, iconsOnly)}</nav>
+              </CardContent>
+            </Card>
+          </aside>
+        </TooltipProvider>
 
         <main className="min-w-0 w-full overflow-x-hidden">
           {/*

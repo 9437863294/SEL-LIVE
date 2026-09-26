@@ -9,16 +9,14 @@
  * behind them.
  */
 
-import AppShell from '@/components/app/AppShell';
 import WorkDashboard from '@/components/work-dashboard/work-dashboard';
 
 export default function MyWorkPage() {
   return (
-    <AppShell>
-      {/* Full width with the same minimal gutters as the home tab. */}
-      <main className="w-full px-2 py-4 sm:px-3 md:px-4">
-        <WorkDashboard />
-      </main>
-    </AppShell>
+    // No AppShell here: the (protected) layout already provides it, and a second one drew a
+    // second header (and breadcrumb bar) on this page.
+    <main className="w-full px-2 py-4 sm:px-3 md:px-4">
+      <WorkDashboard />
+    </main>
   );
 }

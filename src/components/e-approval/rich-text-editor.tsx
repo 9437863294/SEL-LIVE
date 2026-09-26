@@ -226,8 +226,10 @@ export function EApprovalRichTextEditor({
     }
     // Inline styles rather than classes: this markup is stored and later rendered inside a
     // sanitiser that strips `class`, so anything the borders depend on has to travel with it.
+    // The header sets its ink as well as its fill: a stored light fill with inherited text would be
+    // light-on-light in dark mode, and the markup cannot follow the theme.
     const cell = 'border:1px solid #cbd5e1;padding:6px 8px;';
-    const header = `<tr>${Array.from({ length: columns }, (_, index) => `<th style="${cell}background:#f1f5f9;text-align:left;">Column ${index + 1}</th>`).join('')}</tr>`;
+    const header = `<tr>${Array.from({ length: columns }, (_, index) => `<th style="${cell}background:#f1f5f9;color:#0f172a;text-align:left;">Column ${index + 1}</th>`).join('')}</tr>`;
     const body = Array.from(
       { length: rows },
       () => `<tr>${Array.from({ length: columns }, () => `<td style="${cell}">&nbsp;</td>`).join('')}</tr>`,

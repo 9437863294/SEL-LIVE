@@ -417,10 +417,10 @@ export default function EApprovalDashboardPage() {
                   tickLine={false}
                   axisLine={false}
                 />
-                <Tooltip cursor={{ fill: 'rgba(15,23,42,0.03)' }} {...eaTooltipStyle} />
+                <Tooltip cursor={{ fill: EA_VIZ.cursor }} {...eaTooltipStyle} />
                 {/* Nominal states, so one hue for every bar — bar length already carries the value. */}
                 <Bar isAnimationActive={false} dataKey="count" name="Approvals" fill={EA_VIZ.series[0]} radius={[0, 4, 4, 0]} maxBarSize={22}>
-                  <LabelList dataKey="count" position="right" fontSize={11} fill="#52514e" />
+                  <LabelList dataKey="count" position="right" fontSize={11} fill={EA_VIZ.label} />
                 </Bar>
               </BarChart>
             </ResponsiveContainer>
@@ -440,7 +440,7 @@ export default function EApprovalDashboardPage() {
                 <CartesianGrid vertical={false} stroke={EA_VIZ.grid} />
                 <XAxis dataKey="bucket" fontSize={11} stroke={EA_VIZ.axis} tickLine={false} />
                 <YAxis allowDecimals={false} fontSize={11} stroke={EA_VIZ.axis} tickLine={false} axisLine={false} />
-                <Tooltip cursor={{ fill: 'rgba(15,23,42,0.03)' }} {...eaTooltipStyle} />
+                <Tooltip cursor={{ fill: EA_VIZ.cursor }} {...eaTooltipStyle} />
                 {/* Ordered bands, so the ordinal ramp: the order is visible in the colour. */}
                 <Bar isAnimationActive={false} dataKey="count" name="Approvals" radius={[4, 4, 0, 0]} maxBarSize={24}>
                   {ageing.map((entry, index) => (
@@ -451,7 +451,7 @@ export default function EApprovalDashboardPage() {
                     dataKey="count"
                     position="top"
                     fontSize={11}
-                    fill="#52514e"
+                    fill={EA_VIZ.label}
                     formatter={(value: unknown) => (value === ageingPeak?.count && ageingPeak.count > 0 ? String(value) : '')}
                   />
                 </Bar>

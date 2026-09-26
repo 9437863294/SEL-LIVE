@@ -14,8 +14,8 @@
  *
  * Three structural differences from the mockup, all forced by the app it lives in:
  *
- *  1. The sidebar starts below the app's fixed header (h-14 on mobile, h-16 from `md`), not at the
- *     viewport top — the mockup had no application chrome above it.
+ *  1. The sidebar starts below the app's header (h-14 on mobile, h-16 from `md`) while it is on
+ *     screen, not at the viewport top — the mockup had no application chrome above it.
  *  2. The topbar is sticky rather than static, so the breadcrumb and the primary action stay
  *     reachable while a long register scrolls.
  *  3. Counts on the document chain are optional. A page that has not loaded a gate's register
@@ -41,13 +41,20 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { Card, CardContent } from "@/components/ui/card";
+import { useSidebarDefault } from "@/components/theme/use-sidebar-default";
 import { cn } from "@/lib/utils";
 
 /* ── Shared metrics ─────────────────────────────────────────────────────────────────────────── */
 
-/** Height of the application header the shell has to sit beneath. */
-const BELOW_APP_HEADER = "top-14 md:top-16";
-const SIDEBAR_HEIGHT = "h-[calc(100dvh-3.5rem)] md:h-[calc(100dvh-4rem)]";
+/**
+ * Where the sidebar and the topbar stick: beneath `--app-header-offset`, the application header's
+ * currently visible height, so both reach the viewport top once a non-sticky header has scrolled
+ * away. The fallbacks are the header's heights (h-14 on mobile, h-16 from `md`), for while the
+ * variable is unset.
+ */
+const BELOW_APP_HEADER = "top-[var(--app-header-offset,3.5rem)] md:top-[var(--app-header-offset,4rem)]";
+const SIDEBAR_HEIGHT =
+  "h-[calc(100dvh-var(--app-header-offset,3.5rem))] md:h-[calc(100dvh-var(--app-header-offset,4rem))]";
 
 /**
  * Table density for every register in the module.
@@ -143,7 +150,7 @@ export function PmSidebar({
   mobileOpen?: boolean;
   onMobileOpenChange?: (open: boolean) => void;
 }) {
-  const [isExpanded, setIsExpanded] = useState(true);
+  const [isExpanded, setIsExpanded] = useSidebarDefault(true);
   const [ownMobileOpen, setOwnMobileOpen] = useState(false);
   const mobileOpen = mobileOpenProp ?? ownMobileOpen;
   const setMobileOpen = (open: boolean) => {

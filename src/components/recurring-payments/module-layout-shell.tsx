@@ -29,6 +29,7 @@ import { db } from '@/lib/firebase';
 import { DEFAULT_RECURRING_WORKFLOW, type RecurringWorkflowStep } from '@/lib/recurring-payments';
 import { useAuthorization } from '@/hooks/useAuthorization';
 import { ModuleBottomNav, type ModuleNavTab } from '@/components/navigation/ModuleBottomNav';
+import { SIDEBAR_ICONS_GRID, SidebarNavTooltip, useSidebarIconsOnly } from '@/components/navigation/use-sidebar-mode';
 import { useAssignedWorkflowSteps } from './use-assigned-workflow';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -40,6 +41,7 @@ import {
   SheetTitle,
   SheetTrigger,
 } from '@/components/ui/sheet';
+import { TooltipProvider } from '@/components/ui/tooltip';
 import { cn } from '@/lib/utils';
 
 type NavItem = {
@@ -94,6 +96,7 @@ export default function RecurringPaymentsLayoutShell({ children }: { children: R
   const { assignedStepIds, hasAssignedWork, loading: assignmentsLoading } = useAssignedWorkflowSteps();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [workflowSteps, setWorkflowSteps] = useState<RecurringWorkflowStep[]>(DEFAULT_RECURRING_WORKFLOW);
+  const iconsOnly = useSidebarIconsOnly();
 
   useEffect(
     () =>
@@ -172,7 +175,8 @@ export default function RecurringPaymentsLayoutShell({ children }: { children: R
       : []),
   ];
 
-  const navigationLinks = (onNavigate?: () => void) => {
+  // `compact` is the desktop sidebar in icons mode; the phone sheet always passes labels.
+  const navigationLinks = (onNavigate?: () => void, compact = false) => {
     let lastGroup = '';
     return navItems.map((item) => {
       const active = matchesPath(safePathname, item.href);
@@ -183,31 +187,36 @@ export default function RecurringPaymentsLayoutShell({ children }: { children: R
       return (
         <div key={item.href}>
           {showDivider && <div className="my-1 h-px bg-white/40" />}
-          <Link
-            href={item.href}
-            onClick={onNavigate}
-            className={cn(
-              'group relative flex items-center gap-2.5 rounded-lg px-2.5 py-2.5 text-sm font-medium transition-all duration-200 lg:py-2',
-              active
-                ? 'bg-gradient-to-r from-emerald-500 to-teal-600 text-white shadow-[0_8px_24px_-8px_rgba(16,185,129,0.5)]'
-                : 'text-slate-600 hover:bg-white/70 hover:text-slate-900',
-            )}
-          >
-            <span
+          <SidebarNavTooltip label={item.label} enabled={compact}>
+            <Link
+              href={item.href}
+              onClick={onNavigate}
+              aria-current={active ? 'page' : undefined}
+              title={compact ? item.label : undefined}
               className={cn(
-                'flex h-7 w-7 shrink-0 items-center justify-center rounded-lg transition-all duration-200',
-                active ? 'bg-white/20' : cn('group-hover:scale-105', item.bg),
+                'group relative flex items-center gap-2.5 rounded-lg px-2.5 py-2.5 text-sm font-medium transition-all duration-200 lg:py-2',
+                active
+                  ? 'bg-gradient-to-r from-emerald-500 to-teal-600 text-white shadow-[0_8px_24px_-8px_rgba(16,185,129,0.5)]'
+                  : 'text-slate-600 hover:bg-white/70 hover:text-slate-900',
+                compact && 'justify-center',
               )}
             >
-              <Icon
+              <span
                 className={cn(
-                  'h-3.5 w-3.5 transition-transform',
-                  active ? 'scale-110 text-white' : item.color,
+                  'flex h-7 w-7 shrink-0 items-center justify-center rounded-lg transition-all duration-200',
+                  active ? 'bg-white/20' : cn('group-hover:scale-105', item.bg),
                 )}
-              />
-            </span>
-            <span className="truncate">{item.label}</span>
-          </Link>
+              >
+                <Icon
+                  className={cn(
+                    'h-3.5 w-3.5 transition-transform',
+                    active ? 'scale-110 text-white' : item.color,
+                  )}
+                />
+              </span>
+              <span className={compact ? 'sr-only' : 'truncate'}>{item.label}</span>
+            </Link>
+          </SidebarNavTooltip>
         </div>
       );
     });
@@ -321,25 +330,30 @@ export default function RecurringPaymentsLayoutShell({ children }: { children: R
         </Card>
       </div>
 
-      <div className="rp-shell-grid grid grid-cols-1 gap-4 lg:grid-cols-[240px_minmax(0,1fr)] lg:items-start">
-        <aside className="hidden lg:sticky lg:top-20 lg:block">
-          <Card className="overflow-hidden border border-white/60 bg-white/80 shadow-sm backdrop-blur-sm">
-            <div className="border-b border-white/50 bg-gradient-to-r from-emerald-500/10 to-teal-500/5 px-4 py-3">
-              <div className="flex items-center gap-2.5">
-                <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-gradient-to-br from-emerald-500 to-teal-600 shadow-sm">
-                  <Repeat2 className="h-4 w-4 text-white" />
-                </div>
-                <div>
-                  <p className="text-sm font-semibold tracking-tight text-slate-800">Recurring Payments</p>
-                  <p className="text-[11px] text-muted-foreground">Bill &amp; Workflow Manager</p>
+      <div className={`rp-shell-grid grid grid-cols-1 gap-4 ${iconsOnly ? SIDEBAR_ICONS_GRID : 'lg:grid-cols-[240px_minmax(0,1fr)]'} lg:items-start`}>
+        <TooltipProvider delayDuration={150}>
+          <aside className="hidden lg:sticky lg:top-[calc(var(--app-header-offset,4rem)+1rem)] lg:block">
+            <Card className="overflow-hidden border border-white/60 bg-white/80 shadow-sm backdrop-blur-sm">
+              <div
+                className={cn('border-b border-white/50 bg-gradient-to-r from-emerald-500/10 to-teal-500/5 px-4 py-3', iconsOnly && 'px-2')}
+                title={iconsOnly ? 'Recurring Payments' : undefined}
+              >
+                <div className={cn('flex items-center gap-2.5', iconsOnly && 'justify-center')}>
+                  <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-gradient-to-br from-emerald-500 to-teal-600 shadow-sm">
+                    <Repeat2 className="h-4 w-4 text-white" />
+                  </div>
+                  <div className={iconsOnly ? 'sr-only' : undefined}>
+                    <p className="text-sm font-semibold tracking-tight text-slate-800">Recurring Payments</p>
+                    <p className="text-[11px] text-muted-foreground">Bill &amp; Workflow Manager</p>
+                  </div>
                 </div>
               </div>
-            </div>
-            <CardContent className="max-h-[calc(100vh-12rem)] overflow-y-auto p-2">
-              {navigationLinks()}
-            </CardContent>
-          </Card>
-        </aside>
+              <CardContent className="max-h-[calc(100vh-var(--app-header-offset,4rem)-8rem)] overflow-y-auto p-2">
+                {navigationLinks(undefined, iconsOnly)}
+              </CardContent>
+            </Card>
+          </aside>
+        </TooltipProvider>
 
         <main className="recurring-payments-content min-w-0">
           {currentPageAllowed ? children : assignmentsLoading ? loader : pageAccessDenied}

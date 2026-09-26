@@ -1492,7 +1492,9 @@ function MapReport({ ctx }: { ctx: ReportContext }) {
                     cy={point.y}
                     r={6}
                     fill={ROUTE_STATUS_COLORS[point.status]}
-                    stroke="#ffffff"
+                    // Surface and ink are tokens: the frame's `bg-white` goes dark in dark mode, and an
+                    // SVG attribute is out of the dark-compat stylesheet's reach.
+                    stroke="hsl(var(--card))"
                     strokeWidth={1.5}
                   />
                   <title>
@@ -1510,7 +1512,7 @@ function MapReport({ ctx }: { ctx: ReportContext }) {
                       y={point.y - 10}
                       textAnchor="middle"
                       fontSize={9}
-                      fill="#334155"
+                      fill="hsl(var(--foreground) / 0.8)"
                     >
                       {point.towerNo}
                     </text>
