@@ -11,7 +11,11 @@
  * button joined to the top edge by two fillet arcs tangent to both, so the whole outline is smooth.
  */
 
-export type NavShape = 'notch' | 'bump';
+/**
+ * How the active tab is marked. `notch` and `bump` reshape the bar's outline around it; `pill`,
+ * `tile` and `line` leave the bar a plain pill and slide a marker along it instead.
+ */
+export type NavShape = 'notch' | 'bump' | 'pill' | 'tile' | 'line';
 
 export interface BarMetrics {
   /** Bar width in px (measured). */

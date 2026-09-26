@@ -41,7 +41,7 @@ export const DASHBOARD_VIEWS = ['last', 'work', 'modules'] as const;
 export type DashboardView = (typeof DASHBOARD_VIEWS)[number];
 
 /** Kept in step with `FLOATING_NAV_THEMES` in src/components/navigation/themes.ts. */
-export const NAV_STYLES = ['blue', 'teal', 'neon'] as const;
+export const NAV_STYLES = ['blue', 'teal', 'neon', 'glass', 'sunset', 'graphite'] as const;
 export type NavStyle = (typeof NAV_STYLES)[number];
 
 /** `auto` leaves each collapsible sidebar opening the way it was designed to. */

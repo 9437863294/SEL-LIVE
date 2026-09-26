@@ -22,7 +22,7 @@ const DEMO_ITEMS: FloatingNavItem[] = [
  */
 export function FloatingNavPhonePreview({ theme, className }: { theme: FloatingNavTheme; className?: string }) {
   const [active, setActive] = useState('home');
-  const dark = theme === 'neon';
+  const dark = floatingNavThemeMeta[theme].darkBar;
   const tile = dark ? 'bg-white/[0.06]' : 'bg-white shadow-sm ring-1 ring-slate-200/70';
   const line = dark ? 'bg-white/15' : 'bg-slate-200';
   const current = DEMO_ITEMS.find((item) => item.key === active);
@@ -110,7 +110,7 @@ export function FloatingNavShowcase({
               <span
                 className={cn(
                   'relative flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl',
-                  theme === 'neon' ? 'bg-neutral-900' : 'bg-white ring-1 ring-slate-200',
+                  meta.darkBar ? 'bg-neutral-900' : 'bg-white ring-1 ring-slate-200',
                 )}
               >
                 <span className={cn('h-6 w-6 rounded-full bg-gradient-to-br shadow-md', meta.swatch)} />

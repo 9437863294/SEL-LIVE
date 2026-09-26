@@ -20,6 +20,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Skeleton } from '@/components/ui/skeleton';
 import { Switch } from '@/components/ui/switch';
 import { ChoiceGroup, SettingsSection } from '@/components/appearance/controls';
+import { floatingNavThemeMeta } from '@/components/navigation/themes';
 import { HexColorField } from '@/components/appearance/HexColorField';
 import { ThemePreviewFrame } from '@/components/appearance/ThemePreviewFrame';
 import { VersionHistory } from '@/components/appearance/VersionHistory';
@@ -372,7 +373,7 @@ export default function ThemeManagementPage() {
               <DefaultSelect field="textSize" title="Text size" options={TEXT_SIZES} config={config} onChange={edit} disabled={!canEdit} />
               <DefaultSelect field="radius" title="Border style" options={RADII} config={config} onChange={edit} disabled={!canEdit} />
               <DefaultSelect field="tableDensity" title="Table rows" options={DENSITIES} config={config} onChange={edit} disabled={!canEdit} />
-              <DefaultSelect field="navStyle" title="Mobile navigation" options={NAV_STYLES} config={config} onChange={edit} disabled={!canEdit} render={(v) => ({ blue: 'Blue Floating', teal: 'Teal Floating', neon: 'Red Neon' })[v] ?? v} />
+              <DefaultSelect field="navStyle" title="Mobile navigation" options={NAV_STYLES} config={config} onChange={edit} disabled={!canEdit} render={(v) => floatingNavThemeMeta[v as keyof typeof floatingNavThemeMeta]?.label ?? v} />
               <DefaultSelect field="dashboardView" title="Home opens on" options={DASHBOARD_VIEWS} config={config} onChange={edit} disabled={!canEdit} render={(v) => ({ last: 'Last used', work: 'Your work', modules: 'Modules' })[v] ?? v} />
               <DefaultSelect field="sidebarDefault" title="Sidebars start" options={SIDEBAR_DEFAULTS} config={config} onChange={edit} disabled={!canEdit} render={(v) => (v === 'auto' ? "Each module's own" : label(v))} />
               <DefaultSelect field="sidebarMode" title="Module menus" options={SIDEBAR_MODES} config={config} onChange={edit} disabled={!canEdit} render={(v) => (v === 'icons' ? 'Compact icons' : 'Full labels')} />

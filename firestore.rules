@@ -1181,7 +1181,7 @@ service cloud.firestore {
         && appearanceChoice(data, 'contrast', ['standard', 'high'])
         && appearanceChoice(data, 'tableDensity', ['comfortable', 'standard', 'compact'])
         && appearanceChoice(data, 'dashboardView', ['last', 'work', 'modules'])
-        && appearanceChoice(data, 'navStyle', ['blue', 'teal', 'neon'])
+        && appearanceChoice(data, 'navStyle', ['blue', 'teal', 'neon', 'glass', 'sunset', 'graphite'])
         && (!('layout' in data) || (data.layout is map
           && data.layout.keys().hasOnly([
             'sidebarDefault', 'sidebarMode', 'moduleGrouping', 'hiddenModules', 'pinnedModules',

@@ -20,6 +20,7 @@ import { NavItem, type FloatingNavItem } from './NavItem';
 import {
   bumpedBarPath,
   bumpedTopEdgePath,
+  clamp,
   easeOutBack,
   fitInView,
   indicatorCenter,
@@ -34,6 +35,7 @@ import {
   type BarMetrics,
   type BumpSpec,
   type LabelFit,
+  type NavShape,
   type NotchSpec,
 } from './geometry';
 import { DEFAULT_FLOATING_NAV_THEME, floatingNavThemeMeta, type FloatingNavTheme } from './themes';
@@ -87,6 +89,12 @@ function scaleNotch(s: number): NotchSpec {
 
 function scaleBump(s: number): BumpSpec {
   return { rise: BUMP.rise * s, halfWidth: BUMP.halfWidth * s };
+}
+
+/** Width of the sliding marker: a capsule or tile just inside its slot, or a short fixed line. */
+function markWidth(shape: NavShape, slot: number) {
+  if (shape === 'line') return 22;
+  return clamp(slot - 4, 36, shape === 'pill' ? 76 : 80);
 }
 
 function useMediaQuery(query: string | null, serverValue: boolean) {
@@ -407,6 +415,17 @@ export function FloatingBottomNav({
           indicator.style.transform = `translate3d(${cx - half}px, ${spec.centerY - half}px, 0) scale(${s})`;
           indicator.style.opacity = s < 0.05 ? '0' : '1';
         }
+      } else if (shape !== 'bump') {
+        // Pill, tile, line: the bar stays a plain pill and one marker slides along it, sized to
+        // the slot. The line shrinks sideways only, so it never thickens as it lands.
+        barPathRef.current?.setAttribute('d', notchedBarPath(metrics, scaleNotch(0), frame.x));
+        if (indicator) {
+          const w = markWidth(shape, layout.slot);
+          const cx = indicatorCenter(metrics, w / 2, frame.x);
+          indicator.style.width = `${w}px`;
+          indicator.style.transform = `translate3d(${cx - w / 2}px, 0, 0) scale(${shape === 'line' ? `${s}, 1` : s})`;
+          indicator.style.opacity = s < 0.05 ? '0' : '1';
+        }
       } else {
         const spec = scaleBump(s);
         const cx = indicatorCenter(metrics, spec.halfWidth, frame.x);
@@ -426,7 +445,7 @@ export function FloatingBottomNav({
       stageRef.current?.setAttribute('data-lifted', lifted ? 'true' : 'false');
       frameRef.current = frame;
     },
-    [width, shape],
+    [width, shape, layout.slot],
   );
 
   /** Where the indicator belongs right now, with the strip wherever it has been scrolled to. */

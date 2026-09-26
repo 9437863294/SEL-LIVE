@@ -1443,6 +1443,68 @@ main {
   --fbn-accent: #2ee6c5;
   --fbn-focus: #2ee6c5;
 }
+/* Ocean Glass: frosted and see-through (the blur is `.fbn-stage::before`, below). The capsule
+   carries white icon and label, so its gradient stays deep enough for them at 4.5:1. */
+.fbn[data-theme='glass'] {
+  --fbn-bar: rgba(255, 255, 255, 0.62);
+  --fbn-rim: rgba(255, 255, 255, 0.85);
+  --fbn-shadow: drop-shadow(0 10px 24px rgba(15, 23, 42, 0.14)) drop-shadow(0 1px 2px rgba(15, 23, 42, 0.08));
+  --fbn-inactive: #475569;
+  --fbn-hover: #0f172a;
+  --fbn-accent: #0369a1;
+  --fbn-button: linear-gradient(135deg, #0284c7 0%, #2563eb 100%);
+  --fbn-button-shadow: 0 8px 18px -6px rgba(37, 99, 235, 0.6);
+  --fbn-on-button: #ffffff;
+  --fbn-glow: rgba(56, 189, 248, 0.45);
+  --fbn-focus: #0369a1;
+}
+.dark .fbn[data-theme='glass'] {
+  --fbn-bar: rgba(15, 23, 42, 0.58);
+  --fbn-rim: rgba(255, 255, 255, 0.12);
+  --fbn-shadow: drop-shadow(0 14px 28px rgba(0, 0, 0, 0.5));
+  --fbn-inactive: #cbd5e1;
+  --fbn-hover: #ffffff;
+  --fbn-accent: #7dd3fc;
+  --fbn-focus: #7dd3fc;
+}
+/* Sunset Line: a plain white bar; only the line, the active icon and its label take the colour. */
+.fbn[data-theme='sunset'] {
+  --fbn-bar: #ffffff;
+  --fbn-rim: rgba(194, 65, 12, 0.08);
+  --fbn-shadow: drop-shadow(0 8px 20px rgba(154, 52, 18, 0.12)) drop-shadow(0 1px 3px rgba(15, 23, 42, 0.07));
+  --fbn-inactive: #64748b;
+  --fbn-hover: #1f2937;
+  --fbn-accent: #c2410c;
+  --fbn-button: linear-gradient(90deg, #fb923c 0%, #ea580c 100%);
+  --fbn-button-shadow: 0 2px 10px rgba(234, 88, 12, 0.55);
+  --fbn-on-button: #ffffff;
+  --fbn-glow: rgba(251, 146, 60, 0.32);
+  --fbn-focus: #c2410c;
+}
+.dark .fbn[data-theme='sunset'] {
+  --fbn-bar: #18181b;
+  --fbn-rim: rgba(255, 255, 255, 0.07);
+  --fbn-shadow: drop-shadow(0 14px 28px rgba(0, 0, 0, 0.5));
+  --fbn-inactive: #a1a1aa;
+  --fbn-hover: #fafafa;
+  --fbn-accent: #fb923c;
+  --fbn-focus: #fb923c;
+}
+/* Graphite Tile: dark in either mode, the active tab raised onto a lime tile in dark ink. */
+.fbn[data-theme='graphite'] {
+  --fbn-bar: #131316;
+  --fbn-rim: rgba(255, 255, 255, 0.07);
+  --fbn-shadow: drop-shadow(0 16px 30px rgba(0, 0, 0, 0.42)) drop-shadow(0 0 1px rgba(0, 0, 0, 0.6));
+  --fbn-inactive: rgba(255, 255, 255, 0.66);
+  --fbn-hover: #ffffff;
+  --fbn-accent: #bef264;
+  --fbn-button: linear-gradient(135deg, #d9f99d 0%, #bef264 55%, #a3e635 100%);
+  --fbn-button-shadow: 0 8px 18px -8px rgba(163, 230, 53, 0.6), inset 0 1px 0 rgba(255, 255, 255, 0.5);
+  --fbn-on-button: #1a2e05;
+  --fbn-glow: rgba(190, 242, 100, 0.35);
+  --fbn-focus: #bef264;
+  --fbn-badge: #f43f5e;
+}
 
 /* ── Bar ── */
 .fbn-stage {
@@ -1513,6 +1575,58 @@ main {
 .fbn-rim-glow {
   fill: none;
   stroke-linecap: round;
+}
+
+/* ── Sliding marker: pill (Ocean Glass), tile (Graphite), line (Sunset) ── */
+/* The component sets its width and position each frame; each shape here is only its look. */
+.fbn-mark {
+  position: absolute;
+  top: 0;
+  left: 0;
+  pointer-events: none;
+  background: var(--fbn-button);
+  will-change: transform, width;
+}
+.fbn[data-shape='pill'] .fbn-mark {
+  top: 5px;
+  height: calc(var(--fbn-h) - 10px);
+  border-radius: 18px;
+  box-shadow:
+    var(--fbn-button-shadow),
+    inset 0 1px 0 rgba(255, 255, 255, 0.35);
+}
+.fbn[data-shape='tile'] .fbn-mark {
+  top: 6px;
+  height: calc(var(--fbn-h) - 12px);
+  border-radius: 14px;
+  box-shadow: var(--fbn-button-shadow);
+}
+.fbn[data-shape='line'] .fbn-mark {
+  height: 3px;
+  border-radius: 0 0 4px 4px;
+  box-shadow: var(--fbn-button-shadow);
+}
+/* A soft pool of light under the line, over the active icon. */
+.fbn[data-shape='line'] .fbn-mark::after {
+  content: '';
+  position: absolute;
+  left: 50%;
+  top: 3px;
+  width: 48px;
+  height: 34px;
+  margin-left: -24px;
+  background: radial-gradient(closest-side, var(--fbn-glow), transparent);
+}
+/* Frosted glass: blur what scrolls behind the bar. The bar's outline is a plain pill in this
+   shape, so a rounded box matches it exactly. */
+.fbn[data-shape='pill'] .fbn-stage::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: 24px;
+  -webkit-backdrop-filter: blur(18px) saturate(1.6);
+  backdrop-filter: blur(18px) saturate(1.6);
+  pointer-events: none;
 }
 
 /* ── Tab strip ── */
@@ -1615,6 +1729,21 @@ main {
   color: var(--fbn-accent);
   filter: drop-shadow(0 0 6px var(--fbn-glow));
 }
+/* Capsule and tile: icon and label stay put and take the marker's ink as it arrives under them. */
+.fbn[data-shape='pill'] .fbn-slot[data-active='true'] .fbn-icon,
+.fbn[data-shape='tile'] .fbn-slot[data-active='true'] .fbn-icon {
+  transform: scale(1.06);
+  color: var(--fbn-on-button);
+  transition:
+    transform var(--fbn-dur) var(--fbn-ease-pop) 60ms,
+    color 200ms ease 180ms,
+    filter 280ms ease;
+}
+/* Line: the active icon lifts a touch towards the line and takes its colour. */
+.fbn[data-shape='line'] .fbn-slot[data-active='true'] .fbn-icon {
+  transform: translateY(-2px) scale(1.08);
+  color: var(--fbn-accent);
+}
 /* The active tab scrolled out from under the button: its icon settles back into the bar. */
 .fbn-stage[data-lifted='false'] .fbn-slot[data-active='true'] .fbn-icon {
   transform: none;
@@ -1699,9 +1828,21 @@ main {
 .fbn[data-shape='bump'] .fbn-slot[data-active='true'] .fbn-label {
   transform: translateY(-12px);
 }
+/* On a capsule or tile the active label is in the marker's ink, and kept inside the marker. */
+.fbn[data-shape='pill'] .fbn-slot[data-active='true'] .fbn-label,
+.fbn[data-shape='tile'] .fbn-slot[data-active='true'] .fbn-label {
+  width: min(var(--fbn-label-w, calc(100% + 8px)), calc(100% - 8px));
+  margin-left: calc(min(var(--fbn-label-w, calc(100% + 8px)), calc(100% - 8px)) / -2);
+  color: var(--fbn-on-button);
+  transition:
+    color 200ms ease 180ms,
+    opacity 280ms ease,
+    transform 380ms var(--fbn-ease);
+}
 /* …and settles back with the icon when its tab scrolls out from under the button. */
 .fbn-stage[data-lifted='false'] .fbn-slot[data-active='true'] .fbn-label {
   transform: none;
+  color: var(--fbn-accent);
 }
 
 /* ── Badge ── */
@@ -1818,6 +1959,20 @@ html[data-nav-style='teal'] {
 html[data-nav-style='neon'] {
   --sel-tab-gradient: linear-gradient(135deg, #f43f5e 0%, #e11d48 55%, #be123c 100%);
   --sel-tab-glow: rgba(225, 29, 72, 0.42);
+}
+html[data-nav-style='glass'] {
+  --sel-tab-gradient: linear-gradient(135deg, #0369a1 0%, #1d4ed8 100%);
+  --sel-tab-glow: rgba(3, 105, 161, 0.42);
+}
+html[data-nav-style='sunset'] {
+  --sel-tab-gradient: linear-gradient(135deg, #c2410c 0%, #9a3412 100%);
+  --sel-tab-glow: rgba(194, 65, 12, 0.42);
+}
+/* Lime is too light for white text, so this one sets its tab labels in dark ink instead. */
+html[data-nav-style='graphite'] {
+  --sel-tab-gradient: linear-gradient(135deg, #d9f99d 0%, #a3e635 100%);
+  --sel-tab-glow: rgba(132, 204, 22, 0.42);
+  --sel-tab-on: #1a2e05;
 }
 
 /* The pill behind the active tab (src/components/ui/tabs.tsx). Position and size are inline. */
