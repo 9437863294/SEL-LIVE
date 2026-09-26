@@ -93,6 +93,21 @@ service firebase.storage {
       allow read, write: if false;
     }
 
+    // Profile photos: profile-photos/{uid}/{file}, written by Settings → Profile.
+    //
+    // Only the owner writes their own folder (keyed by auth uid), and only a JPEG, PNG or WebP under
+    // 2 MB — the page re-encodes to a ~512px JPEG first. Any signed-in user may read them: photos are
+    // shown beside names across the app. Kept out of the catch-all below, which would otherwise let
+    // any signed-in user overwrite anyone's photo.
+    match /profile-photos/{userId}/{fileName} {
+      allow read: if request.auth != null;
+      allow create, update: if request.auth != null
+        && request.auth.uid == userId
+        && request.resource.size < 2 * 1024 * 1024
+        && request.resource.contentType.matches('image/(jpeg|png|webp)');
+      allow delete: if request.auth != null && request.auth.uid == userId;
+    }
+
     // Company branding images: branding/{logoLight|logoDark|favicon|appIcon}/{file}.
     //
     // Written only by the server (Admin SDK) after /api/appearance/admin/assets has checked the
@@ -113,6 +128,7 @@ service firebase.storage {
         && !allPaths.matches('office-hub/.*')
         && !allPaths.matches('mail-hub/.*')
         && !allPaths.matches('branding/.*')
+        && !allPaths.matches('profile-photos/.*')
         && !allPaths.matches('organizations/[^/]+/fixed-deposits/.*')
         && !allPaths.matches('fixed-deposits/[^/]+/.*')
         && !allPaths.matches('organizations/[^/]+/letters-of-credit/.*')
