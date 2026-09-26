@@ -476,7 +476,7 @@ export default function MeetingDetailPage() {
       )}
 
       <Tabs value={tab} onValueChange={setTab}>
-        <TabsList className="flex h-auto w-full flex-wrap justify-start gap-1">
+        <TabsList className="flex h-auto w-full justify-start gap-1">
           <TabsTrigger value="overview" className="text-xs">
             Overview
           </TabsTrigger>

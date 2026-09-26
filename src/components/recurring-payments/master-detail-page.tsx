@@ -419,7 +419,7 @@ export default function RecurringMasterDetailPage({
         </CardContent>
       </Card>
       <Tabs defaultValue="overview">
-        <TabsList className="flex h-auto flex-wrap">
+        <TabsList className="flex h-auto">
           <TabsTrigger value="overview">Overview</TabsTrigger>
           <TabsTrigger value="payments">Generated Payments</TabsTrigger>
           <TabsTrigger value="documents">Documents</TabsTrigger>

@@ -291,7 +291,7 @@ export default function SiteFundRequestShell({ children }: { children: React.Rea
         <main className="min-w-0">{children}</main>
       </div>
 
-      <ModuleBottomNav tabs={bottomTabs} onMore={() => setMobileMenuOpen(true)} moduleName="Site Fund Request" />
+      <ModuleBottomNav tabs={bottomTabs} pages={availableSections} onMore={() => setMobileMenuOpen(true)} moduleName="Site Fund Request" />
     </div>
   );
 }

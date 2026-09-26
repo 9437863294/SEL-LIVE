@@ -252,7 +252,7 @@ export default function BGDetailPage({ id }: { id: string }) {
         </div>
       )}
       <Tabs defaultValue="overview">
-        <TabsList className="flex h-auto flex-wrap justify-start">
+        <TabsList className="flex h-auto justify-start">
           <TabsTrigger value="overview">Overview</TabsTrigger>
           <TabsTrigger value="contract">Contract</TabsTrigger>
           <TabsTrigger value="validity">Validity</TabsTrigger>

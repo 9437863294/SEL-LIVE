@@ -145,15 +145,16 @@ const settingsItem: NavigationItem = {
   activeGradient: 'from-slate-600 to-slate-800',
 };
 
-// The phone's bottom bar: the overview, stock by item, posting a receipt or issue in the middle, and
-// transfers; "More" opens the full menu. The sidebar above is not permission-filtered (each page
-// gates itself), so neither are these.
+// The phone's bottom bar leads with the overview, stock by item, posting a receipt or issue, and
+// transfers; the rest of the menu follows them, and "More" opens the full menu. The sidebar above
+// is not permission-filtered (each page gates itself), so neither are these.
 const bottomTabs: ModuleNavTab[] = [
   { href: '/store-stock-management/inventory', label: 'Home', icon: Boxes, exact: true },
   { href: '/store-stock-management/inventory/item-wise', label: 'Stock', icon: PackageSearch, ariaLabel: 'Item-wise inventory' },
   { href: '/store-stock-management/inventory/movements', label: 'New', icon: Plus, emphasized: true, ariaLabel: 'Post a receipt, issue or adjustment' },
   { href: '/store-stock-management/inventory/transfers', label: 'Transfers', icon: Repeat2 },
 ];
+const bottomPages = [...operations, ...masters, settingsItem];
 
 const STORAGE_KEY = 'inventory-sidebar-expanded';
 
@@ -348,7 +349,7 @@ export function InventoryModuleShell({ children }: { children: ReactNode }) {
         <main className="mx-auto w-full max-w-[1600px] px-4 py-5 sm:px-6 lg:px-8">{children}</main>
       </div>
 
-      <ModuleBottomNav tabs={bottomTabs} onMore={() => setMobileOpen(true)} moduleName="Property Inventory" hideAbove="md" />
+      <ModuleBottomNav tabs={bottomTabs} pages={bottomPages} onMore={() => setMobileOpen(true)} moduleName="Property Inventory" hideAbove="md" />
     </div>
   );
 }

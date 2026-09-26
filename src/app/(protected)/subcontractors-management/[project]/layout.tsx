@@ -165,6 +165,7 @@ export default function ProjectLayout({
       {children}
       <ModuleBottomNav
         tabs={bottomTabs}
+        pages={visibleNavItems}
         onMore={() => setMobileMenuOpen(true)}
         moduleName="Subcontractors Management"
       />

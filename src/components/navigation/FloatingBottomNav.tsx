@@ -21,11 +21,12 @@ import {
   bumpedTopEdgePath,
   easeOutBack,
   indicatorCenter,
+  indicatorTarget,
   lerp,
   notchHalfWidth,
   notchedBarPath,
-  restingFrame,
-  slotOffsets,
+  revealScroll,
+  slotLayout,
   type BarFrame,
   type BarMetrics,
   type BumpSpec,
@@ -35,17 +36,30 @@ import { DEFAULT_FLOATING_NAV_THEME, floatingNavThemeMeta, type FloatingNavTheme
 
 export type { FloatingNavItem } from './NavItem';
 
-/* Keep in step with `.fbn` / `.fbn-svg` / `.fbn-indicator` in globals.css. */
-const BAR_HEIGHT = 72;
+/* Keep in step with `.fbn` / `.fbn-svg` / `.fbn-indicator` / `.fbn-track` in globals.css. */
+const BAR_HEIGHT = 60;
+const BAR_RADIUS = 24;
 const SVG_OVERHANG = 28;
-const BUTTON_SIZE = 56;
-const SPOT_WIDTH = 96;
-const BAR: Omit<BarMetrics, 'width' | 'count'> = { height: BAR_HEIGHT, radius: 30, padding: 24, boost: 40, minSlot: 48 };
-const NOTCH: NotchSpec = { buttonRadius: BUTTON_SIZE / 2, gap: 6, centerY: -4, fillet: 10 };
-const BUMP: BumpSpec = { rise: 14, halfWidth: 46 };
+const BUTTON_SIZE = 44;
+const SPOT_WIDTH = 80;
+/**
+ * Inset before the first slot and after the last — enough that the notch under an end tab still
+ * leaves the pill a rounded corner with seven slots on a 360px phone.
+ */
+const PADDING = 17;
+/**
+ * The button sits just above the rim — low enough that the active label can tuck in right under
+ * it, high enough that the notch stays narrow at the rim and clears the neighbouring icons.
+ */
+const NOTCH: NotchSpec = { buttonRadius: BUTTON_SIZE / 2, gap: 3, centerY: -4, fillet: 7 };
+const BUMP: BumpSpec = { rise: 12, halfWidth: 36 };
 const TRAVEL_MS = 480;
 /** How far either side of the active tab the neon rim stays lit. */
-const RIM_REACH = 120;
+const RIM_REACH = 110;
+/** Strip tabs in view at once; any past this scroll. */
+const DEFAULT_MAX_IN_VIEW = 6;
+/** Slots narrower than this (seven to a phone) set their labels a size smaller so they do not touch. */
+const DENSE_SLOT = 52;
 
 const HIDE_CLASS = { md: 'md:hidden', lg: 'lg:hidden', xl: 'xl:hidden' } as const;
 const BREAKPOINT_PX = { md: 768, lg: 1024, xl: 1280 } as const;
@@ -196,6 +210,10 @@ function useAutoHide(enabled: boolean, resetKey: string | null) {
 }
 
 export interface FloatingBottomNavProps {
+  /**
+   * In display order. Items marked `pinned` (a "More" menu) stay at the right-hand end; the rest
+   * form a strip that scrolls sideways once there are more than `maxInView` of them.
+   */
   items: FloatingNavItem[];
   /** Key of the active item; `null` when none is (the notch then closes up). */
   activeItem?: string | null;
@@ -203,6 +221,8 @@ export interface FloatingBottomNavProps {
   theme?: FloatingNavTheme;
   /** Labels under every icon (default), or only under the active one. */
   showLabels?: boolean;
+  /** Strip tabs in view at once (default 6). Fewer than this spread out to fill the bar. */
+  maxInView?: number;
   /** Badge shown on the item keyed `notificationItem` (default `inbox`) unless it sets its own. */
   notificationCount?: number;
   notificationItem?: string;
@@ -218,12 +238,22 @@ export interface FloatingBottomNavProps {
   className?: string;
 }
 
+interface Travel {
+  from: BarFrame;
+  start: number;
+  /** Moving between two visible tabs, not growing or shrinking in place: the button dips mid-flight. */
+  travels: boolean;
+}
+
 /**
  * A floating pill-shaped bottom navigation bar whose active tab is marked by a button riding a
  * curved notch (or, in the neon theme, a glowing hill in the rim) that slides between tabs.
  *
- * Geometry is tweened in JS and written straight to the DOM each frame — the notch has to track
- * the button exactly, and neither can wait on React. See `geometry.ts` for the shapes.
+ * The tabs sit in a strip that scrolls natively (swipe, snap, momentum), with pinned items such as
+ * "More" held outside it. The notch and button are not inside the strip — they have to stay one
+ * smooth outline with the bar — so they are redrawn against the strip's scroll position every frame
+ * it moves, and shrink away when the active tab is scrolled out of view. Geometry is written
+ * straight to the DOM rather than through React; see `geometry.ts` for the shapes.
  */
 export function FloatingBottomNav({
   items,
@@ -231,6 +261,7 @@ export function FloatingBottomNav({
   onChange,
   theme = DEFAULT_FLOATING_NAV_THEME,
   showLabels = true,
+  maxInView = DEFAULT_MAX_IN_VIEW,
   notificationCount,
   notificationItem = 'inbox',
   position = 'fixed',
@@ -257,17 +288,19 @@ export function FloatingBottomNav({
     return () => window.clearTimeout(timer);
   }, [pending]);
 
-  const resolvedItems = useMemo(
-    () =>
+  // Strip tabs first, then the pinned ones: every index below is into this order.
+  const ordered = useMemo(() => {
+    const resolved =
       notificationCount === undefined
         ? items
         : items.map((item) =>
             item.key === notificationItem && item.badge === undefined ? { ...item, badge: notificationCount } : item,
-          ),
-    [items, notificationCount, notificationItem],
-  );
+          );
+    return [...resolved.filter((item) => !item.pinned), ...resolved.filter((item) => item.pinned)];
+  }, [items, notificationCount, notificationItem]);
+  const stripCount = ordered.filter((item) => !item.pinned).length;
   const currentKey = pending ?? activeItem;
-  const activeIndex = resolvedItems.findIndex((item) => item.key === currentKey);
+  const activeIndex = ordered.findIndex((item) => item.key === currentKey);
 
   const inView = useMediaQuery(hideAbove ? `(max-width: ${BREAKPOINT_PX[hideAbove] - 0.02}px)` : null, false);
   // The user's own Reduced motion setting, or the device's.
@@ -275,16 +308,18 @@ export function FloatingBottomNav({
   const { hidden, actionBar } = useAutoHide(position === 'fixed' && autoHide && inView, currentKey);
 
   const stageRef = useRef<HTMLElement>(null);
+  const trackRef = useRef<HTMLDivElement>(null);
   const barPathRef = useRef<SVGPathElement>(null);
   const rimRef = useRef<SVGPathElement>(null);
   const rimGlowRef = useRef<SVGPathElement>(null);
   const gradientRef = useRef<SVGLinearGradientElement>(null);
   const indicatorRef = useRef<HTMLSpanElement>(null);
-  // A removed tab's ref callback nulls its slot, so the array can run past `resolvedItems` with
-  // trailing nulls; `draw` and `onKeyDown` both skip empty slots.
+  // A removed tab's ref callback nulls its slot, so the array can run past `ordered` with trailing
+  // nulls; `onKeyDown` skips empty slots.
   const slotEls = useRef<(HTMLElement | null)[]>([]);
   const frameRef = useRef<BarFrame | null>(null);
-  const drawnWidthRef = useRef(0);
+  const travelRef = useRef<Travel | null>(null);
+  const drawnRef = useRef({ width: 0, count: 0 });
   const rafRef = useRef(0);
   const [width, setWidth] = useState(0);
 
@@ -298,16 +333,15 @@ export function FloatingBottomNav({
     return () => observer.disconnect();
   }, []);
 
-  const metrics = useMemo<BarMetrics>(() => ({ ...BAR, width, count: resolvedItems.length }), [width, resolvedItems.length]);
+  const layout = useMemo(
+    () => slotLayout(width, PADDING, stripCount, ordered.length - stripCount, Math.max(1, maxInView)),
+    [width, stripCount, ordered.length, maxInView],
+  );
 
-  const draw = useCallback(
-    (frame: BarFrame) => {
-      const offsets = slotOffsets(metrics, frame.widths);
-      slotEls.current.forEach((el, i) => {
-        if (!el || frame.widths[i] === undefined) return;
-        el.style.width = `${frame.widths[i]}px`;
-        el.style.transform = `translate3d(${offsets[i]}px, 0, 0)`;
-      });
+  /** Draw one frame. `lifted` says whether the active icon should ride up into the button. */
+  const paint = useCallback(
+    (frame: BarFrame, lifted: boolean) => {
+      const metrics: BarMetrics = { width, height: BAR_HEIGHT, radius: BAR_RADIUS };
       const s = frame.scale;
       const indicator = indicatorRef.current;
       if (shape === 'notch') {
@@ -335,49 +369,116 @@ export function FloatingBottomNav({
           indicator.style.opacity = String(s);
         }
       }
+      stageRef.current?.setAttribute('data-lifted', lifted ? 'true' : 'false');
       frameRef.current = frame;
     },
-    [metrics, shape],
+    [width, shape],
   );
 
-  useIsoLayoutEffect(() => {
-    if (width <= 0 || metrics.count === 0) return;
-    const target = restingFrame(metrics, activeIndex);
-    const previous = frameRef.current;
-    if (activeIndex < 0) target.scale = 0;
-    if (activeIndex < 0 && previous) target.x = previous.x;
+  /** Where the indicator belongs right now, with the strip wherever it has been scrolled to. */
+  const liveTarget = useCallback((): BarFrame => {
+    // With nothing active the notch closes where it last was, rather than drifting to the middle.
+    if (activeIndex < 0 && frameRef.current) return { x: frameRef.current.x, scale: 0 };
+    return indicatorTarget(layout, activeIndex, trackRef.current?.scrollLeft ?? 0);
+  }, [layout, activeIndex]);
 
-    const resized = drawnWidthRef.current !== width || previous?.widths.length !== target.widths.length;
-    drawnWidthRef.current = width;
-    cancelAnimationFrame(rafRef.current);
-    if (!previous || resized || reducedMotion) {
-      draw(target);
-      return;
-    }
-
-    // Coming back from "nothing active", grow in place rather than sliding in from the old spot.
-    const from = previous.scale < 0.05 ? { ...previous, x: target.x } : previous;
-    const travels = Math.abs(from.x - target.x) > 0.5 && from.scale > 0.5 && target.scale > 0.5;
-    // Paint the starting frame now: a theme switch mounts fresh paths that would otherwise sit
-    // empty until the first animation frame.
-    draw(from);
-    const start = performance.now();
-    const step = (now: number) => {
-      const u = Math.min(1, (now - start) / TRAVEL_MS);
+  /** Paint the current frame; true while a travel is still under way. */
+  const render = useCallback(() => {
+    const target = liveTarget();
+    const travel = travelRef.current;
+    let frame = target;
+    if (travel) {
+      const u = Math.min(1, (performance.now() - travel.start) / TRAVEL_MS);
       const glide = easeOutBack(u, 1.1);
       const settle = 1 - (1 - u) ** 3;
       // The button dips a little mid-flight and swells back as it lands; the notch follows it.
-      const dip = travels ? 0.12 * Math.sin(Math.PI * u) : 0;
-      draw({
-        widths: target.widths.map((w, i) => lerp(from.widths[i] ?? w, w, glide)),
-        x: lerp(from.x, target.x, glide),
-        scale: lerp(from.scale, target.scale, settle) * (1 - dip),
-      });
-      if (u < 1) rafRef.current = requestAnimationFrame(step);
+      const dip = travel.travels ? 0.12 * Math.sin(Math.PI * u) : 0;
+      frame = {
+        x: lerp(travel.from.x, target.x, glide),
+        scale: lerp(travel.from.scale, target.scale, settle) * (1 - dip),
+      };
+      if (u >= 1) travelRef.current = null;
+    }
+    paint(frame, target.scale > 0.6);
+    return travelRef.current !== null;
+  }, [liveTarget, paint]);
+
+  const schedule = useCallback(() => {
+    if (rafRef.current) return;
+    const loop = () => {
+      rafRef.current = 0;
+      if (render()) rafRef.current = requestAnimationFrame(loop);
     };
-    rafRef.current = requestAnimationFrame(step);
-    return () => cancelAnimationFrame(rafRef.current);
-  }, [width, activeIndex, metrics, draw, reducedMotion]);
+    rafRef.current = requestAnimationFrame(loop);
+  }, [render]);
+
+  useIsoLayoutEffect(() => {
+    if (width <= 0 || ordered.length === 0) return;
+    const previous = frameRef.current;
+    const resized = drawnRef.current.width !== width || drawnRef.current.count !== ordered.length;
+    drawnRef.current = { width, count: ordered.length };
+    const instant = !previous || resized || reducedMotion;
+
+    // Keep the active tab in view: already there on arrival, scrolled to after a change elsewhere.
+    const track = trackRef.current;
+    if (track) {
+      const reveal = revealScroll(layout, activeIndex, track.scrollLeft);
+      if (reveal !== null) track.scrollTo({ left: reveal, behavior: instant ? 'instant' : 'smooth' });
+    }
+
+    cancelAnimationFrame(rafRef.current);
+    rafRef.current = 0;
+    const target = liveTarget();
+    if (instant || !previous) {
+      travelRef.current = null;
+      paint(target, target.scale > 0.6);
+      return;
+    }
+    // Coming back from "nothing active", grow in place rather than sliding in from the old spot.
+    const from = previous.scale < 0.05 ? { x: target.x, scale: previous.scale } : previous;
+    travelRef.current = {
+      from,
+      start: performance.now(),
+      travels: Math.abs(from.x - target.x) > 0.5 && from.scale > 0.5 && target.scale > 0.5,
+    };
+    // Paint the starting frame now: a theme switch mounts fresh paths that would otherwise sit
+    // empty until the first animation frame.
+    paint(from, target.scale > 0.6);
+    schedule();
+    return () => {
+      cancelAnimationFrame(rafRef.current);
+      rafRef.current = 0;
+    };
+  }, [width, ordered.length, activeIndex, layout, liveTarget, paint, schedule, reducedMotion]);
+
+  // The strip's own scrolling: redraw the notch against it, fade whichever edge has more to see,
+  // and let a mouse wheel (which only scrolls up and down) move it sideways.
+  useEffect(() => {
+    const track = trackRef.current;
+    if (!track) return;
+    const edges = () => {
+      const end = track.scrollWidth - track.clientWidth;
+      track.setAttribute('data-at-start', track.scrollLeft <= 1 ? 'true' : 'false');
+      track.setAttribute('data-at-end', track.scrollLeft >= end - 1 ? 'true' : 'false');
+    };
+    const onScroll = () => {
+      edges();
+      schedule();
+    };
+    const onWheel = (event: WheelEvent) => {
+      if (event.ctrlKey || Math.abs(event.deltaX) >= Math.abs(event.deltaY)) return;
+      if (track.scrollWidth <= track.clientWidth + 1) return;
+      event.preventDefault();
+      track.scrollBy({ left: event.deltaY });
+    };
+    edges();
+    track.addEventListener('scroll', onScroll, { passive: true });
+    track.addEventListener('wheel', onWheel, { passive: false });
+    return () => {
+      track.removeEventListener('scroll', onScroll);
+      track.removeEventListener('wheel', onWheel);
+    };
+  }, [schedule, layout]);
 
   const onSelect = (item: FloatingNavItem, event: MouseEvent<HTMLElement>) => {
     onChange?.(item.key, item);
@@ -385,7 +486,8 @@ export function FloatingBottomNav({
     if (item.href && plainClick && !event.defaultPrevented) setPending(item.key);
   };
 
-  // Arrow keys move between tabs, as in any toolbar; Tab still leaves the bar.
+  // Arrow keys move between tabs, as in any toolbar; Tab still leaves the bar. Focusing a tab the
+  // strip has scrolled away brings it into view.
   const onKeyDown = (event: KeyboardEvent<HTMLElement>) => {
     const slots = slotEls.current.filter((el): el is HTMLElement => Boolean(el));
     const index = slots.indexOf(event.currentTarget);
@@ -402,6 +504,9 @@ export function FloatingBottomNav({
   };
 
   const hideClass = hideAbove ? HIDE_CLASS[hideAbove] : undefined;
+  const slotRef = (i: number) => (el: HTMLElement | null) => {
+    slotEls.current[i] = el;
+  };
 
   return (
     <>
@@ -413,6 +518,7 @@ export function FloatingBottomNav({
         data-position={position}
         data-hidden={hidden ? 'true' : 'false'}
         data-measured={width > 0 ? 'true' : 'false'}
+        data-dense={layout.slot > 0 && layout.slot < DENSE_SLOT ? 'true' : 'false'}
       >
         <nav ref={stageRef} className="fbn-stage" aria-label={ariaLabel}>
           <svg
@@ -446,18 +552,43 @@ export function FloatingBottomNav({
             )}
           </svg>
           <ActiveIndicator shape={shape} glowKey={currentKey ?? 'none'} indicatorRef={indicatorRef} />
-          {resolvedItems.map((item, i) => (
-            <NavItem
-              key={item.key}
-              item={item}
-              active={i === activeIndex}
-              slotRef={(el) => {
-                slotEls.current[i] = el;
-              }}
-              onSelect={onSelect}
-              onKeyDown={onKeyDown}
-            />
-          ))}
+          <div
+            ref={trackRef}
+            className="fbn-track"
+            data-scrollable={layout.scrollable ? 'true' : 'false'}
+            style={{ left: layout.trackLeft, width: layout.trackWidth }}
+          >
+            <div className="fbn-track-content" style={{ width: layout.contentWidth }}>
+              {ordered.slice(0, stripCount).map((item, i) => (
+                <NavItem
+                  key={item.key}
+                  item={item}
+                  active={i === activeIndex}
+                  slotRef={slotRef(i)}
+                  style={{ width: layout.slot }}
+                  onSelect={onSelect}
+                  onKeyDown={onKeyDown}
+                />
+              ))}
+            </div>
+          </div>
+          {ordered.slice(stripCount).map((item, j) => {
+            const i = stripCount + j;
+            return (
+              <NavItem
+                key={item.key}
+                item={item}
+                active={i === activeIndex}
+                slotRef={slotRef(i)}
+                style={{
+                  width: layout.slot,
+                  transform: `translate3d(${layout.trackLeft + layout.trackWidth + j * layout.slot}px, 0, 0)`,
+                }}
+                onSelect={onSelect}
+                onKeyDown={onKeyDown}
+              />
+            );
+          })}
         </nav>
       </div>
       {spacer && position === 'fixed' && !actionBar && <div className={cn('fbn-spacer', hideClass)} aria-hidden="true" />}

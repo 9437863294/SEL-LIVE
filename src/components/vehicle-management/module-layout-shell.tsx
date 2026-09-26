@@ -73,9 +73,9 @@ const groupLabels: Record<string, string> = {
   ops: 'Operations & Reports',
 };
 
-// The phone's bottom bar, in priority order: the first four the user can open become the tabs,
-// and "More" opens the full menu. There is no create route to put in the middle — each register
-// adds its records on its own page.
+// The phone's bottom bar leads with these, in this order, under their short names; every other
+// page the user can open follows them, and "More" opens the full grouped menu. There is no create
+// route to put in the middle — each register adds its records on its own page.
 const bottomTabPriority: ModuleNavTab[] = [
   { href: '/vehicle-management',              label: 'Home',     icon: Gauge, exact: true, ariaLabel: 'Overview' },
   { href: '/vehicle-management/renewals',     label: 'Renewals', icon: RefreshCw, ariaLabel: 'Renewals hub' },
@@ -116,9 +116,7 @@ export default function VehicleManagementLayoutShell({ children }: { children: R
 
   // Only tabs whose sidebar row is visible. Not on the driver app's screens, which are not in this
   // menu at all: they are the pages Driver Management re-exports, and that module's bar serves them.
-  const bottomTabs = bottomTabPriority
-    .filter((tab) => availableSections.some((item) => item.href === tab.href))
-    .slice(0, 4);
+  const bottomTabs = bottomTabPriority.filter((tab) => availableSections.some((item) => item.href === tab.href));
   const isDriverAppRoute = safePathname.startsWith('/vehicle-management/driver-mobile');
 
   // `compact` is the desktop sidebar in icons mode; the phone sheet always passes labels.
@@ -278,7 +276,7 @@ export default function VehicleManagementLayoutShell({ children }: { children: R
       </div>
 
       {!isDriverAppRoute && (
-        <ModuleBottomNav tabs={bottomTabs} onMore={() => setMobileMenuOpen(true)} moduleName="Vehicle Management" />
+        <ModuleBottomNav tabs={bottomTabs} pages={availableSections} onMore={() => setMobileMenuOpen(true)} moduleName="Vehicle Management" />
       )}
     </div>
   );

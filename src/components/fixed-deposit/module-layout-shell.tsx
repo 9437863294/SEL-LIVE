@@ -92,6 +92,6 @@ export default function FixedDepositLayoutShell({ children }: { children: ReactN
       <TooltipProvider delayDuration={150}><aside className="hidden lg:sticky lg:top-[calc(var(--app-header-offset,4rem)+1rem)] lg:block"><Card className="overflow-hidden border-white/80 bg-white/90 shadow-sm"><div className={cn('border-b bg-gradient-to-r from-cyan-500/10 to-blue-500/5 px-4 py-3', iconsOnly && 'px-2')} title={iconsOnly ? 'Fixed Deposits' : undefined}><div className={cn('flex items-center gap-2.5', iconsOnly && 'justify-center')}><div className="flex h-8 w-8 items-center justify-center rounded-lg bg-gradient-to-br from-cyan-600 to-blue-700"><BadgeIndianRupee className="h-4 w-4 text-white" /></div><div className={iconsOnly ? 'sr-only' : undefined}><p className="text-sm font-semibold text-slate-800">Fixed Deposits</p><p className="text-[11px] text-muted-foreground">Treasury Control</p></div></div></div><CardContent className="space-y-1 p-2">{links(undefined, iconsOnly)}</CardContent></Card></aside></TooltipProvider>
       <main className="min-w-0">{children}</main>
     </div>
-    <ModuleBottomNav tabs={bottomTabs} onMore={() => setMobileOpen(true)} moduleName="Fixed Deposit Management" />
+    <ModuleBottomNav tabs={bottomTabs} pages={visibleSections} onMore={() => setMobileOpen(true)} moduleName="Fixed Deposit Management" />
   </div>;
 }

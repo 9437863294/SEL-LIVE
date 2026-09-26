@@ -297,7 +297,12 @@ function EApprovalLayoutShellInner({ children }: { children: React.ReactNode }) 
         <main className="min-w-0 w-full overflow-x-hidden">{children}</main>
       </div>
 
-      <ModuleBottomNav tabs={bottomTabs} onMore={() => setMobileMenuOpen(true)} moduleName="E-Approval" />
+      <ModuleBottomNav
+        tabs={bottomTabs}
+        pages={permissions.isLoading ? undefined : availableSections}
+        onMore={() => setMobileMenuOpen(true)}
+        moduleName="E-Approval"
+      />
     </div>
   );
 }

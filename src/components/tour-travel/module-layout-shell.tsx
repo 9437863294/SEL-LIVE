@@ -264,7 +264,7 @@ export default function TourTravelLayoutShell({ children }: { children: React.Re
         <main className="tour-travel-content min-w-0">{currentPageAllowed ? children : pageAccessDenied}</main>
       </div>
 
-      <ModuleBottomNav tabs={bottomTabs} onMore={() => setMobileMenuOpen(true)} moduleName="Tour & Travel" />
+      <ModuleBottomNav tabs={bottomTabs} pages={visibleItems} onMore={() => setMobileMenuOpen(true)} moduleName="Tour & Travel" />
     </div>
   );
 }

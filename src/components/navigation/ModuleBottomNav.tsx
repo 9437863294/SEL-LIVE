@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { LayoutGrid } from 'lucide-react';
@@ -39,11 +39,20 @@ export interface ModuleMoreLink {
 
 export interface ModuleBottomNavProps {
   /**
-   * The module's primary destinations, in display order. Four fit alongside "More"; the bar
-   * takes up to six, but past five the labels get cramped on a 360px phone.
+   * The module's primary destinations, first in the bar, in display order — with the short labels
+   * a bar needs ("Vehicles", not "Vehicle Master"). Six show at a time; the rest scroll.
    */
   tabs: ModuleNavTab[];
-  /** Opens the module's full menu. Adds a "More" tab, which is also active on any page no tab covers. */
+  /**
+   * Every page the person can open in this module — normally the sidebar's permission-filtered
+   * list. Those no tab already covers follow the tabs, so every page is on the bar, a swipe away.
+   * Defaults to `moreLinks`.
+   */
+  pages?: ModuleMoreLink[];
+  /**
+   * Opens the module's full menu. Adds a "More" tab, pinned at the end of the bar while the tabs
+   * scroll, which is also active on any page no tab covers.
+   */
   onMore?: () => void;
   /**
    * For a module with no menu sheet to hand over to: the pages "More" should list. The bar then
@@ -72,13 +81,26 @@ function matchesHref(pathname: string, href: string, exact?: boolean) {
 }
 
 /**
- * The floating bottom navigation wired to a module: tabs are links, the active one follows the
- * route (the most specific match wins, so `/insurance/project/history` does not light up
- * `/insurance/project` too), and "More" hands over to the module's existing menu sheet so the full
- * permission-filtered list lives in one place.
+ * A menu name trimmed for a ~50px slot: "Trip Management" → "Trip", "Renewals Hub" → "Renewals",
+ * "Tasks & follow-ups" → "Tasks". The full name stays the tab's accessible name.
+ */
+function barLabel(label: string) {
+  const short = label
+    .replace(/\s+&\s+.*$/, '')
+    .replace(/\s+(Management|Hub)$/i, '')
+    .trim();
+  return short || label;
+}
+
+/**
+ * The floating bottom navigation wired to a module: tabs are links — the module's picks first,
+ * then every other page it can open — the active one follows the route (the most specific match
+ * wins, so `/insurance/project/history` does not light up `/insurance/project` too), and a pinned
+ * "More" hands over to the module's existing menu sheet, where the full grouped list lives.
  */
 export function ModuleBottomNav({
-  tabs,
+  tabs: primaryTabs,
+  pages: pagesProp,
   onMore: onMoreProp,
   moreLinks,
   moreLabel = 'More',
@@ -90,11 +112,31 @@ export function ModuleBottomNav({
   const pathname = usePathname() ?? '';
   const preferredTheme = useFloatingNavTheme();
   const [sheetOpen, setSheetOpen] = useState(false);
-  useEffect(() => setSheetOpen(false), [pathname]);
+  // Moving to another page closes the sheet — dropped during render, not in an effect.
+  const [sheetPath, setSheetPath] = useState(pathname);
+  if (sheetPath !== pathname) {
+    setSheetPath(pathname);
+    setSheetOpen(false);
+  }
   const hasSheet = !onMoreProp && Boolean(moreLinks?.length);
   const onMore = onMoreProp ?? (hasSheet ? () => setSheetOpen(true) : undefined);
   // Only whether there is a More tab matters to the memos below, not the handler's identity.
   const hasMore = Boolean(onMore);
+
+  const pages = pagesProp ?? moreLinks;
+  const tabs = useMemo<ModuleNavTab[]>(() => {
+    if (!pages?.length) return primaryTabs;
+    const covered = new Set(primaryTabs.map((tab) => hrefPath(tab.href)));
+    const list = [...primaryTabs];
+    for (const page of pages) {
+      const path = hrefPath(page.href);
+      if (covered.has(path)) continue;
+      covered.add(path);
+      const label = barLabel(page.label);
+      list.push({ href: page.href, label, icon: page.icon, exact: page.exact, ariaLabel: label === page.label ? undefined : page.label });
+    }
+    return list;
+  }, [primaryTabs, pages]);
 
   const items = useMemo<FloatingNavItem[]>(() => {
     const list: FloatingNavItem[] = tabs.map((tab) => ({
@@ -112,6 +154,7 @@ export function ModuleBottomNav({
         label: moreLabel,
         icon: LayoutGrid,
         opensMenu: true,
+        pinned: true,
         ariaLabel: `${moreLabel}: all ${moduleName} pages`,
       });
     }

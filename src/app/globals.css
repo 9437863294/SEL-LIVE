@@ -1333,9 +1333,15 @@ main {
  * utilities, so a `display` rule would silently beat the `lg:hidden` the component relies on.
  * ────────────────────────────────────────────────────────────────────────────────────────────── */
 .fbn {
-  --fbn-h: 72px;
+  --fbn-h: 60px;
   --fbn-gap: 12px;
-  --fbn-icon-y: 27px;
+  --fbn-icon-y: 23px;
+  /* Centre of the floating button relative to the bar's top edge (NOTCH.centerY). */
+  --fbn-disc-y: -4px;
+  /* How far the active label rises to sit just under the button (notch) or the lifted icon (neon). */
+  --fbn-label-lift: -15px;
+  /* How far the tab strip reaches above the bar, so the icon rising into the button is not clipped. */
+  --fbn-lift: 30px;
   --fbn-ease: cubic-bezier(0.22, 1, 0.36, 1);
   --fbn-ease-pop: cubic-bezier(0.34, 1.45, 0.64, 1);
   --fbn-dur: 460ms;
@@ -1381,7 +1387,7 @@ main {
   bottom: var(--fbn-gap);
 }
 .fbn[data-labels='active'] {
-  --fbn-icon-y: 36px;
+  --fbn-icon-y: 30px;
 }
 .fbn[data-hidden='true'] {
   transform: translateY(calc(100% + var(--fbn-gap) + 48px));
@@ -1464,8 +1470,8 @@ main {
   position: absolute;
   top: 0;
   left: 0;
-  width: 56px;
-  height: 56px;
+  width: 44px;
+  height: 44px;
   pointer-events: none;
   will-change: transform, opacity;
 }
@@ -1497,8 +1503,8 @@ main {
   position: absolute;
   top: 0;
   left: 0;
-  width: 96px;
-  height: 72px;
+  width: 80px;
+  height: 60px;
   border-radius: 9999px;
   background: radial-gradient(closest-side, rgba(255, 46, 99, 0.22), rgba(255, 46, 99, 0));
   pointer-events: none;
@@ -1509,18 +1515,62 @@ main {
   stroke-linecap: round;
 }
 
+/* ── Tab strip ── */
+/* The tabs scroll sideways inside this; pinned items ("More") sit outside it. It reaches
+   `--fbn-lift` above the bar so the active icon rising into the button stays inside its overflow,
+   and that band is click-through — only the tabs themselves take pointer events. */
+.fbn-track {
+  --fbn-fade-l: 0px;
+  --fbn-fade-r: 0px;
+  position: absolute;
+  top: calc(-1 * var(--fbn-lift));
+  height: calc(var(--fbn-h) + var(--fbn-lift));
+  overflow-x: auto;
+  overflow-y: hidden;
+  overscroll-behavior-x: contain;
+  scroll-snap-type: x mandatory;
+  scrollbar-width: none;
+  pointer-events: none;
+}
+.fbn-track::-webkit-scrollbar {
+  display: none;
+}
+/* A soft fade on whichever edge has more tabs past it. */
+.fbn-track[data-scrollable='true'] {
+  --fbn-fade-r: 10px;
+  -webkit-mask-image: linear-gradient(to right, transparent 0, #000 var(--fbn-fade-l), #000 calc(100% - var(--fbn-fade-r)), transparent 100%);
+  mask-image: linear-gradient(to right, transparent 0, #000 var(--fbn-fade-l), #000 calc(100% - var(--fbn-fade-r)), transparent 100%);
+}
+.fbn-track[data-scrollable='true'][data-at-start='false'] {
+  --fbn-fade-l: 10px;
+}
+.fbn-track[data-at-end='true'] {
+  --fbn-fade-r: 0px;
+}
+.fbn-track-content {
+  display: flex;
+  box-sizing: border-box;
+  height: 100%;
+  padding-top: var(--fbn-lift);
+}
+
 /* ── Slots ── */
 .fbn-slot {
   position: absolute;
   top: 0;
   left: 0;
   height: var(--fbn-h);
-  border-radius: 22px;
+  border-radius: 18px;
   outline: none;
   color: var(--fbn-inactive);
   -webkit-tap-highlight-color: transparent;
   touch-action: manipulation;
-  will-change: transform;
+}
+.fbn-track .fbn-slot {
+  position: relative;
+  flex: none;
+  scroll-snap-align: start;
+  pointer-events: auto;
 }
 .fbn-slot:focus-visible {
   box-shadow: inset 0 0 0 2px var(--fbn-focus);
@@ -1529,9 +1579,9 @@ main {
   position: absolute;
   left: 50%;
   top: var(--fbn-icon-y);
-  width: 24px;
-  height: 24px;
-  margin: -12px 0 0 -12px;
+  width: 22px;
+  height: 22px;
+  margin: -11px 0 0 -11px;
   color: var(--fbn-inactive);
   transition:
     transform var(--fbn-dur) var(--fbn-ease-pop),
@@ -1539,8 +1589,8 @@ main {
     filter 280ms ease;
 }
 .fbn-icon > svg {
-  width: 24px;
-  height: 24px;
+  width: 22px;
+  height: 22px;
   stroke-width: 2;
 }
 .fbn-slot:active .fbn-icon {
@@ -1552,7 +1602,7 @@ main {
   }
 }
 .fbn[data-shape='notch'] .fbn-slot[data-active='true'] .fbn-icon {
-  transform: translateY(calc(-4px - var(--fbn-icon-y))) scale(1.1);
+  transform: translateY(calc(var(--fbn-disc-y) - var(--fbn-icon-y))) scale(1.1);
   color: var(--fbn-on-button);
   /* Turn white only as the disc arrives: sooner, and the icon vanishes against the white bar mid-flight. */
   transition:
@@ -1561,17 +1611,23 @@ main {
     filter 280ms ease;
 }
 .fbn[data-shape='bump'] .fbn-slot[data-active='true'] .fbn-icon {
-  transform: translateY(-14px) scale(1.1);
+  transform: translateY(-12px) scale(1.1);
   color: var(--fbn-accent);
   filter: drop-shadow(0 0 6px var(--fbn-glow));
+}
+/* The active tab scrolled out from under the button: its icon settles back into the bar. */
+.fbn-stage[data-lifted='false'] .fbn-slot[data-active='true'] .fbn-icon {
+  transform: none;
+  color: var(--fbn-accent);
+  filter: none;
 }
 
 /* The permanently emphasised action (usually Create) sits in a small filled tile of its own —
    square-cornered, so it never reads as a second active indicator next to the round one. */
 .fbn-emph {
   position: absolute;
-  inset: -6px;
-  border-radius: 13px;
+  inset: -5px;
+  border-radius: 12px;
   background: var(--fbn-button);
   box-shadow: var(--fbn-button-shadow);
   transition:
@@ -1598,14 +1654,17 @@ main {
   position: absolute;
   left: -4px;
   right: -4px;
-  bottom: 10px;
+  /* Text sits 8px off the bottom; the padding is room for the neon label's glow, which the
+     ellipsis clipping would otherwise cut into a visible rectangle. */
+  bottom: 5px;
+  padding: 3px 0;
   overflow: hidden;
   text-align: center;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-size: 10.5px;
+  font-size: 10px;
   font-weight: 500;
-  line-height: 14px;
+  line-height: 13px;
   letter-spacing: 0;
   color: var(--fbn-inactive);
   transition:
@@ -1617,9 +1676,14 @@ main {
   color: var(--fbn-accent);
   font-weight: 600;
 }
+/* Seven slots to a phone: neighbouring labels would touch if they kept borrowing each other's room. */
+.fbn[data-dense='true'] .fbn-label {
+  left: -1px;
+  right: -1px;
+  font-size: 9.5px;
+}
 .fbn[data-shape='bump'] .fbn-slot[data-active='true'] .fbn-label {
-  transform: translateY(-4px);
-  text-shadow: 0 0 10px var(--fbn-glow);
+  text-shadow: 0 0 6px var(--fbn-glow);
 }
 .fbn[data-labels='active'] .fbn-label {
   opacity: 0;
@@ -1629,6 +1693,18 @@ main {
   opacity: 1;
   transform: none;
   transition-delay: 120ms;
+}
+/* The active label rises to sit just under its button (or, in neon, its lifted icon), so the two
+   read as one control rather than a button with a caption stranded at the bottom of the bar. */
+.fbn[data-shape='notch'] .fbn-slot[data-active='true'] .fbn-label {
+  transform: translateY(var(--fbn-label-lift));
+}
+.fbn[data-shape='bump'] .fbn-slot[data-active='true'] .fbn-label {
+  transform: translateY(-12px);
+}
+/* …and settles back with the icon when its tab scrolls out from under the button. */
+.fbn-stage[data-lifted='false'] .fbn-slot[data-active='true'] .fbn-label {
+  transform: none;
 }
 
 /* ── Badge ── */
@@ -1665,7 +1741,7 @@ main {
 
 /* In-flow space so the last row of a page can scroll clear of the bar and its raised button. */
 .fbn-spacer {
-  height: calc(var(--fbn-h, 72px) + 48px + env(safe-area-inset-bottom, 0px));
+  height: calc(var(--fbn-h, 60px) + 48px + env(safe-area-inset-bottom, 0px));
   pointer-events: none;
 }
 
@@ -1766,6 +1842,24 @@ html[data-nav-style='neon'] {
     width 440ms cubic-bezier(0.34, 1.26, 0.64, 1),
     height 320ms cubic-bezier(0.22, 1, 0.36, 1),
     border-radius 320ms ease;
+}
+/* A strip whose tabs overflow scrolls sideways (see `useOverflowScroll` in ui/tabs.tsx): no
+   scrollbar eating its height, and a fade on whichever edge has more tabs past it. */
+.tabs-strip[data-overflow='true'] {
+  --tabs-fade-l: 0px;
+  --tabs-fade-r: 20px;
+  scrollbar-width: none;
+  -webkit-mask-image: linear-gradient(to right, transparent 0, #000 var(--tabs-fade-l), #000 calc(100% - var(--tabs-fade-r)), transparent 100%);
+  mask-image: linear-gradient(to right, transparent 0, #000 var(--tabs-fade-l), #000 calc(100% - var(--tabs-fade-r)), transparent 100%);
+}
+.tabs-strip[data-overflow='true']::-webkit-scrollbar {
+  display: none;
+}
+.tabs-strip[data-overflow='true'][data-at-start='false'] {
+  --tabs-fade-l: 20px;
+}
+.tabs-strip[data-overflow='true'][data-at-end='true'] {
+  --tabs-fade-r: 0px;
 }
 /* Opacity only: a transform here would briefly re-anchor any `position: fixed` bar in the panel. */
 .tabs-content[data-state='active'] {

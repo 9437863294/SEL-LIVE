@@ -420,7 +420,7 @@ export default function ExpensesLayoutShell({ children }: { children: React.Reac
         </main>
       </div>
 
-      <ModuleBottomNav tabs={bottomTabs} onMore={() => setMobileMenuOpen(true)} moduleName="Expenses" />
+      <ModuleBottomNav tabs={bottomTabs} pages={authLoading ? undefined : navItems} onMore={() => setMobileMenuOpen(true)} moduleName="Expenses" />
     </div>
   );
 }

@@ -1,5 +1,5 @@
 import Link from 'next/link';
-import type { ComponentType, KeyboardEvent, MouseEvent, SVGProps } from 'react';
+import type { ComponentType, CSSProperties, KeyboardEvent, MouseEvent, SVGProps } from 'react';
 import { NotificationBadge, badgeDescription } from './NotificationBadge';
 
 export type FloatingNavIcon = ComponentType<SVGProps<SVGSVGElement>>;
@@ -19,24 +19,27 @@ export interface FloatingNavItem {
   ariaLabel?: string;
   /** Set when pressing the item opens a menu or sheet rather than a page. */
   opensMenu?: boolean;
+  /** Held at the right-hand end of the bar while the other tabs scroll past — for "More". */
+  pinned?: boolean;
 }
 
 /**
- * One slot of the bar. The slot's position and width belong to `FloatingBottomNav`, which writes
- * them straight to the element every animation frame; everything that only depends on whether
- * the item is active — the icon lifting into the button, colour, the label — is CSS keyed off
- * `data-active`.
+ * One slot of the bar. The slot's width (and, when pinned, its position) belong to
+ * `FloatingBottomNav`; everything that only depends on whether the item is active — the icon
+ * lifting into the button, colour, the label — is CSS keyed off `data-active`.
  */
 export function NavItem({
   item,
   active,
   slotRef,
+  style,
   onSelect,
   onKeyDown,
 }: {
   item: FloatingNavItem;
   active: boolean;
   slotRef: (el: HTMLElement | null) => void;
+  style?: CSSProperties;
   onSelect: (item: FloatingNavItem, event: MouseEvent<HTMLElement>) => void;
   onKeyDown: (event: KeyboardEvent<HTMLElement>) => void;
 }) {
@@ -60,6 +63,7 @@ export function NavItem({
     'data-emphasized': item.emphasized ? 'true' : 'false',
     'aria-label': name,
     'aria-current': active ? ('page' as const) : undefined,
+    style,
     onClick: (event: MouseEvent<HTMLElement>) => onSelect(item, event),
     onKeyDown,
   };

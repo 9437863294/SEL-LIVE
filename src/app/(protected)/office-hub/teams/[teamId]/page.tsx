@@ -333,7 +333,7 @@ export default function TeamDetailPage() {
       )}
 
       <Tabs defaultValue="members">
-        <TabsList className="flex h-auto w-full flex-wrap justify-start gap-1">
+        <TabsList className="flex h-auto w-full justify-start gap-1">
           <TabsTrigger value="members" className="text-xs">
             Members ({team.memberCount})
           </TabsTrigger>

@@ -57,9 +57,10 @@ const driverSelfResources = new Set([
   'Driver Daily Status', 'Driver Trips', 'Employee Trip Log',
 ]);
 
-// The phone's bottom bar, in priority order: the first four the user can open become the tabs,
-// and "More" opens the full menu. A driver gets their day — trips, the daily status, fuel; a
-// transport coordinator without the driver screens falls through to the management pages.
+// The phone's bottom bar leads with these, in this order, under their short names; every other
+// page the user can open follows them, and "More" opens the full menu. A driver gets their day —
+// trips, the daily status, fuel; a transport coordinator without the driver screens falls through
+// to the management pages.
 // This module is the driver app (AppShell drops the app header for it in the Android WebView),
 // and none of its pages has a bottom bar of its own, so this is the only one on screen.
 const bottomTabPriority: ModuleNavTab[] = [
@@ -107,9 +108,7 @@ export default function DriverManagementLayoutShell({ children }: { children: Re
   };
 
   const availableSections = sections.filter((item) => canViewSection(item.resource));
-  const bottomTabs = bottomTabPriority
-    .filter((tab) => availableSections.some((item) => item.href === tab.href))
-    .slice(0, 4);
+  const bottomTabs = bottomTabPriority.filter((tab) => availableSections.some((item) => item.href === tab.href));
 
   // `compact` is the desktop sidebar in icons mode; the phone sheet always passes labels.
   const navigationLinks = (onNavigate?: () => void, compact = false) => {
@@ -252,7 +251,7 @@ export default function DriverManagementLayoutShell({ children }: { children: Re
         <main className="min-w-0 vm-reveal">{children}</main>
       </div>
 
-      <ModuleBottomNav tabs={bottomTabs} onMore={() => setMobileMenuOpen(true)} moduleName="Driver Management" />
+      <ModuleBottomNav tabs={bottomTabs} pages={availableSections} onMore={() => setMobileMenuOpen(true)} moduleName="Driver Management" />
     </div>
   );
 }

@@ -351,7 +351,7 @@ function Shell({ children }: { children: ReactNode }) {
         </TooltipProvider>
         <main className="min-w-0 w-full">{children}</main>
       </div>
-      <ModuleBottomNav tabs={bottomTabs} onMore={() => setOpen(true)} moduleName="Mail Hub" />
+      <ModuleBottomNav tabs={bottomTabs} pages={sections} onMore={() => setOpen(true)} moduleName="Mail Hub" />
       {composer && <Composer />}
     </div>
   );

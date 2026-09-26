@@ -292,7 +292,7 @@ export default function EApprovalDetailPage() {
       />
 
       <Tabs defaultValue="overview">
-        <TabsList className="flex w-full flex-wrap justify-start gap-1 bg-muted/50">
+        <TabsList className="flex w-full justify-start gap-1 bg-muted/50">
           <TabsTrigger value="overview" className="text-xs">
             Overview
           </TabsTrigger>

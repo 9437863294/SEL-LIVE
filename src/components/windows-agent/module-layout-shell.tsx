@@ -310,7 +310,8 @@ const GROUP_LABELS: Record<Section['group'], string> = {
 const GROUP_ORDER: Section['group'][] = ['mine', 'monitor', 'reports', 'config'];
 
 /**
- * The phone's bottom bar, in priority order: the first four the viewer can see become the tabs.
+ * The phone's bottom bar leads with these, in this order, under their short names; every other
+ * section the viewer can see follows them.
  *
  * Every one is a section above, and a tab shows only when its sidebar row does — so an
  * administrator gets the fleet at a glance plus their own day, and an employee with no
@@ -425,9 +426,9 @@ function ShellBody({ children }: { children: React.ReactNode }) {
     );
   }
 
-  const bottomTabs = BOTTOM_TABS.filter((tab) => visible.some((section) => section.href === tab.href)).slice(0, 4);
-  // "More" only when the menu holds something the tabs do not; for most employees it would not.
-  const hasMoreSections = visible.length > bottomTabs.length;
+  const bottomTabs = BOTTOM_TABS.filter((tab) => visible.some((section) => section.href === tab.href));
+  // "More" (the grouped menu) only when there is more than a bar's worth; for most employees there is not.
+  const hasMoreSections = visible.length > 6;
 
   /**
    * One row. A tile, a label when there is room, and a tooltip that always has something to say.
@@ -605,6 +606,7 @@ function ShellBody({ children }: { children: React.ReactNode }) {
 
         <ModuleBottomNav
           tabs={bottomTabs}
+          pages={visible}
           onMore={hasMoreSections ? () => setSheetOpen(true) : undefined}
           moduleName="Windows Agent"
         />

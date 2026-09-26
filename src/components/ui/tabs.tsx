@@ -50,6 +50,98 @@ function sameBox(a: IndicatorBox | null, b: IndicatorBox | null) {
   )
 }
 
+/** This strip's own tabs, not those of a strip nested inside one of its panels. */
+function ownTabs(list: HTMLElement) {
+  return Array.from(list.querySelectorAll<HTMLElement>('[role="tab"]')).filter(
+    (tab) => tab.closest('[role="tablist"]') === list
+  )
+}
+
+/** The user's own Reduced motion setting (Settings → Accessibility), or the device's. */
+function prefersReducedMotion() {
+  return (
+    document.documentElement.dataset.motion === "reduced" ||
+    window.matchMedia("(prefers-reduced-motion: reduce)").matches
+  )
+}
+
+/** Scroll `tab` to the middle of `list` unless it is already comfortably in view. */
+function revealTab(list: HTMLElement, tab: HTMLElement, behavior: ScrollBehavior) {
+  const listRect = list.getBoundingClientRect()
+  const tabRect = tab.getBoundingClientRect()
+  const left = tabRect.left - listRect.left - list.clientLeft + list.scrollLeft
+  // Clear of the edge fades, not merely inside the box.
+  const margin = 24
+  if (left >= list.scrollLeft + margin && left + tabRect.width <= list.scrollLeft + list.clientWidth - margin) return
+  list.scrollTo({ left: left - (list.clientWidth - tabRect.width) / 2, behavior })
+}
+
+/**
+ * A strip with more tabs than fit scrolls sideways where it is, instead of pushing the page wider or
+ * cutting tabs off. It is capped at its container's width and becomes a scroller only once its tabs
+ * overflow, so a strip that fits is left exactly as it was. Overflowing, it starts from the left (a
+ * centred row loses its first tabs off the left edge, out of reach), hides its scrollbar, fades the
+ * edge that has more past it, turns a mouse wheel into a sideways scroll, and keeps the active tab
+ * in view. State is written to the element as data attributes: it changes as fast as the strip
+ * scrolls, which React has no need to hear about.
+ */
+function useOverflowScroll(listRef: React.RefObject<HTMLDivElement | null>) {
+  useIsoLayoutEffect(() => {
+    const list = listRef.current
+    if (!list) return
+    let frame = 0
+    let revealed: HTMLElement | null = null
+
+    const update = () => {
+      frame = 0
+      const overflowing = list.scrollWidth > list.clientWidth + 1
+      list.setAttribute("data-overflow", overflowing ? "true" : "false")
+      if (!overflowing) {
+        revealed = null
+        return
+      }
+      const end = list.scrollWidth - list.clientWidth
+      list.setAttribute("data-at-start", list.scrollLeft <= 1 ? "true" : "false")
+      list.setAttribute("data-at-end", list.scrollLeft >= end - 1 ? "true" : "false")
+      // Only when the active tab changes, so a strip the user has scrolled is not dragged back.
+      const active = ownTabs(list).find((tab) => tab.getAttribute("data-state") === "active")
+      if (active && active !== revealed) {
+        const arriving = revealed === null
+        revealed = active
+        revealTab(list, active, arriving || prefersReducedMotion() ? "instant" : "smooth")
+      }
+    }
+    const schedule = () => {
+      if (!frame) frame = window.requestAnimationFrame(update)
+    }
+    const onWheel = (event: WheelEvent) => {
+      if (list.getAttribute("data-overflow") !== "true" || event.ctrlKey) return
+      if (Math.abs(event.deltaX) >= Math.abs(event.deltaY)) return
+      // Already at the end it is heading for: let the page scroll on instead of trapping the wheel.
+      const end = list.scrollWidth - list.clientWidth
+      if ((event.deltaY < 0 && list.scrollLeft <= 0) || (event.deltaY > 0 && list.scrollLeft >= end - 1)) return
+      event.preventDefault()
+      list.scrollLeft += event.deltaY
+    }
+
+    update()
+    const resize = new ResizeObserver(schedule)
+    resize.observe(list)
+    // Tabs added, removed, relabelled or activated. The attributes written above are not watched.
+    const mutations = new MutationObserver(schedule)
+    mutations.observe(list, { subtree: true, childList: true, characterData: true, attributes: true, attributeFilter: ["data-state"] })
+    list.addEventListener("scroll", schedule, { passive: true })
+    list.addEventListener("wheel", onWheel, { passive: false })
+    return () => {
+      if (frame) window.cancelAnimationFrame(frame)
+      resize.disconnect()
+      mutations.disconnect()
+      list.removeEventListener("scroll", schedule)
+      list.removeEventListener("wheel", onWheel)
+    }
+  }, [listRef])
+}
+
 /**
  * A tab strip with an animated indicator: a pill in the app's accent (Settings → Appearance) that
  * slides to whichever tab is active — across a wrapped second row or a scrolled strip too.
@@ -84,9 +176,7 @@ const TabsList = React.forwardRef<
 
     const measure = () => {
       frame = 0
-      const tabs = Array.from(list.querySelectorAll<HTMLElement>('[role="tab"]')).filter(
-        (tab) => tab.closest('[role="tablist"]') === list
-      )
+      const tabs = ownTabs(list)
       tabs.forEach((tab) => resize.observe(tab))
       const active = tabs.find((tab) => tab.getAttribute("data-state") === "active")
       const next = active ? boxWithin(active, list) : null
@@ -107,6 +197,8 @@ const TabsList = React.forwardRef<
     }
   }, [indicator])
 
+  useOverflowScroll(listRef)
+
   // The first placement jumps into position; only moves after that slide.
   const placed = box !== null
   React.useEffect(() => {
@@ -120,7 +212,9 @@ const TabsList = React.forwardRef<
       ref={setRefs}
       data-indicator={!indicator ? "off" : placed ? "on" : "pending"}
       className={cn(
-        "group/tabs relative inline-flex h-10 items-center justify-center rounded-xl bg-muted p-1 text-muted-foreground",
+        "group/tabs tabs-strip relative inline-flex h-10 min-w-0 max-w-full items-center justify-center rounded-xl bg-muted p-1 text-muted-foreground",
+        // Set by useOverflowScroll once the tabs no longer fit.
+        "data-[overflow=true]:justify-start data-[overflow=true]:overflow-x-auto data-[overflow=true]:overflow-y-hidden data-[overflow=true]:overscroll-x-contain",
         className
       )}
       {...props}

@@ -361,7 +361,7 @@ function OfficeHubLayoutShellInner({ children }: { children: React.ReactNode }) 
         </main>
       </div>
 
-      <ModuleBottomNav tabs={bottomTabs} onMore={() => setMobileMenuOpen(true)} moduleName="Office Hub" />
+      <ModuleBottomNav tabs={bottomTabs} pages={available} onMore={() => setMobileMenuOpen(true)} moduleName="Office Hub" />
     </div>
   );
 }

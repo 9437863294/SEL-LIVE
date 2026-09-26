@@ -263,7 +263,7 @@ export default function ActionItemsPage() {
       </div>
 
       <Tabs value={view} onValueChange={(next) => setView(next as View)}>
-        <TabsList className="h-auto flex-wrap">
+        <TabsList className="h-auto">
           <TabsTrigger value="open" className="text-xs">
             Open
           </TabsTrigger>

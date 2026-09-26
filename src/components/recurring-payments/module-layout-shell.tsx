@@ -360,7 +360,7 @@ export default function RecurringPaymentsLayoutShell({ children }: { children: R
         </main>
       </div>
 
-      <ModuleBottomNav tabs={bottomTabs} onMore={() => setMobileMenuOpen(true)} moduleName="Recurring Payments" />
+      <ModuleBottomNav tabs={bottomTabs} pages={navItems} onMore={() => setMobileMenuOpen(true)} moduleName="Recurring Payments" />
     </div>
   );
 }

@@ -852,7 +852,7 @@ function PaymentDetail({
           <Summary label="Status" value={payment.status} />
         </div>
         <Tabs defaultValue="overview">
-          <TabsList className="grid h-auto grid-cols-5">
+          <TabsList className="h-auto w-full justify-start sm:grid sm:grid-cols-5">
             <TabsTrigger value="overview">Overview</TabsTrigger>
             <TabsTrigger value="workflow">Workflow</TabsTrigger>
             <TabsTrigger value="transactions">Transactions</TabsTrigger>

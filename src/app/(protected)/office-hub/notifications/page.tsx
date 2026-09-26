@@ -191,7 +191,7 @@ export default function NotificationsPage() {
       />
 
       <Tabs value={group} onValueChange={(next) => setGroup(next as Group)}>
-        <TabsList className="flex h-auto w-full flex-wrap justify-start gap-1">
+        <TabsList className="flex h-auto w-full justify-start gap-1">
           {(['all', 'meetings', 'tasks', 'teams', 'decisions', 'system'] as Group[]).map((entry) => (
             <TabsTrigger key={entry} value={entry} className="text-xs capitalize">
               {entry}

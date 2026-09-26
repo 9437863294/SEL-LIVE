@@ -20,14 +20,6 @@ export interface BarMetrics {
   height: number;
   /** Corner radius of the pill. The top corners shrink when the notch reaches them. */
   radius: number;
-  /** Horizontal inset before the first and after the last slot. */
-  padding: number;
-  /** Number of slots. */
-  count: number;
-  /** Extra width the active slot takes from the others, when there is room for it. */
-  boost: number;
-  /** Narrowest an inactive slot may get — the boost is given up before a tap target shrinks. */
-  minSlot: number;
 }
 
 export interface NotchSpec {
@@ -50,8 +42,7 @@ export interface BumpSpec {
 
 /** Everything the bar needs to draw one frame. */
 export interface BarFrame {
-  widths: number[];
-  /** Horizontal centre of the active indicator. */
+  /** Horizontal centre of the active indicator, in bar coordinates. */
   x: number;
   /** Scale of the floating button (the notch follows it). */
   scale: number;
@@ -63,53 +54,95 @@ export function clamp(value: number, min: number, max: number) {
   return Math.min(max, Math.max(min, value));
 }
 
-/**
- * Slot widths with `activeIndex` widened. The active slot's extra width comes out of the other
- * slots evenly, so the total never changes and a tween between two layouts is a straight lerp.
- * A negative or out-of-range index gives every slot the same width.
- */
-export function slotWidths(m: BarMetrics, activeIndex: number): number[] {
-  if (m.count <= 0) return [];
-  const inner = Math.max(0, m.width - m.padding * 2);
-  const hasActive = activeIndex >= 0 && activeIndex < m.count;
-  const boost = hasActive ? clamp(inner - m.count * m.minSlot, 0, m.boost) : 0;
-  const base = (inner - boost) / m.count;
-  return Array.from({ length: m.count }, (_, i) => base + (i === activeIndex ? boost : 0));
-}
-
-/** Left edge of every slot for a set of widths. */
-export function slotOffsets(m: BarMetrics, widths: number[]): number[] {
-  const offsets: number[] = [];
-  let cursor = m.padding;
-  for (const w of widths) {
-    offsets.push(cursor);
-    cursor += w;
-  }
-  return offsets;
-}
-
-export function slotCenter(m: BarMetrics, widths: number[], index: number): number {
-  if (index < 0 || index >= widths.length) return m.width / 2;
-  const offsets = slotOffsets(m, widths);
-  return offsets[index] + widths[index] / 2;
-}
-
 export function lerp(a: number, b: number, t: number) {
   return a + (b - a) * t;
 }
 
-export function lerpFrame(from: BarFrame, to: BarFrame, t: number, scale = 1): BarFrame {
+/* ── Slots ───────────────────────────────────────────────────────────────────────────────────── */
+
+/**
+ * Where the slots go. The bar holds a strip of tabs that scrolls sideways, then any pinned items
+ * ("More") that stay put at the right-hand end. Every slot is the same width: up to `maxInView`
+ * strip tabs plus the pinned ones share the bar, so a short list spreads out to fill it and a long
+ * one shows exactly `maxInView` at a time with the rest a swipe away.
+ */
+export interface SlotLayout {
+  /** Width of every slot, strip and pinned alike. */
+  slot: number;
+  /** Tabs in the strip, and pinned items after it. */
+  count: number;
+  pinned: number;
+  /** Strip tabs visible at once. */
+  inView: number;
+  /** Left edge of the strip in bar coordinates — the bar's own inset. */
+  trackLeft: number;
+  /** Visible width of the strip. */
+  trackWidth: number;
+  /** Width of everything in the strip; more than `trackWidth` exactly when it scrolls. */
+  contentWidth: number;
+  scrollable: boolean;
+}
+
+export function slotLayout(width: number, padding: number, count: number, pinned: number, maxInView: number): SlotLayout {
+  const inView = Math.max(0, Math.min(count, maxInView));
+  const slots = inView + pinned;
+  const inner = Math.max(0, width - padding * 2);
+  const slot = slots > 0 ? inner / slots : 0;
   return {
-    widths: to.widths.map((w, i) => lerp(from.widths[i] ?? w, w, t)),
-    x: lerp(from.x, to.x, t),
-    scale,
+    slot,
+    count,
+    pinned,
+    inView,
+    trackLeft: padding,
+    trackWidth: inView * slot,
+    contentWidth: count * slot,
+    scrollable: count > inView,
   };
 }
 
-/** The resting frame for `activeIndex`. */
-export function restingFrame(m: BarMetrics, activeIndex: number): BarFrame {
-  const widths = slotWidths(m, activeIndex);
-  return { widths, x: slotCenter(m, widths, activeIndex), scale: 1 };
+/** Furthest the strip can scroll. */
+export function maxScroll(layout: SlotLayout) {
+  return Math.max(0, layout.contentWidth - layout.trackWidth);
+}
+
+/**
+ * The indicator's resting place for slot `index` (strip tabs first, then pinned items) with the
+ * strip scrolled to `scrollLeft`. A strip tab scrolled partly out of view shrinks its indicator —
+ * gone by the time half the tab is hidden — rather than letting it slide over the pinned "More".
+ * Returns scale 0 for an index that is not a slot.
+ */
+export function indicatorTarget(layout: SlotLayout, index: number, scrollLeft: number): BarFrame {
+  const { slot, trackLeft, trackWidth } = layout;
+  if (index < 0 || index >= layout.count + layout.pinned || slot <= 0) {
+    return { x: trackLeft + (trackWidth + layout.pinned * slot) / 2, scale: 0 };
+  }
+  if (index >= layout.count) {
+    const left = trackLeft + trackWidth + (index - layout.count) * slot;
+    return { x: left + slot / 2, scale: 1 };
+  }
+  const left = trackLeft + index * slot - scrollLeft;
+  const right = trackLeft + trackWidth;
+  // Snapped scroll positions land within a rounding error of a slot edge; that is not "hidden".
+  const hidden = Math.max(0, trackLeft - left) + Math.max(0, left + slot - right);
+  const shown = hidden < 0.5 ? 1 : 1 - hidden / slot;
+  return {
+    x: clamp(left + slot / 2, trackLeft, right),
+    scale: clamp((shown - 0.5) * 2, 0, 1),
+  };
+}
+
+/**
+ * Where to scroll the strip so strip tab `index` is in view: `null` when it already fully is,
+ * otherwise the position that centres it as nearly as the ends allow, on a whole slot so it agrees
+ * with the strip's scroll snapping.
+ */
+export function revealScroll(layout: SlotLayout, index: number, scrollLeft: number): number | null {
+  if (!layout.scrollable || index < 0 || index >= layout.count || layout.slot <= 0) return null;
+  const left = index * layout.slot;
+  const epsilon = 0.5;
+  if (left >= scrollLeft - epsilon && left + layout.slot <= scrollLeft + layout.trackWidth + epsilon) return null;
+  const first = clamp(Math.round(index - (layout.inView - 1) / 2), 0, layout.count - layout.inView);
+  return clamp(first * layout.slot, 0, maxScroll(layout));
 }
 
 /**

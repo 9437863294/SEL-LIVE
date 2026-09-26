@@ -189,7 +189,7 @@ export default function RecurringPaymentsHandbook() {
         </CardHeader>
         <CardContent>
           <Tabs defaultValue="owner">
-            <TabsList className="grid h-auto w-full grid-cols-2 gap-1 sm:grid-cols-5">
+            <TabsList className="h-auto w-full justify-start gap-1 sm:grid sm:grid-cols-5">
               <TabsTrigger value="owner">Bill Owner</TabsTrigger>
               <TabsTrigger value="verifier">Verifier</TabsTrigger>
               <TabsTrigger value="approver">Approver</TabsTrigger>

@@ -4,12 +4,12 @@ import {
   bumpedBarPath,
   bumpedTopEdgePath,
   easeOutBack,
+  indicatorTarget,
+  maxScroll,
   notchHalfWidth,
   notchedBarPath,
-  restingFrame,
-  slotCenter,
-  slotOffsets,
-  slotWidths,
+  revealScroll,
+  slotLayout,
 } from '../src/components/navigation/geometry.ts';
 
 /**
@@ -17,13 +17,16 @@ import {
  * bar with a gash in it, or a notch that no longer sits under its button. These pin the shapes to
  * the numbers the component actually uses (FloatingBottomNav.tsx) at real phone widths.
  */
-const BAR = { height: 72, radius: 30, padding: 24, boost: 40, minSlot: 48, count: 5 };
-const NOTCH = { buttonRadius: 28, gap: 6, centerY: -4, fillet: 10 };
-const BUMP = { rise: 14, halfWidth: 46 };
+const BAR = { height: 60, radius: 24 };
+const PADDING = 17;
+const IN_VIEW = 6;
+const NOTCH = { buttonRadius: 22, gap: 3, centerY: -4, fillet: 7 };
+const BUMP = { rise: 12, halfWidth: 36 };
 // 360, 390, 412 and 430px phones minus the bar's 12px side margins, then the 560px tablet cap.
 const WIDTHS = [336, 366, 388, 406, 560];
 
 const numbers = (d) => d.match(/-?\d+(\.\d+)?/g).map(Number);
+const near = (a, b, eps = 1e-9) => Math.abs(a - b) < eps;
 
 /** Every `A` command in a path, with its endpoint and the point the pen was at before it. */
 function arcs(d) {
@@ -47,43 +50,92 @@ function arcs(d) {
   return out;
 }
 
-test('slot widths always add up to the bar, with the active slot widened', () => {
+/** A module bar: `count` tabs in the strip plus a pinned "More". */
+const layoutAt = (width, count = 12, pinned = 1) => slotLayout(width, PADDING, count, pinned, IN_VIEW);
+
+test('a short list spreads out to fill the bar, with nothing to scroll', () => {
   for (const width of WIDTHS) {
-    const m = { ...BAR, width };
-    for (const active of [-1, 0, 2, 4]) {
-      const widths = slotWidths(m, active);
-      const total = widths.reduce((a, b) => a + b, 0);
-      assert.ok(Math.abs(total - (width - BAR.padding * 2)) < 1e-9, `width ${width}, active ${active}`);
-      if (active >= 0) assert.ok(widths[active] > widths[(active + 1) % 5]);
+    for (const count of [1, 3, 5, 6]) {
+      const layout = layoutAt(width, count);
+      assert.equal(layout.scrollable, false, `width ${width}, ${count} tabs`);
+      assert.equal(layout.inView, count);
+      assert.ok(near(layout.trackWidth + layout.slot, width - PADDING * 2), 'strip plus More fill the bar');
+      assert.ok(near(layout.contentWidth, layout.trackWidth));
     }
   }
+  // Without a pinned item the tabs alone fill it.
+  const bare = slotLayout(366, PADDING, 4, 0, IN_VIEW);
+  assert.ok(near(bare.slot * 4, 366 - PADDING * 2));
 });
 
-test('no inactive tap target drops under the 48px floor, even on a 360px phone', () => {
+test('a long list shows six at a time beside More, and the rest scroll', () => {
   for (const width of WIDTHS) {
-    const widths = slotWidths({ ...BAR, width }, 0);
-    for (const w of widths.slice(1)) assert.ok(w >= 48 - 1e-9, `width ${width}: slot ${w}`);
+    const layout = layoutAt(width, 17);
+    assert.equal(layout.scrollable, true);
+    assert.equal(layout.inView, 6);
+    assert.ok(near(layout.slot, (width - PADDING * 2) / 7), 'six tabs and More share the bar evenly');
+    assert.ok(near(layout.trackWidth, 6 * layout.slot));
+    assert.ok(near(layout.contentWidth, 17 * layout.slot));
+    assert.ok(near(maxScroll(layout), 11 * layout.slot));
   }
-  // Too narrow for the boost at all: it is given up entirely rather than squeezing the others.
-  const cramped = slotWidths({ ...BAR, width: 280 }, 1);
-  assert.equal(new Set(cramped.map((w) => w.toFixed(6))).size, 1);
+  // Even seven to a 360px phone, a slot is still a fair thumb target.
+  assert.ok(layoutAt(336).slot > 43, `slot ${layoutAt(336).slot}`);
 });
 
-test('slot offsets and centres line up with the widths', () => {
-  const m = { ...BAR, width: 366 };
-  const widths = slotWidths(m, 1);
-  const offsets = slotOffsets(m, widths);
-  assert.equal(offsets[0], BAR.padding);
-  assert.ok(Math.abs(offsets[4] + widths[4] - (366 - BAR.padding)) < 1e-9);
-  assert.ok(Math.abs(slotCenter(m, widths, 1) - (offsets[1] + widths[1] / 2)) < 1e-9);
-  assert.equal(restingFrame(m, 1).x, slotCenter(m, widths, 1));
+test('the indicator sits over its tab, and shrinks away as the tab scrolls out of view', () => {
+  const layout = layoutAt(366, 12);
+  const { slot, trackLeft, trackWidth } = layout;
+  const at = indicatorTarget(layout, 2, 0);
+  assert.ok(near(at.x, trackLeft + 2.5 * slot));
+  assert.equal(at.scale, 1);
+  // Scrolled by one slot, the same tab has moved one slot left and is still whole.
+  const moved = indicatorTarget(layout, 2, slot);
+  assert.ok(near(moved.x, trackLeft + 1.5 * slot));
+  assert.equal(moved.scale, 1);
+  // A quarter hidden: half size. Half hidden or more: gone, and never past the strip's edge.
+  assert.ok(near(indicatorTarget(layout, 0, slot / 4).scale, 0.5));
+  assert.equal(indicatorTarget(layout, 0, slot / 2).scale, 0);
+  const gone = indicatorTarget(layout, 0, slot * 3);
+  assert.equal(gone.scale, 0);
+  assert.ok(gone.x >= trackLeft);
+  // Off the right-hand end it stays short of More rather than sliding over it.
+  const right = indicatorTarget(layout, 9, 0);
+  assert.equal(right.scale, 0);
+  assert.ok(right.x <= trackLeft + trackWidth);
+});
+
+test('the pinned More slot ignores the strip scroll', () => {
+  const layout = layoutAt(366, 12);
+  const more = layout.count;
+  for (const scroll of [0, 40, maxScroll(layout)]) {
+    const at = indicatorTarget(layout, more, scroll);
+    assert.ok(near(at.x, layout.trackLeft + layout.trackWidth + layout.slot / 2));
+    assert.equal(at.scale, 1);
+  }
+  assert.equal(indicatorTarget(layout, -1, 0).scale, 0, 'no active tab');
+  assert.equal(indicatorTarget(layout, more + 1, 0).scale, 0, 'past the last slot');
+});
+
+test('revealing a tab centres it on a whole slot, clamped to the ends, and leaves a visible one alone', () => {
+  const layout = layoutAt(366, 17);
+  const { slot } = layout;
+  assert.equal(revealScroll(layout, 3, 0), null, 'already in view');
+  assert.equal(revealScroll(layout, 5, 0), null, 'last whole tab in view');
+  const middle = revealScroll(layout, 10, 0);
+  assert.ok(near(middle / slot, Math.round(middle / slot)), 'lands on a slot boundary');
+  assert.ok(middle / slot <= 10 && middle / slot + 6 > 10, 'tab 10 is in the six shown');
+  assert.ok(near(revealScroll(layout, 16, 0), maxScroll(layout)), 'the last tab scrolls only to the end');
+  assert.equal(revealScroll(layout, 0, slot * 4), 0, 'the first tab scrolls back to the start');
+  assert.equal(revealScroll(layoutAt(366, 4), 3, 0), null, 'nothing to scroll');
+  assert.equal(revealScroll(layout, layout.count, 0), null, 'More is never scrolled to');
 });
 
 test('the notch arc and its two fillets meet on both circles, so the outline has no corner', () => {
   for (const width of WIDTHS) {
     const m = { ...BAR, width };
-    for (const active of [0, 2, 4]) {
-      const { x } = restingFrame(m, active);
+    const layout = layoutAt(width);
+    for (const active of [0, 2, 5, layout.count]) {
+      const { x } = indicatorTarget(layout, active, 0);
       const d = notchedBarPath(m, NOTCH, x);
       assert.ok(!/NaN|Infinity/.test(d), d);
       assert.match(d, /^M0 /);
@@ -110,24 +162,30 @@ test('the notch arc and its two fillets meet on both circles, so the outline has
 
 test('the notch leaves the button an even gap all the way round', () => {
   const m = { ...BAR, width: 366 };
-  const { x } = restingFrame(m, 2);
-  const [arc] = arcs(notchedBarPath(m, NOTCH, x)).filter((a) => a.r === 34);
+  const { x } = indicatorTarget(layoutAt(366), 2, 0);
+  const r = NOTCH.buttonRadius + NOTCH.gap;
+  const [arc] = arcs(notchedBarPath(m, NOTCH, x)).filter((a) => a.r === r);
   // The deepest point of the notch is directly under the button: centre + radius + gap.
-  const deepest = NOTCH.centerY + arc.r;
-  assert.equal(deepest, NOTCH.centerY + NOTCH.buttonRadius + NOTCH.gap);
+  assert.equal(NOTCH.centerY + arc.r, NOTCH.centerY + NOTCH.buttonRadius + NOTCH.gap);
   assert.ok(arc.from[1] > 0 && arc.to[1] > 0, 'tangent points are inside the bar, below its top edge');
+});
+
+test('the notch is narrow enough at the rim to clear the neighbouring icons', () => {
+  // Icons are 22px; with seven slots on a 360px phone the next icon starts slot − 11px away.
+  const { slot } = layoutAt(336);
+  assert.ok(notchHalfWidth(NOTCH) < slot - 11, `reach ${notchHalfWidth(NOTCH)} vs ${slot - 11}`);
 });
 
 test('the top corners give way to a notch at the ends instead of colliding with it', () => {
   for (const width of WIDTHS) {
     const m = { ...BAR, width };
-    const { x } = restingFrame(m, 0);
+    const { x } = indicatorTarget(layoutAt(width), 0, 0);
     const reach = notchHalfWidth(NOTCH);
     const d = notchedBarPath(m, NOTCH, x);
     const [corner] = arcs(d);
-    assert.ok(Math.abs(corner.r - Math.min(30, x - reach)) < 0.01, `width ${width}: corner ${corner.r}`);
-    // Still recognisably rounded on the smallest phone, not squared off.
-    assert.ok(corner.r >= 24, `width ${width}: corner squashed to ${corner.r}`);
+    assert.ok(Math.abs(corner.r - Math.min(BAR.radius, x - reach)) < 0.01, `width ${width}: corner ${corner.r}`);
+    // Still recognisably rounded with seven slots on the smallest phone, not squared off.
+    assert.ok(corner.r >= 8, `width ${width}: corner squashed to ${corner.r}`);
   }
 });
 
@@ -152,7 +210,7 @@ test('a notch shrunk to nothing is a plain pill', () => {
 
 test('the neon hill rises exactly `rise` above the rim and the rim path follows it', () => {
   const m = { ...BAR, width: 388 };
-  const { x } = restingFrame(m, 3);
+  const { x } = indicatorTarget(layoutAt(388), 3, 0);
   const bar = bumpedBarPath(m, BUMP, x);
   const rim = bumpedTopEdgePath(m, BUMP, x);
   assert.ok(!/NaN/.test(bar) && !/NaN/.test(rim));

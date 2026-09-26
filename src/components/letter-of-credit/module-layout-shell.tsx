@@ -109,7 +109,7 @@ export default function LetterOfCreditLayoutShell({ children }: { children: Reac
         <main className="min-w-0">{children}</main>
       </div>
 
-      <ModuleBottomNav tabs={bottomTabs} onMore={() => setMobileOpen(true)} moduleName="Letter of Credit" />
+      <ModuleBottomNav tabs={bottomTabs} pages={visibleSections} onMore={() => setMobileOpen(true)} moduleName="Letter of Credit" />
     </div>
   );
 }

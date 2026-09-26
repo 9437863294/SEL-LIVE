@@ -409,7 +409,7 @@ export default function BGSettingsWorkspace() {
         </p>
       </div>
       <Tabs defaultValue="limits">
-        <TabsList className="flex h-auto flex-wrap">
+        <TabsList className="flex h-auto">
           <TabsTrigger value="limits">Shared Bank Limits</TabsTrigger>
           <TabsTrigger value="beneficiaries">Beneficiaries</TabsTrigger>
           <TabsTrigger value="contracts">Contracts & Tenders</TabsTrigger>

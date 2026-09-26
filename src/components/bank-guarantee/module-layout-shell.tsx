@@ -395,6 +395,7 @@ export default function BankGuaranteeLayoutShell({
 
       <ModuleBottomNav
         tabs={bottomTabs}
+        pages={visible}
         onMore={() => setOpen(true)}
         moduleName="Bank Guarantee"
       />

@@ -284,7 +284,7 @@ export default function HrLayoutShell({ children }: { children: React.ReactNode 
         <main className="hr-content min-w-0">{currentPageAllowed ? children : pageAccessDenied}</main>
       </div>
 
-      <ModuleBottomNav tabs={bottomTabs} onMore={() => setMobileMenuOpen(true)} moduleName="HR & Recruitment" />
+      <ModuleBottomNav tabs={bottomTabs} pages={visibleItems} onMore={() => setMobileMenuOpen(true)} moduleName="HR & Recruitment" />
     </div>
   );
 }

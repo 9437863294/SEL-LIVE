@@ -296,7 +296,7 @@ export default function LiveMeetingPage() {
       </div>
 
       <Tabs value={tab} onValueChange={setTab}>
-        <TabsList className="flex h-auto w-full flex-wrap justify-start gap-1">
+        <TabsList className="flex h-auto w-full justify-start gap-1">
           <TabsTrigger value="agenda" className="gap-1.5 text-xs">
             <ListOrdered className="h-3.5 w-3.5" />
             Agenda

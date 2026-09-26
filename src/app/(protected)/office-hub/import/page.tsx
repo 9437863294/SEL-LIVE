@@ -428,7 +428,7 @@ export default function ImportEmployeesPage() {
 
           <div className="flex flex-wrap items-center justify-between gap-2">
             <Tabs value={filter} onValueChange={(next) => setFilter(next as Filter)}>
-              <TabsList className="h-auto flex-wrap">
+              <TabsList className="h-auto">
                 <TabsTrigger value="all" className="text-xs">
                   All ({preview.summary.total})
                 </TabsTrigger>

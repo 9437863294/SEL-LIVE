@@ -123,16 +123,17 @@ const inventoryMasterItems: SettingsNavigationItem[] = [
   },
 ];
 
-// The phone's bottom bar: the overview and the three masters set up most often; "More" opens the
-// full menu, which also holds units, GRN fields and the inventory masters. Not permission-filtered,
-// like the sidebar above. Overview wears the shell's icon rather than its sidebar one, which is the
-// same grid "More" uses.
+// The phone's bottom bar leads with the overview and the three masters set up most often; the rest
+// of the menu — units, GRN fields and the inventory masters — follows them, and "More" opens the
+// full menu. Not permission-filtered, like the sidebar above. Overview wears the shell's icon
+// rather than its sidebar one, which is the same grid "More" uses.
 const bottomTabs: ModuleNavTab[] = [
   { href: '/store-stock-management/settings', label: 'Overview', icon: Settings2, exact: true, ariaLabel: 'Settings overview' },
   { href: '/store-stock-management/settings/stock-status', label: 'Scope', icon: SlidersHorizontal, ariaLabel: 'Stock scope' },
   { href: '/store-stock-management/settings/projects', label: 'Projects', icon: Construction },
   { href: '/store-stock-management/settings/sites', label: 'Sites', icon: MapPin, ariaLabel: 'Project sites' },
 ];
+const bottomPages = [...configurationItems, ...inventoryMasterItems];
 
 const STORAGE_KEY = 'stock-settings-sidebar-expanded';
 
@@ -314,7 +315,7 @@ export function SettingsModuleShell({ children }: { children: ReactNode }) {
         <main className="mx-auto w-full max-w-[1600px] px-4 py-5 sm:px-6 lg:px-8">{children}</main>
       </div>
 
-      <ModuleBottomNav tabs={bottomTabs} onMore={() => setMobileOpen(true)} moduleName="Stock Settings" hideAbove="md" />
+      <ModuleBottomNav tabs={bottomTabs} pages={bottomPages} onMore={() => setMobileOpen(true)} moduleName="Stock Settings" hideAbove="md" />
     </div>
   );
 }

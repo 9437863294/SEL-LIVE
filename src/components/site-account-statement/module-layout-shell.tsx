@@ -366,7 +366,7 @@ export default function SiteAccountStatementShell({ children }: { children: Reac
         </main>
       </div>
 
-      <ModuleBottomNav tabs={bottomTabs} onMore={() => setMobileMenuOpen(true)} moduleName="Site Account Statement" />
+      <ModuleBottomNav tabs={bottomTabs} pages={availableSections} onMore={() => setMobileMenuOpen(true)} moduleName="Site Account Statement" />
     </div>
   );
 }
