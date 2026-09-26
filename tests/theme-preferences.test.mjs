@@ -2,22 +2,23 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import vm from 'node:vm';
 import {
-  ACCENT_STYLE_STORAGE_KEY,
   DEFAULT_THEME_MODE,
   THEME_MODES,
-  THEME_MODE_STORAGE_KEY,
+  THEME_USER_STORAGE_KEY,
+  accentStyleStorageKey,
   isThemeMode,
   resolveThemeMode,
   themeInitScript,
+  themeModeStorageKey,
 } from '../src/components/theme/theme-preferences.ts';
 import { FLOATING_NAV_THEMES } from '../src/components/navigation/themes.ts';
 
 /**
  * The inline script is the part that runs before React exists, in every browser, on every full page
  * load — including the login screen — and nothing type-checks the string it is built from. So it is
- * executed here against a stand-in page, for each stored value it can meet.
+ * executed here against a stand-in page and a stand-in localStorage.
  */
-function runInitScript({ mode, accent, systemDark = false, storageThrows = false } = {}) {
+function runInitScript(store = {}, { systemDark = false, storageThrows = false } = {}) {
   const classes = new Set();
   const attributes = {};
   const documentElement = {
@@ -27,7 +28,6 @@ function runInitScript({ mode, accent, systemDark = false, storageThrows = false
       attributes[name] = value;
     },
   };
-  const store = { [THEME_MODE_STORAGE_KEY]: mode ?? null, [ACCENT_STYLE_STORAGE_KEY]: accent ?? null };
   const window = {
     localStorage: {
       getItem: (key) => {
@@ -40,6 +40,13 @@ function runInitScript({ mode, accent, systemDark = false, storageThrows = false
   vm.runInNewContext(themeInitScript(), { window, document: { documentElement } });
   return { dark: classes.has('dark'), colorScheme: documentElement.style.colorScheme, accent: attributes['data-nav-style'] };
 }
+
+/** A device where `userId` is signed in and has chosen `mode` (and optionally an accent). */
+const signedIn = (userId, mode, accent) => ({
+  [THEME_USER_STORAGE_KEY]: userId,
+  [themeModeStorageKey(userId)]: mode,
+  ...(accent ? { [accentStyleStorageKey(userId)]: accent } : {}),
+});
 
 test('system mode follows the device; explicit modes ignore it', () => {
   assert.equal(resolveThemeMode('system', true), 'dark');
@@ -54,26 +61,37 @@ test('only the three modes are accepted', () => {
   assert.ok(isThemeMode(DEFAULT_THEME_MODE));
 });
 
-test('the init script applies each stored mode before paint', () => {
-  assert.deepEqual(runInitScript({ mode: 'dark' }), { dark: true, colorScheme: 'dark', accent: undefined });
-  assert.deepEqual(runInitScript({ mode: 'light', systemDark: true }), { dark: false, colorScheme: 'light', accent: undefined });
-  assert.equal(runInitScript({ mode: 'system', systemDark: true }).dark, true);
-  assert.equal(runInitScript({ mode: 'system', systemDark: false }).dark, false);
+test("the init script applies the signed-in user's own mode before paint", () => {
+  assert.deepEqual(runInitScript(signedIn('u1', 'dark')), { dark: true, colorScheme: 'dark', accent: undefined });
+  assert.deepEqual(runInitScript(signedIn('u1', 'light'), { systemDark: true }), { dark: false, colorScheme: 'light', accent: undefined });
+  assert.equal(runInitScript(signedIn('u1', 'system'), { systemDark: true }).dark, true);
+  assert.equal(runInitScript(signedIn('u1', 'system'), { systemDark: false }).dark, false);
 });
 
-test('nothing stored, or something unexpected, falls back to the default mode', () => {
-  const expectedDark = resolveThemeMode(DEFAULT_THEME_MODE, true) === 'dark';
-  assert.equal(runInitScript({ systemDark: true }).dark, expectedDark);
-  assert.equal(runInitScript({ mode: '"><script>', systemDark: true }).dark, expectedDark);
+test("one person's choice never reaches the next on a shared device", () => {
+  const defaultDark = resolveThemeMode(DEFAULT_THEME_MODE, true) === 'dark';
+  // u1 chose dark and teal; u2 is the one signed in now and chose nothing.
+  const device = { ...signedIn('u1', 'dark', 'teal'), [THEME_USER_STORAGE_KEY]: 'u2' };
+  assert.deepEqual(runInitScript(device, { systemDark: true }), { dark: defaultDark, colorScheme: defaultDark ? 'dark' : 'light', accent: undefined });
+  // Signed out (no current user): the sign-in screen is in the default, whatever anyone chose.
+  const signedOut = { ...signedIn('u1', 'dark', 'teal') };
+  delete signedOut[THEME_USER_STORAGE_KEY];
+  assert.equal(runInitScript(signedOut, { systemDark: true }).dark, defaultDark);
+  assert.equal(runInitScript(signedOut).accent, undefined);
 });
 
-test('the accent is restored only when it is one of the real styles', () => {
-  assert.equal(runInitScript({ accent: 'teal' }).accent, 'teal');
-  assert.equal(runInitScript({ accent: 'purple' }).accent, undefined);
+test('an unexpected stored value falls back to the default mode', () => {
+  const defaultDark = resolveThemeMode(DEFAULT_THEME_MODE, true) === 'dark';
+  assert.equal(runInitScript(signedIn('u1', '"><script>'), { systemDark: true }).dark, defaultDark);
+});
+
+test("the user's accent is restored only when it is one of the real styles", () => {
+  assert.equal(runInitScript(signedIn('u1', 'light', 'teal')).accent, 'teal');
+  assert.equal(runInitScript(signedIn('u1', 'light', 'purple')).accent, undefined);
 });
 
 test('blocked storage cannot break the page', () => {
-  assert.doesNotThrow(() => runInitScript({ storageThrows: true }));
+  assert.doesNotThrow(() => runInitScript({}, { storageThrows: true }));
 });
 
 test('the script and the bottom nav agree on the accent styles', () => {

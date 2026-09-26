@@ -36,7 +36,10 @@ const fonts = [
 
 export default function AppearancePage() {
   const { toast } = useToast();
-  const { user, loading: authLoading, refreshUserData } = useAuth();
+  const { user: viewedUser, originalUser, loading: authLoading, refreshUserData } = useAuth();
+  // Appearance is personal: during Switch User these stay the signed-in admin's own, the same
+  // person ThemeProvider applies them for — not the account being viewed.
+  const user = originalUser ?? viewedUser;
 
   const [selectedColor, setSelectedColor] = useState('violet');
   const [selectedFont, setSelectedFont] = useState('inter');

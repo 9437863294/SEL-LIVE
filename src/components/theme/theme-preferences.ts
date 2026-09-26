@@ -13,14 +13,23 @@ export type ResolvedThemeMode = 'light' | 'dark';
 
 /**
  * Light until a user picks otherwise. Most screens were built light-only and reach dark through the
- * compatibility layer in globals.css; following every phone that happens to be in dark mode would
- * put that layer in front of people who never asked for it.
+ * compatibility layer (dark-compat.css); following every phone that happens to be in dark mode
+ * would put that layer in front of people who never asked for it.
  */
 export const DEFAULT_THEME_MODE: ThemeMode = 'light';
 
-/** Mirrors of the signed-in user's choices, read by the inline script before React loads. */
-export const THEME_MODE_STORAGE_KEY = 'sel-theme-mode';
-export const ACCENT_STYLE_STORAGE_KEY = 'sel-nav-style';
+/**
+ * The choices belong to the user — they live on the profile (`theme.mode`, `theme.navStyle`). This
+ * device keeps a mirror of each user's, keyed by user id, for the inline script to read before
+ * React and Firebase Auth have loaded. `THEME_USER_STORAGE_KEY` says whose mirror applies: the user
+ * signed in here, or nobody after a sign-out — so a shared machine never hands one person's dark
+ * mode to the next, and the sign-in screen is always in the default.
+ */
+export const THEME_USER_STORAGE_KEY = 'sel-theme-user';
+const THEME_MODE_PREFIX = 'sel-theme-mode:';
+const ACCENT_STYLE_PREFIX = 'sel-nav-style:';
+export const themeModeStorageKey = (userId: string) => THEME_MODE_PREFIX + userId;
+export const accentStyleStorageKey = (userId: string) => ACCENT_STYLE_PREFIX + userId;
 
 /** Kept in step with `FLOATING_NAV_THEMES` in `src/components/navigation/themes.ts`. */
 export const ACCENT_STYLES = ['blue', 'teal', 'neon'] as const;
@@ -51,11 +60,12 @@ export function themeInitScript(): string {
   return [
     '(function(){try{',
     'var d=document.documentElement,s=window.localStorage;',
-    `var m=s.getItem(${JSON.stringify(THEME_MODE_STORAGE_KEY)});`,
+    `var u=s.getItem(${JSON.stringify(THEME_USER_STORAGE_KEY)});`,
+    `var m=u?s.getItem(${JSON.stringify(THEME_MODE_PREFIX)}+u):null;`,
     `if(${modes}.indexOf(m)<0)m=${JSON.stringify(DEFAULT_THEME_MODE)};`,
     "var dark=m==='dark'||(m==='system'&&window.matchMedia('(prefers-color-scheme: dark)').matches);",
     "d.classList.toggle('dark',dark);d.style.colorScheme=dark?'dark':'light';",
-    `var a=s.getItem(${JSON.stringify(ACCENT_STYLE_STORAGE_KEY)});`,
+    `var a=u?s.getItem(${JSON.stringify(ACCENT_STYLE_PREFIX)}+u):null;`,
     `if(${accents}.indexOf(a)>=0)d.setAttribute('data-nav-style',a);`,
     '}catch(e){}})()',
   ].join('');

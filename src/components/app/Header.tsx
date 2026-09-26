@@ -4,7 +4,7 @@
 import { useState, useEffect, useMemo } from 'react';
 import Link from 'next/link';
 import Image from 'next/image';
-import { Bell, Settings, LogOut, User as UserIcon, Lock, Home, FileText, Inbox, Loader2, Users, LogIn, History as HistoryIcon, AlertTriangle, MessageCircle, Monitor, Moon, Sun } from 'lucide-react';
+import { Bell, Settings, LogOut, User as UserIcon, Lock, Home, FileText, Inbox, Loader2, Users, LogIn, History as HistoryIcon, AlertTriangle, MessageCircle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
   DropdownMenu,
@@ -13,14 +13,8 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
   DropdownMenuLabel,
-  DropdownMenuRadioGroup,
-  DropdownMenuRadioItem,
-  DropdownMenuSub,
-  DropdownMenuSubContent,
-  DropdownMenuSubTrigger,
 } from '@/components/ui/dropdown-menu';
-import { useTheme } from '@/components/theme/ThemeProvider';
-import { THEME_MODES, isThemeMode, themeModeMeta } from '@/components/theme/theme-preferences';
+import { ThemeToggleButton } from '@/components/theme/ThemeToggleButton';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { usePathname, useRouter } from 'next/navigation';
 import { auth, db } from '@/lib/firebase';
@@ -104,7 +98,6 @@ export default function Header() {
   const router = useRouter();
   const { toast } = useToast();
   const { user, isImpersonating, handleSignOut } = useAuth();
-  const { mode: themeMode, resolvedMode, setMode: setThemeMode } = useTheme();
   const [isChangePasswordOpen, setIsChangePasswordOpen] = useState(false);
   const [isSwitchUserOpen, setIsSwitchUserOpen] = useState(false);
   const { can } = useAuthorization();
@@ -448,9 +441,11 @@ export default function Header() {
           </div>
 
 
-          <div className="ml-auto flex items-center gap-2 md:gap-4">
+          <div className="ml-auto flex items-center gap-1 sm:gap-2 md:gap-4">
              <span className="text-sm font-medium text-foreground hidden sm:inline">{user?.name}</span>
             <TooltipProvider>
+              {/* The signed-in user's own light / dark / system choice — saved to their profile. */}
+              <ThemeToggleButton />
 
               {/*
                 A link, deliberately without a count.
@@ -524,25 +519,6 @@ export default function Header() {
                       <Lock className="mr-2 h-4 w-4" />
                       <span>Change Password</span>
                     </DropdownMenuItem>
-                     <DropdownMenuSub>
-                      <DropdownMenuSubTrigger>
-                        {resolvedMode === 'dark' ? <Moon className="mr-2 h-4 w-4" /> : <Sun className="mr-2 h-4 w-4" />}
-                        <span>Theme</span>
-                      </DropdownMenuSubTrigger>
-                      <DropdownMenuSubContent>
-                        <DropdownMenuRadioGroup value={themeMode} onValueChange={(value) => isThemeMode(value) && setThemeMode(value)}>
-                          {THEME_MODES.map((option) => {
-                            const Icon = option === 'dark' ? Moon : option === 'system' ? Monitor : Sun;
-                            return (
-                              <DropdownMenuRadioItem key={option} value={option}>
-                                <Icon className="mr-2 h-4 w-4" />
-                                {themeModeMeta[option].label}
-                              </DropdownMenuRadioItem>
-                            );
-                          })}
-                        </DropdownMenuRadioGroup>
-                      </DropdownMenuSubContent>
-                    </DropdownMenuSub>
                      {canSwitchUser && !isImpersonating && (
                         <DropdownMenuItem onSelect={() => setIsSwitchUserOpen(true)}>
                             <LogIn className="mr-2 h-4 w-4" />
