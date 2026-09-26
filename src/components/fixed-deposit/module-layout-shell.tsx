@@ -14,8 +14,10 @@ import {
   FileText,
   FileUp,
   Landmark,
+  LayoutDashboard,
   ListTree,
   Menu,
+  Plus,
   RefreshCcw,
   Replace,
   Settings2,
@@ -24,6 +26,7 @@ import {
   type LucideIcon,
 } from 'lucide-react';
 import { useAuthorization } from '@/hooks/useAuthorization';
+import { ModuleBottomNav, type ModuleNavTab } from '@/components/navigation/ModuleBottomNav';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle, SheetTrigger } from '@/components/ui/sheet';
@@ -55,6 +58,18 @@ export default function FixedDepositLayoutShell({ children }: { children: ReactN
   const canViewModule = can('View Module', 'Fixed Deposit Management') || sections.some((item) => can('View', `Fixed Deposit Management.${item.resource}`));
   const visibleSections = sections.filter((item) => canViewModule && (item.resource === 'Dashboard' || can('View', `Fixed Deposit Management.${item.resource}`) || can('Add', `Fixed Deposit Management.${item.resource}`)));
 
+  // The phone's bottom bar: the dashboard, the register, creating an FD in the middle, approvals,
+  // and "More" opening the full menu. Each tab only if its menu entry is visible too.
+  const isVisible = (href: string) => visibleSections.some((item) => item.href === href);
+  const bottomTabs: ModuleNavTab[] = [
+    { href: '/fixed-deposit', label: 'Home', icon: LayoutDashboard, match: (path) => path === '/fixed-deposit' || path === '/fixed-deposit/dashboard' },
+    ...(isVisible('/fixed-deposit/register') ? [{ href: '/fixed-deposit/register', label: 'Register', icon: ListTree }] : []),
+    ...(can('Add', 'Fixed Deposit Management.FD Register')
+      ? [{ href: '/fixed-deposit/new', label: 'New', icon: Plus, emphasized: true, ariaLabel: 'Create new fixed deposit' }]
+      : []),
+    ...(isVisible('/fixed-deposit/approvals') ? [{ href: '/fixed-deposit/approvals', label: 'Approvals', icon: ClipboardCheck }] : []),
+  ];
+
   const links = (onNavigate?: () => void) => visibleSections.map((item) => {
     const active = pathname === item.href || (item.href !== '/fixed-deposit' && pathname.startsWith(item.href));
     const Icon = item.icon;
@@ -73,5 +88,6 @@ export default function FixedDepositLayoutShell({ children }: { children: ReactN
       <aside className="hidden lg:sticky lg:top-20 lg:block"><Card className="overflow-hidden border-white/80 bg-white/90 shadow-sm"><div className="border-b bg-gradient-to-r from-cyan-500/10 to-blue-500/5 px-4 py-3"><div className="flex items-center gap-2.5"><div className="flex h-8 w-8 items-center justify-center rounded-lg bg-gradient-to-br from-cyan-600 to-blue-700"><BadgeIndianRupee className="h-4 w-4 text-white" /></div><div><p className="text-sm font-semibold text-slate-800">Fixed Deposits</p><p className="text-[11px] text-muted-foreground">Treasury Control</p></div></div></div><CardContent className="space-y-1 p-2">{links()}</CardContent></Card></aside>
       <main className="min-w-0">{children}</main>
     </div>
+    <ModuleBottomNav tabs={bottomTabs} onMore={() => setMobileOpen(true)} moduleName="Fixed Deposit Management" />
   </div>;
 }

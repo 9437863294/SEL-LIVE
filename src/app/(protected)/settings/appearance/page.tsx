@@ -3,7 +3,7 @@
 
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
-import { ArrowLeft, Check, Palette, Type } from 'lucide-react';
+import { ArrowLeft, Check, Palette, SunMoon, Smartphone, Type } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Label } from '@/components/ui/label';
@@ -13,6 +13,13 @@ import { doc, updateDoc } from 'firebase/firestore';
 import { useAuth } from '@/components/auth/AuthProvider';
 import { cn } from '@/lib/utils';
 import { Skeleton } from '@/components/ui/skeleton';
+import { FloatingNavShowcase } from '@/components/navigation/FloatingNavShowcase';
+import { ThemeModeControl } from '@/components/theme/ThemeModeControl';
+import {
+  DEFAULT_FLOATING_NAV_THEME,
+  isFloatingNavTheme,
+  type FloatingNavTheme,
+} from '@/components/navigation/themes';
 
 const colors = [
   { name: 'Violet', value: 'violet', bg: 'bg-violet-500', ring: 'ring-violet-400', preview: 'from-violet-500 to-purple-600' },
@@ -33,12 +40,14 @@ export default function AppearancePage() {
 
   const [selectedColor, setSelectedColor] = useState('violet');
   const [selectedFont, setSelectedFont] = useState('inter');
+  const [selectedNavStyle, setSelectedNavStyle] = useState<FloatingNavTheme>(DEFAULT_FLOATING_NAV_THEME);
   const [isSaving, setIsSaving] = useState(false);
 
   useEffect(() => {
     if (user?.theme) {
       setSelectedColor(user.theme.color || 'violet');
       setSelectedFont(user.theme.font || 'inter');
+      setSelectedNavStyle(isFloatingNavTheme(user.theme.navStyle) ? user.theme.navStyle : DEFAULT_FLOATING_NAV_THEME);
     }
   }, [user]);
 
@@ -49,8 +58,12 @@ export default function AppearancePage() {
     }
     setIsSaving(true);
     try {
+      // Field paths, not a whole `theme` map: the map also holds `sessionDuration` (Login Expiry),
+      // which replacing it wholesale used to wipe.
       await updateDoc(doc(db, 'users', user.id), {
-        theme: { color: selectedColor, font: selectedFont },
+        'theme.color': selectedColor,
+        'theme.font': selectedFont,
+        'theme.navStyle': selectedNavStyle,
       });
       await refreshUserData();
       toast({ title: 'Success', description: 'Appearance settings saved.' });
@@ -111,6 +124,20 @@ export default function AppearancePage() {
             </Button>
           </div>
         </div>
+
+        {/* Theme mode card — applies and saves on its own, no Save needed */}
+        <Card className="mb-4">
+          <CardHeader className="pb-2">
+            <div className="flex items-center gap-2">
+              <SunMoon className="h-4 w-4 text-muted-foreground" />
+              <CardTitle className="text-base">Theme</CardTitle>
+            </div>
+            <CardDescription>Light, dark, or follow this device. Changes apply straight away, everywhere you sign in.</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <ThemeModeControl />
+          </CardContent>
+        </Card>
 
         {/* Color Scheme Card */}
         <Card className="mb-4 overflow-hidden">
@@ -191,6 +218,20 @@ export default function AppearancePage() {
                 </button>
               ))}
             </div>
+          </CardContent>
+        </Card>
+
+        {/* Mobile navigation card */}
+        <Card className="mt-4">
+          <CardHeader className="pb-2">
+            <div className="flex items-center gap-2">
+              <Smartphone className="h-4 w-4 text-muted-foreground" />
+              <CardTitle className="text-base">Accent Style</CardTitle>
+            </div>
+            <CardDescription>Colours the tab strips in every module and the floating bottom bar on your phone.</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <FloatingNavShowcase value={selectedNavStyle} onChange={setSelectedNavStyle} />
           </CardContent>
         </Card>
       </div>

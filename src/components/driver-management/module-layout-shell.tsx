@@ -5,18 +5,21 @@ import { usePathname } from 'next/navigation';
 import { useState } from 'react';
 import {
   CarFront,
+  ClipboardCheck,
   Fuel,
   Gauge,
   ListFilter,
   LocateFixed,
   Menu,
   ReceiptText,
+  Route,
   ShieldAlert,
   Truck,
   User,
 } from 'lucide-react';
 import { useAuthorization } from '@/hooks/useAuthorization';
 import { useCurrentDriverProfile } from '@/components/vehicle-management/hooks';
+import { ModuleBottomNav, type ModuleNavTab } from '@/components/navigation/ModuleBottomNav';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle, SheetTrigger } from '@/components/ui/sheet';
@@ -52,6 +55,21 @@ const driverSelfResources = new Set([
   'Driver Daily Status', 'Driver Trips', 'Employee Trip Log',
 ]);
 
+// The phone's bottom bar, in priority order: the first four the user can open become the tabs,
+// and "More" opens the full menu. A driver gets their day — trips, the daily status, fuel; a
+// transport coordinator without the driver screens falls through to the management pages.
+// This module is the driver app (AppShell drops the app header for it in the Android WebView),
+// and none of its pages has a bottom bar of its own, so this is the only one on screen.
+const bottomTabPriority: ModuleNavTab[] = [
+  { href: '/driver-management',                 label: 'Home',     icon: Gauge, exact: true, ariaLabel: 'Overview' },
+  { href: '/driver-management/trips',           label: 'Trips',    icon: LocateFixed, ariaLabel: 'Driver trips' },
+  { href: '/driver-management/daily-status',    label: 'Status',   icon: ClipboardCheck, ariaLabel: 'Daily status' },
+  { href: '/driver-management/fuel',            label: 'Fuel',     icon: Fuel, ariaLabel: 'Driver fuel' },
+  { href: '/driver-management/trip-management', label: 'Manage',   icon: Route, ariaLabel: 'Trip management' },
+  { href: '/driver-management/employee-trips',  label: 'Claims',   icon: ReceiptText, ariaLabel: 'Employee trip reimbursement' },
+  { href: '/driver-management/trip-log',        label: 'Trip log', icon: ListFilter },
+];
+
 export default function DriverManagementLayoutShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const safePathname = pathname ?? '';
@@ -86,6 +104,9 @@ export default function DriverManagementLayoutShell({ children }: { children: Re
   };
 
   const availableSections = sections.filter((item) => canViewSection(item.resource));
+  const bottomTabs = bottomTabPriority
+    .filter((tab) => availableSections.some((item) => item.href === tab.href))
+    .slice(0, 4);
 
   const navigationLinks = (onNavigate?: () => void) => {
     let lastGroup = '';
@@ -216,6 +237,8 @@ export default function DriverManagementLayoutShell({ children }: { children: Re
 
         <main className="min-w-0 vm-reveal">{children}</main>
       </div>
+
+      <ModuleBottomNav tabs={bottomTabs} onMore={() => setMobileMenuOpen(true)} moduleName="Driver Management" />
     </div>
   );
 }

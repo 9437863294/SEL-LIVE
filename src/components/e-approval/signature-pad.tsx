@@ -231,7 +231,8 @@ export function EApprovalSignaturePad({
             ref={canvasRef}
             width={PAD_WIDTH}
             height={PAD_HEIGHT}
-            className="w-full touch-none rounded-lg border-2 border-dashed bg-white"
+            // `keep-light`: ink is drawn black, so the pad stays white in dark mode.
+            className="keep-light w-full touch-none rounded-lg border-2 border-dashed bg-white"
             style={{ aspectRatio: `${PAD_WIDTH} / ${PAD_HEIGHT}` }}
             onPointerDown={startStroke}
             onPointerMove={continueStroke}

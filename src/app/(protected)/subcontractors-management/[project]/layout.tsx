@@ -22,9 +22,12 @@ import {
   FileText,
   FolderOpen,
   HardHat,
+  LayoutDashboard,
+  Plus,
   Users,
 } from 'lucide-react';
 import { useAuthorization } from '@/hooks/useAuthorization';
+import { ModuleBottomNav, type ModuleNavTab } from '@/components/navigation/ModuleBottomNav';
 import { collection, getDocs, query } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import type { Project } from '@/lib/types';
@@ -41,6 +44,7 @@ export default function ProjectLayout({
   const pathname = usePathname();
   const { can } = useAuthorization();
   const [currentProject, setCurrentProject] = React.useState<Project | null>(null);
+  const [mobileMenuOpen, setMobileMenuOpen] = React.useState(false);
 
   React.useEffect(() => {
     const fetchProject = async () => {
@@ -96,6 +100,27 @@ export default function ProjectLayout({
 
   const visibleNavItems = navItems.filter((item) => item.permission);
 
+  // The phone's bottom bar: the project's dashboard, its work orders and bills, raising a bill in
+  // the middle, and "More" opening the sidebar's own sheet. Each tab only if the sidebar shows it.
+  const projectBase = `/subcontractors-management/${projectSlug}`;
+  const isVisible = (href: string) => visibleNavItems.some((item) => item.href === href);
+  const bottomTabs: ModuleNavTab[] = [
+    // The dashboard every screen's back button returns to, on the same right its page checks.
+    ...(can('View Module', 'Subcontractors Management', projectId)
+      ? [{ href: projectBase, label: 'Home', icon: LayoutDashboard, exact: true }]
+      : []),
+    ...(isVisible(`${projectBase}/work-order`)
+      ? [{ href: `${projectBase}/work-order`, label: 'Orders', icon: FileText, ariaLabel: 'Work orders' }]
+      : []),
+    // Scoped exactly as the Billing screen's own "Bill Entry" tile is.
+    ...(isVisible(`${projectBase}/billing`) && can('Create Bill', 'Subcontractors Management.Billing', projectSlug)
+      ? [{ href: `${projectBase}/billing/create`, label: 'New', icon: Plus, emphasized: true, ariaLabel: 'New subcontractor bill' }]
+      : []),
+    ...(isVisible(`${projectBase}/billing`)
+      ? [{ href: `${projectBase}/billing`, label: 'Billing', icon: Calculator }]
+      : []),
+  ];
+
   const isPrintPage = pathname.includes('/print');
   if (isPrintPage) {
     return <>{children}</>;
@@ -114,6 +139,8 @@ export default function ProjectLayout({
           subtitle={currentProject?.projectName || undefined}
           icon={HardHat}
           gradient="from-sky-600 to-blue-600"
+          mobileOpen={mobileMenuOpen}
+          onMobileOpenChange={setMobileMenuOpen}
           groups={[
             {
               label: 'Screens',
@@ -136,6 +163,11 @@ export default function ProjectLayout({
       }
     >
       {children}
+      <ModuleBottomNav
+        tabs={bottomTabs}
+        onMore={() => setMobileMenuOpen(true)}
+        moduleName="Subcontractors Management"
+      />
     </PmShell>
   );
 }

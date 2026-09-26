@@ -1,5 +1,7 @@
 // src/app/layout.tsx
 import './globals.css';
+// After globals.css: its dark-mode remaps must come later than Tailwind's utilities to win.
+import './dark-compat.css';
 import type { ReactNode } from 'react';
 import { Inter } from 'next/font/google';
 import { AuthProvider } from '@/components/auth/AuthProvider';
@@ -9,6 +11,9 @@ import { Suspense } from 'react';
 import { ClientSessionHandler } from '@/components/auth/ClientSessionHandler';
 import ProgressBar from '@/components/app/ProgressBar';
 import { PushNotificationsLoader } from '@/components/notifications/PushNotificationsLoader';
+import { InlineScript } from '@/components/theme/InlineScript';
+import { ThemeProvider } from '@/components/theme/ThemeProvider';
+import { themeInitScript } from '@/components/theme/theme-preferences';
 
 const inter = Inter({
   subsets: ['latin'],
@@ -28,6 +33,10 @@ export default function RootLayout({ children }: { children: ReactNode }) {
       data-scroll-behavior="smooth"
       suppressHydrationWarning
     >
+      <head>
+        {/* Applies the saved light/dark mode and accent while the HTML is parsed — no white flash. */}
+        <InlineScript html={themeInitScript()} />
+      </head>
       <body>
         <ProgressBar />
         <AuthProvider>
@@ -36,10 +45,12 @@ export default function RootLayout({ children }: { children: ReactNode }) {
             <ClientSessionHandler />
           </Suspense>
           <PushNotificationsLoader />
-          <ModuleProvider>
-            {children}
-            <Toaster />
-          </ModuleProvider>
+          <ThemeProvider>
+            <ModuleProvider>
+              {children}
+              <Toaster />
+            </ModuleProvider>
+          </ThemeProvider>
         </AuthProvider>
       </body>
     </html>

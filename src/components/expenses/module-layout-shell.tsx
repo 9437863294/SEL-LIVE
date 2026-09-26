@@ -19,8 +19,10 @@ import * as React from 'react';
 import { useState } from 'react';
 import Link from 'next/link';
 import { usePathname, useSearchParams } from 'next/navigation';
-import { BarChart3, ChevronDown, IndianRupee, LayoutDashboard, Layers, Menu, Settings } from 'lucide-react';
+import { BarChart3, ChevronDown, IndianRupee, LayoutDashboard, Layers, Menu, Plus, Settings } from 'lucide-react';
 import { EXPENSE_REPORTS, EXPENSE_REPORT_GROUPS } from '@/lib/expenses-reports';
+import { useAuth } from '@/components/auth/AuthProvider';
+import { ModuleBottomNav, type ModuleNavTab } from '@/components/navigation/ModuleBottomNav';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import {
@@ -81,7 +83,8 @@ function matchesPath(pathname: string, href: string) {
 }
 
 export default function ExpensesLayoutShell({ children }: { children: React.ReactNode }) {
-  const { can } = useAuthorization();
+  const { can, isLoading: authLoading } = useAuthorization();
+  const { permissions } = useAuth();
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const safePathname = pathname || '';
@@ -141,6 +144,34 @@ export default function ExpensesLayoutShell({ children }: { children: React.Reac
       permitted: can('View', 'Expenses.Settings'),
     },
   ].filter(item => item.permitted);
+
+  /**
+   * Raising a request is granted per department (`Expenses.Departments.<deptId>`), and the shell
+   * does not load the department list, so this asks whether any department grant carries Create —
+   * the grants Overview's "New Request" card reads — without repeating Overview's Firestore read.
+   */
+  const canCreateAnywhere =
+    can('Create', 'Expenses.Departments') ||
+    Object.entries(permissions).some(
+      ([key, actions]) => key.startsWith('Expenses.Departments.') && Array.isArray(actions) && actions.includes('Create'),
+    );
+
+  // The phone's bottom bar: Overview and the consolidated register, raising a request in the
+  // middle, and "More" opening the full menu (settings, the report list). Each tab only if its
+  // sidebar entry is visible too, and none until permissions resolve so the bar does not grow.
+  const isVisible = (href: string) => navItems.some(item => item.href === href);
+  const bottomTabs: ModuleNavTab[] = authLoading
+    ? []
+    : [
+        { href: '/expenses', label: 'Home', icon: LayoutDashboard, match: path => matchesPath(path, '/expenses') },
+        ...(isVisible('/expenses/all')
+          ? [{ href: '/expenses/all', label: 'All', icon: Layers, ariaLabel: 'Consolidated register' }]
+          : []),
+        ...(canCreateAnywhere
+          ? [{ href: '/expenses/new-request', label: 'New', icon: Plus, emphasized: true, ariaLabel: 'New expense request' }]
+          : []),
+        ...(isVisible('/expenses/reports') ? [{ href: '/expenses/reports', label: 'Reports', icon: BarChart3 }] : []),
+      ];
 
   const isPrintPage = safePathname.includes('/print');
   if (isPrintPage) return <>{children}</>;
@@ -337,6 +368,8 @@ export default function ExpensesLayoutShell({ children }: { children: React.Reac
           </footer>
         </main>
       </div>
+
+      <ModuleBottomNav tabs={bottomTabs} onMore={() => setMobileMenuOpen(true)} moduleName="Expenses" />
     </div>
   );
 }

@@ -18,6 +18,7 @@ import {
   ListChecks,
   Loader2,
   Menu,
+  Plus,
   Settings,
   ShieldAlert,
   Sparkles,
@@ -27,6 +28,7 @@ import {
   Users,
 } from 'lucide-react';
 import { useAuthorization } from '@/hooks/useAuthorization';
+import { ModuleBottomNav, type ModuleNavTab } from '@/components/navigation/ModuleBottomNav';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle, SheetTrigger } from '@/components/ui/sheet';
@@ -113,6 +115,18 @@ export default function HrLayoutShell({ children }: { children: React.ReactNode 
     safePathname === '/hr/tasks' ||
     ALWAYS_VISIBLE.some(href => safePathname.startsWith(href)) ||
     visibleItems.some(item => matchesPath(safePathname, item.href));
+
+  // The phone's bottom bar: the day-to-day screens, raising a requirement in the middle, and
+  // "More" opening the full menu below. Each tab only if its sidebar entry is visible too.
+  const isVisible = (href: string) => visibleItems.some(item => item.href === href);
+  const bottomTabs: ModuleNavTab[] = [
+    { href: '/hr', label: 'Home', icon: LayoutDashboard, match: path => matchesPath(path, '/hr') },
+    ...(isVisible('/hr/tasks') ? [{ href: '/hr/tasks', label: 'My Tasks', icon: ListChecks }] : []),
+    ...(can('Add', `${HR_PERMISSION_MODULE}.Requirements`)
+      ? [{ href: '/hr/requirements/new', label: 'New', icon: Plus, emphasized: true, ariaLabel: 'New manpower requirement' }]
+      : []),
+    ...(isVisible('/hr/approvals') ? [{ href: '/hr/approvals', label: 'Approvals', icon: ClipboardCheck }] : []),
+  ];
 
   const navigationLinks = (onNavigate?: () => void) => {
     let lastGroup = '';
@@ -255,6 +269,8 @@ export default function HrLayoutShell({ children }: { children: React.ReactNode 
 
         <main className="hr-content min-w-0">{currentPageAllowed ? children : pageAccessDenied}</main>
       </div>
+
+      <ModuleBottomNav tabs={bottomTabs} onMore={() => setMobileMenuOpen(true)} moduleName="HR & Recruitment" />
     </div>
   );
 }

@@ -1,4 +1,5 @@
 import type { ReactNode } from 'react';
+import Requisition2BottomNav from '@/components/site-fund-requisition/Requisition2BottomNav';
 
 export default function SiteFundRequisition2Layout({
   children,
@@ -28,6 +29,9 @@ export default function SiteFundRequisition2Layout({
       </div>
 
       <div className="relative">{children}</div>
+
+      {/* A client component: this layout stays a server component, and icons cannot cross that boundary as props. */}
+      <Requisition2BottomNav />
     </div>
   );
 }

@@ -620,10 +620,10 @@ export default function WorkDashboard({
       */}
       <Tabs value={view} onValueChange={(value) => setView(value === 'calendar' ? 'calendar' : 'list')}>
         <TabsList className="h-9 border border-slate-200/80 bg-slate-100/80 p-1 shadow-sm">
-          <TabsTrigger value="list" className='h-7 gap-1.5 px-2.5 text-xs transition-all data-[state=active]:shadow-sm'>
+          <TabsTrigger value="list" className='h-7 gap-1.5 px-2.5 text-xs'>
             <ListIcon className="h-3.5 w-3.5" /> List
           </TabsTrigger>
-          <TabsTrigger value="calendar" className='h-7 gap-1.5 px-2.5 text-xs transition-all data-[state=active]:shadow-sm'>
+          <TabsTrigger value="calendar" className='h-7 gap-1.5 px-2.5 text-xs'>
             <CalendarDays className="h-3.5 w-3.5" /> Calendar
             {datedCount > 0 ? (
               <Badge variant="outline" className="ml-0.5 px-1 py-0 text-[10px] tabular-nums">

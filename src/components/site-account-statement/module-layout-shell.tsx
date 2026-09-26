@@ -29,6 +29,7 @@ import { db } from '@/lib/firebase';
 import { SAS_COLLECTIONS } from '@/lib/site-account-statement';
 import { useAuth } from '@/components/auth/AuthProvider';
 import { useAuthorization } from '@/hooks/useAuthorization';
+import { ModuleBottomNav, type ModuleNavTab } from '@/components/navigation/ModuleBottomNav';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle, SheetTrigger } from '@/components/ui/sheet';
@@ -176,6 +177,23 @@ export default function SiteAccountStatementShell({ children }: { children: Reac
   }
 
   const isCurrentPageAccessible = !membershipChecked || isPathInSections(safePathname, availableSections);
+
+  // The phone's bottom bar: the two ledgers entered from site and the statement they add up to, with
+  // "More" opening the full menu below. Each tab only if its sidebar entry is visible too. Expenses
+  // and payments are added from a dialog on their own page, so there is no create tab.
+  const isVisible = (href: string) => availableSections.some(s => s.href === href);
+  const bottomTabs: ModuleNavTab[] = [
+    { href: '/site-account-statement', label: 'Home', icon: LayoutDashboard, exact: true },
+    ...(isVisible('/site-account-statement/expenses')
+      ? [{ href: '/site-account-statement/expenses', label: 'Expenses', icon: TrendingDown, ariaLabel: 'Site expenses' }]
+      : []),
+    ...(isVisible('/site-account-statement/payments')
+      ? [{ href: '/site-account-statement/payments', label: 'Payments', icon: TrendingUp, ariaLabel: 'Payments received' }]
+      : []),
+    ...(isVisible('/site-account-statement/reports/statement')
+      ? [{ href: '/site-account-statement/reports/statement', label: 'Statement', icon: BookOpen, ariaLabel: 'Account statement' }]
+      : []),
+  ];
 
   const navigationLinks = (onNavigate?: () => void) => {
     let lastGroup = '';
@@ -333,6 +351,8 @@ export default function SiteAccountStatementShell({ children }: { children: Reac
           {isCurrentPageAccessible ? children : pageAccessDenied}
         </main>
       </div>
+
+      <ModuleBottomNav tabs={bottomTabs} onMore={() => setMobileMenuOpen(true)} moduleName="Site Account Statement" />
     </div>
   );
 }

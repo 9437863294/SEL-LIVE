@@ -64,7 +64,11 @@
     "test:work-calls": "node --experimental-strip-types --test tests/work-calls.test.mjs",
     "test:work-dashboard": "node --experimental-strip-types --test tests/work-dashboard.test.mjs tests/work-dashboard-links.test.mjs tests/work-dashboard-statuses.test.mjs",
     "typecheck:work-dashboard": "tsc -p tsconfig.work-dashboard.json",
-    "check:greythr-swipes": "node --experimental-strip-types scripts/check-greythr-swipes.mjs"
+    "check:greythr-swipes": "node --experimental-strip-types scripts/check-greythr-swipes.mjs",
+    "test:navigation": "node --experimental-strip-types --test tests/floating-nav-geometry.test.mjs",
+    "typecheck:navigation": "tsc -p tsconfig.navigation.json",
+    "theme:dark-compat": "node scripts/generate-dark-compat.mjs",
+    "test:theme": "node --experimental-strip-types --test tests/theme-preferences.test.mjs"
   },
   "dependencies": {
     "@capacitor-community/background-geolocation": "^1.2.26",

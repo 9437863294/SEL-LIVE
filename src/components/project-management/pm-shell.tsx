@@ -116,6 +116,8 @@ export function PmSidebar({
   footerLinks,
   activeValue,
   onChange,
+  mobileOpen: mobileOpenProp,
+  onMobileOpenChange,
 }: {
   title: string;
   /** The project, under the screen name — the mockup's second line on the module mark. */
@@ -134,9 +136,20 @@ export function PmSidebar({
   footerLinks?: PmSidebarLink[];
   activeValue?: string;
   onChange?: (value: string) => void;
+  /**
+   * Control the phone sheet from outside — for a layout whose bottom bar's "More" should open this
+   * same list rather than a second copy of it. Left alone, the sheet keeps its own state.
+   */
+  mobileOpen?: boolean;
+  onMobileOpenChange?: (open: boolean) => void;
 }) {
   const [isExpanded, setIsExpanded] = useState(true);
-  const [mobileOpen, setMobileOpen] = useState(false);
+  const [ownMobileOpen, setOwnMobileOpen] = useState(false);
+  const mobileOpen = mobileOpenProp ?? ownMobileOpen;
+  const setMobileOpen = (open: boolean) => {
+    if (mobileOpenProp === undefined) setOwnMobileOpen(open);
+    onMobileOpenChange?.(open);
+  };
 
   const allViews = groups.flatMap((group) => ("views" in group ? group.views : []));
   const current = allViews.find((view) => view.value === activeValue);

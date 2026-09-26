@@ -9,6 +9,7 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/comp
 import { cn } from '@/lib/utils';
 import { useAuthorization } from '@/hooks/useAuthorization';
 import { usePathname } from 'next/navigation';
+import { ModuleBottomNav, type ModuleNavTab } from '@/components/navigation/ModuleBottomNav';
 
 export default function LoanLayoutShell({ children }: { children: React.ReactNode }) {
   const [isExpanded, setIsExpanded] = useState(false);
@@ -22,6 +23,17 @@ export default function LoanLayoutShell({ children }: { children: React.ReactNod
     { href: '/loan/reports', icon: BarChart3, label: 'Reports', permission: can('View', 'Loan.Reports'), iconBg: 'bg-indigo-100', iconColor: 'text-indigo-600', activeGradient: 'from-indigo-500 to-blue-600' },
   ].filter(i => i.permission);
 
+  // On a phone the rail gives way to the bottom bar. The module is small enough for every rail
+  // destination to be a tab — creating a loan in the middle — so there is no "More".
+  const isVisible = (href: string) => navItems.some(item => item.href === href);
+  const bottomTabs: ModuleNavTab[] = [
+    ...(isVisible('/loan') ? [{ href: '/loan', label: 'Home', icon: LayoutDashboard, exact: true }] : []),
+    ...(isVisible('/loan/manage') ? [{ href: '/loan/manage', label: 'Loans', icon: Briefcase, ariaLabel: 'Manage loans' }] : []),
+    ...(can('Create', 'Loan') ? [{ href: '/loan/new', label: 'New', icon: Plus, emphasized: true, ariaLabel: 'New loan' }] : []),
+    ...(isVisible('/loan/emi-summary') ? [{ href: '/loan/emi-summary', label: 'EMIs', icon: CalendarCheck, ariaLabel: 'EMI tracker' }] : []),
+    ...(isVisible('/loan/reports') ? [{ href: '/loan/reports', label: 'Reports', icon: BarChart3 }] : []),
+  ];
+
   const isPrintPage = pathname?.includes('/print');
   if (isPrintPage) return <>{children}</>;
 
@@ -33,7 +45,7 @@ export default function LoanLayoutShell({ children }: { children: React.ReactNod
   return (
     <div className="flex w-full h-full">
       <aside className={cn(
-        'fixed left-0 top-16 h-[calc(100vh-4rem)] z-40 flex flex-col border-r border-border/60 bg-background/95 backdrop-blur-sm transition-all duration-300 shadow-sm',
+        'fixed left-0 top-16 h-[calc(100vh-4rem)] z-40 hidden md:flex flex-col border-r border-border/60 bg-background/95 backdrop-blur-sm transition-all duration-300 shadow-sm',
         isExpanded ? 'w-56' : 'w-14',
       )}>
         <div className={cn('flex items-center gap-2 px-3 py-3 border-b border-border/40 shrink-0', !isExpanded && 'justify-center')}>
@@ -107,11 +119,12 @@ export default function LoanLayoutShell({ children }: { children: React.ReactNod
         </TooltipProvider>
       </aside>
 
-      <div className={cn('flex-1 flex flex-col min-h-screen transition-all duration-300', isExpanded ? 'ml-56' : 'ml-14')}>
+      <div className={cn('flex-1 flex flex-col min-h-screen transition-all duration-300', isExpanded ? 'md:ml-56' : 'md:ml-14')}>
         <main className="flex-grow p-4 sm:p-6">{children}</main>
         <footer className="shrink-0 flex items-center text-muted-foreground text-xs py-3 px-6 border-t border-border/40">
           <span>Copyright © 2025 SEL. All Rights Reserved.</span>
         </footer>
+        <ModuleBottomNav tabs={bottomTabs} moduleName="Loans" hideAbove="md" />
       </div>
     </div>
   );

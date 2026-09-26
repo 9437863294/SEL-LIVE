@@ -44,6 +44,10 @@ export interface User {
     color?: string;
     font?: string;
     sessionDuration?: number;
+    /** Look of the mobile floating bottom navigation — see `src/components/navigation/themes.ts`. */
+    navStyle?: string;
+    /** Light, dark or follow the device — see `src/components/theme/theme-preferences.ts`. */
+    mode?: string;
   };
   organizationId?: string;
   organizationName?: string;

@@ -24,6 +24,7 @@ import {
   Users,
 } from 'lucide-react';
 
+import { ModuleBottomNav, type ModuleNavTab } from '@/components/navigation/ModuleBottomNav';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import {
@@ -306,6 +307,21 @@ const GROUP_LABELS: Record<Section['group'], string> = {
 
 const GROUP_ORDER: Section['group'][] = ['mine', 'monitor', 'reports', 'config'];
 
+/**
+ * The phone's bottom bar, in priority order: the first four the viewer can see become the tabs.
+ *
+ * Every one is a section above, and a tab shows only when its sidebar row does — so an
+ * administrator gets the fleet at a glance plus their own day, and an employee with no
+ * administrative permission gets the three pages written for them, work calls among them.
+ */
+const BOTTOM_TABS: ModuleNavTab[] = [
+  { href: WINDOWS_AGENT_ROUTES.dashboard, label: 'Home', icon: Gauge, exact: true, ariaLabel: 'Dashboard' },
+  { href: WINDOWS_AGENT_ROUTES.live, label: 'Live', icon: Activity, ariaLabel: 'Live users' },
+  { href: WINDOWS_AGENT_ROUTES.workCalls, label: 'Calls', icon: PhoneCall, exact: true, ariaLabel: 'Work calls' },
+  { href: WINDOWS_AGENT_ROUTES.myActivity, label: 'My day', icon: UserRound, ariaLabel: 'My activity' },
+  { href: WINDOWS_AGENT_ROUTES.monitoringPolicy, label: 'Recorded', icon: ShieldCheck, ariaLabel: 'What is recorded' },
+];
+
 /** Where the collapsed/expanded preference is kept. Per browser, not per user. */
 const NAV_COLLAPSED_KEY = 'sel.windowsAgent.navCollapsed';
 
@@ -392,6 +408,10 @@ function ShellBody({ children }: { children: React.ReactNode }) {
       </div>
     );
   }
+
+  const bottomTabs = BOTTOM_TABS.filter((tab) => visible.some((section) => section.href === tab.href)).slice(0, 4);
+  // "More" only when the menu holds something the tabs do not; for most employees it would not.
+  const hasMoreSections = visible.length > bottomTabs.length;
 
   /**
    * One row. A tile, a label when there is room, and a tooltip that always has something to say.
@@ -564,6 +584,12 @@ function ShellBody({ children }: { children: React.ReactNode }) {
         )}
       >
         <main className="min-w-0 p-3 sm:p-6">{children}</main>
+
+        <ModuleBottomNav
+          tabs={bottomTabs}
+          onMore={hasMoreSections ? () => setSheetOpen(true) : undefined}
+          moduleName="Windows Agent"
+        />
       </div>
     </TooltipProvider>
   );

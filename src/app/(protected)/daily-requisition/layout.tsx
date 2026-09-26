@@ -1,4 +1,5 @@
 import type { ReactNode } from 'react';
+import { DailyRequisitionBottomNav } from '@/components/daily-requisition/bottom-nav';
 
 export default function DailyRequisitionLayout({
   children,
@@ -28,6 +29,9 @@ export default function DailyRequisitionLayout({
       </div>
 
       <div className="relative">{children}</div>
+
+      {/* The phone's bottom bar. It builds its own tabs: a server layout cannot pass icons to a client component. */}
+      <DailyRequisitionBottomNav />
     </div>
   );
 }

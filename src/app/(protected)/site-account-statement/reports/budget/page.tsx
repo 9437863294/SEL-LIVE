@@ -579,10 +579,10 @@ export default function BudgetReportsPage() {
       {/* ── Tab bar ── */}
       <Tabs value={activeTab} onValueChange={v => setActiveTab(v as ActiveTab)}>
         <TabsList className="h-auto flex-wrap gap-1 bg-slate-100/80">
-          <TabsTrigger value="utilization" className="text-xs px-2 py-1 data-[state=active]:bg-white data-[state=active]:text-emerald-700 data-[state=active]:font-semibold">
+          <TabsTrigger value="utilization" className="text-xs px-2 py-1 data-[state=active]:font-semibold">
             Budget Utilization
           </TabsTrigger>
-          <TabsTrigger value="over-budget" className="text-xs px-2 py-1 data-[state=active]:bg-white data-[state=active]:text-red-700 data-[state=active]:font-semibold">
+          <TabsTrigger value="over-budget" className="text-xs px-2 py-1 data-[state=active]:font-semibold">
             Over-Budget Alert
             {overBudgetRows.length > 0 && (
               <span className="ml-1 flex h-4 w-4 items-center justify-center rounded-full bg-red-600 text-[9px] font-bold text-white">
@@ -590,10 +590,10 @@ export default function BudgetReportsPage() {
               </span>
             )}
           </TabsTrigger>
-          <TabsTrigger value="category" className="text-xs px-2 py-1 data-[state=active]:bg-white data-[state=active]:text-violet-700 data-[state=active]:font-semibold">
+          <TabsTrigger value="category" className="text-xs px-2 py-1 data-[state=active]:font-semibold">
             By Category
           </TabsTrigger>
-          <TabsTrigger value="approval" className="text-xs px-2 py-1 data-[state=active]:bg-white data-[state=active]:text-blue-700 data-[state=active]:font-semibold">
+          <TabsTrigger value="approval" className="text-xs px-2 py-1 data-[state=active]:font-semibold">
             Approval Status
           </TabsTrigger>
         </TabsList>

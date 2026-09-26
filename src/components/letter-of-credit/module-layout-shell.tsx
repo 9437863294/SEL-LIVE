@@ -14,10 +14,12 @@ import {
   FileSearch,
   FileText,
   Landmark,
+  LayoutDashboard,
   LayoutList,
   Link2,
   Menu,
   PencilRuler,
+  Plus,
   ReceiptIndianRupee,
   Settings2,
   ShieldAlert,
@@ -29,6 +31,7 @@ import {
 } from 'lucide-react';
 import { useAuthorization } from '@/hooks/useAuthorization';
 import { LC_PERMISSION_MODULE } from '@/lib/letter-of-credit';
+import { ModuleBottomNav, type ModuleNavTab } from '@/components/navigation/ModuleBottomNav';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle, SheetTrigger } from '@/components/ui/sheet';
@@ -63,6 +66,18 @@ export default function LetterOfCreditLayoutShell({ children }: { children: Reac
   const canViewModule = can('View Module', LC_PERMISSION_MODULE) || sections.some((section) => can('View', `${LC_PERMISSION_MODULE}.${section.resource}`));
   const visibleSections = sections.filter((section) => canViewModule && (section.resource === 'Dashboard' || can('View', `${LC_PERMISSION_MODULE}.${section.resource}`) || can('Add', `${LC_PERMISSION_MODULE}.${section.resource}`) || can('Request', `${LC_PERMISSION_MODULE}.${section.resource}`)));
 
+  // The phone's bottom bar: the dashboard, the register, raising an LC request in the middle,
+  // approvals, and "More" opening the full menu. Each tab only if its menu entry is visible too.
+  const isVisible = (href: string) => visibleSections.some((section) => section.href === href);
+  const bottomTabs: ModuleNavTab[] = [
+    { href: '/letter-of-credit', label: 'Home', icon: LayoutDashboard, match: (path) => path === '/letter-of-credit' || path === '/letter-of-credit/dashboard' },
+    ...(isVisible('/letter-of-credit/register') ? [{ href: '/letter-of-credit/register', label: 'Register', icon: LayoutList }] : []),
+    ...(can('Add', `${LC_PERMISSION_MODULE}.LC Requests`)
+      ? [{ href: '/letter-of-credit/new', label: 'New', icon: Plus, emphasized: true, ariaLabel: 'New letter of credit request' }]
+      : []),
+    ...(isVisible('/letter-of-credit/approvals') ? [{ href: '/letter-of-credit/approvals', label: 'Approvals', icon: ClipboardCheck }] : []),
+  ];
+
   const links = (onNavigate?: () => void) => visibleSections.map((section) => {
     const active = pathname === section.href || (section.href !== '/letter-of-credit' && pathname.startsWith(section.href));
     const Icon = section.icon;
@@ -87,6 +102,8 @@ export default function LetterOfCreditLayoutShell({ children }: { children: Reac
         <aside className="hidden lg:sticky lg:top-20 lg:block"><Card className="overflow-hidden border-white/80 bg-white/90 shadow-sm"><div className="border-b bg-gradient-to-r from-cyan-500/10 to-blue-500/5 px-4 py-3"><div className="flex items-center gap-2.5"><div className="flex h-8 w-8 items-center justify-center rounded-lg bg-gradient-to-br from-cyan-600 to-blue-700"><BookOpenCheck className="h-4 w-4 text-white" /></div><div><p className="text-sm font-semibold text-slate-800">Letter of Credit</p><p className="text-[11px] text-muted-foreground">Trade Finance Control</p></div></div></div><CardContent className="max-h-[calc(100vh-12rem)] space-y-1 overflow-y-auto p-2">{links()}</CardContent></Card></aside>
         <main className="min-w-0">{children}</main>
       </div>
+
+      <ModuleBottomNav tabs={bottomTabs} onMore={() => setMobileOpen(true)} moduleName="Letter of Credit" />
     </div>
   );
 }

@@ -32,6 +32,7 @@ import {
   Workflow,
 } from 'lucide-react';
 
+import { ModuleBottomNav, type ModuleNavTab } from '@/components/navigation/ModuleBottomNav';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle, SheetTrigger } from '@/components/ui/sheet';
@@ -126,6 +127,20 @@ function Shell({ children }: { children: ReactNode }) {
   const personal = data.accounts.filter((account) => account.kind === 'personal' && account.access.canRead);
   const activeAccount = search?.get('account');
   const activeFolder = search?.get('folder');
+
+  // The phone's bottom bar: the overview, the inbox with its unread count, follow-ups and search,
+  // and "More" opening the menu sheet. Compose stays the header's button — it is a dialog, not a
+  // page, and the bar gets out of the dialog's way (it sits under the overlay, and hides while typing).
+  const unread = personal.reduce(
+    (sum, account) => sum + ((data.folders[account.id] ?? []).find((folder) => folder.role === 'inbox')?.unreadCount ?? 0),
+    0,
+  );
+  const bottomTabs: ModuleNavTab[] = [
+    { href: MAIL_HUB_BASE_PATH, label: 'Home', icon: Mail, exact: true, ariaLabel: 'Mail overview' },
+    { href: `${MAIL_HUB_BASE_PATH}/inbox`, label: 'Inbox', icon: Inbox, badge: unread },
+    { href: `${MAIL_HUB_BASE_PATH}/tasks`, label: 'Tasks', icon: ListChecks, ariaLabel: 'Tasks & follow-ups' },
+    { href: `${MAIL_HUB_BASE_PATH}/search`, label: 'Search', icon: Search },
+  ];
 
   const nav = (onNavigate?: () => void) => {
     let last = '';
@@ -252,6 +267,7 @@ function Shell({ children }: { children: ReactNode }) {
         </aside>
         <main className="min-w-0 w-full">{children}</main>
       </div>
+      <ModuleBottomNav tabs={bottomTabs} onMore={() => setOpen(true)} moduleName="Mail Hub" />
       {composer && <Composer />}
     </div>
   );

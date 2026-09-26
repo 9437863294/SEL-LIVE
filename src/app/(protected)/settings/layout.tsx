@@ -8,6 +8,7 @@ import {
   LogIn, MailCheck, MapPinned, Menu, MonitorSmartphone, Palette, Settings2,
   ShieldCheck, User as UserIcon, Users,
 } from 'lucide-react';
+import { ModuleBottomNav, type ModuleNavTab } from '@/components/navigation/ModuleBottomNav';
 import { Button } from '@/components/ui/button';
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle, SheetTrigger } from '@/components/ui/sheet';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
@@ -84,6 +85,19 @@ export default function SettingsLayout({ children }: { children: React.ReactNode
   function active(href: string) {
     return pathname === href || (pathname?.startsWith(href + '/') ?? false);
   }
+
+  // The phone's bottom bar: the pages people come to Settings for, each only when its rail entry
+  // is shown, and "More" opening the menu sheet. Icons are named here rather than taken from
+  // `navGroups`, whose `React.ElementType` the bar does not accept.
+  const permitted = (href: string) => navGroups.some(group => group.items.some(item => item.href === href && item.permission));
+  const bottomTabs: ModuleNavTab[] = [
+    ...(permitted('/settings/profile') ? [{ href: '/settings/profile', label: 'Profile', icon: UserIcon }] : []),
+    ...(permitted('/settings/access-management')
+      ? [{ href: '/settings/access-management', label: 'Access', icon: ShieldCheck, ariaLabel: 'Access management' }]
+      : []),
+    ...(permitted('/settings/session-management') ? [{ href: '/settings/session-management', label: 'Sessions', icon: MonitorSmartphone }] : []),
+    ...(permitted('/settings/appearance') ? [{ href: '/settings/appearance', label: 'Theme', icon: Palette, ariaLabel: 'Appearance' }] : []),
+  ];
 
   return (
     <div className="flex w-full h-full">
@@ -247,6 +261,9 @@ export default function SettingsLayout({ children }: { children: React.ReactNode
         <footer className="shrink-0 flex items-center text-muted-foreground text-xs py-3 px-6 border-t border-border/40">
           <span>Copyright © 2025 SEL. All Rights Reserved.</span>
         </footer>
+
+        {/* In the content column, not beside it: its spacer must stack under the footer, not become a flex column. */}
+        <ModuleBottomNav tabs={bottomTabs} onMore={() => setMobileNavOpen(true)} moduleName="Settings" />
       </div>
     </div>
   );

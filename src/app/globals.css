@@ -1303,3 +1303,506 @@ main {
     display: table-header-group;
   }
 }
+
+/* ──────────────────────────────────────────────────────────────────────────────────────────────
+ * Floating bottom navigation (src/components/navigation)
+ *
+ * The bar's outline, the slot positions and the floating button are drawn by the component frame
+ * by frame (the notch has to follow the button, and Safari cannot transition an SVG path). What
+ * lives here is everything a plain CSS transition can do: colours, the icon lifting into the
+ * button, labels fading in, and the three themes.
+ *
+ * Nothing here sets `display` on `.fbn` or `.fbn-spacer`: this sheet comes after Tailwind's
+ * utilities, so a `display` rule would silently beat the `lg:hidden` the component relies on.
+ * ────────────────────────────────────────────────────────────────────────────────────────────── */
+.fbn {
+  --fbn-h: 72px;
+  --fbn-gap: 12px;
+  --fbn-icon-y: 27px;
+  --fbn-ease: cubic-bezier(0.22, 1, 0.36, 1);
+  --fbn-ease-pop: cubic-bezier(0.34, 1.45, 0.64, 1);
+  --fbn-dur: 460ms;
+
+  --fbn-bar: #ffffff;
+  --fbn-rim: rgba(15, 23, 42, 0.06);
+  /* Kept shallow: a deep offset shadow pools inside the notch and muddies it. */
+  --fbn-shadow: drop-shadow(0 6px 18px rgba(49, 46, 129, 0.13)) drop-shadow(0 1px 3px rgba(15, 23, 42, 0.07));
+  --fbn-inactive: #55586b;
+  --fbn-hover: #2f3142;
+  --fbn-accent: #4f46e5;
+  --fbn-button: linear-gradient(135deg, #6366f1 0%, #7c3aed 100%);
+  --fbn-button-shadow: 0 12px 24px -6px rgba(79, 70, 229, 0.55), 0 4px 10px -4px rgba(124, 58, 237, 0.45);
+  --fbn-on-button: #ffffff;
+  --fbn-glow: rgba(99, 102, 241, 0.5);
+  --fbn-focus: #4f46e5;
+  --fbn-badge: #ef4444;
+
+  position: fixed;
+  z-index: 40;
+  left: 0;
+  right: 0;
+  bottom: calc(var(--fbn-gap) + env(safe-area-inset-bottom, 0px));
+  margin: 0 auto;
+  width: calc(100% - 24px);
+  max-width: 520px;
+  height: var(--fbn-h);
+  -webkit-tap-highlight-color: transparent;
+  transition:
+    transform 420ms var(--fbn-ease),
+    opacity 300ms ease;
+  /* `backwards`, not `both`: a filled end state would pin transform/opacity and defeat data-hidden. */
+  animation: fbn-enter 560ms var(--fbn-ease) backwards;
+}
+@media (min-width: 640px) {
+  .fbn {
+    width: calc(100% - 32px);
+    max-width: 560px;
+  }
+}
+.fbn[data-position='absolute'] {
+  position: absolute;
+  bottom: var(--fbn-gap);
+}
+.fbn[data-labels='active'] {
+  --fbn-icon-y: 36px;
+}
+.fbn[data-hidden='true'] {
+  transform: translateY(calc(100% + var(--fbn-gap) + 48px));
+  opacity: 0;
+  pointer-events: none;
+}
+.fbn[data-measured='false'] {
+  visibility: hidden;
+}
+
+/* ── Themes ── */
+.fbn[data-theme='teal'] {
+  --fbn-rim: rgba(15, 118, 110, 0.07);
+  --fbn-shadow: drop-shadow(0 6px 18px rgba(13, 148, 136, 0.14)) drop-shadow(0 1px 3px rgba(15, 23, 42, 0.07));
+  --fbn-inactive: #5b7a76;
+  --fbn-hover: #1f3d39;
+  /* Label text uses a deeper teal than the button: #14D9B5 on white is under 2:1. */
+  --fbn-accent: #0c9c83;
+  --fbn-button: linear-gradient(135deg, #2ee6c5 0%, #14d9b5 45%, #0ea893 100%);
+  --fbn-button-shadow: 0 14px 26px -6px rgba(20, 217, 181, 0.6), 0 4px 10px -4px rgba(14, 168, 147, 0.5);
+  --fbn-glow: rgba(20, 217, 181, 0.55);
+  --fbn-focus: #0c9c83;
+}
+.fbn[data-theme='neon'] {
+  --fbn-bar: #151515;
+  --fbn-rim: rgba(255, 255, 255, 0.07);
+  --fbn-shadow: drop-shadow(0 16px 30px rgba(0, 0, 0, 0.45)) drop-shadow(0 0 1px rgba(0, 0, 0, 0.6));
+  --fbn-inactive: rgba(255, 255, 255, 0.72);
+  --fbn-hover: #ffffff;
+  --fbn-accent: #ff2e63;
+  --fbn-button: linear-gradient(135deg, #ff4d7d 0%, #ff2e63 50%, #e11d48 100%);
+  --fbn-button-shadow: 0 0 18px rgba(255, 46, 99, 0.65), 0 8px 18px -6px rgba(255, 46, 99, 0.7);
+  --fbn-on-button: #ffffff;
+  --fbn-glow: rgba(255, 46, 99, 0.75);
+  --fbn-focus: #ff2e63;
+  --fbn-badge: #ff2e63;
+}
+.dark .fbn[data-theme='blue'] {
+  --fbn-bar: #111827;
+  --fbn-rim: rgba(255, 255, 255, 0.08);
+  --fbn-shadow: drop-shadow(0 14px 28px rgba(0, 0, 0, 0.5));
+  --fbn-inactive: #9ca3af;
+  --fbn-hover: #e5e7eb;
+  --fbn-accent: #a5b4fc;
+  --fbn-focus: #a5b4fc;
+}
+.dark .fbn[data-theme='teal'] {
+  --fbn-bar: #0f1a19;
+  --fbn-rim: rgba(255, 255, 255, 0.08);
+  --fbn-shadow: drop-shadow(0 14px 28px rgba(0, 0, 0, 0.5));
+  --fbn-inactive: #94a3a1;
+  --fbn-hover: #e2f5f2;
+  --fbn-accent: #2ee6c5;
+  --fbn-focus: #2ee6c5;
+}
+
+/* ── Bar ── */
+.fbn-stage {
+  position: relative;
+  width: 100%;
+  height: 100%;
+}
+.fbn-svg {
+  position: absolute;
+  left: 0;
+  top: -28px;
+  overflow: visible;
+  pointer-events: none;
+  filter: var(--fbn-shadow);
+}
+.fbn-bar-path {
+  fill: var(--fbn-bar);
+  stroke: var(--fbn-rim);
+  stroke-width: 1;
+}
+
+/* ── Active indicator ── */
+/* The wrapper is what moves; the glow is its first child so it paints behind the disc, not over it. */
+.fbn-indicator {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 56px;
+  height: 56px;
+  pointer-events: none;
+  will-change: transform, opacity;
+}
+.fbn-indicator-disc {
+  position: absolute;
+  inset: 0;
+  border-radius: 9999px;
+  background: var(--fbn-button);
+  box-shadow: var(--fbn-button-shadow);
+}
+.fbn-indicator-disc::after {
+  /* A soft highlight on the upper half, so the button reads as a raised disc rather than a flat dot. */
+  content: '';
+  position: absolute;
+  inset: 3px 8px auto;
+  height: 45%;
+  border-radius: 9999px;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.38), rgba(255, 255, 255, 0));
+}
+.fbn-indicator-glow {
+  position: absolute;
+  inset: -12px;
+  border-radius: 9999px;
+  background: radial-gradient(closest-side, var(--fbn-glow), transparent);
+  animation: fbn-glow-in 900ms var(--fbn-ease) both;
+}
+.fbn-spot {
+  /* Neon: a red wash inside the bar under the active tab. */
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 96px;
+  height: 72px;
+  border-radius: 9999px;
+  background: radial-gradient(closest-side, rgba(255, 46, 99, 0.22), rgba(255, 46, 99, 0));
+  pointer-events: none;
+  will-change: transform;
+}
+.fbn-rim-glow {
+  fill: none;
+  stroke-linecap: round;
+}
+
+/* ── Slots ── */
+.fbn-slot {
+  position: absolute;
+  top: 0;
+  left: 0;
+  height: var(--fbn-h);
+  border-radius: 22px;
+  outline: none;
+  color: var(--fbn-inactive);
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+  will-change: transform;
+}
+.fbn-slot:focus-visible {
+  box-shadow: inset 0 0 0 2px var(--fbn-focus);
+}
+.fbn-icon {
+  position: absolute;
+  left: 50%;
+  top: var(--fbn-icon-y);
+  width: 24px;
+  height: 24px;
+  margin: -12px 0 0 -12px;
+  color: var(--fbn-inactive);
+  transition:
+    transform var(--fbn-dur) var(--fbn-ease-pop),
+    color 280ms ease,
+    filter 280ms ease;
+}
+.fbn-icon > svg {
+  width: 24px;
+  height: 24px;
+  stroke-width: 2;
+}
+.fbn-slot:active .fbn-icon {
+  transform: scale(0.9);
+}
+@media (hover: hover) {
+  .fbn-slot:hover .fbn-icon {
+    color: var(--fbn-hover);
+  }
+}
+.fbn[data-shape='notch'] .fbn-slot[data-active='true'] .fbn-icon {
+  transform: translateY(calc(-4px - var(--fbn-icon-y))) scale(1.1);
+  color: var(--fbn-on-button);
+  /* Turn white only as the disc arrives: sooner, and the icon vanishes against the white bar mid-flight. */
+  transition:
+    transform var(--fbn-dur) var(--fbn-ease-pop) 60ms,
+    color 200ms ease 230ms,
+    filter 280ms ease;
+}
+.fbn[data-shape='bump'] .fbn-slot[data-active='true'] .fbn-icon {
+  transform: translateY(-14px) scale(1.1);
+  color: var(--fbn-accent);
+  filter: drop-shadow(0 0 6px var(--fbn-glow));
+}
+
+/* The permanently emphasised action (usually Create) sits in a small filled tile of its own —
+   square-cornered, so it never reads as a second active indicator next to the round one. */
+.fbn-emph {
+  position: absolute;
+  inset: -6px;
+  border-radius: 13px;
+  background: var(--fbn-button);
+  box-shadow: var(--fbn-button-shadow);
+  transition:
+    opacity 260ms ease,
+    transform var(--fbn-dur) var(--fbn-ease-pop);
+}
+.fbn-emph + svg {
+  position: relative;
+}
+.fbn-slot[data-emphasized='true'] .fbn-icon {
+  color: var(--fbn-on-button);
+}
+.fbn-slot[data-active='true'] .fbn-emph {
+  opacity: 0;
+  transform: scale(0.6);
+}
+.fbn[data-shape='bump'] .fbn-slot[data-emphasized='true'][data-active='true'] .fbn-icon {
+  color: var(--fbn-accent);
+}
+
+.fbn-label {
+  /* A few px past the slot on each side: the neighbouring labels are centred and shorter than
+     their slots, so "Approvals" can borrow the space instead of truncating on a 360px phone. */
+  position: absolute;
+  left: -4px;
+  right: -4px;
+  bottom: 10px;
+  overflow: hidden;
+  text-align: center;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 10.5px;
+  font-weight: 500;
+  line-height: 14px;
+  letter-spacing: 0;
+  color: var(--fbn-inactive);
+  transition:
+    color 280ms ease,
+    opacity 280ms ease,
+    transform 380ms var(--fbn-ease);
+}
+.fbn-slot[data-active='true'] .fbn-label {
+  color: var(--fbn-accent);
+  font-weight: 600;
+}
+.fbn[data-shape='bump'] .fbn-slot[data-active='true'] .fbn-label {
+  transform: translateY(-4px);
+  text-shadow: 0 0 10px var(--fbn-glow);
+}
+.fbn[data-labels='active'] .fbn-label {
+  opacity: 0;
+  transform: translateY(6px);
+}
+.fbn[data-labels='active'] .fbn-slot[data-active='true'] .fbn-label {
+  opacity: 1;
+  transform: none;
+  transition-delay: 120ms;
+}
+
+/* ── Badge ── */
+.fbn-badge {
+  position: absolute;
+  top: -5px;
+  right: -8px;
+  min-width: 17px;
+  height: 17px;
+  padding: 0 4px;
+  border-radius: 9999px;
+  border: 2px solid var(--fbn-bar);
+  background: var(--fbn-badge);
+  color: #ffffff;
+  font-size: 9.5px;
+  font-weight: 700;
+  line-height: 13px;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+  animation: fbn-badge-in 420ms var(--fbn-ease-pop) both;
+}
+.fbn-badge[data-dot='true'] {
+  top: -2px;
+  right: -3px;
+  min-width: 11px;
+  width: 11px;
+  height: 11px;
+  padding: 0;
+}
+.fbn-slot[data-active='true'] .fbn-badge {
+  border-color: transparent;
+  box-shadow: 0 0 0 2px var(--fbn-on-button);
+}
+
+/* In-flow space so the last row of a page can scroll clear of the bar and its raised button. */
+.fbn-spacer {
+  height: calc(var(--fbn-h, 72px) + 48px + env(safe-area-inset-bottom, 0px));
+  pointer-events: none;
+}
+
+@keyframes fbn-enter {
+  from {
+    opacity: 0;
+    transform: translateY(28px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+@keyframes fbn-glow-in {
+  0% {
+    opacity: 0;
+    transform: scale(0.6);
+  }
+  45% {
+    opacity: 1;
+    transform: scale(1.12);
+  }
+  100% {
+    opacity: 0.75;
+    transform: scale(1);
+  }
+}
+@keyframes fbn-badge-in {
+  from {
+    transform: scale(0.3);
+    opacity: 0;
+  }
+  to {
+    transform: none;
+    opacity: 1;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .fbn,
+  .fbn-icon,
+  .fbn-emph,
+  .fbn-label {
+    transition-duration: 1ms !important;
+    transition-delay: 0ms !important;
+  }
+  .fbn,
+  .fbn-indicator-glow,
+  .fbn-badge {
+    animation: none;
+  }
+}
+@media print {
+  .fbn,
+  .fbn-spacer {
+    display: none !important;
+  }
+}
+
+/* ──────────────────────────────────────────────────────────────────────────────────────────────
+ * Theme: accent, tab strips, dark surfaces, printing
+ *
+ * The accent is the user's Appearance choice (the same one that styles the floating bottom nav),
+ * applied as `data-nav-style` on <html> by ThemeProvider and, before first paint, by the inline
+ * script in the root layout. Text on the accent must read at 4.5:1, so these gradients run a
+ * shade deeper than the bottom nav's button — #14D9B5 teal under white text would not.
+ * ────────────────────────────────────────────────────────────────────────────────────────────── */
+:root {
+  --sel-tab-gradient: linear-gradient(135deg, #4f46e5 0%, #7c3aed 100%);
+  --sel-tab-glow: rgba(79, 70, 229, 0.42);
+  --sel-tab-on: #ffffff;
+}
+html[data-nav-style='teal'] {
+  --sel-tab-gradient: linear-gradient(135deg, #0d9488 0%, #0f766e 100%);
+  --sel-tab-glow: rgba(13, 148, 136, 0.42);
+}
+html[data-nav-style='neon'] {
+  --sel-tab-gradient: linear-gradient(135deg, #f43f5e 0%, #e11d48 55%, #be123c 100%);
+  --sel-tab-glow: rgba(225, 29, 72, 0.42);
+}
+
+/* The pill behind the active tab (src/components/ui/tabs.tsx). Position and size are inline. */
+.tabs-indicator {
+  position: absolute;
+  left: 0;
+  top: 0;
+  z-index: 0;
+  pointer-events: none;
+  background: var(--sel-tab-gradient);
+  box-shadow:
+    0 6px 16px -6px var(--sel-tab-glow),
+    inset 0 1px 0 rgba(255, 255, 255, 0.22);
+  will-change: transform, width;
+}
+.tabs-indicator[data-animate='true'] {
+  transition:
+    transform 440ms cubic-bezier(0.34, 1.26, 0.64, 1),
+    width 440ms cubic-bezier(0.34, 1.26, 0.64, 1),
+    height 320ms cubic-bezier(0.22, 1, 0.36, 1),
+    border-radius 320ms ease;
+}
+/* Opacity only: a transform here would briefly re-anchor any `position: fixed` bar in the panel. */
+.tabs-content[data-state='active'] {
+  animation: tabs-content-in 280ms cubic-bezier(0.22, 1, 0.36, 1) backwards;
+}
+@keyframes tabs-content-in {
+  from {
+    opacity: 0;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .tabs-indicator[data-animate='true'] {
+    transition: none;
+  }
+  .tabs-content[data-state='active'] {
+    animation: none;
+  }
+}
+
+/* Surface ladder the dark compatibility layer (dark-compat.css) maps -50…-300 neutrals onto:
+   -50 sits between the page and a card, so a white card on a slate-50 page still reads as raised. */
+.dark {
+  --dc-50: 240 5% 8.5%;
+  --dc-100: 240 4% 16%;
+  --dc-200: 240 4% 21%;
+  --dc-300: 240 4% 27%;
+}
+
+/* Paper is white: whatever is on screen, a printout uses the light tokens (the compatibility layer
+   is screen-only), and the tab pill — a background the printer drops — gives way to an underline. */
+@media print {
+  .dark {
+    color-scheme: light;
+    --background: 220 20% 98%;
+    --foreground: 222.2 84% 4.9%;
+    --card: 220 20% 100%;
+    --card-foreground: 222.2 84% 4.9%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 222.2 84% 4.9%;
+    --secondary: 210 40% 96.1%;
+    --secondary-foreground: 222.2 47.4% 11.2%;
+    --muted: 210 40% 96.1%;
+    --muted-foreground: 215.4 16.3% 46.9%;
+    --accent: 210 40% 96.1%;
+    --accent-foreground: 222.2 47.4% 11.2%;
+    --border: 214.3 31.8% 91.4%;
+    --input: 214.3 31.8% 91.4%;
+  }
+  .tabs-indicator {
+    display: none !important;
+  }
+  [role='tab'][data-state='active'] {
+    color: inherit !important;
+    background: none !important;
+    text-decoration: underline;
+  }
+}

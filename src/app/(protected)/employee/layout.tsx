@@ -1,5 +1,6 @@
 import type { Metadata } from 'next';
 import type { ReactNode } from 'react';
+import { EmployeeBottomNav } from '@/components/employee/bottom-nav';
 
 export const metadata: Metadata = {
   title: 'Employee Management | SEL Live',
@@ -12,6 +13,10 @@ export default function EmployeeLayout({ children }: { children: ReactNode }) {
     // inputs and selects below 640px, horizontally scrolling tab strips, compacted card padding and
     // safe-area padding at the bottom. Applied once here so every employee screen inherits it —
     // these routes do not go through the HR module shell that would otherwise supply it.
-    <div className="hr-module-root">{children}</div>
+    // The phone's bottom bar builds its own tabs: a server layout cannot pass icons to a client component.
+    <div className="hr-module-root">
+      {children}
+      <EmployeeBottomNav />
+    </div>
   );
 }

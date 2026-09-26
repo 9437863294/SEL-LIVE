@@ -388,13 +388,13 @@ export default function MyTasksPage() {
         {/* ── Tabs ────────────────────────────────────────────────────────── */}
         <Tabs defaultValue="pending">
           <TabsList className="h-9 gap-1 bg-muted/60 p-1">
-            <TabsTrigger value="pending" className="h-7 text-xs data-[state=active]:bg-white data-[state=active]:shadow-sm">
+            <TabsTrigger value="pending" className="h-7 text-xs">
               My Pending Tasks
               {!isLoading && pendingTasks.length > 0 && (
                 <Badge className="ml-1.5 h-4 min-w-4 px-1 text-[10px] bg-amber-500 text-white">{pendingTasks.length}</Badge>
               )}
             </TabsTrigger>
-            <TabsTrigger value="completed" className="h-7 text-xs data-[state=active]:bg-white data-[state=active]:shadow-sm">
+            <TabsTrigger value="completed" className="h-7 text-xs">
               Completed / Rejected
               {!isLoading && completedTasks.length > 0 && (
                 <Badge className="ml-1.5 h-4 min-w-4 px-1 text-[10px] bg-slate-400 text-white">{completedTasks.length}</Badge>

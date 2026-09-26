@@ -7,17 +7,18 @@ import Link from 'next/link';
 import {
   BarChart3, CalendarClock, ChevronLeft, ChevronRight, ClipboardCheck,
   Files, HardHat, History as HistoryIcon, LayoutDashboard, Settings2,
-  ShieldCheck, ShieldHalf, Users,
+  ShieldCheck, ShieldHalf, Users, type LucideIcon,
 } from 'lucide-react';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { cn } from '@/lib/utils';
 import { usePathname } from 'next/navigation';
 import { useAuthorization } from '@/hooks/useAuthorization';
+import { ModuleBottomNav, type ModuleMoreLink, type ModuleNavTab } from '@/components/navigation/ModuleBottomNav';
 
 type NavItem = {
   href: string;
   label: string;
-  icon: React.ElementType;
+  icon: LucideIcon;
   iconBg: string;
   iconColor: string;
   activeGradient: string;
@@ -28,7 +29,7 @@ type NavItem = {
 type SubNavItem = {
   href: string;
   label: string;
-  icon: React.ElementType;
+  icon: LucideIcon;
   iconBg: string;
   iconColor: string;
   activeGradient: string;
@@ -86,6 +87,33 @@ export default function InsuranceLayoutShell({ children }: { children: React.Rea
     iconBg: 'bg-slate-100', iconColor: 'text-slate-600', activeGradient: 'from-slate-500 to-slate-700',
   };
 
+  // On a phone the rail gives way to the bottom bar: the dashboard, both policy registers and the
+  // task inbox as tabs, and "More" opening a sheet of the rail's remaining pages. The rail's own
+  // permission filtering decides both.
+  const isVisible = (href: string) => mainNavItems.some(item => item.href === href);
+  const personalItem = mainNavItems.find(item => item.href === '/insurance/personal');
+  const bottomTabs: ModuleNavTab[] = [
+    ...(isVisible('/insurance') ? [{ href: '/insurance', label: 'Home', icon: LayoutDashboard, exact: true }] : []),
+    ...(personalItem
+      ? [{
+          href: personalItem.href, label: 'Personal', icon: Users, ariaLabel: 'Personal insurance',
+          // Premium Due and Maturity Due sit outside /insurance/personal but belong to it, as in the rail.
+          match: (path: string) => (personalItem.subActivePatterns ?? [personalItem.href]).some(p => path.startsWith(p)),
+        }]
+      : []),
+    ...(isVisible('/insurance/project') ? [{ href: '/insurance/project', label: 'Project', icon: HardHat, ariaLabel: 'Project insurance' }] : []),
+    ...(isVisible('/insurance/my-tasks') ? [{ href: '/insurance/my-tasks', label: 'My Tasks', icon: ClipboardCheck }] : []),
+  ];
+  const bottomMoreLinks: ModuleMoreLink[] = [
+    ...mainNavItems.flatMap(item => (item.subItems ?? []).map(sub => ({ href: sub.href, label: sub.label, icon: sub.icon, group: item.label }))),
+    ...mainNavItems
+      .filter(item => item.href === '/insurance/reports')
+      .map(item => ({ href: item.href, label: item.label, icon: item.icon, group: 'Reports & Settings' })),
+    ...(can('View', 'Insurance.Settings')
+      ? [{ href: settingsItem.href, label: settingsItem.label, icon: settingsItem.icon, group: 'Reports & Settings' }]
+      : []),
+  ];
+
   const isPrintPage = pathname?.includes('/print');
   if (isPrintPage) return <>{children}</>;
 
@@ -133,7 +161,7 @@ export default function InsuranceLayoutShell({ children }: { children: React.Rea
   return (
     <div className="flex w-full h-full">
       <aside className={cn(
-        'fixed left-0 top-16 h-[calc(100vh-4rem)] z-40 flex flex-col border-r border-border/60 bg-background/95 backdrop-blur-sm transition-all duration-300 shadow-sm',
+        'fixed left-0 top-16 h-[calc(100vh-4rem)] z-40 hidden md:flex flex-col border-r border-border/60 bg-background/95 backdrop-blur-sm transition-all duration-300 shadow-sm',
         isExpanded ? 'w-56' : 'w-14',
       )}>
         {/* Header */}
@@ -173,11 +201,12 @@ export default function InsuranceLayoutShell({ children }: { children: React.Rea
         </TooltipProvider>
       </aside>
 
-      <div className={cn('flex-1 flex flex-col min-h-screen transition-all duration-300', isExpanded ? 'ml-56' : 'ml-14')}>
+      <div className={cn('flex-1 flex flex-col min-h-screen transition-all duration-300', isExpanded ? 'md:ml-56' : 'md:ml-14')}>
         <main className="flex-grow p-4 sm:p-6">{children}</main>
         <footer className="shrink-0 flex items-center text-muted-foreground text-xs py-3 px-6 border-t border-border/40">
           <span>Copyright © 2025 SEL. All Rights Reserved.</span>
         </footer>
+        <ModuleBottomNav tabs={bottomTabs} moreLinks={bottomMoreLinks} moduleName="Insurance" hideAbove="md" />
       </div>
     </div>
   );

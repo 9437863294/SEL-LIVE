@@ -16,10 +16,12 @@ import {
   FileText,
   History,
   Landmark,
+  LayoutDashboard,
   LayoutList,
   Link2,
   Menu,
   PencilRuler,
+  Plus,
   Send,
   Settings2,
   ShieldAlert,
@@ -30,6 +32,10 @@ import {
 } from "lucide-react";
 import { useAuthorization } from "@/hooks/useAuthorization";
 import { BG_PERMISSION_MODULE } from "@/lib/bank-guarantee";
+import {
+  ModuleBottomNav,
+  type ModuleNavTab,
+} from "@/components/navigation/ModuleBottomNav";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -198,6 +204,48 @@ export default function BankGuaranteeLayoutShell({
         can("Add", `${BG_PERMISSION_MODULE}.${section.resource}`) ||
         can("Request", `${BG_PERMISSION_MODULE}.${section.resource}`)),
   );
+  // The phone's bottom bar: the dashboard, the register, raising a BG request in the middle,
+  // approvals, and "More" opening the full menu. Each tab only if its menu entry is visible too.
+  const isVisible = (href: string) =>
+    visible.some((section) => section.href === href);
+  const bottomTabs: ModuleNavTab[] = [
+    {
+      href: "/bank-guarantee",
+      label: "Home",
+      icon: LayoutDashboard,
+      match: (path) =>
+        path === "/bank-guarantee" || path === "/bank-guarantee/dashboard",
+    },
+    ...(isVisible("/bank-guarantee/register")
+      ? [
+          {
+            href: "/bank-guarantee/register",
+            label: "Register",
+            icon: LayoutList,
+          },
+        ]
+      : []),
+    ...(can("Add", `${BG_PERMISSION_MODULE}.BG Requests`)
+      ? [
+          {
+            href: "/bank-guarantee/new",
+            label: "New",
+            icon: Plus,
+            emphasized: true,
+            ariaLabel: "New bank guarantee request",
+          },
+        ]
+      : []),
+    ...(isVisible("/bank-guarantee/approvals")
+      ? [
+          {
+            href: "/bank-guarantee/approvals",
+            label: "Approvals",
+            icon: ClipboardCheck,
+          },
+        ]
+      : []),
+  ];
   const links = (close?: () => void) =>
     visible.map((section) => {
       const active =
@@ -311,6 +359,12 @@ export default function BankGuaranteeLayoutShell({
         </aside>
         <main className="min-w-0">{children}</main>
       </div>
+
+      <ModuleBottomNav
+        tabs={bottomTabs}
+        onMore={() => setOpen(true)}
+        moduleName="Bank Guarantee"
+      />
     </div>
   );
 }

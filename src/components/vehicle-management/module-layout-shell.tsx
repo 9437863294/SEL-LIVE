@@ -27,6 +27,7 @@ import {
   Wrench,
 } from 'lucide-react';
 import { useAuthorization } from '@/hooks/useAuthorization';
+import { ModuleBottomNav, type ModuleNavTab } from '@/components/navigation/ModuleBottomNav';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle, SheetTrigger } from '@/components/ui/sheet';
@@ -65,6 +66,19 @@ const groupLabels: Record<string, string> = {
   ops: 'Operations & Reports',
 };
 
+// The phone's bottom bar, in priority order: the first four the user can open become the tabs,
+// and "More" opens the full menu. There is no create route to put in the middle — each register
+// adds its records on its own page.
+const bottomTabPriority: ModuleNavTab[] = [
+  { href: '/vehicle-management',              label: 'Home',     icon: Gauge, exact: true, ariaLabel: 'Overview' },
+  { href: '/vehicle-management/renewals',     label: 'Renewals', icon: RefreshCw, ariaLabel: 'Renewals hub' },
+  { href: '/vehicle-management/vehicle-master', label: 'Vehicles', icon: CarFront, ariaLabel: 'Vehicle master' },
+  { href: '/vehicle-management/trips',        label: 'Trips',    icon: LocateFixed, ariaLabel: 'Trip management' },
+  { href: '/vehicle-management/fuel',         label: 'Fuel',     icon: Fuel },
+  { href: '/vehicle-management/maintenance',  label: 'Service',  icon: Wrench, ariaLabel: 'Maintenance' },
+  { href: '/vehicle-management/reports',      label: 'Reports',  icon: BarChart3 },
+];
+
 export default function VehicleManagementLayoutShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const safePathname = pathname ?? '';
@@ -91,6 +105,13 @@ export default function VehicleManagementLayoutShell({ children }: { children: R
   const currentSection = [...availableSections]
     .sort((a, b) => b.href.length - a.href.length)
     .find((item) => safePathname === item.href || (item.href !== '/vehicle-management' && safePathname.startsWith(item.href)));
+
+  // Only tabs whose sidebar row is visible. Not on the driver app's screens, which are not in this
+  // menu at all: they are the pages Driver Management re-exports, and that module's bar serves them.
+  const bottomTabs = bottomTabPriority
+    .filter((tab) => availableSections.some((item) => item.href === tab.href))
+    .slice(0, 4);
+  const isDriverAppRoute = safePathname.startsWith('/vehicle-management/driver-mobile');
 
   const navigationLinks = (onNavigate?: () => void) => {
     let lastGroup = '';
@@ -227,6 +248,10 @@ export default function VehicleManagementLayoutShell({ children }: { children: R
 
         <main className="min-w-0 w-full overflow-x-hidden vm-reveal">{children}</main>
       </div>
+
+      {!isDriverAppRoute && (
+        <ModuleBottomNav tabs={bottomTabs} onMore={() => setMobileMenuOpen(true)} moduleName="Vehicle Management" />
+      )}
     </div>
   );
 }

@@ -6,11 +6,13 @@ import Link from 'next/link';
 import { usePathname, useParams } from 'next/navigation';
 import {
   BarChart3, Calculator, ChevronLeft, ChevronRight, ClipboardList,
-  FileEdit, FilePlus, HardHat, History, LayoutDashboard, Receipt, Settings, Truck,
+  FileEdit, FilePlus, HardHat, History, LayoutDashboard, Plus, Receipt, Settings, Truck,
+  type LucideIcon,
 } from 'lucide-react';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { cn } from '@/lib/utils';
 import { useAuthorization } from '@/hooks/useAuthorization';
+import { ModuleBottomNav, type ModuleMoreLink, type ModuleNavTab } from '@/components/navigation/ModuleBottomNav';
 import { collection, getDocs } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import type { Project } from '@/lib/types';
@@ -18,7 +20,7 @@ import { projectMatchesSlug } from '@/lib/project-slug';
 
 type NavItem = {
   href: string;
-  icon: React.ElementType;
+  icon: LucideIcon;
   label: string;
   iconBg: string;
   iconColor: string;
@@ -64,6 +66,36 @@ export default function ProjectLayout({ children }: { children: React.ReactNode 
     permission: can('View Module', 'Billing Recon'),
   };
 
+  // The phone's bottom bar, standing in for the rail below `md`: the project's dashboard, JMC with
+  // a new entry in the middle, and Billing. "More" lists the rail's other live screens. Each tab
+  // only if the rail shows its screen.
+  const projectBase = `/billing-recon/${projectSlug}`;
+  const isVisible = (href: string) => navItems.some(item => item.href === href && !item.disabled);
+  const bottomTabs: ModuleNavTab[] = [
+    // The dashboard every screen's back button returns to; its page checks the same right as the rail's Dashboard.
+    ...(can('View Module', 'Billing Recon')
+      ? [{ href: projectBase, label: 'Home', icon: LayoutDashboard, exact: true }]
+      : []),
+    ...(isVisible(`${projectBase}/jmc`) ? [{ href: `${projectBase}/jmc`, label: 'JMC', icon: HardHat }] : []),
+    // The JMC screen's own "JMC Entry" gate.
+    ...(isVisible(`${projectBase}/jmc`) && can('Create JMC Entry', 'Billing Recon.JMC')
+      ? [{ href: `${projectBase}/jmc/entry`, label: 'New', icon: Plus, emphasized: true, ariaLabel: 'New JMC entry' }]
+      : []),
+    ...(isVisible(`${projectBase}/billing`) ? [{ href: `${projectBase}/billing`, label: 'Billing', icon: Calculator }] : []),
+  ];
+  // The "Soon" placeholders go nowhere, so they stay out of the sheet.
+  const moreLinks: ModuleMoreLink[] = [
+    ...navItems
+      .filter(item => !item.disabled && item.href !== '/billing-recon')
+      .map(item => ({ href: item.href, label: item.label, icon: item.icon, group: 'This project' })),
+    ...navItems
+      .filter(item => item.href === '/billing-recon')
+      .map(item => ({ href: item.href, label: 'All Projects', icon: item.icon, group: 'Billing Recon', exact: true })),
+    ...(settingsItem.permission
+      ? [{ href: settingsItem.href, label: settingsItem.label, icon: settingsItem.icon, group: 'Billing Recon' }]
+      : []),
+  ];
+
   const isPrintPage = pathname?.includes('/print');
   if (isPrintPage) return <>{children}</>;
 
@@ -76,7 +108,7 @@ export default function ProjectLayout({ children }: { children: React.ReactNode 
   return (
     <div className="flex w-full h-full">
       <aside className={cn(
-        'fixed left-0 top-16 h-[calc(100vh-4rem)] z-40 flex flex-col border-r border-border/60 bg-background/95 backdrop-blur-sm transition-all duration-300 shadow-sm',
+        'fixed left-0 top-16 h-[calc(100vh-4rem)] z-40 hidden md:flex flex-col border-r border-border/60 bg-background/95 backdrop-blur-sm transition-all duration-300 shadow-sm',
         isExpanded ? 'w-56' : 'w-14',
       )}>
         <div className={cn('flex items-center gap-2 px-3 py-3 border-b border-border/40 shrink-0', !isExpanded && 'justify-center')}>
@@ -163,11 +195,13 @@ export default function ProjectLayout({ children }: { children: React.ReactNode 
         </TooltipProvider>
       </aside>
 
-      <div className={cn('flex-1 flex flex-col min-h-[calc(100vh-4rem)] transition-all duration-300', isExpanded ? 'ml-56' : 'ml-14')}>
+      {/* No rail on a phone — the bottom bar replaces it — so the content only steps aside from `md`. */}
+      <div className={cn('flex-1 flex flex-col min-h-[calc(100vh-4rem)] transition-all duration-300', isExpanded ? 'md:ml-56' : 'md:ml-14')}>
         <main className="flex-1 p-4 sm:p-6">{children}</main>
         <footer className="shrink-0 flex items-center text-muted-foreground text-xs py-3 px-6 border-t border-border/40">
           <span>Copyright © 2025 SEL. All Rights Reserved.</span>
         </footer>
+        <ModuleBottomNav tabs={bottomTabs} moreLinks={moreLinks} moduleName="Billing Reconciliation" hideAbove="md" />
       </div>
     </div>
   );

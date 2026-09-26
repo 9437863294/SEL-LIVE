@@ -10,6 +10,7 @@ import {
   Loader2,
   Menu,
   Plane,
+  Plus,
   ReceiptIndianRupee,
   Settings,
   ShieldAlert,
@@ -18,6 +19,7 @@ import {
   Wallet,
 } from 'lucide-react';
 import { useAuthorization } from '@/hooks/useAuthorization';
+import { ModuleBottomNav, type ModuleNavTab } from '@/components/navigation/ModuleBottomNav';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle, SheetTrigger } from '@/components/ui/sheet';
@@ -93,6 +95,18 @@ export default function TourTravelLayoutShell({ children }: { children: React.Re
     safePathname.startsWith('/tour-travel/my-travel') ||
     safePathname === '/tour-travel/requests/new' ||
     visibleItems.some(item => matchesPath(safePathname, item.href));
+
+  // The phone's bottom bar: my own travel, raising a tour in the middle, the approval queue, and
+  // "More" opening the full menu below. Dashboard, My Travel and the request form are open to
+  // every module user (see above); Approvals only if its sidebar entry is visible too.
+  const bottomTabs: ModuleNavTab[] = [
+    { href: '/tour-travel', label: 'Home', icon: LayoutDashboard, match: path => matchesPath(path, '/tour-travel') },
+    { href: '/tour-travel/my-travel', label: 'My Travel', icon: UserRound },
+    { href: '/tour-travel/requests/new', label: 'New', icon: Plus, emphasized: true, ariaLabel: 'New tour request' },
+    ...(visibleItems.some(item => item.href === '/tour-travel/approvals')
+      ? [{ href: '/tour-travel/approvals', label: 'Approvals', icon: ClipboardCheck }]
+      : []),
+  ];
 
   const navigationLinks = (onNavigate?: () => void) => {
     let lastGroup = '';
@@ -235,6 +249,8 @@ export default function TourTravelLayoutShell({ children }: { children: React.Re
 
         <main className="tour-travel-content min-w-0">{currentPageAllowed ? children : pageAccessDenied}</main>
       </div>
+
+      <ModuleBottomNav tabs={bottomTabs} onMore={() => setMobileMenuOpen(true)} moduleName="Tour & Travel" />
     </div>
   );
 }

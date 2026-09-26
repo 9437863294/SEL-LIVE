@@ -34,6 +34,7 @@ import {
   LayoutTemplate,
   ListTodo,
   Menu,
+  Plus,
   Search,
   Settings,
   ShieldAlert,
@@ -41,6 +42,7 @@ import {
   UserRound,
   Users,
 } from 'lucide-react';
+import { ModuleBottomNav, type ModuleNavTab } from '@/components/navigation/ModuleBottomNav';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle, SheetTrigger } from '@/components/ui/sheet';
@@ -149,6 +151,25 @@ function OfficeHubLayoutShellInner({ children }: { children: React.ReactNode }) 
     .find((section) =>
       section.exact ? pathname === section.href : pathname === section.href || pathname.startsWith(`${section.href}/`),
     );
+
+  // The phone's bottom bar: the dashboard, the two working registers either side of scheduling a
+  // meeting (or, for someone who may only raise tasks, a new task), and "More" opening the menu
+  // sheet. Each register tab only if its sidebar entry is visible; the create tab on the same
+  // capability its page checks.
+  const isAvailable = (href: string) => available.some((section) => section.href === href);
+  const createTab: ModuleNavTab | null = capabilities.canCreateMeeting
+    ? { href: `${OFFICE_HUB_BASE_PATH}/meetings/new`, label: 'New', icon: Plus, emphasized: true, ariaLabel: 'Schedule a meeting' }
+    : capabilities.canCreateTask
+      ? { href: `${OFFICE_HUB_BASE_PATH}/tasks/new`, label: 'New', icon: Plus, emphasized: true, ariaLabel: 'New task' }
+      : null;
+  const bottomTabs: ModuleNavTab[] = [
+    ...(isAvailable(OFFICE_HUB_BASE_PATH) ? [{ href: OFFICE_HUB_BASE_PATH, label: 'Home', icon: Gauge, exact: true }] : []),
+    ...(isAvailable(`${OFFICE_HUB_BASE_PATH}/meetings`)
+      ? [{ href: `${OFFICE_HUB_BASE_PATH}/meetings`, label: 'Meetings', icon: ClipboardList }]
+      : []),
+    ...(createTab ? [createTab] : []),
+    ...(isAvailable(`${OFFICE_HUB_BASE_PATH}/tasks`) ? [{ href: `${OFFICE_HUB_BASE_PATH}/tasks`, label: 'Tasks', icon: ListTodo }] : []),
+  ];
 
   const navigation = (onNavigate?: () => void) => {
     let lastGroup = '';
@@ -304,6 +325,8 @@ function OfficeHubLayoutShellInner({ children }: { children: React.ReactNode }) 
           <OfficeHubErrorBoundary>{children}</OfficeHubErrorBoundary>
         </main>
       </div>
+
+      <ModuleBottomNav tabs={bottomTabs} onMore={() => setMobileMenuOpen(true)} moduleName="Office Hub" />
     </div>
   );
 }

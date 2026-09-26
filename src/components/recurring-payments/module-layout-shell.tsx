@@ -16,6 +16,7 @@ import {
   ListChecks,
   Loader2,
   Menu,
+  Plus,
   ReceiptIndianRupee,
   Repeat2,
   Settings,
@@ -27,6 +28,7 @@ import {
 import { db } from '@/lib/firebase';
 import { DEFAULT_RECURRING_WORKFLOW, type RecurringWorkflowStep } from '@/lib/recurring-payments';
 import { useAuthorization } from '@/hooks/useAuthorization';
+import { ModuleBottomNav, type ModuleNavTab } from '@/components/navigation/ModuleBottomNav';
 import { useAssignedWorkflowSteps } from './use-assigned-workflow';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -145,6 +147,30 @@ export default function RecurringPaymentsLayoutShell({ children }: { children: R
   const currentPageAllowed = safePathname.startsWith('/recurring-payments/settings/workflow')
     ? can('View Workflow', 'Recurring Payments.Settings')
     : navItems.some((item) => matchesPath(safePathname, item.href));
+
+  // The phone's bottom bar: the payment register and the approval centre either side of a new
+  // payment, and "More" opening the full menu below. Each tab only if its sidebar entry is
+  // visible too. A create form sits under its register's route, so it is offered only where
+  // that register is open to the user — otherwise the shell would refuse the page it leads to.
+  const isVisible = (href: string) => navItems.some((item) => item.href === href);
+  const createTab: ModuleNavTab | null =
+    can('Add', 'Recurring Payments.Payments') && isVisible('/recurring-payments/payments')
+      ? { href: '/recurring-payments/payments/new', label: 'New', icon: Plus, emphasized: true, ariaLabel: 'New manual payment' }
+      : can('Add', 'Recurring Payments.Recurring Masters') && isVisible('/recurring-payments/masters')
+        ? { href: '/recurring-payments/masters/new', label: 'New', icon: Plus, emphasized: true, ariaLabel: 'New recurring master' }
+        : null;
+  const bottomTabs: ModuleNavTab[] = [
+    ...(isVisible('/recurring-payments')
+      ? [{ href: '/recurring-payments', label: 'Home', icon: LayoutDashboard, match: (path: string) => matchesPath(path, '/recurring-payments') }]
+      : []),
+    ...(isVisible('/recurring-payments/payments')
+      ? [{ href: '/recurring-payments/payments', label: 'Payments', icon: ReceiptIndianRupee }]
+      : []),
+    ...(createTab ? [createTab] : []),
+    ...(isVisible('/recurring-payments/approvals')
+      ? [{ href: '/recurring-payments/approvals', label: 'Approvals', icon: ClipboardCheck }]
+      : []),
+  ];
 
   const navigationLinks = (onNavigate?: () => void) => {
     let lastGroup = '';
@@ -319,6 +345,8 @@ export default function RecurringPaymentsLayoutShell({ children }: { children: R
           {currentPageAllowed ? children : assignmentsLoading ? loader : pageAccessDenied}
         </main>
       </div>
+
+      <ModuleBottomNav tabs={bottomTabs} onMore={() => setMobileMenuOpen(true)} moduleName="Recurring Payments" />
     </div>
   );
 }

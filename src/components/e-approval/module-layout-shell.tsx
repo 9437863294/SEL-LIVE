@@ -16,12 +16,14 @@ import {
   History,
   Inbox,
   Menu,
+  Plus,
   ShieldAlert,
   Settings,
   Stamp,
   UserCheck,
   XCircle,
 } from 'lucide-react';
+import { ModuleBottomNav, type ModuleNavTab } from '@/components/navigation/ModuleBottomNav';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle, SheetTrigger } from '@/components/ui/sheet';
@@ -120,6 +122,25 @@ function EApprovalLayoutShellInner({ children }: { children: React.ReactNode }) 
   const currentSection = [...availableSections]
     .sort((a, b) => b.href.length - a.href.length)
     .find((item) => pathname === item.href || (item.href !== E_APPROVAL_BASE_PATH && pathname.startsWith(item.href)));
+
+  // The phone's bottom bar: the inbox and the files I raised either side of creating one, and
+  // "More" opening the full menu below. Each tab only if its sidebar entry is visible too — and
+  // none until permissions resolve, so the bar does not appear two tabs short and then grow.
+  const isVisible = (href: string) => availableSections.some((item) => item.href === href);
+  const bottomTabs: ModuleNavTab[] = permissions.isLoading
+    ? []
+    : [
+        { href: E_APPROVAL_BASE_PATH, label: 'Home', icon: Gauge, exact: true },
+        ...(isVisible(`${E_APPROVAL_BASE_PATH}/inbox`)
+          ? [{ href: `${E_APPROVAL_BASE_PATH}/inbox`, label: 'Inbox', icon: Inbox, ariaLabel: 'My inbox' }]
+          : []),
+        ...(isVisible(`${E_APPROVAL_BASE_PATH}/create`)
+          ? [{ href: `${E_APPROVAL_BASE_PATH}/create`, label: 'New', icon: Plus, emphasized: true, ariaLabel: 'Create approval' }]
+          : []),
+        ...(isVisible(`${E_APPROVAL_BASE_PATH}/created-by-me`)
+          ? [{ href: `${E_APPROVAL_BASE_PATH}/created-by-me`, label: 'Mine', icon: FileText, ariaLabel: 'Created by me' }]
+          : []),
+      ];
 
   const navigationLinks = (onNavigate?: () => void) => {
     let lastGroup = '';
@@ -248,6 +269,8 @@ function EApprovalLayoutShellInner({ children }: { children: React.ReactNode }) 
 
         <main className="min-w-0 w-full overflow-x-hidden">{children}</main>
       </div>
+
+      <ModuleBottomNav tabs={bottomTabs} onMore={() => setMobileMenuOpen(true)} moduleName="E-Approval" />
     </div>
   );
 }

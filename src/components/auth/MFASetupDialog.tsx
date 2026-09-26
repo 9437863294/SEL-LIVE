@@ -166,7 +166,7 @@ export function MFASetupDialog({ open, onOpenChange, onEnrolled }: Props) {
               {/* QR Image */}
               {qrDataUrl && (
                 <div className="flex justify-center">
-                  <div className="rounded-2xl border-2 border-dashed border-border p-4 bg-white shadow-sm">
+                  <div className="keep-light rounded-2xl border-2 border-dashed border-border p-4 bg-white shadow-sm">
                     {/* eslint-disable-next-line @next/next/no-img-element */}
                     <img src={qrDataUrl} alt="TOTP QR code" width={180} height={180} />
                   </div>

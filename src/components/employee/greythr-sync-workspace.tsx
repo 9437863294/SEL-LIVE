@@ -970,7 +970,12 @@ export function GreytHRSyncWorkspace() {
                 </Card>
 
                 {canEdit && (
-                  <div className="sticky bottom-2 flex flex-wrap items-center justify-between gap-2 rounded-2xl border border-white/70 bg-white/90 px-3 py-2.5 shadow-sm backdrop-blur">
+                  // `data-floating-nav="hide"`: `bottom-2` is not the `bottom-0` the phone's bottom bar
+                  // looks for, and the two would otherwise stack at the foot of the screen.
+                  <div
+                    data-floating-nav="hide"
+                    className="sticky bottom-2 flex flex-wrap items-center justify-between gap-2 rounded-2xl border border-white/70 bg-white/90 px-3 py-2.5 shadow-sm backdrop-blur"
+                  >
                     <p className="text-xs text-muted-foreground">
                       {dirty ? 'Unsaved changes.' : 'All changes saved.'}
                     </p>

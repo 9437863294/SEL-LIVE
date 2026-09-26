@@ -26,6 +26,7 @@ import { db } from '@/lib/firebase';
 import { SFR_COLLECTIONS } from '@/lib/site-fund-request';
 import { useAuth } from '@/components/auth/AuthProvider';
 import { useAuthorization } from '@/hooks/useAuthorization';
+import { ModuleBottomNav, type ModuleNavTab } from '@/components/navigation/ModuleBottomNav';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle, SheetTrigger } from '@/components/ui/sheet';
@@ -98,6 +99,22 @@ export default function SiteFundRequestShell({ children }: { children: React.Rea
       can('Edit', `${MODULE}.${item.resource}`)
     );
   });
+
+  // The phone's bottom bar. No create tab: a request is raised from a dialog on All Requests, not
+  // a route of its own. "More" opens the full menu below (the report list, settings). Each tab
+  // only if its sidebar entry is visible too.
+  const isVisible = (href: string) => availableSections.some(item => item.href === href);
+  const bottomTabs: ModuleNavTab[] = [
+    ...(isVisible('/site-fund-request')
+      ? [{ href: '/site-fund-request', label: 'Home', icon: LayoutDashboard, exact: true }]
+      : []),
+    ...(isVisible('/site-fund-request/requests')
+      ? [{ href: '/site-fund-request/requests', label: 'Requests', icon: FileText, ariaLabel: 'All requests' }]
+      : []),
+    ...(isVisible('/site-fund-request/reports')
+      ? [{ href: '/site-fund-request/reports', label: 'Reports', icon: BarChart3 }]
+      : []),
+  ];
 
   const navigationLinks = (onNavigate?: () => void) => {
     let lastGroup = '';
@@ -253,6 +270,8 @@ export default function SiteFundRequestShell({ children }: { children: React.Rea
 
         <main className="min-w-0">{children}</main>
       </div>
+
+      <ModuleBottomNav tabs={bottomTabs} onMore={() => setMobileMenuOpen(true)} moduleName="Site Fund Request" />
     </div>
   );
 }
