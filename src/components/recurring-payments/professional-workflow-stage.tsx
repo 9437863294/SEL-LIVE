@@ -46,6 +46,7 @@ import type { Holiday, WorkingHours } from '@/lib/types';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { PageHeader } from '@/components/shared/page-header';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
@@ -436,7 +437,8 @@ export default function ProfessionalRecurringWorkflowStage({ stageId }: { stageI
   // rows the register still shows as in good standing inside their grace period.
   const overdue = pending.filter(payment => paymentTiming(payment).isOverdue).length;
   return <div className="space-y-5">
-    <Card className="border-0 bg-gradient-to-r from-indigo-700 via-violet-700 to-purple-700 text-white"><CardContent className="flex flex-col gap-4 p-5 sm:flex-row sm:items-center sm:justify-between"><div><p className="text-xs uppercase tracking-wider text-indigo-200">Recurring payment workflow · Step {stage.id}</p><h1 className="text-2xl font-bold">{stage.name}</h1><p className="mt-1 text-sm text-indigo-100">{stage.description}</p></div><div className="grid grid-cols-3 gap-2 text-center"><StageMetric label="My queue" value={pending.length} /><StageMetric label="Due ≤ 3 days" value={dueSoon} /><StageMetric label="Overdue" value={overdue} /></div></CardContent></Card>
+    <PageHeader className="mb-0 sm:mb-0" eyebrow={`Recurring payment workflow · Step ${stage.id}`} title={stage.name} description={stage.description} />
+    <div className="grid grid-cols-3 gap-3"><StageMetric label="My queue" value={pending.length} /><StageMetric label="Due ≤ 3 days" value={dueSoon} /><StageMetric label="Overdue" value={overdue} /></div>
     <Tabs defaultValue="pending"><TabsList><TabsTrigger value="pending">My pending tasks ({pending.length})</TabsTrigger><TabsTrigger value="completed">My completed tasks ({completed.length})</TabsTrigger></TabsList><TabsContent value="pending"><TaskTable rows={pending} stage={stage} title={`${stage.name} — awaiting my action`} description="Assigned to you and not yet actioned" onView={setSelected} onAction={(payment, nextAction) => { setSelected(payment); setAction(nextAction); }} /></TabsContent><TabsContent value="completed"><TaskTable rows={completed} stage={stage} title={`${stage.name} — actioned by me`} description="Payments you have already moved through this step" onView={setSelected} /></TabsContent></Tabs>
     <ActionDialog payment={selected} stage={stage} action={action} canAct={!!selected && pending.some(item => item.id === selected.id)} onAction={setAction} onClose={() => { setSelected(null); setAction(null); }} onSubmit={perform} working={working} departments={departments} accountHeads={accountHeads} subAccountHeads={subAccountHeads} submitBillField={submitBillField} activeChecklist={activeChecklist} recordPaymentField={recordPaymentField} expenseField={expenseField} commonField={commonField} />
   </div>;
@@ -497,7 +499,7 @@ function ActionDialog({ payment, stage, action, canAct, onAction, onClose, onSub
   </DialogContent></Dialog>;
 }
 
-function StageMetric({ label, value }: { label: string; value: number }) { return <div className="min-w-20 rounded-xl bg-white/15 px-3 py-2"><p className="text-lg font-bold">{value}</p><p className="text-[10px] text-indigo-100">{label}</p></div>; }
+function StageMetric({ label, value }: { label: string; value: number }) { return <div className="min-w-0 rounded-lg border bg-card p-3 shadow-sm"><p className="truncate text-[11px] text-muted-foreground">{label}</p><p className="text-lg font-bold">{value}</p></div>; }
 function Summary({ label, value }: { label: string; value: string }) { return <div className="rounded-lg border bg-muted/20 p-3"><p className="text-xs text-muted-foreground">{label}</p><p className="font-semibold">{value}</p></div>; }
 // `recurringDateOnly`, not `toISOString()`: the approval is compared against a `<input type="date">`
 // value, which is a *local* calendar date. Deriving the approval's date in UTC made them different

@@ -4,7 +4,6 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import {
-  ArrowLeft,
   ArrowRight,
   BadgeCheck,
   BarChart3,
@@ -34,6 +33,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
+import { PageHeader, SectionHeader } from "@/components/shared/page-header";
 import { useAuthorization } from "@/hooks/useAuthorization";
 import { cn } from "@/lib/utils";
 
@@ -300,25 +300,21 @@ export default function SupplyPage() {
 
   return (
     <main className="min-h-[calc(100dvh-4rem)] space-y-5 p-4 sm:p-6">
-      <div className="flex items-center gap-3">
-        <Button variant="ghost" size="icon" asChild>
-          <Link href={`/project-management?project=${encodeURIComponent(mappingId)}`} aria-label="Back to Project Management">
-            <ArrowLeft className="h-5 w-5" />
-          </Link>
-        </Button>
-        <div className="hidden h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-cyan-500 to-blue-600 shadow-sm sm:flex">
-          <Package className="h-5 w-5 text-white" />
-        </div>
-        <div className="min-w-0">
-          <h1 className="text-xl font-bold sm:text-2xl">Supply</h1>
-          {/* The project leads, since the screen name is already the heading above it. */}
-          <p className="break-words text-sm text-muted-foreground">
+      <PageHeader
+        title="Supply"
+        // The project leads, since the screen name is already the heading above it.
+        description={
+          <>
             {mapping.projectName}
             <span className="mx-1.5 text-muted-foreground/50">·</span>
             BOQ through to client acceptance
-          </p>
-        </div>
-      </div>
+          </>
+        }
+        icon={Package}
+        backHref={`/project-management?project=${encodeURIComponent(mappingId)}`}
+        backLabel="Back to Project Management"
+        className="mb-0 sm:mb-0"
+      />
 
       {quickLinks.length ? (
         /* Two columns rather than one flat grid, with each group's span and inner column count
@@ -337,13 +333,7 @@ export default function SupplyPage() {
                     : "lg:col-span-1",
               )}
             >
-              <div className="flex items-center gap-2">
-                <group.icon className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-                <h2 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                  {group.title}
-                </h2>
-                <span aria-hidden className="h-px flex-1 bg-border" />
-              </div>
+              <SectionHeader title={group.title} icon={group.icon} className="mb-0" />
 
               <div
                 className={cn(

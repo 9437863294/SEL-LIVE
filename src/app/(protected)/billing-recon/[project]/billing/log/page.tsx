@@ -2,9 +2,9 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import Link from 'next/link';
-import { ArrowLeft, View } from 'lucide-react';
+import { View } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { PageHeader } from '@/components/shared/page-header';
 import { Card, CardContent } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { db } from '@/lib/firebase';
@@ -64,16 +64,7 @@ export default function BillLogPage() {
   return (
     <>
       <div className="w-full px-4 sm:px-6 lg:px-8">
-        <div className="mb-6 flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <Link href={`/billing-recon/${projectSlug}/billing`}>
-              <Button variant="ghost" size="icon">
-                <ArrowLeft className="h-6 w-6" />
-              </Button>
-            </Link>
-            <h1 className="text-2xl font-bold">Billing Log</h1>
-          </div>
-        </div>
+        <PageHeader title="Billing Log" backHref={`/billing-recon/${projectSlug}/billing`} backLabel="Back to billing" />
         <Card>
           <CardContent className="p-0">
             <Table>

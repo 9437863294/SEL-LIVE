@@ -1,6 +1,7 @@
 'use client';
 
 import Link from 'next/link';
+import { PageHeader } from '@/components/shared/page-header';
 import { BarChart3, Activity, ArrowLeftRight, CalendarDays, FileText, PieChart, Users, Wallet, ClipboardList, ShieldCheck } from 'lucide-react';
 
 const MODULE = 'Site Account Statement';
@@ -101,11 +102,11 @@ const REPORTS = [
 export default function ReportsIndexPage() {
   return (
     <div className="space-y-5">
-      <div>
-        <h1 className="text-base sm:text-lg font-bold text-slate-800">Reports</h1>
-        <p className="text-sm text-muted-foreground">{REPORTS.length} reports available — click any card to open</p>
-
-      </div>
+      <PageHeader
+        className="mb-0 sm:mb-0"
+        title="Reports"
+        description={<>{REPORTS.length} reports available — click any card to open</>}
+      />
 
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
         {REPORTS.map(r => {

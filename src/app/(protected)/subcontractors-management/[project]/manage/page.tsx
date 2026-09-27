@@ -4,8 +4,9 @@
 import { useState, useEffect, useMemo, Fragment } from 'react';
 import Link from 'next/link';
 import { useRouter, useParams } from 'next/navigation';
-import { ArrowLeft, Plus, Edit, Trash2, ShieldAlert, ChevronDown, ChevronRight } from 'lucide-react';
+import { Plus, Edit, Trash2, ShieldAlert, ChevronDown, ChevronRight } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { PageHeader } from '@/components/shared/page-header';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { useToast } from '@/hooks/use-toast';
@@ -214,10 +215,11 @@ export default function ManageSubcontractorsPage() {
   if (!canViewPage) {
     return (
       <div className="w-full max-w-4xl mx-auto px-4 sm:px-6 lg:px-8">
-        <div className="mb-6 flex items-center gap-2">
-            <Link href={`/subcontractors-management/${projectSlug}`}><Button variant="ghost" size="icon"><ArrowLeft className="h-6 w-6" /></Button></Link>
-            <h1 className="text-2xl font-bold">Manage Subcontractors</h1>
-        </div>
+        <PageHeader
+            title="Manage Subcontractors"
+            backHref={`/subcontractors-management/${projectSlug}`}
+            backLabel="Back to Subcontractors"
+        />
         <Card>
             <CardHeader><CardTitle>Access Denied</CardTitle><CardDescription>You do not have permission to view this page.</CardDescription></CardHeader>
             <CardContent className="flex justify-center p-8"><ShieldAlert className="h-16 w-16 text-destructive" /></CardContent>

@@ -4,14 +4,13 @@ export const dynamic = 'force-dynamic';
 
 import Link from 'next/link';
 import {
-  ArrowLeft,
   ShieldAlert,
   type LucideIcon,
   BarChart4,
 } from 'lucide-react';
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/components/ui/card';
 import { cn } from '@/lib/utils';
-import { Button } from '@/components/ui/button';
+import { PageHeader } from '@/components/shared/page-header';
 import { useParams } from 'next/navigation';
 import { useAuthorization } from '@/hooks/useAuthorization';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -38,7 +37,7 @@ const ReportCard = ({ item }: ReportCardProps) => {
                 <div className="bg-primary/10 p-3 rounded-lg mb-2">
                   <item.icon className="w-6 h-6 text-primary" />
                 </div>
-                <CardTitle className="text-base font-semibold">{item.text}</CardTitle>
+                <CardTitle>{item.text}</CardTitle>
             </CardHeader>
             <CardContent className="text-center p-4 pt-0">
                 <CardDescription className="text-xs">{item.description}</CardDescription>
@@ -93,10 +92,7 @@ export default function JmcReportsPage() {
     if (!canViewPage) {
         return (
             <div className="w-full max-w-lg">
-                <div className="mb-6 flex items-center gap-4">
-                    <Link href={`/billing-recon/${projectSlug}/jmc`}><Button variant="ghost" size="icon"><ArrowLeft className="h-6 w-6" /></Button></Link>
-                    <h1 className="text-2xl font-bold">JMC Reports</h1>
-                </div>
+                <PageHeader title="JMC Reports" backHref={`/billing-recon/${projectSlug}/jmc`} backLabel="Back to JMC" />
                 <Card>
                     <CardHeader>
                         <CardTitle>Access Denied</CardTitle>
@@ -112,14 +108,7 @@ export default function JmcReportsPage() {
 
   return (
     <div className="w-full max-w-4xl pr-4">
-      <div className="mb-6 flex items-center gap-4">
-        <Link href={`/billing-recon/${projectSlug}/jmc`}>
-          <Button variant="ghost" size="icon">
-            <ArrowLeft className="h-6 w-6" />
-          </Button>
-        </Link>
-        <h1 className="text-2xl font-bold">JMC Reports</h1>
-      </div>
+      <PageHeader title="JMC Reports" backHref={`/billing-recon/${projectSlug}/jmc`} backLabel="Back to JMC" />
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
         {reportItems.map((item) => (
           <ReportCard key={item.text} item={item} />

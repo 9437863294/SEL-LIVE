@@ -2,9 +2,7 @@
 'use client';
 
 import { useState, useEffect, useMemo, useCallback } from 'react';
-import Link from 'next/link';
 import {
-  ArrowLeft,
   Save,
   Trash2,
   Plus,
@@ -15,6 +13,7 @@ import {
   ArrowDown,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { PageHeader } from '@/components/shared/page-header';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { useToast } from '@/hooks/use-toast';
@@ -374,16 +373,11 @@ export default function BillingWorkflowConfigurationPage() {
   if (!canViewPage) {
     return (
       <div className="w-full max-w-4xl mx-auto px-4 sm:px-6 lg:px-8">
-        <div className="mb-6 flex items-center justify-between">
-          <div className="flex items-center gap-4">
-            <Link href={`/subcontractors-management/${projectSlug}/billing/settings`}>
-              <Button variant="ghost" size="icon">
-                <ArrowLeft className="h-6 w-6" />
-              </Button>
-            </Link>
-            <h1 className="text-xl font-bold">Billing Workflow Configuration</h1>
-          </div>
-        </div>
+        <PageHeader
+          title="Billing Workflow Configuration"
+          backHref={`/subcontractors-management/${projectSlug}/billing/settings`}
+          backLabel="Back to Billing Settings"
+        />
         <Card>
           <CardHeader>
             <CardTitle>Access Denied</CardTitle>

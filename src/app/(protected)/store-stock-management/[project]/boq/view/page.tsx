@@ -2,9 +2,7 @@
 'use client';
 
 import React, { useState, useEffect, useMemo, Fragment, useCallback, useRef } from 'react';
-import Link from 'next/link';
 import {
-  ArrowLeft,
   Trash2,
   Loader2,
   Settings,
@@ -55,6 +53,7 @@ import type { CheckedState } from '@radix-ui/react-checkbox';
 import { Tooltip, TooltipProvider, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { projectMatchesSlug } from '@/lib/project-slug';
+import { PageHeader } from '@/components/shared/page-header';
 
 
 export type BoqItem = {
@@ -563,16 +562,12 @@ export default function ViewBoqPage() {
   return (
     <div className="flex flex-col h-[calc(100vh-8rem)] w-full px-4 sm:px-6 lg:px-8">
       {/* Header */}
-      <div className="py-6 flex items-center justify-between">
-        <div className="flex items-center gap-2">
-          <Link href={`/store-stock-management/${projectSlug}/boq`}>
-            <Button variant="ghost" size="icon" aria-label="Back">
-              <ArrowLeft className="h-6 w-6" />
-            </Button>
-          </Link>
-          <h1 className="text-xl font-bold">View BOQ</h1>
-        </div>
-
+      <PageHeader
+        className="shrink-0"
+        title="View BOQ"
+        backHref={`/store-stock-management/${projectSlug}/boq`}
+        backLabel="Back to BOQ Management"
+        actions={
         <div className="flex items-center gap-2 flex-wrap">
           <div className="relative">
             <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
@@ -674,7 +669,8 @@ export default function ViewBoqPage() {
             </DialogContent>
           </Dialog>
         </div>
-      </div>
+        }
+      />
 
       {/* Table */}
       <div className="flex-1 min-h-0">

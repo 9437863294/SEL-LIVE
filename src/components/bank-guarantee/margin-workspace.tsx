@@ -28,6 +28,7 @@ import {
 } from "@/lib/fixed-deposit";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { PageHeader } from "@/components/shared/page-header";
 import {
   Card,
   CardContent,
@@ -266,26 +267,24 @@ export default function BGMarginWorkspace() {
     );
   return (
     <div className="space-y-4">
-      <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-end">
-        <div>
-          <h1 className="text-2xl font-bold">Margin & FD Linkage</h1>
-          <p className="text-sm text-muted-foreground">
-            Reserve eligible FD value through claim expiry and monitor active
-            collateral.
-          </p>
-        </div>
-        <div className="flex gap-2">
-          {canReserve && (
-            <Button onClick={() => setOpen(true)}>
-              <Plus className="mr-2 h-4 w-4" />
-              Reserve FD Margin
+      <PageHeader
+        className="mb-0 sm:mb-0"
+        title="Margin & FD Linkage"
+        description="Reserve eligible FD value through claim expiry and monitor active collateral."
+        actions={
+          <>
+            {canReserve && (
+              <Button onClick={() => setOpen(true)}>
+                <Plus className="mr-2 h-4 w-4" />
+                Reserve FD Margin
+              </Button>
+            )}
+            <Button variant="outline" size="icon" onClick={() => void load()}>
+              <RefreshCw className="h-4 w-4" />
             </Button>
-          )}
-          <Button variant="outline" size="icon" onClick={() => void load()}>
-            <RefreshCw className="h-4 w-4" />
-          </Button>
-        </div>
-      </div>
+          </>
+        }
+      />
       <div className="grid gap-3 sm:grid-cols-4">
         <Metric label="Available FDs" value={String(available.length)} />
         <Metric

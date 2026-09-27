@@ -19,6 +19,7 @@ import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { cn } from '@/lib/utils';
 import { projectMatchesSlug } from '@/lib/project-slug';
+import { PageHeader } from '@/components/shared/page-header';
 
 export default function AssemblyPage() {
   const params = useParams();
@@ -180,7 +181,7 @@ export default function AssemblyPage() {
   return (
     <>
       <div>
-        <h1 className="text-3xl font-bold mb-6">BOM Management</h1>
+        <PageHeader title="BOM Management" />
         <Card>
           <CardHeader>
             <div className="flex justify-between items-center">

@@ -23,6 +23,7 @@ import { db } from '@/lib/firebase';
 import { collection, getDocs, addDoc, deleteDoc, doc, updateDoc, writeBatch } from 'firebase/firestore';
 import type { Project, Site } from '@/lib/types';
 import { Skeleton } from '@/components/ui/skeleton';
+import { PageHeader } from '@/components/shared/page-header';
 import {
   Accordion,
   AccordionContent,
@@ -131,16 +132,17 @@ export default function ManageProjectsAndSitesPage() {
 
   return (
     <div className="mx-auto w-full max-w-7xl space-y-6">
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
-        <div>
-          <p className="text-xs font-bold uppercase tracking-[0.14em] text-amber-600">Project structure</p>
-          <h1 className="mt-1 text-2xl font-bold tracking-tight">Projects</h1>
-          <p className="mt-1 text-sm text-muted-foreground">Maintain project identity, site code, division, location, and operational status.</p>
-        </div>
-        <Button onClick={() => openProjectDialog('add')}>
+      <PageHeader
+        className="mb-0 sm:mb-0"
+        eyebrow="Project structure"
+        title="Projects"
+        description="Maintain project identity, site code, division, location, and operational status."
+        actions={
+          <Button onClick={() => openProjectDialog('add')}>
             <Plus className="mr-2 h-4 w-4" /> Add Project
-        </Button>
-      </div>
+          </Button>
+        }
+      />
 
        <Card className="border-slate-200/80 shadow-sm">
         <CardHeader>

@@ -32,6 +32,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Skeleton } from '@/components/ui/skeleton';
+import { PageHeader } from '@/components/shared/page-header';
 import { cn } from '@/lib/utils';
 
 // ─── types ────────────────────────────────────────────────────────────────────
@@ -164,44 +165,40 @@ export default function ProjectInsurancePage() {
     <div className="space-y-4">
 
       {/* ── Header ────────────────────────────────────────────────────────── */}
-      <Card className="overflow-hidden border-border/60">
-        <div className="h-1 w-full bg-gradient-to-r from-emerald-500 via-teal-500 to-cyan-500" />
-        <CardHeader className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <div className="flex items-center gap-3">
-            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-emerald-50 ring-1 ring-emerald-100">
-              <HardHat className="h-5 w-5 text-emerald-600" />
-            </div>
-            <div>
-              <CardTitle className="tracking-tight">Project Insurance</CardTitle>
-              <CardDescription>Insurance coverage across projects and properties</CardDescription>
-            </div>
-          </div>
-          <div className="flex flex-wrap items-center gap-2">
+      <PageHeader
+        className="mb-0 sm:mb-0"
+        icon={HardHat}
+        title="Project Insurance"
+        description="Insurance coverage across projects and properties"
+        actions={
+          <>
             <Link href="/insurance/project/history">
-              <Button variant="outline" size="sm" className="gap-1.5">
+              <Button variant="outline" size="sm" className="w-full gap-1.5">
                 <History className="h-3.5 w-3.5" /> History
               </Button>
             </Link>
             <Link href="/insurance/project/all-policies">
-              <Button variant="outline" size="sm" className="gap-1.5">
+              <Button variant="outline" size="sm" className="w-full gap-1.5">
                 <Files className="h-3.5 w-3.5" /> All Policies
               </Button>
             </Link>
-            <Button variant="outline" size="sm" onClick={fetchData} className="gap-1.5">
+            <Button variant="outline" size="sm" onClick={fetchData} className="gap-1.5" aria-label="Refresh">
               <RefreshCw className="h-3.5 w-3.5" />
             </Button>
             {canAdd && (
               <Link href="/insurance/project/new">
-                <Button size="sm" className="gap-1.5 bg-emerald-600 hover:bg-emerald-700 text-white">
+                <Button size="sm" className="w-full gap-1.5 bg-emerald-600 hover:bg-emerald-700 text-white">
                   <Plus className="h-3.5 w-3.5" /> Add Policy
                 </Button>
               </Link>
             )}
-          </div>
-        </CardHeader>
+          </>
+        }
+      />
 
-        {/* Stats strip */}
-        <CardContent className="grid grid-cols-2 gap-2 sm:grid-cols-4 border-t pt-4">
+      {/* ── Stats strip ────────────────────────────────────────────────────── */}
+      <Card className="overflow-hidden border-border/60">
+        <CardContent className="grid grid-cols-2 gap-2 p-4 sm:grid-cols-4">
           {[
             { label: 'Total Assets',      value: totals.assets,   color: 'text-slate-700' },
             { label: 'Active Policies',   value: totals.active,   color: 'text-emerald-600' },

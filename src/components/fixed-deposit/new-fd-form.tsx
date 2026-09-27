@@ -6,7 +6,7 @@ import { useRouter } from 'next/navigation';
 import { addMonths } from 'date-fns';
 import { addDoc, collection, doc, getDoc, getDocs, query, runTransaction, serverTimestamp, Timestamp, updateDoc, where } from 'firebase/firestore';
 import { getDownloadURL, ref as storageRef, uploadBytes } from 'firebase/storage';
-import { ArrowLeft, Calculator, Loader2, RotateCcw, Save, Send, ShieldAlert } from 'lucide-react';
+import { Calculator, Loader2, RotateCcw, Save, Send, ShieldAlert } from 'lucide-react';
 import { db } from '@/lib/firebase';
 import { storage } from '@/lib/firebase-storage';
 import { useAuth } from '@/components/auth/AuthProvider';
@@ -41,11 +41,12 @@ import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Switch } from '@/components/ui/switch';
 import { Separator } from '@/components/ui/separator';
+import { PageHeader } from '@/components/shared/page-header';
 
 const toTimestamp = (value: string) => Timestamp.fromDate(new Date(`${value}T12:00:00`));
 
 function Section({ title, description, children }: { title: string; description: string; children: ReactNode }) {
-  return <Card className="border-white/80 bg-white/90 shadow-sm"><CardHeader className="pb-4"><CardTitle className="text-base">{title}</CardTitle><CardDescription>{description}</CardDescription></CardHeader><CardContent className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">{children}</CardContent></Card>;
+  return <Card className="border-white/80 bg-white/90 shadow-sm"><CardHeader className="pb-4"><CardTitle>{title}</CardTitle><CardDescription>{description}</CardDescription></CardHeader><CardContent className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">{children}</CardContent></Card>;
 }
 
 function Field({ label, required, helper, children, className = '' }: { label: string; required?: boolean; helper?: string; children: ReactNode; className?: string }) {
@@ -190,7 +191,7 @@ export default function NewFixedDepositForm() {
   if (!canAdd) return <Card><CardHeader><CardTitle>Access Denied</CardTitle><CardDescription>You do not have permission to create fixed deposits.</CardDescription></CardHeader><CardContent className="flex justify-center py-8"><ShieldAlert className="h-14 w-14 text-destructive" /></CardContent></Card>;
 
   return <div className="space-y-5">
-    <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-center"><div className="flex items-center gap-3"><Button asChild variant="ghost" size="icon"><Link href="/fixed-deposit"><ArrowLeft className="h-5 w-5" /></Link></Button><div><h1 className="text-2xl font-bold tracking-tight">Create New FD</h1><p className="text-sm text-muted-foreground">Create any supported fixed deposit type with financial, lien and document controls.</p></div></div><div className="flex flex-wrap gap-2"><Button variant="outline" onClick={reset} disabled={Boolean(saving)}><RotateCcw className="mr-2 h-4 w-4" />Reset</Button><Button variant="outline" onClick={() => void save('draft')} disabled={Boolean(saving)}>{saving === 'draft' ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}Save Draft</Button><Button onClick={() => void save('submit')} disabled={Boolean(saving)} className="bg-gradient-to-r from-cyan-600 to-blue-700">{saving === 'submit' ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Send className="mr-2 h-4 w-4" />}Submit for Approval</Button></div></div>
+    <PageHeader className="mb-0 sm:mb-0" backHref="/fixed-deposit" backLabel="Back to FD dashboard" title="Create New FD" description="Create any supported fixed deposit type with financial, lien and document controls." actions={<><Button variant="outline" onClick={reset} disabled={Boolean(saving)}><RotateCcw className="mr-2 h-4 w-4" />Reset</Button><Button variant="outline" onClick={() => void save('draft')} disabled={Boolean(saving)}>{saving === 'draft' ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}Save Draft</Button><Button onClick={() => void save('submit')} disabled={Boolean(saving)} className="bg-gradient-to-r from-cyan-600 to-blue-700">{saving === 'submit' ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Send className="mr-2 h-4 w-4" />}Submit for Approval</Button></>} />
 
     <Section title="7.1 Basic Information" description="Organization, ownership, bank, and bank-issued FD identification.">
       <Field label="Organization" required><Input value={organizationName} readOnly className="bg-slate-50" /></Field>

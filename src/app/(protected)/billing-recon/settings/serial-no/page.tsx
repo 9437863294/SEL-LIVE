@@ -2,8 +2,8 @@
 'use client';
 
 import { useState, useEffect, useCallback, useMemo } from 'react';
-import Link from 'next/link';
-import { ArrowLeft, Save, Loader2, RefreshCw } from 'lucide-react';
+import { Save, Loader2, RefreshCw } from 'lucide-react';
+import { PageHeader } from '@/components/shared/page-header';
 import { Button } from '@/components/ui/button';
 import {
   Card,
@@ -139,14 +139,7 @@ export default function SerialNoConfigPage() {
     
     return (
         <div className="w-full max-w-6xl mx-auto px-4 sm:px-6 lg:px-8">
-            <div className="mb-6 flex items-center gap-4">
-                <Link href="/billing-recon/settings">
-                    <Button variant="ghost" size="icon">
-                        <ArrowLeft className="h-6 w-6" />
-                    </Button>
-                </Link>
-                <h1 className="text-xl font-bold">JMC Serial Number Configuration</h1>
-            </div>
+            <PageHeader title="JMC Serial Number Configuration" backHref="/billing-recon/settings" backLabel="Back to settings" />
             
             <Accordion type="multiple" className="w-full space-y-4">
                 {isLoading ? <Skeleton className="h-48 w-full" /> : projects.map(project => (
@@ -161,7 +154,7 @@ export default function SerialNoConfigPage() {
                                     <AccordionItem value={scope2} key={scope2} className="border-none">
                                         <Card className="bg-muted/20">
                                             <AccordionTrigger className="px-4 py-3 hover:no-underline">
-                                                <h4 className="font-semibold text-md">{scope2}</h4>
+                                                <CardTitle>{scope2}</CardTitle>
                                             </AccordionTrigger>
                                             <AccordionContent className="px-4 pb-4">
                                                 <div className="space-y-4">
@@ -172,7 +165,7 @@ export default function SerialNoConfigPage() {
                                                         return (
                                                             <Card key={slug} className="bg-background">
                                                                 <CardHeader className="flex flex-row items-center justify-between py-3 px-4">
-                                                                    <div><CardTitle className="text-base">{scope1}</CardTitle></div>
+                                                                    <div><CardTitle>{scope1}</CardTitle></div>
                                                                     <Button size="sm" onClick={() => handleSaveConfig(slug, project.projectName, scope1, scope2)} disabled={savingStates[slug]}>
                                                                         {savingStates[slug] ? <Loader2 className="mr-2 h-4 w-4 animate-spin"/> : <Save className="mr-2 h-4 w-4" />}
                                                                         Save

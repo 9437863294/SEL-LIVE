@@ -3,9 +3,9 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import Link from 'next/link';
-import { ArrowLeft, Plus, ShieldAlert } from 'lucide-react';
+import { Plus, ShieldAlert } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { PageHeader } from '@/components/shared/page-header';
 import {
   Card,
   CardContent,
@@ -205,14 +205,7 @@ export default function ManageProjectPage() {
   if (!canView) {
       return (
         <div className="w-full px-4 sm:px-5">
-            <div className="mb-6 flex items-center gap-4">
-              <Link href="/settings">
-                <Button variant="ghost" size="icon">
-                  <ArrowLeft className="h-6 w-6" />
-                </Button>
-              </Link>
-              <h1 className="text-2xl font-bold">Manage Project</h1>
-            </div>
+            <PageHeader title="Manage Project" backHref="/settings" backLabel="Back to settings" />
             <Card>
                 <CardHeader>
                     <CardTitleShad>Access Denied</CardTitleShad>
@@ -238,18 +231,11 @@ export default function ManageProjectPage() {
         />
       </div>
     <div className="w-full px-4 sm:px-5 py-3">
-      <div className="mb-5 flex items-center justify-between">
-        <div className="flex items-center gap-3">
-          <Link href="/settings">
-            <Button variant="ghost" size="icon" className="rounded-full hover:bg-amber-50 dark:hover:bg-amber-950/30">
-              <ArrowLeft className="h-5 w-5" />
-            </Button>
-          </Link>
-          <div>
-            <h1 className="text-xl font-bold tracking-tight">Manage Projects</h1>
-            <p className="text-xs text-muted-foreground">{/* project count injected below */}</p>
-          </div>
-        </div>
+      <PageHeader
+        title="Manage Projects"
+        backHref="/settings"
+        backLabel="Back to settings"
+        actions={
         <Dialog open={isAddDialogOpen} onOpenChange={setIsAddDialogOpen}>
           <DialogTrigger asChild>
             <Button disabled={!canAdd} className="rounded-full shadow-md">
@@ -318,7 +304,8 @@ export default function ManageProjectPage() {
             </DialogFooter>
           </DialogContent>
         </Dialog>
-      </div>
+        }
+      />
 
       {/* ── Mobile card list (visible below md) ── */}
       <div className="md:hidden space-y-3">

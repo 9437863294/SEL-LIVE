@@ -1,10 +1,8 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import {
-  ArrowLeft,
   Check,
   GitPullRequestArrow,
   Loader2,
@@ -71,6 +69,7 @@ import {
   PmEmptyState,
   type PmListColumn,
 } from "@/components/project-management/pm-shell";
+import { PageHeader } from "@/components/shared/page-header";
 import { cn } from "@/lib/utils";
 
 const PROJECTS_COLLECTION = "projectManagementProjects";
@@ -323,7 +322,7 @@ export default function VariationOrdersPage() {
   if (!canView) {
     return (
       <main className="min-h-[calc(100dvh-4rem)] p-4 sm:p-6">
-        <h1 className="mb-6 text-2xl font-bold sm:text-3xl">Variation Orders</h1>
+        <PageHeader title="Variation Orders" />
         <Card>
           <CardHeader>
             <CardTitle>Access Denied</CardTitle>
@@ -433,24 +432,13 @@ export default function VariationOrdersPage() {
 
   return (
     <main className="min-h-[calc(100dvh-4rem)] p-4 sm:p-6">
-      <div className="mb-4 flex flex-col gap-3 sm:mb-6 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
-        <div className="flex min-w-0 items-center gap-2 sm:gap-3">
-          <Button variant="ghost" size="icon" className="shrink-0" asChild>
-            <Link href="/project-management/settings" aria-label="Back to Settings">
-              <ArrowLeft className="h-5 w-5" />
-            </Link>
-          </Button>
-          <div className="hidden h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-amber-500 to-orange-600 shadow-sm sm:flex">
-            <GitPullRequestArrow className="h-5 w-5 text-white" />
-          </div>
-          <div className="min-w-0">
-            <h1 className="text-xl font-bold sm:text-3xl">Variation Orders</h1>
-            <p className="mt-0.5 text-[13px] text-muted-foreground sm:mt-1 sm:text-sm">
-              {variations.length} total · {pendingCount} pending approval
-            </p>
-          </div>
-        </div>
-
+      <PageHeader
+        title="Variation Orders"
+        description={`${variations.length} total · ${pendingCount} pending approval`}
+        icon={GitPullRequestArrow}
+        backHref="/project-management/settings"
+        backLabel="Back to Settings"
+        actions={
         <Dialog open={isDialogOpen} onOpenChange={(open) => { setIsDialogOpen(open); if (!open) resetDialog(); }}>
           <DialogTrigger asChild>
             <Button disabled={!canAdd}>
@@ -527,7 +515,8 @@ export default function VariationOrdersPage() {
             </DialogFooter>
           </DialogContent>
         </Dialog>
-      </div>
+        }
+      />
 
       <PmDataList
         rows={variations}

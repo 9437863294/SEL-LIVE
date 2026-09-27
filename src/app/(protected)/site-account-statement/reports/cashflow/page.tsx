@@ -9,6 +9,7 @@ import { useAuthorization } from '@/hooks/useAuthorization';
 import { useAuth } from '@/components/auth/AuthProvider';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
+import { PageHeader } from '@/components/shared/page-header';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { cn } from '@/lib/utils';
@@ -146,18 +147,17 @@ export default function CashFlowPage() {
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between gap-3 flex-wrap">
-        <div>
-          <h1 className="text-base sm:text-lg font-bold text-slate-800">Month-wise Cash Flow</h1>
-          <p className="text-sm text-muted-foreground">Monthly receipts, expenses and running balance for {filterYear}</p>
-        </div>
-        {canExport && (
+      <PageHeader
+        className="mb-0 sm:mb-0"
+        title="Month-wise Cash Flow"
+        description={<>Monthly receipts, expenses and running balance for {filterYear}</>}
+        actions={canExport ? (
           <Button variant="outline" size="sm" onClick={exportExcel} disabled={exporting} className="gap-2">
             {exporting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
             Export Excel
           </Button>
-        )}
-      </div>
+        ) : undefined}
+      />
 
       {/* Filters */}
       <div className="flex gap-2 flex-wrap">

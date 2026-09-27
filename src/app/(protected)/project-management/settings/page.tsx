@@ -2,7 +2,6 @@
 
 import Link from "next/link";
 import {
-  ArrowLeft,
   ArrowRight,
   Building2,
   ClipboardList,
@@ -12,7 +11,7 @@ import {
   ShieldAlert,
   SlidersHorizontal,
 } from "lucide-react";
-import { Button } from "@/components/ui/button";
+import { PageHeader } from "@/components/shared/page-header";
 import {
   Card,
   CardContent,
@@ -90,9 +89,7 @@ export default function ProjectManagementSettingsPage() {
   if (!can("View", SETTINGS_PERMISSION)) {
     return (
       <main className="min-h-[calc(100dvh-4rem)] p-4 sm:p-6">
-        <h1 className="mb-6 text-2xl font-bold sm:text-3xl">
-          Project Management Settings
-        </h1>
+        <PageHeader title="Project Management Settings" />
         <Card>
           <CardHeader>
             <CardTitle>Access Denied</CardTitle>
@@ -111,25 +108,14 @@ export default function ProjectManagementSettingsPage() {
   return (
     <main className="min-h-[calc(100dvh-4rem)] space-y-5 p-4 sm:p-6">
       {/* ── Header ──────────────────────────────────────────────────────── */}
-      <Card className="relative overflow-hidden border-0 bg-gradient-to-r from-slate-700 via-slate-600 to-slate-500 text-white shadow-lg">
-        <div className="absolute inset-0 opacity-10 bg-[radial-gradient(ellipse_at_top_right,_white_0%,_transparent_60%)]" />
-        <CardContent className="relative flex items-center gap-3 p-4 sm:gap-4 sm:p-5">
-          <Button variant="ghost" size="icon" asChild className="shrink-0 text-white hover:bg-white/20 hover:text-white">
-            <Link href="/project-management" aria-label="Back to Project Management">
-              <ArrowLeft className="h-5 w-5" />
-            </Link>
-          </Button>
-          <div className="hidden h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-white/20 backdrop-blur-sm sm:flex">
-            <Settings2 className="h-6 w-6 text-white" />
-          </div>
-          <div className="min-w-0">
-            <h1 className="text-xl font-bold leading-tight tracking-tight sm:text-2xl">Project Management Settings</h1>
-            <p className="mt-0.5 text-[13px] text-slate-200 sm:text-sm">
-              Manage projects and configure module-wide behavior
-            </p>
-          </div>
-        </CardContent>
-      </Card>
+      <PageHeader
+        title="Project Management Settings"
+        description="Manage projects and configure module-wide behavior"
+        icon={Settings2}
+        backHref="/project-management"
+        backLabel="Back to Project Management"
+        className="mb-0 sm:mb-0"
+      />
 
       {/* ── Sections ─────────────────────────────────────────────────────── */}
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5">

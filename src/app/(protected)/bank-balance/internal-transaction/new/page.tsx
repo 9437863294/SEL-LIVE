@@ -4,7 +4,6 @@ export const dynamic = 'force-dynamic';
 import { useState, useEffect, useMemo } from 'react';
 import Link from 'next/link';
 import {
-  ArrowLeft,
   Plus,
   Trash2,
   Save,
@@ -14,6 +13,7 @@ import {
 } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
+import { PageHeader } from '@/components/shared/page-header';
 import {
   Card,
   CardContent,
@@ -330,14 +330,7 @@ export default function NewInternalTransactionPage() {
   if (!canAdd) {
     return (
       <div className="w-full px-4 sm:px-6 lg:px-8">
-        <div className="mb-6 flex items-center gap-2">
-          <Link href="/bank-balance/internal-transaction">
-            <Button variant="ghost" size="icon">
-              <ArrowLeft className="h-6 w-6" />
-            </Button>
-          </Link>
-          <h1 className="text-2xl font-bold">New Contra Entry</h1>
-        </div>
+        <PageHeader title="New Contra Entry" backHref="/bank-balance/internal-transaction" backLabel="Back to transaction log" />
         <Card>
           <CardHeader>
             <CardTitle>Access Denied</CardTitle>
@@ -364,25 +357,20 @@ export default function NewInternalTransactionPage() {
         />
       </div>
     <div className="relative w-full px-4 sm:px-6 lg:px-8 py-4">
-      <div className="mb-5 flex items-center justify-between">
-        <div className="flex items-center gap-3">
+      <PageHeader
+        title="New Internal Transfer"
+        description="Record a transfer between bank accounts"
+        backHref="/bank-balance/internal-transaction"
+        backLabel="Back to transaction log"
+        actions={
           <Link href="/bank-balance/internal-transaction">
-            <Button variant="ghost" size="icon" className="rounded-full hover:bg-violet-50 dark:hover:bg-violet-950/30">
-              <ArrowLeft className="h-5 w-5" />
+            <Button variant="outline" className="rounded-full border-border/60">
+              <History className="mr-2 h-4 w-4" />
+              Transaction Log
             </Button>
           </Link>
-          <div>
-            <h1 className="text-xl font-bold tracking-tight">New Internal Transfer</h1>
-            <p className="text-xs text-muted-foreground">Record a transfer between bank accounts</p>
-          </div>
-        </div>
-        <Link href="/bank-balance/internal-transaction">
-          <Button variant="outline" className="rounded-full border-border/60">
-            <History className="mr-2 h-4 w-4" />
-            Transaction Log
-          </Button>
-        </Link>
-      </div>
+        }
+      />
 
       <Card>
         <CardContent className="space-y-6 pt-6">

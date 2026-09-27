@@ -17,6 +17,7 @@ import {
   VEHICLE_COLLECTIONS,
 } from '@/lib/vehicle-management';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { PageHeader } from '@/components/shared/page-header';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -254,13 +255,11 @@ export default function DriverTripLogPage() {
 
   return (
     <div className="space-y-4">
-      <Card className="vm-panel-strong overflow-hidden">
-        <div className="h-1 w-full bg-gradient-to-r from-cyan-500 via-sky-500 to-blue-600 animate-bb-gradient" />
-        <CardHeader>
-          <CardTitle className="tracking-tight">Driver Trip Log</CardTitle>
-          <CardDescription>All trips with summary and filters. Click row for complete details.</CardDescription>
-        </CardHeader>
-      </Card>
+      <PageHeader
+        title="Driver Trip Log"
+        description="All trips with summary and filters. Click row for complete details."
+        className="mb-0 sm:mb-0"
+      />
 
       <Card className="vm-panel">
         <CardContent className="grid grid-cols-2 gap-3 pt-6 md:grid-cols-4">
@@ -289,7 +288,7 @@ export default function DriverTripLogPage() {
 
       <Card className="vm-panel">
         <CardHeader>
-          <CardTitle className="text-lg">Filters</CardTitle>
+          <CardTitle>Filters</CardTitle>
         </CardHeader>
         <CardContent className="grid grid-cols-1 gap-3 md:grid-cols-3">
           <div className="space-y-2">
@@ -319,7 +318,7 @@ export default function DriverTripLogPage() {
 
       <Card className="vm-panel">
         <CardHeader>
-          <CardTitle className="text-lg">Trip Table</CardTitle>
+          <CardTitle>Trip Table</CardTitle>
         </CardHeader>
         <CardContent className="space-y-0 p-0">
           {isLoading ? (

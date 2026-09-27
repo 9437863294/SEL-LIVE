@@ -26,6 +26,7 @@ import { useAuth } from '@/components/auth/AuthProvider';
 import { ModuleBottomNav, type ModuleNavTab } from '@/components/navigation/ModuleBottomNav';
 import { SIDEBAR_ICONS_GRID, SidebarNavTooltip, useSidebarIconsOnly } from '@/components/navigation/use-sidebar-mode';
 import { Card, CardContent } from '@/components/ui/card';
+import { ModuleMobileHeader } from '@/components/shared/page-header';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import { SheetClose } from '@/components/ui/sheet';
@@ -411,13 +412,13 @@ export default function ExpensesLayoutShell({ children }: { children: React.Reac
       </div>
 
       {/* `lg:hidden` is a min-width query, so this bar would otherwise print on a wide sheet. */}
-      <div className="mb-3 lg:hidden print:hidden">
-        <Card className="border border-white/60 bg-white/80 shadow-sm backdrop-blur-sm">
-          <CardContent className="flex items-center gap-3 px-3 py-2.5">
-            {brand}
-          </CardContent>
-        </Card>
-      </div>
+      <ModuleMobileHeader
+        icon={IndianRupee}
+        title="Expenses"
+        subtitle="Requests & Reporting"
+        hideFrom="lg"
+        className="print:hidden"
+      />
 
       <div className={`grid grid-cols-1 gap-4 ${iconsOnly ? SIDEBAR_ICONS_GRID : 'lg:grid-cols-[232px_minmax(0,1fr)]'} lg:items-start`}>
         <TooltipProvider delayDuration={150}>

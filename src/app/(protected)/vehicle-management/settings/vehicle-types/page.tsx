@@ -1,6 +1,5 @@
 'use client';
 
-import Link from 'next/link';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { serverTimestamp, setDoc, doc } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
@@ -9,6 +8,7 @@ import { useVehicleOptions, useVehicleTypeOptions } from '@/components/vehicle-m
 import { useAuthorization } from '@/hooks/useAuthorization';
 import { useToast } from '@/hooks/use-toast';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { PageHeader } from '@/components/shared/page-header';
 import { Label } from '@/components/ui/label';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -25,7 +25,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
-import { AlertTriangle, CarFront, Plus, RotateCcw, Save, Search, Tag, Trash2, ArrowLeft } from 'lucide-react';
+import { AlertTriangle, CarFront, Plus, RotateCcw, Save, Search, Tag, Trash2 } from 'lucide-react';
 
 export default function VehicleTypesSettingsPage() {
   const { can } = useAuthorization();
@@ -139,43 +139,26 @@ export default function VehicleTypesSettingsPage() {
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center gap-2">
-        <Link href="/vehicle-management/settings">
-          <Button variant="ghost" size="icon">
-            <ArrowLeft className="h-5 w-5" />
-          </Button>
-        </Link>
-        <div>
-          <h1 className="text-xl font-bold">Vehicle Types</h1>
-          <p className="text-sm text-muted-foreground">Controls the Vehicle Type dropdown in Vehicle Master.</p>
+      <PageHeader
+        title="Vehicle Types"
+        description="Controls the Vehicle Type dropdown in Vehicle Master. Add or remove the types available when registering a vehicle."
+        icon={Tag}
+        backHref="/vehicle-management/settings"
+        backLabel="Back to settings"
+        className="mb-0 sm:mb-0"
+      />
+
+      {/* Stats */}
+      <div className="grid grid-cols-2 gap-2 sm:flex sm:gap-2">
+        <div className="rounded-lg border border-violet-100 bg-violet-50/50 px-3 py-2 text-center">
+          <p className="text-lg font-bold leading-tight text-violet-700">{localTypes.length}</p>
+          <p className="text-[11px] text-muted-foreground">Total types</p>
+        </div>
+        <div className="rounded-lg border border-emerald-100 bg-emerald-50/50 px-3 py-2 text-center">
+          <p className="text-lg font-bold leading-tight text-emerald-700">{vehiclesLoading ? '…' : usedCount}</p>
+          <p className="text-[11px] text-muted-foreground">In use</p>
         </div>
       </div>
-
-      {/* Hero + stats */}
-      <Card className="vm-panel-strong overflow-hidden">
-        <div className="h-1 w-full bg-gradient-to-r from-violet-500 to-purple-600" />
-        <CardContent className="flex flex-col gap-4 p-4 sm:flex-row sm:items-center sm:justify-between">
-          <div className="flex items-center gap-3">
-            <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-violet-100">
-              <Tag className="h-5 w-5 text-violet-600" />
-            </div>
-            <div>
-              <p className="font-semibold text-slate-900">Vehicle Type Setup</p>
-              <p className="text-xs text-muted-foreground">Add or remove the types available when registering a vehicle.</p>
-            </div>
-          </div>
-          <div className="grid grid-cols-2 gap-2 sm:flex sm:gap-2">
-            <div className="rounded-lg border border-violet-100 bg-violet-50/50 px-3 py-2 text-center">
-              <p className="text-lg font-bold leading-tight text-violet-700">{localTypes.length}</p>
-              <p className="text-[11px] text-muted-foreground">Total types</p>
-            </div>
-            <div className="rounded-lg border border-emerald-100 bg-emerald-50/50 px-3 py-2 text-center">
-              <p className="text-lg font-bold leading-tight text-emerald-700">{vehiclesLoading ? '…' : usedCount}</p>
-              <p className="text-[11px] text-muted-foreground">In use</p>
-            </div>
-          </div>
-        </CardContent>
-      </Card>
 
       {/* Toolbar: search + add */}
       <Card className="vm-panel overflow-hidden">
@@ -218,7 +201,7 @@ export default function VehicleTypesSettingsPage() {
       <Card className="vm-panel overflow-hidden">
         <CardHeader className="flex flex-row items-center justify-between border-b border-slate-100 p-4">
           <div>
-            <CardTitle className="text-base">Configured Types</CardTitle>
+            <CardTitle>Configured Types</CardTitle>
             <CardDescription className="mt-0.5 text-xs">Sorted alphabetically. Vehicle counts reflect current Vehicle Master records.</CardDescription>
           </div>
           <Badge variant="outline" className="bg-white">{visibleTypes.length} of {localTypes.length}</Badge>

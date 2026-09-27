@@ -33,6 +33,7 @@ import { db } from '@/lib/firebase';
 import type { Project } from '@/lib/types';
 import { projectMatchesSlug } from '@/lib/project-slug';
 import { PmShell, PmSidebar, pmAccent } from '@/components/project-management/pm-shell';
+import { ModuleMobileHeader } from '@/components/shared/page-header';
 
 export default function ProjectLayout({
   children,
@@ -164,6 +165,15 @@ export default function ProjectLayout({
         />
       }
     >
+      {/* Below lg, where the sidebar is hidden, the module's card heads the column. The pages'
+          sticky `PmTopbar` follows directly and brings its own top padding, hence `mb-0`. */}
+      <ModuleMobileHeader
+        icon={HardHat}
+        title="Subcontractors"
+        subtitle={currentProject?.projectName || undefined}
+        hideFrom="lg"
+        className="mx-4 mb-0 mt-3 md:mx-6"
+      />
       {children}
       <ModuleBottomNav
         tabs={bottomTabs}

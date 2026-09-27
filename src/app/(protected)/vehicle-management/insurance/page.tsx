@@ -31,6 +31,7 @@ import { useToast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { PageHeader } from '@/components/shared/page-header';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
@@ -692,22 +693,18 @@ export default function InsuranceManagementPage() {
 
   return (
     <div className="space-y-4">
-      <Card className="vm-panel-strong overflow-hidden">
-        <div className="h-1 w-full bg-gradient-to-r from-emerald-500 via-teal-500 to-cyan-600 animate-bb-gradient" />
-        <CardHeader className="flex flex-col gap-3 px-3 py-4 sm:flex-row sm:items-center sm:justify-between sm:px-6 sm:py-6">
-          <div className="flex items-start gap-3">
-            <div className="hidden h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-emerald-50 text-emerald-600 sm:flex">
-              <ShieldCheck className="h-6 w-6" />
-            </div>
-            <div>
-              <CardTitle>Insurance Management</CardTitle>
-              <CardDescription>Manage current policies, renewals, expiry status, and policy history.</CardDescription>
-            </div>
-          </div>
-          <div className="grid w-full grid-cols-2 gap-2 sm:flex sm:w-auto sm:flex-wrap sm:justify-end">
-            <Badge variant="outline" className="col-span-2 w-fit bg-white/70 sm:col-span-1">
-              {rows.length} records
-            </Badge>
+      <PageHeader
+        title="Insurance Management"
+        description="Manage current policies, renewals, expiry status, and policy history."
+        icon={ShieldCheck}
+        badge={
+          <Badge variant="outline" className="w-fit bg-white/70">
+            {rows.length} records
+          </Badge>
+        }
+        className="mb-0 sm:mb-0"
+        actions={
+          <>
             <Button variant="outline" onClick={() => void loadRows()} className="bg-white/80 hover:bg-white">
               Refresh
             </Button>
@@ -729,9 +726,11 @@ export default function InsuranceManagementPage() {
             >
               Add Insurance
             </Button>
-          </div>
-        </CardHeader>
-        <CardContent className="space-y-4 px-3 pb-4 sm:px-6 sm:pb-6">
+          </>
+        }
+      />
+      <Card className="vm-panel-strong overflow-hidden">
+        <CardContent className="space-y-4 px-3 pb-4 pt-4 sm:px-6 sm:pb-6 sm:pt-6">
           <div className="grid grid-cols-3 gap-2">
             <div className="rounded-xl border border-emerald-100 bg-emerald-50/70 px-3 py-2.5"><p className="text-[11px] font-semibold uppercase tracking-wide text-emerald-700">Current</p><p className="text-xl font-bold text-emerald-800">{currentCount}</p></div>
             <div className="rounded-xl border border-amber-100 bg-amber-50/70 px-3 py-2.5"><p className="text-[11px] font-semibold uppercase tracking-wide text-amber-700">Needs Attention</p><p className="text-xl font-bold text-amber-800">{attentionCount}</p></div>

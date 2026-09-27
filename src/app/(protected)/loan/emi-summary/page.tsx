@@ -6,7 +6,8 @@ import { useState, useEffect, useMemo } from 'react';
 import Link from 'next/link';
 import { AlertTriangle, ArrowLeft, CalendarCheck, CheckCircle, CheckCircle2, Clock, Edit, Eye, FilePlus, Loader2, MoreHorizontal, RefreshCw, RotateCcw, Save, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent } from '@/components/ui/card';
+import { PageHeader } from '@/components/shared/page-header';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow, TableFooter } from '@/components/ui/table';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useToast } from '@/hooks/use-toast';
@@ -337,19 +338,13 @@ export default function EmiSummaryPage() {
     <>
       <div className="space-y-4">
         {/* Header */}
-        <Card className="overflow-hidden border-border/60">
-          <div className="h-1 w-full bg-gradient-to-r from-violet-500 via-purple-500 to-indigo-500" />
-          <CardHeader className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-            <div className="flex items-center gap-3">
-              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-violet-50 ring-1 ring-violet-100">
-                <CalendarCheck className="h-5 w-5 text-violet-600" />
-              </div>
-              <div>
-                <CardTitle className="tracking-tight">EMI Tracker</CardTitle>
-                <CardDescription>Monthly EMI due and payment status</CardDescription>
-              </div>
-            </div>
-            <div className="flex flex-wrap items-center gap-2">
+        <PageHeader
+          className="mb-0 sm:mb-0"
+          icon={CalendarCheck}
+          title="EMI Tracker"
+          description="Monthly EMI due and payment status"
+          actions={
+            <>
               <Select value={selectedMonth} onValueChange={setSelectedMonth}>
                 <SelectTrigger className="h-9 w-36 text-sm"><SelectValue /></SelectTrigger>
                 <SelectContent>
@@ -362,12 +357,14 @@ export default function EmiSummaryPage() {
                   {yearOptions.map(y => <SelectItem key={y} value={y}>{y}</SelectItem>)}
                 </SelectContent>
               </Select>
-              <Button variant="outline" size="sm" onClick={fetchAllData} className="gap-1.5">
+              <Button variant="outline" size="sm" onClick={fetchAllData} className="gap-1.5" aria-label="Refresh">
                 <RefreshCw className="h-3.5 w-3.5" />
               </Button>
-            </div>
-          </CardHeader>
-          <CardContent className="grid grid-cols-2 gap-2 border-t sm:grid-cols-4 pt-4">
+            </>
+          }
+        />
+        <Card className="overflow-hidden border-border/60">
+          <CardContent className="grid grid-cols-2 gap-2 p-4 sm:grid-cols-4">
             {[
               { label: 'Month Due',   value: formatCurrency(summary.thisMonthDue), color: 'text-slate-700' },
               { label: 'Paid',        value: formatCurrency(summary.totalPaid),    color: 'text-emerald-600' },

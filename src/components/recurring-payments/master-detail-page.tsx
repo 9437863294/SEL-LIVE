@@ -20,7 +20,6 @@ import {
 } from "firebase/firestore";
 import {
   AlertTriangle,
-  ArrowLeft,
   Copy,
   Edit3,
   FileText,
@@ -61,6 +60,7 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import { PageHeader } from "@/components/shared/page-header";
 import {
   Table,
   TableBody,
@@ -327,97 +327,85 @@ export default function RecurringMasterDetailPage({
 
   return (
     <div className="space-y-5">
-      <Card className="border-0 bg-gradient-to-r from-indigo-800 to-violet-800 text-white">
-        <CardContent className="space-y-4 p-5">
-          <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-            <div className="flex gap-3">
-              <Button
-                size="icon"
-                variant="secondary"
-                onClick={() => router.back()}
-              >
-                <ArrowLeft className="h-4 w-4" />
-              </Button>
-              <div>
-                <div className="flex items-center gap-2">
-                  <h1 className="text-2xl font-bold">{master.title}</h1>
-                  <Badge className="bg-white/15 text-white">
-                    {master.status}
-                  </Badge>
-                </div>
-                <p className="text-sm text-indigo-100">
-                  Master ID {master.id} · {master.category} ·{" "}
-                  {master.vendorName}
-                </p>
-              </div>
-            </div>
-            <div className="flex flex-wrap gap-2">
-              {can("Edit", "Recurring Payments.Recurring Masters") && (
-                <>
-                  <Link href={`/recurring-payments/masters/${master.id}/edit`}>
-                    <Button variant="secondary">
-                      <Edit3 className="mr-2 h-4 w-4" />
-                      Edit
-                    </Button>
-                  </Link>
-                  <Button
-                    variant="secondary"
-                    onClick={() =>
-                      changeStatus(
-                        master.status === "Paused" ? "Active" : "Paused",
-                      )
-                    }
-                  >
-                    {master.status === "Paused" ? (
-                      <Play className="mr-2 h-4 w-4" />
-                    ) : (
-                      <Pause className="mr-2 h-4 w-4" />
-                    )}
-                    {master.status === "Paused" ? "Resume" : "Pause"}
+      <PageHeader
+        className="mb-0 sm:mb-0"
+        backHref="/recurring-payments/masters"
+        backLabel="Back to masters"
+        title={master.title}
+        badge={<Badge variant="secondary">{master.status}</Badge>}
+        description={
+          <>
+            Master ID {master.id} · {master.category} ·{" "}
+            {master.vendorName}
+          </>
+        }
+        actions={
+          <>
+            {can("Edit", "Recurring Payments.Recurring Masters") && (
+              <>
+                <Link href={`/recurring-payments/masters/${master.id}/edit`}>
+                  <Button variant="outline">
+                    <Edit3 className="mr-2 h-4 w-4" />
+                    Edit
                   </Button>
-                  <Button variant="secondary" onClick={duplicate}>
-                    <Copy className="mr-2 h-4 w-4" />
-                    Duplicate
-                  </Button>
-                </>
-              )}
-              {can("Add", "Recurring Payments.Payments") &&
-                master.status === "Active" && (
-                  <Button
-                    className="bg-emerald-500 hover:bg-emerald-400"
-                    onClick={generate}
-                  >
-                    <RefreshCw className="mr-2 h-4 w-4" />
-                    Generate now
-                  </Button>
-                )}
-              {can("Delete", "Recurring Payments.Recurring Masters") && (
-                <Button variant="destructive" onClick={archive}>
-                  <Trash2 className="mr-2 h-4 w-4" />
-                  Archive
+                </Link>
+                <Button
+                  variant="outline"
+                  onClick={() =>
+                    changeStatus(
+                      master.status === "Paused" ? "Active" : "Paused",
+                    )
+                  }
+                >
+                  {master.status === "Paused" ? (
+                    <Play className="mr-2 h-4 w-4" />
+                  ) : (
+                    <Pause className="mr-2 h-4 w-4" />
+                  )}
+                  {master.status === "Paused" ? "Resume" : "Pause"}
+                </Button>
+                <Button variant="outline" onClick={duplicate}>
+                  <Copy className="mr-2 h-4 w-4" />
+                  Duplicate
+                </Button>
+              </>
+            )}
+            {can("Add", "Recurring Payments.Payments") &&
+              master.status === "Active" && (
+                <Button
+                  className="bg-emerald-500 hover:bg-emerald-400"
+                  onClick={generate}
+                >
+                  <RefreshCw className="mr-2 h-4 w-4" />
+                  Generate now
                 </Button>
               )}
-            </div>
-          </div>
-          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
-            <Header
-              label="Organization"
-              value={master.organizationName || organizationId}
-            />
-            <Header label="Category" value={master.category} />
-            <Header label="Vendor" value={master.vendorName} />
-            <Header
-              label="Next generation"
-              value={nextCycle?.billingPeriodStart || "—"}
-            />
-            <Header
-              label="Bill expected"
-              value={nextCycle?.expectedBillDate || "—"}
-            />
-            <Header label="Next due date" value={nextCycle?.dueDate || "—"} />
-          </div>
-        </CardContent>
-      </Card>
+            {can("Delete", "Recurring Payments.Recurring Masters") && (
+              <Button variant="destructive" onClick={archive}>
+                <Trash2 className="mr-2 h-4 w-4" />
+                Archive
+              </Button>
+            )}
+          </>
+        }
+      />
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-6">
+        <HeaderStat
+          label="Organization"
+          value={master.organizationName || organizationId}
+        />
+        <HeaderStat label="Category" value={master.category} />
+        <HeaderStat label="Vendor" value={master.vendorName} />
+        <HeaderStat
+          label="Next generation"
+          value={nextCycle?.billingPeriodStart || "—"}
+        />
+        <HeaderStat
+          label="Bill expected"
+          value={nextCycle?.expectedBillDate || "—"}
+        />
+        <HeaderStat label="Next due date" value={nextCycle?.dueDate || "—"} />
+      </div>
       <Tabs defaultValue="overview">
         <TabsList className="flex h-auto">
           <TabsTrigger value="overview">Overview</TabsTrigger>
@@ -650,10 +638,10 @@ function PaymentTable({
     </ModuleTableCard>
   );
 }
-function Header({ label, value }: { label: string; value: string }) {
+function HeaderStat({ label, value }: { label: string; value: string }) {
   return (
-    <div className="rounded-lg bg-white/10 p-3">
-      <p className="text-[11px] text-indigo-200">{label}</p>
+    <div className="min-w-0 rounded-lg border bg-card p-3 shadow-sm">
+      <p className="text-[11px] text-muted-foreground">{label}</p>
       <p className="truncate text-sm font-medium">{value}</p>
     </div>
   );

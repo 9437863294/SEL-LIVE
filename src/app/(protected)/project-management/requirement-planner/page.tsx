@@ -5,7 +5,6 @@ import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import {
   AlertTriangle,
-  ArrowLeft,
   ClipboardList,
   ListChecks,
   Search,
@@ -51,6 +50,7 @@ import {
   PmToolbar,
   type PmListColumn,
 } from "@/components/project-management/pm-shell";
+import { PageHeader } from "@/components/shared/page-header";
 
 type ProjectMapping = {
   id: string;
@@ -376,31 +376,26 @@ export default function RequirementPlannerPage() {
 
   return (
     <main className="min-h-[calc(100dvh-4rem)] space-y-5 p-4 sm:p-6">
-      <div className="flex flex-wrap items-center gap-x-4 gap-y-3">
-        <div className="flex min-w-0 items-center gap-3">
-          <Button variant="ghost" size="icon" className="shrink-0" asChild>
-            <Link href={`/project-management/supply?project=${encodeURIComponent(mappingId)}`} aria-label="Back to Supply">
-              <ArrowLeft className="h-5 w-5" />
-            </Link>
-          </Button>
-          <div className="hidden h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-amber-500 to-orange-600 shadow-sm sm:flex">
-            <ClipboardList className="h-5 w-5 text-white" />
-          </div>
-          <div className="min-w-0">
-            <h1 className="truncate text-xl font-bold sm:text-2xl">Requirement Planner</h1>
-            <p className="text-sm text-muted-foreground">
-              {rows.length} supply-lane BOQ line{rows.length === 1 ? "" : "s"} for {mapping.projectName}
-            </p>
-          </div>
-        </div>
-        {canCreateIndent && (
-          <Button className="ml-auto w-full sm:w-auto" disabled={!selectedIds.size} onClick={handleCreateIndentFromSelection}>
-            <ListChecks className="mr-2 h-4 w-4" />
-            <span className="sm:hidden">Create indent ({selectedIds.size})</span>
-            <span className="hidden sm:inline">Create Indent from Selection ({selectedIds.size})</span>
-          </Button>
-        )}
-      </div>
+      {/* Sticky: rows are ticked while scrolling the register, and the action that uses the
+          selection has to stay in reach. `sm:` margins match this page's `sm:p-6`. */}
+      <PageHeader
+        sticky
+        title="Requirement Planner"
+        description={`${rows.length} supply-lane BOQ line${rows.length === 1 ? "" : "s"} for ${mapping.projectName}`}
+        icon={ClipboardList}
+        backHref={`/project-management/supply?project=${encodeURIComponent(mappingId)}`}
+        backLabel="Back to Supply"
+        className="sm:-mx-6 sm:px-6"
+        actions={
+          canCreateIndent ? (
+            <Button className="ml-auto w-full sm:w-auto" disabled={!selectedIds.size} onClick={handleCreateIndentFromSelection}>
+              <ListChecks className="mr-2 h-4 w-4" />
+              <span className="sm:hidden">Create indent ({selectedIds.size})</span>
+              <span className="hidden sm:inline">Create Indent from Selection ({selectedIds.size})</span>
+            </Button>
+          ) : undefined
+        }
+      />
 
       {lateSummary.count > 0 && (
         <div className="flex items-center gap-2 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-800">

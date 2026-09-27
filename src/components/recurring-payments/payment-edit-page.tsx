@@ -8,7 +8,7 @@ import {
   serverTimestamp,
   writeBatch,
 } from "firebase/firestore";
-import { ArrowLeft, Loader2, Save } from "lucide-react";
+import { Loader2, Save } from "lucide-react";
 import { db } from "@/lib/firebase";
 import { useAuth } from "@/components/auth/AuthProvider";
 import { useAuthorization } from "@/hooks/useAuthorization";
@@ -28,6 +28,7 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import { PageHeader } from "@/components/shared/page-header";
 import { Input } from "@/components/ui/input";
 import {
   Select,
@@ -155,15 +156,13 @@ export default function PaymentEditPage({ paymentId }: { paymentId: string }) {
   const locked = !isObligationEditable(payment);
   return (
     <div className="mx-auto max-w-4xl space-y-4">
-      <div className="flex items-center gap-3">
-        <Button variant="outline" size="icon" onClick={() => router.back()}>
-          <ArrowLeft className="h-4 w-4" />
-        </Button>
-        <div>
-          <h1 className="text-2xl font-bold">Edit Payment</h1>
-          <p className="text-sm text-muted-foreground">{payment.id}</p>
-        </div>
-      </div>
+      <PageHeader
+        className="mb-0 sm:mb-0"
+        backHref={`/recurring-payments/payments/${payment.id}`}
+        backLabel="Back to payment"
+        title="Edit Payment"
+        meta={[{ label: "Payment ID", value: payment.id }]}
+      />
       <Card>
         <CardHeader>
           <CardTitle>Payment information</CardTitle>

@@ -5,6 +5,7 @@ import { AlertTriangle, BarChart3, Car, Fuel, FolderOpen, Layers, TrendingUp, Wr
 import { useAuthorization } from '@/hooks/useAuthorization';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { PageHeader } from '@/components/shared/page-header';
 
 const REPORTS = [
   {
@@ -102,18 +103,12 @@ export default function VehicleReportsHubPage() {
 
   return (
     <div className="vm-report-page space-y-3">
-      <Card className="vm-panel-strong overflow-hidden">
-        <div className="h-1 w-full bg-gradient-to-r from-cyan-500 via-sky-500 to-blue-600 animate-bb-gradient" />
-        <CardHeader className="p-3 sm:p-4">
-          <div className="flex items-center gap-2">
-            <BarChart3 className="h-4 w-4 text-indigo-500" />
-            <CardTitle className="text-base tracking-tight">Vehicle Reports</CardTitle>
-          </div>
-          <CardDescription className="text-xs">
-            Select a report to view focused analytics, apply date filters, and export to Excel.
-          </CardDescription>
-        </CardHeader>
-      </Card>
+      <PageHeader
+        title="Vehicle Reports"
+        description="Select a report to view focused analytics, apply date filters, and export to Excel."
+        icon={BarChart3}
+        className="mb-0 sm:mb-0"
+      />
 
       <div className="grid grid-cols-2 gap-2 md:grid-cols-3 lg:grid-cols-4 2xl:grid-cols-5">
         {REPORTS.map((report) => {

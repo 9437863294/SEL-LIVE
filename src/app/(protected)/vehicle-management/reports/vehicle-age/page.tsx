@@ -1,15 +1,15 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
-import Link from 'next/link';
 import ExcelJS from 'exceljs';
 import { collection, getDocs } from 'firebase/firestore';
-import { Car, ChevronLeft, Download } from 'lucide-react';
+import { Car, Download } from 'lucide-react';
 import { db } from '@/lib/firebase';
 import { VEHICLE_COLLECTIONS } from '@/lib/vehicle-management';
 import { useAuthorization } from '@/hooks/useAuthorization';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { PageHeader } from '@/components/shared/page-header';
 import { Skeleton } from '@/components/ui/skeleton';
 import { TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
@@ -165,24 +165,15 @@ export default function VehicleAgeReportPage() {
 
   return (
     <div className="vm-report-page space-y-3 sm:space-y-4">
-      <Card className="vm-panel-strong overflow-hidden">
-        <div className="h-1 w-full bg-gradient-to-r from-pink-500 to-rose-500" />
-        <CardHeader className="flex flex-col gap-3 px-3 py-4 sm:px-6 sm:py-6 md:flex-row md:items-center md:justify-between">
-          <div>
-            <Link
-              href="/vehicle-management/reports"
-              className="mb-1 inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-slate-900 transition-colors"
-            >
-              <ChevronLeft className="h-3.5 w-3.5" /> Back to Reports
-            </Link>
-            <CardTitle className="flex items-center gap-2 tracking-tight">
-              <Car className="h-4 w-4 text-pink-500" /> Vehicle Age Report
-            </CardTitle>
-            <CardDescription>
-              Fleet age analysis by year of manufacture. Fleet-wide — not filtered by month.
-            </CardDescription>
-          </div>
-          {canExport && (
+      <PageHeader
+        title="Vehicle Age Report"
+        description="Fleet age analysis by year of manufacture. Fleet-wide — not filtered by month."
+        icon={Car}
+        backHref="/vehicle-management/reports"
+        backLabel="Back to Reports"
+        className="mb-0 sm:mb-0"
+        actions={
+          canExport ? (
             <Button
               variant="outline"
               onClick={exportExcel}
@@ -192,9 +183,9 @@ export default function VehicleAgeReportPage() {
               <Download className="mr-2 h-4 w-4" />
               {isExporting ? 'Exporting...' : 'Export Excel'}
             </Button>
-          )}
-        </CardHeader>
-      </Card>
+          ) : undefined
+        }
+      />
 
       <div className="grid grid-cols-2 gap-2.5 sm:gap-4 xl:grid-cols-4">
         <Card className="vm-panel overflow-hidden">
@@ -250,7 +241,7 @@ export default function VehicleAgeReportPage() {
 
       <Card className="vm-panel-strong">
         <CardHeader>
-          <CardTitle className="text-base">Fleet Age Details</CardTitle>
+          <CardTitle>Fleet Age Details</CardTitle>
         </CardHeader>
         <CardContent className="space-y-2 sm:hidden">
           {rows.length === 0 ? (

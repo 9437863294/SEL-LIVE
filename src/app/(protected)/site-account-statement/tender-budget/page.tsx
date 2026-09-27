@@ -17,6 +17,7 @@ import { useActivityLogger } from '@/hooks/useActivityLogger';
 import { useToast } from '@/hooks/use-toast';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
+import { PageHeader } from '@/components/shared/page-header';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -212,19 +213,17 @@ export default function TenderBudgetSetupPage() {
     <div className="space-y-5">
 
       {/* Header */}
-      <div className="flex items-center justify-between gap-3 flex-wrap">
-        <div>
-          <h1 className="text-base sm:text-lg font-bold text-slate-800 flex items-center gap-2">
-            <Settings className="h-5 w-5 text-teal-600" /> Tender Budget Setup
-          </h1>
-          <p className="text-sm text-muted-foreground">Configure tender budget, start and end month per project</p>
-        </div>
-        {effectiveCanAdd && unconfiguredProjects.length > 0 && (
+      <PageHeader
+        className="mb-0 sm:mb-0"
+        icon={Settings}
+        title="Tender Budget Setup"
+        description="Configure tender budget, start and end month per project"
+        actions={effectiveCanAdd && unconfiguredProjects.length > 0 ? (
           <Button size="sm" onClick={() => openAdd()} className="gap-1.5 bg-emerald-700 hover:bg-emerald-800">
             <Plus className="h-4 w-4" /> Add Setup
           </Button>
-        )}
-      </div>
+        ) : undefined}
+      />
 
       {/* Configured projects table */}
       {configuredProjects.length > 0 && (

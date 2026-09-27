@@ -5,6 +5,7 @@ import { CarFront, Clock, Fuel, Gauge, LocateFixed, ReceiptText, Smartphone } fr
 import { useAuthorization } from '@/hooks/useAuthorization';
 import { useCurrentDriverProfile } from '@/components/vehicle-management/hooks';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { PageHeader } from '@/components/shared/page-header';
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
 
@@ -142,24 +143,24 @@ export default function DriverManagementOverviewPage() {
 
   return (
     <div className="space-y-4">
-      <Card className="vm-panel-strong overflow-hidden">
-        <div className="h-1 w-full bg-gradient-to-r from-emerald-500 via-cyan-500 to-blue-600 animate-bb-gradient" />
-        <CardHeader className="pb-3">
-          <CardTitle className="tracking-tight text-xl sm:text-2xl">Driver Management</CardTitle>
-          <CardDescription>Dedicated module for driver operations and trip execution.</CardDescription>
-        </CardHeader>
-        <CardContent className="flex flex-wrap items-center gap-2 pt-0">
-          <Badge className="bg-cyan-600 text-white">
-            {driver?.driverName || 'User'}
-          </Badge>
-          <Badge variant="outline">
-            Vehicle: {driver?.assignedVehicleNumber || 'Not assigned'}
-          </Badge>
-          <Badge variant="outline">
-            Auto Access: {isAssignedDriver ? 'Enabled' : 'Role Based'}
-          </Badge>
-        </CardContent>
-      </Card>
+      <PageHeader
+        title="Driver Management"
+        description="Dedicated module for driver operations and trip execution."
+        className="mb-0 sm:mb-0"
+        meta={
+          <>
+            <Badge className="bg-cyan-600 text-white">
+              {driver?.driverName || 'User'}
+            </Badge>
+            <Badge variant="outline">
+              Vehicle: {driver?.assignedVehicleNumber || 'Not assigned'}
+            </Badge>
+            <Badge variant="outline">
+              Auto Access: {isAssignedDriver ? 'Enabled' : 'Role Based'}
+            </Badge>
+          </>
+        }
+      />
 
       <div className="grid grid-cols-2 gap-2 sm:gap-3 md:grid-cols-3 xl:grid-cols-4">
         {visibleCards.map((item) => {

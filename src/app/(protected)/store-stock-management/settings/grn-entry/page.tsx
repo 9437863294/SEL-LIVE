@@ -11,6 +11,7 @@ import { doc, getDoc, setDoc } from 'firebase/firestore';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Switch } from '@/components/ui/switch';
 import { Label } from '@/components/ui/label';
+import { PageHeader } from '@/components/shared/page-header';
 
 interface MandatoryFields {
   poNumber: boolean;
@@ -95,17 +96,18 @@ export default function GrnEntrySettingsPage() {
 
   return (
     <div className="mx-auto w-full max-w-3xl space-y-6">
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
-        <div>
-          <p className="text-xs font-bold uppercase tracking-[0.14em] text-violet-600">Transaction configuration</p>
-          <h1 className="mt-1 text-2xl font-bold tracking-tight">GRN Entry Settings</h1>
-          <p className="mt-1 text-sm text-muted-foreground">Choose the information users must provide when creating a Goods Receipt Note.</p>
-        </div>
-        <Button onClick={handleSaveMandatoryFields} disabled={isSaving}>
+      <PageHeader
+        className="mb-0 sm:mb-0"
+        eyebrow="Transaction configuration"
+        title="GRN Entry Settings"
+        description="Choose the information users must provide when creating a Goods Receipt Note."
+        actions={
+          <Button onClick={handleSaveMandatoryFields} disabled={isSaving}>
             {isSaving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
             Save Settings
-        </Button>
-      </div>
+          </Button>
+        }
+      />
       
       <Card className="border-slate-200/80 shadow-sm">
           <CardHeader>

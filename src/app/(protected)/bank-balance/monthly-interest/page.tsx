@@ -2,10 +2,10 @@
 export const dynamic = 'force-dynamic';
 
 import { Fragment, useState, useEffect, useMemo, useCallback } from 'react';
-import Link from 'next/link';
-import { ArrowLeft, Save, Loader2, ShieldAlert } from 'lucide-react';
+import { Save, Loader2, ShieldAlert } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
+import { PageHeader } from '@/components/shared/page-header';
 import {
   Card,
   CardContent,
@@ -623,18 +623,7 @@ export default function MonthlyInterestPage() {
   if (!canView) {
     return (
       <div className="relative w-full px-4 sm:px-6 lg:px-8 py-6">
-        <div className="mb-6 flex items-center gap-3">
-          <Link href="/bank-balance">
-            <Button variant="ghost" size="icon" className="rounded-full">
-              <ArrowLeft className="h-5 w-5" />
-            </Button>
-          </Link>
-          <div>
-            <h1 className="text-xl font-bold">
-              Monthly Interest
-            </h1>
-          </div>
-        </div>
+        <PageHeader title="Monthly Interest" backHref="/bank-balance" backLabel="Back to dashboard" />
         <Card>
           <CardHeader>
             <CardTitle>
@@ -666,19 +655,12 @@ export default function MonthlyInterestPage() {
         />
       </div>
     <div className="relative w-full px-4 sm:px-6 lg:px-8 py-4">
-      <div className="mb-5 flex items-center justify-between">
-        <div className="flex items-center gap-3">
-          <Link href="/bank-balance">
-            <Button variant="ghost" size="icon" className="rounded-full hover:bg-amber-50 dark:hover:bg-amber-950/30">
-              <ArrowLeft className="h-5 w-5" />
-            </Button>
-          </Link>
-          <div>
-            <h1 className="text-xl font-bold tracking-tight">Monthly Interest</h1>
-            <p className="text-xs text-muted-foreground">Enter projected vs. actual interest for each Cash Credit account.</p>
-          </div>
-        </div>
-      </div>
+      <PageHeader
+        title="Monthly Interest"
+        description="Enter projected vs. actual interest for each Cash Credit account."
+        backHref="/bank-balance"
+        backLabel="Back to dashboard"
+      />
 
       <Tabs
         value={activeTab}

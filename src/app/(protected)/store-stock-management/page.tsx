@@ -22,6 +22,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
+import { PageHeader } from '@/components/shared/page-header';
 
 type PropertyRecord = {
   id: string;
@@ -103,35 +104,30 @@ export default function StoreStockManagementPage() {
 
   if (!canViewModule) {
     return (
-      <div className="flex min-h-[calc(100vh-4rem)] items-center justify-center bg-slate-50 p-4">
-        <Card className="w-full max-w-md border-rose-200">
-          <CardContent className="flex flex-col items-center p-8 text-center">
-            <div className="flex size-12 items-center justify-center rounded-xl bg-rose-100 text-rose-700">
-              <ShieldAlert className="size-6" />
-            </div>
-            <h1 className="mt-4 text-xl font-bold">Access restricted</h1>
-            <p className="mt-2 text-sm text-slate-600">
-              Your role does not include access to Store &amp; Stock Management.
-            </p>
-          </CardContent>
-        </Card>
+      <div className="min-h-screen bg-slate-50 p-3 sm:p-4">
+        <PageHeader
+          icon={ShieldAlert}
+          title="Access restricted"
+          description="Your role does not include access to Store & Stock Management."
+        />
       </div>
     );
   }
 
   return (
     <div className="min-h-screen bg-slate-50 p-3 text-slate-950 sm:p-4">
-      <header className="flex flex-col gap-3 border-b border-slate-200 pb-4 sm:flex-row sm:items-center sm:justify-between">
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight sm:text-3xl">Store &amp; Stock Management</h1>
-          <p className="mt-1 text-sm text-slate-600">Select where you want to manage stock.</p>
-        </div>
-        <Button asChild variant="outline" className="w-fit bg-white">
-          <Link href="/store-stock-management/settings" prefetch={false}>
-            <Settings className="mr-2 size-4" />Settings
-          </Link>
-        </Button>
-      </header>
+      <PageHeader
+        className="mb-0 sm:mb-0"
+        title="Store & Stock Management"
+        description="Select where you want to manage stock."
+        actions={
+          <Button asChild variant="outline" className="bg-white">
+            <Link href="/store-stock-management/settings" prefetch={false}>
+              <Settings className="mr-2 size-4" />Settings
+            </Link>
+          </Button>
+        }
+      />
 
       {loadError && (
         <Alert className="mt-4 border-amber-200 bg-amber-50">

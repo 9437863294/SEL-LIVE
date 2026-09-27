@@ -22,6 +22,7 @@ import { useToast } from '@/hooks/use-toast';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { PageHeader } from '@/components/shared/page-header';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import {
   Dialog,
@@ -370,23 +371,20 @@ export default function LocationTrackingSettingsPage() {
 
   return (
     <div className="space-y-5 p-4 sm:p-6">
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <div>
-          <div className="flex items-center gap-2">
-            <div className="rounded-xl bg-emerald-100 p-2 text-emerald-700"><LocateFixed className="h-5 w-5" /></div>
-            <div>
-              <h1 className="text-2xl font-bold tracking-tight">Location Tracking</h1>
-              <p className="text-sm text-muted-foreground">Choose who shares location and how often it is captured.</p>
-            </div>
-          </div>
-        </div>
-        <div className="flex gap-2">
-          <Button variant="outline" onClick={() => void loadRows(accessToken)} disabled={loadingRows}>
-            <RefreshCw className={`mr-2 h-4 w-4 ${loadingRows ? 'animate-spin' : ''}`} /> Refresh
-          </Button>
-          <Button variant="ghost" onClick={clearAccess}><LockKeyhole className="mr-2 h-4 w-4" /> Lock</Button>
-        </div>
-      </div>
+      <PageHeader
+        title="Location Tracking"
+        description="Choose who shares location and how often it is captured."
+        icon={LocateFixed}
+        className="mb-0 sm:mb-0"
+        actions={
+          <>
+            <Button variant="outline" onClick={() => void loadRows(accessToken)} disabled={loadingRows}>
+              <RefreshCw className={`mr-2 h-4 w-4 ${loadingRows ? 'animate-spin' : ''}`} /> Refresh
+            </Button>
+            <Button variant="ghost" onClick={clearAccess}><LockKeyhole className="mr-2 h-4 w-4" /> Lock</Button>
+          </>
+        }
+      />
 
       <div className="grid gap-3 sm:grid-cols-3">
         <Metric icon={Users} label="Total users" value={rows.length} />

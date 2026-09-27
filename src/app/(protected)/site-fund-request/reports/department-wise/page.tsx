@@ -1,10 +1,10 @@
 'use client';
 
 import { useState, useEffect, useMemo } from 'react';
-import Link from 'next/link';
 import ExcelJS from 'exceljs';
 import { collection, getDocs } from 'firebase/firestore';
-import { ArrowLeft, Download, ShieldAlert } from 'lucide-react';
+import { Download, ShieldAlert } from 'lucide-react';
+import { PageHeader } from '@/components/shared/page-header';
 import { db } from '@/lib/firebase';
 import type { Requisition, Department } from '@/lib/types';
 import { useAuthorization } from '@/hooks/useAuthorization';
@@ -237,17 +237,13 @@ export default function DepartmentWiseReportPage() {
   if (!canView) {
     return (
       <div className="w-full space-y-4 p-4 sm:p-6">
-        <div className="flex items-center gap-3">
-          <Link href="/site-fund-request/reports">
-            <Button variant="ghost" size="icon">
-              <ArrowLeft className="h-5 w-5" />
-            </Button>
-          </Link>
-          <div>
-            <p className="text-xs font-semibold uppercase tracking-[0.22em] text-slate-500">Site Fund Request</p>
-            <h1 className="mt-1 text-2xl font-bold tracking-tight text-slate-900">Department-wise Report</h1>
-          </div>
-        </div>
+        <PageHeader
+          className="mb-0 sm:mb-0"
+          backHref="/site-fund-request/reports"
+          backLabel="Back to reports"
+          eyebrow="Site Fund Request"
+          title="Department-wise Report"
+        />
         <Card className="overflow-hidden rounded-2xl border border-white/70 bg-white/70 shadow-[0_20px_70px_-55px_rgba(2,6,23,0.55)] backdrop-blur">
           <div className="h-1.5 w-full bg-gradient-to-r from-teal-400 via-emerald-400 to-cyan-400 opacity-70" />
           <CardHeader>
@@ -266,31 +262,25 @@ export default function DepartmentWiseReportPage() {
   return (
     <div className="w-full space-y-4 p-4 sm:p-6">
       {/* Header */}
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
-        <div className="flex items-center gap-3">
-          <Link href="/site-fund-request/reports">
-            <Button variant="ghost" size="icon">
-              <ArrowLeft className="h-5 w-5" />
-            </Button>
-          </Link>
-          <div>
-            <p className="text-xs font-semibold uppercase tracking-[0.22em] text-slate-500">
-              Site Fund Request — Reports
-            </p>
-            <h1 className="mt-1 text-2xl font-bold tracking-tight text-slate-900">Department-wise Report</h1>
-            <p className="mt-0.5 text-sm text-slate-600">Requests and amounts grouped by department.</p>
-          </div>
-        </div>
-        <Button
-          variant="outline"
-          onClick={handleExport}
-          disabled={isExporting || rows.length === 0}
-          className="bg-white/80 border-white/70"
-        >
-          <Download className="mr-2 h-4 w-4" />
-          {isExporting ? 'Exporting…' : 'Export Excel'}
-        </Button>
-      </div>
+      <PageHeader
+        className="mb-0 sm:mb-0"
+        backHref="/site-fund-request/reports"
+        backLabel="Back to reports"
+        eyebrow="Site Fund Request — Reports"
+        title="Department-wise Report"
+        description="Requests and amounts grouped by department."
+        actions={
+          <Button
+            variant="outline"
+            onClick={handleExport}
+            disabled={isExporting || rows.length === 0}
+            className="bg-white/80 border-white/70"
+          >
+            <Download className="mr-2 h-4 w-4" />
+            {isExporting ? 'Exporting…' : 'Export Excel'}
+          </Button>
+        }
+      />
 
       {/* Filters */}
       <Card className="overflow-hidden bg-white/70 border border-white/70 rounded-2xl shadow-[0_20px_70px_-55px_rgba(2,6,23,0.55)] backdrop-blur">
@@ -347,7 +337,7 @@ export default function DepartmentWiseReportPage() {
       <Card className="overflow-hidden rounded-2xl border border-white/70 bg-white/70 shadow-[0_20px_70px_-55px_rgba(2,6,23,0.55)] backdrop-blur">
         <div className="h-1.5 w-full bg-gradient-to-r from-teal-400 via-emerald-400 to-cyan-400 opacity-70" />
         <CardHeader className="p-4 pb-2">
-          <CardTitle className="text-base">Department Breakdown</CardTitle>
+          <CardTitle>Department Breakdown</CardTitle>
           <CardDescription>
             {rows.length} department{rows.length !== 1 ? 's' : ''} · {totals.total} request{totals.total !== 1 ? 's' : ''}
           </CardDescription>

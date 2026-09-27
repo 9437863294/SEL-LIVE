@@ -41,6 +41,7 @@ import {
 } from '@/lib/driver-mobile-geolocation';
 import TripMapView from '@/components/vehicle-management/trip-map-view';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { PageHeader } from '@/components/shared/page-header';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -695,24 +696,23 @@ export default function DriverMobileTripsPage() {
 
   return (
     <div className="space-y-4">
-      <Card className="vm-panel-strong overflow-hidden">
-        <div className="h-1 w-full bg-gradient-to-r from-emerald-500 via-teal-500 to-cyan-600 animate-bb-gradient" />
-        <CardHeader>
-          <CardTitle className="tracking-tight">Driver Trip Tracking</CardTitle>
-          <CardDescription>
-            Start trip when driving begins and stop trip when ride is completed.
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-3">
-          <div className="flex flex-wrap items-center gap-2 text-sm">
+      <PageHeader
+        title="Driver Trip Tracking"
+        description="Start trip when driving begins and stop trip when ride is completed."
+        className="mb-0 sm:mb-0"
+        meta={
+          <>
             <Badge className="bg-emerald-600 text-white">{String(driver.driverName || 'Driver')}</Badge>
             <Badge variant="outline">Vehicle: {assignedVehicleNumber || 'Not assigned'}</Badge>
             <Badge variant="outline">Tracking: {settingsIntervalSec}s</Badge>
             <Badge variant="outline">
               Status: {activeTrip ? 'In Progress' : 'Idle'}
             </Badge>
-          </div>
-
+          </>
+        }
+      />
+      <Card className="vm-panel-strong overflow-hidden">
+        <CardContent className="space-y-3 pt-[var(--card-pad,1.5rem)]">
           <div className="grid grid-cols-1 gap-2 text-sm sm:grid-cols-2">
             <div className="rounded-lg border border-white/70 bg-white/85 px-3 py-2">
               Start Time: <span className="font-medium">{formatDateTime(String(activeTrip?.startTimeIso || ''))}</span>

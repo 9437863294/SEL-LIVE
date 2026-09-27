@@ -1,9 +1,9 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
-import Link from 'next/link';
-import { ArrowLeft, Download, Trash2, File as FileIcon } from 'lucide-react';
+import { Download, Trash2, File as FileIcon } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { PageHeader } from '@/components/shared/page-header';
 import { Card, CardContent } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { db } from '@/lib/firebase';
@@ -330,19 +330,16 @@ export default function MvacLogPage() {
   return (
     <>
       <div className="w-full px-4 sm:px-6 lg:px-8">
-        <div className="mb-6 flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <Link href={`/billing-recon/${projectSlug}/mvac`}>
-              <Button variant="ghost" size="icon">
-                <ArrowLeft className="h-6 w-6" />
-              </Button>
-            </Link>
-            <h1 className="text-2xl font-bold">MVAC Log</h1>
-          </div>
-          <Button onClick={handleExportAll} disabled={mvacEntries.length === 0}>
-            <Download className="mr-2 h-4 w-4" /> Export All as Excel
-          </Button>
-        </div>
+        <PageHeader
+          title="MVAC Log"
+          backHref={`/billing-recon/${projectSlug}/mvac`}
+          backLabel="Back to MVAC"
+          actions={
+            <Button onClick={handleExportAll} disabled={mvacEntries.length === 0}>
+              <Download className="mr-2 h-4 w-4" /> Export All as Excel
+            </Button>
+          }
+        />
 
         <Card>
           {/* Make the wide table scroll horizontally inside the card */}

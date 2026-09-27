@@ -14,7 +14,6 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import {
-  ArrowLeft,
   ArrowRight,
   BarChart3,
   Building2,
@@ -35,6 +34,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
+import { PageHeader } from "@/components/shared/page-header";
 import { useAuthorization } from "@/hooks/useAuthorization";
 import { cn } from "@/lib/utils";
 import { PM_JMC_BASE_PATH } from "@/lib/jmc-module";
@@ -203,25 +203,14 @@ export default function CivilPage() {
 
   return (
     <main className="min-h-[calc(100dvh-4rem)] space-y-5 p-4 sm:p-6">
-      <div className="flex items-center gap-3">
-        <Button variant="ghost" size="icon" className="shrink-0" asChild>
-          <Link
-            href={`/project-management?project=${encodeURIComponent(mappingId)}`}
-            aria-label="Back to Project Management"
-          >
-            <ArrowLeft className="h-5 w-5" />
-          </Link>
-        </Button>
-        <div className="hidden h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-stone-500 to-stone-700 shadow-sm sm:flex">
-          <Building2 className="h-5 w-5 text-white" />
-        </div>
-        <div className="min-w-0">
-          <h1 className="text-xl font-bold sm:text-2xl">Civil</h1>
-          <p className="break-words text-sm text-muted-foreground">
-            Civil scope for {mapping.projectName}.
-          </p>
-        </div>
-      </div>
+      <PageHeader
+        title="Civil"
+        description={`Civil scope for ${mapping.projectName}.`}
+        icon={Building2}
+        backHref={`/project-management?project=${encodeURIComponent(mappingId)}`}
+        backLabel="Back to Project Management"
+        className="mb-0 sm:mb-0"
+      />
 
       {quickLinks.length ? (
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5">

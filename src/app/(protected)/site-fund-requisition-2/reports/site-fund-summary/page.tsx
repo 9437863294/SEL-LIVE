@@ -3,8 +3,9 @@
 
 import { useState, useEffect, useMemo } from 'react';
 import Link from 'next/link';
-import { ArrowLeft, Home, Loader2, ShieldAlert } from 'lucide-react';
+import { Home, Loader2, ShieldAlert } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { PageHeader, SectionHeader } from '@/components/shared/page-header';
 import {
   Card,
   CardContent,
@@ -303,19 +304,12 @@ export default function SiteFundSummaryPage() {
   if(!canViewPage) {
     return (
         <div className="w-full px-3 py-4 sm:px-4 lg:px-6 xl:px-8">
-            <div className="mb-6 flex items-center justify-between">
-                <div className="flex items-center gap-4">
-                    <Link href="/site-fund-requisition-2/reports">
-                      <Button variant="ghost" size="icon">
-                        <ArrowLeft className="h-6 w-6" />
-                      </Button>
-                    </Link>
-                    <div>
-                      <p className="text-xs font-semibold uppercase tracking-[0.22em] text-slate-500">Site Fund Requisition 2</p>
-                      <h1 className="mt-1 text-2xl font-bold tracking-tight text-slate-900">Site Fund Summary</h1>
-                    </div>
-                </div>
-            </div>
+            <PageHeader
+                backHref="/site-fund-requisition-2/reports"
+                backLabel="Back to reports"
+                eyebrow="Site Fund Requisition 2"
+                title="Site Fund Summary"
+            />
             <Card className="overflow-hidden rounded-2xl border border-white/70 bg-white/70 shadow-[0_20px_70px_-55px_rgba(2,6,23,0.55)] backdrop-blur">
                 <div className="h-1.5 w-full bg-gradient-to-r from-rose-400 via-amber-300 to-cyan-400 opacity-70" />
                 <CardHeader>
@@ -333,28 +327,21 @@ export default function SiteFundSummaryPage() {
 
   return (
     <div className="w-full px-3 py-4 sm:px-4 lg:px-6 xl:px-8">
-      <div className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
-        <div className="flex items-center gap-3">
-          <Link href="/site-fund-requisition-2/reports">
-            <Button variant="ghost" size="icon">
-              <ArrowLeft className="h-6 w-6" />
-            </Button>
-          </Link>
-          <div>
-            <p className="text-xs font-semibold uppercase tracking-[0.22em] text-slate-500">Site Fund Requisition 2</p>
-            <h1 className="mt-1 text-2xl font-bold tracking-tight text-slate-900">Site Fund Summary</h1>
-            <p className="mt-1 text-sm text-slate-600">Totals, approvals, and step-wise performance.</p>
-          </div>
-        </div>
-        <div className="flex items-center gap-2">
+      <PageHeader
+        backHref="/site-fund-requisition-2/reports"
+        backLabel="Back to reports"
+        eyebrow="Site Fund Requisition 2"
+        title="Site Fund Summary"
+        description="Totals, approvals, and step-wise performance."
+        actions={
           <Link href="/">
             <Button variant="outline" className="bg-white/70 border-white/70">
               <Home className="mr-2 h-4 w-4" />
               Home
             </Button>
           </Link>
-        </div>
-      </div>
+        }
+      />
 
       <Card className="mb-6 overflow-hidden rounded-2xl border border-white/70 bg-white/70 shadow-[0_20px_70px_-55px_rgba(2,6,23,0.55)] backdrop-blur">
         <div className="h-1.5 w-full bg-gradient-to-r from-cyan-400 via-fuchsia-400 to-amber-300 opacity-70" />
@@ -449,10 +436,10 @@ export default function SiteFundSummaryPage() {
         )}
       </div>
 
-      <div className="mb-6">
-        <h2 className="text-xl font-bold text-slate-900">Step-wise Report</h2>
-        <p className="mt-1 text-sm text-slate-600">Workload and outcomes by workflow step and user.</p>
-      </div>
+      <SectionHeader
+        title="Step-wise Report"
+        description="Workload and outcomes by workflow step and user."
+      />
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
         {isLoading ? (
@@ -467,7 +454,7 @@ export default function SiteFundSummaryPage() {
               <Card key={step.name} className="overflow-hidden rounded-2xl border border-white/70 bg-white/70 shadow-[0_18px_60px_-55px_rgba(2,6,23,0.55)] backdrop-blur">
                 <div className="h-1.5 w-full bg-gradient-to-r from-cyan-300 via-fuchsia-300 to-amber-200 opacity-70" />
                 <CardHeader className="p-4">
-                  <CardTitle className="text-base text-center text-slate-900">{step.name}</CardTitle>
+                  <CardTitle className="text-center text-slate-900">{step.name}</CardTitle>
                 </CardHeader>
                 <CardContent className="p-0">
                   <Table>

@@ -25,6 +25,7 @@ import { Badge } from '@/components/ui/badge';
 import type { TransactionSummary } from '@/app/(protected)/store-stock-management/[project]/transactions/page';
 import ViewTransactionDialog from '@/components/store-stock-management/ViewTransactionDialog';
 import { projectMatchesSlug } from '@/lib/project-slug';
+import { PageHeader } from '@/components/shared/page-header';
 
 
 interface InventoryItem {
@@ -224,7 +225,7 @@ export default function InventoryPage() {
     return (
         <>
             <div>
-                <h1 className="text-3xl font-bold mb-6">Inventory Status</h1>
+                <PageHeader title="Inventory Status" />
 
                 <Card className="mb-6">
                     <CardContent className="p-4 flex flex-col sm:flex-row items-start sm:items-end gap-4">

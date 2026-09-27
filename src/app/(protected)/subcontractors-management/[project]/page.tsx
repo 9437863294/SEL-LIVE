@@ -2,7 +2,6 @@
 'use client';
 
 import { useState, useEffect, useMemo, useCallback } from 'react';
-import Link from 'next/link';
 import { useRouter, useParams } from 'next/navigation';
 import {
   Users,
@@ -11,12 +10,10 @@ import {
   FolderOpen,
   ShieldAlert,
   BarChart3,
-  Home,
-  ArrowLeft,
   ArrowRight,
 } from 'lucide-react';
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
+import { PageHeader } from '@/components/shared/page-header';
 import { cn } from '@/lib/utils';
 import { useAuthorization } from '@/hooks/useAuthorization';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -174,16 +171,7 @@ export default function SubcontractorsProjectDashboard() {
   if (!safeCan('View Module', 'Subcontractors Management', isAllProjectsView ? undefined : currentProject?.id)) {
     return (
       <div>
-        <div className="mb-8 flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <Link href="/subcontractors-management">
-              <Button variant="ghost" size="icon" aria-label="Back">
-                <ArrowLeft className="h-6 w-6" />
-              </Button>
-            </Link>
-            <h1 className="text-2xl font-bold">{projectName}</h1>
-          </div>
-        </div>
+        <PageHeader title={projectName} backHref="/subcontractors-management" backLabel="Back to Projects" />
         <Card>
           <CardHeader>
             <CardTitle>Access Denied</CardTitle>
@@ -200,29 +188,26 @@ export default function SubcontractorsProjectDashboard() {
   if (isAllProjectsView) {
       return (
           <div>
-            <div className="mb-8 flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <Link href="/">
-                  <Button variant="ghost" size="icon" aria-label="Home">
-                    <Home className="h-6 w-6" />
-                  </Button>
-                </Link>
-                <h1 className="text-2xl font-bold">Subcontractors Management</h1>
-              </div>
-               <div className="flex items-center gap-2">
-                <FolderOpen className="h-5 w-5 text-muted-foreground" />
-                <Select value={selectedValue} onValueChange={handleProjectChange}>
+            <PageHeader
+              title="Subcontractors Management"
+              backHref="/"
+              backLabel="Back to home"
+              actions={
+                <div className="flex items-center gap-2">
+                  <FolderOpen className="h-5 w-5 text-muted-foreground" />
+                  <Select value={selectedValue} onValueChange={handleProjectChange}>
                     <SelectTrigger className="w-full sm:w-[260px]"><SelectValue placeholder="Select Project" /></SelectTrigger>
                     <SelectContent>
-                    <SelectItem value="all">All Projects</SelectItem>
-                    {projects.map((p) => {
+                      <SelectItem value="all">All Projects</SelectItem>
+                      {projects.map((p) => {
                         const value = slugify(p.projectName);
                         return <SelectItem key={p.id} value={value}>{p.projectName}</SelectItem>;
-                    })}
+                      })}
                     </SelectContent>
-                </Select>
+                  </Select>
                 </div>
-            </div>
+              }
+            />
             <AllSubcontractorsDashboard />
         </div>
       )

@@ -1,28 +1,19 @@
 
 'use client';
 
-import Link from 'next/link';
-import { ArrowLeft } from 'lucide-react';
-import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { PageHeader } from '@/components/shared/page-header';
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion';
 
 export default function InsuranceHelpPage() {
     return (
         <div className="w-full">
-            <div className="mb-6 flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                    <Link href="/insurance/settings">
-                        <Button variant="ghost" size="icon">
-                            <ArrowLeft className="h-6 w-6" />
-                        </Button>
-                    </Link>
-                    <div>
-                        <h1 className="text-xl font-bold">Insurance Help & Information</h1>
-                        <p className="text-sm text-muted-foreground">Learn about different types of project insurance.</p>
-                    </div>
-                </div>
-            </div>
+            <PageHeader
+                title="Insurance Help & Information"
+                description="Learn about different types of project insurance."
+                backHref="/insurance/settings"
+                backLabel="Back to settings"
+            />
 
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mt-8">
                 <Card>

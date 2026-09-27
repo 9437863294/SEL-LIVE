@@ -16,6 +16,7 @@ import { useActivityLogger } from '@/hooks/useActivityLogger';
 import { useToast } from '@/hooks/use-toast';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
+import { PageHeader } from '@/components/shared/page-header';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
@@ -255,27 +256,26 @@ export default function ProjectSettingsPage() {
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between gap-3 flex-wrap">
-        <div>
-          <h1 className="text-lg font-bold text-slate-800">Project Setup</h1>
-          <p className="text-sm text-muted-foreground">
-            Enable projects for Site Account Statement and assign responsible persons
-          </p>
-        </div>
-        <div className="flex items-center gap-2 flex-wrap">
-          <Link href="/settings/project" target="_blank">
-            <Button variant="outline" size="sm" className="gap-2 text-xs">
-              <ExternalLink className="h-3.5 w-3.5" /> Manage Projects
-            </Button>
-          </Link>
-          {canAdd && (
-            <Button size="sm" onClick={openAdd} className="gap-2 bg-emerald-600 hover:bg-emerald-700"
-              disabled={availableCentralProjects.length === 0}>
-              <Plus className="h-4 w-4" /> Add Project
-            </Button>
-          )}
-        </div>
-      </div>
+      <PageHeader
+        className="mb-0 sm:mb-0"
+        title="Project Setup"
+        description="Enable projects for Site Account Statement and assign responsible persons"
+        actions={
+          <>
+            <Link href="/settings/project" target="_blank">
+              <Button variant="outline" size="sm" className="gap-2 text-xs">
+                <ExternalLink className="h-3.5 w-3.5" /> Manage Projects
+              </Button>
+            </Link>
+            {canAdd && (
+              <Button size="sm" onClick={openAdd} className="gap-2 bg-emerald-600 hover:bg-emerald-700"
+                disabled={availableCentralProjects.length === 0}>
+                <Plus className="h-4 w-4" /> Add Project
+              </Button>
+            )}
+          </>
+        }
+      />
 
       {canAdd && availableCentralProjects.length === 0 && rows.length === 0 && (
         <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">

@@ -4,14 +4,13 @@ export const dynamic = 'force-dynamic';
 
 import Link from 'next/link';
 import {
-  ArrowLeft,
   ShieldAlert,
   type LucideIcon,
   BarChart4,
 } from 'lucide-react';
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/components/ui/card';
+import { PageHeader } from '@/components/shared/page-header';
 import { cn } from '@/lib/utils';
-import { Button } from '@/components/ui/button';
 import { useAuthorization } from '@/hooks/useAuthorization';
 import { Skeleton } from '@/components/ui/skeleton';
 import { ReactNode } from 'react';
@@ -50,7 +49,7 @@ function ReportCard({ item }: ReportCardProps) {
                 <div className="mb-2 rounded-2xl border border-white/70 bg-white/70 p-3 shadow-sm transition-colors group-hover:bg-white">
                   <item.icon className="h-6 w-6 text-slate-900/80" />
                 </div>
-                <CardTitle className="text-base font-semibold text-slate-900">{item.title}</CardTitle>
+                <CardTitle className="text-slate-900">{item.title}</CardTitle>
             </CardHeader>
             <CardContent className="text-center px-5 pb-6 pt-0">
                 <CardDescription className="text-xs text-slate-600">{item.description}</CardDescription>
@@ -93,17 +92,12 @@ export default function ReportsPage() {
     if (!canViewPage) {
         return (
             <div className="w-full px-3 py-4 sm:px-4 lg:px-6 xl:px-8">
-                <div className="mb-6 flex items-center gap-3">
-                    <Link href="/site-fund-requisition-2">
-                      <Button variant="ghost" size="icon">
-                        <ArrowLeft className="h-6 w-6" />
-                      </Button>
-                    </Link>
-                    <div>
-                      <p className="text-xs font-semibold uppercase tracking-[0.22em] text-slate-500">Site Fund Requisition 2</p>
-                      <h1 className="mt-1 text-2xl font-bold tracking-tight text-slate-900">Reports</h1>
-                    </div>
-                </div>
+                <PageHeader
+                    backHref="/site-fund-requisition-2"
+                    backLabel="Back to dashboard"
+                    eyebrow="Site Fund Requisition 2"
+                    title="Reports"
+                />
                 <Card className="overflow-hidden rounded-2xl border border-white/70 bg-white/70 shadow-[0_20px_70px_-55px_rgba(2,6,23,0.55)] backdrop-blur">
                     <div className="h-1.5 w-full bg-gradient-to-r from-rose-400 via-amber-300 to-cyan-400 opacity-70" />
                     <CardHeader>
@@ -120,18 +114,13 @@ export default function ReportsPage() {
 
   return (
     <div className="w-full px-3 py-4 sm:px-4 lg:px-6 xl:px-8">
-      <div className="mb-6 flex items-center gap-3">
-        <Link href="/site-fund-requisition-2">
-          <Button variant="ghost" size="icon">
-            <ArrowLeft className="h-6 w-6" />
-          </Button>
-        </Link>
-        <div>
-          <p className="text-xs font-semibold uppercase tracking-[0.22em] text-slate-500">Site Fund Requisition 2</p>
-          <h1 className="mt-1 text-2xl font-bold tracking-tight text-slate-900">Reports</h1>
-          <p className="mt-1 text-sm text-slate-600">Summaries and step-wise performance views.</p>
-        </div>
-      </div>
+      <PageHeader
+        backHref="/site-fund-requisition-2"
+        backLabel="Back to dashboard"
+        eyebrow="Site Fund Requisition 2"
+        title="Reports"
+        description="Summaries and step-wise performance views."
+      />
       <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4">
         {reportItems.map((item) => (
           <ReportCard key={item.text} item={item} />

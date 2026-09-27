@@ -2,9 +2,7 @@
 export const dynamic = 'force-dynamic';
 
 import { useState, useEffect } from 'react';
-import Link from 'next/link';
-import { ArrowLeft } from 'lucide-react';
-import { Button } from '@/components/ui/button';
+import { PageHeader } from '@/components/shared/page-header';
 import {
   Card,
   CardContent,
@@ -215,16 +213,7 @@ export default function CashflowStatementPage() {
   if (!canView) {
     return (
       <div className="w-full px-4 sm:px-6 lg:px-8">
-        <div className="mb-6 flex items-center gap-4">
-          <Link href="/bank-balance/reports">
-            <Button variant="ghost" size="icon">
-              <ArrowLeft className="h-6 w-6" />
-            </Button>
-          </Link>
-          <div>
-            <h1 className="text-xl font-bold">Cashflow Statement</h1>
-          </div>
-        </div>
+        <PageHeader title="Cashflow Statement" backHref="/bank-balance/reports" backLabel="Back to reports" />
         <Card>
           <CardHeader>
             <CardTitle>Access Denied</CardTitle>
@@ -249,17 +238,12 @@ export default function CashflowStatementPage() {
         />
       </div>
     <div className="relative w-full px-4 sm:px-6 lg:px-8 py-4">
-      <div className="mb-5 flex items-center gap-3">
-        <Link href="/bank-balance/reports">
-          <Button variant="ghost" size="icon" className="rounded-full hover:bg-emerald-50 dark:hover:bg-emerald-950/30">
-            <ArrowLeft className="h-5 w-5" />
-          </Button>
-        </Link>
-        <div>
-          <h1 className="text-xl font-bold tracking-tight">Cashflow Statement</h1>
-          <p className="text-xs text-muted-foreground">Monthly inflow vs outflow across all non-contra transactions.</p>
-        </div>
-      </div>
+      <PageHeader
+        title="Cashflow Statement"
+        description="Monthly inflow vs outflow across all non-contra transactions."
+        backHref="/bank-balance/reports"
+        backLabel="Back to reports"
+      />
 
       <Card>
         <CardHeader>

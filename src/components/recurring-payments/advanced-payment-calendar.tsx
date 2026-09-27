@@ -55,6 +55,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { PageHeader } from "@/components/shared/page-header";
 import CollapsibleFilterCard from "./collapsible-filter-card";
 import ModuleTableCard from "./module-table-card";
 import { useGlobalScopes } from "./use-global-scopes";
@@ -177,17 +178,16 @@ export default function AdvancedPaymentCalendar() {
     );
   return (
     <div className="space-y-5">
-      <Card className="border-0 bg-gradient-to-r from-cyan-800 to-indigo-800 text-white">
-        <CardContent className="flex flex-col gap-4 p-5 lg:flex-row lg:items-center lg:justify-between">
-          <div>
-            <h1 className="text-2xl font-bold">Payment Calendar</h1>
-            <p className="text-sm text-cyan-100">
-              Monthly, weekly, list and agenda views of due-date commitments
-            </p>
-          </div>
-          <div className="text-right">
-            <p className="text-xs text-cyan-100">Visible monthly value</p>
-            <p className="text-2xl font-bold">
+      <PageHeader
+        className="mb-0 sm:mb-0"
+        title="Payment Calendar"
+        description="Monthly, weekly, list and agenda views of due-date commitments"
+      />
+      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+        <Card>
+          <CardContent className="min-w-0 p-4">
+            <p className="text-xs text-muted-foreground">Visible monthly value</p>
+            <p className="truncate text-xl font-bold">
               {currency(
                 monthRows.reduce(
                   (sum, item) =>
@@ -196,9 +196,9 @@ export default function AdvancedPaymentCalendar() {
                 ),
               )}
             </p>
-          </div>
-        </CardContent>
-      </Card>
+          </CardContent>
+        </Card>
+      </div>
       <CollapsibleFilterCard activeCount={activeFilterCount} onClear={() => setFilters(DEFAULT_FILTERS)}>
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
           <Filter

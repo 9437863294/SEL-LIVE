@@ -2,9 +2,7 @@
 'use client';
 
 import { useState, useEffect, useMemo, Fragment } from 'react';
-import Link from 'next/link';
-import { ArrowLeft } from 'lucide-react';
-import { Button } from '@/components/ui/button';
+import { PageHeader } from '@/components/shared/page-header';
 import {
   Card,
   CardContent,
@@ -165,14 +163,11 @@ export default function AgeingReportPage() {
 
     return (
         <div className="w-full">
-            <div className="mb-6 flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                    <Link href={`/store-stock-management/${projectSlug}/reports`}>
-                      <Button variant="ghost" size="icon"><ArrowLeft className="h-6 w-6" /></Button>
-                    </Link>
-                    <h1 className="text-2xl font-bold">Inventory Ageing Report</h1>
-                </div>
-            </div>
+            <PageHeader
+                title="Inventory Ageing Report"
+                backHref={`/store-stock-management/${projectSlug}/reports`}
+                backLabel="Back to Reports"
+            />
 
             <Card>
                 <CardHeader>

@@ -1,10 +1,8 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import Link from "next/link";
 import {
   ArrowDown,
-  ArrowLeft,
   ArrowUp,
   ClipboardList,
   Loader2,
@@ -45,6 +43,7 @@ import {
 } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 import { PmDataList, type PmListColumn } from "@/components/project-management/pm-shell";
+import { PageHeader } from "@/components/shared/page-header";
 import { useAuthorization } from "@/hooks/useAuthorization";
 import { useToast } from "@/hooks/use-toast";
 import {
@@ -244,7 +243,7 @@ export default function ProjectManagementBoqSettingsPage() {
   if (!canView) {
     return (
       <main className="min-h-[calc(100dvh-4rem)] p-4 sm:p-6">
-        <h1 className="mb-6 text-2xl font-bold sm:text-3xl">BOQ Settings</h1>
+        <PageHeader title="BOQ Settings" />
         <Card>
           <CardHeader>
             <CardTitle>Access Denied</CardTitle>
@@ -392,51 +391,46 @@ export default function ProjectManagementBoqSettingsPage() {
 
   return (
     <main className="min-h-[calc(100dvh-4rem)] p-4 max-sm:[--card-pad:1rem] sm:p-6">
-      <div className="mb-4 flex flex-col gap-3 sm:mb-6 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
-        <div className="flex min-w-0 items-center gap-2 sm:gap-3">
-          <Button variant="ghost" size="icon" className="shrink-0" asChild>
-            <Link href="/project-management/settings" aria-label="Back to Settings">
-              <ArrowLeft className="h-5 w-5" />
-            </Link>
-          </Button>
-          <div className="hidden h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-violet-500 to-purple-600 shadow-sm sm:flex">
-            <ClipboardList className="h-5 w-5 text-white" />
-          </div>
-          <div className="min-w-0">
-            <h1 className="text-xl font-bold sm:text-3xl">BOQ Column Settings</h1>
-            <p className="mt-0.5 text-[13px] text-muted-foreground sm:mt-1 sm:text-sm">
-              Configure labels, validation data types, order, and visibility for both BOQ views.
-            </p>
-          </div>
-        </div>
-        <div className="flex flex-wrap gap-2">
-          <Button
-            variant="outline"
-            onClick={refreshImportedColumns}
-            disabled={isDiscovering}
-          >
-            {isDiscovering ? (
-              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-            ) : (
-              <RefreshCw className="mr-2 h-4 w-4" />
-            )}
-            Scan Imports
-          </Button>
-          <Button onClick={saveColumns} disabled={!canEdit || isSaving}>
-            {isSaving ? (
-              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-            ) : (
-              <Save className="mr-2 h-4 w-4" />
-            )}
-            Save Columns
-          </Button>
-        </div>
-      </div>
+      {/* Sticky: Save Columns is the only save, and the column list it saves runs long. `sm:`
+          margins match this page's `sm:p-6`. */}
+      <PageHeader
+        sticky
+        title="BOQ Column Settings"
+        description="Configure labels, validation data types, order, and visibility for both BOQ views."
+        icon={ClipboardList}
+        backHref="/project-management/settings"
+        backLabel="Back to Settings"
+        className="sm:-mx-6 sm:px-6"
+        actions={
+          <>
+            <Button
+              variant="outline"
+              onClick={refreshImportedColumns}
+              disabled={isDiscovering}
+            >
+              {isDiscovering ? (
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              ) : (
+                <RefreshCw className="mr-2 h-4 w-4" />
+              )}
+              Scan Imports
+            </Button>
+            <Button onClick={saveColumns} disabled={!canEdit || isSaving}>
+              {isSaving ? (
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              ) : (
+                <Save className="mr-2 h-4 w-4" />
+              )}
+              Save Columns
+            </Button>
+          </>
+        }
+      />
 
       <Card className="mb-6 overflow-hidden border-border/60">
         <div className="h-1 w-full bg-gradient-to-r from-violet-500 to-purple-600" />
         <CardHeader>
-          <CardTitle className="flex items-center gap-2 text-lg">
+          <CardTitle className="flex items-center gap-2">
             <Plus className="h-5 w-5 text-primary" />
             Add Dynamic Column
           </CardTitle>
@@ -493,7 +487,7 @@ export default function ProjectManagementBoqSettingsPage() {
           column cards stand on the page, rather than sitting as cards inside a card. */}
       <Card className="max-sm:border-0 max-sm:bg-transparent max-sm:shadow-none">
         <CardHeader className="max-sm:px-0 max-sm:pt-0">
-          <CardTitle className="flex items-center gap-2 text-lg">
+          <CardTitle className="flex items-center gap-2">
             <ClipboardList className="h-5 w-5 text-primary" />
             BOQ Columns
           </CardTitle>

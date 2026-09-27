@@ -6,7 +6,7 @@
 import { useState, useEffect, useRef, useMemo } from 'react';
 import Link from 'next/link';
 import {
-  ArrowLeft, ShieldAlert, SlidersHorizontal,
+  ShieldAlert, SlidersHorizontal,
   Search, FileText, IndianRupee, Building2, TrendingUp, Filter,
   Receipt, Layers,
 } from 'lucide-react';
@@ -191,10 +191,7 @@ export default function AllExpensesPage() {
   if (!canViewPage) {
     return (
       <div className="w-full">
-        <div className="mb-6 flex items-center gap-2">
-          <Link href="/expenses"><Button variant="ghost" size="icon"><ArrowLeft className="h-5 w-5" /></Button></Link>
-          <h1 className="text-xl font-bold">Consolidated Expenses</h1>
-        </div>
+        <ExpensesPageHeader icon={Layers} title="Consolidated Expenses" backHref="/expenses" />
         <Card className="border-destructive/30">
           <CardHeader className="text-center pb-2">
             <div className="mx-auto mb-3 flex h-14 w-14 items-center justify-center rounded-full bg-destructive/10">

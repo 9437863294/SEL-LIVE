@@ -10,6 +10,7 @@ import { useAuthorization } from '@/hooks/useAuthorization';
 import { useAuth } from '@/components/auth/AuthProvider';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { PageHeader } from '@/components/shared/page-header';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -199,18 +200,17 @@ export default function AccountStatementPage() {
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between gap-3 flex-wrap">
-        <div>
-          <h1 className="text-base sm:text-lg font-bold text-slate-800">Project-Wise Account Statement</h1>
-          <p className="text-sm text-muted-foreground">Running balance of receipts and expenses</p>
-        </div>
-        {canExport && selectedProject && (
+      <PageHeader
+        className="mb-0 sm:mb-0"
+        title="Project-Wise Account Statement"
+        description="Running balance of receipts and expenses"
+        actions={canExport && selectedProject ? (
           <Button variant="outline" size="sm" onClick={exportExcel} disabled={exporting} className="gap-2">
             {exporting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
             Export Excel
           </Button>
-        )}
-      </div>
+        ) : undefined}
+      />
 
       {/* Controls */}
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
@@ -246,7 +246,7 @@ export default function AccountStatementPage() {
       ) : (
         <Card className="bg-white/80 backdrop-blur-sm">
           <CardHeader className="pb-2 pt-3 px-4">
-            <CardTitle className="text-sm font-semibold text-slate-700">{selectedProjectName}</CardTitle>
+            <CardTitle className="text-slate-700">{selectedProjectName}</CardTitle>
           </CardHeader>
           <CardContent className="p-0">
             <div className="overflow-auto overflow-x-auto max-h-[60vh]">

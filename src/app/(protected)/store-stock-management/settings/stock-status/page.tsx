@@ -18,6 +18,7 @@ import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
+import { PageHeader } from '@/components/shared/page-header';
 
 interface PropertyRecord {
   id: string;
@@ -85,11 +86,12 @@ export default function StockStatusPage() {
 
   return (
     <div className="mx-auto w-full max-w-7xl space-y-6">
-      <div>
-        <p className="text-xs font-bold uppercase tracking-[0.14em] text-emerald-600">Inventory availability</p>
-        <h1 className="mt-1 text-2xl font-bold tracking-tight">Stock-management scope</h1>
-        <p className="mt-1 text-sm text-muted-foreground">Enable BOQ-based project stock and property item inventory independently.</p>
-      </div>
+      <PageHeader
+        className="mb-0 sm:mb-0"
+        eyebrow="Inventory availability"
+        title="Stock-management scope"
+        description="Enable BOQ-based project stock and property item inventory independently."
+      />
 
       <Alert>
         <FolderKanban className="h-4 w-4" />

@@ -33,6 +33,7 @@ import { LC_PERMISSION_MODULE } from '@/lib/letter-of-credit';
 import { ModuleBottomNav, type ModuleNavTab } from '@/components/navigation/ModuleBottomNav';
 import { SIDEBAR_ICONS_GRID, SidebarNavTooltip, useSidebarIconsOnly } from '@/components/navigation/use-sidebar-mode';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { ModuleMobileHeader } from '@/components/shared/page-header';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import { cn } from '@/lib/utils';
 
@@ -97,9 +98,7 @@ export default function LetterOfCreditLayoutShell({ children }: { children: Reac
   return (
     <div className="relative w-full px-4 py-5 sm:px-6 lg:px-8">
       <div className="pointer-events-none absolute inset-0 -z-10 overflow-hidden rounded-3xl bg-gradient-to-br from-cyan-50/70 via-white to-blue-50/60" />
-      <div className="mb-3 lg:hidden">
-        <Card className="border-white/80 bg-white/90"><CardContent className="flex items-center gap-2.5 px-4 py-3"><div className="flex h-8 w-8 items-center justify-center rounded-lg bg-gradient-to-br from-cyan-600 to-blue-700"><BookOpenCheck className="h-4 w-4 text-white" /></div><div><p className="text-sm font-semibold">Letter of Credit</p><p className="text-xs text-muted-foreground">Trade Finance Control</p></div></CardContent></Card>
-      </div>
+      <ModuleMobileHeader icon={BookOpenCheck} title="Letter of Credit" subtitle="Trade Finance Control" hideFrom="lg" />
       <div className={`grid grid-cols-1 gap-4 ${iconsOnly ? SIDEBAR_ICONS_GRID : 'lg:grid-cols-[250px_minmax(0,1fr)]'} lg:items-start`}>
         <TooltipProvider delayDuration={150}><aside className="hidden lg:sticky lg:top-[calc(var(--app-header-offset,4rem)+1rem)] lg:block"><Card className="overflow-hidden border-white/80 bg-white/90 shadow-sm"><div className={cn('border-b bg-gradient-to-r from-cyan-500/10 to-blue-500/5 px-4 py-3', iconsOnly && 'px-2')} title={iconsOnly ? 'Letter of Credit' : undefined}><div className={cn('flex items-center gap-2.5', iconsOnly && 'justify-center')}><div className="flex h-8 w-8 items-center justify-center rounded-lg bg-gradient-to-br from-cyan-600 to-blue-700"><BookOpenCheck className="h-4 w-4 text-white" /></div><div className={iconsOnly ? 'sr-only' : undefined}><p className="text-sm font-semibold text-slate-800">Letter of Credit</p><p className="text-[11px] text-muted-foreground">Trade Finance Control</p></div></div></div><CardContent className="max-h-[calc(100vh-var(--app-header-offset,4rem)-8rem)] space-y-1 overflow-y-auto p-2">{links(iconsOnly)}</CardContent></Card></aside></TooltipProvider>
         <main className="min-w-0">{children}</main>

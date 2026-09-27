@@ -7,6 +7,7 @@ import { chartChrome } from '@/components/ui/chart';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Skeleton } from '@/components/ui/skeleton';
+import { PageHeader } from '@/components/shared/page-header';
 import { useToast } from '@/hooks/use-toast';
 import { db } from '@/lib/firebase';
 import { collection, query, where, getDocs } from 'firebase/firestore';
@@ -165,7 +166,7 @@ export default function AiForecastPage() {
 
   return (
     <div>
-      <h1 className="text-3xl font-bold mb-6">AI Forecast</h1>
+      <PageHeader title="AI Forecast" />
       <Card className="mb-6">
         <CardHeader>
           <CardTitle>Select Item to Forecast</CardTitle>

@@ -10,6 +10,7 @@ import { useFieldControl, validateFieldControlRequirements } from '@/components/
 import { ControlledField } from '@/components/vehicle-management/controlled-field';
 import { useToast } from '@/hooks/use-toast';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { PageHeader } from '@/components/shared/page-header';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -287,13 +288,13 @@ export default function DriverDailyStatusPage() {
 
   return (
     <div className="space-y-4">
+      <PageHeader
+        title="Driver Daily Running Status"
+        description="Submit your daily movement, odometer, and status report."
+        className="mb-0 sm:mb-0"
+      />
       <Card className="vm-panel-strong overflow-hidden">
-        <div className="h-1 w-full bg-gradient-to-r from-emerald-500 via-teal-500 to-cyan-600 animate-bb-gradient" />
-        <CardHeader>
-          <CardTitle className="tracking-tight">Driver Daily Running Status</CardTitle>
-          <CardDescription>Submit your daily movement, odometer, and status report.</CardDescription>
-        </CardHeader>
-        <CardContent className="grid grid-cols-1 gap-3 md:grid-cols-2">
+        <CardContent className="grid grid-cols-1 gap-3 pt-[var(--card-pad,1.5rem)] md:grid-cols-2">
           <ControlledField setting={field('statusDate')}>
             <Input type="date" value={form.statusDate} onChange={(e) => setForm((prev) => ({ ...prev, statusDate: e.target.value }))} className="bg-white/85" />
           </ControlledField>
@@ -369,7 +370,7 @@ export default function DriverDailyStatusPage() {
 
       <Card className="vm-panel">
         <CardHeader>
-          <CardTitle className="text-lg">Recent Daily Status Logs</CardTitle>
+          <CardTitle>Recent Daily Status Logs</CardTitle>
         </CardHeader>
         <CardContent className="space-y-3">
           {isLoadingLogs ? (

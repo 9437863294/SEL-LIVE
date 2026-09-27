@@ -2,16 +2,12 @@
 'use client';
 
 import { useState, useEffect, useMemo } from 'react';
-import Link from 'next/link';
-import { ArrowLeft, CalendarCheck, RefreshCw } from 'lucide-react';
-import { Button } from '@/components/ui/button';
+import { CalendarCheck, RefreshCw } from 'lucide-react';
 import {
   Card,
   CardContent,
-  CardHeader,
-  CardTitle,
-  CardDescription,
 } from '@/components/ui/card';
+import { PageHeader } from '@/components/shared/page-header';
 import {
   Table,
   TableBody,
@@ -148,40 +144,29 @@ export default function MonthWiseStatusReportPage() {
   return (
     <div className="space-y-4">
       {/* Header */}
-      <Card className="overflow-hidden border-border/60">
-        <div className="h-1 w-full bg-gradient-to-r from-violet-500 via-indigo-500 to-blue-500" />
-        <CardHeader className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <div className="flex items-center gap-3">
-            <Link href="/loan/reports">
-              <Button variant="ghost" size="sm" className="gap-1.5 text-xs">
-                <ArrowLeft className="h-3.5 w-3.5" /> Back
-              </Button>
-            </Link>
-            <div className="flex items-center gap-2">
-              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-violet-50 ring-1 ring-violet-100">
-                <CalendarCheck className="h-5 w-5 text-violet-600" />
-              </div>
-              <div>
-                <CardTitle className="tracking-tight text-base">Month-wise EMI Status</CardTitle>
-                <CardDescription>Financial year EMI breakdown — {selectedYear}–{(parseInt(selectedYear) + 1).toString().slice(-2)}</CardDescription>
-              </div>
-            </div>
-          </div>
-          <div className="flex items-center gap-2">
-            <Select value={selectedYear} onValueChange={setSelectedYear}>
-              <SelectTrigger className="h-9 w-36 text-sm"><SelectValue /></SelectTrigger>
-              <SelectContent>
-                {yearOptions.map(year => (
-                  <SelectItem key={year} value={year}>{`FY ${year}–${(parseInt(year) + 1).toString().slice(-2)}`}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-        </CardHeader>
+      <PageHeader
+        className="mb-0 sm:mb-0"
+        icon={CalendarCheck}
+        title="Month-wise EMI Status"
+        description={<>Financial year EMI breakdown — {selectedYear}–{(parseInt(selectedYear) + 1).toString().slice(-2)}</>}
+        backHref="/loan/reports"
+        backLabel="Back to loan reports"
+        actions={
+          <Select value={selectedYear} onValueChange={setSelectedYear}>
+            <SelectTrigger className="h-9 w-36 text-sm"><SelectValue /></SelectTrigger>
+            <SelectContent>
+              {yearOptions.map(year => (
+                <SelectItem key={year} value={year}>{`FY ${year}–${(parseInt(year) + 1).toString().slice(-2)}`}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        }
+      />
 
-        {/* FY totals strip */}
-        {!isLoading && (
-          <CardContent className="grid grid-cols-3 gap-2 border-t pt-4">
+      {/* FY totals strip */}
+      {!isLoading && (
+        <Card className="overflow-hidden border-border/60">
+          <CardContent className="grid grid-cols-3 gap-2 p-4">
             {[
               { label: 'FY Total Due',   value: formatCurrency(yearlyTotals.totalDue),    color: 'text-slate-700' },
               { label: 'Already Paid',   value: formatCurrency(yearlyTotals.alreadyPaid), color: 'text-emerald-600' },
@@ -193,8 +178,8 @@ export default function MonthWiseStatusReportPage() {
               </div>
             ))}
           </CardContent>
-        )}
-      </Card>
+        </Card>
+      )}
 
       {/* Monthly grid */}
       {isLoading ? (

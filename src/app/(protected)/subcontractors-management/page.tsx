@@ -2,15 +2,13 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import {
-  Home,
   FolderOpen,
   HardHat,
   ShieldAlert,
 } from 'lucide-react';
-import { Button } from '@/components/ui/button';
+import { PageHeader } from '@/components/shared/page-header';
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/components/ui/card';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -135,40 +133,32 @@ export default function SubcontractorsDashboardPage() {
     /* The module root spans every project, so it uses Project Management's hub layout rather than
        PmShell — a project-scoped sidebar here would be describing a project that is not selected. */
     <main className="min-h-[calc(100dvh-4rem)] space-y-5 p-4 sm:p-6">
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <div className="flex items-center gap-3">
-          <Button variant="ghost" size="icon" asChild>
-            <Link href="/" aria-label="Home">
-              <Home className="h-5 w-5" />
-            </Link>
-          </Button>
-          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-sky-600 to-blue-600 shadow-sm">
-            <HardHat className="h-5 w-5 text-white" />
+      <PageHeader
+        title="Subcontractors"
+        description="Work orders, billing and reports across every project."
+        icon={HardHat}
+        backHref="/"
+        backLabel="Back to home"
+        className="mb-0 sm:mb-0"
+        actions={
+          <div className="flex items-center gap-2">
+            <FolderOpen className="h-4 w-4 shrink-0 text-muted-foreground" />
+            <Select onValueChange={handleProjectChange} defaultValue="all">
+              <SelectTrigger className="h-9 w-full sm:w-[260px]">
+                <SelectValue placeholder="Select Project" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Projects</SelectItem>
+                {projects.map((p) => (
+                  <SelectItem key={p.id} value={slugify(p.projectName)}>
+                    {p.projectName}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </div>
-          <div>
-            <h1 className="text-2xl font-bold">Subcontractors</h1>
-            <p className="text-sm text-muted-foreground">
-              Work orders, billing and reports across every project.
-            </p>
-          </div>
-        </div>
-        <div className="flex items-center gap-2">
-          <FolderOpen className="h-4 w-4 shrink-0 text-muted-foreground" />
-          <Select onValueChange={handleProjectChange} defaultValue="all">
-            <SelectTrigger className="h-9 w-full sm:w-[260px]">
-              <SelectValue placeholder="Select Project" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">All Projects</SelectItem>
-              {projects.map((p) => (
-                <SelectItem key={p.id} value={slugify(p.projectName)}>
-                  {p.projectName}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
-      </div>
+        }
+      />
       <AllSubcontractorsDashboard />
     </main>
   );

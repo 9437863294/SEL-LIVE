@@ -14,7 +14,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { ArrowLeft, FolderKanban, Search, ShieldAlert } from "lucide-react";
+import { FolderKanban, Search, ShieldAlert } from "lucide-react";
 import { collection, getDocs } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import type { Project } from "@/lib/types";
@@ -52,6 +52,7 @@ import {
   PmToolbar,
   type PmListColumn,
 } from "@/components/project-management/pm-shell";
+import { PageHeader } from "@/components/shared/page-header";
 import { cn } from "@/lib/utils";
 
 const MODULE_NAME = "Project Management";
@@ -280,29 +281,21 @@ export default function ProjectRegisterPage() {
 
   return (
     <main className="min-h-[calc(100dvh-4rem)] space-y-4 p-4 sm:space-y-5 sm:p-6">
-      <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
-        <div className="flex min-w-0 flex-1 basis-48 items-center gap-2 sm:gap-3">
-          <Button variant="ghost" size="icon" className="shrink-0" asChild>
-            <Link href="/project-management" aria-label="Back to Project Management">
-              <ArrowLeft className="h-5 w-5" />
-            </Link>
-          </Button>
-          <div className="hidden h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-indigo-500 to-blue-600 shadow-sm sm:flex">
-            <FolderKanban className="h-5 w-5 text-white" />
-          </div>
-          <div className="min-w-0">
-            <h1 className="truncate text-xl font-bold sm:text-2xl">Projects</h1>
-            <p className="text-[13px] text-muted-foreground sm:text-sm">
-              {projects.length} project{projects.length === 1 ? "" : "s"} in Project Management
-            </p>
-          </div>
-        </div>
-        {canManage && (
-          <Button asChild className="ml-auto">
-            <Link href="/project-management/settings/projects">Manage projects</Link>
-          </Button>
-        )}
-      </div>
+      <PageHeader
+        title="Projects"
+        description={`${projects.length} project${projects.length === 1 ? "" : "s"} in Project Management`}
+        icon={FolderKanban}
+        backHref="/project-management"
+        backLabel="Back to Project Management"
+        className="mb-0 sm:mb-0"
+        actions={
+          canManage ? (
+            <Button asChild>
+              <Link href="/project-management/settings/projects">Manage projects</Link>
+            </Button>
+          ) : undefined
+        }
+      />
 
       {/* Lifecycle summary */}
       <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-6">

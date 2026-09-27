@@ -7,6 +7,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { PageHeader, type PageHeaderProps } from '@/components/shared/page-header';
 import { cn } from '@/lib/utils';
 import { travelCurrency, travelStatusLabel, travelStatusTone } from '@/lib/tour-travel';
 
@@ -87,28 +88,9 @@ export function Money({ value, className, exact = false }: { value: number; clas
   return <span className={cn('tabular-nums', className)}>{formatted}</span>;
 }
 
-export function TravelPageHeader({
-  title,
-  description,
-  actions,
-}: {
-  title: string;
-  description?: string;
-  actions?: React.ReactNode;
-}) {
-  return (
-    // Stacked on a phone with full-width actions, side by side from `sm` up. A wrapped row of
-    // half-width buttons under a two-line heading is the worst of both on a narrow screen.
-    <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-      <div className="min-w-0">
-        <h1 className="text-lg font-semibold tracking-tight text-slate-800 sm:text-xl">{title}</h1>
-        {description && <p className="mt-0.5 text-sm text-muted-foreground">{description}</p>}
-      </div>
-      {actions && (
-        <div className="flex flex-wrap items-center gap-2 [&>*]:flex-1 sm:[&>*]:flex-none">{actions}</div>
-      )}
-    </div>
-  );
+/** The module's page header — the app's standard one (`shared/page-header`). */
+export function TravelPageHeader(props: PageHeaderProps) {
+  return <PageHeader {...props} />;
 }
 
 export function TravelLoader({ label }: { label?: string }) {

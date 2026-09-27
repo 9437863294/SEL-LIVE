@@ -1,9 +1,7 @@
 'use client';
 
 import { useCallback, useRef } from 'react';
-import Link from 'next/link';
-import { ArrowLeft } from 'lucide-react';
-import { Button } from '@/components/ui/button';
+import { PageHeader } from '@/components/shared/page-header';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useAuth } from '@/components/auth/AuthProvider';
 import { AccessSummaryCard } from '@/components/profile/AccessSummaryCard';
@@ -49,17 +47,13 @@ export default function ProfilePage() {
 
   return (
     <div className="space-y-4 px-3 py-3 sm:px-5">
-      <div className="flex items-center gap-3">
-        <Button asChild variant="ghost" size="icon" className="rounded-full">
-          <Link href="/settings" aria-label="Back to settings">
-            <ArrowLeft className="h-5 w-5" />
-          </Link>
-        </Button>
-        <div>
-          <h1 className="text-xl font-bold tracking-tight">Your profile</h1>
-          <p className="text-xs text-muted-foreground">Your details, access and account security.</p>
-        </div>
-      </div>
+      <PageHeader
+        title="Your profile"
+        description="Your details, access and account security."
+        backHref="/settings"
+        backLabel="Back to settings"
+        className="mb-0 sm:mb-0"
+      />
 
       <ProfileHero onJumpToSecurity={jumpToSecurity} />
 

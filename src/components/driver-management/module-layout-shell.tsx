@@ -20,6 +20,7 @@ import { useCurrentDriverProfile } from '@/components/vehicle-management/hooks';
 import { ModuleBottomNav, type ModuleNavTab } from '@/components/navigation/ModuleBottomNav';
 import { SIDEBAR_ICONS_GRID, SidebarNavTooltip, useSidebarIconsOnly } from '@/components/navigation/use-sidebar-mode';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { ModuleMobileHeader } from '@/components/shared/page-header';
 import { Skeleton } from '@/components/ui/skeleton';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import { cn } from '@/lib/utils';
@@ -186,21 +187,7 @@ export default function DriverManagementLayoutShell({ children }: { children: Re
 
       {/* Mobile header — the driver app's only title bar (AppShell drops the app header in the
           Android WebView). Navigation is the bottom bar and its "More" pop-up. */}
-      <div className="mb-3 lg:hidden">
-        <Card className="vm-panel-strong">
-          <CardContent className="flex items-center justify-between px-4 py-3">
-            <div className="flex items-center gap-2.5">
-              <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-gradient-to-br from-cyan-500 to-blue-600 shadow-sm">
-                <Truck className="h-4 w-4 text-white" />
-              </div>
-              <div>
-                <p className="text-sm font-semibold tracking-tight">Driver Management</p>
-                <p className="text-xs text-muted-foreground">Control Center</p>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-      </div>
+      <ModuleMobileHeader icon={Truck} title="Driver Management" subtitle="Control Center" hideFrom="lg" />
 
       {/* Desktop grid */}
       <div className={`grid grid-cols-1 gap-4 ${iconsOnly ? SIDEBAR_ICONS_GRID : 'lg:grid-cols-[240px_minmax(0,1fr)]'} lg:items-start`}>

@@ -59,6 +59,7 @@ import {
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
+import { PageHeader } from '@/components/shared/page-header';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -1380,49 +1381,41 @@ export default function SessionManagementPage() {
   return (
     <div className="space-y-5 p-4 md:p-6">
 
-      {/* ── Header ──────────────────────────────────────────────────────── */}
-      <Card className="overflow-hidden">
-        <div className="h-1 w-full bg-gradient-to-r from-indigo-500 via-blue-500 to-cyan-500" />
-        <CardHeader className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-          <div className="flex items-center gap-3">
-            <div className={cn(
-              'flex h-11 w-11 shrink-0 items-center justify-center rounded-xl shadow-sm',
-              isAdmin ? 'bg-gradient-to-br from-indigo-500 to-blue-600' : 'bg-indigo-50'
-            )}>
-              {isAdmin
-                ? <ShieldAlert className="h-5 w-5 text-white" />
-                : <Shield className="h-5 w-5 text-indigo-600" />}
-            </div>
-            <div>
-              <CardTitle className="text-lg tracking-tight">Session Management</CardTitle>
-              <CardDescription>
-                {isAdmin
-                  ? 'Monitor, control and set policy for every login session — devices, locations, idle and stale sessions.'
-                  : 'View and manage your own active login sessions across all devices.'}
-              </CardDescription>
-            </div>
-          </div>
-          <div className="flex flex-wrap gap-2 self-start">
+      <PageHeader
+        icon={isAdmin ? ShieldAlert : Shield}
+        title="Session Management"
+        description={
+          isAdmin
+            ? 'Monitor, control and set policy for every login session — devices, locations, idle and stale sessions.'
+            : 'View and manage your own active login sessions across all devices.'
+        }
+        backHref="/settings"
+        backLabel="Back to settings"
+        className="mb-0 sm:mb-0"
+        actions={
+          <>
             {myOtherSessions.length > 0 && (
               <Button
                 variant="outline"
                 size="sm"
                 onClick={() => setPending({ kind: 'terminate-others', sessions: myOtherSessions })}
-                className="w-fit gap-1.5 bg-white text-rose-600 hover:text-rose-700"
+                className="gap-1.5 text-rose-600 hover:text-rose-700"
               >
                 <LogOut className="h-3.5 w-3.5" />
                 Sign out my other devices ({myOtherSessions.length})
               </Button>
             )}
-            <Button variant="outline" size="sm" onClick={() => { setupListeners(); loadPolicy(); void loadGps(); }} className="w-fit gap-1.5 bg-white">
+            <Button variant="outline" size="sm" onClick={() => { setupListeners(); loadPolicy(); void loadGps(); }} className="gap-1.5">
               <RefreshCw className="h-3.5 w-3.5" />
               Refresh
             </Button>
-          </div>
-        </CardHeader>
+          </>
+        }
+      />
 
-        {/* Stats */}
-        <CardContent className={cn('grid grid-cols-2 gap-3', isAdmin ? 'sm:grid-cols-3 lg:grid-cols-5' : 'sm:grid-cols-4')}>
+      {/* ── Stats ───────────────────────────────────────────────────────── */}
+      <Card className="overflow-hidden">
+        <CardContent className={cn('grid grid-cols-2 gap-3 pt-[var(--card-pad,1.5rem)]', isAdmin ? 'sm:grid-cols-3 lg:grid-cols-5' : 'sm:grid-cols-4')}>
           {[
             { label: 'Active Sessions', value: summary.active, icon: <Globe className="h-4 w-4" />, color: 'text-indigo-600', bg: 'bg-indigo-50' },
             { label: 'Users Online', value: summary.uniqueUsers, icon: <Users className="h-4 w-4" />, color: 'text-emerald-600', bg: 'bg-emerald-50', adminOnly: true },

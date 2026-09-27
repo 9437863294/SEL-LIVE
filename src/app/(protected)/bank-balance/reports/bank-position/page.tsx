@@ -2,9 +2,9 @@
 export const dynamic = 'force-dynamic';
 
 import { useState, useEffect, useMemo } from 'react';
-import Link from 'next/link';
-import { ArrowLeft, ShieldAlert, Building2, CreditCard, TrendingUp, Wallet, RefreshCw } from 'lucide-react';
+import { ShieldAlert, Building2, CreditCard, TrendingUp, Wallet, RefreshCw } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { PageHeader } from '@/components/shared/page-header';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow, TableFooter } from '@/components/ui/table';
 import { useToast } from '@/hooks/use-toast';
@@ -101,10 +101,7 @@ export default function BankPositionReportPage() {
   if (!canView) {
     return (
       <div className="w-full px-4 sm:px-6 lg:px-8">
-        <div className="mb-6 flex items-center gap-2">
-          <Link href="/bank-balance/reports"><Button variant="ghost" size="icon"><ArrowLeft className="h-6 w-6" /></Button></Link>
-          <h1 className="text-xl font-bold">Bank Position Report</h1>
-        </div>
+        <PageHeader title="Bank Position Report" backHref="/bank-balance/reports" backLabel="Back to reports" />
         <Card><CardHeader><CardTitle>Access Denied</CardTitle><CardDescription>You do not have permission.</CardDescription></CardHeader>
           <CardContent className="flex justify-center p-8"><ShieldAlert className="h-16 w-16 text-destructive" /></CardContent>
         </Card>
@@ -124,25 +121,18 @@ export default function BankPositionReportPage() {
       </div>
     <div className="relative w-full px-4 sm:px-6 lg:px-8 py-4">
       {/* Header */}
-      <div className="mb-5 flex items-center justify-between">
-        <div className="flex items-center gap-2">
-          <Link href="/bank-balance/reports">
-            <Button variant="ghost" size="icon" className="rounded-full hover:bg-primary/10">
-              <ArrowLeft className="h-5 w-5" />
-            </Button>
-          </Link>
-          <div>
-            <h1 className="text-xl font-bold tracking-tight">Bank Position Report</h1>
-            <p className="text-xs text-muted-foreground">
-              As of {format(new Date(), 'MMMM do, yyyy')} &nbsp;·&nbsp; Updated {format(lastUpdated, 'HH:mm:ss')}
-            </p>
-          </div>
-        </div>
-        <Button variant="outline" size="sm" className="rounded-full" onClick={() => void fetchAndCalculate()} disabled={isLoading}>
-          <RefreshCw className={cn('mr-2 h-4 w-4', isLoading && 'animate-spin')} />
-          Refresh
-        </Button>
-      </div>
+      <PageHeader
+        title="Bank Position Report"
+        description={<>As of {format(new Date(), 'MMMM do, yyyy')} &nbsp;·&nbsp; Updated {format(lastUpdated, 'HH:mm:ss')}</>}
+        backHref="/bank-balance/reports"
+        backLabel="Back to reports"
+        actions={
+          <Button variant="outline" size="sm" className="rounded-full" onClick={() => void fetchAndCalculate()} disabled={isLoading}>
+            <RefreshCw className={cn('mr-2 h-4 w-4', isLoading && 'animate-spin')} />
+            Refresh
+          </Button>
+        }
+      />
 
       {/* Summary cards */}
       <div className="mb-5 grid grid-cols-1 sm:grid-cols-3 gap-4">
@@ -187,7 +177,7 @@ export default function BankPositionReportPage() {
       {/* Table */}
       <Card className="rounded-xl border-border/60 shadow-sm overflow-hidden">
         <CardHeader className="border-b border-border/40 pb-4">
-          <CardTitle className="text-base">Account-wise Positions</CardTitle>
+          <CardTitle>Account-wise Positions</CardTitle>
           <CardDescription>Calculated from opening balances/utilizations and all ledger entries.</CardDescription>
         </CardHeader>
         <CardContent className="p-0">

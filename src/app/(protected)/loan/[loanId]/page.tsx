@@ -2,9 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { useParams } from 'next/navigation';
-import Link from 'next/link';
 import {
-  ArrowLeft,
   Loader2,
   Save,
   X,
@@ -41,6 +39,7 @@ import type {
   ExpenseRequest,
 } from '@/lib/types';
 import { Skeleton } from '@/components/ui/skeleton';
+import { PageHeader } from '@/components/shared/page-header';
 import { format, addMonths } from 'date-fns';
 import {
   Dialog,
@@ -536,7 +535,7 @@ export default function LoanDetailsPage() {
   if (!loan || !editedLoan) {
     return (
       <div className="w-full px-4 sm:px-6 lg:px-8">
-        <h1 className="text-2xl font-bold">Loan Not Found</h1>
+        <PageHeader title="Loan Not Found" backHref="/loan" backLabel="Back to loan dashboard" />
       </div>
     );
   }
@@ -548,22 +547,16 @@ export default function LoanDetailsPage() {
   return (
     <>
       <div className="w-full px-4 sm:px-6 lg:px-8">
-        <div className="mb-6 flex items-center justify-between">
-          <div className="flex items-center gap-4">
-            <Link href="/loan">
-              <Button variant="ghost" size="icon">
-                <ArrowLeft className="h-6 w-6" />
-              </Button>
-            </Link>
-            <div>
-              <h1 className="text-2xl font-bold">Loan Details</h1>
-              <p className="text-muted-foreground">
-                {loan.lenderName} - {loan.accountNo}
-              </p>
-            </div>
-          </div>
-          <div className="flex items-center gap-2">
-            {isEditing ? (
+        <PageHeader
+          title="Loan Details"
+          backHref="/loan"
+          backLabel="Back to loan dashboard"
+          meta={[
+            { label: 'Lender', value: loan.lenderName },
+            { label: 'A/C No', value: loan.accountNo },
+          ]}
+          actions={
+            isEditing ? (
               <>
                 <Button
                   variant="outline"
@@ -584,9 +577,9 @@ export default function LoanDetailsPage() {
               <Button variant="outline" onClick={() => setIsEditing(true)}>
                 <Edit className="mr-2 h-4 w-4" /> Edit Loan
               </Button>
-            )}
-          </div>
-        </div>
+            )
+          }
+        />
 
         <Card className="mb-6">
           <CardHeader>

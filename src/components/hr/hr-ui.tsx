@@ -197,8 +197,9 @@ export function HrSection({
     <Card className={cn('border-white/60 bg-white/80 shadow-sm backdrop-blur-sm', className)}>
       <CardHeader className="flex-row items-start justify-between gap-3 space-y-0 border-b border-slate-100 px-4 py-3">
         <div className="min-w-0">
-          <CardTitle className="text-sm font-semibold">{title}</CardTitle>
-          {description && <CardDescription className="text-xs">{description}</CardDescription>}
+          {/* The standard section-heading scale (CardTitle's default). */}
+          <CardTitle>{title}</CardTitle>
+          {description && <CardDescription className="text-xs sm:text-[13px]">{description}</CardDescription>}
         </div>
         {actions && <div className="flex shrink-0 items-center gap-2">{actions}</div>}
       </CardHeader>

@@ -20,6 +20,7 @@ import {
 } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { PageHeader } from '@/components/shared/page-header';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
@@ -165,20 +166,12 @@ const faqs: { q: string; a: string }[] = [
 export default function RecurringPaymentsHandbook() {
   return (
     <div className="space-y-6">
-      <Card className="overflow-hidden border-none bg-gradient-to-r from-emerald-500 to-teal-600 text-white shadow-lg">
-        <CardContent className="flex flex-col gap-4 p-6 sm:flex-row sm:items-center">
-          <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-white/15">
-            <BookOpen className="h-6 w-6" />
-          </div>
-          <div>
-            <h1 className="text-xl font-bold tracking-tight sm:text-2xl">Recurring Payments Handbook</h1>
-            <p className="mt-1 max-w-2xl text-sm text-white/85">
-              A step-by-step guide to collecting bills, verifying, approving, paying and closing recurring
-              obligations in this module — written for anyone new here.
-            </p>
-          </div>
-        </CardContent>
-      </Card>
+      <PageHeader
+        className="mb-0 sm:mb-0"
+        icon={BookOpen}
+        title="Recurring Payments Handbook"
+        description="A step-by-step guide to collecting bills, verifying, approving, paying and closing recurring obligations in this module — written for anyone new here."
+      />
 
       <Card>
         <CardHeader>

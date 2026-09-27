@@ -1,8 +1,8 @@
 'use client';
 
-import Link from 'next/link';
-import { ArrowLeft, MailCheck, ShieldAlert } from 'lucide-react';
+import { MailCheck, ShieldAlert } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { PageHeader } from '@/components/shared/page-header';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { useAuthorization } from '@/hooks/useAuthorization';
@@ -34,14 +34,7 @@ export default function EmailAuthorizationPage() {
     return (
       <div className="relative min-h-[calc(100vh-4rem)] overflow-hidden px-4 py-3 sm:px-5">
         <AuroraBackdrop />
-        <div className="mb-6 flex items-center gap-4">
-          <Link href="/settings">
-            <Button variant="ghost" size="icon" className="rounded-full bg-white/70 shadow-sm backdrop-blur hover:bg-white/90">
-              <ArrowLeft className="h-6 w-6" />
-            </Button>
-          </Link>
-          <h1 className="text-2xl font-bold tracking-tight text-slate-900">Email Authorization</h1>
-        </div>
+        <PageHeader title="Email Authorization" backHref="/settings" backLabel="Back to settings" />
         <Card className="overflow-hidden rounded-2xl border border-white/70 bg-white/70 shadow-[0_20px_70px_-55px_rgba(2,6,23,0.55)] backdrop-blur">
           <CardHeader>
             <CardTitle>Access Denied</CardTitle>
@@ -61,36 +54,28 @@ export default function EmailAuthorizationPage() {
     <div className="relative min-h-[calc(100vh-4rem)] overflow-hidden px-4 py-3 sm:px-5">
       <AuroraBackdrop />
 
-      <div className="mb-6 flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
-        <div className="flex items-start gap-4">
-          <Link href="/settings">
-            <Button variant="ghost" size="icon" className="rounded-full bg-white/70 shadow-sm backdrop-blur hover:bg-white/90">
-              <ArrowLeft className="h-6 w-6" />
+      <PageHeader
+        title="Email Authorization"
+        description="Manage authorization requests for integrated email services."
+        backHref="/settings"
+        backLabel="Back to settings"
+        badge={
+          <Badge variant="outline" className="border-white/70 bg-white/70 text-slate-700 backdrop-blur">
+            Settings
+          </Badge>
+        }
+        actions={
+          <>
+            <Button disabled={!canSend} className="shadow-[0_18px_60px_-45px_rgba(2,6,23,0.55)]">
+              <MailCheck className="mr-2 h-4 w-4" />
+              Send Request
             </Button>
-          </Link>
-          <div>
-            <div className="flex items-center gap-2">
-              <h1 className="text-2xl font-bold tracking-tight text-slate-900">Email Authorization</h1>
-              <Badge variant="outline" className="border-white/70 bg-white/70 text-slate-700 backdrop-blur">
-                Settings
-              </Badge>
-            </div>
-            <p className="mt-1 text-sm text-slate-600">
-              Manage authorization requests for integrated email services.
-            </p>
-          </div>
-        </div>
-
-        <div className="flex items-center gap-3">
-          <Button disabled={!canSend} className="shadow-[0_18px_60px_-45px_rgba(2,6,23,0.55)]">
-            <MailCheck className="mr-2 h-4 w-4" />
-            Send Request
-          </Button>
-          <Button variant="outline" className="bg-white/70 border-white/70" disabled={!canRevoke}>
-            Revoke
-          </Button>
-        </div>
-      </div>
+            <Button variant="outline" className="bg-white/70 border-white/70" disabled={!canRevoke}>
+              Revoke
+            </Button>
+          </>
+        }
+      />
 
       <Card className="overflow-hidden rounded-2xl border border-white/70 bg-white/70 shadow-[0_20px_70px_-55px_rgba(2,6,23,0.55)] backdrop-blur">
         <CardHeader>

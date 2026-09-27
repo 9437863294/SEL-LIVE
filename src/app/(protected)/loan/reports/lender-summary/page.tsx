@@ -1,8 +1,7 @@
 'use client';
 
 import { useState, useEffect, useMemo } from 'react';
-import Link from 'next/link';
-import { ArrowLeft, Download, Landmark } from 'lucide-react';
+import { Download, Landmark } from 'lucide-react';
 import ExcelJS from 'exceljs';
 import { collection, getDocs } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
@@ -24,6 +23,7 @@ import {
   TableRow,
 } from '@/components/ui/table';
 import { Skeleton } from '@/components/ui/skeleton';
+import { PageHeader } from '@/components/shared/page-header';
 
 // ─── helpers ────────────────────────────────────────────────────────────────
 
@@ -223,31 +223,14 @@ export default function LenderSummaryPage() {
   return (
     <div className="space-y-4">
       {/* ── Header card ── */}
-      <Card className="overflow-hidden border-border/60">
-        <div className="h-1 w-full bg-gradient-to-r from-amber-500 via-orange-500 to-yellow-500" />
-        <CardHeader className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <div className="flex items-center gap-3">
-            <Link href="/loan/reports">
-              <Button variant="ghost" size="sm" className="gap-1.5 text-xs">
-                <ArrowLeft className="h-3.5 w-3.5" />
-                Back
-              </Button>
-            </Link>
-            <div className="flex items-center gap-2">
-              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-amber-50 ring-1 ring-amber-100">
-                <Landmark className="h-5 w-5 text-amber-600" />
-              </div>
-              <div>
-                <CardTitle className="tracking-tight text-base">
-                  Lender Summary
-                </CardTitle>
-                <CardDescription>
-                  Portfolio exposure grouped by lending institution
-                </CardDescription>
-              </div>
-            </div>
-          </div>
-
+      <PageHeader
+        className="mb-0 sm:mb-0"
+        icon={Landmark}
+        title="Lender Summary"
+        description="Portfolio exposure grouped by lending institution"
+        backHref="/loan/reports"
+        backLabel="Back to loan reports"
+        actions={
           <Button
             variant="outline"
             size="sm"
@@ -258,8 +241,8 @@ export default function LenderSummaryPage() {
             <Download className="mr-1.5 h-3.5 w-3.5" />
             {isExporting ? 'Exporting…' : 'Export Excel'}
           </Button>
-        </CardHeader>
-      </Card>
+        }
+      />
 
       {/* ── Stat cards ── */}
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
@@ -303,7 +286,7 @@ export default function LenderSummaryPage() {
       <Card className="overflow-hidden border-border/60">
         <div className="h-1 w-full bg-gradient-to-r from-amber-400 via-orange-400 to-yellow-400 opacity-70" />
         <CardHeader className="pb-2">
-          <CardTitle className="text-base">By Lender</CardTitle>
+          <CardTitle>By Lender</CardTitle>
           <CardDescription>
             Sorted by total principal — descending. Outstanding bar shows proportion repaid.
           </CardDescription>

@@ -39,6 +39,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { cn } from '@/lib/utils';
 import { projectMatchesSlug } from '@/lib/project-slug';
+import { PageHeader, SectionHeader } from '@/components/shared/page-header';
 
 
 const currency = new Intl.NumberFormat('en-IN', {
@@ -148,29 +149,40 @@ export default function ProjectDashboardPage() {
 
   return (
     <div className="space-y-6">
-      <section className="relative overflow-hidden rounded-2xl border border-emerald-200/60 bg-gradient-to-br from-slate-950 via-emerald-950 to-teal-900 p-6 text-white shadow-lg sm:p-8">
-        <div className="pointer-events-none absolute -right-16 -top-20 h-64 w-64 rounded-full bg-emerald-300/15 blur-3xl" />
-        <div className="pointer-events-none absolute -bottom-24 left-1/3 h-56 w-56 rounded-full bg-cyan-300/10 blur-3xl" />
-        <div className="relative flex flex-col gap-6 xl:flex-row xl:items-end xl:justify-between">
-          <div className="max-w-3xl">
-            <div className="mb-4 flex flex-wrap items-center gap-2">
-              <Badge className="border-white/15 bg-white/10 text-white hover:bg-white/10"><Building2 className="mr-1.5 h-3.5 w-3.5" />Project stock workspace</Badge>
-              <Badge className={cn('border-white/15', currentProject.status === 'Active' ? 'bg-emerald-400/20 text-emerald-100' : 'bg-slate-400/20 text-slate-100')}>{currentProject.status || 'Unknown'}</Badge>
-            </div>
-            <h1 className="text-2xl font-bold tracking-tight sm:text-3xl">{currentProject.projectName}</h1>
-            <div className="mt-3 flex flex-wrap gap-x-5 gap-y-2 text-sm text-emerald-100/85">
-              <ProjectMeta icon={MapPin} value={currentProject.location || currentProject.projectSite || 'Location not configured'} />
-              <ProjectMeta icon={ClipboardList} value={currentProject.siteCode || 'Site code not configured'} />
-              <ProjectMeta icon={Building2} value={currentProject.projectDivision || 'Division not configured'} />
-              <ProjectMeta icon={CalendarDays} value={lastMovementAt ? `Last movement ${formatDistanceToNow(lastMovementAt, { addSuffix: true })}` : 'No stock movement yet'} />
-            </div>
+      <PageHeader
+        className="mb-0 sm:mb-0"
+        icon={Building2}
+        eyebrow="Project stock workspace"
+        title={currentProject.projectName}
+        badge={
+          <Badge
+            variant="outline"
+            className={cn(
+              currentProject.status === 'Active'
+                ? 'border-emerald-200 bg-emerald-50 text-emerald-700'
+                : 'border-slate-200 bg-slate-100 text-slate-600',
+            )}
+          >
+            {currentProject.status || 'Unknown'}
+          </Badge>
+        }
+        meta={
+          <div className="flex flex-wrap gap-x-5 gap-y-1.5 text-xs text-muted-foreground sm:text-sm">
+            <ProjectMeta icon={MapPin} value={currentProject.location || currentProject.projectSite || 'Location not configured'} />
+            <ProjectMeta icon={ClipboardList} value={currentProject.siteCode || 'Site code not configured'} />
+            <ProjectMeta icon={Building2} value={currentProject.projectDivision || 'Division not configured'} />
+            <ProjectMeta icon={CalendarDays} value={lastMovementAt ? `Last movement ${formatDistanceToNow(lastMovementAt, { addSuffix: true })}` : 'No stock movement yet'} />
           </div>
-          <div className="flex flex-wrap gap-2">
-            {canViewInventory && <Button asChild variant="secondary"><Link href={`/store-stock-management/${projectSlug}/inventory`}><Boxes className="mr-2 h-4 w-4" />View inventory</Link></Button>}
-            {canViewTransactions && <Button asChild className="border border-white/20 bg-white/10 text-white hover:bg-white/20"><Link href={`/store-stock-management/${projectSlug}/transactions`}><Activity className="mr-2 h-4 w-4" />Transactions</Link></Button>}
-          </div>
-        </div>
-      </section>
+        }
+        actions={
+          canViewInventory || canViewTransactions ? (
+            <>
+              {canViewInventory && <Button asChild variant="outline"><Link href={`/store-stock-management/${projectSlug}/inventory`}><Boxes className="mr-2 h-4 w-4" />View inventory</Link></Button>}
+              {canViewTransactions && <Button asChild variant="outline"><Link href={`/store-stock-management/${projectSlug}/transactions`}><Activity className="mr-2 h-4 w-4" />Transactions</Link></Button>}
+            </>
+          ) : undefined
+        }
+      />
 
       {loadError && (
         <Alert variant="destructive"><AlertTriangle className="h-4 w-4" /><AlertTitle>Some dashboard data may be unavailable</AlertTitle><AlertDescription>{loadError}</AlertDescription></Alert>
@@ -252,7 +264,7 @@ export default function ProjectDashboardPage() {
 
       {workspaceLinks.length > 0 && (
         <section className="space-y-3">
-          <div><h2 className="text-lg font-bold tracking-tight">Project workspaces</h2><p className="text-sm text-muted-foreground">Continue into the detailed project stock workflow.</p></div>
+          <SectionHeader className="mb-0" title="Project workspaces" description="Continue into the detailed project stock workflow." />
           <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
             {workspaceLinks.map((item) => {
               const Icon = item.icon;
@@ -273,7 +285,7 @@ export default function ProjectDashboardPage() {
 }
 
 function ProjectMeta({ icon: Icon, value }: { icon: LucideIcon; value: string }) {
-  return <span className="inline-flex items-center gap-1.5"><Icon className="h-4 w-4" />{value}</span>;
+  return <span className="inline-flex min-w-0 items-center gap-1.5"><Icon className="h-3.5 w-3.5 shrink-0 sm:h-4 sm:w-4" />{value}</span>;
 }
 
 function MetricCard({ title, value, description, icon: Icon, tone }: { title: string; value: string; description: string; icon: LucideIcon; tone: string }) {

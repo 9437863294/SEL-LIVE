@@ -22,6 +22,7 @@ import { useActivityLogger } from '@/hooks/useActivityLogger';
 import { useToast } from '@/hooks/use-toast';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
+import { PageHeader } from '@/components/shared/page-header';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -1258,60 +1259,59 @@ export default function SiteFundBudgetPage() {
     <div className="space-y-4">
 
       {/* Header */}
-      <div className="flex items-center justify-between gap-3 flex-wrap">
-        <div>
-          <h1 className="text-base sm:text-lg font-bold text-slate-800">Site Fund Budget</h1>
-          <p className="text-sm text-muted-foreground">
-            Hierarchical tracking — Total → FY-wise → Month-wise → Category-wise
-          </p>
-        </div>
-        <div className="flex gap-2 flex-wrap">
-          {canExport && (
-            <Button variant="outline" size="sm" onClick={exportExcel} disabled={exporting} className="gap-2">
-              {exporting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
-              Export
-            </Button>
-          )}
-          <input
-            id="budget-upload-input"
-            type="file"
-            accept=".xlsx,.xls"
-            className="hidden"
-            onChange={e => { const f = e.target.files?.[0]; if (f) void handleUploadFile(f); e.target.value = ''; }}
-          />
-          {/* Hidden PDF input for per-month approval uploads */}
-          <input
-            id="budget-pdf-input"
-            type="file"
-            accept="application/pdf"
-            className="hidden"
-            onChange={e => {
-              const f = e.target.files?.[0];
-              const key = pdfPendingKeyRef.current;
-              if (f && key) {
-                const [pid, period] = key.split(':');
-                const proj = visibleProjects.find(p => p.id === pid);
-                void handlePdfUpload(pid, proj?.projectName ?? '', period, f);
-              } else {
-                // User cancelled without picking — clear spinner
-                setPdfUploadingKey(null);
-                pdfPendingKeyRef.current = null;
-              }
-              e.target.value = '';
-            }}
-          />
-          {monthlyPerm.add && (
-            <Button variant="outline" size="sm" className="gap-2" onClick={() => document.getElementById('budget-upload-input')?.click()}>
-              <Upload className="h-4 w-4" /> Upload Approval Sheet
-            </Button>
-          )}
-          {(totalPerm.add || fyPerm.add || monthlyPerm.add) && (
-            <Button size="sm" onClick={() => openAdd(undefined, totalPerm.add ? 'total' : fyPerm.add ? 'fy' : 'monthly')} className="gap-2 bg-emerald-700 hover:bg-emerald-800">
-              <Plus className="h-4 w-4" /> Set Budget
-            </Button>
-          )}
-        </div>
-      </div>
+      <PageHeader
+        className="mb-0 sm:mb-0"
+        title="Site Fund Budget"
+        description="Hierarchical tracking — Total → FY-wise → Month-wise → Category-wise"
+        actions={(canExport || monthlyPerm.add || totalPerm.add || fyPerm.add) ? (
+          <>
+            {canExport && (
+              <Button variant="outline" size="sm" onClick={exportExcel} disabled={exporting} className="gap-2">
+                {exporting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
+                Export
+              </Button>
+            )}
+            {monthlyPerm.add && (
+              <Button variant="outline" size="sm" className="gap-2" onClick={() => document.getElementById('budget-upload-input')?.click()}>
+                <Upload className="h-4 w-4" /> Upload Approval Sheet
+              </Button>
+            )}
+            {(totalPerm.add || fyPerm.add || monthlyPerm.add) && (
+              <Button size="sm" onClick={() => openAdd(undefined, totalPerm.add ? 'total' : fyPerm.add ? 'fy' : 'monthly')} className="gap-2 bg-emerald-700 hover:bg-emerald-800">
+                <Plus className="h-4 w-4" /> Set Budget
+              </Button>
+            )}
+          </>
+        ) : undefined}
+      />
+      <input
+        id="budget-upload-input"
+        type="file"
+        accept=".xlsx,.xls"
+        className="hidden"
+        onChange={e => { const f = e.target.files?.[0]; if (f) void handleUploadFile(f); e.target.value = ''; }}
+      />
+      {/* Hidden PDF input for per-month approval uploads */}
+      <input
+        id="budget-pdf-input"
+        type="file"
+        accept="application/pdf"
+        className="hidden"
+        onChange={e => {
+          const f = e.target.files?.[0];
+          const key = pdfPendingKeyRef.current;
+          if (f && key) {
+            const [pid, period] = key.split(':');
+            const proj = visibleProjects.find(p => p.id === pid);
+            void handlePdfUpload(pid, proj?.projectName ?? '', period, f);
+          } else {
+            // User cancelled without picking — clear spinner
+            setPdfUploadingKey(null);
+            pdfPendingKeyRef.current = null;
+          }
+          e.target.value = '';
+        }}
+      />
 
       {/* Summary cards */}
       <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">

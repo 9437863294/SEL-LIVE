@@ -1,9 +1,9 @@
 'use client';
 
-import Link from 'next/link';
 import { useEffect, useState } from 'react';
 import { doc, onSnapshot, serverTimestamp, setDoc } from 'firebase/firestore';
-import { ArrowLeft, CalendarClock, Loader2, RotateCcw, Save, ShieldAlert, ShieldCheck } from 'lucide-react';
+import { CalendarClock, Loader2, RotateCcw, Save, ShieldAlert, ShieldCheck } from 'lucide-react';
+import { PageHeader } from '@/components/shared/page-header';
 import { db } from '@/lib/firebase';
 import { useAuth } from '@/components/auth/AuthProvider';
 import { useAuthorization } from '@/hooks/useAuthorization';
@@ -133,18 +133,14 @@ export default function SiteAccountDateControlSettings() {
 
   return (
     <div className="space-y-4">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div className="flex items-center gap-3">
-          <Link href="/site-account-statement/settings">
-            <Button variant="ghost" size="icon" className="h-8 w-8"><ArrowLeft className="h-4 w-4" /></Button>
-          </Link>
-          <div>
-            <h1 className="text-base sm:text-lg font-bold text-slate-800">Date Control</h1>
-            <p className="text-sm text-muted-foreground">How far back an expense or receipt may be dated.</p>
-          </div>
-        </div>
-        {canEdit && (
-          <div className="flex gap-2">
+      <PageHeader
+        className="mb-0 sm:mb-0"
+        backHref="/site-account-statement/settings"
+        backLabel="Back to settings"
+        title="Date Control"
+        description="How far back an expense or receipt may be dated."
+        actions={canEdit ? (
+          <>
             <Button
               variant="outline"
               size="sm"
@@ -158,15 +154,15 @@ export default function SiteAccountDateControlSettings() {
               {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
               Save
             </Button>
-          </div>
-        )}
-      </div>
+          </>
+        ) : undefined}
+      />
 
       <Card>
         <CardHeader className="pb-3">
           <div className="flex items-start justify-between gap-4">
             <div>
-              <CardTitle className="flex items-center gap-2 text-sm">
+              <CardTitle className="flex items-center gap-2">
                 <CalendarClock className="h-4 w-4 text-emerald-600" />
                 Restrict entry dates
               </CardTitle>

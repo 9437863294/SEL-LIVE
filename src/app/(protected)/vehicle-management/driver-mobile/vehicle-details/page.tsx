@@ -7,6 +7,7 @@ import { useAuthorization } from '@/hooks/useAuthorization';
 import { useCurrentDriverProfile } from '@/components/vehicle-management/hooks';
 import { computeRenewalMeta, VEHICLE_COLLECTIONS } from '@/lib/vehicle-management';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { PageHeader } from '@/components/shared/page-header';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -268,13 +269,13 @@ export default function DriverVehicleDetailsPage() {
 
   return (
     <div className="space-y-4">
+      <PageHeader
+        title="Assigned Vehicle Details"
+        description="All key details for your assigned vehicle."
+        className="mb-0 sm:mb-0"
+      />
       <Card className="vm-panel-strong overflow-hidden">
-        <div className="h-1 w-full bg-gradient-to-r from-emerald-500 via-teal-500 to-cyan-600 animate-bb-gradient" />
-        <CardHeader>
-          <CardTitle className="tracking-tight">Assigned Vehicle Details</CardTitle>
-          <CardDescription>All key details for your assigned vehicle.</CardDescription>
-        </CardHeader>
-        <CardContent className="grid grid-cols-1 gap-2 text-sm sm:grid-cols-2">
+        <CardContent className="grid grid-cols-1 gap-2 pt-[var(--card-pad,1.5rem)] text-sm sm:grid-cols-2">
           <div className="rounded-lg border border-white/60 bg-white/85 px-3 py-2">
             Vehicle Number: <span className="font-medium">{vehicle?.vehicleNumber || vehicle?.registrationNo || '-'}</span>
           </div>
@@ -298,7 +299,7 @@ export default function DriverVehicleDetailsPage() {
 
       <Card className="vm-panel">
         <CardHeader>
-          <CardTitle className="text-lg">Insurance / PUC / Fitness / Tax / Permit</CardTitle>
+          <CardTitle>Insurance / PUC / Fitness / Tax / Permit</CardTitle>
           <CardDescription>Latest compliance details</CardDescription>
         </CardHeader>
         <CardContent className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
@@ -344,7 +345,7 @@ export default function DriverVehicleDetailsPage() {
 
       <Card className="vm-panel">
         <CardHeader>
-          <CardTitle className="text-lg">Recent Maintenance</CardTitle>
+          <CardTitle>Recent Maintenance</CardTitle>
         </CardHeader>
         <CardContent className="space-y-3">
           {maintenanceRows.length === 0 ? (
@@ -370,7 +371,7 @@ export default function DriverVehicleDetailsPage() {
 
       <Card className="vm-panel">
         <CardHeader>
-          <CardTitle className="text-lg">Recent Fuel Logs</CardTitle>
+          <CardTitle>Recent Fuel Logs</CardTitle>
         </CardHeader>
         <CardContent className="space-y-3">
           {fuelRows.length === 0 ? (
@@ -396,7 +397,7 @@ export default function DriverVehicleDetailsPage() {
 
       <Card className="vm-panel">
         <CardHeader>
-          <CardTitle className="text-lg">Document Folder</CardTitle>
+          <CardTitle>Document Folder</CardTitle>
           <CardDescription>Latest document by type</CardDescription>
         </CardHeader>
         <CardContent className="space-y-3">

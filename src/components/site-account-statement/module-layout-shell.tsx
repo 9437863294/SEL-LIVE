@@ -32,6 +32,7 @@ import { useAuthorization } from '@/hooks/useAuthorization';
 import { ModuleBottomNav, type ModuleNavTab } from '@/components/navigation/ModuleBottomNav';
 import { SIDEBAR_ICONS_GRID, SidebarNavTooltip, useSidebarIconsOnly } from '@/components/navigation/use-sidebar-mode';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { ModuleMobileHeader } from '@/components/shared/page-header';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import { cn } from '@/lib/utils';
 
@@ -299,21 +300,7 @@ export default function SiteAccountStatementShell({ children }: { children: Reac
       </div>
 
       {/* Mobile header */}
-      <div className="mb-3 lg:hidden">
-        <Card className="bg-white/80 backdrop-blur-sm border border-white/60 shadow-sm">
-          <CardContent className="flex items-center gap-3 px-3 py-2.5">
-            <div className="flex items-center gap-2 min-w-0">
-              <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-gradient-to-br from-emerald-500 to-teal-600 shadow-sm">
-                <Wallet className="h-4 w-4 text-white" />
-              </div>
-              <div className="min-w-0">
-                <p className="text-sm font-semibold tracking-tight leading-tight truncate">Site Account Statement</p>
-                <p className="text-[11px] text-muted-foreground leading-tight">Fund Tracker</p>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-      </div>
+      <ModuleMobileHeader icon={Wallet} title="Site Account Statement" subtitle="Fund Tracker" hideFrom="lg" />
 
       {/* Desktop grid */}
       <div className={`grid grid-cols-1 gap-4 ${iconsOnly ? SIDEBAR_ICONS_GRID : 'lg:grid-cols-[240px_minmax(0,1fr)]'} lg:items-start`}>
@@ -329,7 +316,7 @@ export default function SiteAccountStatementShell({ children }: { children: Reac
                     <Wallet className="h-4 w-4 text-white" />
                   </div>
                   <div className={iconsOnly ? 'sr-only' : undefined}>
-                    <p className="text-sm font-semibold tracking-tight text-slate-800">Site Account</p>
+                    <p className="text-sm font-semibold tracking-tight text-slate-800">Site Account Statement</p>
                     <p className="text-[11px] text-muted-foreground">Fund Tracker</p>
                   </div>
                 </div>

@@ -16,6 +16,7 @@ import {
 import TripMapView from '@/components/vehicle-management/trip-map-view';
 import { VehicleTablePagination, useVehicleTablePagination } from '@/components/vehicle-management/table-pagination';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { PageHeader } from '@/components/shared/page-header';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -256,15 +257,11 @@ export default function TripManagementPage() {
 
   return (
     <div className="space-y-3 sm:space-y-4">
-      <Card className="vm-panel-strong overflow-hidden">
-        <div className="h-1 w-full bg-gradient-to-r from-emerald-500 via-teal-500 to-cyan-600 animate-bb-gradient" />
-        <CardHeader className="flex flex-col gap-3 px-3 py-4 sm:flex-row sm:items-center sm:justify-between sm:px-6 sm:py-6">
-          <div>
-            <CardTitle className="tracking-tight">Trip Management</CardTitle>
-            <CardDescription>
-              Monitor driver trips, live locations, and completed ride history.
-            </CardDescription>
-          </div>
+      <PageHeader
+        title="Trip Management"
+        description="Monitor driver trips, live locations, and completed ride history."
+        className="mb-0 sm:mb-0"
+        actions={
           <div className="grid w-full grid-cols-2 gap-2 sm:flex sm:w-auto sm:flex-wrap sm:justify-end">
             {/* Status filter */}
             <Select value={statusFilter} onValueChange={(value) => setStatusFilter(value as StatusFilter)}>
@@ -337,8 +334,8 @@ export default function TripManagementPage() {
               Refresh
             </Button>
           </div>
-        </CardHeader>
-      </Card>
+        }
+      />
 
       <div className="grid grid-cols-2 gap-2.5 sm:gap-3 md:grid-cols-4">
         <Card className="vm-panel">
@@ -369,7 +366,7 @@ export default function TripManagementPage() {
 
       <Card className="vm-panel">
         <CardHeader>
-          <CardTitle className="text-lg">Trip List</CardTitle>
+          <CardTitle>Trip List</CardTitle>
         </CardHeader>
         <CardContent className="space-y-3">
           {/* Mobile card view */}

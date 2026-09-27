@@ -7,6 +7,7 @@ import { Bar, BarChart, CartesianGrid, Cell, Legend, Pie, PieChart, ResponsiveCo
 import { db } from '@/lib/firebase';
 import { getVehicleComplianceRequirements, VEHICLE_COLLECTIONS, type VehicleComplianceRequirements } from '@/lib/vehicle-management';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { PageHeader } from '@/components/shared/page-header';
 import { chartChrome } from '@/components/ui/chart';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Badge } from '@/components/ui/badge';
@@ -303,63 +304,63 @@ export default function VehicleManagementOverviewPage() {
 
   return (
     <div className="min-w-0 space-y-3 overflow-x-hidden sm:space-y-4">
-      <Card className="relative overflow-hidden vm-panel-strong vm-reveal">
-        <div className="absolute inset-0 bg-gradient-to-r from-emerald-500/10 via-white/5 to-teal-500/10 animate-bb-gradient" />
-        <div className="electric-scan-line top-8" />
-        <CardHeader className="relative flex flex-row items-start justify-between gap-3 px-3 pb-1.5 pt-2.5 sm:p-3">
-          <div className="min-w-0">
-            <CardTitle className="text-base tracking-tight sm:text-xl">Vehicle Management</CardTitle>
-            <CardDescription className="hidden text-xs sm:block">
-              Fleet operations, compliance, driver activity, cost intelligence, and reports.
-              {lastUpdated && <span className="ml-1">Updated {lastUpdated.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}</span>}
-            </CardDescription>
-          </div>
+      <PageHeader
+        title="Vehicle Management"
+        description={
+          <>
+            Fleet operations, compliance, driver activity, cost intelligence, and reports.
+            {lastUpdated && <span className="ml-1">Updated {lastUpdated.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}</span>}
+          </>
+        }
+        descriptionClassName="hidden sm:block"
+        className="mb-0 sm:mb-0"
+        actions={
           <Button type="button" size="sm" variant="outline" onClick={() => void load()} disabled={isRefreshing} className="h-8 shrink-0 bg-white/80 px-2.5" aria-label="Refresh vehicle overview">
             <RefreshCw className={cn('h-3.5 w-3.5 sm:mr-1.5', isRefreshing && 'animate-spin')} /><span className="hidden sm:inline">Refresh</span>
           </Button>
-        </CardHeader>
-        <CardContent className="relative grid grid-cols-3 gap-1.5 px-2.5 pb-2.5 sm:px-3 sm:pb-3">
-          <div className="rounded-lg border border-emerald-100/70 bg-white/80 p-2 shadow-sm">
-            <p className="text-[10px] leading-tight text-muted-foreground sm:text-xs">Modules</p>
-            <p className="mt-0.5 text-base font-semibold sm:text-xl">{visibleQuickLinks.length}</p>
+        }
+      />
+      <div className="vm-reveal grid grid-cols-3 gap-1.5 sm:gap-3">
+        <div className="rounded-lg border border-emerald-100/70 bg-white/80 p-2 shadow-sm">
+          <p className="text-[10px] leading-tight text-muted-foreground sm:text-xs">Modules</p>
+          <p className="mt-0.5 text-base font-semibold sm:text-xl">{visibleQuickLinks.length}</p>
+        </div>
+        <div className="rounded-lg border border-emerald-100/70 bg-white/80 p-2 shadow-sm">
+          <p className="text-[10px] leading-tight text-muted-foreground sm:text-xs">Records</p>
+          <p className="mt-0.5 text-base font-semibold sm:text-xl">{isLoading ? '...' : totalVisibleRecords}</p>
+        </div>
+        <div className="rounded-lg border border-emerald-100/70 bg-white/80 p-2 shadow-sm">
+          <p className="text-[10px] leading-tight text-muted-foreground sm:text-xs">Alerts</p>
+          <p className="mt-0.5 text-base font-semibold sm:text-xl">{isLoading ? '...' : totalAlerts}</p>
+          {syncFailures > 0 && <p className="mt-0.5 text-[9px] font-medium text-amber-700 sm:text-[10px]">Partial data · retry refresh</p>}
+          <div className="mt-1.5 hidden flex-wrap gap-1 text-[10px] lg:flex">
+            <Badge variant="destructive" className="shadow-sm">
+              Expired: {alertSummary.expired}
+            </Badge>
+            <Badge className="bg-amber-500 text-white shadow-sm hover:bg-amber-600">
+              Due Soon: {alertSummary.dueSoon}
+            </Badge>
+            <Badge variant="outline" className="bg-emerald-50 text-emerald-700">
+              Valid: {alertSummary.valid}
+            </Badge>
           </div>
-          <div className="rounded-lg border border-emerald-100/70 bg-white/80 p-2 shadow-sm">
-            <p className="text-[10px] leading-tight text-muted-foreground sm:text-xs">Records</p>
-            <p className="mt-0.5 text-base font-semibold sm:text-xl">{isLoading ? '...' : totalVisibleRecords}</p>
-          </div>
-          <div className="rounded-lg border border-emerald-100/70 bg-white/80 p-2 shadow-sm">
-            <p className="text-[10px] leading-tight text-muted-foreground sm:text-xs">Alerts</p>
-            <p className="mt-0.5 text-base font-semibold sm:text-xl">{isLoading ? '...' : totalAlerts}</p>
-            {syncFailures > 0 && <p className="mt-0.5 text-[9px] font-medium text-amber-700 sm:text-[10px]">Partial data · retry refresh</p>}
-            <div className="mt-1.5 hidden flex-wrap gap-1 text-[10px] lg:flex">
-              <Badge variant="destructive" className="shadow-sm">
-                Expired: {alertSummary.expired}
-              </Badge>
-              <Badge className="bg-amber-500 text-white shadow-sm hover:bg-amber-600">
-                Due Soon: {alertSummary.dueSoon}
-              </Badge>
-              <Badge variant="outline" className="bg-emerald-50 text-emerald-700">
-                Valid: {alertSummary.valid}
-              </Badge>
-            </div>
-            {totalAlerts > 0 && (
-              <Link
-                href="/vehicle-management/renewals"
-                className="mt-1 hidden items-center gap-1 text-xs font-semibold text-rose-600 transition-colors hover:text-rose-700 sm:mt-2 sm:flex"
-              >
-                <RefreshCw className="h-3 w-3" />
-                View Renewals Hub
-              </Link>
-            )}
-          </div>
-        </CardContent>
-      </Card>
+          {totalAlerts > 0 && (
+            <Link
+              href="/vehicle-management/renewals"
+              className="mt-1 hidden items-center gap-1 text-xs font-semibold text-rose-600 transition-colors hover:text-rose-700 sm:mt-2 sm:flex"
+            >
+              <RefreshCw className="h-3 w-3" />
+              View Renewals Hub
+            </Link>
+          )}
+        </div>
+      </div>
 
       {/* Reports & data — the dashboard leads with fleet compliance/status data, not navigation. */}
       <div className="grid min-w-0 gap-3 xl:grid-cols-[1.5fr_1fr]">
         <Card className="vm-panel-strong overflow-hidden vm-reveal">
           <CardHeader className="px-3 py-2.5 sm:px-4 sm:py-3">
-            <CardTitle className="text-sm">Fleet Compliance Overview</CardTitle>
+            <CardTitle>Fleet Compliance Overview</CardTitle>
             <CardDescription className="text-xs">
               Valid, due-soon, expired, and missing counts per compliance category — vehicles
               that don&apos;t require a category (Sold/Scrapped, etc.) are excluded.
@@ -395,7 +396,7 @@ export default function VehicleManagementOverviewPage() {
 
         <Card className="vm-panel-strong overflow-hidden vm-reveal">
           <CardHeader className="px-3 py-2.5 sm:px-4 sm:py-3">
-            <CardTitle className="text-sm">Fleet Status</CardTitle>
+            <CardTitle>Fleet Status</CardTitle>
             <CardDescription className="text-xs">Vehicle Master status distribution.</CardDescription>
           </CardHeader>
           <CardContent className="px-1 pb-2 sm:px-3 sm:pb-3">

@@ -35,8 +35,10 @@ const CardTitle = React.forwardRef<
 >(({ className, ...props }, ref) => (
   <div
     ref={ref}
+    // The app's standard section-heading scale (see `shared/page-header` → SectionHeader), so a
+    // card's title reads the same in every module unless a screen deliberately sizes it.
     className={cn(
-      "text-2xl font-semibold leading-none tracking-tight",
+      "text-[15px] font-semibold leading-snug tracking-tight sm:text-base",
       className
     )}
     {...props}

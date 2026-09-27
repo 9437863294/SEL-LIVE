@@ -4,7 +4,6 @@ import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import {
-  ArrowLeft,
   ChevronDown,
   ChevronRight,
   Library,
@@ -59,6 +58,7 @@ import {
   PmFormActions,
   type PmListColumn,
 } from "@/components/project-management/pm-shell";
+import { PageHeader } from "@/components/shared/page-header";
 import {
   PO_COLLECTION,
   PO_PERMISSION_RESOURCE,
@@ -753,7 +753,7 @@ export default function NewProjectPurchaseOrderPage() {
   if (!canAdd) {
     return (
       <main className="min-h-[calc(100dvh-4rem)] p-4 sm:p-6">
-        <h1 className="mb-6 text-2xl font-bold sm:text-3xl">Create Purchase Order</h1>
+        <PageHeader title="Create Purchase Order" />
         <Card>
           <CardHeader>
             <CardTitle>Access Denied</CardTitle>
@@ -1084,25 +1084,21 @@ export default function NewProjectPurchaseOrderPage() {
 
   return (
     <main className="w-full space-y-4 px-4 py-4 max-sm:[--card-pad:1rem] sm:space-y-5 sm:px-6 sm:py-6">
-      <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
-        <div className="flex min-w-0 flex-1 items-center gap-2 sm:gap-3">
-          <Button variant="ghost" size="icon" className="shrink-0" asChild>
-            <Link href={`/project-management/purchase-orders?project=${encodeURIComponent(mappingId)}`} aria-label="Back to Purchase Orders">
-              <ArrowLeft className="h-6 w-6" />
-            </Link>
+      <PageHeader
+        title="Create Purchase Order"
+        icon={ShoppingCart}
+        backHref={`/project-management/purchase-orders?project=${encodeURIComponent(mappingId)}`}
+        backLabel="Back to Purchase Orders"
+        className="mb-0 sm:mb-0"
+        actions={
+          // Short on a phone, where the full label is repeated at the foot of the form.
+          <Button onClick={() => void handleSave()} disabled={isSaving} className="ml-auto">
+            {isSaving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
+            <span className="sm:hidden">Save</span>
+            <span className="hidden sm:inline">Save Purchase Order</span>
           </Button>
-          <div className="hidden h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-emerald-500 to-teal-600 shadow-sm sm:flex">
-            <ShoppingCart className="h-4 w-4 text-white" />
-          </div>
-          <h1 className="truncate text-base font-bold sm:text-xl">Create Purchase Order</h1>
-        </div>
-        {/* Short on a phone, where the full label is repeated at the foot of the form. */}
-        <Button onClick={() => void handleSave()} disabled={isSaving} className="ml-auto">
-          {isSaving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
-          <span className="sm:hidden">Save</span>
-          <span className="hidden sm:inline">Save Purchase Order</span>
-        </Button>
-      </div>
+        }
+      />
 
       <Card>
         <CardHeader>

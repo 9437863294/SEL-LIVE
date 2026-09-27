@@ -41,6 +41,7 @@ import {
 } from '@/components/navigation/use-sidebar-mode';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { ModuleMobileHeader } from '@/components/shared/page-header';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { SheetClose } from '@/components/ui/sheet';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -313,26 +314,19 @@ function Shell({ children }: { children: ReactNode }) {
   return (
     <div className="relative w-full px-2 py-2 sm:px-4 sm:py-3 lg:px-6">
       <div className="pointer-events-none absolute inset-0 -z-10 overflow-hidden rounded-3xl bg-gradient-to-br from-sky-50/60 via-white to-indigo-50/60" />
-      <div className="mb-2 lg:hidden">
-        <Card>
-          <CardContent className="flex items-center gap-2 px-2.5 py-2">
-            <div className="flex min-w-0 flex-1 items-center gap-2">
-              <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-gradient-to-br from-sky-500 to-indigo-600">
-                <Mail className="h-4 w-4 text-white" />
-              </div>
-              <div className="min-w-0">
-                <p className="truncate text-sm font-semibold">Mail Hub</p>
-                <p className="truncate text-[11px] text-muted-foreground">{current?.label ?? 'Overview'}</p>
-              </div>
-            </div>
-            {caps.canSend && personal.length > 0 && (
-              <Button size="icon" className="h-10 w-10 shrink-0" aria-label="Compose" onClick={() => openComposer({ mode: 'new' })}>
-                <PenLine className="h-4 w-4" />
-              </Button>
-            )}
-          </CardContent>
-        </Card>
-      </div>
+      <ModuleMobileHeader
+        icon={Mail}
+        title="Mail Hub"
+        subtitle={current?.label ?? 'Overview'}
+        hideFrom="lg"
+        actions={
+          caps.canSend && personal.length > 0 ? (
+            <Button size="icon" className="h-10 w-10 shrink-0" aria-label="Compose" onClick={() => openComposer({ mode: 'new' })}>
+              <PenLine className="h-4 w-4" />
+            </Button>
+          ) : undefined
+        }
+      />
 
       <div className={`grid grid-cols-1 gap-3 ${iconsOnly ? SIDEBAR_ICONS_GRID : 'lg:grid-cols-[232px_minmax(0,1fr)]'} lg:items-start`}>
         <TooltipProvider delayDuration={150}>

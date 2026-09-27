@@ -2,10 +2,8 @@
 'use client';
 
 import React, { useState, useEffect, useMemo, Fragment, useCallback, useRef } from 'react';
-import Link from 'next/link';
 import ExcelJS from 'exceljs';
 import {
-  ArrowLeft,
   Trash2,
   Download,
   Loader2,
@@ -19,6 +17,7 @@ import {
   Save,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { PageHeader } from '@/components/shared/page-header';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { db } from '@/lib/firebase';
 import { collection, getDocs, writeBatch, doc, query, updateDoc, setDoc, getDoc } from 'firebase/firestore';
@@ -645,16 +644,11 @@ export default function ViewBoqPage() {
   return (
     <div className="flex flex-col h-[calc(100vh-8rem)] w-full px-4 sm:px-6 lg:px-8">
       {/* Header */}
-      <div className="py-6 flex items-center justify-between">
-        <div className="flex items-center gap-2">
-          <Link href={`/billing-recon/${projectSlug}/boq`}>
-            <Button variant="ghost" size="icon" aria-label="Back">
-              <ArrowLeft className="h-6 w-6" />
-            </Button>
-          </Link>
-          <h1 className="text-xl font-bold">View BOQ</h1>
-        </div>
-
+      <PageHeader
+        title="View BOQ"
+        backHref={`/billing-recon/${projectSlug}/boq`}
+        backLabel="Back to BOQ"
+        actions={
         <div className="flex items-center gap-2 flex-wrap">
           <div className="relative">
             <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
@@ -760,7 +754,8 @@ export default function ViewBoqPage() {
             </DialogContent>
           </Dialog>
         </div>
-      </div>
+        }
+      />
 
       {/* Table */}
       <div className="flex-1 min-h-0">

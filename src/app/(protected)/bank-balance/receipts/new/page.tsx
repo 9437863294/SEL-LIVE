@@ -4,7 +4,6 @@ export const dynamic = 'force-dynamic';
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import {
-  ArrowLeft,
   Calendar as CalendarIcon,
   Plus,
   Trash2,
@@ -14,6 +13,7 @@ import {
   ShieldAlert,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { PageHeader } from '@/components/shared/page-header';
 import {
   Card,
   CardContent,
@@ -225,14 +225,7 @@ export default function NewReceiptPage() {
   if (!canView) {
     return (
       <div className="w-full px-4 sm:px-6 lg:px-8">
-        <div className="mb-6 flex items-center gap-4">
-          <Link href="/bank-balance/receipts">
-            <Button variant="ghost" size="icon">
-              <ArrowLeft className="h-6 w-6" />
-            </Button>
-          </Link>
-          <h1 className="text-xl font-bold">New Receipt Entry</h1>
-        </div>
+        <PageHeader title="New Receipt Entry" backHref="/bank-balance/receipts" backLabel="Back to receipts log" />
         <Card>
           <CardHeader>
             <CardTitle>Access Denied</CardTitle>
@@ -259,25 +252,20 @@ export default function NewReceiptPage() {
         />
       </div>
     <div className="relative w-full px-4 sm:px-6 lg:px-8 py-4">
-      <div className="mb-5 flex items-center justify-between">
-        <div className="flex items-center gap-3">
+      <PageHeader
+        title="New Receipt Entry"
+        description="Record a new receipt transaction"
+        backHref="/bank-balance/receipts"
+        backLabel="Back to receipts log"
+        actions={
           <Link href="/bank-balance/receipts">
-            <Button variant="ghost" size="icon" className="rounded-full hover:bg-green-50 dark:hover:bg-green-950/30">
-              <ArrowLeft className="h-5 w-5" />
+            <Button variant="outline" className="rounded-full border-border/60">
+              <History className="mr-2 h-4 w-4" />
+              Receipts Log
             </Button>
           </Link>
-          <div>
-            <h1 className="text-xl font-bold tracking-tight">New Receipt Entry</h1>
-            <p className="text-xs text-muted-foreground">Record a new receipt transaction</p>
-          </div>
-        </div>
-        <Link href="/bank-balance/receipts">
-          <Button variant="outline" className="rounded-full border-border/60">
-            <History className="mr-2 h-4 w-4" />
-            Receipts Log
-          </Button>
-        </Link>
-      </div>
+        }
+      />
 
       <Card>
         <CardContent className="space-y-6 pt-6">

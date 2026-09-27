@@ -32,6 +32,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from '@/components/ui/table';
+import { PageHeader } from '@/components/shared/page-header';
 import { cn } from '@/lib/utils';
 
 // ─── helpers ─────────────────────────────────────────────────────────────────
@@ -167,41 +168,37 @@ export default function PersonalInsurancePage() {
     <div className="space-y-4">
 
       {/* ── Header ────────────────────────────────────────────────────────── */}
-      <Card className="overflow-hidden border-border/60">
-        <div className="h-1 w-full bg-gradient-to-r from-violet-500 via-purple-500 to-indigo-500" />
-        <CardHeader className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <div className="flex items-center gap-3">
-            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-violet-50 ring-1 ring-violet-100">
-              <Shield className="h-5 w-5 text-violet-600" />
-            </div>
-            <div>
-              <CardTitle className="tracking-tight">Personal Insurance</CardTitle>
-              <CardDescription>All personal insurance policies across holders</CardDescription>
-            </div>
-          </div>
-          <div className="flex flex-wrap items-center gap-2">
+      <PageHeader
+        className="mb-0 sm:mb-0"
+        icon={Shield}
+        title="Personal Insurance"
+        description="All personal insurance policies across holders"
+        actions={
+          <>
             <Link href="/insurance/personal/history">
-              <Button variant="outline" size="sm" className="gap-1.5">
+              <Button variant="outline" size="sm" className="w-full gap-1.5">
                 <History className="h-3.5 w-3.5" /> History
               </Button>
             </Link>
             <Link href="/insurance/premium-due">
-              <Button variant="outline" size="sm" className="gap-1.5">
+              <Button variant="outline" size="sm" className="w-full gap-1.5">
                 <CalendarClock className="h-3.5 w-3.5" /> Premium Due
               </Button>
             </Link>
             {canAdd && (
               <Link href="/insurance/personal/new">
-                <Button size="sm" className="gap-1.5 bg-violet-600 hover:bg-violet-700 text-white">
+                <Button size="sm" className="w-full gap-1.5 bg-violet-600 hover:bg-violet-700 text-white">
                   <Plus className="h-3.5 w-3.5" /> Add Policy
                 </Button>
               </Link>
             )}
-          </div>
-        </CardHeader>
+          </>
+        }
+      />
 
-        {/* Stats strip */}
-        <CardContent className="grid grid-cols-2 gap-2 sm:grid-cols-5 border-t">
+      {/* ── Stats strip ────────────────────────────────────────────────────── */}
+      <Card className="overflow-hidden border-border/60">
+        <CardContent className="grid grid-cols-2 gap-2 p-3 sm:grid-cols-5">
           {[
             { label: 'Total',     value: stats.total,    status: 'all'       as const, color: 'text-slate-700' },
             { label: 'Active',    value: stats.active,   status: 'active'    as const, color: 'text-emerald-600' },

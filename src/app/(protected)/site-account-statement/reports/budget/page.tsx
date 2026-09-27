@@ -22,6 +22,7 @@ import { useAuth } from '@/components/auth/AuthProvider';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent } from '@/components/ui/card';
+import { PageHeader } from '@/components/shared/page-header';
 import { Progress } from '@/components/ui/progress';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -504,17 +505,12 @@ export default function BudgetReportsPage() {
     <div className="space-y-4">
 
       {/* ── Page header ── */}
-      <div className="flex items-start justify-between gap-3 flex-wrap">
-        <div>
-          <h1 className="text-base sm:text-lg font-bold text-slate-800 flex items-center gap-2">
-            <Target className="h-5 w-5 text-emerald-700 shrink-0" />
-            Budget Reports
-          </h1>
-          <p className="text-sm text-muted-foreground mt-0.5">
-            {rangeLabel} · Budget utilization, alerts, category breakdown, and approval tracking
-          </p>
-        </div>
-      </div>
+      <PageHeader
+        className="mb-0 sm:mb-0"
+        icon={Target}
+        title="Budget Reports"
+        description={<>{rangeLabel} · Budget utilization, alerts, category breakdown, and approval tracking</>}
+      />
 
       {/* ── Persistent filters ── */}
       <div className="flex flex-wrap gap-2 items-center">

@@ -2,9 +2,8 @@
 export const dynamic = 'force-dynamic';
 
 import { useState, useEffect, useMemo } from 'react';
-import Link from 'next/link';
-import { ArrowLeft, ShieldAlert, CalendarDays, Search, Building2, CreditCard } from 'lucide-react';
-import { Button } from '@/components/ui/button';
+import { ShieldAlert, CalendarDays, Search, Building2, CreditCard } from 'lucide-react';
+import { PageHeader } from '@/components/shared/page-header';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow, TableFooter } from '@/components/ui/table';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -160,10 +159,7 @@ export default function DailyBalancePage() {
   if (!canView) {
     return (
       <div className="w-full px-4 sm:px-6 lg:px-8">
-        <div className="mb-6 flex items-center gap-3">
-          <Link href="/bank-balance/reports"><Button variant="ghost" size="icon"><ArrowLeft className="h-6 w-6" /></Button></Link>
-          <h1 className="text-xl font-bold">Daily Balance Report</h1>
-        </div>
+        <PageHeader title="Daily Balance Report" backHref="/bank-balance/reports" backLabel="Back to reports" />
         <Card>
           <CardHeader><CardTitle>Access Denied</CardTitle><CardDescription>You do not have permission.</CardDescription></CardHeader>
           <CardContent className="flex justify-center p-8"><ShieldAlert className="h-16 w-16 text-destructive" /></CardContent>
@@ -187,20 +183,13 @@ export default function DailyBalancePage() {
 
       <div className="relative w-full px-4 sm:px-6 lg:px-8 py-4">
         {/* Header */}
-        <div className="mb-5 flex items-center gap-3">
-          <Link href="/bank-balance/reports">
-            <Button variant="ghost" size="icon" className="rounded-full hover:bg-teal-50 dark:hover:bg-teal-950/30">
-              <ArrowLeft className="h-5 w-5" />
-            </Button>
-          </Link>
-          <div>
-            <h1 className="text-xl font-bold tracking-tight flex items-center gap-2">
-              <CalendarDays className="h-5 w-5 text-teal-600 dark:text-teal-400" />
-              Daily Balance Report
-            </h1>
-            <p className="text-xs text-muted-foreground">Day-by-day opening and closing balance for a selected account.</p>
-          </div>
-        </div>
+        <PageHeader
+          title="Daily Balance Report"
+          description="Day-by-day opening and closing balance for a selected account."
+          icon={CalendarDays}
+          backHref="/bank-balance/reports"
+          backLabel="Back to reports"
+        />
 
         {/* Filters */}
         <Card className="mb-5 rounded-xl border-border/60 shadow-sm">
@@ -259,7 +248,7 @@ export default function DailyBalancePage() {
           <CardHeader className="border-b border-border/40 pb-4">
             <div className="flex items-center justify-between">
               <div>
-                <CardTitle className="text-base flex items-center gap-2">
+                <CardTitle className="flex items-center gap-2">
                   {selectedAccount?.accountType === 'Cash Credit'
                     ? <CreditCard className="h-4 w-4 text-violet-500" />
                     : <Building2 className="h-4 w-4 text-sky-500" />}

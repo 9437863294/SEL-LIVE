@@ -21,6 +21,7 @@ import { useActivityLogger } from '@/hooks/useActivityLogger';
 import { useAuth } from '@/components/auth/AuthProvider';
 import { useToast } from '@/hooks/use-toast';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { PageHeader, SectionHeader } from '@/components/shared/page-header';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
@@ -507,7 +508,7 @@ function MyProjectCard({
         <CardHeader className="bg-gradient-to-r from-emerald-50 to-teal-50 border-b border-emerald-100 pb-3">
           <div className="flex items-start justify-between gap-3">
             <div className="min-w-0">
-              <CardTitle className="text-base font-bold text-slate-800 truncate">{project.projectName}</CardTitle>
+              <CardTitle className="truncate">{project.projectName}</CardTitle>
               {project.projectCode && (
                 <Badge variant="outline" className="mt-1 text-xs border-emerald-300 text-emerald-700">{project.projectCode}</Badge>
               )}
@@ -868,6 +869,7 @@ export default function SiteAccountDashboardPage() {
 
   return (
     <div className="space-y-6">
+      <PageHeader className="mb-0 sm:mb-0" eyebrow="Site Account Statement" title="Dashboard" />
 
       {/* The dashboard totals every record it holds, so it has to say when it could not hold
           them all rather than present a partial sum as the whole picture. */}
@@ -884,11 +886,11 @@ export default function SiteAccountDashboardPage() {
       {/* ── My Projects (assigned person view) ── */}
       {myProjects.length > 0 && (
         <section>
-          <div className="mb-3 flex items-center gap-2">
-            <Wallet className="h-4 w-4 text-emerald-600" />
-            <h2 className="text-base font-bold text-slate-800">My Projects</h2>
-            <Badge className="bg-emerald-100 text-emerald-700 text-xs">{myProjects.length}</Badge>
-          </div>
+          <SectionHeader
+            icon={Wallet}
+            title="My Projects"
+            badge={<Badge className="bg-emerald-100 text-emerald-700 text-xs">{myProjects.length}</Badge>}
+          />
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             {myProjects.map(proj => {
               const projectBudget = budgetForProject(proj.id);
@@ -915,10 +917,7 @@ export default function SiteAccountDashboardPage() {
       {canViewAll && (
         <section>
           {myProjects.length > 0 && (
-            <div className="mb-3 flex items-center gap-2">
-              <BarChart3 className="h-4 w-4 text-indigo-600" />
-              <h2 className="text-base font-bold text-slate-800">Overall Overview</h2>
-            </div>
+            <SectionHeader icon={BarChart3} title="Overall Overview" />
           )}
 
           {/* Stat cards */}
@@ -944,7 +943,7 @@ export default function SiteAccountDashboardPage() {
           <Card className="bg-white/80 backdrop-blur-sm">
             <CardHeader className="pb-2 flex flex-col gap-3">
               <div className="flex items-center justify-between gap-2 flex-wrap">
-                <CardTitle className="text-sm">Project-Wise Summary</CardTitle>
+                <CardTitle>Project-Wise Summary</CardTitle>
                 <span className="text-xs text-muted-foreground">{filteredProjectStats.length} of {projectStats.length} project{projectStats.length !== 1 ? 's' : ''}</span>
               </div>
               {/* Filter bar */}

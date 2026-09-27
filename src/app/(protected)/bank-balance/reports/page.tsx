@@ -2,8 +2,8 @@
 export const dynamic = 'force-dynamic';
 
 import Link from 'next/link';
-import { ArrowLeft, LineChart, Banknote, ShieldAlert, BarChart3, FileText, Percent, Gauge, LayoutGrid, CalendarDays, ArrowRightLeft } from 'lucide-react';
-import { Button } from '@/components/ui/button';
+import { LineChart, Banknote, ShieldAlert, BarChart3, FileText, Percent, Gauge, LayoutGrid, CalendarDays, ArrowRightLeft } from 'lucide-react';
+import { PageHeader } from '@/components/shared/page-header';
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/components/ui/card';
 import { cn } from '@/lib/utils';
 import type { LucideIcon } from 'lucide-react';
@@ -184,7 +184,7 @@ function ReportCard({ item }: ReportCardProps) {
           <item.icon className={cn('w-9 h-9', colorScheme.iconColor)} />
         </div>
         <div>
-          <CardTitle className="text-base font-bold">{item.title}</CardTitle>
+          <CardTitle>{item.title}</CardTitle>
         </div>
       </CardHeader>
       <CardContent className="relative text-center pb-5">
@@ -231,14 +231,7 @@ export default function BankReportsPage() {
   if (!canViewPage) {
     return (
       <div className="relative w-full px-4 sm:px-6 lg:px-8 py-6">
-        <div className="mb-6 flex items-center gap-3">
-          <Link href="/bank-balance">
-            <Button variant="ghost" size="icon" className="rounded-full">
-              <ArrowLeft className="h-5 w-5" />
-            </Button>
-          </Link>
-          <h1 className="text-xl font-bold">Bank Reports</h1>
-        </div>
+        <PageHeader title="Bank Reports" backHref="/bank-balance" backLabel="Back to dashboard" />
         <Card>
           <CardHeader>
             <CardTitle>Access Denied</CardTitle>
@@ -267,20 +260,13 @@ export default function BankReportsPage() {
       </div>
 
       <div className="relative w-full px-4 sm:px-6 lg:px-8 py-5">
-        <div className="mb-8 flex items-center gap-3">
-          <Link href="/bank-balance">
-            <Button variant="ghost" size="icon" className="rounded-full hover:bg-primary/10">
-              <ArrowLeft className="h-5 w-5" />
-            </Button>
-          </Link>
-          <div>
-            <div className="flex items-center gap-2">
-              <BarChart3 className="h-5 w-5 text-primary/70" />
-              <h1 className="text-xl font-bold tracking-tight">Bank Reports</h1>
-            </div>
-            <p className="text-xs text-muted-foreground mt-0.5">Financial analytics and reporting</p>
-          </div>
-        </div>
+        <PageHeader
+          title="Bank Reports"
+          description="Financial analytics and reporting"
+          icon={BarChart3}
+          backHref="/bank-balance"
+          backLabel="Back to dashboard"
+        />
 
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5 max-w-5xl">
           {reportItems.map((item, idx) => (

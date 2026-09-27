@@ -29,7 +29,6 @@
 import * as React from 'react';
 import Link from 'next/link';
 import {
-  ArrowLeft,
   ArrowRight,
   BarChart3,
   Briefcase,
@@ -51,7 +50,7 @@ import {
 } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Card } from '@/components/ui/card';
+import { PageHeader } from '@/components/shared/page-header';
 import {
   DropdownMenu,
   DropdownMenuCheckboxItem,
@@ -522,17 +521,8 @@ export function EmployeeStatusPill({
 }
 
 /**
- * The header every screen in the module wears.
- *
- * Three things it does that the ten hand-rolled headers did not:
- *
- *  - the back control sits *in* the header, beside the icon, instead of alone on a row above it.
- *    That row cost 40 vertical pixels on every screen to render one unlabelled arrow;
- *  - the title gets a filled, tone-coloured icon tile, so a screen is recognisable before its
- *    heading is read — and the tone is the same one the hub's card for that screen carries, which
- *    is what makes arriving somewhere feel like arriving *there*;
- *  - status pills sit on the title's own line rather than being smuggled into `actions` next to the
- *    buttons, which is where three of these pages had put them.
+ * The header every screen in the module wears — the app's standard one (`shared/page-header`):
+ * back control beside the icon, status pills on the title's own line, actions to the right.
  *
  * The description is `hidden sm:block` by default. A sentence of orientation is worth the space on
  * a desktop; on a 600px-tall phone it is two lines between the reader and the register they opened
@@ -540,7 +530,6 @@ export function EmployeeStatusPill({
  */
 export function EmployeeHeader({
   icon: Icon,
-  tone = 'indigo',
   eyebrow,
   title,
   description,
@@ -553,6 +542,7 @@ export function EmployeeHeader({
   className,
 }: {
   icon: LucideIcon;
+  /** Accepted for existing callers; the icon now takes the user's accent like every module's. */
   tone?: EmpTone;
   /** A small line above the title — the module name on a sub-page, so the hub's own title is not lost. */
   eyebrow?: string;
@@ -569,65 +559,20 @@ export function EmployeeHeader({
   actions?: React.ReactNode;
   className?: string;
 }) {
-  const palette = toneOf(tone);
-
   return (
-    <Card
-      className={cn(
-        'animate-emp-card-in mb-3 flex flex-col gap-3 rounded-2xl p-3 sm:p-4 lg:flex-row lg:items-center lg:justify-between lg:gap-5',
-        EMP_CARD_CLASS,
-        className,
-      )}
-    >
-      <div className="flex min-w-0 items-start gap-2.5 sm:gap-3">
-        {backHref && (
-          <Button
-            asChild
-            variant="ghost"
-            size="icon"
-            className="mt-0.5 h-9 w-9 shrink-0 rounded-full bg-white/70 shadow-sm backdrop-blur max-sm:h-11 max-sm:w-11"
-          >
-            <Link href={backHref} aria-label={backLabel ?? 'Back'}>
-              <ArrowLeft className="h-4 w-4" />
-            </Link>
-          </Button>
-        )}
-
-        <span
-          className={cn(
-            'flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br shadow-sm max-sm:hidden sm:h-12 sm:w-12',
-            palette.solid,
-          )}
-        >
-          <Icon className="h-5 w-5 text-white sm:h-[1.35rem] sm:w-[1.35rem]" />
-        </span>
-
-        <div className="min-w-0">
-          {eyebrow && (
-            <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">{eyebrow}</p>
-          )}
-          <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
-            <h1 className="text-lg font-semibold tracking-tight text-slate-800 sm:text-xl">{title}</h1>
-            {status}
-          </div>
-          {description && (
-            <p
-              className={cn(
-                'mt-0.5 max-w-2xl text-sm text-muted-foreground',
-                !showDescriptionOnMobile && 'hidden sm:block',
-              )}
-            >
-              {description}
-            </p>
-          )}
-          {meta && <p className="mt-1 text-xs text-muted-foreground">{meta}</p>}
-        </div>
-      </div>
-
-      {actions && (
-        <div className="flex shrink-0 flex-wrap items-center gap-2 max-sm:[&>*]:flex-1 lg:justify-end">{actions}</div>
-      )}
-    </Card>
+    <PageHeader
+      icon={Icon}
+      eyebrow={eyebrow}
+      title={title}
+      description={description}
+      descriptionClassName={showDescriptionOnMobile ? undefined : 'hidden sm:block'}
+      backHref={backHref}
+      backLabel={backLabel}
+      badge={status}
+      meta={meta ? <span className="text-xs text-muted-foreground">{meta}</span> : undefined}
+      actions={actions}
+      className={className}
+    />
   );
 }
 

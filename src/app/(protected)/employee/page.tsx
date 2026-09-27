@@ -22,10 +22,10 @@
  *
  * ── What is on the page ─────────────────────────────────────────────────────────────────────────
  *
- * A hero band carrying the one figure that describes the module (how many people are on record) and
- * the four facts that qualify it, then anything that needs attention, then the destinations grouped
- * by what the reader is trying to do — see `EMPLOYEE_GROUPS` for why those three groups and not the
- * four the old hub used.
+ * The standard page header, a row of figures — the one that describes the module (how many people
+ * are on record) and the four facts that qualify it — then anything that needs attention, then the
+ * destinations grouped by what the reader is trying to do — see `EMPLOYEE_GROUPS` for why those
+ * three groups and not the four the old hub used.
  *
  * Gating is unchanged and deliberate: every destination is filtered on its own permission, and the
  * ones a user cannot use are removed rather than greyed out. When nothing is left, the page says so
@@ -36,25 +36,28 @@ import Link from 'next/link';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { formatDistanceToNow } from 'date-fns';
 import {
-  ArrowLeft,
   ArrowRight,
   CalendarClock,
   Clock,
+  Database,
   DownloadCloud,
   RefreshCw,
   ShieldAlert,
+  UserCheck,
+  UserMinus,
   Users,
+  Wallet,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { HrAccessDenied, HrLoader } from '@/components/hr/hr-ui';
-import { CountUp } from '@/components/effects/CountUp';
+import { PageHeader, SectionHeader } from '@/components/shared/page-header';
 import {
   EMPLOYEE_GROUPS,
   EMPLOYEE_NAV,
   EMP_CARD_CLASS,
+  EmployeeKpiCard,
   EmployeePageShell,
-  EmployeeSectionLabel,
   EmployeeSpotlightCard,
   EmployeeStatusPill,
   EmployeeToolRow,
@@ -111,48 +114,6 @@ function readFreshness(report: SyncReport | null): Freshness {
     ageHours >= ALERT_AFTER_HOURS ? 'rose' : ageHours >= WARN_AFTER_HOURS ? 'amber' : 'emerald';
 
   return { tone, pill: phrase, ageHours, known: true };
-}
-
-/**
- * The freshness pill, restyled for the gradient hero.
- *
- * Not the `chip` entry from `EMP_TONES`: those are pale fills with dark text, made for a white
- * card, and on the gradient they read as a sticker pasted onto it. These are translucent washes of the same hues over
- * white text — the tone still carries the meaning, the surface still looks like one surface.
- */
-const HERO_PILL_TONE: Record<EmpTone, string> = {
-  emerald: 'border-emerald-300/40 bg-emerald-400/20 text-white',
-  amber: 'border-amber-200/50 bg-amber-300/25 text-white',
-  rose: 'border-rose-200/50 bg-rose-400/25 text-white',
-  slate: 'border-white/25 bg-white/10 text-white/85',
-  indigo: 'border-white/25 bg-white/10 text-white/85',
-  violet: 'border-white/25 bg-white/10 text-white/85',
-  blue: 'border-white/25 bg-white/10 text-white/85',
-  cyan: 'border-white/25 bg-white/10 text-white/85',
-  teal: 'border-white/25 bg-white/10 text-white/85',
-};
-
-/* ------------------------------------------------------------------------------------------------
- * Hero
- * ---------------------------------------------------------------------------------------------- */
-
-/** One of the four qualifying figures beside the hero number. */
-function HeroStat({
-  label,
-  value,
-  hint,
-}: {
-  label: string;
-  value: React.ReactNode;
-  hint?: string;
-}) {
-  return (
-    <div className="min-w-0 rounded-xl bg-white/10 px-3 py-2 backdrop-blur-sm">
-      <dt className="truncate text-[10px] font-semibold uppercase tracking-wider text-white/65">{label}</dt>
-      <dd className="mt-0.5 truncate text-base font-semibold leading-tight text-white">{value}</dd>
-      {hint && <p className="mt-0.5 truncate text-[10px] text-white/60">{hint}</p>}
-    </div>
-  );
 }
 
 /* ------------------------------------------------------------------------------------------------
@@ -421,119 +382,106 @@ export default function EmployeeHubPage() {
 
   return (
     <EmployeePageShell>
-      {/* ── Hero ───────────────────────────────────────────────────────────────────────────────
-          A gradient band rather than another white card, for one reason: this page is a list of
-          links, and a list of links with no focal point reads as a menu. The figure in it is the
-          module's headline — how many people this system holds records for — and the four beside it
-          are the facts that qualify it. They replace the old page's separate KPI strip, which
-          printed the same numbers a second time in plainer boxes. */}
-      <section className="animate-emp-card-in relative mb-3 overflow-hidden rounded-2xl bg-gradient-to-br from-sky-600 via-indigo-600 to-violet-700 p-4 text-white shadow-lg sm:p-5">
-        {/* Two soft highlights, so the gradient reads as light falling on a surface rather than as a
-            flat block of colour. */}
-        <div aria-hidden className="pointer-events-none absolute -right-20 -top-28 h-72 w-72 rounded-full bg-white/15 blur-3xl" />
-        <div aria-hidden className="pointer-events-none absolute -bottom-32 left-1/4 h-64 w-64 rounded-full bg-cyan-300/25 blur-3xl" />
-
-        <div className="relative grid gap-4 lg:grid-cols-[1fr_auto] lg:items-end lg:gap-6">
-          <div className="min-w-0">
-            {/* A breadcrumb, not the bare round arrow that used to sit on a row of its own above
-                the title. Same destination, no wasted row, and it says where it goes. */}
-            <div className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-[0.16em] text-white/65">
-              <Link
-                href="/settings"
-                className="inline-flex items-center gap-1 rounded-full px-1.5 py-0.5 transition-colors hover:bg-white/15 hover:text-white"
-              >
-                <ArrowLeft className="h-3 w-3" />
-                Settings
-              </Link>
-              <span aria-hidden>/</span>
-              <span className="text-white/90">Employee</span>
-            </div>
-
-            <h1 className="mt-2 text-xl font-semibold tracking-tight sm:text-2xl">Employee Management</h1>
-
-            {/* The headline figure, and the stats beside it, are the roster's — so they are shown to
-                somebody who may read the roster. A user who holds only the linking permission gets
-                the heading and the one destination they can open, not a row of em dashes. */}
-            {access.canView && (
-              <div className="mt-2 flex items-end gap-3">
-                <p className="text-4xl font-semibold leading-none sm:text-5xl">
-                  {statsLoading || !mirror ? '—' : <CountUp value={mirror.employees} />}
-                </p>
-                <p className="pb-1 text-sm text-white/75">
-                  employee records
-                  <br className="hidden sm:block" /> mirrored from greytHR
-                </p>
-              </div>
+      {/* ── Header ─────────────────────────────────────────────────────────────────────────────
+          The app's standard page header. The Settings breadcrumb (and, on a phone, the back
+          button) is where the hub sits; the freshness pill is the one fact about the module that
+          needs reading before anything else, so it rides under the title. */}
+      <PageHeader
+        title="Employee Management"
+        breadcrumbs={[{ label: 'Settings', href: '/settings' }, { label: 'Employee' }]}
+        backHref="/settings"
+        backLabel="Back to settings"
+        meta={
+          <EmployeeStatusPill tone={statsLoading ? 'slate' : freshness.tone} icon={Clock}>
+            {statsLoading ? 'Checking sync status…' : freshness.pill}
+            {freshness.known && freshness.ageHours !== null && freshness.ageHours >= WARN_AFTER_HOURS && (
+              <span className="font-semibold">· needs a run</span>
             )}
-            <div className="mt-3 flex flex-wrap items-center gap-2">
-              <span
-                className={cn(
-                  'inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] font-medium',
-                  HERO_PILL_TONE[statsLoading ? 'slate' : freshness.tone],
-                )}
-              >
-                <Clock className="h-3 w-3" />
-                {statsLoading ? 'Checking sync status…' : freshness.pill}
-                {freshness.known && freshness.ageHours !== null && freshness.ageHours >= WARN_AFTER_HOURS && (
-                  <span className="font-semibold">· needs a run</span>
-                )}
-              </span>
-              {access.canSync && (
-                <Button asChild size="sm" variant="secondary" className="bg-white text-slate-800 hover:bg-white/90">
-                  <Link href="/employee/sync">
-                    <DownloadCloud className="mr-1.5 h-4 w-4" />
-                    Sync console
-                    <ArrowRight className="ml-1.5 h-3.5 w-3.5" />
-                  </Link>
-                </Button>
-              )}
-            </div>
-          </div>
+          </EmployeeStatusPill>
+        }
+        actions={
+          access.canSync ? (
+            <Button asChild size="sm" variant="outline">
+              <Link href="/employee/sync">
+                <DownloadCloud className="mr-1.5 h-4 w-4" />
+                Sync console
+                <ArrowRight className="ml-1.5 h-3.5 w-3.5" />
+              </Link>
+            </Button>
+          ) : undefined
+        }
+        className="mb-3 sm:mb-4"
+      />
 
-          {access.canView && (
-            <dl className="grid grid-cols-2 gap-2 sm:grid-cols-4 lg:min-w-[20rem] lg:grid-cols-2">
-              {/*
-                greytHR's figure, not the mirror's. "How many people work here" has one right answer
-                and the mirror is not where it lives — see `mirrorIncomplete` above. The mirror's own
-                count follows in the hint whenever the two disagree, so the gap is visible on the
-                same line rather than only in the notice below.
-              */}
-              <HeroStat
-                label="Currently employed"
-                value={statsLoading ? '—' : rosterCount > 0 ? rosterCount.toLocaleString() : (mirror?.working.toLocaleString() ?? '—')}
-                hint={
-                  statsLoading
-                    ? undefined
-                    : mirrorIncomplete
-                      ? `Per greytHR · mirror has ${(mirror?.working ?? 0).toLocaleString()}`
-                      : 'Per greytHR'
-                }
-              />
-              <HeroStat
-                label="Departed"
-                value={statsLoading || !mirror ? '—' : departed.toLocaleString()}
-                hint="Records in the mirror"
-              />
-              <HeroStat
-                label="Full baseline"
-                value={statsLoading ? '—' : report?.settings.baselineCompletedAt ? 'Complete' : 'Never'}
-                hint={
-                  statsLoading
-                    ? undefined
-                    : report?.settings.baselineCompletedAt
-                      ? 'Every employee fetched once'
-                      : 'Next full run fetches all'
-                }
-              />
-              <HeroStat
-                label="Salary rows"
-                value={statsLoading || !mirror ? '—' : mirror.salaryRows.toLocaleString()}
-                hint="Monthly documents held"
-              />
-            </dl>
-          )}
+      {/* ── Figures ──────────────────────────────────────────────────────────────────────────────
+          The module's headline — how many people this system holds records for — and the four
+          facts that qualify it. They are the roster's, so they are shown to somebody who may read
+          the roster; a user who holds only the linking permission gets the heading and the one
+          destination they can open, not a row of em dashes. The headline spans the row on a phone
+          so the four beside it sit two by two instead of leaving a ragged last row. */}
+      {access.canView && (
+        <div className="mb-3 grid grid-cols-2 gap-3 lg:grid-cols-5">
+          <EmployeeKpiCard
+            label="Employee records"
+            value={statsLoading || !mirror ? '—' : mirror.employees}
+            hint="Mirrored from greytHR"
+            icon={Users}
+            tone="indigo"
+            index={0}
+            className="col-span-2 lg:col-span-1"
+          />
+          {/*
+            greytHR's figure, not the mirror's. "How many people work here" has one right answer
+            and the mirror is not where it lives — see `mirrorIncomplete` above. The mirror's own
+            count follows in the hint whenever the two disagree, so the gap is visible on the
+            same line rather than only in the notice below.
+          */}
+          <EmployeeKpiCard
+            label="Currently employed"
+            value={statsLoading ? '—' : rosterCount > 0 ? rosterCount.toLocaleString() : (mirror?.working.toLocaleString() ?? '—')}
+            hint={
+              statsLoading
+                ? undefined
+                : mirrorIncomplete
+                  ? `Per greytHR · mirror has ${(mirror?.working ?? 0).toLocaleString()}`
+                  : 'Per greytHR'
+            }
+            icon={UserCheck}
+            tone="emerald"
+            index={1}
+          />
+          <EmployeeKpiCard
+            label="Departed"
+            value={statsLoading || !mirror ? '—' : departed.toLocaleString()}
+            hint="Records in the mirror"
+            icon={UserMinus}
+            tone="slate"
+            index={2}
+          />
+          <EmployeeKpiCard
+            label="Full baseline"
+            value={statsLoading ? '—' : report?.settings.baselineCompletedAt ? 'Complete' : 'Never'}
+            hint={
+              statsLoading
+                ? undefined
+                : report?.settings.baselineCompletedAt
+                  ? 'Every employee fetched once'
+                  : 'Next full run fetches all'
+            }
+            icon={Database}
+            tone="violet"
+            index={3}
+          />
+          <EmployeeKpiCard
+            label="Salary rows"
+            value={statsLoading || !mirror ? '—' : mirror.salaryRows.toLocaleString()}
+            hint="Monthly documents held"
+            icon={Wallet}
+            tone="blue"
+            index={4}
+          />
         </div>
-      </section>
+      )}
 
       {/* ── Anything that needs doing ────────────────────────────────────────────────────────── */}
       {notices.length > 0 && (
@@ -551,10 +499,11 @@ export default function EmployeeHubPage() {
           in prose and two in a figure. */}
       {primaries.length > 0 && (
         <section className="mb-4">
-          <EmployeeSectionLabel
+          <SectionHeader
             icon={EMPLOYEE_GROUPS[0].icon}
             title={EMPLOYEE_GROUPS[0].title}
-            hint={screenCount(primaries.length)}
+            actions={<span className="text-xs text-muted-foreground">{screenCount(primaries.length)}</span>}
+            className="mb-2"
           />
           <div className={cn('grid gap-3', primaries.length === 3 ? 'sm:grid-cols-2 lg:grid-cols-3' : 'sm:grid-cols-2')}>
             {primaries.map((item, index) => (
@@ -583,7 +532,12 @@ export default function EmployeeHubPage() {
       <div className="grid gap-4 lg:grid-cols-2">
         {rowGroups.map(group => (
           <section key={group.key} className="min-w-0">
-            <EmployeeSectionLabel icon={group.icon} title={group.title} hint={screenCount(group.items.length)} />
+            <SectionHeader
+              icon={group.icon}
+              title={group.title}
+              actions={<span className="text-xs text-muted-foreground">{screenCount(group.items.length)}</span>}
+              className="mb-2"
+            />
             <Card className={cn('rounded-2xl p-1.5', EMP_CARD_CLASS)}>
               <div className="grid gap-0.5">
                 {group.items.map((item, index) => (
@@ -599,7 +553,7 @@ export default function EmployeeHubPage() {
       {/*
         No KPI strip under any of this, on purpose. The old page printed "Employee records", "Still
         working", "Full baseline" and "Last sync" as four plain boxes *above* eleven cards; those
-        four figures are now the hero's, where they qualify the headline number instead of restating
+        four figures are now in the row under the header, where they qualify the headline number instead of restating
         it. Adding them back at the foot would reintroduce exactly the duplication this redesign
         removed.
       */}

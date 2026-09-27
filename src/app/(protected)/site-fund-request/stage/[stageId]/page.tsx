@@ -1,9 +1,7 @@
 'use client';
 
 import { useState, useEffect, useMemo, useCallback } from 'react';
-import Link from 'next/link';
 import {
-  ArrowLeft,
   Check,
   Clock,
   Loader2,
@@ -12,6 +10,7 @@ import {
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
+import { PageHeader } from '@/components/shared/page-header';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
@@ -270,18 +269,14 @@ export default function StagePage() {
   return (
     <>
       <div className="w-full space-y-6 p-4 sm:p-6">
-        <div className="flex items-center gap-3">
-          <Link href={BASE_ROUTE}>
-            <Button variant="ghost" size="icon"><ArrowLeft className="h-5 w-5" /></Button>
-          </Link>
-          <div>
-            <p className="text-xs font-semibold uppercase tracking-[0.22em] text-slate-500">{MODULE_LABEL}</p>
-            <h1 className="text-2xl font-bold tracking-tight text-slate-900">{stage?.name || 'Stage'}</h1>
-            <p className="text-sm text-slate-600">
-              Pending: {pendingTasks.length} · Completed: {completedTasks.length}
-            </p>
-          </div>
-        </div>
+        <PageHeader
+          className="mb-0 sm:mb-0"
+          backHref={BASE_ROUTE}
+          backLabel="Back to dashboard"
+          eyebrow={MODULE_LABEL}
+          title={stage?.name || 'Stage'}
+          description={<>Pending: {pendingTasks.length} · Completed: {completedTasks.length}</>}
+        />
 
         <Tabs defaultValue="pending">
           <TabsList className="grid w-full grid-cols-2 rounded-2xl border border-white/70 bg-white/70 p-1 backdrop-blur">

@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { ArrowLeft, Loader2, Save, Settings2, ShieldAlert } from "lucide-react";
+import { Loader2, Save, Settings2, ShieldAlert } from "lucide-react";
 import { doc, getDoc, serverTimestamp, setDoc } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import { DEFAULT_VARIATION_TOLERANCE_PCT } from "@/lib/project-management-variations";
@@ -20,6 +20,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
+import { PageHeader } from "@/components/shared/page-header";
 import { useAuthorization } from "@/hooks/useAuthorization";
 import { useToast } from "@/hooks/use-toast";
 
@@ -119,7 +120,7 @@ export default function ProjectManagementGeneralSettingsPage() {
   if (!canView) {
     return (
       <main className="min-h-[calc(100dvh-4rem)] p-4 sm:p-6">
-        <h1 className="mb-6 text-2xl font-bold sm:text-3xl">General Settings</h1>
+        <PageHeader title="General Settings" />
         <Card>
           <CardHeader>
             <CardTitle>Access Denied</CardTitle>
@@ -137,24 +138,17 @@ export default function ProjectManagementGeneralSettingsPage() {
 
   return (
     <main className="min-h-[calc(100dvh-4rem)] p-4 max-sm:[--card-pad:1rem] sm:p-6">
-      <div className="mb-4 flex items-center gap-2 sm:mb-6 sm:gap-3">
-        <Button variant="ghost" size="icon" className="shrink-0" asChild>
-          <Link href="/project-management/settings" aria-label="Back to Settings">
-            <ArrowLeft className="h-5 w-5" />
-          </Link>
-        </Button>
-        <div className="hidden h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-slate-500 to-slate-700 shadow-sm sm:flex">
-          <Settings2 className="h-5 w-5 text-white" />
-        </div>
-        <div className="min-w-0">
-          <h1 className="text-xl font-bold sm:text-3xl">General Settings</h1>
-          <p className="mt-0.5 text-[13px] text-muted-foreground sm:mt-1 sm:text-sm">Module-wide defaults for Project Management.</p>
-        </div>
-      </div>
+      <PageHeader
+        title="General Settings"
+        description="Module-wide defaults for Project Management."
+        icon={Settings2}
+        backHref="/project-management/settings"
+        backLabel="Back to Settings"
+      />
 
       <Card className="max-w-xl">
         <CardHeader>
-          <CardTitle className="text-lg">Variation Order Tolerance</CardTitle>
+          <CardTitle>Variation Order Tolerance</CardTitle>
           <CardDescription>
             When a surveyed or required quantity exceeds a BOQ item&apos;s stated quantity by more than this
             percentage, it can&apos;t be indented, ordered, or billed until an approved{" "}
@@ -183,7 +177,7 @@ export default function ProjectManagementGeneralSettingsPage() {
 
       <Card className="mt-4 max-w-xl">
         <CardHeader>
-          <CardTitle className="text-lg">Survey Plausibility Limit</CardTitle>
+          <CardTitle>Survey Plausibility Limit</CardTitle>
           <CardDescription>
             A surveyed quantity deviating from the BOQ by more than this percentage is treated as a likely
             measurement error rather than a real variation — it&apos;s blocked pending re-survey instead of being
@@ -208,7 +202,7 @@ export default function ProjectManagementGeneralSettingsPage() {
 
       <Card className="mt-4 max-w-xl">
         <CardHeader>
-          <CardTitle className="text-lg">Procurement Lead Time</CardTitle>
+          <CardTitle>Procurement Lead Time</CardTitle>
           <CardDescription>
             Default total lead time (RFQ → quotes → PO → manufacturing → inspection → dispatch → transit) used
             by the{" "}
@@ -236,7 +230,7 @@ export default function ProjectManagementGeneralSettingsPage() {
 
       <Card className="mt-4 max-w-xl">
         <CardHeader>
-          <CardTitle className="text-lg">Stall Threshold</CardTitle>
+          <CardTitle>Stall Threshold</CardTitle>
           <CardDescription>
             How many days a waiting record (an RFQ sent, an inspection or MDCC requested, a DI issued,
             an MVAC with the client) may age before the project control tower reports it as stalled.

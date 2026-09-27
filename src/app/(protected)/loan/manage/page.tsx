@@ -34,7 +34,7 @@ import {
 } from '@/components/ui/alert-dialog';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent } from '@/components/ui/card';
 import {
   Dialog,
   DialogClose,
@@ -48,6 +48,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { PageHeader } from '@/components/shared/page-header';
 import { cn } from '@/lib/utils';
 
 // ─── helpers ─────────────────────────────────────────────────────────────────
@@ -179,30 +180,26 @@ export default function ManageLoanPage() {
   return (
     <div className="space-y-4">
       {/* Header */}
-      <Card className="overflow-hidden border-border/60">
-        <div className="h-1 w-full bg-gradient-to-r from-blue-500 via-indigo-500 to-violet-500" />
-        <CardHeader className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <div className="flex items-center gap-3">
-            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-blue-50 ring-1 ring-blue-100">
-              <Briefcase className="h-5 w-5 text-blue-600" />
-            </div>
-            <div>
-              <CardTitle className="tracking-tight">Manage Loans</CardTitle>
-              <CardDescription>Add, view, and close loan facilities</CardDescription>
-            </div>
-          </div>
-          <div className="flex flex-wrap items-center gap-2">
-            <Button variant="outline" size="sm" onClick={fetchData} className="gap-1.5">
+      <PageHeader
+        className="mb-0 sm:mb-0"
+        icon={Briefcase}
+        title="Manage Loans"
+        description="Add, view, and close loan facilities"
+        actions={
+          <>
+            <Button variant="outline" size="sm" onClick={fetchData} className="gap-1.5" aria-label="Refresh">
               <RefreshCw className="h-3.5 w-3.5" />
             </Button>
             <Link href="/loan/new">
-              <Button size="sm" className="gap-1.5 bg-blue-600 hover:bg-blue-700 text-white">
+              <Button size="sm" className="w-full gap-1.5 bg-blue-600 hover:bg-blue-700 text-white">
                 <Plus className="h-3.5 w-3.5" /> Add Loan
               </Button>
             </Link>
-          </div>
-        </CardHeader>
-        <CardContent className="grid grid-cols-3 gap-2 border-t pt-4">
+          </>
+        }
+      />
+      <Card className="overflow-hidden border-border/60">
+        <CardContent className="grid grid-cols-3 gap-2 p-4">
           {[
             { label: 'Active',           value: totals.active,  color: 'text-emerald-600' },
             { label: 'Closed',           value: totals.closed,  color: 'text-slate-500' },

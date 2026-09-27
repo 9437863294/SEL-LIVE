@@ -73,6 +73,7 @@ import {
 } from "@/components/ui/table";
 import { Textarea } from "@/components/ui/textarea";
 import { Switch } from "@/components/ui/switch";
+import { PageHeader } from "@/components/shared/page-header";
 
 type Draft = {
   instrumentType: "BG" | "LC";
@@ -431,25 +432,24 @@ export default function FDAssignmentWorkspace({
 
   return (
     <div className="space-y-4">
-      <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-end">
-        <div>
-          <h1 className="text-2xl font-bold">FD Assignments</h1>
-          <p className="text-sm text-muted-foreground">
-            Reserve and assign one or more FDs against BG and LC instruments.
-          </p>
-        </div>
-        <div className="flex gap-2">
-          {canAdd && (
-            <Button onClick={() => setDialogOpen(true)}>
-              <Plus className="mr-2 h-4 w-4" />
-              New Assignment
+      <PageHeader
+        className="mb-0 sm:mb-0"
+        title="FD Assignments"
+        description="Reserve and assign one or more FDs against BG and LC instruments."
+        actions={
+          <>
+            {canAdd && (
+              <Button onClick={() => setDialogOpen(true)}>
+                <Plus className="mr-2 h-4 w-4" />
+                New Assignment
+              </Button>
+            )}
+            <Button variant="outline" size="icon" onClick={() => void load()}>
+              <RefreshCw className="h-4 w-4" />
             </Button>
-          )}
-          <Button variant="outline" size="icon" onClick={() => void load()}>
-            <RefreshCw className="h-4 w-4" />
-          </Button>
-        </div>
-      </div>
+          </>
+        }
+      />
       <div className="grid gap-3 sm:grid-cols-4">
         {[
           [
@@ -884,7 +884,7 @@ export default function FDAssignmentWorkspace({
           </div>
           <Card>
             <CardHeader>
-              <CardTitle className="text-base">
+              <CardTitle>
                 Available FD Allocation
               </CardTitle>
               <CardDescription>

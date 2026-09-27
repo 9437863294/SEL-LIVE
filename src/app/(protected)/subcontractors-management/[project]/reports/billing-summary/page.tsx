@@ -2,9 +2,7 @@
 'use client';
 
 import { useState, useEffect, useMemo, useCallback } from 'react';
-import Link from 'next/link';
 import {
-  ArrowLeft,
   ShieldAlert,
   Wallet,
   IndianRupee,
@@ -17,7 +15,7 @@ import {
   FileText,
   BarChart3,
 } from 'lucide-react';
-import { Button } from '@/components/ui/button';
+import { PageHeader } from '@/components/shared/page-header';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import {
   Table,
@@ -316,12 +314,11 @@ export default function BillingSummaryReport() {
   if(!canViewPage) {
     return (
         <PmContent>
-            <div className="mb-6 flex items-center justify-between">
-                <div className="flex items-center gap-4">
-                    <Link href={`/subcontractors-management/${projectSlug}/reports`}><Button variant="ghost" size="icon"><ArrowLeft className="h-6 w-6" /></Button></Link>
-                    <h1 className="text-2xl font-bold">Billing Summary</h1>
-                </div>
-            </div>
+            <PageHeader
+                title="Billing Summary"
+                backHref={`/subcontractors-management/${projectSlug}/reports`}
+                backLabel="Back to Reports"
+            />
             <Card>
                 <CardHeader>
                     <CardTitle>Access Denied</CardTitle>

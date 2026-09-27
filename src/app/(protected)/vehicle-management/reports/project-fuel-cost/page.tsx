@@ -1,15 +1,15 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
-import Link from 'next/link';
 import ExcelJS from 'exceljs';
 import { collection, getDocs } from 'firebase/firestore';
-import { ChevronLeft, Download, Layers } from 'lucide-react';
+import { Download, Layers } from 'lucide-react';
 import { db } from '@/lib/firebase';
 import { VEHICLE_COLLECTIONS } from '@/lib/vehicle-management';
 import { useAuthorization } from '@/hooks/useAuthorization';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { PageHeader } from '@/components/shared/page-header';
 import { Skeleton } from '@/components/ui/skeleton';
 import { TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Input } from '@/components/ui/input';
@@ -146,43 +146,38 @@ export default function ProjectFuelCostReportPage() {
 
   return (
     <div className="vm-report-page space-y-3 sm:space-y-4">
-      <Card className="vm-panel-strong overflow-hidden">
-        <div className="h-1 w-full bg-gradient-to-r from-emerald-500 to-teal-500" />
-        <CardHeader className="flex flex-col gap-3 px-3 py-4 sm:px-6 sm:py-6 md:flex-row md:items-center md:justify-between">
-          <div>
-            <Link
-              href="/vehicle-management/reports"
-              className="mb-1 inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-slate-900 transition-colors"
-            >
-              <ChevronLeft className="h-3.5 w-3.5" /> Back to Reports
-            </Link>
-            <CardTitle className="flex items-center gap-2 tracking-tight">
-              <Layers className="h-4 w-4 text-emerald-500" /> Project-wise Fuel Cost
-            </CardTitle>
-            <CardDescription>Total fuel expenditure grouped by project for the selected month.</CardDescription>
-          </div>
-          <div className="flex w-full flex-wrap items-center gap-2 md:w-auto md:justify-end">
-            <span className="text-sm text-muted-foreground">Month</span>
-            <Input
-              type="month"
-              value={month}
-              onChange={(e) => setMonth(e.target.value)}
-              className="w-full bg-white/80 border-white/70 md:w-44"
-            />
+      <PageHeader
+        title="Project-wise Fuel Cost"
+        description="Total fuel expenditure grouped by project for the selected month."
+        icon={Layers}
+        backHref="/vehicle-management/reports"
+        backLabel="Back to Reports"
+        className="mb-0 sm:mb-0"
+        actions={
+          <>
+            <div className="flex min-w-full items-center gap-2 sm:min-w-0">
+              <span className="text-sm text-muted-foreground">Month</span>
+              <Input
+                type="month"
+                value={month}
+                onChange={(e) => setMonth(e.target.value)}
+                className="w-full bg-white/80 border-white/70 sm:w-44"
+              />
+            </div>
             {canExport && (
               <Button
                 variant="outline"
                 onClick={exportExcel}
                 disabled={isExporting}
-                className="w-full bg-white/80 hover:bg-white md:w-auto"
+                className="w-full bg-white/80 hover:bg-white sm:w-auto"
               >
                 <Download className="mr-2 h-4 w-4" />
                 {isExporting ? 'Exporting...' : 'Export Excel'}
               </Button>
             )}
-          </div>
-        </CardHeader>
-      </Card>
+          </>
+        }
+      />
 
       <div className="grid grid-cols-3 gap-2 sm:gap-4">
         <Card className="vm-panel overflow-hidden">
@@ -213,7 +208,7 @@ export default function ProjectFuelCostReportPage() {
 
       <Card className="vm-panel-strong">
         <CardHeader>
-          <CardTitle className="text-base">Project Fuel Breakdown</CardTitle>
+          <CardTitle>Project Fuel Breakdown</CardTitle>
         </CardHeader>
         <CardContent className="space-y-3 sm:hidden">
           {rows.length === 0 ? (

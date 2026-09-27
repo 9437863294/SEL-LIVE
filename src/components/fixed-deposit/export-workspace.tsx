@@ -86,6 +86,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Separator } from '@/components/ui/separator';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { cn } from '@/lib/utils';
+import { PageHeader } from '@/components/shared/page-header';
 
 const PREVIEW_ROWS = 25;
 const PREVIEW_COLUMNS = 10;
@@ -520,16 +521,15 @@ export default function FDExportWorkspace() {
   const previewColumns = showAllPreviewColumns ? columns : columns.slice(0, PREVIEW_COLUMNS);
 
   return <div className="space-y-4">
-    <div className="flex flex-col justify-between gap-3 lg:flex-row lg:items-end">
-      <div>
-        <h1 className="text-2xl font-bold tracking-tight">FD Export Centre</h1>
-        <p className="text-sm text-muted-foreground">Four steps: choose the deposits, choose the columns, choose the sheets, download. The summary on the right updates as you go.</p>
-      </div>
-      <div className="flex flex-wrap gap-2">
+    <PageHeader
+      className="mb-0 sm:mb-0"
+      title="FD Export Centre"
+      description="Four steps: choose the deposits, choose the columns, choose the sheets, download. The summary on the right updates as you go."
+      actions={<>
         <Button variant="outline" asChild><Link href="/fixed-deposit/import"><Upload className="mr-2 h-4 w-4" />Import Workspace</Link></Button>
         <Button variant="outline" size="icon" onClick={() => void load()} aria-label="Refresh"><RefreshCw className="h-4 w-4" /></Button>
-      </div>
-    </div>
+      </>}
+    />
 
     {/* Step rail — every step is reachable directly; each chip doubles as a status readout. */}
     <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
@@ -556,7 +556,7 @@ export default function FDExportWorkspace() {
       {/* ── summary rail ─────────────────────────────────────────────────── */}
       <aside className="order-1 space-y-3 lg:sticky lg:top-[calc(var(--app-header-offset,4rem)+1rem)] lg:order-2">
         <Card className="border-white/80 bg-white/90 shadow-sm">
-          <CardHeader className="pb-3"><CardTitle className="text-base">Export summary</CardTitle><CardDescription className="line-clamp-2">{scopeText}</CardDescription></CardHeader>
+          <CardHeader className="pb-3"><CardTitle>Export summary</CardTitle><CardDescription className="line-clamp-2">{scopeText}</CardDescription></CardHeader>
           <CardContent className="space-y-3">
             <div className="rounded-lg bg-slate-50 px-3 py-2.5">
               <p className="text-[11px] uppercase tracking-wide text-muted-foreground">Deposits in scope</p>
@@ -599,7 +599,7 @@ export default function FDExportWorkspace() {
       <div className="order-2 min-w-0 space-y-3 lg:order-1">
         {step === 'scope' && <Card className="border-white/80 bg-white/90 shadow-sm">
           <CardHeader className="flex-row items-start justify-between gap-3 space-y-0">
-            <div><CardTitle className="text-base">Step 1 · Which deposits?</CardTitle><CardDescription>Everything downstream — columns, sheets and totals — applies to these {filtered.length} deposits.</CardDescription></div>
+            <div><CardTitle>Step 1 · Which deposits?</CardTitle><CardDescription>Everything downstream — columns, sheets and totals — applies to these {filtered.length} deposits.</CardDescription></div>
             {Boolean(activeFilters.length) && <Button variant="ghost" size="sm" onClick={resetFilters}><RotateCcw className="mr-2 h-4 w-4" />Clear all</Button>}
           </CardHeader>
           <CardContent className="space-y-5">
@@ -641,7 +641,7 @@ export default function FDExportWorkspace() {
         </Card>}
 
         {step === 'columns' && <Card className="border-white/80 bg-white/90 shadow-sm">
-          <CardHeader><CardTitle className="text-base">Step 2 · Which columns?</CardTitle><CardDescription>Start from a preset, then expand any group to fine-tune. {columns.length} of {FD_EXPORT_COLUMNS.length} fields selected.</CardDescription></CardHeader>
+          <CardHeader><CardTitle>Step 2 · Which columns?</CardTitle><CardDescription>Start from a preset, then expand any group to fine-tune. {columns.length} of {FD_EXPORT_COLUMNS.length} fields selected.</CardDescription></CardHeader>
           <CardContent className="space-y-4">
             <div className="space-y-2">
               <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Presets</p>
@@ -720,7 +720,7 @@ export default function FDExportWorkspace() {
         </Card>}
 
         {step === 'sheets' && <Card className="border-white/80 bg-white/90 shadow-sm">
-          <CardHeader><CardTitle className="text-base">Step 3 · What goes in the workbook?</CardTitle><CardDescription>{sheetCount} sheets will be written. Optional sheets are derived from the same {filtered.length} deposits.</CardDescription></CardHeader>
+          <CardHeader><CardTitle>Step 3 · What goes in the workbook?</CardTitle><CardDescription>{sheetCount} sheets will be written. Optional sheets are derived from the same {filtered.length} deposits.</CardDescription></CardHeader>
           <CardContent className="space-y-4">
             <div className="space-y-2">
               <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Always included</p>
@@ -752,7 +752,7 @@ export default function FDExportWorkspace() {
         {step === 'download' && <Card className="overflow-hidden border-white/80 bg-white/90 shadow-sm">
           <CardHeader className="flex flex-col justify-between gap-3 sm:flex-row sm:items-start">
             <div>
-              <CardTitle className="text-base">Step 4 · Preview &amp; download</CardTitle>
+              <CardTitle>Step 4 · Preview &amp; download</CardTitle>
               <CardDescription>First {previewRows.length} of {filtered.length} rows · {previewColumns.length} of {columns.length} columns shown.</CardDescription>
             </div>
             <div className="flex flex-wrap gap-2">

@@ -2,9 +2,7 @@
 export const dynamic = 'force-dynamic';
 
 import { Fragment, useState, useEffect, useMemo } from 'react';
-import Link from 'next/link';
 import {
-  ArrowLeft,
   Plus,
   Trash2,
   Calendar as CalendarIcon,
@@ -13,6 +11,7 @@ import {
 } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
+import { PageHeader, SectionHeader } from '@/components/shared/page-header';
 import {
   Card,
   CardContent,
@@ -643,14 +642,7 @@ export default function InterestRatePage() {
   if (!canView) {
     return (
       <div className="relative w-full px-4 sm:px-6 lg:px-8 py-6">
-        <div className="mb-6 flex items-center gap-3">
-          <Link href="/bank-balance">
-            <Button variant="ghost" size="icon" className="rounded-full">
-              <ArrowLeft className="h-5 w-5" />
-            </Button>
-          </Link>
-          <h1 className="text-xl font-bold">Interest Rate Management</h1>
-        </div>
+        <PageHeader title="Interest Rate Management" backHref="/bank-balance" backLabel="Back to dashboard" />
         <Card><CardHeader><CardTitle>Access Denied</CardTitle><CardDescription>You do not have permission to view this page.</CardDescription></CardHeader>
           <CardContent className="flex justify-center p-8"><ShieldAlert className="h-14 w-14 text-destructive" /></CardContent>
         </Card>
@@ -670,19 +662,12 @@ export default function InterestRatePage() {
         />
       </div>
     <div className="relative w-full px-4 sm:px-6 lg:px-8 py-4">
-      <div className="mb-5 flex justify-between items-center">
-        <div className="flex items-center gap-3">
-          <Link href="/bank-balance">
-            <Button variant="ghost" size="icon" className="rounded-full hover:bg-indigo-50 dark:hover:bg-indigo-950/30">
-              <ArrowLeft className="h-5 w-5" />
-            </Button>
-          </Link>
-          <div>
-            <h1 className="text-xl font-bold tracking-tight">Interest Rate Management</h1>
-            <p className="text-xs text-muted-foreground">Manage interest rate history and view daily interest logs.</p>
-          </div>
-        </div>
-      </div>
+      <PageHeader
+        title="Interest Rate Management"
+        description="Manage interest rate history and view daily interest logs."
+        backHref="/bank-balance"
+        backLabel="Back to dashboard"
+      />
 
       <Tabs defaultValue="daily-log">
         <TabsList className="mb-4">
@@ -801,9 +786,7 @@ export default function InterestRatePage() {
                         </div>
                       </CollapsibleContent>
 
-                      <h4 className="font-semibold mb-2 mt-6">
-                        Interest Rate History
-                      </h4>
+                      <SectionHeader title="Interest Rate History" as="h3" className="mb-2 mt-6" />
                       <div className="border rounded-md max-h-60 overflow-y-auto mb-4">
                         <Table>
                           <TableHeader>

@@ -10,7 +10,7 @@ import {
   query,
   where,
 } from "firebase/firestore";
-import { ArrowLeft, Loader2 } from "lucide-react";
+import { Loader2 } from "lucide-react";
 import { db } from "@/lib/firebase";
 import { useAuth } from "@/components/auth/AuthProvider";
 import {
@@ -26,6 +26,7 @@ import {
 import { FD_COLLECTIONS } from "@/lib/fixed-deposit";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { PageHeader } from "@/components/shared/page-header";
 import {
   Card,
   CardContent,
@@ -184,49 +185,49 @@ export default function BGDetailPage({ id }: { id: string }) {
   ) => <SimpleTable rows={related[name] || []} columns={columns} />;
   return (
     <div className="space-y-4">
-      <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-center">
-        <div className="flex items-center gap-3">
-          <Button asChild variant="outline" size="icon">
-            <Link href="/bank-guarantee/register">
-              <ArrowLeft className="h-4 w-4" />
-            </Link>
-          </Button>
-          <div>
-            <div className="flex items-center gap-2">
-              <h1 className="text-2xl font-bold">{title}</h1>
-              <Badge variant="outline" className={bgStatusTone(status)}>
-                {bgLabel(status)}
-              </Badge>
-            </div>
-            <p className="text-sm text-muted-foreground">
-              {bg?.beneficiaryName || request?.beneficiaryName} ·{" "}
-              {bg?.projectName || request?.projectName}
-            </p>
-          </div>
-        </div>
-        <div className="flex flex-wrap gap-2">
-          {request?.status === "APPROVED" && !bg && (
-            <Button asChild>
-              <Link href={`/bank-guarantee/${request.id}/issue`}>Issue BG</Link>
-            </Button>
-          )}
-          {bg && (
+      <PageHeader
+        className="mb-0 sm:mb-0"
+        backHref="/bank-guarantee/register"
+        backLabel="Back to BG register"
+        title={title}
+        badge={
+          <Badge variant="outline" className={bgStatusTone(status)}>
+            {bgLabel(status)}
+          </Badge>
+        }
+        description={
+          <>
+            {bg?.beneficiaryName || request?.beneficiaryName} ·{" "}
+            {bg?.projectName || request?.projectName}
+          </>
+        }
+        actions={
+          bg || request?.status === "APPROVED" ? (
             <>
-              <Button asChild variant="outline">
-                <Link href={`/bank-guarantee/${bg.id}/extend`}>Extend</Link>
-              </Button>
-              <Button asChild variant="outline">
-                <Link href={`/bank-guarantee/${bg.id}/invoke`}>Invoke</Link>
-              </Button>
-              <Button asChild>
-                <Link href={`/bank-guarantee/${bg.id}/cancel`}>
-                  Cancel / Release
-                </Link>
-              </Button>
+              {request?.status === "APPROVED" && !bg && (
+                <Button asChild>
+                  <Link href={`/bank-guarantee/${request.id}/issue`}>Issue BG</Link>
+                </Button>
+              )}
+              {bg && (
+                <>
+                  <Button asChild variant="outline">
+                    <Link href={`/bank-guarantee/${bg.id}/extend`}>Extend</Link>
+                  </Button>
+                  <Button asChild variant="outline">
+                    <Link href={`/bank-guarantee/${bg.id}/invoke`}>Invoke</Link>
+                  </Button>
+                  <Button asChild>
+                    <Link href={`/bank-guarantee/${bg.id}/cancel`}>
+                      Cancel / Release
+                    </Link>
+                  </Button>
+                </>
+              )}
             </>
-          )}
-        </div>
-      </div>
+          ) : undefined
+        }
+      />
       {bg && (
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
           <Metric

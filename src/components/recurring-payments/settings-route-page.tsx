@@ -1,9 +1,7 @@
 'use client';
 
-import Link from 'next/link';
-import { ArrowLeft } from 'lucide-react';
 import { useAuth } from '@/components/auth/AuthProvider';
-import { Button } from '@/components/ui/button';
+import { PageHeader } from '@/components/shared/page-header';
 import RecurringPaymentSettingsPanel from '@/components/recurring-payments/settings-panel';
 import AutomationOperations from '@/components/recurring-payments/automation-operations';
 
@@ -33,17 +31,13 @@ export default function RecurringSettingsRoutePage({ tab }: { tab: SettingsSecti
   const meta = SECTION_META[tab];
   return (
     <div className="space-y-5">
-      <div className="flex items-center gap-2">
-        <Link href="/recurring-payments/settings">
-          <Button variant="ghost" size="icon">
-            <ArrowLeft className="h-5 w-5" />
-          </Button>
-        </Link>
-        <div>
-          <h1 className="text-xl font-bold">{meta.title}</h1>
-          <p className="text-sm text-muted-foreground">{meta.description}</p>
-        </div>
-      </div>
+      <PageHeader
+        className="mb-0 sm:mb-0"
+        backHref="/recurring-payments/settings"
+        backLabel="Back to settings"
+        title={meta.title}
+        description={meta.description}
+      />
       <RecurringPaymentSettingsPanel organizationId={user?.organizationId || 'default'} section={tab} />
       {tab === 'automation' && <AutomationOperations />}
     </div>

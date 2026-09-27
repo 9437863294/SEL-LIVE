@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { collection, doc, onSnapshot, orderBy, query, serverTimestamp, updateDoc, where } from 'firebase/firestore';
-import { AlertTriangle, ArrowLeft, Edit3, Loader2, Power } from 'lucide-react';
+import { AlertTriangle, Edit3, Loader2, Power } from 'lucide-react';
 import { db } from '@/lib/firebase';
 import { useAuth } from '@/components/auth/AuthProvider';
 import { useAuthorization } from '@/hooks/useAuthorization';
@@ -14,6 +14,7 @@ import type { RecurringVendor } from './vendor-management';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
+import { PageHeader } from '@/components/shared/page-header';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import ModuleTableCard from './module-table-card';
@@ -63,8 +64,16 @@ export default function VendorDetailPage({ vendorId }: { vendorId: string }) {
   if (!vendor) return <Card><CardContent className="py-16 text-center"><AlertTriangle className="mx-auto mb-3 h-9 w-9 text-amber-500" />Vendor not found or access denied.</CardContent></Card>;
 
   return <div className="space-y-5">
-    <Card className="border-0 bg-gradient-to-r from-slate-900 to-indigo-900 text-white"><CardContent className="flex flex-col gap-4 p-5 lg:flex-row lg:items-center lg:justify-between"><div className="flex gap-3"><Button variant="secondary" size="icon" onClick={() => router.back()}><ArrowLeft className="h-4 w-4" /></Button><div><div className="flex items-center gap-2"><h1 className="text-2xl font-bold">{vendor.name}</h1><Badge className="bg-white/15 text-white">{vendor.status}</Badge></div><p className="text-sm text-indigo-100">{vendor.code || vendor.id} · {vendor.category || 'General vendor'}</p></div></div>{can('Edit', 'Recurring Payments.Vendors') && <div className="flex gap-2"><Link href={`/recurring-payments/vendors/${vendor.id}/edit`}><Button variant="secondary"><Edit3 className="mr-2 h-4 w-4" />Edit</Button></Link><Button variant="secondary" onClick={toggle}><Power className="mr-2 h-4 w-4" />{vendor.status === 'Active' ? 'Deactivate' : 'Activate'}</Button></div>}</CardContent></Card>
-    <div className="grid gap-3 sm:grid-cols-3"><Metric label="Payment records" value={String(payments.length)} /><Metric label="Outstanding records" value={String(outstanding.length)} /><Metric label="Outstanding value" value={currency(outstanding.reduce((sum, item) => sum + Math.max(0, (item.billAmount || item.expectedAmount) - (item.settledAmount || item.paidAmount)), 0))} /></div>
+    <PageHeader
+      className="mb-0 sm:mb-0"
+      backHref="/recurring-payments/vendors"
+      backLabel="Back to vendors"
+      title={vendor.name}
+      badge={<Badge variant="secondary">{vendor.status}</Badge>}
+      description={`${vendor.code || vendor.id} · ${vendor.category || 'General vendor'}`}
+      actions={can('Edit', 'Recurring Payments.Vendors') ? <><Link href={`/recurring-payments/vendors/${vendor.id}/edit`}><Button variant="outline"><Edit3 className="mr-2 h-4 w-4" />Edit</Button></Link><Button variant="outline" onClick={toggle}><Power className="mr-2 h-4 w-4" />{vendor.status === 'Active' ? 'Deactivate' : 'Activate'}</Button></> : undefined}
+    />
+    <div className="grid grid-cols-1 gap-3 sm:grid-cols-3"><Metric label="Payment records" value={String(payments.length)} /><Metric label="Outstanding records" value={String(outstanding.length)} /><Metric label="Outstanding value" value={currency(outstanding.reduce((sum, item) => sum + Math.max(0, (item.billAmount || item.expectedAmount) - (item.settledAmount || item.paidAmount)), 0))} /></div>
     <Tabs defaultValue="overview"><TabsList className="flex h-auto"><TabsTrigger value="overview">Overview</TabsTrigger><TabsTrigger value="bank">Bank details</TabsTrigger><TabsTrigger value="payments">Payment history</TabsTrigger><TabsTrigger value="outstanding">Outstanding</TabsTrigger><TabsTrigger value="audit">Audit log</TabsTrigger></TabsList>
       <TabsContent value="overview"><Card><CardContent className="grid gap-4 p-5 sm:grid-cols-2 lg:grid-cols-3"><Info label="GSTIN" value={vendor.gstin || '—'} /><Info label="PAN" value={vendor.pan || '—'} /><Info label="Contact person" value={vendor.contactPerson || '—'} /><Info label="Mobile" value={vendor.mobile || '—'} /><Info label="Email" value={vendor.email || '—'} /><Info label="Payment terms" value={vendor.paymentTerms || '—'} /><div className="sm:col-span-2 lg:col-span-3"><Info label="Address" value={vendor.address || '—'} /></div></CardContent></Card></TabsContent>
       <TabsContent value="bank"><Card><CardContent className="grid gap-4 p-5 sm:grid-cols-3"><Info label="Bank name" value={vendor.bankName || '—'} /><Info label="Masked account" value={maskAccount(vendor.maskedAccountNumber) || '—'} /><Info label="IFSC" value={vendor.ifsc || '—'} /></CardContent></Card></TabsContent>

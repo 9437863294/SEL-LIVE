@@ -46,6 +46,9 @@ const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
     return (
       <Comp
         className={cn(buttonVariants({ variant, size, className }))}
+        // Lets a layout tell a square icon button from a labelled one (the page header's action
+        // row stretches labelled buttons across a phone, never icon ones).
+        data-size={size ?? "default"}
         ref={ref}
         {...props}
       />

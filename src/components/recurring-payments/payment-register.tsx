@@ -60,6 +60,7 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
+import { PageHeader } from "@/components/shared/page-header";
 import CollapsibleFilterCard from "./collapsible-filter-card";
 import ModuleTableCard from "./module-table-card";
 import {
@@ -387,33 +388,28 @@ function PaymentRegisterView() {
     );
   return (
     <div className="space-y-5">
-      <Card className="border-0 bg-gradient-to-r from-slate-900 via-indigo-900 to-violet-900 text-white">
-        <CardContent className="flex flex-col gap-4 p-5 sm:flex-row sm:items-center sm:justify-between">
-          <div>
-            <p className="text-xs uppercase tracking-widest text-indigo-200">
-              Finance operations
-            </p>
-            <h1 className="text-2xl font-bold">Payment Obligation Register</h1>
-            <p className="text-sm text-indigo-100">
-              Controlled register with workflow, documents, transactions and audit history
-            </p>
-          </div>
-          <div className="flex flex-wrap gap-2">
-            <Button variant="secondary" onClick={exportCsv}>
+      <PageHeader
+        className="mb-0 sm:mb-0"
+        eyebrow="Finance operations"
+        title="Payment Obligation Register"
+        description="Controlled register with workflow, documents, transactions and audit history"
+        actions={
+          <>
+            <Button variant="outline" onClick={exportCsv}>
               <Download className="mr-2 h-4 w-4" />
               Export register
             </Button>
             {can("Add", "Recurring Payments.Payments") && (
               <Link href="/recurring-payments/payments/new">
-                <Button className="bg-white text-indigo-900 hover:bg-indigo-50">
+                <Button>
                   <Plus className="mr-2 h-4 w-4" />
                   Add manual payment
                 </Button>
               </Link>
             )}
-          </div>
-        </CardContent>
-      </Card>
+          </>
+        }
+      />
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
         <Metric
           icon={WalletCards}

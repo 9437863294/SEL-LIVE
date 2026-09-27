@@ -34,6 +34,7 @@ import {
   PmShell,
   PmTopbar,
 } from "@/components/project-management/pm-shell";
+import { PageHeader } from "@/components/shared/page-header";
 import {
   Card,
   CardContent,
@@ -342,7 +343,7 @@ export default function NewRfqPage() {
   if (!canAdd) {
     return (
       <main className="min-h-[calc(100dvh-4rem)] p-4 sm:p-6">
-        <h1 className="mb-6 text-2xl font-bold sm:text-3xl">Create RFQ</h1>
+        <PageHeader title="Create RFQ" />
         <Card>
           <CardHeader>
             <CardTitle>Access Denied</CardTitle>
@@ -481,7 +482,7 @@ export default function NewRfqPage() {
 
       <Card className="max-sm:[--card-pad:1rem]">
         <CardHeader>
-          <CardTitle className="text-xl sm:text-2xl">Select Vendors ({selectedVendorIds.size} selected)</CardTitle>
+          <CardTitle>Select Vendors ({selectedVendorIds.size} selected)</CardTitle>
           <CardDescription>The RFQ will be sent to every vendor selected here.</CardDescription>
         </CardHeader>
         <CardContent>

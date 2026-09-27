@@ -23,6 +23,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { SectionHeader } from "@/components/shared/page-header";
 import {
   Select,
   SelectContent,
@@ -136,17 +137,17 @@ export default function BGDocumentPanel({
 
   return (
     <div className="space-y-4 rounded-lg border p-4">
-      <div className="flex flex-wrap items-start justify-between gap-2">
-        <div>
-          <h3 className="font-semibold">{title}</h3>
-          <p className="text-xs text-muted-foreground">
-            Files are versioned and stored in the organization-scoped BG folder.
-          </p>
-        </div>
-        <Badge variant={missing.length ? "destructive" : "secondary"}>
-          {missing.length ? `${missing.length} required missing` : "Complete"}
-        </Badge>
-      </div>
+      <SectionHeader
+        as="h3"
+        className="mb-0"
+        title={title}
+        description="Files are versioned and stored in the organization-scoped BG folder."
+        badge={
+          <Badge variant={missing.length ? "destructive" : "secondary"}>
+            {missing.length ? `${missing.length} required missing` : "Complete"}
+          </Badge>
+        }
+      />
 
       {requiredTypes.length > 0 && (
         <div className="flex flex-wrap gap-2">

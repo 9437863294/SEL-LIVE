@@ -5,7 +5,6 @@
 
 import Link from 'next/link';
 import {
-  Home,
   Building2,
   IndianRupee,
   ShieldAlert,
@@ -15,10 +14,10 @@ import {
   Sparkles,
 } from 'lucide-react';
 import { ExpenseBadge, ExpensesPageHeader } from '@/components/expenses/page-header';
+import { SectionHeader } from '@/components/shared/page-header';
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/components/ui/card';
 import { cn } from '@/lib/utils';
 import type { LucideIcon } from 'lucide-react';
-import { Button } from '@/components/ui/button';
 import { useEffect, useState, useMemo } from 'react';
 import { db } from '@/lib/firebase';
 import { collection, getDocs, query, where } from 'firebase/firestore';
@@ -162,10 +161,7 @@ export default function ExpensesPage() {
   if (!canViewModule) {
     return (
       <div className="w-full">
-        <div className="mb-6 flex items-center gap-2">
-          <Link href="/"><Button variant="ghost" size="icon"><Home className="h-5 w-5" /></Button></Link>
-          <h1 className="text-xl font-bold">Expenses Management</h1>
-        </div>
+        <ExpensesPageHeader icon={IndianRupee} title="Expenses Management" backHref="/" />
         <Card className="border-destructive/30">
           <CardHeader className="text-center pb-2">
             <div className="mx-auto mb-3 flex h-14 w-14 items-center justify-center rounded-full bg-destructive/10">
@@ -192,13 +188,7 @@ export default function ExpensesPage() {
 
       {/* Departments section */}
       <div>
-        <div className="flex items-center gap-2 mb-3">
-          <Building2 className="h-4 w-4 text-muted-foreground" />
-          <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider">
-            Your Departments
-          </h2>
-          <div className="flex-1 h-px bg-border/50" />
-        </div>
+        <SectionHeader title="Your Departments" icon={Building2} />
 
         {departmentItems.length > 0 ? (
           <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">

@@ -23,6 +23,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { TableScrollArea } from "./module-table-card";
+import { PageHeader } from "@/components/shared/page-header";
 
 /**
  * Shared chrome for the Recurring Payments "Reports" section. Every report hand-rolled its own
@@ -68,33 +69,29 @@ export function ReportHeader({
   hero?: { label: string; value: string; hint?: string };
   actions?: React.ReactNode;
 }) {
+  // The app's standard header (`shared/page-header`); the report's lead number rides along as a
+  // key fact under the title, where the KPI tiles below pick up the rest.
   return (
-    <Card>
-      <CardContent className="flex flex-col gap-4 p-5 sm:flex-row sm:items-start sm:justify-between">
-        <div className="min-w-0">
-          {/* A hairline emerald rule instead of the old full-bleed gradient: a large saturated
-              block reads loud at page scale and forced every value on top of it to fight the
-              background. The accent now marks the page without competing with the data. */}
-          <div className="mb-2 h-0.5 w-10 rounded-full bg-[#059669] dark:bg-[#0e9f6e]" />
-          <h1 className="text-xl font-semibold tracking-tight text-foreground">{title}</h1>
-          <p className="mt-1 max-w-2xl text-sm text-muted-foreground">{description}</p>
-        </div>
-        <div className="flex flex-col items-start gap-3 sm:items-end">
-          {actions && <div className="flex flex-wrap gap-2 print:hidden">{actions}</div>}
-          {hero && (
-            <div className="sm:text-right">
-              <p className="text-xs uppercase tracking-wide text-muted-foreground">{hero.label}</p>
-              {/* Proportional figures, not tabular: at display size, equal-width digits make a
-                  number like 121 look gapped. tabular-nums belongs in the columns below. */}
-              <p className="text-3xl font-semibold leading-tight text-foreground sm:text-4xl">
-                {hero.value}
-              </p>
-              {hero.hint && <p className="text-xs text-muted-foreground">{hero.hint}</p>}
-            </div>
-          )}
-        </div>
-      </CardContent>
-    </Card>
+    <PageHeader
+      title={title}
+      description={description}
+      actions={actions ? <div className="flex flex-wrap gap-2 print:hidden">{actions}</div> : undefined}
+      meta={
+        hero
+          ? [
+              {
+                label: hero.label,
+                value: (
+                  <span className="text-sm font-semibold text-foreground">
+                    {hero.value}
+                    {hero.hint && <span className="ml-1.5 font-normal text-muted-foreground">{hero.hint}</span>}
+                  </span>
+                ),
+              },
+            ]
+          : undefined
+      }
+    />
   );
 }
 

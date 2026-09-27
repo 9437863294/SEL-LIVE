@@ -13,6 +13,7 @@ import { useFieldControl, validateFieldControlRequirements } from '@/components/
 import { ControlledField } from '@/components/vehicle-management/controlled-field';
 import { useToast } from '@/hooks/use-toast';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { PageHeader } from '@/components/shared/page-header';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -300,13 +301,13 @@ export default function DriverMobileFuelPage() {
 
   return (
     <div className="space-y-4">
+      <PageHeader
+        title="Driver Fuel Entry"
+        description="Submit fuel from phone in a few taps."
+        className="mb-0 sm:mb-0"
+      />
       <Card className="vm-panel-strong overflow-hidden">
-        <div className="h-1 w-full bg-gradient-to-r from-emerald-500 via-teal-500 to-cyan-600 animate-bb-gradient" />
-        <CardHeader>
-          <CardTitle className="tracking-tight">Driver Fuel Entry</CardTitle>
-          <CardDescription>Submit fuel from phone in a few taps.</CardDescription>
-        </CardHeader>
-        <CardContent className="grid grid-cols-1 gap-3 md:grid-cols-2">
+        <CardContent className="grid grid-cols-1 gap-3 pt-[var(--card-pad,1.5rem)] md:grid-cols-2">
           <ControlledField setting={field('vehicleId')}>
             <Select value={form.vehicleId || undefined} onValueChange={(value) => setForm((prev) => ({ ...prev, vehicleId: value }))}>
               <SelectTrigger className="bg-white/85">
@@ -386,7 +387,7 @@ export default function DriverMobileFuelPage() {
 
       <Card className="vm-panel">
         <CardHeader>
-          <CardTitle className="text-lg">Recent Fuel Entries</CardTitle>
+          <CardTitle>Recent Fuel Entries</CardTitle>
         </CardHeader>
         <CardContent className="space-y-3">
           {isLoadingLogs ? (

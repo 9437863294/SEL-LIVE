@@ -35,6 +35,7 @@ import {
 } from "@/lib/bank-guarantee";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { PageHeader } from "@/components/shared/page-header";
 import {
   Card,
   CardContent,
@@ -510,35 +511,34 @@ export default function BGRegister({
   );
   return (
     <div className="space-y-4">
-      <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-end">
-        <div>
-          <h1 className="text-2xl font-bold">
-            {mode === "approvals" ? "Pending BG Approvals" : "BG Register"}
-          </h1>
-          <p className="text-sm text-muted-foreground">
-            {mode === "approvals"
-              ? "Project, commercial, finance, and director-stage decisions."
-              : "Complete request and issued Bank Guarantee register."}
-          </p>
-        </div>
-        <div className="flex gap-2">
-          {canAdd && (
-            <Button asChild>
-              <Link href="/bank-guarantee/new">
-                <FilePlus2 className="mr-2 h-4 w-4" />
-                New Request
-              </Link>
+      <PageHeader
+        className="mb-0 sm:mb-0"
+        title={mode === "approvals" ? "Pending BG Approvals" : "BG Register"}
+        description={
+          mode === "approvals"
+            ? "Project, commercial, finance, and director-stage decisions."
+            : "Complete request and issued Bank Guarantee register."
+        }
+        actions={
+          <>
+            {canAdd && (
+              <Button asChild>
+                <Link href="/bank-guarantee/new">
+                  <FilePlus2 className="mr-2 h-4 w-4" />
+                  New Request
+                </Link>
+              </Button>
+            )}
+            <Button variant="outline" onClick={() => void exportRows()}>
+              <Download className="mr-2 h-4 w-4" />
+              Export
             </Button>
-          )}
-          <Button variant="outline" onClick={() => void exportRows()}>
-            <Download className="mr-2 h-4 w-4" />
-            Export
-          </Button>
-          <Button variant="outline" size="icon" onClick={() => void load()}>
-            <RefreshCw className="h-4 w-4" />
-          </Button>
-        </div>
-      </div>
+            <Button variant="outline" size="icon" onClick={() => void load()}>
+              <RefreshCw className="h-4 w-4" />
+            </Button>
+          </>
+        }
+      />
       <div className="grid gap-3 sm:grid-cols-3">
         <Card>
           <CardContent className="p-4">

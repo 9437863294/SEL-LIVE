@@ -16,7 +16,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useParams, useSearchParams } from "next/navigation";
-import { AlertTriangle, ArrowLeft, ExternalLink, Route, ShieldAlert } from "lucide-react";
+import { AlertTriangle, ExternalLink, Route, ShieldAlert } from "lucide-react";
 import { collection, doc, getDoc, getDocs, query, where } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import { useAuthorization } from "@/hooks/useAuthorization";
@@ -100,6 +100,7 @@ import {
 } from "@/components/ui/table";
 import { cn } from "@/lib/utils";
 import { PmDataList, type PmListColumn } from "@/components/project-management/pm-shell";
+import { PageHeader } from "@/components/shared/page-header";
 
 type ProjectMapping = {
   id: string;
@@ -700,30 +701,16 @@ export default function BoqItem360Page() {
 
   return (
     <main className="min-h-[calc(100dvh-4rem)] min-w-0 space-y-5 p-4 max-sm:[--card-pad:1rem] sm:p-6">
-      <div className="flex items-start gap-3 sm:items-center">
-        <Button variant="ghost" size="icon" className="shrink-0" asChild>
-          <Link
-            href={`/project-management/boq/costing?project=${encodeURIComponent(mappingId)}`}
-            aria-label="Back to BOQ"
-          >
-            <ArrowLeft className="h-5 w-5" />
-          </Link>
-        </Button>
-        <div className="hidden h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-cyan-500 to-blue-600 shadow-sm sm:flex">
-          <Route className="h-5 w-5 text-white" />
-        </div>
-        {/* The description is the item's only full statement on this page, so a phone wraps it
-            rather than cutting it to one line. */}
-        <div className="min-w-0">
-          <h1 className="break-words text-lg font-bold sm:truncate sm:text-2xl">
-            {boqSlNo ? `${boqSlNo} — ` : ""}
-            {text(boqItem.Description) || "BOQ item"}
-          </h1>
-          <p className="text-sm text-muted-foreground">
-            Full lifecycle for {mapping.projectName}
-          </p>
-        </div>
-      </div>
+      {/* The description is the item's only full statement on this page, so the title wraps it
+          rather than cutting it to one line. */}
+      <PageHeader
+        title={`${boqSlNo ? `${boqSlNo} — ` : ""}${text(boqItem.Description) || "BOQ item"}`}
+        description={`Full lifecycle for ${mapping.projectName}`}
+        icon={Route}
+        backHref={`/project-management/boq/costing?project=${encodeURIComponent(mappingId)}`}
+        backLabel="Back to BOQ"
+        className="mb-0 sm:mb-0"
+      />
 
       {/* Header facts */}
       <Card>
@@ -782,7 +769,7 @@ export default function BoqItem360Page() {
       {/* Lifecycle timeline */}
       <Card className={SECTION_CARD}>
         <CardHeader className={cn("pb-3", SECTION_CARD_HEADER)}>
-          <CardTitle className="text-base">Lifecycle</CardTitle>
+          <CardTitle>Lifecycle</CardTitle>
           <CardDescription>
             Every stage this BOQ line passes through, with the record and date behind each one.
           </CardDescription>
@@ -806,7 +793,7 @@ export default function BoqItem360Page() {
       {ledger && (
         <Card>
           <CardHeader className="pb-3">
-            <CardTitle className="text-base">Quantity reconciliation</CardTitle>
+            <CardTitle>Quantity reconciliation</CardTitle>
             <CardDescription>
               Each stage&apos;s recorded quantity, checked against the one above it and against
               approved scope. {formatQuantity(ledger.availableToOrder)} {unit} still available to order.
@@ -890,7 +877,7 @@ export default function BoqItem360Page() {
           civilRecords.bills.length > 0) && (
           <Card className={SECTION_CARD}>
             <CardHeader className={cn("pb-3", SECTION_CARD_HEADER)}>
-              <CardTitle className="text-base">Subcontract &amp; measurement records</CardTitle>
+              <CardTitle>Subcontract &amp; measurement records</CardTitle>
               <CardDescription>
                 Work orders, JMC/MVAC measurement entries, and subcontractor bills that reference
                 this BOQ line — owned by Subcontractors Management and Billing Recon, joined here.
@@ -913,7 +900,7 @@ export default function BoqItem360Page() {
       {/* Linked documents */}
       <Card className={cn(documents.length > 0 && SECTION_CARD)}>
         <CardHeader className={cn("pb-3", documents.length > 0 && SECTION_CARD_HEADER)}>
-          <CardTitle className="text-base">Linked documents</CardTitle>
+          <CardTitle>Linked documents</CardTitle>
           <CardDescription>Evidence filed against this BOQ item in the document vault.</CardDescription>
         </CardHeader>
         <CardContent className="p-0">

@@ -2,9 +2,9 @@
 export const dynamic = 'force-dynamic';
 
 import { useState, useEffect, useMemo } from 'react';
-import Link from 'next/link';
-import { ArrowLeft, ShieldAlert, Gauge, CreditCard, RefreshCw, TrendingUp } from 'lucide-react';
+import { ShieldAlert, Gauge, CreditCard, RefreshCw, TrendingUp } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { PageHeader } from '@/components/shared/page-header';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow, TableFooter } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
@@ -150,10 +150,7 @@ export default function DpUtilizationPage() {
   if (!canView) {
     return (
       <div className="w-full px-4 sm:px-6 lg:px-8">
-        <div className="mb-6 flex items-center gap-3">
-          <Link href="/bank-balance/reports"><Button variant="ghost" size="icon"><ArrowLeft className="h-6 w-6" /></Button></Link>
-          <h1 className="text-xl font-bold">DP Utilization</h1>
-        </div>
+        <PageHeader title="DP Utilization" backHref="/bank-balance/reports" backLabel="Back to reports" />
         <Card>
           <CardHeader><CardTitle>Access Denied</CardTitle><CardDescription>You do not have permission.</CardDescription></CardHeader>
           <CardContent className="flex justify-center p-8"><ShieldAlert className="h-16 w-16 text-destructive" /></CardContent>
@@ -175,28 +172,19 @@ export default function DpUtilizationPage() {
 
       <div className="relative w-full px-4 sm:px-6 lg:px-8 py-4">
         {/* Header */}
-        <div className="mb-5 flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <Link href="/bank-balance/reports">
-              <Button variant="ghost" size="icon" className="rounded-full hover:bg-rose-50 dark:hover:bg-rose-950/30">
-                <ArrowLeft className="h-5 w-5" />
-              </Button>
-            </Link>
-            <div>
-              <h1 className="text-xl font-bold tracking-tight flex items-center gap-2">
-                <Gauge className="h-5 w-5 text-rose-600 dark:text-rose-400" />
-                DP Utilization Report
-              </h1>
-              <p className="text-xs text-muted-foreground">
-                Drawing power limits and current utilization for Cash Credit accounts &nbsp;·&nbsp; As of {format(new Date(), 'dd MMM yyyy HH:mm')}
-              </p>
-            </div>
-          </div>
-          <Button variant="outline" size="sm" className="rounded-full" onClick={() => void fetchData()} disabled={isLoading}>
-            <RefreshCw className={cn('mr-2 h-4 w-4', isLoading && 'animate-spin')} />
-            Refresh
-          </Button>
-        </div>
+        <PageHeader
+          title="DP Utilization Report"
+          description={<>Drawing power limits and current utilization for Cash Credit accounts &nbsp;·&nbsp; As of {format(new Date(), 'dd MMM yyyy HH:mm')}</>}
+          icon={Gauge}
+          backHref="/bank-balance/reports"
+          backLabel="Back to reports"
+          actions={
+            <Button variant="outline" size="sm" className="rounded-full" onClick={() => void fetchData()} disabled={isLoading}>
+              <RefreshCw className={cn('mr-2 h-4 w-4', isLoading && 'animate-spin')} />
+              Refresh
+            </Button>
+          }
+        />
 
         {/* Summary Cards */}
         <div className="mb-5 grid grid-cols-1 sm:grid-cols-3 gap-4">
@@ -229,7 +217,7 @@ export default function DpUtilizationPage() {
         {/* Table */}
         <Card className="rounded-xl border-border/60 shadow-sm overflow-hidden">
           <CardHeader className="border-b border-border/40 pb-4">
-            <CardTitle className="text-base flex items-center gap-2">
+            <CardTitle className="flex items-center gap-2">
               <TrendingUp className="h-4 w-4 text-rose-500" />
               Account-wise DP Utilization
             </CardTitle>

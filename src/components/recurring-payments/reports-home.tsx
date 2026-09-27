@@ -13,6 +13,7 @@ import {
   Timer,
 } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
+import { SectionHeader } from "@/components/shared/page-header";
 import ProfessionalRecurringReports from "./professional-reports";
 
 interface ReportTile {
@@ -37,12 +38,11 @@ const REPORT_TILES: ReportTile[] = [
 export default function RecurringReportsHome() {
   return (
     <div className="space-y-5">
-      <div>
-        <h2 className="text-sm font-semibold text-slate-700">Jump to a report</h2>
-        <p className="text-xs text-muted-foreground">
-          Each has its own filters and export. The overview below never needs any — it's always the full picture.
-        </p>
-      </div>
+      <SectionHeader
+        className="mb-0"
+        title="Jump to a report"
+        description="Each has its own filters and export. The overview below never needs any — it's always the full picture."
+      />
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
         {REPORT_TILES.map(({ title, description, href, icon: Icon }) => (
           <Link href={href} key={href} className="min-w-0">

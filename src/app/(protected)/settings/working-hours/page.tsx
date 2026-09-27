@@ -2,9 +2,9 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
-import Link from 'next/link';
-import { ArrowLeft, Plus, Trash2, Calendar as CalendarIcon, ShieldAlert } from 'lucide-react';
+import { Plus, Trash2, Calendar as CalendarIcon, ShieldAlert } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { PageHeader } from '@/components/shared/page-header';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Switch } from '@/components/ui/switch';
 import { Input } from '@/components/ui/input';
@@ -159,10 +159,7 @@ export default function WorkingHoursPage() {
   if (!canView) {
     return (
       <div className="w-full">
-        <div className="mb-5 flex items-center gap-3">
-          <Link href="/settings"><Button variant="ghost" size="icon" className="rounded-full"><ArrowLeft className="h-5 w-5" /></Button></Link>
-          <h1 className="text-xl font-bold">Working Hours</h1>
-        </div>
+        <PageHeader title="Working Hours" backHref="/settings" backLabel="Back to settings" />
         <Card><CardHeader><CardTitle>Access Denied</CardTitle><CardDescription>You do not have permission to view this page.</CardDescription></CardHeader>
           <CardContent className="flex justify-center p-8"><ShieldAlert className="h-14 w-14 text-destructive" /></CardContent>
         </Card>
@@ -182,21 +179,18 @@ export default function WorkingHoursPage() {
         />
       </div>
     <div className="w-full px-4 sm:px-5 py-3">
-      <div className="mb-5 flex items-center gap-3">
-        <Link href="/settings">
-          <Button variant="ghost" size="icon" className="rounded-full hover:bg-teal-50 dark:hover:bg-teal-950/30"><ArrowLeft className="h-5 w-5" /></Button>
-        </Link>
-        <div>
-          <h1 className="text-xl font-bold tracking-tight">Working Hours</h1>
-          <p className="text-xs text-muted-foreground">Configure work schedule and holidays</p>
-        </div>
-      </div>
+      <PageHeader
+        title="Working Hours"
+        description="Configure work schedule and holidays"
+        backHref="/settings"
+        backLabel="Back to settings"
+      />
 
       <div className="grid grid-cols-1 lg:grid-cols-5 gap-5 items-start">
         <Card className="lg:col-span-3 border-teal-200/60 dark:border-teal-800/30 overflow-hidden">
           <div className="h-0.5 w-full bg-gradient-to-r from-teal-400 to-cyan-400" />
           <CardHeader className="pb-3">
-            <CardTitle className="text-base">Weekly Schedule</CardTitle>
+            <CardTitle>Weekly Schedule</CardTitle>
             <CardDescription>Set working hours for each day of the week.</CardDescription>
           </CardHeader>
           <CardContent className="space-y-6">

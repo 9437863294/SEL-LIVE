@@ -3,8 +3,9 @@
 
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
-import { ArrowLeft, Plus, Eye, ShieldAlert } from 'lucide-react';
+import { Plus, Eye, ShieldAlert } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { PageHeader } from '@/components/shared/page-header';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { db } from '@/lib/firebase';
@@ -133,10 +134,11 @@ export default function WorkOrderLogPage() {
   if (!canViewPage) {
      return (
         <PmContent>
-            <div className="mb-6 flex items-center gap-2">
-                <Link href={`/subcontractors-management/${projectSlug}`}><Button variant="ghost" size="icon"><ArrowLeft className="h-6 w-6" /></Button></Link>
-                <h1 className="text-xl font-bold">Work Order Log</h1>
-            </div>
+            <PageHeader
+                title="Work Order Log"
+                backHref={`/subcontractors-management/${projectSlug}`}
+                backLabel="Back to Subcontractors"
+            />
             <Card>
                 <CardHeader>
                     <CardTitle>Access Denied</CardTitle>

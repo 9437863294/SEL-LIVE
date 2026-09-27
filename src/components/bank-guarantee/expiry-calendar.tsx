@@ -35,6 +35,7 @@ import {
 } from "@/lib/bank-guarantee";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { PageHeader } from "@/components/shared/page-header";
 import {
   Card,
   CardContent,
@@ -204,29 +205,25 @@ export default function BGExpiryCalendar() {
     );
   return (
     <div className="space-y-4">
-      <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-end">
-        <div>
-          <h1 className="flex items-center gap-2 text-2xl font-bold">
-            <CalendarClock className="h-6 w-6 text-indigo-600" />
-            BG Expiry Calendar
-          </h1>
-          <p className="text-sm text-muted-foreground">
-            Validity, claim periods, owner decisions, and extension/cancellation
-            actions.
-          </p>
-        </div>
-        <div className="flex gap-2">
-          {canExport && (
-            <Button variant="outline" onClick={() => void exportRows()}>
-              <Download className="mr-2 h-4 w-4" />
-              Export
+      <PageHeader
+        className="mb-0 sm:mb-0"
+        icon={CalendarClock}
+        title="BG Expiry Calendar"
+        description="Validity, claim periods, owner decisions, and extension/cancellation actions."
+        actions={
+          <>
+            {canExport && (
+              <Button variant="outline" onClick={() => void exportRows()}>
+                <Download className="mr-2 h-4 w-4" />
+                Export
+              </Button>
+            )}
+            <Button variant="outline" size="icon" onClick={() => void load()}>
+              <RefreshCw className="h-4 w-4" />
             </Button>
-          )}
-          <Button variant="outline" size="icon" onClick={() => void load()}>
-            <RefreshCw className="h-4 w-4" />
-          </Button>
-        </div>
-      </div>
+          </>
+        }
+      />
       <Card>
         <CardContent className="grid gap-2 p-3 sm:grid-cols-3">
           <Select value={windowDays} onValueChange={setWindowDays}>

@@ -18,6 +18,7 @@ import { Badge } from '@/components/ui/badge';
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { PageHeader } from '@/components/shared/page-header';
 
 type ItemForm = Omit<InventoryItem, 'id' | 'organizationId'> & { id?: string };
 
@@ -119,7 +120,7 @@ export default function ItemMasterPage() {
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between"><div><h1 className="text-2xl font-bold">Item Master</h1><p className="text-muted-foreground">The central item catalog is independent from project BOQ.</p></div><Button onClick={() => edit()}><Plus className="mr-2 h-4 w-4" />New item</Button></div>
+      <PageHeader className="mb-0 sm:mb-0" title="Item Master" description="The central item catalog is independent from project BOQ." actions={<Button onClick={() => edit()}><Plus className="mr-2 h-4 w-4" />New item</Button>} />
       <Card>
         <CardHeader className="gap-4 sm:flex-row sm:items-center sm:justify-between"><div><CardTitle>Inventory items</CardTitle><CardDescription>{items.length} master records</CardDescription></div><div className="relative w-full sm:w-80"><Search className="absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" /><Input className="pl-9" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search items…" /></div></CardHeader>
         <CardContent className="overflow-x-auto"><Table><TableHeader><TableRow><TableHead>Code</TableHead><TableHead>Item</TableHead><TableHead>Category</TableHead><TableHead>Unit</TableHead><TableHead>Pack list</TableHead><TableHead className="text-right">Reorder</TableHead><TableHead className="text-right">Cost rate</TableHead><TableHead>Tracking</TableHead><TableHead>Status</TableHead><TableHead /></TableRow></TableHeader><TableBody>
@@ -154,7 +155,7 @@ export default function ItemMasterPage() {
           {form.unit && form.classification === 'Inventory' && (
             <Card className="sm:col-span-2 lg:col-span-3 border-cyan-200 bg-cyan-50/40">
               <CardHeader className="gap-3 pb-3 sm:flex-row sm:items-start sm:justify-between">
-                <div><CardTitle className="flex items-center gap-2 text-base"><PackagePlus className="h-4 w-4 text-cyan-700" />Item pack list</CardTitle><CardDescription>Define the sub-items required to build one {form.unit} of this main item.</CardDescription></div>
+                <div><CardTitle className="flex items-center gap-2"><PackagePlus className="h-4 w-4 text-cyan-700" />Item pack list</CardTitle><CardDescription>Define the sub-items required to build one {form.unit} of this main item.</CardDescription></div>
                 <Button type="button" variant="outline" size="sm" onClick={addPackComponent} disabled={!componentOptions.length}><Plus className="mr-2 h-4 w-4" />Add sub-item</Button>
               </CardHeader>
               <CardContent className="space-y-3">

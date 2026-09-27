@@ -12,6 +12,7 @@ import { useAuthorization } from '@/hooks/useAuthorization';
 import { useAuth } from '@/components/auth/AuthProvider';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
+import { PageHeader } from '@/components/shared/page-header';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -270,18 +271,17 @@ export default function DaywiseStatementPage() {
   return (
     <div className="space-y-4">
       {/* Header */}
-      <div className="flex items-center justify-between gap-3 flex-wrap">
-        <div>
-          <h1 className="text-base sm:text-lg font-bold text-slate-800">Day-wise Statement</h1>
-          <p className="text-sm text-muted-foreground">Every receipt and expense grouped by date with running balance</p>
-        </div>
-        {canExport && dayGroups.length > 0 && (
+      <PageHeader
+        className="mb-0 sm:mb-0"
+        title="Day-wise Statement"
+        description="Every receipt and expense grouped by date with running balance"
+        actions={canExport && dayGroups.length > 0 ? (
           <Button variant="outline" size="sm" onClick={exportExcel} disabled={exporting} className="gap-2">
             {exporting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
             Export Excel
           </Button>
-        )}
-      </div>
+        ) : undefined}
+      />
 
       {/* Controls */}
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">

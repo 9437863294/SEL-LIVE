@@ -33,6 +33,7 @@ import {
 } from "@/lib/bank-guarantee";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { PageHeader } from "@/components/shared/page-header";
 import {
   Card,
   CardContent,
@@ -367,31 +368,29 @@ export default function BGLifecycleWorkspace({ kind }: { kind: Kind }) {
           ];
   return (
     <div className="space-y-4">
-      <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-end">
-        <div>
-          <h1 className="text-2xl font-bold">{title}</h1>
-          <p className="text-sm text-muted-foreground">
-            Separate event history with controlled approvals, bank confirmation,
-            and consolidated BG updates.
-          </p>
-        </div>
-        <div className="flex gap-2">
-          {canAdd && (
-            <Button onClick={newRecord}>
-              <Plus className="mr-2 h-4 w-4" />
-              New{" "}
-              {kind === "extensions"
-                ? "Extension"
-                : kind === "invocations"
-                  ? "Invocation"
-                  : "Cancellation"}
+      <PageHeader
+        className="mb-0 sm:mb-0"
+        title={title}
+        description="Separate event history with controlled approvals, bank confirmation, and consolidated BG updates."
+        actions={
+          <>
+            {canAdd && (
+              <Button onClick={newRecord}>
+                <Plus className="mr-2 h-4 w-4" />
+                New{" "}
+                {kind === "extensions"
+                  ? "Extension"
+                  : kind === "invocations"
+                    ? "Invocation"
+                    : "Cancellation"}
+              </Button>
+            )}
+            <Button variant="outline" size="icon" onClick={() => void load()}>
+              <RefreshCw className="h-4 w-4" />
             </Button>
-          )}
-          <Button variant="outline" size="icon" onClick={() => void load()}>
-            <RefreshCw className="h-4 w-4" />
-          </Button>
-        </div>
-      </div>
+          </>
+        }
+      />
       <Card>
         <CardContent className="p-0">
           <div className="overflow-x-auto">

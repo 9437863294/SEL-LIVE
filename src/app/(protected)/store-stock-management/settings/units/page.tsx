@@ -22,6 +22,7 @@ import { db } from '@/lib/firebase';
 import { collection, getDocs, addDoc, deleteDoc, doc } from 'firebase/firestore';
 import type { Site } from '@/lib/types';
 import { Skeleton } from '@/components/ui/skeleton';
+import { PageHeader } from '@/components/shared/page-header';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogHeader, AlertDialogTitle, AlertDialogDescription, AlertDialogFooter, AlertDialogTrigger } from "@/components/ui/alert-dialog";
 
 export default function ManageUnitsPage() {
@@ -80,14 +81,13 @@ export default function ManageUnitsPage() {
 
   return (
     <div className="mx-auto w-full max-w-3xl space-y-6">
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
-        <div>
-            <p className="text-xs font-bold uppercase tracking-[0.14em] text-sky-600">Transaction configuration</p>
-            <h1 className="mt-1 text-2xl font-bold tracking-tight">Units of Measurement</h1>
-            <p className="mt-1 text-sm text-muted-foreground">Manage the measurement units available to stock and BOQ items.</p>
-         </div>
-        <Button onClick={() => setIsDialogOpen(true)}><Plus className="mr-2 h-4 w-4"/> Add Unit</Button>
-      </div>
+      <PageHeader
+        className="mb-0 sm:mb-0"
+        eyebrow="Transaction configuration"
+        title="Units of Measurement"
+        description="Manage the measurement units available to stock and BOQ items."
+        actions={<Button onClick={() => setIsDialogOpen(true)}><Plus className="mr-2 h-4 w-4"/> Add Unit</Button>}
+      />
 
       <Card className="border-slate-200/80 shadow-sm">
         <CardHeader>

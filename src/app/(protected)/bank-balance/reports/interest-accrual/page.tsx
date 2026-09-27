@@ -2,9 +2,8 @@
 export const dynamic = 'force-dynamic';
 
 import { useState, useEffect, useMemo } from 'react';
-import Link from 'next/link';
-import { ArrowLeft, ShieldAlert, Percent, CreditCard, Info } from 'lucide-react';
-import { Button } from '@/components/ui/button';
+import { ShieldAlert, Percent, CreditCard, Info } from 'lucide-react';
+import { PageHeader } from '@/components/shared/page-header';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow, TableFooter } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
@@ -154,10 +153,7 @@ export default function InterestAccrualPage() {
   if (!canView) {
     return (
       <div className="w-full px-4 sm:px-6 lg:px-8">
-        <div className="mb-6 flex items-center gap-3">
-          <Link href="/bank-balance/reports"><Button variant="ghost" size="icon"><ArrowLeft className="h-6 w-6" /></Button></Link>
-          <h1 className="text-xl font-bold">Interest Accrual</h1>
-        </div>
+        <PageHeader title="Interest Accrual" backHref="/bank-balance/reports" backLabel="Back to reports" />
         <Card>
           <CardHeader><CardTitle>Access Denied</CardTitle><CardDescription>You do not have permission.</CardDescription></CardHeader>
           <CardContent className="flex justify-center p-8"><ShieldAlert className="h-16 w-16 text-destructive" /></CardContent>
@@ -179,20 +175,13 @@ export default function InterestAccrualPage() {
 
       <div className="relative w-full px-4 sm:px-6 lg:px-8 py-4">
         {/* Header */}
-        <div className="mb-5 flex items-center gap-3">
-          <Link href="/bank-balance/reports">
-            <Button variant="ghost" size="icon" className="rounded-full hover:bg-violet-50 dark:hover:bg-violet-950/30">
-              <ArrowLeft className="h-5 w-5" />
-            </Button>
-          </Link>
-          <div>
-            <h1 className="text-xl font-bold tracking-tight flex items-center gap-2">
-              <Percent className="h-5 w-5 text-violet-600 dark:text-violet-400" />
-              Interest Accrual Report
-            </h1>
-            <p className="text-xs text-muted-foreground">Estimated monthly interest for Cash Credit accounts. Formula: Utilization × Rate / 365 × Days.</p>
-          </div>
-        </div>
+        <PageHeader
+          title="Interest Accrual Report"
+          description="Estimated monthly interest for Cash Credit accounts. Formula: Utilization × Rate / 365 × Days."
+          icon={Percent}
+          backHref="/bank-balance/reports"
+          backLabel="Back to reports"
+        />
 
         {/* Disclaimer */}
         <div className="mb-5 flex items-start gap-2 rounded-xl border border-violet-200/60 bg-violet-50/50 dark:bg-violet-950/20 dark:border-violet-800/30 px-4 py-3">
@@ -235,7 +224,7 @@ export default function InterestAccrualPage() {
                     <div className="flex items-center gap-2">
                       <CreditCard className="h-4 w-4 text-violet-500" />
                       <div>
-                        <CardTitle className="text-sm">{account.bankName} — {account.shortName}</CardTitle>
+                        <CardTitle>{account.bankName} — {account.shortName}</CardTitle>
                         <CardDescription className="text-xs">{account.accountNumber}</CardDescription>
                       </div>
                     </div>

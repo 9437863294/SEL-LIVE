@@ -51,6 +51,7 @@ import {
 } from "@/lib/bank-guarantee";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { PageHeader } from "@/components/shared/page-header";
 import {
   Card,
   CardContent,
@@ -474,19 +475,13 @@ export default function BankGuaranteeDashboard() {
   ];
   return (
     <div className="space-y-4">
-      <Card className="overflow-hidden border-0 bg-gradient-to-r from-slate-950 via-indigo-950 to-violet-950 text-white shadow-lg">
-        <CardContent className="flex flex-col gap-4 p-5 lg:flex-row lg:items-center lg:justify-between">
-          <div>
-            <div className="flex items-center gap-2">
-              <ShieldCheck className="h-6 w-6 text-indigo-300" />
-              <h1 className="text-2xl font-bold">Bank Guarantee Management</h1>
-            </div>
-            <p className="mt-1 text-sm text-indigo-100">
-              Limits, expiry, collateral, commission, custody, claims, and
-              cancellation.
-            </p>
-          </div>
-          <div className="flex flex-wrap gap-2">
+      <PageHeader
+        className="mb-0 sm:mb-0"
+        icon={ShieldCheck}
+        title="Bank Guarantee Management"
+        description="Limits, expiry, collateral, commission, custody, claims, and cancellation."
+        actions={
+          <>
             <Button asChild variant="secondary">
               <Link href="/bank-guarantee/new">
                 <FilePlus2 className="mr-2 h-4 w-4" />
@@ -516,9 +511,9 @@ export default function BankGuaranteeDashboard() {
             <Button variant="secondary" size="icon" onClick={() => void load()}>
               <RefreshCw className="h-4 w-4" />
             </Button>
-          </div>
-        </CardContent>
-      </Card>
+          </>
+        }
+      />
       <Card>
         <CardContent className="grid gap-2 p-3 sm:grid-cols-3">
           <Select value={bank} onValueChange={setBank}>
@@ -589,7 +584,7 @@ export default function BankGuaranteeDashboard() {
         <Chart title="Project-wise BG exposure" data={projectData} />
         <Card>
           <CardHeader>
-            <CardTitle className="text-base">Status distribution</CardTitle>
+            <CardTitle>Status distribution</CardTitle>
           </CardHeader>
           <CardContent className="h-72">
             <ResponsiveContainer>
@@ -614,7 +609,7 @@ export default function BankGuaranteeDashboard() {
         </Card>
         <Card>
           <CardHeader>
-            <CardTitle className="flex items-center gap-2 text-base">
+            <CardTitle className="flex items-center gap-2">
               <AlertOctagon className="h-4 w-4 text-rose-600" />
               Critical exposure
             </CardTitle>
@@ -631,7 +626,7 @@ export default function BankGuaranteeDashboard() {
       </div>
       <Card>
         <CardHeader>
-          <CardTitle className="text-base">
+          <CardTitle>
             Expiry and claim action queue
           </CardTitle>
           <CardDescription>
@@ -719,7 +714,7 @@ function Chart({
   return (
     <Card>
       <CardHeader>
-        <CardTitle className="text-base">{title}</CardTitle>
+        <CardTitle>{title}</CardTitle>
       </CardHeader>
       <CardContent className="h-72">
         <ResponsiveContainer>

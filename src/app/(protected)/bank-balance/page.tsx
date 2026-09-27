@@ -5,11 +5,12 @@ export const dynamic = 'force-dynamic';
 import { useState, useEffect, useMemo } from 'react';
 import Link from 'next/link';
 import {
-  Home, Plus, Settings, Scale, ArrowDown, ArrowUp,
+  Plus, Settings, Scale, ArrowDown, ArrowUp,
   ArrowRightLeft, BarChart3, ShieldAlert, Activity, TrendingUp,
   RefreshCw, CreditCard, Building2, Percent, Calendar,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { PageHeader, SectionHeader } from '@/components/shared/page-header';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useToast } from '@/hooks/use-toast';
@@ -212,10 +213,7 @@ export default function BankBalanceDashboard() {
   if (!canView) {
     return (
       <div className="w-full px-4 sm:px-6 lg:px-8">
-        <div className="mb-6 flex items-center gap-2">
-          <Link href="/"><Button variant="ghost" size="icon"><Home className="h-6 w-6" /></Button></Link>
-          <h1 className="text-2xl font-bold">Bank Balance Dashboard</h1>
-        </div>
+        <PageHeader title="Bank Balance Dashboard" backHref="/" backLabel="Home" />
         <Card>
           <CardHeader>
             <CardTitle>Access Denied</CardTitle>
@@ -251,67 +249,60 @@ export default function BankBalanceDashboard() {
 
       <div className="relative w-full flex flex-col px-4 sm:px-6 lg:px-8 py-4">
         {/* ── Header ── */}
-        <div className="mb-5 flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <Link href="/">
-              <Button variant="ghost" size="icon" className="rounded-full hover:bg-primary/10">
-                <Home className="h-5 w-5" />
+        <PageHeader
+          title="Bank Balance"
+          description={format(new Date(), 'EEEE, MMMM do, yyyy')}
+          backHref="/"
+          backLabel="Home"
+          actions={
+            <>
+              <Button
+                variant="ghost"
+                size="icon"
+                className={cn('h-8 w-8 rounded-full', refreshing && 'animate-spin')}
+                onClick={() => void fetchData(true)}
+                disabled={refreshing}
+                title={`Last refreshed: ${format(lastRefreshed, 'HH:mm:ss')}`}
+              >
+                <RefreshCw className="h-4 w-4" />
               </Button>
-            </Link>
-            <div>
-              <h1 className="text-xl font-bold tracking-tight">Bank Balance</h1>
-              <p className="text-xs text-muted-foreground">
-                {format(new Date(), 'EEEE, MMMM do, yyyy')}
-              </p>
-            </div>
-          </div>
-          <div className="flex items-center gap-2">
-            <Button
-              variant="ghost"
-              size="icon"
-              className={cn('h-8 w-8 rounded-full', refreshing && 'animate-spin')}
-              onClick={() => void fetchData(true)}
-              disabled={refreshing}
-              title={`Last refreshed: ${format(lastRefreshed, 'HH:mm:ss')}`}
-            >
-              <RefreshCw className="h-4 w-4" />
-            </Button>
-            {canViewReports ? (
-              <Link href="/bank-balance/reports">
-                <Button variant="outline" size="sm" className="rounded-full border-border/60">
+              {canViewReports ? (
+                <Link href="/bank-balance/reports">
+                  <Button variant="outline" size="sm" className="rounded-full border-border/60">
+                    <BarChart3 className="mr-2 h-4 w-4" />
+                    Reports
+                  </Button>
+                </Link>
+              ) : (
+                <Button variant="outline" size="sm" className="rounded-full border-border/60" disabled>
                   <BarChart3 className="mr-2 h-4 w-4" />
                   Reports
                 </Button>
-              </Link>
-            ) : (
-              <Button variant="outline" size="sm" className="rounded-full border-border/60" disabled>
-                <BarChart3 className="mr-2 h-4 w-4" />
-                Reports
+              )}
+              <Button
+                size="sm"
+                className="rounded-full shadow-md shadow-primary/20"
+                onClick={() => setIsDailyEntryOpen(true)}
+                disabled={!canOpenDailyEntry}
+                title={!activeAccounts.length ? 'Add and activate a bank account first.' : undefined}
+              >
+                <Plus className="mr-2 h-4 w-4" />
+                Daily Entry
               </Button>
-            )}
-            <Button
-              size="sm"
-              className="rounded-full shadow-md shadow-primary/20"
-              onClick={() => setIsDailyEntryOpen(true)}
-              disabled={!canOpenDailyEntry}
-              title={!activeAccounts.length ? 'Add and activate a bank account first.' : undefined}
-            >
-              <Plus className="mr-2 h-4 w-4" />
-              Daily Entry
-            </Button>
-            {canViewSettings ? (
-              <Link href="/bank-balance/settings">
-                <Button variant="ghost" size="icon" className="h-8 w-8 rounded-full">
+              {canViewSettings ? (
+                <Link href="/bank-balance/settings">
+                  <Button variant="ghost" size="icon" className="h-8 w-8 rounded-full">
+                    <Settings className="h-4 w-4" />
+                  </Button>
+                </Link>
+              ) : (
+                <Button variant="ghost" size="icon" className="h-8 w-8 rounded-full" disabled>
                   <Settings className="h-4 w-4" />
                 </Button>
-              </Link>
-            ) : (
-              <Button variant="ghost" size="icon" className="h-8 w-8 rounded-full" disabled>
-                <Settings className="h-4 w-4" />
-              </Button>
-            )}
-          </div>
-        </div>
+              )}
+            </>
+          }
+        />
 
         {/* ── Consolidated Balance Hero ── */}
         <div className="mb-4 relative overflow-hidden rounded-2xl border border-primary/20 bg-gradient-to-r from-primary/10 via-violet-500/8 to-sky-500/8 dark:from-primary/15 dark:via-violet-600/10 dark:to-sky-600/10 shadow-lg shadow-primary/5">
@@ -427,7 +418,7 @@ export default function BankBalanceDashboard() {
                           }
                         </div>
                         <div className="min-w-0">
-                          <CardTitle className="text-sm font-semibold truncate">{account.shortName}</CardTitle>
+                          <CardTitle className="truncate">{account.shortName}</CardTitle>
                           <p className="text-xs text-muted-foreground truncate">{account.bankName}</p>
                         </div>
                       </div>
@@ -527,7 +518,7 @@ export default function BankBalanceDashboard() {
 
           {/* ── Quick Navigation Row ── */}
           <div className="mt-2 mb-4">
-            <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-3">Quick Navigation</p>
+            <SectionHeader title="Quick Navigation" />
             <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2">
               {quickLinks.map(item => {
                 const content = (

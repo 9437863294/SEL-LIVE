@@ -28,8 +28,9 @@ import {
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
   AlertDialogTrigger,
 } from '@/components/ui/alert-dialog';
-import { ArrowLeft, Loader2, Pencil, Plus, Trash2, User2, Users2 } from 'lucide-react';
+import { Loader2, Pencil, Plus, Trash2, User2, Users2 } from 'lucide-react';
 import Link from 'next/link';
+import { PageHeader } from '@/components/shared/page-header';
 
 const MODULE   = 'Site Fund Request';
 const RESOURCE = 'Settings';
@@ -268,22 +269,14 @@ export default function SFRProjectAccessPage() {
   return (
     <div className="w-full space-y-6 p-4 sm:p-6">
       {/* Page header */}
-      <div className="flex items-start gap-3">
-        <Link href="/site-fund-request/settings">
-          <Button variant="ghost" size="icon" className="mt-0.5 h-8 w-8 shrink-0 text-slate-500 hover:text-slate-800">
-            <ArrowLeft className="h-4 w-4" />
-          </Button>
-        </Link>
-        <div>
-          <p className="text-xs font-semibold uppercase tracking-[0.22em] text-slate-500">
-            Site Fund Request / Settings
-          </p>
-          <h1 className="mt-1 text-2xl font-bold tracking-tight text-slate-900">Project Access</h1>
-          <p className="mt-0.5 text-sm text-slate-600">
-            Assign users to projects for the fund request module.
-          </p>
-        </div>
-      </div>
+      <PageHeader
+        className="mb-0 sm:mb-0"
+        backHref="/site-fund-request/settings"
+        backLabel="Back to settings"
+        eyebrow="Site Fund Request / Settings"
+        title="Project Access"
+        description="Assign users to projects for the fund request module."
+      />
 
       {/* Toolbar */}
       <div className="flex flex-wrap items-center gap-3">

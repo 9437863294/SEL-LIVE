@@ -32,6 +32,7 @@ import { ModuleBottomNav, type ModuleNavTab } from '@/components/navigation/Modu
 import { SIDEBAR_ICONS_GRID, SidebarNavTooltip, useSidebarIconsOnly } from '@/components/navigation/use-sidebar-mode';
 import { useAssignedWorkflowSteps } from './use-assigned-workflow';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { ModuleMobileHeader } from '@/components/shared/page-header';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import { cn } from '@/lib/utils';
 
@@ -288,21 +289,13 @@ export default function RecurringPaymentsLayoutShell({ children }: { children: R
       </div>
 
       {/* `lg:hidden` is a min-width query, so this bar would still print on a wide sheet. */}
-      <div className="mb-3 lg:hidden print:hidden">
-        <Card className="border border-white/60 bg-white/80 shadow-sm backdrop-blur-sm">
-          <CardContent className="flex items-center gap-3 px-3 py-2.5">
-            <div className="flex min-w-0 items-center gap-2">
-              <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-gradient-to-br from-emerald-500 to-teal-600 shadow-sm">
-                <Repeat2 className="h-4 w-4 text-white" />
-              </div>
-              <div className="min-w-0">
-                <p className="truncate text-sm font-semibold leading-tight tracking-tight">Recurring Payments</p>
-                <p className="text-[11px] leading-tight text-muted-foreground">Bill &amp; Workflow Manager</p>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-      </div>
+      <ModuleMobileHeader
+        icon={Repeat2}
+        title="Recurring Payments"
+        subtitle="Bill & Workflow Manager"
+        hideFrom="lg"
+        className="print:hidden"
+      />
 
       <div className={`rp-shell-grid grid grid-cols-1 gap-4 ${iconsOnly ? SIDEBAR_ICONS_GRID : 'lg:grid-cols-[240px_minmax(0,1fr)]'} lg:items-start`}>
         <TooltipProvider delayDuration={150}>

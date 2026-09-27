@@ -14,6 +14,7 @@ import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { PageHeader } from '@/components/shared/page-header';
 import type { InventoryBalance, InventoryItem, InventoryLocation } from '@/lib/inventory';
 
 type ItemRow = InventoryItem & { onHand: number; reserved: number; available: number; value: number; locations: number };
@@ -97,17 +98,18 @@ export default function InventoryDashboardPage() {
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight sm:text-3xl">Inventory control</h1>
-          <p className="text-muted-foreground">Item- and location-wise stock derived from posted ledger movements.</p>
-        </div>
-        <div className="flex gap-2">
-          <Button asChild variant="outline"><Link href="/store-stock-management/inventory/item-wise">Item-wise inventory</Link></Button>
-          <Button asChild variant="outline"><Link href="/store-stock-management/inventory/transfers">New transfer</Link></Button>
-          <Button asChild><Link href="/store-stock-management/inventory/movements">Post movement</Link></Button>
-        </div>
-      </div>
+      <PageHeader
+        className="mb-0 sm:mb-0"
+        title="Inventory control"
+        description="Item- and location-wise stock derived from posted ledger movements."
+        actions={
+          <>
+            <Button asChild variant="outline"><Link href="/store-stock-management/inventory/item-wise">Item-wise inventory</Link></Button>
+            <Button asChild variant="outline"><Link href="/store-stock-management/inventory/transfers">New transfer</Link></Button>
+            <Button asChild><Link href="/store-stock-management/inventory/movements">Post movement</Link></Button>
+          </>
+        }
+      />
 
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
         <Metric title="Inventory value" value={canViewCost ? `₹${totalValue.toLocaleString('en-IN', { maximumFractionDigits: 2 })}` : 'Restricted'} icon={IndianRupee} />

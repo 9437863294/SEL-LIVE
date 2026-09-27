@@ -30,7 +30,7 @@ import {
 } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent } from '@/components/ui/card';
+import { PageHeader } from '@/components/shared/page-header';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -316,41 +316,45 @@ export default function RequirementWorkspace({ requirementId }: { requirementId:
   return (
     <div>
       {/* ── Header (spec section 16) ── */}
-      <Card className="mb-4 border-white/60 bg-white/85 shadow-sm backdrop-blur-sm">
-        <CardContent className="p-4">
-          <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
-            <div className="min-w-0">
-              <div className="flex flex-wrap items-center gap-2">
-                <h1 className="text-lg font-semibold tracking-tight text-slate-800">{requirement.requirementNumber}</h1>
-                <HrStatusBadge status={requirement.status} />
-                <HrPriorityBadge priority={requirement.priority} />
-                {requirement.fastTrack && (
-                  <Badge variant="outline" className="border-rose-200 bg-rose-50 text-rose-700">Fast track</Badge>
-                )}
-              </div>
-              <p className="mt-1 text-sm font-medium text-slate-700">
-                {requirement.requestedQuantity} × {requirement.designation}
-                {requirement.grade ? ` · ${requirement.grade}` : ''}
-              </p>
-              <p className="text-xs text-muted-foreground">
-                {requirement.departmentName}
-                {requirement.projectName ? ` · ${requirement.projectName}` : ''}
-                {requirement.location ? ` · ${requirement.location}` : ''}
-              </p>
-              <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-muted-foreground">
-                <span>Raised {requirement.requirementDate}</span>
-                <span>Age {ageDays}d</span>
-                {requirement.targetClosureDate && <span>Target {requirement.targetClosureDate}</span>}
-                <span>
-                  Recruiter{' '}
-                  {requirement.primaryRecruiterName || <span className="font-medium text-amber-700">unassigned</span>}
-                </span>
-                <HrSlaBadge state={sla.state} consumedPercent={sla.consumedPercent} overdueDays={sla.overdueDays} />
-              </div>
+      <PageHeader
+        title={requirement.requirementNumber}
+        badge={
+          <>
+            <HrStatusBadge status={requirement.status} />
+            <HrPriorityBadge priority={requirement.priority} />
+            {requirement.fastTrack && (
+              <Badge variant="outline" className="border-rose-200 bg-rose-50 text-rose-700">Fast track</Badge>
+            )}
+          </>
+        }
+        description={
+          <span className="font-medium text-slate-700">
+            {requirement.requestedQuantity} × {requirement.designation}
+            {requirement.grade ? ` · ${requirement.grade}` : ''}
+          </span>
+        }
+        meta={
+          <div className="min-w-0 space-y-1 text-xs text-muted-foreground">
+            <p>
+              {requirement.departmentName}
+              {requirement.projectName ? ` · ${requirement.projectName}` : ''}
+              {requirement.location ? ` · ${requirement.location}` : ''}
+            </p>
+            <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
+              <span>Raised {requirement.requirementDate}</span>
+              <span>Age {ageDays}d</span>
+              {requirement.targetClosureDate && <span>Target {requirement.targetClosureDate}</span>}
+              <span>
+                Recruiter{' '}
+                {requirement.primaryRecruiterName || <span className="font-medium text-amber-700">unassigned</span>}
+              </span>
+              <HrSlaBadge state={sla.state} consumedPercent={sla.consumedPercent} overdueDays={sla.overdueDays} />
             </div>
-
-            {/* Actions, in the order a requirement actually moves. */}
-            <div className="flex shrink-0 flex-wrap gap-2">
+          </div>
+        }
+        /* Actions, in the order a requirement actually moves. */
+        actions={
+            <>
               {['DRAFT', 'REJECTED'].includes(requirement.status) && (
                 <>
                   {permissions.can('Edit', 'Requirements') && (
@@ -425,54 +429,47 @@ export default function RequirementWorkspace({ requirementId }: { requirementId:
                   <Ban className="h-3.5 w-3.5" /> Cancel
                 </Button>
               )}
-            </div>
-          </div>
+            </>
+        }
+      />
 
-          {/* Fill counters — the spec's own header figures. */}
-          <div className="mt-4 grid grid-cols-2 gap-3 border-t border-slate-100 pt-3 sm:grid-cols-3 lg:grid-cols-6">
-            <HrKpiCard label="Required" value={fill.effectiveRequired} tone="blue" />
-            <HrKpiCard label="Joined" value={fill.joined} tone="emerald" />
-            <HrKpiCard label="Offer accepted" value={fill.offerAccepted} tone="violet" />
-            <HrKpiCard label="Offered" value={fill.offered} tone="orange" />
-            <HrKpiCard label="In pipeline" value={scoped.applications.filter(row => !['JOINED', 'REJECTED', 'WITHDRAWN', 'NO_RESPONSE', 'OFFER_REJECTED', 'NO_SHOW', 'TALENT_POOL'].includes(row.stage)).length} tone="indigo" />
-            <HrKpiCard label="Balance" value={fill.balance} tone={fill.balance > 0 ? 'rose' : 'teal'} />
-          </div>
-          <div className="mt-3">
-            <HrFillBar required={fill.effectiveRequired} joined={fill.joined} accepted={fill.offerAccepted} />
-          </div>
+      <div className="mb-4 space-y-3">
+        {/* Fill counters — the spec's own header figures. */}
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
+          <HrKpiCard label="Required" value={fill.effectiveRequired} tone="blue" />
+          <HrKpiCard label="Joined" value={fill.joined} tone="emerald" />
+          <HrKpiCard label="Offer accepted" value={fill.offerAccepted} tone="violet" />
+          <HrKpiCard label="Offered" value={fill.offered} tone="orange" />
+          <HrKpiCard label="In pipeline" value={scoped.applications.filter(row => !['JOINED', 'REJECTED', 'WITHDRAWN', 'NO_RESPONSE', 'OFFER_REJECTED', 'NO_SHOW', 'TALENT_POOL'].includes(row.stage)).length} tone="indigo" />
+          <HrKpiCard label="Balance" value={fill.balance} tone={fill.balance > 0 ? 'rose' : 'teal'} />
+        </div>
+        <HrFillBar required={fill.effectiveRequired} joined={fill.joined} accepted={fill.offerAccepted} />
 
-          {requirement.status === 'ON_HOLD' && (
-            <div className="mt-3">
-              <HrAlertNotice tone="amber" title="On hold">
-                {requirement.holdReason}
-                {requirement.holdRemarks ? ` — ${requirement.holdRemarks}` : ''}
-                {settings.sla.pauseOnHold ? ' The SLA clock is paused.' : ' The SLA clock keeps running.'}
-              </HrAlertNotice>
-            </div>
-          )}
+        {requirement.status === 'ON_HOLD' && (
+          <HrAlertNotice tone="amber" title="On hold">
+            {requirement.holdReason}
+            {requirement.holdRemarks ? ` — ${requirement.holdRemarks}` : ''}
+            {settings.sla.pauseOnHold ? ' The SLA clock is paused.' : ' The SLA clock keeps running.'}
+          </HrAlertNotice>
+        )}
 
-          {requirement.status === 'REJECTED' && requirement.rejectionReason && (
-            <div className="mt-3">
-              <HrAlertNotice tone="rose" title="Returned">
-                {requirement.rejectionReason}
-              </HrAlertNotice>
-            </div>
-          )}
+        {requirement.status === 'REJECTED' && requirement.rejectionReason && (
+          <HrAlertNotice tone="rose" title="Returned">
+            {requirement.rejectionReason}
+          </HrAlertNotice>
+        )}
 
-          {fill.recommendClosure && canAct && (
-            <div className="mt-3">
-              <HrAlertNotice tone="emerald" title="Requirement fulfilled">
-                All {fill.effectiveRequired} positions have joined. Close this requirement?
-                {permissions.can('Close', 'Requirements') && (
-                  <Button size="sm" variant="outline" className="ml-2 h-6 bg-white" onClick={() => setCloseOpen(true)}>
-                    Close now
-                  </Button>
-                )}
-              </HrAlertNotice>
-            </div>
-          )}
-        </CardContent>
-      </Card>
+        {fill.recommendClosure && canAct && (
+          <HrAlertNotice tone="emerald" title="Requirement fulfilled">
+            All {fill.effectiveRequired} positions have joined. Close this requirement?
+            {permissions.can('Close', 'Requirements') && (
+              <Button size="sm" variant="outline" className="ml-2 h-6 bg-white" onClick={() => setCloseOpen(true)}>
+                Close now
+              </Button>
+            )}
+          </HrAlertNotice>
+        )}
+      </div>
 
       {/* ── Tabs (spec section 16) ── */}
       <Tabs defaultValue="overview">

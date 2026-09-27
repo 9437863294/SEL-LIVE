@@ -3,9 +3,9 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import Link from 'next/link';
-import { ArrowLeft, Save, Loader2, ShieldAlert, Clock, Info } from 'lucide-react';
+import { Save, Loader2, ShieldAlert, Clock, Info } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { PageHeader } from '@/components/shared/page-header';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -60,10 +60,7 @@ export default function LoginExpiryPage() {
   if (!canViewPage) {
     return (
       <div className=" px-4 sm:px-5 py-3">
-        <div className="mb-5 flex items-center gap-3">
-          <Link href="/settings"><Button variant="ghost" size="icon" className="rounded-full"><ArrowLeft className="h-5 w-5" /></Button></Link>
-          <h1 className="text-xl font-bold">Login Expiry</h1>
-        </div>
+        <PageHeader title="Login Expiry" icon={Clock} backHref="/settings" backLabel="Back to settings" />
         <Card><CardHeader><CardTitle>Access Denied</CardTitle><CardDescription>You do not have permission to view this page.</CardDescription></CardHeader>
           <CardContent className="flex justify-center p-8"><ShieldAlert className="h-14 w-14 text-destructive" /></CardContent>
         </Card>
@@ -85,20 +82,13 @@ export default function LoginExpiryPage() {
 
       <div className=" px-4 sm:px-5 py-3">
         {/* Header */}
-        <div className="mb-5 flex items-center gap-3">
-          <Link href="/settings">
-            <Button variant="ghost" size="icon" className="rounded-full hover:bg-orange-50 dark:hover:bg-orange-950/30">
-              <ArrowLeft className="h-5 w-5" />
-            </Button>
-          </Link>
-          <div>
-            <div className="flex items-center gap-2">
-              <Clock className="h-4 w-4 text-orange-500" />
-              <h1 className="text-xl font-bold tracking-tight">Login Expiry</h1>
-            </div>
-            <p className="text-xs text-muted-foreground">Session timeout configuration</p>
-          </div>
-        </div>
+        <PageHeader
+          title="Login Expiry"
+          description="Session timeout configuration"
+          icon={Clock}
+          backHref="/settings"
+          backLabel="Back to settings"
+        />
 
         <Card className="border-orange-200/60 dark:border-orange-800/30 overflow-hidden">
           <div className="h-1 w-full bg-gradient-to-r from-orange-400 to-amber-400" />
@@ -108,7 +98,7 @@ export default function LoginExpiryPage() {
                 <Clock className="h-4 w-4 text-orange-600 dark:text-orange-400" />
               </div>
               <div>
-                <CardTitle className="text-base">Session Duration</CardTitle>
+                <CardTitle>Session Duration</CardTitle>
                 <CardDescription className="text-xs">Auto-logout after inactivity</CardDescription>
               </div>
             </div>

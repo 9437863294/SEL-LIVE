@@ -5,7 +5,6 @@ import React, { useState, useEffect, useMemo, useRef, Fragment, useCallback } fr
 import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
 import {
-  ArrowLeft,
   Calculator,
   Trash2,
   ListPlus,
@@ -93,6 +92,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import type { CheckedState } from '@radix-ui/react-checkbox';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { PM_DIALOG } from '@/components/project-management/pm-shell';
+import { PageHeader } from '@/components/shared/page-header';
 
 
 export type BoqItem = {
@@ -1210,14 +1210,7 @@ export default function ViewBoqPage() {
   if (!canView) {
     return (
       <div className="w-full px-4 py-6 sm:px-6 lg:px-8">
-        <div className="mb-6 flex items-center gap-3">
-          <Link href={backHref}>
-            <Button variant="ghost" size="icon" aria-label="Back">
-              <ArrowLeft className="h-6 w-6" />
-            </Button>
-          </Link>
-          <h1 className="text-xl font-bold">View BOQ</h1>
-        </div>
+        <PageHeader title="View BOQ" icon={Calculator} backHref={backHref} backLabel="Back" />
         <Card>
           <CardHeader>
             <CardTitle>Access Denied</CardTitle>
@@ -1236,19 +1229,17 @@ export default function ViewBoqPage() {
     // header. On a phone the stacked filters would leave that box a sliver, so the page flows and
     // the sheet gets a viewport-relative height of its own instead.
     <div className="flex w-full min-w-0 flex-col px-4 pb-4 sm:h-[calc(100dvh-8rem)] sm:px-6 sm:pb-0 lg:px-8">
-      {/* Header */}
+      {/* Header. The filter toolbar stays beside the standard title rather than inside its
+          `actions`: that slot sizes its children to their content, and a row of search and
+          filters would not wrap there. */}
       <div className="flex flex-col gap-3 py-4 sm:py-6 lg:flex-row lg:items-center lg:justify-between">
-        <div className="flex min-w-0 items-center gap-2">
-          <Link href={backHref}>
-            <Button variant="ghost" size="icon" aria-label="Back">
-              <ArrowLeft className="h-6 w-6" />
-            </Button>
-          </Link>
-          <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-gradient-to-br from-emerald-500 to-teal-600 shadow-sm">
-            <Calculator className="h-4 w-4 text-white" />
-          </div>
-          <h1 className="truncate text-xl font-bold">View BOQ</h1>
-        </div>
+        <PageHeader
+          title="View BOQ"
+          icon={Calculator}
+          backHref={backHref}
+          backLabel="Back"
+          className="mb-0 min-w-0 sm:mb-0"
+        />
 
         {/* Phones: search on top, the filters paired beneath it, the actions last — a 2-column grid
             reordered with `max-sm:order-*` so the desktop row keeps its source order. */}

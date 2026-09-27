@@ -6,7 +6,8 @@ import { collection, getDocs } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import { computeRenewalMeta, getVehicleComplianceRequirements, VEHICLE_COLLECTIONS, type VehicleComplianceRequirements } from '@/lib/vehicle-management';
 import { useAuthorization } from '@/hooks/useAuthorization';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent } from '@/components/ui/card';
+import { PageHeader } from '@/components/shared/page-header';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -355,59 +356,50 @@ export default function RenewalsHubPage() {
   return (
     <div className="space-y-3 sm:space-y-5">
       {/* ── Header ── */}
-      <Card className="relative overflow-hidden vm-panel-strong vm-reveal">
-        <div className="absolute inset-0 bg-gradient-to-r from-rose-500/10 via-orange-500/5 to-amber-500/10 animate-bb-gradient" />
-        <div className="electric-scan-line top-8" />
-        <CardHeader className="relative px-3 py-4 sm:px-6 sm:py-6">
-          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-            <div>
-              <CardTitle className="flex items-center gap-2 text-xl tracking-tight sm:text-2xl">
-                <RefreshCw className="h-6 w-6 text-rose-500" />
-                Renewals Hub
-              </CardTitle>
-              <CardDescription>
-                Consolidated view of all expired and due-soon compliance items across the fleet.
-              </CardDescription>
-            </div>
-            <div className="grid w-full grid-cols-2 items-center gap-2 sm:flex sm:w-auto">
-              <Link
-                href="/vehicle-management/vehicle-health"
-                className="flex min-h-11 items-center justify-center gap-1.5 rounded-lg border border-emerald-300 bg-emerald-50 px-3 py-1.5 text-center text-xs font-semibold text-emerald-700 transition-colors hover:bg-emerald-100 sm:min-h-0"
-              >
-                <Activity className="h-3.5 w-3.5" />
-                Health Dashboard
-              </Link>
-              <Button
-                variant="outline"
-                onClick={load}
-                disabled={isLoading}
-                className="w-full gap-2 bg-white/80 hover:bg-white sm:w-fit"
-              >
-                <RefreshCw className={cn('h-4 w-4', isLoading && 'animate-spin')} />
-                Refresh
-              </Button>
-            </div>
-          </div>
-        </CardHeader>
-        <CardContent className="relative grid grid-cols-3 gap-2 px-3 pb-4 sm:gap-3 sm:px-6 sm:pb-6">
-          <div className="rounded-xl border border-rose-100/80 bg-white/80 p-3 shadow-sm sm:p-4">
-            <p className="text-xs text-muted-foreground">Total Alerts</p>
-            <p className="mt-1 text-2xl font-semibold">{isLoading ? '...' : items.length}</p>
-          </div>
-          <div className="rounded-xl border border-rose-100/80 bg-white/80 p-3 shadow-sm sm:p-4">
-            <p className="text-xs text-muted-foreground">Expired</p>
-            <p className="mt-1 text-2xl font-semibold text-rose-600">
-              {isLoading ? '...' : expired.length}
-            </p>
-          </div>
-          <div className="rounded-xl border border-amber-100/80 bg-white/80 p-3 shadow-sm sm:p-4">
-            <p className="text-xs text-muted-foreground">Due Within 30 Days</p>
-            <p className="mt-1 text-2xl font-semibold text-amber-600">
-              {isLoading ? '...' : dueSoon.length}
-            </p>
-          </div>
-        </CardContent>
-      </Card>
+      <PageHeader
+        title="Renewals Hub"
+        description="Consolidated view of all expired and due-soon compliance items across the fleet."
+        icon={RefreshCw}
+        className="mb-0 sm:mb-0"
+        actions={
+          <>
+            <Link
+              href="/vehicle-management/vehicle-health"
+              className="flex min-h-11 items-center justify-center gap-1.5 rounded-lg border border-emerald-300 bg-emerald-50 px-3 py-1.5 text-center text-xs font-semibold text-emerald-700 transition-colors hover:bg-emerald-100 sm:min-h-0"
+            >
+              <Activity className="h-3.5 w-3.5" />
+              Health Dashboard
+            </Link>
+            <Button
+              variant="outline"
+              onClick={load}
+              disabled={isLoading}
+              className="w-full gap-2 bg-white/80 hover:bg-white sm:w-fit"
+            >
+              <RefreshCw className={cn('h-4 w-4', isLoading && 'animate-spin')} />
+              Refresh
+            </Button>
+          </>
+        }
+      />
+      <div className="vm-reveal grid grid-cols-3 gap-2 sm:gap-3">
+        <div className="rounded-xl border border-rose-100/80 bg-white/80 p-3 shadow-sm sm:p-4">
+          <p className="text-xs text-muted-foreground">Total Alerts</p>
+          <p className="mt-1 text-2xl font-semibold">{isLoading ? '...' : items.length}</p>
+        </div>
+        <div className="rounded-xl border border-rose-100/80 bg-white/80 p-3 shadow-sm sm:p-4">
+          <p className="text-xs text-muted-foreground">Expired</p>
+          <p className="mt-1 text-2xl font-semibold text-rose-600">
+            {isLoading ? '...' : expired.length}
+          </p>
+        </div>
+        <div className="rounded-xl border border-amber-100/80 bg-white/80 p-3 shadow-sm sm:p-4">
+          <p className="text-xs text-muted-foreground">Due Within 30 Days</p>
+          <p className="mt-1 text-2xl font-semibold text-amber-600">
+            {isLoading ? '...' : dueSoon.length}
+          </p>
+        </div>
+      </div>
 
       {/* ── Filters ── */}
       <Card className="vm-panel-strong overflow-hidden">

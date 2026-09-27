@@ -3,13 +3,13 @@
 
 import Link from 'next/link';
 import {
-  Activity, Home, Briefcase, Construction, Clock, Users, Hash,
+  Activity, Briefcase, Construction, Clock, Users, Hash,
   Palette, MailCheck, LogIn, MapPinned, Package, Settings2, KeyRound,
 } from 'lucide-react';
 import { Card, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { cn } from '@/lib/utils';
 import type { LucideIcon } from 'lucide-react';
-import { Button } from '@/components/ui/button';
+import { PageHeader } from '@/components/shared/page-header';
 import { useAuthorization } from '@/hooks/useAuthorization';
 import { canOpenAccessManagement } from '@/lib/access-control';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -309,20 +309,14 @@ export default function SettingsPage() {
 
       <div className="w-full px-4 sm:px-5">
         {/* ── Header ── */}
-        <div className="pt-3 mb-4 flex items-center gap-3">
-          <Link href="/">
-            <Button variant="ghost" size="icon" className="rounded-full hover:bg-primary/10">
-              <Home className="h-5 w-5" />
-            </Button>
-          </Link>
-          <div>
-            <div className="flex items-center gap-2">
-              <Settings2 className="h-5 w-5 text-primary/70" />
-              <h1 className="text-xl font-bold tracking-tight">System Settings</h1>
-            </div>
-            <p className="text-xs text-muted-foreground mt-0.5">Configure system preferences and manage access</p>
-          </div>
-        </div>
+        <PageHeader
+          title="System Settings"
+          description="Configure system preferences and manage access"
+          icon={Settings2}
+          backHref="/"
+          backLabel="Back to home"
+          className="pt-3"
+        />
 
         {/* ── Settings Grid ── */}
         <div className="pb-6 grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">

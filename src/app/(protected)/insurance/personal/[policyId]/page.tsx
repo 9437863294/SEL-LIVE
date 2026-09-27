@@ -18,6 +18,7 @@ import { format, addMonths, addYears, addQuarters, isPast, isWithinInterval, add
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
 import { RenewalDialog } from '@/components/insurance/RenewalDialog';
+import { PageHeader } from '@/components/shared/page-header';
 
 export default function PolicyDetailsPage() {
   const { policyId } = useParams() as { policyId: string };
@@ -153,17 +154,20 @@ export default function PolicyDetailsPage() {
   return (
     <>
     <div className="w-full">
-        <div className="mb-6 flex items-center justify-between">
-          <div>
-            <h1 className="text-xl font-bold">{policy.policy_name}</h1>
-            <p className="text-muted-foreground">{policy.policy_no} - {policy.insured_person}</p>
-          </div>
-          <Link href={`/insurance/personal/edit/${policy.id}`}>
-            <Button variant="outline">
-              <Edit className="mr-2 h-4 w-4" /> Edit Policy
-            </Button>
-          </Link>
-        </div>
+        <PageHeader
+          title={policy.policy_name}
+          meta={[
+            { label: 'Policy No', value: policy.policy_no },
+            { label: 'Insured', value: policy.insured_person },
+          ]}
+          actions={
+            <Link href={`/insurance/personal/edit/${policy.id}`}>
+              <Button variant="outline" className="w-full">
+                <Edit className="mr-2 h-4 w-4" /> Edit Policy
+              </Button>
+            </Link>
+          }
+        />
         
         <Card className="mb-6">
             <CardHeader>

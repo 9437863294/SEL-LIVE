@@ -1,9 +1,8 @@
 'use client';
 
-import Link from 'next/link';
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { doc, getDoc, serverTimestamp, setDoc } from 'firebase/firestore';
-import { ArrowDown, ArrowLeft, ArrowUp, GitBranch, Loader2, Plus, RotateCcw, Save, ShieldCheck, Trash2, Users } from 'lucide-react';
+import { ArrowDown, ArrowUp, GitBranch, Loader2, Plus, RotateCcw, Save, ShieldCheck, Trash2, Users } from 'lucide-react';
 import { db } from '@/lib/firebase';
 import { personOptionLabel } from '@/lib/people-directory';
 import { useAuth } from '@/components/auth/AuthProvider';
@@ -22,6 +21,7 @@ import {
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { PageHeader, SectionHeader } from '@/components/shared/page-header';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -153,19 +153,18 @@ export default function InsuranceWorkflowSettingsPage() {
 
   return (
     <div className="space-y-4">
-      <Card className="vm-panel-strong overflow-hidden">
-        <div className="h-1 bg-gradient-to-r from-violet-500 via-indigo-500 to-cyan-500" />
-        <CardHeader className="flex flex-col gap-3 p-4 sm:flex-row sm:items-center sm:justify-between sm:p-5">
-          <div className="flex items-start gap-3">
-            <Link href="/vehicle-management/settings"><Button variant="outline" size="icon" className="bg-white"><ArrowLeft className="h-4 w-4" /></Button></Link>
-            <div><CardTitle className="flex items-center gap-2 text-lg"><GitBranch className="h-5 w-5 text-violet-600" />Insurance Workflow Setup</CardTitle><CardDescription>Configure expiry triggers, assignments, approval routing, stage TAT and escalation.</CardDescription></div>
-          </div>
-          <div className="flex gap-2"><Button variant="outline" onClick={() => { const defaults = normalizeInsuranceWorkflowConfig(DEFAULT_INSURANCE_WORKFLOW_CONFIG); setConfig(defaults); setTriggerDaysText(defaults.triggerDays.join(', ')); }} disabled={!canEdit}><RotateCcw className="mr-1.5 h-4 w-4" />Defaults</Button><Button onClick={() => void save()} disabled={!canEdit || isSaving || !dirty} className="bg-gradient-to-r from-violet-600 to-indigo-600"><Save className="mr-1.5 h-4 w-4" />{isSaving ? 'Saving...' : 'Save Workflow'}</Button></div>
-        </CardHeader>
-      </Card>
+      <PageHeader
+        title="Insurance Workflow Setup"
+        description="Configure expiry triggers, assignments, approval routing, stage TAT and escalation."
+        icon={GitBranch}
+        backHref="/vehicle-management/settings"
+        backLabel="Back to settings"
+        className="mb-0 sm:mb-0"
+        actions={<><Button variant="outline" onClick={() => { const defaults = normalizeInsuranceWorkflowConfig(DEFAULT_INSURANCE_WORKFLOW_CONFIG); setConfig(defaults); setTriggerDaysText(defaults.triggerDays.join(', ')); }} disabled={!canEdit}><RotateCcw className="mr-1.5 h-4 w-4" />Defaults</Button><Button onClick={() => void save()} disabled={!canEdit || isSaving || !dirty} className="bg-gradient-to-r from-violet-600 to-indigo-600"><Save className="mr-1.5 h-4 w-4" />{isSaving ? 'Saving...' : 'Save Workflow'}</Button></>}
+      />
 
       <Card className="vm-panel">
-        <CardHeader><CardTitle className="text-base">Workflow Rules</CardTitle><CardDescription>These rules determine when cases start and how premium-based approval is routed.</CardDescription></CardHeader>
+        <CardHeader><CardTitle>Workflow Rules</CardTitle><CardDescription>These rules determine when cases start and how premium-based approval is routed.</CardDescription></CardHeader>
         <CardContent className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
           <SettingSwitch label="Workflow Enabled" description="Automatically create cases inside the expiry window." checked={config.enabled} onCheckedChange={(enabled) => setConfig((current) => ({ ...current, enabled }))} disabled={!canEdit} />
           <SettingSwitch label="Automatic Escalation" description="Move overdue work to the configured backup owner." checked={config.autoEscalate} onCheckedChange={(autoEscalate) => setConfig((current) => ({ ...current, autoEscalate }))} disabled={!canEdit} />
@@ -177,7 +176,12 @@ export default function InsuranceWorkflowSettingsPage() {
         </CardContent>
       </Card>
 
-      <div className="flex items-center justify-between"><div><h2 className="font-semibold text-slate-800">Workflow Stages</h2><p className="text-xs text-muted-foreground">Cases move through these stages from top to bottom.</p></div><Button variant="outline" onClick={addStep} disabled={!canEdit}><Plus className="mr-1.5 h-4 w-4" />Add Stage</Button></div>
+      <SectionHeader
+        title="Workflow Stages"
+        description="Cases move through these stages from top to bottom."
+        className="mb-0"
+        actions={<Button variant="outline" onClick={addStep} disabled={!canEdit}><Plus className="mr-1.5 h-4 w-4" />Add Stage</Button>}
+      />
 
       <div className="space-y-3">
         {config.steps.map((workflowStep, index) => (
@@ -185,7 +189,7 @@ export default function InsuranceWorkflowSettingsPage() {
             <CardHeader className="border-b border-slate-100 p-4">
               <div className="flex items-start gap-3">
                 <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-violet-100 font-bold text-violet-700">{index + 1}</div>
-                <div className="min-w-0 flex-1"><CardTitle className="text-base">{workflowStep.name}</CardTitle><CardDescription>{workflowStep.description || 'No instructions added.'}</CardDescription></div>
+                <div className="min-w-0 flex-1"><CardTitle>{workflowStep.name}</CardTitle><CardDescription>{workflowStep.description || 'No instructions added.'}</CardDescription></div>
                 <Badge variant="outline" className="hidden bg-white sm:inline-flex">{workflowStep.tatHours}h TAT</Badge>
                 {canEdit && <div className="flex gap-1"><Button size="icon" variant="ghost" onClick={() => moveStep(index, -1)} disabled={index === 0}><ArrowUp className="h-4 w-4" /></Button><Button size="icon" variant="ghost" onClick={() => moveStep(index, 1)} disabled={index === config.steps.length - 1}><ArrowDown className="h-4 w-4" /></Button><Button size="icon" variant="ghost" className="text-rose-600" onClick={() => removeStep(workflowStep.id)}><Trash2 className="h-4 w-4" /></Button></div>}
               </div>

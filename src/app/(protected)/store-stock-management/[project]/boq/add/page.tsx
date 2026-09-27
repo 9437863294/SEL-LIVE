@@ -2,8 +2,8 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import Link from 'next/link';
-import { ArrowLeft, Save, Loader2 } from 'lucide-react';
+import { Save, Loader2 } from 'lucide-react';
+import { PageHeader } from '@/components/shared/page-header';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -119,20 +119,17 @@ export default function AddBoqItemPage() {
 
   return (
     <div className="w-full px-4 sm:px-6 lg:px-8">
-      <div className="mb-6 flex items-center justify-between">
-        <div className="flex items-center gap-2">
-            <Link href={`/store-stock-management/${projectSlug}/boq`}>
-                <Button variant="ghost" size="icon">
-                    <ArrowLeft className="h-6 w-6" />
-                </Button>
-            </Link>
-            <h1 className="text-xl font-bold">Add New BOQ Item</h1>
-        </div>
-        <Button onClick={handleSave} disabled={isSaving}>
+      <PageHeader
+        title="Add New BOQ Item"
+        backHref={`/store-stock-management/${projectSlug}/boq`}
+        backLabel="Back to BOQ Management"
+        actions={
+          <Button onClick={handleSave} disabled={isSaving}>
             {isSaving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
             Save Item
-        </Button>
-      </div>
+          </Button>
+        }
+      />
 
       <Card>
         <CardHeader>

@@ -27,6 +27,7 @@ import {
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { PageHeader, SectionHeader } from '@/components/shared/page-header';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
@@ -112,6 +113,11 @@ export interface CrudColumnConfig {
 interface GenericCrudPageProps {
   title: string;
   description: string;
+  /**
+   * Set when this register sits inside another page (a settings tab, a workspace panel): its title
+   * becomes a section heading, so the host page keeps its own single <h1>.
+   */
+  embedded?: boolean;
   itemName: string;
   collectionName: string;
   fields: CrudFieldConfig[];
@@ -306,6 +312,7 @@ const isFieldVisible = (
 export default function GenericCrudPage({
   title,
   description,
+  embedded = false,
   itemName,
   collectionName,
   fields: fieldsProp,
@@ -1042,19 +1049,22 @@ export default function GenericCrudPage({
     );
   }
 
+  // Embedded in another page, the register's title is a section heading, not a second <h1>.
+  const RegisterHeader = embedded ? SectionHeader : PageHeader;
+
   return (
     <div className="space-y-3 sm:space-y-4">
-      <Card className="vm-panel-strong overflow-hidden">
-        <div className="h-1 w-full bg-gradient-to-r from-emerald-500 via-teal-500 to-cyan-600 animate-bb-gradient" />
-        <CardHeader className="flex flex-col gap-3 px-3 py-4 sm:flex-row sm:items-center sm:justify-between sm:px-6 sm:py-6">
-          <div>
-            <CardTitle className="tracking-tight">{title}</CardTitle>
-            <CardDescription>{description}</CardDescription>
-          </div>
-          <div className="grid w-full grid-cols-2 gap-2 sm:flex sm:w-auto sm:flex-wrap sm:justify-end">
-            <Badge variant="outline" className="col-span-2 w-fit bg-white/70 sm:col-span-1">
-              {filteredRows.length === rows.length ? `${rows.length} records` : `${filteredRows.length} of ${rows.length}`}
-            </Badge>
+      <RegisterHeader
+        title={title}
+        description={description}
+        badge={
+          <Badge variant="outline" className="w-fit bg-white/70">
+            {filteredRows.length === rows.length ? `${rows.length} records` : `${filteredRows.length} of ${rows.length}`}
+          </Badge>
+        }
+        className="mb-0 sm:mb-0"
+        actions={
+          <>
             <Button type="button" variant="outline" onClick={loadRows} disabled={isLoading} className="bg-white/80 hover:bg-white">
               <RefreshCw className={cn('mr-2 h-4 w-4', isLoading && 'animate-spin')} />
               Refresh
@@ -1089,9 +1099,11 @@ export default function GenericCrudPage({
                 Add {itemName}
               </Button>
             )}
-          </div>
-        </CardHeader>
-        <CardContent className="space-y-3 px-3 pb-4 sm:px-6 sm:pb-6">
+          </>
+        }
+      />
+      <Card className="vm-panel-strong overflow-hidden">
+        <CardContent className="space-y-3 px-3 pb-4 pt-4 sm:px-6 sm:pb-6 sm:pt-6">
           {loadError && (
             <div className="flex flex-col gap-2 rounded-xl border border-rose-200 bg-rose-50 px-3 py-2.5 text-sm text-rose-700 sm:flex-row sm:items-center sm:justify-between">
               <span className="flex items-center gap-2"><AlertTriangle className="h-4 w-4 shrink-0" />{loadError}</span>

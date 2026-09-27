@@ -15,7 +15,6 @@ import { useState, type ReactNode } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
-  ArrowLeft,
   BarChart3,
   CheckCircle2,
   Download,
@@ -33,6 +32,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
+import { PageHeader } from "@/components/shared/page-header";
 import { cn } from "@/lib/utils";
 import {
   activityStatusStyles,
@@ -79,33 +79,9 @@ export function TowerProgressHeader({
   backHref: string;
   actions?: ReactNode;
 }) {
+  // The app's standard header (`shared/page-header`); the shell's `space-y` spaces it.
   return (
-    // `basis-64` gives the title the whole first line on a phone, so the actions wrap beneath it
-    // instead of squeezing the title down to "Tower Pr…".
-    <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
-      <div className="flex min-w-0 flex-1 basis-64 items-center gap-2 sm:gap-3">
-        <Button variant="ghost" size="icon" className="shrink-0" asChild>
-          <Link href={backHref} aria-label="Back">
-            <ArrowLeft className="h-5 w-5" />
-          </Link>
-        </Button>
-        <div
-          className={cn(
-            "hidden h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br shadow-sm sm:flex",
-            TOWER_PROGRESS_GRADIENT,
-          )}
-        >
-          <Icon className="h-5 w-5 text-white" />
-        </div>
-        <div className="min-w-0">
-          <h1 className="truncate text-xl font-bold sm:text-2xl">{title}</h1>
-          <p className="text-sm text-muted-foreground">{subtitle}</p>
-        </div>
-      </div>
-      {actions ? (
-        <div className="ml-auto flex flex-wrap items-center justify-end gap-2">{actions}</div>
-      ) : null}
-    </div>
+    <PageHeader icon={Icon} title={title} description={subtitle} backHref={backHref} actions={actions} className="mb-0 sm:mb-0" />
   );
 }
 

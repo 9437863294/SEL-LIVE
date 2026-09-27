@@ -9,6 +9,7 @@ import { cn } from '@/lib/utils';
 import { useAuthorization } from '@/hooks/useAuthorization';
 import { usePathname } from 'next/navigation';
 import { ModuleBottomNav, type ModuleNavTab } from '@/components/navigation/ModuleBottomNav';
+import { ModuleMobileHeader } from '@/components/shared/page-header';
 import { useSidebarDefault } from '@/components/theme/use-sidebar-default';
 
 export default function LoanLayoutShell({ children }: { children: React.ReactNode }) {
@@ -120,7 +121,11 @@ export default function LoanLayoutShell({ children }: { children: React.ReactNod
       </aside>
 
       <div className={cn('flex-1 flex flex-col min-h-screen transition-all duration-300', isExpanded ? 'md:ml-56' : 'md:ml-14')}>
-        <main className="flex-grow p-4 sm:p-6">{children}</main>
+        <main className="flex-grow p-4 sm:p-6">
+          {/* Below md, where the rail gives way to the bottom bar, the module's card heads the page. */}
+          <ModuleMobileHeader icon={CreditCard} title="Loans" hideFrom="md" />
+          {children}
+        </main>
         <footer className="shrink-0 flex items-center text-muted-foreground text-xs py-3 px-6 border-t border-border/40">
           <span>Copyright © 2025 SEL. All Rights Reserved.</span>
         </footer>

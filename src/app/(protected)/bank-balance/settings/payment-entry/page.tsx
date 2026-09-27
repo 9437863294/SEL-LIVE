@@ -2,9 +2,9 @@
 export const dynamic = 'force-dynamic';
 
 import { useState, useEffect, useCallback } from 'react';
-import Link from 'next/link';
-import { ArrowLeft, Save, Plus, Trash2, Loader2, ShieldAlert } from 'lucide-react';
+import { Save, Plus, Trash2, Loader2, ShieldAlert } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { PageHeader } from '@/components/shared/page-header';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { useToast } from '@/hooks/use-toast';
 import { db } from '@/lib/firebase';
@@ -206,14 +206,7 @@ export default function PaymentEntrySettingsPage() {
   if (!canView) {
     return (
       <div className="w-full px-4 sm:px-6 lg:px-8">
-        <div className="mb-6 flex items-center gap-2">
-          <Link href="/bank-balance/settings">
-            <Button variant="ghost" size="icon">
-              <ArrowLeft className="h-6 w-6" />
-            </Button>
-          </Link>
-          <h1 className="text-xl font-bold">Payment Entry Settings</h1>
-        </div>
+        <PageHeader title="Payment Entry Settings" backHref="/bank-balance/settings" backLabel="Back to settings" />
         <Card>
           <CardHeader>
             <CardTitle>Access Denied</CardTitle>
@@ -240,19 +233,12 @@ export default function PaymentEntrySettingsPage() {
         />
       </div>
     <div className="relative w-full px-4 sm:px-6 lg:px-8 py-4">
-      <div className="mb-5 flex items-center justify-between">
-        <div className="flex items-center gap-3">
-          <Link href="/bank-balance/settings">
-            <Button variant="ghost" size="icon" className="rounded-full hover:bg-primary/10">
-              <ArrowLeft className="h-5 w-5" />
-            </Button>
-          </Link>
-          <div>
-            <h1 className="text-xl font-bold tracking-tight">Payment Entry Settings</h1>
-            <p className="text-xs text-muted-foreground">Customize your payment entry form.</p>
-          </div>
-        </div>
-      </div>
+      <PageHeader
+        title="Payment Entry Settings"
+        description="Customize your payment entry form."
+        backHref="/bank-balance/settings"
+        backLabel="Back to settings"
+      />
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
         {/* Mandatory Fields */}

@@ -5,7 +5,8 @@ import { collection, getDocs } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import { computeRenewalMeta, formatVehicleTimestamp, getVehicleComplianceRequirements, getVehicleTimestampMillis, VEHICLE_COLLECTIONS, type VehicleComplianceRequirements } from '@/lib/vehicle-management';
 import { useAuthorization } from '@/hooks/useAuthorization';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent } from '@/components/ui/card';
+import { PageHeader } from '@/components/shared/page-header';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -255,48 +256,39 @@ export default function RenewalHistoryPage() {
   return (
     <div className="space-y-3 sm:space-y-5">
       {/* ── Header ── */}
-      <Card className="relative overflow-hidden vm-panel-strong vm-reveal">
-        <div className="absolute inset-0 bg-gradient-to-r from-slate-500/10 via-zinc-400/5 to-gray-500/10 animate-bb-gradient" />
-        <div className="electric-scan-line top-8" />
-        <CardHeader className="relative px-3 py-4 sm:px-6 sm:py-6">
-          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-            <div>
-              <CardTitle className="flex items-center gap-2 text-xl tracking-tight sm:text-2xl">
-                <History className="h-6 w-6 text-slate-600" />
-                Renewal History
-              </CardTitle>
-              <CardDescription>
-                Archive of all expired compliance records across PUC, Insurance, DL, Fitness, Road Tax, and Permit.
-              </CardDescription>
-            </div>
-            <Button
-              variant="outline"
-              onClick={load}
-              disabled={isLoading}
-              className="w-full gap-2 bg-white/80 hover:bg-white sm:w-fit"
-            >
-              <RefreshCw className={cn('h-4 w-4', isLoading && 'animate-spin')} />
-              Refresh
-            </Button>
-          </div>
-        </CardHeader>
-        <CardContent className="relative grid grid-cols-3 gap-2 px-3 pb-4 sm:gap-3 sm:px-6 sm:pb-6">
-          <div className="rounded-xl border border-slate-100/80 bg-white/80 p-4 shadow-sm">
-            <p className="text-xs text-muted-foreground">Total Expired Records</p>
-            <p className="mt-1 text-2xl font-semibold text-rose-600">
-              {isLoading ? '...' : records.length}
+      <PageHeader
+        title="Renewal History"
+        description="Archive of all expired compliance records across PUC, Insurance, DL, Fitness, Road Tax, and Permit."
+        icon={History}
+        className="mb-0 sm:mb-0"
+        actions={
+          <Button
+            variant="outline"
+            onClick={load}
+            disabled={isLoading}
+            className="w-full gap-2 bg-white/80 hover:bg-white sm:w-fit"
+          >
+            <RefreshCw className={cn('h-4 w-4', isLoading && 'animate-spin')} />
+            Refresh
+          </Button>
+        }
+      />
+      <div className="vm-reveal grid grid-cols-3 gap-2 sm:gap-3">
+        <div className="rounded-xl border border-slate-100/80 bg-white/80 p-4 shadow-sm">
+          <p className="text-xs text-muted-foreground">Total Expired Records</p>
+          <p className="mt-1 text-2xl font-semibold text-rose-600">
+            {isLoading ? '...' : records.length}
+          </p>
+        </div>
+        {categories.slice(1).slice(0, 2).map((cat) => (
+          <div key={cat} className="rounded-xl border border-slate-100/80 bg-white/80 p-4 shadow-sm">
+            <p className="text-xs text-muted-foreground">{cat}</p>
+            <p className="mt-1 text-2xl font-semibold">
+              {isLoading ? '...' : records.filter((r) => r.category === cat).length}
             </p>
           </div>
-          {categories.slice(1).slice(0, 2).map((cat) => (
-            <div key={cat} className="rounded-xl border border-slate-100/80 bg-white/80 p-4 shadow-sm">
-              <p className="text-xs text-muted-foreground">{cat}</p>
-              <p className="mt-1 text-2xl font-semibold">
-                {isLoading ? '...' : records.filter((r) => r.category === cat).length}
-              </p>
-            </div>
-          ))}
-        </CardContent>
-      </Card>
+        ))}
+      </div>
 
       {/* ── Filters ── */}
       <Card className="vm-panel-strong overflow-hidden">

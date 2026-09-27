@@ -1,15 +1,15 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
-import Link from 'next/link';
 import ExcelJS from 'exceljs';
 import { collection, getDocs } from 'firebase/firestore';
-import { ChevronLeft, Download, TrendingUp } from 'lucide-react';
+import { Download, TrendingUp } from 'lucide-react';
 import { db } from '@/lib/firebase';
 import { VEHICLE_COLLECTIONS } from '@/lib/vehicle-management';
 import { useAuthorization } from '@/hooks/useAuthorization';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { PageHeader } from '@/components/shared/page-header';
 import { Skeleton } from '@/components/ui/skeleton';
 
 const formatCurrency = (amount: number) =>
@@ -187,22 +187,15 @@ export default function MonthlyTrendsReportPage() {
 
   return (
     <div className="vm-report-page space-y-3 sm:space-y-4">
-      <Card className="vm-panel-strong overflow-hidden">
-        <div className="h-1 w-full bg-gradient-to-r from-violet-500 to-purple-600" />
-        <CardHeader className="flex flex-col gap-3 px-3 py-4 sm:px-6 sm:py-6 md:flex-row md:items-center md:justify-between">
-          <div>
-            <Link
-              href="/vehicle-management/reports"
-              className="mb-1 inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-slate-900 transition-colors"
-            >
-              <ChevronLeft className="h-3.5 w-3.5" /> Back to Reports
-            </Link>
-            <CardTitle className="flex items-center gap-2 tracking-tight">
-              <TrendingUp className="h-4 w-4 text-violet-500" /> Monthly Cost Trends
-            </CardTitle>
-            <CardDescription>6-month fleet expenditure overview — fuel and maintenance combined.</CardDescription>
-          </div>
-          {canExport && (
+      <PageHeader
+        title="Monthly Cost Trends"
+        description="6-month fleet expenditure overview — fuel and maintenance combined."
+        icon={TrendingUp}
+        backHref="/vehicle-management/reports"
+        backLabel="Back to Reports"
+        className="mb-0 sm:mb-0"
+        actions={
+          canExport ? (
             <Button
               variant="outline"
               onClick={exportExcel}
@@ -212,9 +205,9 @@ export default function MonthlyTrendsReportPage() {
               <Download className="mr-2 h-4 w-4" />
               {isExporting ? 'Exporting...' : 'Export Excel'}
             </Button>
-          )}
-        </CardHeader>
-      </Card>
+          ) : undefined
+        }
+      />
 
       <div className="grid grid-cols-2 gap-2.5 sm:gap-4 xl:grid-cols-4">
         <Card className="vm-panel overflow-hidden">
@@ -259,7 +252,7 @@ export default function MonthlyTrendsReportPage() {
 
       <Card className="vm-panel-strong">
         <CardHeader>
-          <CardTitle className="text-base">6-Month Cost Trend</CardTitle>
+          <CardTitle>6-Month Cost Trend</CardTitle>
           <CardDescription>Stacked fuel (cyan) and maintenance (amber) spend per month.</CardDescription>
         </CardHeader>
         <CardContent className="space-y-3">
@@ -301,7 +294,7 @@ export default function MonthlyTrendsReportPage() {
       {topVehicles.length > 0 && (
         <Card className="vm-panel-strong">
           <CardHeader>
-            <CardTitle className="text-base">Top 5 Vehicles by Total Cost</CardTitle>
+            <CardTitle>Top 5 Vehicles by Total Cost</CardTitle>
             <CardDescription>Highest combined fuel + maintenance spend in {currentMonth}.</CardDescription>
           </CardHeader>
           <CardContent className="space-y-3">

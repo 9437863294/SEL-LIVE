@@ -2,8 +2,8 @@
 export const dynamic = 'force-dynamic';
 
 import { useState, useEffect } from 'react';
-import Link from 'next/link';
-import { ArrowLeft, Plus, Edit, Trash2, ShieldAlert, Building2, CreditCard, CheckCircle2, XCircle } from 'lucide-react';
+import { Plus, Edit, Trash2, ShieldAlert, Building2, CreditCard, CheckCircle2, XCircle } from 'lucide-react';
+import { PageHeader } from '@/components/shared/page-header';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import {
@@ -165,10 +165,7 @@ export default function ManageBanksPage() {
   if (!canView) {
     return (
       <div className="w-full px-4 sm:px-6 lg:px-8">
-        <div className="mb-6 flex items-center gap-2">
-          <Link href="/bank-balance/settings"><Button variant="ghost" size="icon"><ArrowLeft className="h-6 w-6" /></Button></Link>
-          <h1 className="text-xl font-bold">Manage Banks</h1>
-        </div>
+        <PageHeader title="Manage Banks" backHref="/bank-balance/settings" backLabel="Back to settings" />
         <Card>
           <CardHeader><CardTitle>Access Denied</CardTitle><CardDescription>You do not have permission to view this page.</CardDescription></CardHeader>
           <CardContent className="flex justify-center p-8"><ShieldAlert className="h-16 w-16 text-destructive" /></CardContent>
@@ -192,25 +189,18 @@ export default function ManageBanksPage() {
       </div>
     <div className="relative w-full px-4 sm:px-6 lg:px-8 py-4">
       {/* Header */}
-      <div className="mb-5 flex items-center justify-between">
-        <div className="flex items-center gap-2">
-          <Link href="/bank-balance/settings">
-            <Button variant="ghost" size="icon" className="rounded-full hover:bg-primary/10">
-              <ArrowLeft className="h-5 w-5" />
-            </Button>
-          </Link>
-          <div>
-            <h1 className="text-xl font-bold tracking-tight">Manage Banks</h1>
-            <p className="text-xs text-muted-foreground">
-              {accounts.length} accounts &nbsp;·&nbsp; {activeCount} active &nbsp;·&nbsp; {ccCount} CC
-            </p>
-          </div>
-        </div>
-        <Button onClick={() => openDialog('add')} disabled={!canAdd} className="rounded-lg shadow-md shadow-primary/20">
-          <Plus className="mr-2 h-4 w-4" />
-          Add Bank
-        </Button>
-      </div>
+      <PageHeader
+        title="Manage Banks"
+        description={<>{accounts.length} accounts &nbsp;·&nbsp; {activeCount} active &nbsp;·&nbsp; {ccCount} CC</>}
+        backHref="/bank-balance/settings"
+        backLabel="Back to settings"
+        actions={
+          <Button onClick={() => openDialog('add')} disabled={!canAdd} className="rounded-lg shadow-md shadow-primary/20">
+            <Plus className="mr-2 h-4 w-4" />
+            Add Bank
+          </Button>
+        }
+      />
 
       <Card className="rounded-xl border-border/60 shadow-sm overflow-hidden">
         <CardContent className="p-0">

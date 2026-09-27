@@ -3,9 +3,8 @@
 export const dynamic = 'force-dynamic';
 
 import { useState, useEffect, useMemo, useCallback } from 'react';
-import Link from 'next/link';
-import { ArrowLeft, Home, Loader2, ShieldAlert, Users, CheckCircle, BarChart, Activity, XCircle } from 'lucide-react';
-import { Button } from '@/components/ui/button';
+import { Home, Loader2, ShieldAlert, Users, CheckCircle, BarChart, Activity, XCircle } from 'lucide-react';
+import { PageHeader, SectionHeader } from '@/components/shared/page-header';
 import {
   Card,
   CardContent,
@@ -304,12 +303,7 @@ export default function MvacSummaryPage() {
   if(!canViewPage) {
     return (
         <div className="w-full pr-14">
-            <div className="mb-6 flex items-center justify-between">
-                <div className="flex items-center gap-4">
-                    <Link href={`/billing-recon/${projectSlug}/mvac/reports`}><Button variant="ghost" size="icon"><ArrowLeft className="h-6 w-6" /></Button></Link>
-                    <h1 className="text-2xl font-bold">MVAC Summary</h1>
-                </div>
-            </div>
+            <PageHeader title="MVAC Summary" backHref={`/billing-recon/${projectSlug}/mvac/reports`} backLabel="Back to MVAC reports" />
             <Card>
                 <CardHeader>
                     <CardTitle>Access Denied</CardTitle>
@@ -325,16 +319,7 @@ export default function MvacSummaryPage() {
 
   return (
     <div className="w-full pr-14">
-      <div className="mb-6 flex items-center justify-between">
-        <div className="flex items-center gap-4">
-          <Link href={`/billing-recon/${projectSlug}/mvac/reports`}>
-            <Button variant="ghost" size="icon">
-              <ArrowLeft className="h-6 w-6" />
-            </Button>
-          </Link>
-          <h1 className="text-2xl font-bold">MVAC Summary</h1>
-        </div>
-      </div>
+      <PageHeader title="MVAC Summary" backHref={`/billing-recon/${projectSlug}/mvac/reports`} backLabel="Back to MVAC reports" />
 
       <Card className="mb-6">
         <CardContent className="p-4 flex flex-col md:flex-row items-center gap-4">
@@ -392,9 +377,7 @@ export default function MvacSummaryPage() {
         )}
       </div>
 
-      <div className="mb-6">
-        <h2 className="text-xl font-bold">Step-wise Report</h2>
-      </div>
+      <SectionHeader title="Step-wise Report" />
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
         {isLoading ? (
@@ -408,7 +391,7 @@ export default function MvacSummaryPage() {
               return (
               <Card key={step.id}>
                 <CardHeader className="p-4 bg-muted/50">
-                  <CardTitle className="text-base text-center">{step.name}</CardTitle>
+                  <CardTitle className="text-center">{step.name}</CardTitle>
                 </CardHeader>
                 <CardContent className="p-0">
                   <Table>

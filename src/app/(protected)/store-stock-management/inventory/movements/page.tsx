@@ -16,6 +16,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
+import { PageHeader } from '@/components/shared/page-header';
 
 type MovementType = Exclude<InventoryDocumentType, 'Stock Transfer' | 'Physical Count'>;
 type Line = { id: string; itemId: string; quantity: number; unitCost: number; batchNumber: string; serialNumbers: string; expiryDate: string; remarks: string };
@@ -88,7 +89,7 @@ export default function InventoryMovementsPage() {
   };
 
   return <div className="space-y-6">
-    <div><h1 className="text-2xl font-bold">Receipts, issues & adjustments</h1><p className="text-muted-foreground">Posted documents update stock through an immutable item/location ledger. BOQ is optional.</p></div>
+    <PageHeader className="mb-0 sm:mb-0" title="Receipts, issues & adjustments" description="Posted documents update stock through an immutable item/location ledger. BOQ is optional." />
     <Alert><Send className="h-4 w-4" /><AlertTitle>Posting point</AlertTitle><AlertDescription>This screen posts immediately. Posted documents cannot be edited or deleted; corrections must use a return, adjustment, or reversal.</AlertDescription></Alert>
     <Card><CardHeader><CardTitle>Document header</CardTitle><CardDescription>Select the business movement and its controlling location.</CardDescription></CardHeader><CardContent className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
       <Field label="Movement type"><Select value={documentType} onValueChange={(value: MovementType) => setDocumentType(value)}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent>{movementTypes.map((type) => <SelectItem key={type} value={type}>{type}</SelectItem>)}</SelectContent></Select></Field>

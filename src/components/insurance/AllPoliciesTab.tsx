@@ -62,7 +62,7 @@ function CategoryCard({ item }: CategoryCardProps) {
                 <div className="bg-primary/10 p-3 rounded-full mb-2">
                   <item.icon className="w-6 h-6 text-primary" />
                 </div>
-                <CardTitle className="text-base font-semibold">{item.title}</CardTitle>
+                <CardTitle>{item.title}</CardTitle>
             </CardHeader>
             <CardContent className="text-center p-4 pt-0">
                 <CardDescription className="text-xs">{item.description}</CardDescription>

@@ -1,9 +1,8 @@
 'use client';
 
-import Link from 'next/link';
 import { useEffect, useState } from 'react';
 import { doc, onSnapshot, serverTimestamp, setDoc } from 'firebase/firestore';
-import { ArrowLeft, Loader2, Lock, RotateCcw, Save, ShieldAlert, SlidersHorizontal } from 'lucide-react';
+import { Loader2, Lock, RotateCcw, Save, ShieldAlert, SlidersHorizontal } from 'lucide-react';
 import { db } from '@/lib/firebase';
 import { useAuth } from '@/components/auth/AuthProvider';
 import { useAuthorization } from '@/hooks/useAuthorization';
@@ -14,6 +13,7 @@ import { fieldControlDocId, type RPFieldSetting } from './use-field-control';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { PageHeader } from '@/components/shared/page-header';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Switch } from '@/components/ui/switch';
@@ -134,27 +134,21 @@ export default function RecurringFieldControlSettings() {
 
   return (
     <div className="space-y-5">
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <div className="flex items-center gap-2">
-          <Link href="/recurring-payments/settings">
-            <Button variant="ghost" size="icon">
-              <ArrowLeft className="h-5 w-5" />
+      <PageHeader
+        className="mb-0 sm:mb-0"
+        backHref="/recurring-payments/settings"
+        backLabel="Back to settings"
+        title="Field Control"
+        description="Choose which fields appear, whether they're required, and what they're called — per form."
+        actions={
+          canEdit ? (
+            <Button onClick={save} disabled={saving}>
+              {saving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
+              Save changes
             </Button>
-          </Link>
-          <div>
-            <h1 className="text-xl font-bold">Field Control</h1>
-            <p className="text-sm text-muted-foreground">
-              Choose which fields appear, whether they're required, and what they're called — per form.
-            </p>
-          </div>
-        </div>
-        {canEdit && (
-          <Button onClick={save} disabled={saving}>
-            {saving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
-            Save changes
-          </Button>
-        )}
-      </div>
+          ) : undefined
+        }
+      />
 
       {!canEdit && (
         <div className="rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900">

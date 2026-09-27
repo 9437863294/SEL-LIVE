@@ -1,9 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import Link from "next/link";
 import {
-  ArrowLeft,
   Loader2,
   Pencil,
   Plus,
@@ -25,6 +23,7 @@ import { useAuth } from "@/components/auth/AuthProvider";
 import { useAuthorization } from "@/hooks/useAuthorization";
 import { useToast } from "@/hooks/use-toast";
 import { Button } from "@/components/ui/button";
+import { PageHeader } from "@/components/shared/page-header";
 import {
   Card,
   CardContent,
@@ -259,7 +258,7 @@ export default function VendorsPage() {
   if (!canView) {
     return (
       <main className="min-h-[calc(100vh-4rem)] p-4 sm:p-6">
-        <h1 className="mb-6 text-2xl font-bold sm:text-3xl">Vendors</h1>
+        <PageHeader title="Vendors" backHref="/vendor-management" backLabel="Back to Vendor Management" />
         <Card>
           <CardHeader>
             <CardTitle>Access Denied</CardTitle>
@@ -275,126 +274,118 @@ export default function VendorsPage() {
 
   return (
     <main className="min-h-[calc(100vh-4rem)] p-4 sm:p-6">
-      <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-        <div className="flex items-center gap-3">
-          <Button variant="ghost" size="icon" asChild>
-            <Link href="/vendor-management" aria-label="Back to Vendor Management">
-              <ArrowLeft className="h-5 w-5" />
-            </Link>
-          </Button>
-          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-indigo-500 to-blue-600 shadow-sm">
-            <Truck className="h-5 w-5 text-white" />
-          </div>
-          <div>
-            <h1 className="text-2xl font-bold sm:text-3xl">Vendors</h1>
-            <p className="mt-1 text-sm text-muted-foreground">Global vendor registry used across purchase orders.</p>
-          </div>
-        </div>
-
-        <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
-          <DialogTrigger asChild>
-            <Button onClick={openCreateDialog} disabled={!canAdd}>
-              <Plus className="mr-2 h-4 w-4" /> New Vendor
-            </Button>
-          </DialogTrigger>
-          <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-2xl">
-            <DialogHeader>
-              <DialogTitle>{editingVendor ? "Edit Vendor" : "Create Vendor"}</DialogTitle>
-              <DialogDescription>Vendor details are shared globally across all projects.</DialogDescription>
-            </DialogHeader>
-
-            <div className="grid gap-4 py-2">
-              <div className="grid gap-4 sm:grid-cols-2">
-                <div className="space-y-2">
-                  <Label htmlFor="vendor-name">Vendor Name *</Label>
-                  <Input id="vendor-name" value={form.vendorName} onChange={(e) => setForm((c) => ({ ...c, vendorName: e.target.value }))} />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="vendor-category">Category</Label>
-                  <Select value={form.category} onValueChange={(category: VendorCategory) => setForm((c) => ({ ...c, category }))}>
-                    <SelectTrigger id="vendor-category"><SelectValue /></SelectTrigger>
-                    <SelectContent>
-                      {VENDOR_CATEGORIES.map((category) => (
-                        <SelectItem key={category} value={category}>{category}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="contact-person">Contact Person</Label>
-                  <Input id="contact-person" value={form.contactPerson} onChange={(e) => setForm((c) => ({ ...c, contactPerson: e.target.value }))} />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="phone">Phone</Label>
-                  <Input id="phone" value={form.phone} onChange={(e) => setForm((c) => ({ ...c, phone: e.target.value }))} />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="email">Email</Label>
-                  <Input id="email" type="email" value={form.email} onChange={(e) => setForm((c) => ({ ...c, email: e.target.value }))} />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="status">Status</Label>
-                  <Select value={form.status} onValueChange={(status: VendorStatus) => setForm((c) => ({ ...c, status }))}>
-                    <SelectTrigger id="status"><SelectValue /></SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="Active">Active</SelectItem>
-                      <SelectItem value="Inactive">Inactive</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-              </div>
-
-              <div className="space-y-2">
-                <Label htmlFor="address">Address</Label>
-                <Textarea id="address" value={form.address} onChange={(e) => setForm((c) => ({ ...c, address: e.target.value }))} />
-              </div>
-
-              <div className="h-px bg-border" />
-
-              <div className="grid gap-4 sm:grid-cols-2">
-                <div className="space-y-2">
-                  <Label htmlFor="gstin">GSTIN</Label>
-                  <Input id="gstin" value={form.gstin} onChange={(e) => setForm((c) => ({ ...c, gstin: e.target.value }))} />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="pan">PAN</Label>
-                  <Input id="pan" value={form.pan} onChange={(e) => setForm((c) => ({ ...c, pan: e.target.value }))} />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="bank-name">Bank Name</Label>
-                  <Input id="bank-name" value={form.bankName} onChange={(e) => setForm((c) => ({ ...c, bankName: e.target.value }))} />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="account-number">Account Number</Label>
-                  <Input id="account-number" value={form.accountNumber} onChange={(e) => setForm((c) => ({ ...c, accountNumber: e.target.value }))} />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="ifsc">IFSC</Label>
-                  <Input id="ifsc" value={form.ifsc} onChange={(e) => setForm((c) => ({ ...c, ifsc: e.target.value }))} />
-                </div>
-              </div>
-
-              <div className="space-y-2">
-                <Label htmlFor="notes">Notes</Label>
-                <Textarea id="notes" placeholder="Optional" value={form.notes} onChange={(e) => setForm((c) => ({ ...c, notes: e.target.value }))} />
-              </div>
-            </div>
-
-            <DialogFooter>
-              <DialogClose asChild><Button variant="outline">Cancel</Button></DialogClose>
-              <Button onClick={() => void handleSave()} disabled={isSaving}>
-                {isSaving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                {editingVendor ? "Save Changes" : "Create Vendor"}
+      <PageHeader
+        title="Vendors"
+        description="Global vendor registry used across purchase orders."
+        icon={Truck}
+        backHref="/vendor-management"
+        backLabel="Back to Vendor Management"
+        actions={
+          <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
+            <DialogTrigger asChild>
+              <Button onClick={openCreateDialog} disabled={!canAdd}>
+                <Plus className="mr-2 h-4 w-4" /> New Vendor
               </Button>
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>
-      </div>
+            </DialogTrigger>
+            <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-2xl">
+              <DialogHeader>
+                <DialogTitle>{editingVendor ? "Edit Vendor" : "Create Vendor"}</DialogTitle>
+                <DialogDescription>Vendor details are shared globally across all projects.</DialogDescription>
+              </DialogHeader>
+
+              <div className="grid gap-4 py-2">
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <div className="space-y-2">
+                    <Label htmlFor="vendor-name">Vendor Name *</Label>
+                    <Input id="vendor-name" value={form.vendorName} onChange={(e) => setForm((c) => ({ ...c, vendorName: e.target.value }))} />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="vendor-category">Category</Label>
+                    <Select value={form.category} onValueChange={(category: VendorCategory) => setForm((c) => ({ ...c, category }))}>
+                      <SelectTrigger id="vendor-category"><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        {VENDOR_CATEGORIES.map((category) => (
+                          <SelectItem key={category} value={category}>{category}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="contact-person">Contact Person</Label>
+                    <Input id="contact-person" value={form.contactPerson} onChange={(e) => setForm((c) => ({ ...c, contactPerson: e.target.value }))} />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="phone">Phone</Label>
+                    <Input id="phone" value={form.phone} onChange={(e) => setForm((c) => ({ ...c, phone: e.target.value }))} />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="email">Email</Label>
+                    <Input id="email" type="email" value={form.email} onChange={(e) => setForm((c) => ({ ...c, email: e.target.value }))} />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="status">Status</Label>
+                    <Select value={form.status} onValueChange={(status: VendorStatus) => setForm((c) => ({ ...c, status }))}>
+                      <SelectTrigger id="status"><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="Active">Active</SelectItem>
+                        <SelectItem value="Inactive">Inactive</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="address">Address</Label>
+                  <Textarea id="address" value={form.address} onChange={(e) => setForm((c) => ({ ...c, address: e.target.value }))} />
+                </div>
+
+                <div className="h-px bg-border" />
+
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <div className="space-y-2">
+                    <Label htmlFor="gstin">GSTIN</Label>
+                    <Input id="gstin" value={form.gstin} onChange={(e) => setForm((c) => ({ ...c, gstin: e.target.value }))} />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="pan">PAN</Label>
+                    <Input id="pan" value={form.pan} onChange={(e) => setForm((c) => ({ ...c, pan: e.target.value }))} />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="bank-name">Bank Name</Label>
+                    <Input id="bank-name" value={form.bankName} onChange={(e) => setForm((c) => ({ ...c, bankName: e.target.value }))} />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="account-number">Account Number</Label>
+                    <Input id="account-number" value={form.accountNumber} onChange={(e) => setForm((c) => ({ ...c, accountNumber: e.target.value }))} />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="ifsc">IFSC</Label>
+                    <Input id="ifsc" value={form.ifsc} onChange={(e) => setForm((c) => ({ ...c, ifsc: e.target.value }))} />
+                  </div>
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="notes">Notes</Label>
+                  <Textarea id="notes" placeholder="Optional" value={form.notes} onChange={(e) => setForm((c) => ({ ...c, notes: e.target.value }))} />
+                </div>
+              </div>
+
+              <DialogFooter>
+                <DialogClose asChild><Button variant="outline">Cancel</Button></DialogClose>
+                <Button onClick={() => void handleSave()} disabled={isSaving}>
+                  {isSaving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                  {editingVendor ? "Save Changes" : "Create Vendor"}
+                </Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
+        }
+      />
 
       <Card className="overflow-hidden border-border/60">
         <div className="h-1 w-full bg-gradient-to-r from-indigo-500 to-blue-600" />
         <CardHeader>
-          <CardTitle className="text-lg">Vendor Registry</CardTitle>
+          <CardTitle>Vendor Registry</CardTitle>
           <CardDescription>{vendors.length} vendor{vendors.length === 1 ? "" : "s"} on file.</CardDescription>
         </CardHeader>
         <CardContent className="p-0">

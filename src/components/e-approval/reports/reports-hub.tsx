@@ -14,7 +14,7 @@ import {
   UserCheck,
 } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
-import { Card, CardContent } from '@/components/ui/card';
+import { PageHeader } from '@/components/shared/page-header';
 import { cn } from '@/lib/utils';
 import { E_APPROVAL_BASE_PATH } from '@/lib/e-approval';
 import { useEApprovalPermissions } from '../hooks';
@@ -126,20 +126,12 @@ export function EApprovalReportsHub() {
 
   return (
     <div className="space-y-5">
-      <Card className="overflow-hidden border-none bg-gradient-to-r from-slate-800 to-slate-900 text-white shadow-lg">
-        <CardContent className="flex items-center gap-3 p-5 sm:p-6">
-          <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-white/15">
-            <BarChart3 className="h-6 w-6" />
-          </div>
-          <div className="min-w-0">
-            <h1 className="text-xl font-bold tracking-tight sm:text-2xl">Approval Intelligence</h1>
-            <p className="mt-1 text-sm text-white/85">
-              Where approvals are stuck, who is holding them, what it is worth, and how long it took. Every figure is
-              computed from the live record — nothing here is stored or cached.
-            </p>
-          </div>
-        </CardContent>
-      </Card>
+      <PageHeader
+        icon={BarChart3}
+        title="Approval Intelligence"
+        description="Where approvals are stuck, who is holding them, what it is worth, and how long it took. Every figure is computed from the live record — nothing here is stored or cached."
+        className="mb-0 sm:mb-0"
+      />
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
         {AREAS.map((area) => {

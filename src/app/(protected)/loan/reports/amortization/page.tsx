@@ -2,8 +2,8 @@
 'use client';
 
 import { useState, useEffect, useMemo } from 'react';
-import Link from 'next/link';
-import { ArrowLeft, TrendingUp, Download } from 'lucide-react';
+import { TrendingUp, Download } from 'lucide-react';
+import { PageHeader } from '@/components/shared/page-header';
 import { Button } from '@/components/ui/button';
 import {
   Card,
@@ -301,29 +301,15 @@ export default function AmortizationReportPage() {
   return (
     <div className="space-y-4">
       {/* ── Header card ─────────────────────────────────────────────────── */}
-      <Card className="overflow-hidden border-border/60">
-        <div className="h-1 w-full bg-gradient-to-r from-blue-500 via-indigo-500 to-violet-500" />
-        <CardHeader className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <div className="flex items-center gap-3">
-            <Link href="/loan/reports">
-              <Button variant="ghost" size="sm" className="gap-1.5 text-xs">
-                <ArrowLeft className="h-3.5 w-3.5" /> Back
-              </Button>
-            </Link>
-            <div className="flex items-center gap-2">
-              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-blue-50 ring-1 ring-blue-100">
-                <TrendingUp className="h-5 w-5 text-blue-600" />
-              </div>
-              <div>
-                <CardTitle className="text-base tracking-tight">Loan Amortization Schedule</CardTitle>
-                <CardDescription>
-                  Full EMI-by-EMI breakdown of principal vs interest
-                </CardDescription>
-              </div>
-            </div>
-          </div>
-
-          <div className="flex items-center gap-2">
+      <PageHeader
+        className="mb-0 sm:mb-0"
+        icon={TrendingUp}
+        title="Loan Amortization Schedule"
+        description="Full EMI-by-EMI breakdown of principal vs interest"
+        backHref="/loan/reports"
+        backLabel="Back to loan reports"
+        actions={
+          <>
             {/* Loan selector */}
             {loadingLoans ? (
               <Skeleton className="h-9 w-52" />
@@ -352,9 +338,9 @@ export default function AmortizationReportPage() {
             >
               <Download className="h-3.5 w-3.5" /> Export
             </Button>
-          </div>
-        </CardHeader>
-      </Card>
+          </>
+        }
+      />
 
       {/* ── Stat cards ──────────────────────────────────────────────────── */}
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
@@ -386,7 +372,7 @@ export default function AmortizationReportPage() {
         /* Aggregate: loan-by-loan summary table */
         <Card className="overflow-hidden border-border/60">
           <CardHeader className="py-3 px-4 border-b">
-            <CardTitle className="text-sm font-semibold">Loan-by-Loan Summary</CardTitle>
+            <CardTitle>Loan-by-Loan Summary</CardTitle>
           </CardHeader>
           <CardContent className="p-0">
             {isLoading ? (
@@ -431,7 +417,7 @@ export default function AmortizationReportPage() {
         /* Single loan: full EMI schedule table */
         <Card className="overflow-hidden border-border/60">
           <CardHeader className="py-3 px-4 border-b">
-            <CardTitle className="text-sm font-semibold">EMI Schedule</CardTitle>
+            <CardTitle>EMI Schedule</CardTitle>
             {loans.find((l) => l.id === selectedLoanId) && (
               <CardDescription className="text-xs">
                 {loans.find((l) => l.id === selectedLoanId)?.lenderName} —{' '}

@@ -4,7 +4,6 @@
 
 import Link from 'next/link';
 import {
-  ArrowLeft,
   FilePlus,
   History,
   ShieldAlert,
@@ -12,7 +11,7 @@ import {
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/components/ui/card';
 import { cn } from '@/lib/utils';
 import type { LucideIcon } from 'lucide-react';
-import { Button } from '@/components/ui/button';
+import { PageHeader } from '@/components/shared/page-header';
 import { useParams } from 'next/navigation';
 import { useAuthorization } from '@/hooks/useAuthorization';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -40,7 +39,7 @@ function BillingCard({ item }: BillingCardProps) {
                 <item.icon className="w-6 h-6 text-primary" />
                 </div>
                 <div className="flex-1">
-                    <CardTitle className="text-base font-bold">{item.text}</CardTitle>
+                    <CardTitle>{item.text}</CardTitle>
                     <CardDescription className="text-xs">{item.description}</CardDescription>
                 </div>
             </CardHeader>
@@ -86,10 +85,7 @@ export default function BillingDashboardPage() {
   if(!canViewModule) {
     return (
       <div className="w-full px-4 sm:px-6 lg:px-8">
-        <div className="mb-6 flex items-center gap-2">
-            <Link href={`/billing-recon/${projectSlug}`}><Button variant="ghost" size="icon"><ArrowLeft className="h-6 w-6" /></Button></Link>
-            <h1 className="text-2xl font-bold">Billing Management</h1>
-        </div>
+        <PageHeader title="Billing Management" backHref={`/billing-recon/${projectSlug}`} backLabel="Back to project" />
          <Card>
             <CardHeader><CardTitle>Access Denied</CardTitle><CardDescription>You do not have permission to access billing management.</CardDescription></CardHeader>
             <CardContent className="flex justify-center p-8"><ShieldAlert className="h-16 w-16 text-destructive" /></CardContent>
@@ -100,14 +96,7 @@ export default function BillingDashboardPage() {
 
   return (
     <div className="w-full px-4 sm:px-6 lg:px-8">
-      <div className="mb-6 flex items-center gap-2">
-        <Link href={`/billing-recon/${projectSlug}`}>
-            <Button variant="ghost" size="icon">
-                <ArrowLeft className="h-6 w-6" />
-            </Button>
-        </Link>
-        <h1 className="text-2xl font-bold">Billing Management</h1>
-      </div>
+      <PageHeader title="Billing Management" backHref={`/billing-recon/${projectSlug}`} backLabel="Back to project" />
       <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
         {billingItems.map((item) => (
           <BillingCard key={item.text} item={item} />

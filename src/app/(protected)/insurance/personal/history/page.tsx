@@ -10,10 +10,11 @@ import { useToast } from '@/hooks/use-toast';
 import type { InsurancePolicy, PolicyRenewal, User } from '@/lib/types';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { PageHeader } from '@/components/shared/page-header';
 import { cn } from '@/lib/utils';
 
 type EventType = 'Policy Created' | 'Premium Paid';
@@ -116,23 +117,19 @@ export default function PersonalInsuranceHistoryPage() {
   return (
     <div className="space-y-4">
       {/* Header */}
-      <Card className="overflow-hidden border-border/60">
-        <div className="h-1 w-full bg-gradient-to-r from-slate-400 via-slate-500 to-slate-600" />
-        <CardHeader className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <div className="flex items-center gap-3">
-            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-slate-50 ring-1 ring-slate-200">
-              <History className="h-5 w-5 text-slate-600" />
-            </div>
-            <div>
-              <CardTitle className="tracking-tight">Personal Insurance History</CardTitle>
-              <CardDescription>Complete activity log — policy creations and premium payments</CardDescription>
-            </div>
-          </div>
-          <Button variant="outline" size="sm" onClick={fetchHistory} className="gap-1.5 w-fit">
+      <PageHeader
+        className="mb-0 sm:mb-0"
+        icon={History}
+        title="Personal Insurance History"
+        description="Complete activity log — policy creations and premium payments"
+        actions={
+          <Button variant="outline" size="sm" onClick={fetchHistory} className="gap-1.5">
             <RefreshCw className="h-3.5 w-3.5" /> Refresh
           </Button>
-        </CardHeader>
-        <CardContent className="grid grid-cols-3 gap-2 border-t pt-4">
+        }
+      />
+      <Card className="overflow-hidden border-border/60">
+        <CardContent className="grid grid-cols-3 gap-2 p-4">
           {[
             { label: 'Total Events',    value: stats.total,   color: 'text-slate-700' },
             { label: 'Policies Created', value: stats.created, color: 'text-blue-600' },

@@ -18,6 +18,7 @@ import { useToast } from '@/hooks/use-toast';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { PageHeader } from '@/components/shared/page-header';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
@@ -391,15 +392,12 @@ export default function BudgetAlertsPage() {
     <div className="space-y-4">
 
       {/* Page header */}
-      <div>
-        <h1 className="flex items-center gap-2 text-lg font-bold text-slate-800">
-          <ShieldAlert className="h-5 w-5 text-red-500" />
-          Budget Alert Settings
-        </h1>
-        <p className="text-sm text-muted-foreground">
-          Configure who gets notified when project budgets are exceeded
-        </p>
-      </div>
+      <PageHeader
+        className="mb-0 sm:mb-0"
+        icon={ShieldAlert}
+        title="Budget Alert Settings"
+        description="Configure who gets notified when project budgets are exceeded"
+      />
 
       {/* ── Module-wide (All Projects) alert card ── */}
       <Card className={`border-2 ${moduleConfig?.enabled ? 'border-red-200 bg-red-50/40' : 'border-slate-200 bg-white/80'} backdrop-blur-sm`}>
@@ -408,7 +406,7 @@ export default function BudgetAlertsPage() {
             <div className="flex items-center gap-2">
               <Globe className="h-4 w-4 text-red-500 shrink-0" />
               <div>
-                <CardTitle className="text-sm font-bold">Module-Wide Alerts — All Projects</CardTitle>
+                <CardTitle>Module-Wide Alerts — All Projects</CardTitle>
                 <p className="text-xs text-muted-foreground mt-0.5">
                   Recipients here receive alerts for <strong>every</strong> project when budgets are crossed.
                   Ideal for HO managers who oversee all sites.

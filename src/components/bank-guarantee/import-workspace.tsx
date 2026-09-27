@@ -23,6 +23,7 @@ import {
 } from "@/lib/bank-guarantee";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { PageHeader } from "@/components/shared/page-header";
 import {
   Card,
   CardContent,
@@ -333,13 +334,11 @@ export default function BGImportWorkspace() {
     );
   return (
     <div className="space-y-4">
-      <div>
-        <h1 className="text-2xl font-bold">BG Import & Reconciliation</h1>
-        <p className="text-sm text-muted-foreground">
-          Validate legacy Bank Guarantee workbooks before activating clean
-          organization-scoped records.
-        </p>
-      </div>
+      <PageHeader
+        className="mb-0 sm:mb-0"
+        title="BG Import & Reconciliation"
+        description="Validate legacy Bank Guarantee workbooks before activating clean organization-scoped records."
+      />
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2">

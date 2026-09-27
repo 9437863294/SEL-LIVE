@@ -10,6 +10,7 @@ import { useAuth } from '@/components/auth/AuthProvider';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { PageHeader } from '@/components/shared/page-header';
 import { Input } from '@/components/ui/input';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -167,18 +168,17 @@ export default function PersonExpensePage() {
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between gap-3 flex-wrap">
-        <div>
-          <h1 className="text-base sm:text-lg font-bold text-slate-800">Person-wise Expense Report</h1>
-          <p className="text-sm text-muted-foreground">Who spent what — grouped by person with category breakdown</p>
-        </div>
-        {canExport && (
+      <PageHeader
+        className="mb-0 sm:mb-0"
+        title="Person-wise Expense Report"
+        description="Who spent what — grouped by person with category breakdown"
+        actions={canExport ? (
           <Button variant="outline" size="sm" onClick={exportExcel} disabled={exporting} className="gap-2">
             {exporting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
             Export Excel
           </Button>
-        )}
-      </div>
+        ) : undefined}
+      />
 
       {/* Mobile filter toggle */}
       {(() => { const c = [filterProject, search].filter(Boolean).length; return (
@@ -220,7 +220,7 @@ export default function PersonExpensePage() {
         personGroups.map(person => (
           <Card key={person.name} className="bg-white/80 backdrop-blur-sm">
             <CardHeader className="pb-2 pt-3 px-4">
-              <CardTitle className="text-sm font-semibold text-slate-700 flex items-center justify-between flex-wrap gap-2">
+              <CardTitle className="text-slate-700 flex items-center justify-between flex-wrap gap-2">
                 <div className="flex items-center gap-2">
                   <span>{person.name}</span>
                   <Badge variant="secondary" className="text-xs">{person.count} entries</Badge>

@@ -2,9 +2,8 @@
 export const dynamic = 'force-dynamic';
 
 import { useState, useEffect, useMemo } from 'react';
-import Link from 'next/link';
-import { ArrowLeft, ShieldAlert, ArrowRightLeft, Search } from 'lucide-react';
-import { Button } from '@/components/ui/button';
+import { ShieldAlert, ArrowRightLeft, Search } from 'lucide-react';
+import { PageHeader } from '@/components/shared/page-header';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow, TableFooter } from '@/components/ui/table';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -135,10 +134,7 @@ export default function InternalTransfersPage() {
   if (!canView) {
     return (
       <div className="w-full px-4 sm:px-6 lg:px-8">
-        <div className="mb-6 flex items-center gap-3">
-          <Link href="/bank-balance/reports"><Button variant="ghost" size="icon"><ArrowLeft className="h-6 w-6" /></Button></Link>
-          <h1 className="text-xl font-bold">Inter-bank Transfers</h1>
-        </div>
+        <PageHeader title="Inter-bank Transfers" backHref="/bank-balance/reports" backLabel="Back to reports" />
         <Card>
           <CardHeader><CardTitle>Access Denied</CardTitle><CardDescription>You do not have permission.</CardDescription></CardHeader>
           <CardContent className="flex justify-center p-8"><ShieldAlert className="h-16 w-16 text-destructive" /></CardContent>
@@ -160,20 +156,13 @@ export default function InternalTransfersPage() {
 
       <div className="relative w-full px-4 sm:px-6 lg:px-8 py-4">
         {/* Header */}
-        <div className="mb-5 flex items-center gap-3">
-          <Link href="/bank-balance/reports">
-            <Button variant="ghost" size="icon" className="rounded-full hover:bg-indigo-50 dark:hover:bg-indigo-950/30">
-              <ArrowLeft className="h-5 w-5" />
-            </Button>
-          </Link>
-          <div>
-            <h1 className="text-xl font-bold tracking-tight flex items-center gap-2">
-              <ArrowRightLeft className="h-5 w-5 text-indigo-600 dark:text-indigo-400" />
-              Inter-bank Transfers
-            </h1>
-            <p className="text-xs text-muted-foreground">All internal fund transfers (contra entries) between bank accounts.</p>
-          </div>
-        </div>
+        <PageHeader
+          title="Inter-bank Transfers"
+          description="All internal fund transfers (contra entries) between bank accounts."
+          icon={ArrowRightLeft}
+          backHref="/bank-balance/reports"
+          backLabel="Back to reports"
+        />
 
         {/* Filters */}
         <Card className="mb-5 rounded-xl border-border/60 shadow-sm">
@@ -210,7 +199,7 @@ export default function InternalTransfersPage() {
         {/* Table */}
         <Card className="rounded-xl border-border/60 shadow-sm overflow-hidden">
           <CardHeader className="border-b border-border/40 pb-4">
-            <CardTitle className="text-base">Transfer Log</CardTitle>
+            <CardTitle>Transfer Log</CardTitle>
             <CardDescription>
               {fromDate && toDate
                 ? `${format(new Date(fromDate), 'dd MMM yyyy')} to ${format(new Date(toDate), 'dd MMM yyyy')}`

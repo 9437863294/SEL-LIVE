@@ -1,9 +1,7 @@
 'use client';
 
 import { useState, useEffect, useMemo, useCallback } from 'react';
-import Link from 'next/link';
 import {
-  ArrowLeft,
   Check,
   Clock,
   Loader2,
@@ -11,6 +9,7 @@ import {
   Calendar as CalendarIcon,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { PageHeader } from '@/components/shared/page-header';
 import { Card, CardContent } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import {
@@ -602,16 +601,7 @@ export default function StagePage() {
   return (
     <>
       <div className="w-full px-4 sm:px-6 lg:px-8">
-        <div className="mb-6 flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <Link href={`/billing-recon/${projectSlug}/jmc`}>
-              <Button variant="ghost" size="icon">
-                <ArrowLeft className="h-6 w-6" />
-              </Button>
-            </Link>
-            <h1 className="text-2xl font-bold">{stage?.name || 'JMC Stage'}</h1>
-          </div>
-        </div>
+        <PageHeader title={stage?.name || 'JMC Stage'} backHref={`/billing-recon/${projectSlug}/jmc`} backLabel="Back to JMC" />
         <Tabs defaultValue="pending">
           <TabsList className="grid w-full grid-cols-2">
             <TabsTrigger value="pending">

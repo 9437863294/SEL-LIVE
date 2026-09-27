@@ -2,8 +2,8 @@
 'use client';
 
 import { useState, useEffect, useMemo } from 'react';
-import Link from 'next/link';
-import { ArrowLeft, BarChart3, Download, Landmark, TrendingUp } from 'lucide-react';
+import { BarChart3, Download, Landmark, TrendingUp } from 'lucide-react';
+import { PageHeader } from '@/components/shared/page-header';
 import { Button } from '@/components/ui/button';
 import {
   Card,
@@ -199,27 +199,14 @@ export default function PortfolioOverviewPage() {
   return (
     <div className="space-y-4">
       {/* ── Header card ─────────────────────────────────────────────────── */}
-      <Card className="overflow-hidden border-border/60">
-        <div className="h-1 w-full bg-gradient-to-r from-emerald-500 via-teal-500 to-cyan-500" />
-        <CardHeader className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <div className="flex items-center gap-3">
-            <Link href="/loan/reports">
-              <Button variant="ghost" size="sm" className="gap-1.5 text-xs">
-                <ArrowLeft className="h-3.5 w-3.5" /> Back
-              </Button>
-            </Link>
-            <div className="flex items-center gap-2">
-              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-emerald-50 ring-1 ring-emerald-100">
-                <BarChart3 className="h-5 w-5 text-emerald-600" />
-              </div>
-              <div>
-                <CardTitle className="text-base tracking-tight">Portfolio Overview</CardTitle>
-                <CardDescription>
-                  All loans at a glance — outstanding, paid, and type breakdown
-                </CardDescription>
-              </div>
-            </div>
-          </div>
+      <PageHeader
+        className="mb-0 sm:mb-0"
+        icon={BarChart3}
+        title="Portfolio Overview"
+        description="All loans at a glance — outstanding, paid, and type breakdown"
+        backHref="/loan/reports"
+        backLabel="Back to loan reports"
+        actions={
           <Button
             variant="outline"
             size="sm"
@@ -229,8 +216,8 @@ export default function PortfolioOverviewPage() {
           >
             <Download className="h-3.5 w-3.5" /> Export
           </Button>
-        </CardHeader>
-      </Card>
+        }
+      />
 
       {/* ── Stat cards ──────────────────────────────────────────────────── */}
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
@@ -286,7 +273,7 @@ export default function PortfolioOverviewPage() {
       {/* ── By Loan Type ─────────────────────────────────────────────────── */}
       <Card className="overflow-hidden border-border/60">
         <CardHeader className="py-3 px-4 border-b">
-          <CardTitle className="text-sm font-semibold">Breakdown by Loan Type</CardTitle>
+          <CardTitle>Breakdown by Loan Type</CardTitle>
         </CardHeader>
         <CardContent className="p-0">
           {isLoading ? (
@@ -334,7 +321,7 @@ export default function PortfolioOverviewPage() {
       {/* ── All Loans table (desktop) ─────────────────────────────────────── */}
       <Card className="hidden overflow-hidden border-border/60 sm:block">
         <CardHeader className="py-3 px-4 border-b">
-          <CardTitle className="text-sm font-semibold">All Loans</CardTitle>
+          <CardTitle>All Loans</CardTitle>
         </CardHeader>
         <CardContent className="p-0">
           {isLoading ? (

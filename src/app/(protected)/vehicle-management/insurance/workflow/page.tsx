@@ -67,6 +67,7 @@ import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { PageHeader } from '@/components/shared/page-header';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -524,13 +525,13 @@ export default function InsuranceWorkflowPage() {
 
   return (
     <div className="space-y-4">
-      <Card className="vm-panel-strong overflow-hidden">
-        <div className="h-1 bg-gradient-to-r from-violet-500 via-indigo-500 to-cyan-500" />
-        <CardHeader className="flex flex-col gap-3 p-4 sm:flex-row sm:items-center sm:justify-between sm:p-5">
-          <div><CardTitle className="flex items-center gap-2 text-lg"><GitBranch className="h-5 w-5 text-violet-600" />Insurance Renewal Workflow</CardTitle><CardDescription>Dynamic ownership, stage TAT, escalation, approvals and policy activation.</CardDescription></div>
-          <div className="flex flex-wrap gap-2">{canConfigure && <Link href="/vehicle-management/settings/insurance-workflow"><Button variant="outline" className="bg-white"><Settings2 className="mr-1.5 h-4 w-4" />Configure</Button></Link>}<Button variant="outline" onClick={() => void runEscalations()} disabled={!canManage || isWorking} className="bg-white"><BellRing className="mr-1.5 h-4 w-4" />Run Escalation</Button><Button onClick={() => void runScan()} disabled={!canManage || isScanning} className="bg-gradient-to-r from-violet-600 to-indigo-600">{isScanning ? <Loader2 className="mr-1.5 h-4 w-4 animate-spin" /> : <Play className="mr-1.5 h-4 w-4" />}Run Expiry Scan</Button></div>
-        </CardHeader>
-      </Card>
+      <PageHeader
+        title="Insurance Renewal Workflow"
+        description="Dynamic ownership, stage TAT, escalation, approvals and policy activation."
+        icon={GitBranch}
+        className="mb-0 sm:mb-0"
+        actions={<>{canConfigure && <Link href="/vehicle-management/settings/insurance-workflow"><Button variant="outline" className="w-full bg-white sm:w-auto"><Settings2 className="mr-1.5 h-4 w-4" />Configure</Button></Link>}<Button variant="outline" onClick={() => void runEscalations()} disabled={!canManage || isWorking} className="bg-white"><BellRing className="mr-1.5 h-4 w-4" />Run Escalation</Button><Button onClick={() => void runScan()} disabled={!canManage || isScanning} className="bg-gradient-to-r from-violet-600 to-indigo-600">{isScanning ? <Loader2 className="mr-1.5 h-4 w-4 animate-spin" /> : <Play className="mr-1.5 h-4 w-4" />}Run Expiry Scan</Button></>}
+      />
 
       <div className="grid grid-cols-2 gap-1.5 sm:grid-cols-4">
         <Metric label="Open Cases" value={metrics.open} icon={RefreshCw} tone="blue" />

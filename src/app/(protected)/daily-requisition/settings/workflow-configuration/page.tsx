@@ -1,9 +1,7 @@
 'use client';
 
 import { useState, useEffect, useMemo, useCallback } from 'react';
-import Link from 'next/link';
 import {
-  ArrowLeft,
   Save,
   Trash2,
   Plus,
@@ -14,6 +12,7 @@ import {
   ArrowDown,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { PageHeader } from '@/components/shared/page-header';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { useToast } from '@/hooks/use-toast';
@@ -366,19 +365,12 @@ export default function DailyRequisitionWorkflowConfigurationPage() {
   if (!canViewPage) {
     return (
       <div className="w-full px-3 py-4 sm:px-4 lg:px-6 xl:px-8">
-        <div className="mb-6 flex items-center justify-between">
-          <div className="flex items-center gap-4">
-            <Link href="/daily-requisition/settings">
-              <Button variant="ghost" size="icon">
-                <ArrowLeft className="h-6 w-6" />
-              </Button>
-            </Link>
-            <div>
-              <p className="text-xs font-semibold uppercase tracking-[0.22em] text-slate-500">Daily Requisition</p>
-              <h1 className="mt-1 text-2xl font-bold tracking-tight text-slate-900">Configure Workflow</h1>
-            </div>
-          </div>
-        </div>
+        <PageHeader
+          title="Configure Workflow"
+          eyebrow="Daily Requisition"
+          backHref="/daily-requisition/settings"
+          backLabel="Back to settings"
+        />
         <Card className="overflow-hidden rounded-2xl border border-white/70 bg-white/70 shadow-[0_20px_70px_-55px_rgba(2,6,23,0.55)] backdrop-blur">
           <div className="h-1.5 w-full bg-gradient-to-r from-rose-400 via-amber-300 to-cyan-400 opacity-70" />
           <CardHeader>
@@ -395,35 +387,30 @@ export default function DailyRequisitionWorkflowConfigurationPage() {
 
   return (
     <div className="w-full px-3 py-4 sm:px-4 lg:px-6 xl:px-8">
-      <div className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
-        <div className="flex items-center gap-3">
-          <Link href="/daily-requisition/settings">
-            <Button variant="ghost" size="icon">
-              <ArrowLeft className="h-6 w-6" />
+      <PageHeader
+        title="Configure Workflow"
+        eyebrow="Daily Requisition"
+        description="Steps, assignments, actions, and turnaround time."
+        backHref="/daily-requisition/settings"
+        backLabel="Back to settings"
+        actions={
+          <>
+            {pageInvalidMsg && (
+              <Badge variant="destructive" className="whitespace-nowrap">
+                {pageInvalidMsg}
+              </Badge>
+            )}
+            <Button
+              onClick={handleSave}
+              disabled={isSaving || !canEditPage || !!pageInvalidMsg}
+              className="bg-slate-900 text-white shadow hover:bg-slate-900/90"
+            >
+              {isSaving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
+              Save Workflow
             </Button>
-          </Link>
-          <div>
-            <p className="text-xs font-semibold uppercase tracking-[0.22em] text-slate-500">Daily Requisition</p>
-            <h1 className="mt-1 text-2xl font-bold tracking-tight text-slate-900">Configure Workflow</h1>
-            <p className="mt-1 text-sm text-slate-600">Steps, assignments, actions, and turnaround time.</p>
-          </div>
-        </div>
-        <div className="flex items-center gap-3">
-          {pageInvalidMsg && (
-            <Badge variant="destructive" className="whitespace-nowrap">
-              {pageInvalidMsg}
-            </Badge>
-          )}
-          <Button
-            onClick={handleSave}
-            disabled={isSaving || !canEditPage || !!pageInvalidMsg}
-            className="bg-slate-900 text-white shadow hover:bg-slate-900/90"
-          >
-            {isSaving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
-            Save Workflow
-          </Button>
-        </div>
-      </div>
+          </>
+        }
+      />
 
       <Card className="overflow-hidden rounded-2xl border border-white/70 bg-white/70 shadow-[0_20px_70px_-55px_rgba(2,6,23,0.55)] backdrop-blur">
         <div className="h-1.5 w-full bg-gradient-to-r from-cyan-400 via-fuchsia-400 to-amber-300 opacity-70" />

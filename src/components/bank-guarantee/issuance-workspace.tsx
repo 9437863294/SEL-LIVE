@@ -23,6 +23,7 @@ import {
 } from "@/lib/bank-guarantee";
 import type { BankAccount } from "@/lib/types";
 import { Button } from "@/components/ui/button";
+import { PageHeader } from "@/components/shared/page-header";
 import {
   Card,
   CardContent,
@@ -273,16 +274,14 @@ export default function BGIssuanceWorkspace({
     );
   return (
     <div className="space-y-4">
-      <div>
-        <h1 className="text-2xl font-bold">BG Issuance</h1>
-        <p className="text-sm text-muted-foreground">
-          Convert an approved request and reserved bank/FD margin into an issued
-          Bank Guarantee.
-        </p>
-      </div>
+      <PageHeader
+        className="mb-0 sm:mb-0"
+        title="BG Issuance"
+        description="Convert an approved request and reserved bank/FD margin into an issued Bank Guarantee."
+      />
       <Card>
         <CardHeader>
-          <CardTitle className="text-base">Approved request</CardTitle>
+          <CardTitle>Approved request</CardTitle>
           <CardDescription>
             Only fully approved requests are available for issuance.
           </CardDescription>
@@ -361,7 +360,7 @@ export default function BGIssuanceWorkspace({
       </Card>
       <Card>
         <CardHeader>
-          <CardTitle className="text-base">Final amount and validity</CardTitle>
+          <CardTitle>Final amount and validity</CardTitle>
         </CardHeader>
         <CardContent className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
           <Field label="Issue date">
@@ -431,7 +430,7 @@ export default function BGIssuanceWorkspace({
       </Card>
       <Card>
         <CardHeader>
-          <CardTitle className="text-base">Collateral and charges</CardTitle>
+          <CardTitle>Collateral and charges</CardTitle>
           <CardDescription>
             Required margin {formatBgCurrency(requiredMargin)} · assigned{" "}
             {formatBgCurrency(totalMargin)} · shortfall{" "}

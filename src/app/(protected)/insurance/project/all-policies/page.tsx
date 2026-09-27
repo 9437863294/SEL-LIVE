@@ -25,6 +25,7 @@ import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { PageHeader } from '@/components/shared/page-header';
 import { cn } from '@/lib/utils';
 
 // ─── helpers ─────────────────────────────────────────────────────────────────
@@ -124,23 +125,17 @@ export default function AllProjectPoliciesPage() {
   return (
     <div className="space-y-4">
       {/* Header */}
-      <Card className="overflow-hidden border-border/60">
-        <div className="h-1 w-full bg-gradient-to-r from-teal-500 via-cyan-500 to-sky-500" />
-        <CardHeader className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <div className="flex items-center gap-3">
-            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-teal-50 ring-1 ring-teal-100">
-              <Files className="h-5 w-5 text-teal-600" />
-            </div>
-            <div>
-              <CardTitle className="tracking-tight">All Project Policies</CardTitle>
-              <CardDescription>Consolidated view of {policies.length} project insurance policies</CardDescription>
-            </div>
-          </div>
-          <Button variant="outline" size="sm" onClick={fetchPolicies} className="gap-1.5 w-fit">
+      <PageHeader
+        className="mb-0 sm:mb-0"
+        icon={Files}
+        title="All Project Policies"
+        description={`Consolidated view of ${policies.length} project insurance policies`}
+        actions={
+          <Button variant="outline" size="sm" onClick={fetchPolicies} className="gap-1.5">
             <RefreshCw className="h-3.5 w-3.5" /> Refresh
           </Button>
-        </CardHeader>
-      </Card>
+        }
+      />
 
       {/* Filters */}
       <Card className="border-border/60">

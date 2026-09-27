@@ -3,8 +3,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import Link from 'next/link';
-import { ArrowLeft, Save, Trash2, Plus, GripVertical, ShieldAlert, Loader2 } from 'lucide-react';
+import { Save, Trash2, Plus, GripVertical, ShieldAlert, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -26,6 +25,7 @@ import { useAuth } from '@/components/auth/AuthProvider';
 import { logUserActivity } from '@/lib/activity-logger';
 import { cn } from '@/lib/utils';
 import { Textarea } from '@/components/ui/textarea';
+import { PageHeader } from '@/components/shared/page-header';
 
 
 const initialSteps: WorkflowStep[] = [
@@ -262,12 +262,11 @@ export default function InsuranceWorkflowConfigurationPage() {
     if(!canViewPage) {
         return (
              <div className="w-full max-w-4xl mx-auto pr-14">
-                <div className="mb-6 flex items-center justify-between">
-                    <div className="flex items-center gap-4">
-                        <Link href="/insurance/settings"><Button variant="ghost" size="icon"><ArrowLeft className="h-6 w-6" /></Button></Link>
-                        <h1 className="text-xl font-bold">Configure Workflow</h1>
-                    </div>
-                </div>
+                <PageHeader
+                    title="Configure Workflow"
+                    backHref="/insurance/settings"
+                    backLabel="Back to settings"
+                />
                 <Card>
                     <CardHeader>
                         <CardTitle>Access Denied</CardTitle>
@@ -283,20 +282,17 @@ export default function InsuranceWorkflowConfigurationPage() {
 
     return (
         <div className="w-full max-w-4xl mx-auto pr-14">
-            <div className="mb-6 flex items-center justify-between">
-                <div className="flex items-center gap-4">
-                    <Link href="/insurance/settings">
-                        <Button variant="ghost" size="icon">
-                            <ArrowLeft className="h-6 w-6" />
-                        </Button>
-                    </Link>
-                    <h1 className="text-xl font-bold">Configure Workflow</h1>
-                </div>
-                <Button onClick={handleSave} disabled={isSaving}>
-                    {isSaving ? <Loader2 className="mr-2 h-4 w-4 animate-spin"/> : <Save className="mr-2 h-4 w-4" />}
-                    Save
-                </Button>
-            </div>
+            <PageHeader
+                title="Configure Workflow"
+                backHref="/insurance/settings"
+                backLabel="Back to settings"
+                actions={
+                    <Button onClick={handleSave} disabled={isSaving}>
+                        {isSaving ? <Loader2 className="mr-2 h-4 w-4 animate-spin"/> : <Save className="mr-2 h-4 w-4" />}
+                        Save
+                    </Button>
+                }
+            />
 
             <Card>
                 <CardHeader>

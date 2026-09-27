@@ -3,12 +3,12 @@ export const dynamic = 'force-dynamic';
 
 import Link from 'next/link';
 import {
-  ArrowLeft, Landmark, TrendingUp, Percent, CalendarDays, List, Target, FilePen, ShieldAlert, Settings2,
+  Landmark, TrendingUp, Percent, CalendarDays, List, Target, FilePen, ShieldAlert, Settings2,
 } from 'lucide-react';
 import { Card, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { cn } from '@/lib/utils';
 import type { LucideIcon } from 'lucide-react';
-import { Button } from '@/components/ui/button';
+import { PageHeader } from '@/components/shared/page-header';
 import { useAuthorization } from '@/hooks/useAuthorization';
 import { Skeleton } from '@/components/ui/skeleton';
 
@@ -128,7 +128,7 @@ function SettingsCard({ item }: SettingsCardProps) {
           <item.icon className={cn('w-7 h-7', colorScheme.iconColor)} />
         </div>
         <div className="flex-1">
-          <CardTitle className="text-sm font-bold">{item.text}</CardTitle>
+          <CardTitle>{item.text}</CardTitle>
           <CardDescription className="text-xs mt-1.5 leading-relaxed">
             {item.description}
           </CardDescription>
@@ -241,14 +241,7 @@ export default function BankBalanceSettingsPage() {
   if (!canViewPage) {
     return (
       <div className="relative w-full px-4 sm:px-6 lg:px-8 py-6">
-        <div className="mb-6 flex items-center gap-2">
-          <Link href="/bank-balance">
-            <Button variant="ghost" size="icon" className="rounded-full">
-              <ArrowLeft className="h-5 w-5" />
-            </Button>
-          </Link>
-          <h1 className="text-xl font-bold">Bank Settings</h1>
-        </div>
+        <PageHeader title="Bank Settings" backHref="/bank-balance" backLabel="Back to dashboard" />
         <Card>
           <CardHeader>
             <CardTitle>Access Denied</CardTitle>
@@ -280,20 +273,13 @@ export default function BankBalanceSettingsPage() {
 
       <div className="relative w-full px-4 sm:px-6 lg:px-8 py-5">
         {/* ── Header ── */}
-        <div className="mb-6 flex items-center gap-3">
-          <Link href="/bank-balance">
-            <Button variant="ghost" size="icon" className="rounded-full hover:bg-primary/10">
-              <ArrowLeft className="h-5 w-5" />
-            </Button>
-          </Link>
-          <div>
-            <div className="flex items-center gap-2">
-              <Settings2 className="h-5 w-5 text-primary/70" />
-              <h1 className="text-xl font-bold tracking-tight">Bank Settings</h1>
-            </div>
-            <p className="text-xs text-muted-foreground mt-0.5">Configure accounts, rates, and system preferences</p>
-          </div>
-        </div>
+        <PageHeader
+          title="Bank Settings"
+          description="Configure accounts, rates, and system preferences"
+          icon={Settings2}
+          backHref="/bank-balance"
+          backLabel="Back to dashboard"
+        />
 
         {/* ── Settings Grid ── */}
         <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">

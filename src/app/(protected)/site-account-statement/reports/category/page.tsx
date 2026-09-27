@@ -12,6 +12,7 @@ import { useAuthorization } from '@/hooks/useAuthorization';
 import { useAuth } from '@/components/auth/AuthProvider';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
+import { PageHeader } from '@/components/shared/page-header';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -378,35 +379,34 @@ export default function CategoryAnalysisPage() {
     <div className="space-y-4">
 
       {/* Header */}
-      <div className="flex items-center justify-between gap-3 flex-wrap">
-        <div>
-          <h1 className="text-base sm:text-lg font-bold text-slate-800">Category-wise Expense Analysis</h1>
-          <p className="text-sm text-muted-foreground">
-            Click a category to expand entries · Click an entry for full details
-          </p>
-        </div>
-        <div className="flex gap-2 flex-wrap">
-          <Button
-            variant="outline" size="sm"
-            className={cn('gap-2 h-9', activeFilterCount > 0 && 'border-rose-300 text-rose-700 bg-rose-50')}
-            onClick={() => setShowFilters(s => !s)}
-          >
-            <Filter className="h-3.5 w-3.5" />
-            Filters
-            {activeFilterCount > 0 && (
-              <span className="flex h-4 w-4 items-center justify-center rounded-full bg-rose-600 text-[10px] font-bold text-white leading-none">
-                {activeFilterCount}
-              </span>
-            )}
-          </Button>
-          {canExport && (
-            <Button variant="outline" size="sm" onClick={exportExcel} disabled={exporting} className="gap-2 h-9">
-              {exporting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
-              Export
+      <PageHeader
+        className="mb-0 sm:mb-0"
+        title="Category-wise Expense Analysis"
+        description="Click a category to expand entries · Click an entry for full details"
+        actions={
+          <>
+            <Button
+              variant="outline" size="sm"
+              className={cn('gap-2 h-9', activeFilterCount > 0 && 'border-rose-300 text-rose-700 bg-rose-50')}
+              onClick={() => setShowFilters(s => !s)}
+            >
+              <Filter className="h-3.5 w-3.5" />
+              Filters
+              {activeFilterCount > 0 && (
+                <span className="flex h-4 w-4 items-center justify-center rounded-full bg-rose-600 text-[10px] font-bold text-white leading-none">
+                  {activeFilterCount}
+                </span>
+              )}
             </Button>
-          )}
-        </div>
-      </div>
+            {canExport && (
+              <Button variant="outline" size="sm" onClick={exportExcel} disabled={exporting} className="gap-2 h-9">
+                {exporting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
+                Export
+              </Button>
+            )}
+          </>
+        }
+      />
 
       {/* Filter panel */}
       {showFilters && (

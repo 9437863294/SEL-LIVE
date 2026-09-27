@@ -1,13 +1,12 @@
 'use client';
 
 import { useState, useEffect, useMemo } from 'react';
-import Link from 'next/link';
 import {
   AlertTriangle,
-  ArrowLeft,
   CheckCircle2,
   Download,
 } from 'lucide-react';
+import { PageHeader } from '@/components/shared/page-header';
 import ExcelJS from 'exceljs';
 import { collection, getDocs } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
@@ -238,31 +237,14 @@ export default function OverdueAnalysisPage() {
   return (
     <div className="space-y-4">
       {/* ── Header card ── */}
-      <Card className="overflow-hidden border-border/60">
-        <div className="h-1 w-full bg-gradient-to-r from-rose-500 via-red-500 to-orange-500" />
-        <CardHeader className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <div className="flex items-center gap-3">
-            <Link href="/loan/reports">
-              <Button variant="ghost" size="sm" className="gap-1.5 text-xs">
-                <ArrowLeft className="h-3.5 w-3.5" />
-                Back
-              </Button>
-            </Link>
-            <div className="flex items-center gap-2">
-              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-rose-50 ring-1 ring-rose-100">
-                <AlertTriangle className="h-5 w-5 text-rose-600" />
-              </div>
-              <div>
-                <CardTitle className="tracking-tight text-base">
-                  Overdue Analysis
-                </CardTitle>
-                <CardDescription>
-                  All overdue EMIs sorted by days past due — live snapshot
-                </CardDescription>
-              </div>
-            </div>
-          </div>
-
+      <PageHeader
+        className="mb-0 sm:mb-0"
+        icon={AlertTriangle}
+        title="Overdue Analysis"
+        description="All overdue EMIs sorted by days past due — live snapshot"
+        backHref="/loan/reports"
+        backLabel="Back to loan reports"
+        actions={
           <Button
             variant="outline"
             size="sm"
@@ -273,8 +255,8 @@ export default function OverdueAnalysisPage() {
             <Download className="mr-1.5 h-3.5 w-3.5" />
             {isExporting ? 'Exporting…' : 'Export Excel'}
           </Button>
-        </CardHeader>
-      </Card>
+        }
+      />
 
       {/* ── Stat cards ── */}
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
@@ -318,7 +300,7 @@ export default function OverdueAnalysisPage() {
       <Card className="overflow-hidden border-border/60">
         <div className="h-1 w-full bg-gradient-to-r from-rose-400 via-orange-400 to-amber-400 opacity-70" />
         <CardHeader className="pb-2">
-          <CardTitle className="text-base">Overdue EMIs</CardTitle>
+          <CardTitle>Overdue EMIs</CardTitle>
           <CardDescription>
             Color-coded by days overdue — amber ≤7, orange 8–30, rose 30+
           </CardDescription>

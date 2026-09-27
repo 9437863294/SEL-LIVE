@@ -22,6 +22,7 @@ import {
   type LucideIcon,
 } from 'lucide-react';
 import { ModuleBottomNav, type ModuleMoreLink, type ModuleNavTab } from '@/components/navigation/ModuleBottomNav';
+import { ModuleMobileHeader } from '@/components/shared/page-header';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { useSidebarDefault } from '@/components/theme/use-sidebar-default';
 import { cn } from '@/lib/utils';
@@ -295,20 +296,11 @@ export function InventoryModuleShell({ children }: { children: ReactNode }) {
       </TooltipProvider>
 
       <div className={cn('min-w-0 transition-[margin] duration-300', isExpanded ? 'md:ml-64' : 'md:ml-[4.5rem]')}>
-        {/* Phones: the module's name only. Its pages are on the bottom bar, all of them under "More". */}
-        <div className="border-b bg-white/90 px-4 py-3 backdrop-blur md:hidden">
-          <div className="flex min-w-0 items-center gap-3">
-            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-emerald-600 to-teal-700">
-              <Building2 className="h-4 w-4 text-white" />
-            </div>
-            <div className="min-w-0">
-              <p className="truncate text-sm font-bold">Property Inventory</p>
-              <p className="truncate text-xs text-muted-foreground">Store & stock control</p>
-            </div>
-          </div>
-        </div>
-
-        <main className="mx-auto w-full max-w-[1600px] px-4 py-5 sm:px-6 lg:px-8">{children}</main>
+        <main className="mx-auto w-full max-w-[1600px] px-4 py-5 sm:px-6 lg:px-8">
+          {/* Phones: the module's name only. Its pages are on the bottom bar, all of them under "More". */}
+          <ModuleMobileHeader icon={Building2} title="Property Inventory" subtitle="Store & stock control" hideFrom="md" />
+          {children}
+        </main>
       </div>
 
       <ModuleBottomNav

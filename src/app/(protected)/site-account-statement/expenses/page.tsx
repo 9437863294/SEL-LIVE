@@ -29,6 +29,7 @@ import { useActivityLogger } from '@/hooks/useActivityLogger';
 import { useToast } from '@/hooks/use-toast';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
+import { PageHeader } from '@/components/shared/page-header';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -1273,30 +1274,31 @@ export default function SiteExpensesPage() {
   return (
     <div className="space-y-4">
       {/* Header */}
-      <div className="flex items-center justify-between gap-3 flex-wrap">
-        <div>
-          <h1 className="text-base sm:text-lg font-bold text-slate-800">Site Expenses</h1>
-          <p className="text-sm text-muted-foreground">All expenses incurred at project sites</p>
-        </div>
-        <div className="flex flex-wrap gap-2">
-          {canExport && (
-            <Button variant="outline" size="sm" onClick={exportExcel} disabled={exporting} className="gap-2">
-              {exporting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
-              Export
-            </Button>
-          )}
-          {effectiveCanImport && (
-            <Button variant="outline" size="sm" onClick={() => setImportDialogOpen(true)} className="gap-2">
-              <Upload className="h-4 w-4" /> Import
-            </Button>
-          )}
-          {effectiveCanAdd && (
-            <Button size="sm" onClick={openAdd} className="gap-2 bg-rose-600 hover:bg-rose-700">
-              <Plus className="h-4 w-4" /> Add Expense
-            </Button>
-          )}
-        </div>
-      </div>
+      <PageHeader
+        className="mb-0 sm:mb-0"
+        title="Site Expenses"
+        description="All expenses incurred at project sites"
+        actions={(canExport || effectiveCanImport || effectiveCanAdd) ? (
+          <>
+            {canExport && (
+              <Button variant="outline" size="sm" onClick={exportExcel} disabled={exporting} className="gap-2">
+                {exporting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
+                Export
+              </Button>
+            )}
+            {effectiveCanImport && (
+              <Button variant="outline" size="sm" onClick={() => setImportDialogOpen(true)} className="gap-2">
+                <Upload className="h-4 w-4" /> Import
+              </Button>
+            )}
+            {effectiveCanAdd && (
+              <Button size="sm" onClick={openAdd} className="gap-2 bg-rose-600 hover:bg-rose-700">
+                <Plus className="h-4 w-4" /> Add Expense
+              </Button>
+            )}
+          </>
+        ) : undefined}
+      />
 
       {/* Month navigation */}
       <div className="flex flex-wrap items-center gap-2">

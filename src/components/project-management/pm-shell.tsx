@@ -27,6 +27,7 @@ import Link from "next/link";
 import { ArrowRight, ChevronLeft, ChevronRight, Inbox, type LucideIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { DataList, type ListColumn } from "@/components/shared/data-list";
+import { PageHeader } from "@/components/shared/page-header";
 import {
   SectionsSheet,
   type SectionsSheetEntry,
@@ -468,47 +469,18 @@ export function PmTopbar({
   backLabel?: string;
   actions?: ReactNode;
 }) {
+  // The app's standard header in its sticky form (`shared/page-header`). The topbar spans the
+  // content column edge to edge, above `PmContent`'s padding, so it takes no negative margins.
   return (
-    <header
-      className={cn(
-        "sticky z-20 flex flex-wrap items-center gap-x-3 gap-y-2 border-b bg-card/95 px-4 py-2.5 backdrop-blur md:px-6",
-        BELOW_APP_HEADER,
-      )}
-    >
-      <Button variant="outline" size="icon" className="h-9 w-9 shrink-0 sm:h-8 sm:w-8" asChild>
-        <Link href={backHref} aria-label={backLabel}>
-          <ChevronLeft className="h-4 w-4" />
-        </Link>
-      </Button>
-
-      {/* `basis-40` rather than a zero basis: the title claims a real share of the first line, so
-          on a phone the actions wrap beneath it instead of squeezing it down to "Ind…". */}
-      <nav aria-label="Breadcrumb" className="flex min-w-0 flex-1 basis-40 items-baseline gap-2">
-        {breadcrumbs.length > 0 && (
-          <p className="hidden shrink-0 items-baseline gap-1.5 whitespace-nowrap text-[13px] text-muted-foreground md:flex">
-            {breadcrumbs.map((crumb) => (
-              <span key={crumb.label} className="flex items-baseline gap-1.5">
-                {crumb.href ? (
-                  <Link href={crumb.href} className="font-medium text-foreground hover:underline">
-                    {crumb.label}
-                  </Link>
-                ) : (
-                  <span className="font-medium text-foreground">{crumb.label}</span>
-                )}
-                <span aria-hidden className="text-muted-foreground/50">
-                  /
-                </span>
-              </span>
-            ))}
-          </p>
-        )}
-        <h1 className="truncate text-base font-semibold tracking-tight sm:text-[17px]">{title}</h1>
-      </nav>
-
-      {actions ? (
-        <div className="ml-auto flex flex-wrap items-center justify-end gap-2">{actions}</div>
-      ) : null}
-    </header>
+    <PageHeader
+      sticky
+      title={title}
+      breadcrumbs={breadcrumbs}
+      backHref={backHref}
+      backLabel={backLabel}
+      actions={actions}
+      className="mx-0 mb-0 md:mx-0"
+    />
   );
 }
 
@@ -617,7 +589,8 @@ export function PmSectionHead({
 }) {
   return (
     <div className="mb-3 flex flex-wrap items-end gap-x-6 gap-y-2">
-      <h2 className="text-lg font-semibold tracking-tight sm:text-xl">{title}</h2>
+      {/* The app's standard section-heading scale (`shared/page-header` → SectionHeader). */}
+      <h2 className="text-[15px] font-semibold leading-snug tracking-tight sm:text-base">{title}</h2>
       {stats.length > 0 && (
         <dl className="flex flex-wrap items-baseline gap-x-5 gap-y-1 text-[13px] text-muted-foreground">
           {stats.map((stat) => (

@@ -2,8 +2,7 @@
 'use client';
 
 import { useState, useEffect, useMemo } from 'react';
-import Link from 'next/link';
-import { ArrowLeft, Plus, Edit, Trash2, ShieldAlert } from 'lucide-react';
+import { Plus, Edit, Trash2, ShieldAlert } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
@@ -21,6 +20,7 @@ import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
 import { Badge } from '@/components/ui/badge';
+import { PageHeader } from '@/components/shared/page-header';
 
 const initialFormState = {
   name: '',
@@ -163,12 +163,11 @@ export default function ManageAssetsPage() {
   if (!canViewPage) {
     return (
         <div className="w-full">
-            <div className="mb-6 flex items-center justify-between">
-                <div className="flex items-center gap-4">
-                    <Link href="/insurance/settings"><Button variant="ghost" size="icon"><ArrowLeft className="h-6 w-6"/></Button></Link>
-                    <h1 className="text-xl font-bold">Manage Projects and Properties</h1>
-                </div>
-            </div>
+            <PageHeader
+                title="Manage Projects and Properties"
+                backHref="/insurance/settings"
+                backLabel="Back to settings"
+            />
             <Card>
                 <CardHeader>
                     <CardTitle>Access Denied</CardTitle>
@@ -182,16 +181,13 @@ export default function ManageAssetsPage() {
 
   return (
     <div className="w-full">
-      <div className="mb-6 flex items-center justify-between">
-         <div className="flex items-center gap-4">
-            <Link href="/insurance/settings"><Button variant="ghost" size="icon"><ArrowLeft className="h-6 w-6"/></Button></Link>
-            <div>
-                <h1 className="text-xl font-bold">Manage Projects and Properties</h1>
-                <p className="text-sm text-muted-foreground">Manage insurable assets like projects and properties.</p>
-            </div>
-         </div>
-        <Button onClick={() => openDialog('add')} disabled={!canAdd}><Plus className="mr-2 h-4 w-4"/> Add Asset</Button>
-      </div>
+      <PageHeader
+        title="Manage Projects and Properties"
+        description="Manage insurable assets like projects and properties."
+        backHref="/insurance/settings"
+        backLabel="Back to settings"
+        actions={<Button onClick={() => openDialog('add')} disabled={!canAdd}><Plus className="mr-2 h-4 w-4"/> Add Asset</Button>}
+      />
 
       <Card>
         <CardContent className="p-0">

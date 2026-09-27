@@ -15,7 +15,8 @@ import {
 } from 'lucide-react';
 import { useAuthorization } from '@/hooks/useAuthorization';
 import { Skeleton } from '@/components/ui/skeleton';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { PageHeader } from '@/components/shared/page-header';
 import { cn } from '@/lib/utils';
 
 const SETTINGS_ITEMS = [
@@ -110,18 +111,12 @@ export default function InsuranceSettingsPage() {
   return (
     <div className="space-y-5">
       {/* Header */}
-      <Card className="overflow-hidden border-border/60">
-        <div className="h-1 w-full bg-gradient-to-r from-slate-400 via-slate-500 to-slate-600" />
-        <CardHeader className="flex items-center gap-3 flex-row">
-          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-slate-50 ring-1 ring-slate-200">
-            <Settings2 className="h-5 w-5 text-slate-600" />
-          </div>
-          <div>
-            <CardTitle className="tracking-tight">Insurance Settings</CardTitle>
-            <CardDescription>Configure masters, workflows and documentation</CardDescription>
-          </div>
-        </CardHeader>
-      </Card>
+      <PageHeader
+        className="mb-0 sm:mb-0"
+        icon={Settings2}
+        title="Insurance Settings"
+        description="Configure masters, workflows and documentation"
+      />
 
       {/* Settings cards */}
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">

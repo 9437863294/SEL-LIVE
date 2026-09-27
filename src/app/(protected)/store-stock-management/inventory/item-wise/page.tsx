@@ -29,6 +29,7 @@ import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { PageHeader } from '@/components/shared/page-header';
 
 type StockStatus = 'all' | 'in' | 'low' | 'out';
 type SortMode = 'name' | 'available-desc' | 'available-asc' | 'value-desc';
@@ -296,17 +297,19 @@ export default function ItemWiseInventoryPage() {
 
   return (
     <div className="space-y-6 print:p-0">
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
-        <div>
-          <div className="mb-2 flex items-center gap-2 text-sm font-medium text-cyan-700"><Boxes className="h-4 w-4" />Inventory report</div>
-          <h1 className="text-2xl font-bold tracking-tight sm:text-3xl">Item-wise inventory</h1>
-          <p className="text-muted-foreground">Current stock for every item, consolidated across stores with location-level drill-down.</p>
-        </div>
-        <div className="flex flex-wrap gap-2 print:hidden">
-          <Button variant="outline" onClick={() => window.print()}><Printer className="mr-2 h-4 w-4" />Print / PDF</Button>
-          <Button onClick={exportExcel}><Download className="mr-2 h-4 w-4" />Export Excel</Button>
-        </div>
-      </div>
+      <PageHeader
+        className="mb-0 sm:mb-0"
+        icon={Boxes}
+        eyebrow="Inventory report"
+        title="Item-wise inventory"
+        description="Current stock for every item, consolidated across stores with location-level drill-down."
+        actions={
+          <>
+            <Button variant="outline" className="print:hidden" onClick={() => window.print()}><Printer className="mr-2 h-4 w-4" />Print / PDF</Button>
+            <Button className="print:hidden" onClick={exportExcel}><Download className="mr-2 h-4 w-4" />Export Excel</Button>
+          </>
+        }
+      />
 
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-6">
         <Metric title="Filtered items" value={filteredRows.length.toLocaleString()} icon={Boxes} />

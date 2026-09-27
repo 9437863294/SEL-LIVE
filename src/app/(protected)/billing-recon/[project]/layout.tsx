@@ -13,6 +13,7 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/comp
 import { cn } from '@/lib/utils';
 import { useAuthorization } from '@/hooks/useAuthorization';
 import { ModuleBottomNav, type ModuleMoreLink, type ModuleNavTab } from '@/components/navigation/ModuleBottomNav';
+import { ModuleMobileHeader } from '@/components/shared/page-header';
 import { useSidebarDefault } from '@/components/theme/use-sidebar-default';
 import { collection, getDocs } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
@@ -198,7 +199,11 @@ export default function ProjectLayout({ children }: { children: React.ReactNode 
 
       {/* No rail on a phone — the bottom bar replaces it — so the content only steps aside from `md`. */}
       <div className={cn('flex-1 flex flex-col min-h-[calc(100vh-4rem)] transition-all duration-300', isExpanded ? 'md:ml-56' : 'md:ml-14')}>
-        <main className="flex-1 p-4 sm:p-6">{children}</main>
+        <main className="flex-1 p-4 sm:p-6">
+          {/* Below md, where the rail gives way to the bottom bar, the module's card heads the page. */}
+          <ModuleMobileHeader icon={Receipt} title="Billing Recon" subtitle={currentProject?.projectName} hideFrom="md" />
+          {children}
+        </main>
         <footer className="shrink-0 flex items-center text-muted-foreground text-xs py-3 px-6 border-t border-border/40">
           <span>Copyright © 2025 SEL. All Rights Reserved.</span>
         </footer>

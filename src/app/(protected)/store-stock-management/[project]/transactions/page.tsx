@@ -44,6 +44,7 @@ import type { InventoryLog, EnrichedLogItem, BoqItem, Project } from '@/lib/type
 import { format } from 'date-fns';
 import Link from 'next/link';
 import ViewTransactionDialog from '@/components/store-stock-management/ViewTransactionDialog';
+import { PageHeader } from '@/components/shared/page-header';
 import { useToast } from '@/hooks/use-toast';
 import {
   AlertDialog,
@@ -499,7 +500,7 @@ export default function TransactionsPage() {
   return (
     <>
       <div>
-        <h1 className="text-3xl font-bold mb-6">Transactions</h1>
+        <PageHeader title="Transactions" />
         <Card>
           <CardHeader>
             <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">

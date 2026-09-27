@@ -12,6 +12,7 @@ import {
   UserCheck,
 } from 'lucide-react';
 import { Card, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { PageHeader } from '@/components/shared/page-header';
 import Link from 'next/link';
 
 const reportCards = [
@@ -92,11 +93,12 @@ const reportCards = [
 export default function SiteFundRequestReportsPage() {
   return (
     <div className="w-full space-y-6 p-4 sm:p-6">
-      <div>
-        <p className="text-xs font-semibold uppercase tracking-[0.22em] text-slate-500">Site Fund Request</p>
-        <h1 className="mt-1 text-3xl font-bold tracking-tight text-slate-900">Reports</h1>
-        <p className="mt-1 text-sm text-slate-600">Analytics, summaries, and exports for fund requests.</p>
-      </div>
+      <PageHeader
+        className="mb-0 sm:mb-0"
+        eyebrow="Site Fund Request"
+        title="Reports"
+        description="Analytics, summaries, and exports for fund requests."
+      />
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
         {reportCards.map(card => {
@@ -110,7 +112,7 @@ export default function SiteFundRequestReportsPage() {
                     <Icon className={`h-5 w-5 ${card.color}`} />
                   </div>
                   <div>
-                    <CardTitle className="text-base font-semibold text-slate-900">{card.title}</CardTitle>
+                    <CardTitle className="text-slate-900">{card.title}</CardTitle>
                     <CardDescription className="mt-1 text-xs">{card.description}</CardDescription>
                   </div>
                 </CardHeader>

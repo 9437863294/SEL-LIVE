@@ -60,7 +60,7 @@ export default function ModuleTableCard({
     <Card className="min-w-0">
       <CardHeader className="flex flex-row flex-wrap items-start justify-between gap-3 space-y-0 py-4">
         <div className="min-w-0">
-          <CardTitle className="text-base">{title}</CardTitle>
+          <CardTitle>{title}</CardTitle>
           {subtitle && <CardDescription className="mt-1">{subtitle}</CardDescription>}
         </div>
         {actions && <div className="flex shrink-0 flex-wrap gap-2 print:hidden">{actions}</div>}

@@ -2,9 +2,7 @@
 'use client';
 
 import { useState, useEffect, useMemo, useCallback } from 'react';
-import Link from 'next/link';
 import {
-  ArrowLeft,
   Check,
   Clock,
   Loader2,
@@ -15,6 +13,7 @@ import {
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
+import { PageHeader } from '@/components/shared/page-header';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import {
   Table,
@@ -526,26 +525,13 @@ export default function StagePage() {
   return (
     <>
       <div className="w-full px-3 py-4 sm:px-4 lg:px-6 xl:px-8">
-        <div className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
-          <div className="flex items-center gap-3">
-            <Link href={`/site-fund-requisition-2`}>
-              <Button variant="ghost" size="icon">
-                <ArrowLeft className="h-6 w-6" />
-              </Button>
-            </Link>
-            <div>
-              <p className="text-xs font-semibold uppercase tracking-[0.22em] text-slate-500">
-                Site Fund Requisition 2
-              </p>
-              <h1 className="mt-1 text-2xl font-bold tracking-tight text-slate-900">
-                {stage?.name || 'Stage'}
-              </h1>
-              <p className="mt-1 text-sm text-slate-600">
-                Pending: {pendingTasks.length} , Completed: {completedTasks.length}
-              </p>
-            </div>
-          </div>
-        </div>
+        <PageHeader
+          backHref="/site-fund-requisition-2"
+          backLabel="Back to dashboard"
+          eyebrow="Site Fund Requisition 2"
+          title={stage?.name || 'Stage'}
+          description={<>Pending: {pendingTasks.length} , Completed: {completedTasks.length}</>}
+        />
         <Tabs defaultValue="pending">
           <TabsList className="grid w-full grid-cols-2 rounded-2xl border border-white/70 bg-white/70 p-1 backdrop-blur">
             <TabsTrigger value="pending">

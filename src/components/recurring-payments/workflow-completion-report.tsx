@@ -30,6 +30,7 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import { SectionHeader } from "@/components/shared/page-header";
 import CollapsibleFilterCard from "./collapsible-filter-card";
 import { Label } from "@/components/ui/label";
 import {
@@ -392,10 +393,11 @@ export default function WorkflowCompletionReport() {
         <ReportMetricTile label="Rejected / failed" value={String(summary.rejected)} tone={summary.rejected ? "warning" : "good"} />
       </div>
 
-      <div>
-        <h2 className="text-lg font-semibold">Step-wise workload</h2>
-        <p className="text-sm text-muted-foreground">Who handled each step, how many they completed, and how many stayed within the step&apos;s TAT.</p>
-      </div>
+      <SectionHeader
+        className="mb-0"
+        title="Step-wise workload"
+        description="Who handled each step, how many they completed, and how many stayed within the step's TAT."
+      />
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
         {workflow.map(step => {
           const stepData = stepReport[step.name];
@@ -403,7 +405,7 @@ export default function WorkflowCompletionReport() {
           if (!entries.length) return null;
           return (
             <Card key={step.id}>
-              <CardHeader><CardTitle className="text-base">{step.name}</CardTitle></CardHeader>
+              <CardHeader><CardTitle>{step.name}</CardTitle></CardHeader>
               <CardContent className="p-0">
                 <Table>
                   <TableHeader>

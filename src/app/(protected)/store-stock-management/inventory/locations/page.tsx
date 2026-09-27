@@ -18,6 +18,7 @@ import { Badge } from '@/components/ui/badge';
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { PageHeader } from '@/components/shared/page-header';
 
 type LocationForm = Omit<InventoryLocation, 'id' | 'organizationId'> & { id?: string };
 const types: InventoryLocationType[] = ['Central Warehouse', 'Property Store', 'Project Store', 'Transit', 'Quarantine', 'Scrap'];
@@ -56,7 +57,7 @@ export default function InventoryLocationsPage() {
   };
 
   return <div className="space-y-6">
-    <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between"><div><h1 className="text-2xl font-bold">Inventory locations</h1><p className="text-muted-foreground">Central, property, project, quarantine, and scrap locations with independent balances.</p></div><Button onClick={() => edit()}><Plus className="mr-2 h-4 w-4" />New location</Button></div>
+    <PageHeader className="mb-0 sm:mb-0" title="Inventory locations" description="Central, property, project, quarantine, and scrap locations with independent balances." actions={<Button onClick={() => edit()}><Plus className="mr-2 h-4 w-4" />New location</Button>} />
     <Card><CardHeader><CardTitle>Location Master</CardTitle><CardDescription>{locations.length} physical or logical locations</CardDescription></CardHeader><CardContent className="overflow-x-auto"><Table><TableHeader><TableRow><TableHead>Code</TableHead><TableHead>Location</TableHead><TableHead>Type</TableHead><TableHead>Property / project</TableHead><TableHead>Bin / rack</TableHead><TableHead>Status</TableHead><TableHead /></TableRow></TableHeader><TableBody>
       {locations.map((location) => <TableRow key={location.id}><TableCell className="font-mono text-xs">{location.locationCode}</TableCell><TableCell><div className="flex items-center gap-2 font-medium"><MapPin className="h-4 w-4 text-muted-foreground" />{location.locationName}</div><div className="text-xs text-muted-foreground">{location.address || '—'}</div></TableCell><TableCell>{location.type}</TableCell><TableCell>{location.projectName || location.propertyName || 'Network-wide'}</TableCell><TableCell>{location.binOrRack || '—'}</TableCell><TableCell><Badge variant={location.active ? 'default' : 'secondary'}>{location.active ? 'Active' : 'Inactive'}</Badge></TableCell><TableCell><Button size="icon" variant="ghost" onClick={() => edit(location)}><Pencil className="h-4 w-4" /></Button></TableCell></TableRow>)}
       {!locations.length && <TableRow><TableCell colSpan={7} className="h-28 text-center text-muted-foreground">No inventory locations exist yet.</TableCell></TableRow>}

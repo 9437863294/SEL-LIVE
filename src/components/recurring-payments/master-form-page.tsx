@@ -20,7 +20,6 @@ import {
 } from "firebase/storage";
 import {
   AlertCircle,
-  ArrowLeft,
   BellRing,
   Building2,
   CalendarClock,
@@ -31,6 +30,7 @@ import {
   Settings2,
   ShieldCheck,
   Users,
+  type LucideIcon,
 } from "lucide-react";
 import { db } from "@/lib/firebase";
 import { storage } from "@/lib/firebase-storage";
@@ -74,6 +74,7 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import { PageHeader, SectionHeader } from "@/components/shared/page-header";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -550,29 +551,24 @@ export default function RecurringMasterFormPage({
     );
   return (
     <div className="mx-auto max-w-6xl space-y-5">
-      <div className="flex items-center gap-3">
-        <Button variant="outline" size="icon" onClick={() => router.back()}>
-          <ArrowLeft className="h-4 w-4" />
-        </Button>
-        <div>
-          <div className="flex flex-wrap items-center gap-2">
-            <h1 className="text-2xl font-bold">
-              {masterId
-                ? "Edit Recurring Master"
-                : "Create Recurring Payment Master"}
-            </h1>
-            {masterId && draft.status && (
-              <Badge variant={draft.status === "Active" ? "default" : "secondary"}>
-                {draft.status}
-              </Badge>
-            )}
-          </div>
-          <p className="text-sm text-muted-foreground">
-            Configuration, generation, approval, notification and ownership
-            controls
-          </p>
-        </div>
-      </div>
+      <PageHeader
+        className="mb-0 sm:mb-0"
+        backHref={masterId ? `/recurring-payments/masters/${masterId}` : "/recurring-payments/masters"}
+        backLabel={masterId ? "Back to master" : "Back to masters"}
+        title={
+          masterId
+            ? "Edit Recurring Master"
+            : "Create Recurring Payment Master"
+        }
+        badge={
+          masterId && draft.status ? (
+            <Badge variant={draft.status === "Active" ? "default" : "secondary"}>
+              {draft.status}
+            </Badge>
+          ) : undefined
+        }
+        description="Configuration, generation, approval, notification and ownership controls"
+      />
       <form onSubmit={save} className="space-y-5">
         <div className="grid gap-5 lg:grid-cols-[1fr_320px] lg:items-start">
         <div className="space-y-5">
@@ -1253,12 +1249,12 @@ export default function RecurringMasterFormPage({
   );
 }
 function Section({
-  icon: Icon,
+  icon,
   title,
   description,
   children,
 }: {
-  icon: React.ElementType;
+  icon: LucideIcon;
   title: string;
   description: string;
   children: React.ReactNode;
@@ -1266,11 +1262,7 @@ function Section({
   return (
     <Card>
       <CardHeader>
-        <CardTitle className="flex items-center gap-2">
-          <Icon className="h-5 w-5 text-indigo-600" />
-          {title}
-        </CardTitle>
-        <CardDescription>{description}</CardDescription>
+        <SectionHeader className="mb-0" icon={icon} title={title} description={description} />
       </CardHeader>
       <CardContent>{children}</CardContent>
     </Card>
@@ -1392,7 +1384,7 @@ function SummarySidebar({
   return (
     <Card className="lg:sticky lg:top-[calc(var(--app-header-offset,4rem)+1rem)]">
       <CardHeader>
-        <CardTitle className="text-base">Preview</CardTitle>
+        <CardTitle>Preview</CardTitle>
         <CardDescription>
           Live snapshot of this master as configured so far.
         </CardDescription>

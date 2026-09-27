@@ -2,7 +2,6 @@
 'use client';
 
 import { Fragment, useEffect, useMemo, useState } from 'react';
-import Link from 'next/link';
 import { BarChart3, CheckCircle2, ClipboardCheck, Loader2, ShieldAlert, XCircle } from 'lucide-react';
 import { collection, doc, getDoc, getDocs } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
@@ -10,11 +9,11 @@ import { useAuthorization } from '@/hooks/useAuthorization';
 import type { ActionLog, InsuranceTask, Project, User, WorkflowStep } from '@/lib/types';
 import { withDesignations } from '@/lib/people-directory-client';
 import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { PageHeader, SectionHeader } from '@/components/shared/page-header';
 import { cn } from '@/lib/utils';
 
 // ─── types ────────────────────────────────────────────────────────────────────
@@ -136,23 +135,14 @@ export default function MyTasksSummaryPage() {
   return (
     <div className="space-y-5">
       {/* Header */}
-      <Card className="overflow-hidden border-border/60">
-        <div className="h-1 w-full bg-gradient-to-r from-cyan-500 via-blue-500 to-indigo-500" />
-        <CardHeader className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <div className="flex items-center gap-3">
-            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-cyan-50 ring-1 ring-cyan-100">
-              <BarChart3 className="h-5 w-5 text-cyan-600" />
-            </div>
-            <div>
-              <CardTitle className="tracking-tight">My Tasks Summary</CardTitle>
-              <CardDescription>Step-wise breakdown of insurance task performance</CardDescription>
-            </div>
-          </div>
-          <Link href="/insurance/reports">
-            <Button variant="outline" size="sm" className="gap-1.5 w-fit">← Back to Reports</Button>
-          </Link>
-        </CardHeader>
-      </Card>
+      <PageHeader
+        className="mb-0 sm:mb-0"
+        icon={BarChart3}
+        title="My Tasks Summary"
+        description="Step-wise breakdown of insurance task performance"
+        backHref="/insurance/reports"
+        backLabel="Back to Reports"
+      />
 
       {/* Filters */}
       <Card className="border-border/60">
@@ -194,7 +184,7 @@ export default function MyTasksSummaryPage() {
 
       {/* Step-wise report */}
       <div>
-        <p className="text-sm font-semibold text-muted-foreground uppercase tracking-wide mb-3">Step-wise Breakdown</p>
+        <SectionHeader title="Step-wise Breakdown" />
         {isLoading ? (
           <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
             {[1,2,3].map((i) => <Skeleton key={i} className="h-44 rounded-xl" />)}
@@ -211,7 +201,7 @@ export default function MyTasksSummaryPage() {
                 <Card key={step.name} className="overflow-hidden border-border/60">
                   <div className="h-1 w-full bg-gradient-to-r from-cyan-400 to-blue-500" />
                   <CardHeader className="pb-2">
-                    <CardTitle className="text-sm font-semibold">{step.name}</CardTitle>
+                    <CardTitle>{step.name}</CardTitle>
                     <CardDescription className="text-[11px]">TAT: {step.tat}h</CardDescription>
                   </CardHeader>
                   <CardContent className="p-0">

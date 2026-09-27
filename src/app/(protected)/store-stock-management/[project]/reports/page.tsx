@@ -10,6 +10,7 @@ import type { LucideIcon } from 'lucide-react';
 import { useAuthorization } from '@/hooks/useAuthorization';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useParams } from 'next/navigation';
+import { PageHeader } from '@/components/shared/page-header';
 
 interface ReportCardProps {
   item: {
@@ -50,7 +51,7 @@ function ReportCard({ item }: ReportCardProps) {
                 <div className="bg-primary/10 p-3 rounded-lg mb-2">
                   <item.icon className="w-6 h-6 text-primary" />
                 </div>
-                <CardTitle className="text-base font-semibold">{item.title}</CardTitle>
+                <CardTitle>{item.title}</CardTitle>
             </CardHeader>
             <CardContent className="text-center p-4 pt-0">
                 <CardDescription className="text-xs">{item.description}</CardDescription>
@@ -93,7 +94,7 @@ export default function ReportsPage() {
     if (!canViewPage) {
         return (
             <div className="w-full max-w-lg px-4 sm:px-6 lg:px-8">
-                <h1 className="text-3xl font-bold mb-6">Reports</h1>
+                <PageHeader title="Reports" />
                 <Card>
                     <CardHeader>
                         <CardTitle>Access Denied</CardTitle>
@@ -109,7 +110,7 @@ export default function ReportsPage() {
 
   return (
     <div className="w-full">
-      <h1 className="text-3xl font-bold mb-6">Reports</h1>
+      <PageHeader title="Reports" />
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
         {reportItems.map((item) => (
           <ReportCard key={item.title} item={item} />

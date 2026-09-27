@@ -1,9 +1,9 @@
 'use client';
 
 import Link from 'next/link';
-import { ArrowLeft, GitMerge } from 'lucide-react';
-import { Button } from '@/components/ui/button';
+import { GitMerge } from 'lucide-react';
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/components/ui/card';
+import { PageHeader } from '@/components/shared/page-header';
 import { cn } from '@/lib/utils';
 import type { LucideIcon } from 'lucide-react';
 
@@ -40,7 +40,7 @@ function SettingsCard({ item }: SettingsCardProps) {
                   <item.icon className="h-6 w-6 text-slate-900/80" />
                 </div>
                 <div className="flex-1">
-                    <CardTitle className="text-base font-semibold text-slate-900">{item.text}</CardTitle>
+                    <CardTitle className="text-slate-900">{item.text}</CardTitle>
                     <CardDescription className="mt-1 text-xs text-slate-600">{item.description}</CardDescription>
                 </div>
             </CardHeader>
@@ -61,18 +61,13 @@ function SettingsCard({ item }: SettingsCardProps) {
 export default function SiteFundRequisitionSettingsPage() {
   return (
     <div className="w-full px-3 py-4 sm:px-4 lg:px-6 xl:px-8">
-      <div className="mb-6 flex items-center gap-3">
-        <Link href="/site-fund-requisition-2">
-          <Button variant="ghost" size="icon">
-            <ArrowLeft className="h-6 w-6" />
-          </Button>
-        </Link>
-        <div>
-          <p className="text-xs font-semibold uppercase tracking-[0.22em] text-slate-500">Site Fund Requisition 2</p>
-          <h1 className="mt-1 text-2xl font-bold tracking-tight text-slate-900">Settings</h1>
-          <p className="mt-1 text-sm text-slate-600">Configure workflow, assignments, actions, and TAT.</p>
-        </div>
-      </div>
+      <PageHeader
+        backHref="/site-fund-requisition-2"
+        backLabel="Back to dashboard"
+        eyebrow="Site Fund Requisition 2"
+        title="Settings"
+        description="Configure workflow, assignments, actions, and TAT."
+      />
        <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4">
         {settingsItems.map((item) => (
           <SettingsCard key={item.text} item={item} />

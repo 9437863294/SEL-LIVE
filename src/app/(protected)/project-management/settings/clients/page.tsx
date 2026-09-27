@@ -1,9 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import Link from "next/link";
 import {
-  ArrowLeft,
   Building2,
   Loader2,
   Pencil,
@@ -75,6 +73,7 @@ import {
   PmEmptyState,
   type PmListColumn,
 } from "@/components/project-management/pm-shell";
+import { PageHeader } from "@/components/shared/page-header";
 import { cn } from "@/lib/utils";
 
 const COLLECTION_NAME = "clients";
@@ -309,7 +308,7 @@ export default function ClientMasterPage() {
   if (!canView) {
     return (
       <main className="min-h-[calc(100dvh-4rem)] p-4 sm:p-6">
-        <h1 className="mb-6 text-2xl font-bold sm:text-3xl">Clients</h1>
+        <PageHeader title="Clients" />
         <Card>
           <CardHeader>
             <CardTitle>Access Denied</CardTitle>
@@ -389,24 +388,13 @@ export default function ClientMasterPage() {
 
   return (
     <main className="min-h-[calc(100dvh-4rem)] p-4 sm:p-6">
-      <div className="mb-4 flex flex-col gap-3 sm:mb-6 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
-        <div className="flex min-w-0 items-center gap-2 sm:gap-3">
-          <Button variant="ghost" size="icon" className="shrink-0" asChild>
-            <Link href="/project-management/settings" aria-label="Back to Settings">
-              <ArrowLeft className="h-5 w-5" />
-            </Link>
-          </Button>
-          <div className="hidden h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-indigo-500 to-blue-600 shadow-sm sm:flex">
-            <Building2 className="h-5 w-5 text-white" />
-          </div>
-          <div className="min-w-0">
-            <h1 className="text-xl font-bold sm:text-3xl">Clients</h1>
-            <p className="mt-0.5 text-[13px] text-muted-foreground sm:mt-1 sm:text-sm">
-              {clients.length} client{clients.length === 1 ? "" : "s"} · {activeCount} active
-            </p>
-          </div>
-        </div>
-
+      <PageHeader
+        title="Clients"
+        description={`${clients.length} client${clients.length === 1 ? "" : "s"} · ${activeCount} active`}
+        icon={Building2}
+        backHref="/project-management/settings"
+        backLabel="Back to Settings"
+        actions={
         <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
           <DialogTrigger asChild>
             <Button onClick={openCreateDialog} disabled={!canAdd}>
@@ -558,7 +546,8 @@ export default function ClientMasterPage() {
             </DialogFooter>
           </DialogContent>
         </Dialog>
-      </div>
+        }
+      />
 
       <PmDataList
         rows={clients}

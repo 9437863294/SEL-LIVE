@@ -21,6 +21,7 @@ import { useToast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { PageHeader, SectionHeader } from '@/components/shared/page-header';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
@@ -795,17 +796,17 @@ export default function VehicleMasterPage() {
 
   return (
     <div className="space-y-3 sm:space-y-4">
-      <Card className="vm-panel-strong overflow-hidden">
-        <div className="h-1 w-full bg-gradient-to-r from-emerald-500 via-teal-500 to-cyan-600 animate-bb-gradient" />
-        <CardHeader className="flex flex-col gap-3 px-3 py-4 sm:flex-row sm:items-center sm:justify-between sm:px-6 sm:py-6">
-          <div>
-            <CardTitle>Vehicle Master</CardTitle>
-            <CardDescription>Manage complete vehicle profile and assignment details.</CardDescription>
-          </div>
-          <div className="grid w-full grid-cols-2 gap-2 sm:flex sm:w-auto sm:flex-wrap sm:justify-end">
-            <Badge variant="outline" className="col-span-2 w-fit bg-white/70 sm:col-span-1">
-              {rows.length - duplicateIds.size} records
-            </Badge>
+      <PageHeader
+        title="Vehicle Master"
+        description="Manage complete vehicle profile and assignment details."
+        badge={
+          <Badge variant="outline" className="w-fit bg-white/70">
+            {rows.length - duplicateIds.size} records
+          </Badge>
+        }
+        className="mb-0 sm:mb-0"
+        actions={
+          <>
             <Button variant="outline" onClick={() => void loadRows()} className="h-11 bg-white/80 hover:bg-white sm:h-10">
               Refresh
             </Button>
@@ -827,9 +828,11 @@ export default function VehicleMasterPage() {
             >
               Add Vehicle
             </Button>
-          </div>
-        </CardHeader>
-        <CardContent className="space-y-3 px-3 pb-4 sm:px-6 sm:pb-6">
+          </>
+        }
+      />
+      <Card className="vm-panel-strong overflow-hidden">
+        <CardContent className="space-y-3 px-3 pb-4 pt-4 sm:px-6 sm:pb-6 sm:pt-6">
           <Input
             placeholder="Search vehicle..."
             value={query}
@@ -1210,10 +1213,7 @@ function FormSection({
         <span className={cn('flex h-8 w-8 shrink-0 items-center justify-center rounded-lg', tones[tone])}>
           {icon}
         </span>
-        <div className="min-w-0">
-          <h3 className="text-sm font-semibold leading-tight text-slate-800">{title}</h3>
-          <p className="mt-0.5 text-[11px] leading-tight text-slate-500">{description}</p>
-        </div>
+        <SectionHeader title={title} description={description} as="h3" className="mb-0 min-w-0 flex-1" />
       </div>
       <div className="p-2.5 sm:p-3">{children}</div>
     </section>

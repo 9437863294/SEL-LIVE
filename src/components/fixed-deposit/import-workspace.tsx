@@ -69,6 +69,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Separator } from '@/components/ui/separator';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { cn } from '@/lib/utils';
+import { PageHeader } from '@/components/shared/page-header';
 
 /* ── constants ───────────────────────────────────────────────────────────── */
 
@@ -858,23 +859,22 @@ export default function FDImportWorkspace() {
   const currency = (value: number) => formatFdCurrency(value);
 
   return <div className="space-y-4">
-    <div className="flex flex-col justify-between gap-3 lg:flex-row lg:items-end">
-      <div>
-        <h1 className="text-2xl font-bold tracking-tight">FD Import &amp; Reconciliation</h1>
-        <p className="text-sm text-muted-foreground">Map any workbook onto the FD register with master-data resolution, row-level validation, duplicate prevention and a full audit trail.</p>
-      </div>
-      <div className="flex flex-wrap gap-2">
+    <PageHeader
+      className="mb-0 sm:mb-0"
+      title="FD Import & Reconciliation"
+      description="Map any workbook onto the FD register with master-data resolution, row-level validation, duplicate prevention and a full audit trail."
+      actions={<>
         <Button variant="outline" asChild><Link href="/fixed-deposit/export"><Download className="mr-2 h-4 w-4" />Export Centre</Link></Button>
         {step !== 'upload' && <Button variant="outline" onClick={resetWizard} disabled={importing}><RotateCcw className="mr-2 h-4 w-4" />Start Over</Button>}
-      </div>
-    </div>
+      </>}
+    />
 
     <StepIndicator current={step} />
 
     {/* Step 1 — upload */}
     {step === 'upload' && <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_320px]">
       <Card className="border-white/80 bg-white/90 shadow-sm">
-        <CardHeader><CardTitle className="text-base">Upload workbook</CardTitle><CardDescription>Any .xlsx or .xls layout is accepted — the next step maps its columns onto FD fields.</CardDescription></CardHeader>
+        <CardHeader><CardTitle>Upload workbook</CardTitle><CardDescription>Any .xlsx or .xls layout is accepted — the next step maps its columns onto FD fields.</CardDescription></CardHeader>
         <CardContent className="space-y-4">
           <label className="flex cursor-pointer flex-col items-center justify-center gap-2 rounded-xl border-2 border-dashed border-cyan-200 bg-gradient-to-br from-cyan-50/60 to-blue-50/40 px-6 py-10 text-center transition-colors hover:border-cyan-400"
             onDragOver={(event) => event.preventDefault()}
@@ -890,7 +890,7 @@ export default function FDImportWorkspace() {
       </Card>
       <div className="space-y-4">
         <Card className="border-white/80 bg-white/90 shadow-sm">
-          <CardHeader><CardTitle className="text-base">Prepare the workbook</CardTitle><CardDescription>{FD_IMPORT_FIELDS.length} mappable columns, {FD_IMPORT_FIELDS.filter((field) => field.required).length} mandatory.</CardDescription></CardHeader>
+          <CardHeader><CardTitle>Prepare the workbook</CardTitle><CardDescription>{FD_IMPORT_FIELDS.length} mappable columns, {FD_IMPORT_FIELDS.filter((field) => field.required).length} mandatory.</CardDescription></CardHeader>
           <CardContent className="space-y-2">
             <Button variant="outline" className="w-full justify-start" onClick={() => void template(false)}><Download className="mr-2 h-4 w-4" />Blank template</Button>
             <Button variant="outline" className="w-full justify-start" onClick={() => void template(true)}><Wand2 className="mr-2 h-4 w-4" />Template with sample row</Button>
@@ -898,7 +898,7 @@ export default function FDImportWorkspace() {
           </CardContent>
         </Card>
         <Card className="border-white/80 bg-white/90 shadow-sm">
-          <CardHeader><CardTitle className="text-base">Register snapshot</CardTitle></CardHeader>
+          <CardHeader><CardTitle>Register snapshot</CardTitle></CardHeader>
           <CardContent className="space-y-1.5 text-sm">
             {[['Existing fixed deposits', String(existingDeposits.length)], ['Active bank accounts', String(banks.length)], ['Active projects', String(projects.length)], ['Reference prefix', settings.referencePrefix], ['TDS rate', `${settings.tdsPercentage}%`]].map(([label, value]) => <div key={label} className="flex items-center justify-between gap-3"><span className="text-muted-foreground">{label}</span><span className="font-medium">{value}</span></div>)}
           </CardContent>
@@ -910,7 +910,7 @@ export default function FDImportWorkspace() {
     {step === 'mapping' && read && <Card className="border-white/80 bg-white/90 shadow-sm">
       <CardHeader className="gap-3">
         <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-start">
-          <div><CardTitle className="text-base">Map source columns</CardTitle><CardDescription>{fileName} · {read.rows.length} data rows · {read.headers.length} columns detected on row {read.headerRow}.</CardDescription></div>
+          <div><CardTitle>Map source columns</CardTitle><CardDescription>{fileName} · {read.rows.length} data rows · {read.headers.length} columns detected on row {read.headerRow}.</CardDescription></div>
           <Button variant="outline" size="sm" onClick={() => setColumnMap(autoMapColumns(FD_IMPORT_FIELDS, read.headers))}><Wand2 className="mr-2 h-4 w-4" />Re-run auto-map</Button>
         </div>
         <div className="grid gap-3 sm:grid-cols-2">
@@ -967,7 +967,7 @@ export default function FDImportWorkspace() {
       </div>
 
       <Card className="border-white/80 bg-white/90 shadow-sm">
-        <CardHeader><CardTitle className="text-base">Import options</CardTitle><CardDescription>These change validation as well as the write — blocked rows are recalculated immediately.</CardDescription></CardHeader>
+        <CardHeader><CardTitle>Import options</CardTitle><CardDescription>These change validation as well as the write — blocked rows are recalculated immediately.</CardDescription></CardHeader>
         <CardContent className="grid gap-5 lg:grid-cols-3">
           <div className="space-y-2">
             <Label className="text-xs font-semibold uppercase tracking-wide text-slate-500">Approval treatment</Label>
@@ -993,7 +993,7 @@ export default function FDImportWorkspace() {
       <Card className="overflow-hidden border-white/80 bg-white/90 shadow-sm">
         <CardHeader className="gap-3">
           <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-center">
-            <div><CardTitle className="text-base">Row review</CardTitle><CardDescription>{visibleRows.length} of {rows.length} rows shown{rows.length > PREVIEW_LIMIT ? ` · preview capped at ${PREVIEW_LIMIT}` : ''}.</CardDescription></div>
+            <div><CardTitle>Row review</CardTitle><CardDescription>{visibleRows.length} of {rows.length} rows shown{rows.length > PREVIEW_LIMIT ? ` · preview capped at ${PREVIEW_LIMIT}` : ''}.</CardDescription></div>
             <div className="flex flex-wrap gap-2">
               {([['all', 'All', rows.length], ['ready', 'Clean', readyRows.length - warningRows.length], ['warning', 'Warnings', warningRows.length], ['error', 'Blocked', errorRows.length]] as const).map(([value, label, count]) => <Button key={value} size="sm" variant={rowFilter === value ? 'default' : 'outline'} onClick={() => setRowFilter(value)}>{label} <Badge variant="secondary" className="ml-1.5">{count}</Badge></Button>)}
               {canExportExceptions && (errorRows.length > 0 || warningRows.length > 0) && <Button size="sm" variant="outline" onClick={() => void exportExceptions()}><Download className="mr-2 h-4 w-4" />Export Exceptions</Button>}
@@ -1042,7 +1042,7 @@ export default function FDImportWorkspace() {
       <Card className="border-emerald-200 bg-gradient-to-br from-emerald-50 to-white shadow-sm">
         <CardHeader className="flex-row items-center gap-3">
           <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-emerald-600"><CheckCircle2 className="h-5 w-5 text-white" /></div>
-          <div><CardTitle className="text-base">Import complete</CardTitle><CardDescription>{outcome.fileName} · sheet &quot;{outcome.sheetName}&quot; · finished {outcome.finishedAt.toLocaleString('en-IN')}</CardDescription></div>
+          <div><CardTitle>Import complete</CardTitle><CardDescription>{outcome.fileName} · sheet &quot;{outcome.sheetName}&quot; · finished {outcome.finishedAt.toLocaleString('en-IN')}</CardDescription></div>
         </CardHeader>
         <CardContent className="grid gap-3 sm:grid-cols-5">
           {[['Rows read', outcome.read, 'text-slate-900'], ['Created', outcome.inserted, 'text-emerald-700'], ['Updated', outcome.updated, 'text-blue-700'], ['Skipped by validation', outcome.skipped, 'text-amber-700'], ['Failed to write', outcome.failures.length, 'text-rose-700']].map(([label, value, tone]) => <div key={String(label)} className="rounded-lg border bg-white/80 p-3"><p className="text-[11px] text-muted-foreground">{label}</p><p className={cn('mt-0.5 text-xl font-bold', tone as string)}>{value}</p></div>)}
@@ -1056,7 +1056,7 @@ export default function FDImportWorkspace() {
       </Card>
 
       {outcome.failures.length > 0 && <Card className="border-rose-200 bg-white/90">
-        <CardHeader><CardTitle className="text-base text-rose-700">Rows that failed to write</CardTitle><CardDescription>These passed validation but Firestore rejected the batch. Fix the cause and re-import them.</CardDescription></CardHeader>
+        <CardHeader><CardTitle className="text-rose-700">Rows that failed to write</CardTitle><CardDescription>These passed validation but Firestore rejected the batch. Fix the cause and re-import them.</CardDescription></CardHeader>
         <CardContent className="p-0"><Table><TableHeader><TableRow><TableHead className="w-20">Row</TableHead><TableHead>FD Number</TableHead><TableHead>Error</TableHead></TableRow></TableHeader><TableBody>{outcome.failures.map((failure) => <TableRow key={failure.excelRow}><TableCell>{failure.excelRow}</TableCell><TableCell>{failure.reference}</TableCell><TableCell className="text-xs text-rose-700">{failure.message}</TableCell></TableRow>)}</TableBody></Table></CardContent>
       </Card>}
 

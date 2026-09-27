@@ -2,15 +2,14 @@
 export const dynamic = 'force-dynamic';
 
 import { useState, useEffect } from 'react';
-import Link from 'next/link';
 import {
-  ArrowLeft,
   Loader2,
   Plus,
   Trash2,
   ShieldAlert,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { PageHeader, SectionHeader } from '@/components/shared/page-header';
 import {
   Card,
   CardContent,
@@ -418,14 +417,7 @@ export default function DpManagementPage() {
   if (!canView) {
     return (
       <div className="relative w-full px-4 sm:px-6 lg:px-8 py-6">
-        <div className="mb-6 flex items-center gap-3">
-          <Link href="/bank-balance/settings">
-            <Button variant="ghost" size="icon" className="rounded-full" aria-label="Back">
-              <ArrowLeft className="h-5 w-5" />
-            </Button>
-          </Link>
-          <h1 className="text-xl font-bold">DP Management</h1>
-        </div>
+        <PageHeader title="DP Management" backHref="/bank-balance/settings" backLabel="Back to settings" />
         <Card><CardHeader><CardTitle>Access Denied</CardTitle><CardDescription>You do not have permission to view this page.</CardDescription></CardHeader>
           <CardContent className="flex justify-center p-8"><ShieldAlert className="h-14 w-14 text-destructive" /></CardContent>
         </Card>
@@ -446,19 +438,12 @@ export default function DpManagementPage() {
         />
       </div>
     <div className="relative w-full px-4 sm:px-6 lg:px-8 py-4">
-      <div className="mb-5 flex justify-between items-center">
-        <div className="flex items-center gap-3">
-          <Link href="/bank-balance/settings">
-            <Button variant="ghost" size="icon" className="rounded-full hover:bg-purple-50 dark:hover:bg-purple-950/30" aria-label="Back">
-              <ArrowLeft className="h-5 w-5" />
-            </Button>
-          </Link>
-          <div>
-            <h1 className="text-xl font-bold tracking-tight">DP Management</h1>
-            <p className="text-xs text-muted-foreground">Manage dated limits for Cash Credit accounts using DP and temporary overdrawn amount.</p>
-          </div>
-        </div>
-      </div>
+      <PageHeader
+        title="DP Management"
+        description="Manage dated limits for Cash Credit accounts using DP and temporary overdrawn amount."
+        backHref="/bank-balance/settings"
+        backLabel="Back to settings"
+      />
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {isLoading ? (
@@ -634,9 +619,7 @@ export default function DpManagementPage() {
                     </div>
                   </CollapsibleContent>
 
-                  <h4 className="font-semibold mb-2">
-                    Limit History
-                  </h4>
+                  <SectionHeader title="Limit History" as="h3" className="mb-2" />
                   <div className="border rounded-md max-h-60 overflow-y-auto">
                     <Table>
                       <TableHeader>

@@ -3,12 +3,10 @@
 
 import { useState, useEffect, useMemo } from 'react';
 import { useRouter, useParams } from 'next/navigation';
-import Link from 'next/link';
 import { useForm, useFieldArray, Controller } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
 import {
-  ArrowLeft,
   Save,
   Loader2,
   Trash2,
@@ -43,6 +41,7 @@ import { Switch } from '@/components/ui/switch';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Timestamp } from 'firebase/firestore';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { PageHeader } from '@/components/shared/page-header';
 
 
 const bomItemSchema = z.object({
@@ -549,31 +548,28 @@ export default function StockInPage() {
     <Form {...form}>
       <form onSubmit={form.handleSubmit(onSubmit)}>
         <div className="w-full max-w-6xl mx-auto">
-            <div className="mb-6 flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                    <Link href={`/store-stock-management/${projectSlug}/transactions`}>
-                        <Button variant="ghost" size="icon" type="button">
-                            <ArrowLeft className="h-6 w-6" />
-                        </Button>
-                    </Link>
-                    <div>
-                        <h1 className="text-2xl font-bold">Stock In (Goods Receipt Note)</h1>
-                        <p className="text-muted-foreground">Record a new goods receipt. Add items and quantities received.</p>
-                    </div>
-                </div>
-                <div className="flex items-center gap-4">
-                  <div className="text-right">
-                      <p className="text-sm text-muted-foreground">Total GRN Value</p>
-                      <p className="text-2xl font-bold">
+            <PageHeader
+                title="Stock In (Goods Receipt Note)"
+                description="Record a new goods receipt. Add items and quantities received."
+                backHref={`/store-stock-management/${projectSlug}/transactions`}
+                backLabel="Back to Transactions"
+                meta={[
+                  {
+                    label: 'Total GRN Value',
+                    value: (
+                      <span className="text-sm font-semibold tabular-nums">
                         {new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR' }).format(totalGrnValue)}
-                      </p>
-                  </div>
+                      </span>
+                    ),
+                  },
+                ]}
+                actions={
                   <Button type="submit" disabled={isSaving}>
                     {isSaving ? <Loader2 className="mr-2 h-4 w-4 animate-spin"/> : <Save className="mr-2 h-4 w-4" />}
                     Save Transaction
                   </Button>
-                </div>
-            </div>
+                }
+            />
 
             <div className="space-y-6">
                 <Card>

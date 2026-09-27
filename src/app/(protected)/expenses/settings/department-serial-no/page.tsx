@@ -4,8 +4,9 @@
 
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
-import { ArrowLeft, Save, ShieldAlert, Loader2 } from 'lucide-react';
+import { Save, ShieldAlert, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { PageHeader } from '@/components/shared/page-header';
 import {
   Card,
   CardContent,
@@ -127,10 +128,7 @@ export default function DepartmentSerialNoPage() {
   if (!canViewPage) {
     return (
       <div className="w-full">
-        <div className="mb-6 flex items-center gap-4">
-            <Link href="/expenses/settings"><Button variant="ghost" size="icon"><ArrowLeft className="h-6 w-6" /></Button></Link>
-            <h1 className="text-xl font-bold">Department-wise Serial Number</h1>
-        </div>
+        <PageHeader title="Department-wise Serial Number" backHref="/expenses/settings" backLabel="Back to settings" />
         <Card>
             <CardHeader><CardTitle>Access Denied</CardTitle><CardDescription>You do not have permission to view this page.</CardDescription></CardHeader>
             <CardContent className="flex justify-center p-8"><ShieldAlert className="h-16 w-16 text-destructive" /></CardContent>
@@ -141,14 +139,7 @@ export default function DepartmentSerialNoPage() {
 
   return (
     <div className="w-full">
-      <div className="mb-6 flex items-center gap-4">
-        <Link href="/expenses/settings">
-          <Button variant="ghost" size="icon">
-            <ArrowLeft className="h-6 w-6" />
-          </Button>
-        </Link>
-        <h1 className="text-xl font-bold">Department-wise Serial Number</h1>
-      </div>
+      <PageHeader title="Department-wise Serial Number" backHref="/expenses/settings" backLabel="Back to settings" />
 
       <div className="space-y-6">
         {departments.length > 0 ? (

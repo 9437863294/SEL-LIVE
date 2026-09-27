@@ -33,7 +33,7 @@ import { useRouter } from 'next/navigation';
 import type { InsurancePolicy } from '@/lib/types';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent } from '@/components/ui/card';
 import {
   Dialog,
   DialogContent,
@@ -49,6 +49,7 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { PageHeader } from '@/components/shared/page-header';
 import { cn } from '@/lib/utils';
 
 // ─── helpers ─────────────────────────────────────────────────────────────────
@@ -199,25 +200,21 @@ export default function PremiumDuePage() {
     <div className="space-y-4">
 
       {/* ── Header ────────────────────────────────────────────────────────── */}
-      <Card className="overflow-hidden border-border/60">
-        <div className="h-1 w-full bg-gradient-to-r from-amber-400 via-orange-500 to-rose-500" />
-        <CardHeader className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <div className="flex items-center gap-3">
-            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-amber-50 ring-1 ring-amber-100">
-              <CalendarClock className="h-5 w-5 text-amber-600" />
-            </div>
-            <div>
-              <CardTitle className="tracking-tight">Premium Due</CardTitle>
-              <CardDescription>Upcoming and overdue premium payment schedule</CardDescription>
-            </div>
-          </div>
-          <Button variant="outline" size="sm" onClick={fetchPolicies} className="gap-1.5 w-fit">
+      <PageHeader
+        className="mb-0 sm:mb-0"
+        icon={CalendarClock}
+        title="Premium Due"
+        description="Upcoming and overdue premium payment schedule"
+        actions={
+          <Button variant="outline" size="sm" onClick={fetchPolicies} className="gap-1.5">
             <RefreshCw className="h-3.5 w-3.5" /> Refresh
           </Button>
-        </CardHeader>
+        }
+      />
 
-        {/* Stats strip */}
-        <CardContent className="grid grid-cols-2 gap-2 border-t sm:grid-cols-4 pt-4">
+      {/* ── Stats strip ────────────────────────────────────────────────────── */}
+      <Card className="overflow-hidden border-border/60">
+        <CardContent className="grid grid-cols-2 gap-2 p-4 sm:grid-cols-4">
           {[
             { label: 'Overdue',     value: stats.overdue,   color: 'text-red-600' },
             { label: 'Due in 30d',  value: stats.dueSoon,   color: 'text-amber-600' },

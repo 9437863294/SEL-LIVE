@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { collection, doc, getDocs, onSnapshot, query, serverTimestamp, setDoc, where } from 'firebase/firestore';
-import { AlertTriangle, ArrowLeft, CheckCircle2, Info, Loader2, RefreshCw, Save, ShieldCheck, Workflow } from 'lucide-react';
+import { AlertTriangle, CheckCircle2, Info, Loader2, RefreshCw, Save, ShieldCheck, Workflow } from 'lucide-react';
 import { db } from '@/lib/firebase';
 import { useAuth } from '@/components/auth/AuthProvider';
 import { useAuthorization } from '@/hooks/useAuthorization';
@@ -26,6 +26,7 @@ import {
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { PageHeader } from '@/components/shared/page-header';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -145,17 +146,13 @@ export default function RecurringEApprovalSettingsPage() {
 
   return (
     <div className="space-y-5">
-      <div className="flex items-center gap-2">
-        <Link href="/recurring-payments/settings">
-          <Button variant="ghost" size="icon"><ArrowLeft className="h-5 w-5" /></Button>
-        </Link>
-        <div>
-          <h1 className="text-xl font-bold">E-Approval Bridge</h1>
-          <p className="text-sm text-muted-foreground">
-            Mirror each payment’s workflow into E-Approval, so the same task appears in both and either side can act.
-          </p>
-        </div>
-      </div>
+      <PageHeader
+        className="mb-0 sm:mb-0"
+        backHref="/recurring-payments/settings"
+        backLabel="Back to settings"
+        title="E-Approval Bridge"
+        description="Mirror each payment’s workflow into E-Approval, so the same task appears in both and either side can act."
+      />
 
       <Card>
         <CardHeader>

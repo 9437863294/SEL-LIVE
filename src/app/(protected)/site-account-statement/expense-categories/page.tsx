@@ -14,6 +14,7 @@ import { useActivityLogger } from '@/hooks/useActivityLogger';
 import { useToast } from '@/hooks/use-toast';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
+import { PageHeader } from '@/components/shared/page-header';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
@@ -321,27 +322,28 @@ export default function ExpenseCategoriesPage() {
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between gap-3 flex-wrap">
-        <div>
-          <h1 className="text-lg font-bold text-slate-800">Expense Categories</h1>
-          <p className="text-sm text-muted-foreground">
+      <PageHeader
+        className="mb-0 sm:mb-0"
+        title="Expense Categories"
+        description={
+          <>
             {mainCategories.length} main {mainCategories.length === 1 ? 'category' : 'categories'} · {subCategories.length} sub-{subCategories.length === 1 ? 'category' : 'categories'}
-          </p>
-        </div>
-        <div className="flex gap-2 flex-wrap">
-          {canAdd && rows.length === 0 && (
-            <Button variant="outline" size="sm" onClick={seedDefaults} disabled={seeding} className="gap-2">
-              {seeding ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sprout className="h-4 w-4" />}
-              Seed Defaults
-            </Button>
-          )}
-          {canAdd && (
+          </>
+        }
+        actions={canAdd ? (
+          <>
+            {rows.length === 0 && (
+              <Button variant="outline" size="sm" onClick={seedDefaults} disabled={seeding} className="gap-2">
+                {seeding ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sprout className="h-4 w-4" />}
+                Seed Defaults
+              </Button>
+            )}
             <Button size="sm" onClick={openAdd} className="gap-2 bg-emerald-600 hover:bg-emerald-700">
               <Plus className="h-4 w-4" /> Add Category
             </Button>
-          )}
-        </div>
-      </div>
+          </>
+        ) : undefined}
+      />
 
       <Input
         placeholder="Search categories..."

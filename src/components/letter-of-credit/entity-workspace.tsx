@@ -10,6 +10,7 @@ import { useToast } from '@/hooks/use-toast';
 import { applyLCAmendment, type LCActor } from '@/lib/letter-of-credit-service';
 import { LC_AMENDMENT_TYPES, LC_COLLECTIONS, LC_DOCUMENT_TYPES, LC_PERMISSION_MODULE, formatLcCurrency, lcLabel, type LCHundi, type LetterOfCredit } from '@/lib/letter-of-credit';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { PageHeader } from '@/components/shared/page-header';
 
 type WorkspaceKind = 'documents' | 'amendments' | 'vendor-settlement' | 'client-recovery';
 type SingleKind = 'shipments' | 'document-records' | 'discrepancies' | Exclude<WorkspaceKind, 'documents'>;
@@ -19,7 +20,7 @@ const money = (value: any, row: Record<string, any>) => formatLcCurrency(Number(
 
 export default function LCEntityWorkspace({ kind }: { kind: WorkspaceKind }) {
   if (kind !== 'documents') return <SingleWorkspace kind={kind} />;
-  return <div className="space-y-4"><div><h1 className="text-2xl font-bold tracking-tight">Shipment & Document Tracking</h1><p className="text-sm text-muted-foreground">Track dispatch, material receipt, versioned documents, verification, and discrepancy resolution.</p></div><Tabs defaultValue="shipments"><TabsList className="grid w-full max-w-xl grid-cols-3"><TabsTrigger value="shipments">Shipments</TabsTrigger><TabsTrigger value="documents">Documents</TabsTrigger><TabsTrigger value="discrepancies">Discrepancies</TabsTrigger></TabsList><TabsContent value="shipments"><SingleWorkspace kind="shipments" /></TabsContent><TabsContent value="documents"><SingleWorkspace kind="document-records" /></TabsContent><TabsContent value="discrepancies"><SingleWorkspace kind="discrepancies" /></TabsContent></Tabs></div>;
+  return <div className="space-y-4"><PageHeader className="mb-0 sm:mb-0" title="Shipment & Document Tracking" description="Track dispatch, material receipt, versioned documents, verification, and discrepancy resolution." /><Tabs defaultValue="shipments"><TabsList className="grid w-full max-w-xl grid-cols-3"><TabsTrigger value="shipments">Shipments</TabsTrigger><TabsTrigger value="documents">Documents</TabsTrigger><TabsTrigger value="discrepancies">Discrepancies</TabsTrigger></TabsList><TabsContent value="shipments"><SingleWorkspace kind="shipments" /></TabsContent><TabsContent value="documents"><SingleWorkspace kind="document-records" /></TabsContent><TabsContent value="discrepancies"><SingleWorkspace kind="discrepancies" /></TabsContent></Tabs></div>;
 }
 
 function SingleWorkspace({ kind }: { kind: SingleKind }) {

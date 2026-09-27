@@ -12,7 +12,7 @@
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { ArrowLeft, FileBarChart2, ShieldAlert } from "lucide-react";
+import { FileBarChart2, ShieldAlert } from "lucide-react";
 import { collection, getDocs } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import { Button } from "@/components/ui/button";
@@ -25,6 +25,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
+import { PageHeader } from "@/components/shared/page-header";
 import { useAuthorization } from "@/hooks/useAuthorization";
 import ProjectControlTower from "@/components/project-management/project-control-tower";
 
@@ -118,42 +119,30 @@ export default function ProjectManagementReportsPage() {
 
   return (
     <main className="min-h-[calc(100dvh-4rem)] space-y-4 p-4 sm:space-y-5 sm:p-6">
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
-        <div className="flex min-w-0 items-center gap-2 sm:gap-3">
-          <Button variant="ghost" size="icon" className="shrink-0" asChild>
-            <Link
-              href={`/project-management${selectedProjectId ? `?project=${encodeURIComponent(selectedProjectId)}` : ""}`}
-              aria-label="Back to Project Management"
-            >
-              <ArrowLeft className="h-5 w-5" />
-            </Link>
-          </Button>
-          <div className="hidden h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-blue-500 to-indigo-600 shadow-sm sm:flex">
-            <FileBarChart2 className="h-5 w-5 text-white" />
-          </div>
-          <div className="min-w-0">
-            <h1 className="text-xl font-bold sm:text-2xl">Reports</h1>
-            <p className="text-[13px] text-muted-foreground sm:text-sm">
-              Commercial, engineering, procurement and site-control indicators across the project.
-            </p>
-          </div>
-        </div>
-
-        {projects.length > 0 && (
-          <Select value={selectedProject?.id ?? ""} onValueChange={handleProjectChange}>
-            <SelectTrigger className="w-full sm:w-64 sm:shrink-0">
-              <SelectValue placeholder="Select project..." />
-            </SelectTrigger>
-            <SelectContent>
-              {projects.map((project) => (
-                <SelectItem key={project.id} value={project.id}>
-                  {project.projectName}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        )}
-      </div>
+      <PageHeader
+        title="Reports"
+        description="Commercial, engineering, procurement and site-control indicators across the project."
+        icon={FileBarChart2}
+        backHref={`/project-management${selectedProjectId ? `?project=${encodeURIComponent(selectedProjectId)}` : ""}`}
+        backLabel="Back to Project Management"
+        className="mb-0 sm:mb-0"
+        actions={
+          projects.length > 0 ? (
+            <Select value={selectedProject?.id ?? ""} onValueChange={handleProjectChange}>
+              <SelectTrigger className="w-full sm:w-64 sm:shrink-0">
+                <SelectValue placeholder="Select project..." />
+              </SelectTrigger>
+              <SelectContent>
+                {projects.map((project) => (
+                  <SelectItem key={project.id} value={project.id}>
+                    {project.projectName}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          ) : undefined
+        }
+      />
 
       {selectedProject ? (
         <ProjectControlTower mapping={selectedProject} />

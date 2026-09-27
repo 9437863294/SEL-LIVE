@@ -5,7 +5,8 @@ import Link from 'next/link';
 import { AlertTriangle, BarChart3, CalendarCheck, ChevronRight, Landmark, TrendingUp } from 'lucide-react';
 import { useAuthorization } from '@/hooks/useAuthorization';
 import { Skeleton } from '@/components/ui/skeleton';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { PageHeader } from '@/components/shared/page-header';
 import { cn } from '@/lib/utils';
 
 const REPORTS = [
@@ -88,18 +89,12 @@ export default function LoanReportsPage() {
   return (
     <div className="space-y-5">
       {/* Header */}
-      <Card className="overflow-hidden border-border/60">
-        <div className="h-1 w-full bg-gradient-to-r from-indigo-500 via-blue-500 to-violet-500" />
-        <CardHeader className="flex items-center gap-3 flex-row">
-          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-indigo-50 ring-1 ring-indigo-100">
-            <BarChart3 className="h-5 w-5 text-indigo-600" />
-          </div>
-          <div>
-            <CardTitle className="tracking-tight">Loan Reports</CardTitle>
-            <CardDescription>Analytics and month-wise summaries for loan EMIs</CardDescription>
-          </div>
-        </CardHeader>
-      </Card>
+      <PageHeader
+        className="mb-0 sm:mb-0"
+        icon={BarChart3}
+        title="Loan Reports"
+        description="Analytics and month-wise summaries for loan EMIs"
+      />
 
       {/* Report tiles */}
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">

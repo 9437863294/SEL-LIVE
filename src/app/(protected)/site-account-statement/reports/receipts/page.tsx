@@ -11,6 +11,7 @@ import { SortControl } from '@/components/site-account-statement/sort-control';
 import { useAuth } from '@/components/auth/AuthProvider';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { PageHeader } from '@/components/shared/page-header';
 import { Input } from '@/components/ui/input';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Badge } from '@/components/ui/badge';
@@ -134,18 +135,17 @@ export default function ReceiptReportPage() {
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between gap-3 flex-wrap">
-        <div>
-          <h1 className="text-base sm:text-lg font-bold text-slate-800">Project-Wise Receipt Report</h1>
-          <p className="text-sm text-muted-foreground">Payments received from Head Office</p>
-        </div>
-        {canExport && (
+      <PageHeader
+        className="mb-0 sm:mb-0"
+        title="Project-Wise Receipt Report"
+        description="Payments received from Head Office"
+        actions={canExport ? (
           <Button variant="outline" size="sm" onClick={exportExcel} disabled={exporting} className="gap-2">
             {exporting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
             Export Excel
           </Button>
-        )}
-      </div>
+        ) : undefined}
+      />
 
       {/* Mobile filter toggle */}
       {(() => { const c = [filterProject, search].filter(Boolean).length; return (
@@ -187,7 +187,7 @@ export default function ReceiptReportPage() {
         grouped.map(group => (
           <Card key={group.name} className="bg-white/80 backdrop-blur-sm">
             <CardHeader className="pb-2 pt-3 px-4">
-              <CardTitle className="text-sm font-semibold text-slate-700 flex items-center justify-between">
+              <CardTitle className="text-slate-700 flex items-center justify-between">
                 <span>{group.name}</span>
                 <span className="text-blue-600">{formatINR(group.total)}</span>
               </CardTitle>

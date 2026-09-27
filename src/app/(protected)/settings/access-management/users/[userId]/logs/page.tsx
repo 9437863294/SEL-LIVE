@@ -27,6 +27,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { format } from 'date-fns';
 import type { User } from '@/lib/types';
 import { HrDataList, HrEmptyState, type HrListColumn } from '@/components/hr/hr-ui';
+import { PageHeader } from '@/components/shared/page-header';
 import { AccessCard, AccessPageShell, ACCESS_SCROLL_FRAME_CLASS } from '@/components/access-management/access-ui';
 
 type UserLog = {
@@ -127,29 +128,20 @@ export default function UserLogsPage() {
   );
 
   return (
-    <AccessPageShell
-      fill
-      backHref={`/settings/access-management/users/${userId}`}
-      backLabel="Back to access profile"
-    >
-      <div className="flex shrink-0 flex-col gap-1 pb-3">
-        {isLoading ? (
-          <Skeleton className="h-7 w-52" />
-        ) : (
-          <h1 className="break-words text-lg font-semibold tracking-tight text-slate-800 sm:text-xl">
-            Activity · {user?.name || user?.email || 'User'}
-          </h1>
-        )}
-        <p className="hidden text-sm text-muted-foreground sm:block">
-          Sign-ins, sign-outs and edits to this user's record. Access grants and revokes are on the
-          profile's History tab.
-        </p>
-      </div>
+    <AccessPageShell fill>
+      <PageHeader
+        title={isLoading ? 'Activity' : `Activity · ${user?.name || user?.email || 'User'}`}
+        description="Sign-ins, sign-outs and edits to this user's record. Access grants and revokes are on the profile's History tab."
+        descriptionClassName="hidden sm:block"
+        backHref={`/settings/access-management/users/${userId}`}
+        backLabel="Back to access profile"
+        className="shrink-0"
+      />
 
       <div className={ACCESS_SCROLL_FRAME_CLASS}>
         <AccessCard>
           <CardHeader className="px-4 py-3">
-            <CardTitle className="text-sm">Activity log</CardTitle>
+            <CardTitle>Activity log</CardTitle>
             <CardDescription className="text-xs">
               {isLoading ? 'Loading…' : `${logs.length} ${logs.length === 1 ? 'entry' : 'entries'}, newest first.`}
             </CardDescription>

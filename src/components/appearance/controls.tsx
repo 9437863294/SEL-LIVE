@@ -187,7 +187,7 @@ export function SettingsSection({
           <div className="min-w-0">
             <div className="flex items-center gap-2">
               {Icon && <Icon className="h-4 w-4 text-muted-foreground" />}
-              <CardTitle className="text-base">{title}</CardTitle>
+              <CardTitle>{title}</CardTitle>
             </div>
             {description && <CardDescription className="mt-1">{description}</CardDescription>}
           </div>

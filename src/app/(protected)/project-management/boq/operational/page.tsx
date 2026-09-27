@@ -1,12 +1,11 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { ArrowLeft, ClipboardCheck, FolderOpen, ShieldAlert } from "lucide-react";
+import { ClipboardCheck, FolderOpen, ShieldAlert } from "lucide-react";
 import { collection, getDocs } from "firebase/firestore";
 import { db } from "@/lib/firebase";
-import { Button } from "@/components/ui/button";
+import { PageHeader } from "@/components/shared/page-header";
 import {
   Card,
   CardContent,
@@ -95,7 +94,7 @@ export default function OperationalBoqPage() {
   if (!canView) {
     return (
       <main className="min-h-[calc(100dvh-4rem)] p-4 sm:p-6">
-        <h1 className="mb-6 text-2xl font-bold sm:text-3xl">Operational BOQ</h1>
+        <PageHeader title="Operational BOQ" />
         <Card>
           <CardHeader>
             <CardTitle>Access Denied</CardTitle>
@@ -113,27 +112,19 @@ export default function OperationalBoqPage() {
 
   return (
     <main className="min-h-[calc(100dvh-4rem)] p-4 max-sm:[--card-pad:1rem] sm:p-6">
-      <div className="flex items-center gap-3">
-        <Button variant="ghost" size="icon" className="shrink-0" asChild>
-          <Link href="/project-management/boq" aria-label="Back to BOQ">
-            <ArrowLeft className="h-5 w-5" />
-          </Link>
-        </Button>
-        <div className="hidden h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-violet-500 to-purple-600 shadow-sm sm:flex">
-          <ClipboardCheck className="h-5 w-5 text-white" />
-        </div>
-        <div className="min-w-0">
-          <h1 className="text-xl font-bold sm:text-3xl">Operational BOQ</h1>
-          <p className="mt-1 text-sm text-muted-foreground">
-            Select a project to track its execution quantities against the BOQ.
-          </p>
-        </div>
-      </div>
+      <PageHeader
+        title="Operational BOQ"
+        description="Select a project to track its execution quantities against the BOQ."
+        icon={ClipboardCheck}
+        backHref="/project-management/boq"
+        backLabel="Back to BOQ"
+        className="mb-0 sm:mb-0"
+      />
 
       <Card className="mt-5 max-w-md overflow-hidden border-border/60 sm:mt-6">
         <div className="h-1 w-full bg-gradient-to-r from-violet-500 to-purple-600" />
         <CardHeader>
-          <CardTitle className="text-base">Select Project</CardTitle>
+          <CardTitle>Select Project</CardTitle>
           <CardDescription>Choose a project to open its Operational BOQ.</CardDescription>
         </CardHeader>
         <CardContent>

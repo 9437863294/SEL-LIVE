@@ -2,9 +2,9 @@
 'use client';
 
 import { useState, useEffect, useMemo } from 'react';
-import Link from 'next/link';
-import { ArrowLeft, Save, Loader2, Plus, Trash2, Library } from 'lucide-react';
+import { Save, Loader2, Plus, Trash2, Library } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { PageHeader } from '@/components/shared/page-header';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { useToast } from '@/hooks/use-toast';
@@ -459,18 +459,17 @@ export default function CreateBillPage() {
   return (
     <>
       <div className="w-full px-4 sm:px-6 lg:px-8">
-        <div className="mb-6 flex items-center justify-between">
-          <div className="flex items-center gap-2">
-              <Link href={`/subcontractors-management/${projectSlug}/billing`}>
-                  <Button variant="ghost" size="icon"> <ArrowLeft className="h-6 w-6" /> </Button>
-              </Link>
-              <h1 className="text-2xl font-bold">Bill Entry</h1>
-          </div>
-          <Button onClick={handleSave} disabled={isSaving}>
-              {isSaving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
-              Save Bill
-          </Button>
-        </div>
+        <PageHeader
+          title="Bill Entry"
+          backHref={`/subcontractors-management/${projectSlug}/billing`}
+          backLabel="Back to billing"
+          actions={
+            <Button onClick={handleSave} disabled={isSaving}>
+                {isSaving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
+                Save Bill
+            </Button>
+          }
+        />
 
         <Card className="mb-6">
           <CardHeader><CardTitle>Bill Details</CardTitle></CardHeader>

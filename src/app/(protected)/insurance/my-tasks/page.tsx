@@ -36,6 +36,7 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { Skeleton } from '@/components/ui/skeleton';
+import { PageHeader } from '@/components/shared/page-header';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
@@ -347,43 +348,37 @@ export default function MyTasksPage() {
       <div className="space-y-4">
 
         {/* ── Header ──────────────────────────────────────────────────────── */}
-        <Card className="overflow-hidden border-border/60">
-          <div className="h-1 w-full bg-gradient-to-r from-cyan-500 via-sky-500 to-blue-600" />
-          <CardHeader className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-            <div className="flex items-center gap-3">
-              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-cyan-50 ring-1 ring-cyan-100">
-                <ClipboardCheck className="h-5 w-5 text-cyan-600" />
+        <PageHeader
+          className="mb-0 sm:mb-0"
+          icon={ClipboardCheck}
+          title="My Insurance Tasks"
+          description="Premium due tasks assigned to you — approve, verify, or reject"
+          badge={
+            /* Quick stats */
+            !isLoading && (
+              <div className="flex items-center gap-2 text-sm">
+                {pendingTasks.length > 0 && (
+                  <Badge className="gap-1 bg-amber-100 text-amber-700 border-amber-200">
+                    <AlertTriangle className="h-3 w-3" />
+                    {pendingTasks.length} pending
+                  </Badge>
+                )}
+                {completedTasks.filter((t) => t.status === 'Completed').length > 0 && (
+                  <Badge className="gap-1 bg-emerald-100 text-emerald-700 border-emerald-200">
+                    <CheckCircle2 className="h-3 w-3" />
+                    {completedTasks.filter((t) => t.status === 'Completed').length} done
+                  </Badge>
+                )}
               </div>
-              <div>
-                <CardTitle className="tracking-tight">My Insurance Tasks</CardTitle>
-                <CardDescription>Premium due tasks assigned to you — approve, verify, or reject</CardDescription>
-              </div>
-            </div>
-            <div className="flex flex-wrap items-center gap-2">
-              {/* Quick stats */}
-              {!isLoading && (
-                <div className="flex items-center gap-2 text-sm">
-                  {pendingTasks.length > 0 && (
-                    <Badge className="gap-1 bg-amber-100 text-amber-700 border-amber-200">
-                      <AlertTriangle className="h-3 w-3" />
-                      {pendingTasks.length} pending
-                    </Badge>
-                  )}
-                  {completedTasks.filter((t) => t.status === 'Completed').length > 0 && (
-                    <Badge className="gap-1 bg-emerald-100 text-emerald-700 border-emerald-200">
-                      <CheckCircle2 className="h-3 w-3" />
-                      {completedTasks.filter((t) => t.status === 'Completed').length} done
-                    </Badge>
-                  )}
-                </div>
-              )}
-              <Button size="sm" onClick={() => handleSync(true)} disabled={isSyncing} className="gap-1.5">
-                {isSyncing ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
-                Sync Tasks
-              </Button>
-            </div>
-          </CardHeader>
-        </Card>
+            )
+          }
+          actions={
+            <Button size="sm" onClick={() => handleSync(true)} disabled={isSyncing} className="gap-1.5">
+              {isSyncing ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
+              Sync Tasks
+            </Button>
+          }
+        />
 
         {/* ── Tabs ────────────────────────────────────────────────────────── */}
         <Tabs defaultValue="pending">

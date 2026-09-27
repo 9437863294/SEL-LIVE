@@ -36,6 +36,7 @@ import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { PageHeader } from '@/components/shared/page-header';
 import { cn } from '@/lib/utils';
 
 const INIT = { name: '', status: 'Active' as 'Active' | 'Inactive' };
@@ -126,25 +127,21 @@ export default function ManageInsuranceCompaniesPage() {
   return (
     <div className="space-y-4">
       {/* Header */}
-      <Card className="overflow-hidden border-border/60">
-        <div className="h-1 w-full bg-gradient-to-r from-blue-500 via-indigo-500 to-violet-500" />
-        <CardHeader className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <div className="flex items-center gap-3">
-            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-blue-50 ring-1 ring-blue-100">
-              <Building2 className="h-5 w-5 text-blue-600" />
-            </div>
-            <div>
-              <CardTitle className="tracking-tight">Insurance Companies</CardTitle>
-              <CardDescription>Manage the master list of insurance providers</CardDescription>
-            </div>
-          </div>
-          {canAdd && (
-            <Button size="sm" onClick={openAdd} className="gap-1.5 w-fit bg-blue-600 hover:bg-blue-700 text-white">
+      <PageHeader
+        className="mb-0 sm:mb-0"
+        icon={Building2}
+        title="Insurance Companies"
+        description="Manage the master list of insurance providers"
+        actions={
+          canAdd && (
+            <Button size="sm" onClick={openAdd} className="gap-1.5 bg-blue-600 hover:bg-blue-700 text-white">
               <Plus className="h-3.5 w-3.5" /> Add Company
             </Button>
-          )}
-        </CardHeader>
-        <CardContent className="grid grid-cols-3 gap-2 border-t pt-4">
+          )
+        }
+      />
+      <Card className="overflow-hidden border-border/60">
+        <CardContent className="grid grid-cols-3 gap-2 p-4">
           {[
             { label: 'Total',    value: companies.length,  color: 'text-slate-700' },
             { label: 'Active',   value: activeCount,       color: 'text-emerald-600' },

@@ -11,17 +11,8 @@ import { cn } from '@/lib/utils';
 import type { MailRecoveryAdvice } from '@/lib/mail-hub/model';
 import type { AccountRow, ThreadSummary } from '@/lib/mail-hub/client';
 
-export function PageHeader({ title, description, actions }: { title: string; description?: string; actions?: ReactNode }) {
-  return (
-    <div className="mb-3 flex flex-col gap-2 sm:mb-4 sm:flex-row sm:items-end sm:justify-between">
-      <div className="min-w-0">
-        <h1 className="truncate text-lg font-semibold tracking-tight text-slate-900 sm:text-xl">{title}</h1>
-        {description && <p className="text-sm text-muted-foreground">{description}</p>}
-      </div>
-      {actions && <div className="flex shrink-0 flex-wrap items-center gap-2">{actions}</div>}
-    </div>
-  );
-}
+/** The app's standard page header (`shared/page-header`), under the name these screens import. */
+export { PageHeader } from '@/components/shared/page-header';
 
 export function EmptyState({ icon, title, body, action }: { icon?: ReactNode; title: string; body?: string; action?: ReactNode }) {
   return (

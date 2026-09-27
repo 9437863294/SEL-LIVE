@@ -13,7 +13,7 @@ import {
   UserCog,
 } from 'lucide-react';
 import { useAuthorization } from '@/hooks/useAuthorization';
-import { Card, CardContent } from '@/components/ui/card';
+import { PageHeader } from '@/components/shared/page-header';
 import { cn } from '@/lib/utils';
 
 const MODULE = 'Site Account Statement';
@@ -117,17 +117,12 @@ export default function SiteAccountStatementSettingsHub() {
 
   return (
     <div className="space-y-5">
-      <Card className="overflow-hidden border-none bg-gradient-to-r from-emerald-500 to-teal-600 text-white shadow-lg">
-        <CardContent className="flex items-center gap-3 p-6">
-          <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-white/15">
-            <Settings className="h-6 w-6" />
-          </div>
-          <div>
-            <h1 className="text-xl font-bold tracking-tight sm:text-2xl">Site Account Statement Settings</h1>
-            <p className="mt-1 text-sm text-white/85">Project setup, categories, budget alerts, tender setup and field control — each in its own place.</p>
-          </div>
-        </CardContent>
-      </Card>
+      <PageHeader
+        className="mb-0 sm:mb-0"
+        icon={Settings}
+        title="Site Account Statement Settings"
+        description="Project setup, categories, budget alerts, tender setup and field control — each in its own place."
+      />
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
         {visibleItems.map((item) => (

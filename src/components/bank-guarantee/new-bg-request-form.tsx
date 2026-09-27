@@ -1,11 +1,9 @@
 "use client";
 
 import { useEffect, useMemo, useState, type ReactNode } from "react";
-import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { collection, getDocs } from "firebase/firestore";
 import {
-  ArrowLeft,
   Calculator,
   Loader2,
   Save,
@@ -35,6 +33,7 @@ import {
 } from "@/lib/bank-guarantee";
 import type { BankAccount, Department, Project } from "@/lib/types";
 import { Button } from "@/components/ui/button";
+import { PageHeader } from "@/components/shared/page-header";
 import {
   Card,
   CardContent,
@@ -112,7 +111,7 @@ function Section({
   return (
     <Card className="border-white/80 bg-white/90 shadow-sm">
       <CardHeader className="pb-4">
-        <CardTitle className="text-base">{title}</CardTitle>
+        <CardTitle>{title}</CardTitle>
         <CardDescription>{description}</CardDescription>
       </CardHeader>
       <CardContent className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
@@ -375,47 +374,40 @@ export default function NewBGRequestForm() {
     );
   return (
     <div className="space-y-4">
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <div className="flex items-center gap-3">
-          <Button asChild variant="outline" size="icon">
-            <Link href="/bank-guarantee">
-              <ArrowLeft className="h-4 w-4" />
-            </Link>
-          </Button>
-          <div>
-            <h1 className="text-2xl font-bold">New BG Request</h1>
-            <p className="text-sm text-muted-foreground">
-              Contract requirement, beneficiary, validity, limit, and
-              collateral.
-            </p>
-          </div>
-        </div>
-        <div className="flex gap-2">
-          <Button
-            variant="outline"
-            disabled={Boolean(saving)}
-            onClick={() => void save("draft")}
-          >
-            {saving === "draft" ? (
-              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-            ) : (
-              <Save className="mr-2 h-4 w-4" />
-            )}
-            Save Draft
-          </Button>
-          <Button
-            disabled={Boolean(saving)}
-            onClick={() => void save("submit")}
-          >
-            {saving === "submit" ? (
-              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-            ) : (
-              <Send className="mr-2 h-4 w-4" />
-            )}
-            Submit
-          </Button>
-        </div>
-      </div>
+      <PageHeader
+        className="mb-0 sm:mb-0"
+        backHref="/bank-guarantee"
+        backLabel="Back to Bank Guarantee dashboard"
+        title="New BG Request"
+        description="Contract requirement, beneficiary, validity, limit, and collateral."
+        actions={
+          <>
+            <Button
+              variant="outline"
+              disabled={Boolean(saving)}
+              onClick={() => void save("draft")}
+            >
+              {saving === "draft" ? (
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              ) : (
+                <Save className="mr-2 h-4 w-4" />
+              )}
+              Save Draft
+            </Button>
+            <Button
+              disabled={Boolean(saving)}
+              onClick={() => void save("submit")}
+            >
+              {saving === "submit" ? (
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              ) : (
+                <Send className="mr-2 h-4 w-4" />
+              )}
+              Submit
+            </Button>
+          </>
+        }
+      />
       <Section
         title="Request and global ownership"
         description="Organization and requester come from the signed-in user. Projects and departments use global setup."

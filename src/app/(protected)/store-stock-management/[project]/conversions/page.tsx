@@ -14,6 +14,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { useParams } from 'next/navigation';
 import { ConversionDialog } from '@/components/store-stock-management/ConversionDialog';
 import { projectMatchesSlug } from '@/lib/project-slug';
+import { PageHeader } from '@/components/shared/page-header';
 
 export default function ConversionsPage() {
   const { toast } = useToast();
@@ -79,7 +80,7 @@ export default function ConversionsPage() {
   return (
     <>
       <div>
-        <h1 className="text-3xl font-bold mb-6">Unit Conversions</h1>
+        <PageHeader title="Unit Conversions" />
         <Card>
           <CardHeader>
             <CardTitle>Define Item Unit Conversions</CardTitle>

@@ -12,6 +12,7 @@ import { useAuthorization } from '@/hooks/useAuthorization';
 import { useAuth } from '@/components/auth/AuthProvider';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
+import { PageHeader } from '@/components/shared/page-header';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Skeleton } from '@/components/ui/skeleton';
 import { cn } from '@/lib/utils';
@@ -295,20 +296,17 @@ export default function MonthlyComparisonPage() {
     <div className="space-y-4">
 
       {/* Header */}
-      <div className="flex items-center justify-between gap-3 flex-wrap">
-        <div>
-          <h1 className="text-base sm:text-lg font-bold text-slate-800">Month-over-Month Comparison</h1>
-          <p className="text-sm text-muted-foreground">
-            Budget · Received · Expenses per project — Δ% shows expense change vs previous month
-          </p>
-        </div>
-        {canExport && (
+      <PageHeader
+        className="mb-0 sm:mb-0"
+        title="Month-over-Month Comparison"
+        description="Budget · Received · Expenses per project — Δ% shows expense change vs previous month"
+        actions={canExport ? (
           <Button variant="outline" size="sm" onClick={exportExcel} disabled={exporting} className="gap-2">
             {exporting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
             Export Excel
           </Button>
-        )}
-      </div>
+        ) : undefined}
+      />
 
       {/* Range picker */}
       <div className="flex items-center gap-3 flex-wrap">

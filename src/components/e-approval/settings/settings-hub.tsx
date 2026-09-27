@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { ChevronRight, GitBranch, Building2, FileStack, HardHat, Loader2, Settings, ShieldCheck, UserCheck, Workflow } from 'lucide-react';
-import { Card, CardContent } from '@/components/ui/card';
+import { PageHeader } from '@/components/shared/page-header';
 import { cn } from '@/lib/utils';
 import { E_APPROVAL_BASE_PATH, E_APPROVAL_PERMISSION_RESOURCE } from '@/lib/e-approval';
 import { useEApprovalPermissions } from '../hooks';
@@ -117,20 +117,12 @@ export function EApprovalSettingsHub() {
 
   return (
     <div className="space-y-5">
-      <Card className="overflow-hidden border-none bg-gradient-to-r from-sky-500 to-indigo-600 text-white shadow-lg">
-        <CardContent className="flex items-center gap-3 p-5 sm:p-6">
-          <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-white/15">
-            <Settings className="h-6 w-6" />
-          </div>
-          <div className="min-w-0">
-            <h1 className="text-xl font-bold tracking-tight sm:text-2xl">E-Approval Settings</h1>
-            <p className="mt-1 text-sm text-white/85">
-              Everything that decides how an approval behaves before anybody touches it. Changes apply to
-              approvals raised from now on — a request already in flight keeps the chain it was given.
-            </p>
-          </div>
-        </CardContent>
-      </Card>
+      <PageHeader
+        icon={Settings}
+        title="E-Approval Settings"
+        description="Everything that decides how an approval behaves before anybody touches it. Changes apply to approvals raised from now on — a request already in flight keeps the chain it was given."
+        className="mb-0 sm:mb-0"
+      />
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
         {visible.map((section) => (

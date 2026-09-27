@@ -3,12 +3,10 @@
 
 import { useState, useEffect, useMemo } from 'react';
 import { useRouter, useParams } from 'next/navigation';
-import Link from 'next/link';
 import { useForm, useFieldArray, Controller } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
 import {
-  ArrowLeft,
   Save,
   Loader2,
   Trash2,
@@ -43,6 +41,7 @@ import { Switch } from '@/components/ui/switch';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Timestamp } from 'firebase/firestore';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { PageHeader } from '@/components/shared/page-header';
 
 const getItemDescription = (item: BoqItem | FabricationBomItem) => {
     const descriptionKeys = ['Description', 'DESCRIPTION OF ITEMS', 'DESCRIPTION OF ITEMS(SCHEDULE-VIIA-SS) SUPPLY OF FOLLOWING EQUIPMENT & MATERIALS (As per Technical Specification)'];
@@ -461,23 +460,18 @@ export default function StockOutPage() {
     <Form {...form}>
       <form onSubmit={form.handleSubmit(onSubmit)}>
         <div className="w-full max-w-4xl mx-auto">
-            <div className="mb-6 flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                    <Link href={`/store-stock-management/${projectSlug}/transactions`}>
-                        <Button variant="ghost" size="icon" type="button">
-                            <ArrowLeft className="h-6 w-6" />
-                        </Button>
-                    </Link>
-                    <div>
-                        <h1 className="text-2xl font-bold">Stock Out (Goods Issue Note)</h1>
-                        <p className="text-muted-foreground">Record items being issued from the inventory.</p>
-                    </div>
-                </div>
-                <Button type="submit" disabled={isSaving}>
+            <PageHeader
+                title="Stock Out (Goods Issue Note)"
+                description="Record items being issued from the inventory."
+                backHref={`/store-stock-management/${projectSlug}/transactions`}
+                backLabel="Back to Transactions"
+                actions={
+                  <Button type="submit" disabled={isSaving}>
                     {isSaving ? <Loader2 className="mr-2 h-4 w-4 animate-spin"/> : <Save className="mr-2 h-4 w-4" />}
                     Save Transaction
-                </Button>
-            </div>
+                  </Button>
+                }
+            />
 
             <div className="space-y-6">
                 <Card>

@@ -31,6 +31,7 @@ import {
 } from "@/lib/bank-guarantee-settings";
 import type { BankAccount, Project } from "@/lib/types";
 import { Button } from "@/components/ui/button";
+import { PageHeader } from "@/components/shared/page-header";
 import {
   Card,
   CardContent,
@@ -401,13 +402,11 @@ export default function BGSettingsWorkspace() {
   ];
   return (
     <div className="space-y-4">
-      <div>
-        <h1 className="text-2xl font-bold">BG Settings & Global Masters</h1>
-        <p className="text-sm text-muted-foreground">
-          Shared bank accounts, projects, users and departments are reused;
-          missing Beneficiary and Contract masters are managed here.
-        </p>
-      </div>
+      <PageHeader
+        className="mb-0 sm:mb-0"
+        title="BG Settings & Global Masters"
+        description="Shared bank accounts, projects, users and departments are reused; missing Beneficiary and Contract masters are managed here."
+      />
       <Tabs defaultValue="limits">
         <TabsList className="flex h-auto">
           <TabsTrigger value="limits">Shared Bank Limits</TabsTrigger>
@@ -417,7 +416,7 @@ export default function BGSettingsWorkspace() {
           <TabsTrigger value="controls">Workflow Controls</TabsTrigger>
         </TabsList>
         <TabsContent value="limits">
-          <GenericCrudPage
+          <GenericCrudPage embedded
             title="Bank BG / LC Limits"
             description="One shared exposure record supports separate and combined BG/LC limits."
             itemName="Bank Limit"
@@ -471,7 +470,7 @@ export default function BGSettingsWorkspace() {
           />
         </TabsContent>
         <TabsContent value="beneficiaries">
-          <GenericCrudPage
+          <GenericCrudPage embedded
             title="Global Beneficiary Master"
             description="Legal identity and beneficiary BG-format preferences; request forms consume this master read-only."
             itemName="Beneficiary"
@@ -500,7 +499,7 @@ export default function BGSettingsWorkspace() {
           />
         </TabsContent>
         <TabsContent value="contracts">
-          <GenericCrudPage
+          <GenericCrudPage embedded
             title="Global Contract & Tender Master"
             description="Project and beneficiary-linked contractual BG requirement setup."
             itemName="Contract"

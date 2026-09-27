@@ -8,6 +8,7 @@ import {
   ShieldCheck, User as UserIcon, Users, type LucideIcon,
 } from 'lucide-react';
 import { ModuleBottomNav, type ModuleNavTab } from '@/components/navigation/ModuleBottomNav';
+import { ModuleMobileHeader } from '@/components/shared/page-header';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { useSidebarDefault } from '@/components/theme/use-sidebar-default';
 import { cn } from '@/lib/utils';
@@ -189,15 +190,9 @@ export default function SettingsLayout({ children }: { children: React.ReactNode
           isExpanded ? 'lg:ml-56' : 'lg:ml-14',
         )}
       >
-        {/* Mobile title bar — only on screens below lg; navigation is the bottom bar and its "More" pop-up. Sticks under the header's visible height, like the sidebar. */}
-        <div className="lg:hidden flex items-center justify-between border-b border-border/40 bg-background/95 backdrop-blur-sm px-4 py-2.5 sticky top-[var(--app-header-offset,4rem)] z-30">
-          <div className="flex items-center gap-2">
-            <div className="rounded-md bg-primary/10 p-1.5">
-              <Settings2 className="h-4 w-4 text-primary" />
-            </div>
-            <span className="text-sm font-semibold text-foreground/80">Settings</span>
-          </div>
-        </div>
+        {/* The module's card below lg; navigation is the bottom bar and its "More" pop-up. `main`
+            has no padding of its own (each page brings it), so the card carries the pages' inset. */}
+        <ModuleMobileHeader icon={Settings2} title="Settings" hideFrom="lg" className="px-4 pt-3 sm:px-5" />
 
         <main className="min-w-0 flex-grow overflow-x-clip">{children}</main>
         <footer className="shrink-0 flex items-center text-muted-foreground text-xs py-3 px-6 border-t border-border/40">

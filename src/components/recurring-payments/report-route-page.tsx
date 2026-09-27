@@ -54,6 +54,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { SectionHeader } from "@/components/shared/page-header";
 import { useGlobalScopes } from "./use-global-scopes";
 import {
   ReportAccessDenied,
@@ -423,12 +424,10 @@ function ReportRouteView({ kind }: { kind: ReportKind }) {
       </div>
       {kind === "cash-flow" && (
         <div>
-          <div className="mb-2">
-            <h2 className="text-lg font-semibold">Outflow horizon</h2>
-            <p className="text-sm text-muted-foreground">
-              Total open exposure (confirmed bills, or expected amount where no bill exists yet) due within each window, regardless of the filters below.
-            </p>
-          </div>
+          <SectionHeader
+            title="Outflow horizon"
+            description="Total open exposure (confirmed bills, or expected amount where no bill exists yet) due within each window, regardless of the filters below."
+          />
           <div className="grid grid-cols-2 gap-3 lg:grid-cols-5">
             {outflowBuckets.map(({ days, amount }) => (
               <ReportMetricTile key={days} label={`Next ${days} days`} value={currency(amount)} icon={CalendarClock} tone="neutral" />

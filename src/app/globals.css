@@ -1987,6 +1987,23 @@ html[data-nav-style='graphite'] {
   --sel-tab-on: #1a2e05;
 }
 
+/* The page header's action row (src/components/shared/page-header.tsx). On a phone the row is full
+   width and labelled buttons share it; a square icon button (`size="icon"`, marked `data-size="icon"`
+   by the Button, or hand-sized `w-8`…`w-11`) keeps its size instead of becoming a bar with one glyph.
+   From `sm` every child keeps its natural width but may shrink, so a wrapping toolbar passed as one
+   child wraps inside the header instead of overflowing it. */
+.page-header-actions > * {
+  min-width: 0;
+}
+.page-header-actions > *:not([data-size='icon']):not(.w-8):not(.w-9):not(.w-10):not(.w-11) {
+  flex: 1 1 0%;
+}
+@media (min-width: 640px) {
+  .page-header-actions > *:not([data-size='icon']):not(.w-8):not(.w-9):not(.w-10):not(.w-11) {
+    flex: 0 1 auto;
+  }
+}
+
 /* The pill behind the active tab (src/components/ui/tabs.tsx). Position and size are inline. */
 .tabs-indicator {
   position: absolute;

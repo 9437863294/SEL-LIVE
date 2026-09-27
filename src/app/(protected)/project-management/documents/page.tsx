@@ -4,7 +4,6 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import {
-  ArrowLeft,
   Download,
   FileText,
   FolderOpen,
@@ -89,6 +88,7 @@ import {
   PmEmptyState,
   type PmListColumn,
 } from "@/components/project-management/pm-shell";
+import { PageHeader } from "@/components/shared/page-header";
 import { cn } from "@/lib/utils";
 
 type ProjectMapping = {
@@ -465,24 +465,14 @@ export default function ProjectDocumentsPage() {
 
   return (
     <main className="min-h-[calc(100dvh-4rem)] space-y-5 p-4 sm:p-6">
-      <div className="mb-1 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-        <div className="flex min-w-0 items-center gap-3">
-          <Button variant="ghost" size="icon" className="shrink-0" asChild>
-            <Link href={`/project-management?project=${encodeURIComponent(mappingId)}`} aria-label="Back to Project Management">
-              <ArrowLeft className="h-5 w-5" />
-            </Link>
-          </Button>
-          <div className="hidden h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-purple-500 to-fuchsia-600 shadow-sm sm:flex">
-            <FolderOpen className="h-5 w-5 text-white" />
-          </div>
-          <div className="min-w-0">
-            <h1 className="text-xl font-bold sm:text-3xl">Documents</h1>
-            <p className="mt-0.5 break-words text-sm text-muted-foreground sm:mt-1">
-              {documents.length} file{documents.length === 1 ? "" : "s"} for {mapping.projectName}
-            </p>
-          </div>
-        </div>
-
+      <PageHeader
+        title="Documents"
+        description={`${documents.length} file${documents.length === 1 ? "" : "s"} for ${mapping.projectName}`}
+        icon={FolderOpen}
+        backHref={`/project-management?project=${encodeURIComponent(mappingId)}`}
+        backLabel="Back to Project Management"
+        className="mb-0 sm:mb-0"
+        actions={
         <Dialog open={isDialogOpen} onOpenChange={(open) => { setIsDialogOpen(open); if (!open) resetDialog(); }}>
           <DialogTrigger asChild>
             <Button disabled={!canAdd}>
@@ -596,7 +586,8 @@ export default function ProjectDocumentsPage() {
             </DialogFooter>
           </DialogContent>
         </Dialog>
-      </div>
+        }
+      />
 
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
         <div className="relative w-full sm:max-w-xs">

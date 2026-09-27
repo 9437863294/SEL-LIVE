@@ -105,7 +105,7 @@ export default function TripMapView({
   return (
     <Card className="vm-panel overflow-hidden">
       <CardHeader className="pb-2">
-        <CardTitle className="text-base">{title}</CardTitle>
+        <CardTitle>{title}</CardTitle>
       </CardHeader>
       <CardContent>
         {mapError ? (

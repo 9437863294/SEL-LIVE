@@ -28,6 +28,7 @@ import {
 } from '@/lib/vehicle-management';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { PageHeader } from '@/components/shared/page-header';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Input } from '@/components/ui/input';
 import { TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
@@ -365,18 +366,13 @@ export default function VehicleHealthPage() {
   return (
     <div className="space-y-3 vm-reveal sm:space-y-5">
       {/* Header */}
-      <Card className="vm-panel-strong overflow-hidden">
-        <div className="h-1 w-full bg-gradient-to-r from-emerald-400 via-teal-500 to-cyan-600 animate-bb-gradient" />
-        <CardHeader className="flex flex-row items-center justify-between gap-3 px-3 py-2.5 sm:px-4 sm:py-3">
-          <div className="min-w-0">
-            <CardTitle className="flex items-center gap-2 text-sm tracking-tight sm:text-base">
-              <Activity className="h-4 w-4 shrink-0 text-emerald-500" />
-              Vehicle Health
-            </CardTitle>
-            <p className="mt-0.5 hidden text-xs text-muted-foreground sm:block">
-              Compliance score is calculated only on applicable documents by vehicle type/category/fuel.
-            </p>
-          </div>
+      <PageHeader
+        title="Vehicle Health"
+        description="Compliance score is calculated only on applicable documents by vehicle type/category/fuel."
+        descriptionClassName="hidden sm:block"
+        icon={Activity}
+        className="mb-0 sm:mb-0"
+        actions={
           <button
             onClick={load}
             className="flex h-8 shrink-0 items-center justify-center gap-1.5 rounded-lg border border-black/10 bg-white/80 px-2.5 text-xs font-medium text-foreground transition-colors hover:bg-white"
@@ -384,8 +380,8 @@ export default function VehicleHealthPage() {
             <RefreshCw className="h-3.5 w-3.5" />
             <span className="hidden sm:inline">Refresh</span>
           </button>
-        </CardHeader>
-      </Card>
+        }
+      />
 
       {/* Summary Stats — small, refined tiles. 2 columns below ~480px so labels never
           truncate mid-word (4 equal columns left no room for "Fleet Score"/"Critical" on

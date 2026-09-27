@@ -48,6 +48,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { TooltipProvider } from "@/components/ui/tooltip";
+import { ModuleMobileHeader } from "@/components/shared/page-header";
 import { cn } from "@/lib/utils";
 
 type Section = {
@@ -303,21 +304,12 @@ export default function BankGuaranteeLayoutShell({
   return (
     <div className="relative w-full px-4 py-5 sm:px-6 lg:px-8">
       <div className="pointer-events-none absolute inset-0 -z-10 rounded-3xl bg-gradient-to-br from-indigo-50/70 via-white to-violet-50/60" />
-      <div className="mb-3 lg:hidden">
-        <Card className="border-white/80 bg-white/90">
-          <CardContent className="flex items-center gap-2.5 px-4 py-3">
-            <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-gradient-to-br from-indigo-600 to-violet-700">
-              <ShieldCheck className="h-4 w-4 text-white" />
-            </span>
-            <div>
-              <p className="text-sm font-semibold">Bank Guarantee</p>
-              <p className="text-xs text-muted-foreground">
-                Exposure & lifecycle control
-              </p>
-            </div>
-          </CardContent>
-        </Card>
-      </div>
+      <ModuleMobileHeader
+        icon={ShieldCheck}
+        title="Bank Guarantee"
+        subtitle="Exposure & lifecycle control"
+        hideFrom="lg"
+      />
       <div
         className={`grid grid-cols-1 gap-4 ${iconsOnly ? SIDEBAR_ICONS_GRID : "lg:grid-cols-[260px_minmax(0,1fr)]"} lg:items-start`}
       >

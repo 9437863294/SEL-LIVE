@@ -43,6 +43,7 @@ import {
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { PageHeader } from '@/components/shared/page-header';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 
@@ -202,16 +203,17 @@ export default function ManageSitesPage() {
 
   return (
     <div className="mx-auto w-full max-w-7xl space-y-6">
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
-        <div>
-          <p className="text-xs font-bold uppercase tracking-[0.14em] text-rose-600">Project structure</p>
-          <h1 className="mt-1 text-2xl font-bold tracking-tight">Project Sites</h1>
-          <p className="mt-1 text-sm text-muted-foreground">Maintain operating sites under the correct parent project.</p>
-        </div>
-        <Button onClick={() => openSiteDialog('add')} disabled={isLoading || !projects.length}>
-          <Plus className="mr-2 h-4 w-4" />Add Site
-        </Button>
-      </div>
+      <PageHeader
+        className="mb-0 sm:mb-0"
+        eyebrow="Project structure"
+        title="Project Sites"
+        description="Maintain operating sites under the correct parent project."
+        actions={
+          <Button onClick={() => openSiteDialog('add')} disabled={isLoading || !projects.length}>
+            <Plus className="mr-2 h-4 w-4" />Add Site
+          </Button>
+        }
+      />
 
       <div className="grid gap-4 sm:grid-cols-3">
         <SummaryCard label="Projects" value={groups.length} icon={FolderKanban} tone="bg-amber-100 text-amber-700" />
@@ -246,7 +248,7 @@ export default function ManageSitesPage() {
               <div className="flex flex-col gap-3 bg-slate-50/80 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
                 <div className="min-w-0">
                   <div className="flex flex-wrap items-center gap-2">
-                    <h3 className="truncate font-bold text-slate-900">{group.project.projectName || 'Unnamed project'}</h3>
+                    <h3 className="truncate text-[15px] font-semibold leading-snug tracking-tight text-slate-900 sm:text-base">{group.project.projectName || 'Unnamed project'}</h3>
                     <Badge variant={group.project.status === 'Active' ? 'default' : 'secondary'}>{group.project.status || 'Unknown'}</Badge>
                     <Badge variant="outline">{group.sites.length} site{group.sites.length === 1 ? '' : 's'}</Badge>
                   </div>

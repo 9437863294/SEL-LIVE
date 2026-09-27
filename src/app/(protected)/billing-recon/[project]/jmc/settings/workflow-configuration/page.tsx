@@ -1,9 +1,7 @@
 'use client';
 
 import { useState, useEffect, useMemo, useCallback } from 'react';
-import Link from 'next/link';
 import {
-  ArrowLeft,
   Save,
   Trash2,
   Plus,
@@ -15,6 +13,7 @@ import {
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { PageHeader } from '@/components/shared/page-header';
 import { Input } from '@/components/ui/input';
 import { useToast } from '@/hooks/use-toast';
 import { db } from '@/lib/firebase';
@@ -374,16 +373,11 @@ export default function JmcWorkflowConfigurationPage() {
   if (!canViewPage) {
     return (
       <div className="w-full max-w-4xl mx-auto pr-14">
-        <div className="mb-6 flex items-center justify-between">
-          <div className="flex items-center gap-4">
-            <Link href={`/billing-recon/${projectSlug}/jmc/settings`}>
-              <Button variant="ghost" size="icon">
-                <ArrowLeft className="h-6 w-6" />
-              </Button>
-            </Link>
-            <h1 className="text-xl font-bold">JMC Workflow Configuration</h1>
-          </div>
-        </div>
+        <PageHeader
+          title="JMC Workflow Configuration"
+          backHref={`/billing-recon/${projectSlug}/jmc/settings`}
+          backLabel="Back to JMC settings"
+        />
         <Card>
           <CardHeader>
             <CardTitle>Access Denied</CardTitle>
@@ -399,27 +393,24 @@ export default function JmcWorkflowConfigurationPage() {
 
   return (
     <div className="w-full max-w-4xl mx-auto pr-14">
-      <div className="mb-6 flex items-center justify-between">
-        <div className="flex items-center gap-4">
-          <Link href={`/billing-recon/${projectSlug}/jmc/settings`}>
-            <Button variant="ghost" size="icon">
-              <ArrowLeft className="h-6 w-6" />
+      <PageHeader
+        title="JMC Workflow Configuration"
+        backHref={`/billing-recon/${projectSlug}/jmc/settings`}
+        backLabel="Back to JMC settings"
+        actions={
+          <div className="flex items-center gap-3">
+            {pageInvalidMsg && (
+              <Badge variant="destructive" className="whitespace-nowrap">
+                {pageInvalidMsg}
+              </Badge>
+            )}
+            <Button onClick={handleSave} disabled={isSaving || !canEditPage || !!pageInvalidMsg}>
+              {isSaving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
+              Save Workflow
             </Button>
-          </Link>
-          <h1 className="text-xl font-bold">JMC Workflow Configuration</h1>
-        </div>
-        <div className="flex items-center gap-3">
-          {pageInvalidMsg && (
-            <Badge variant="destructive" className="whitespace-nowrap">
-              {pageInvalidMsg}
-            </Badge>
-          )}
-          <Button onClick={handleSave} disabled={isSaving || !canEditPage || !!pageInvalidMsg}>
-            {isSaving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
-            Save Workflow
-          </Button>
-        </div>
-      </div>
+          </div>
+        }
+      />
 
       <Card>
         <CardHeader>

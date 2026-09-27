@@ -11,6 +11,7 @@
 import { useMemo } from 'react';
 import { useParams } from 'next/navigation';
 import { HrAccessDenied, HrLoader } from '@/components/hr/hr-ui';
+import { PageHeader } from '@/components/shared/page-header';
 import { useAuth } from '@/components/auth/AuthProvider';
 import { useAuthorization } from '@/hooks/useAuthorization';
 import { useAccessDirectory } from '@/hooks/useAccessDirectory';
@@ -44,11 +45,8 @@ export default function UserAccessProfilePage() {
 
   if (!allowed || !actor) {
     return (
-      <AccessPageShell
-        backHref="/settings"
-        backLabel="Back to settings"
-        aside={<h1 className="text-xl font-semibold text-slate-800">Access profile</h1>}
-      >
+      <AccessPageShell>
+        <PageHeader title="Access profile" backHref="/settings" backLabel="Back to settings" />
         <HrAccessDenied what="this access profile" />
       </AccessPageShell>
     );

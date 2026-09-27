@@ -2,9 +2,7 @@
 'use client';
 
 import { useState, useMemo, useEffect } from 'react';
-import Link from 'next/link';
 import {
-  ArrowLeft,
   UploadCloud,
   FileSpreadsheet,
   Loader2,
@@ -19,6 +17,7 @@ import {
   CardTitle,
 } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
+import { PageHeader } from '@/components/shared/page-header';
 import { useToast } from '@/hooks/use-toast';
 import ExcelJS from 'exceljs';
 import { db } from '@/lib/firebase';
@@ -327,28 +326,25 @@ export default function ImportBoqPage() {
 
   return (
     <div className="h-screen flex flex-col min-h-0 overflow-hidden px-4 sm:px-6 lg:px-8">
-      <div className="mb-6 flex items-center justify-between shrink-0">
-        <div className="flex items-center gap-2">
-          <Link href={`/store-stock-management/${projectSlug}/boq`}>
-            <Button variant="ghost" size="icon" aria-label="Back">
-              <ArrowLeft className="h-6 w-6" />
-            </Button>
-          </Link>
-          <h1 className="text-xl font-bold">Import BOQ from Excel</h1>
-        </div>
-
-        {jsonData.length > 0 && (
-          <div className="flex items-center gap-2">
-            <Button onClick={handleImport} disabled={isImporting}>
-              {isImporting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <UploadCloud className="mr-2 h-4 w-4" />}
-              {isImporting ? `Importing… ${progress}%` : 'Import Data'}
-            </Button>
-            <Button variant="ghost" onClick={handleClear} disabled={isImporting || isParsing}>
-              Clear
-            </Button>
-          </div>
-        )}
-      </div>
+      <PageHeader
+        className="shrink-0"
+        title="Import BOQ from Excel"
+        backHref={`/store-stock-management/${projectSlug}/boq`}
+        backLabel="Back to BOQ Management"
+        actions={
+          jsonData.length > 0 ? (
+            <>
+              <Button onClick={handleImport} disabled={isImporting}>
+                {isImporting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <UploadCloud className="mr-2 h-4 w-4" />}
+                {isImporting ? `Importing… ${progress}%` : 'Import Data'}
+              </Button>
+              <Button variant="ghost" onClick={handleClear} disabled={isImporting || isParsing}>
+                Clear
+              </Button>
+            </>
+          ) : undefined
+        }
+      />
 
       <div className="flex-1 grid grid-cols-1 lg:grid-cols-2 gap-6 min-h-0">
         <Card className="flex flex-col shrink-0">

@@ -19,7 +19,7 @@
 
 import type { ReactNode } from "react";
 import Link from "next/link";
-import { ArrowLeft, ShieldAlert, type LucideIcon } from "lucide-react";
+import { ShieldAlert, type LucideIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -29,6 +29,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
+import { PageHeader } from "@/components/shared/page-header";
 import { cn } from "@/lib/utils";
 
 /** The rhythm every Project Management screen uses. */
@@ -43,17 +44,11 @@ export const JMC_GRADIENT = "from-emerald-500 to-green-600";
 export const JMC_SETTINGS_GRADIENT = "from-slate-500 to-slate-700";
 
 /**
- * Back-arrow + gradient icon chip + title + subtitle, on **one line**.
+ * Back arrow, icon, title and subtitle — the app's standard page header (`shared/page-header`),
+ * so a JMC screen opens the way every other screen does.
  *
- * These are dense data screens — a register, a queue, a workflow stage — and the header is not the
- * content. It used to stack a 40px chip beside a `text-2xl` title with a full sentence beneath,
- * which cost roughly seventy vertical pixels before the first row of data, on every screen in the
- * module. Laying the subtitle alongside the title instead of under it halves that without losing
- * anything: the title still leads, and the subtitle is still there to explain the screen.
- *
- * The subtitle is hidden below `md` and truncated above it. It is supporting prose, so on a narrow
- * screen the title and the actions are worth more than a wrapped second line, and on a wide one
- * a truncated sentence with the full text on hover beats one that pushes the table down.
+ * These are dense data screens, so the subtitle is hidden below `md`: on a narrow screen the title
+ * and the actions are worth more than a wrapped line of supporting prose.
  */
 export function JmcPageHeader({
   title,
@@ -61,7 +56,6 @@ export function JmcPageHeader({
   icon: Icon,
   backHref,
   backLabel = "Back",
-  gradient = JMC_GRADIENT,
   actions,
 }: {
   title: string;
@@ -69,47 +63,21 @@ export function JmcPageHeader({
   icon: LucideIcon;
   backHref: string;
   backLabel?: string;
+  /** Accepted for existing callers; the icon now takes the user's accent like every module's. */
   gradient?: string;
   actions?: ReactNode;
 }) {
   return (
-    <div className="flex flex-wrap items-center gap-x-2.5 gap-y-2">
-      <Button variant="ghost" size="icon" className="h-9 w-9 shrink-0 sm:h-8 sm:w-8" asChild>
-        <Link href={backHref} aria-label={backLabel}>
-          <ArrowLeft className="h-4 w-4" />
-        </Link>
-      </Button>
-      {/* Decoration, so it gives its 42px back to the title on a phone. */}
-      <div
-        className={cn(
-          "hidden h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-gradient-to-br shadow-sm sm:flex",
-          gradient,
-        )}
-      >
-        <Icon className="h-4 w-4 text-white" />
-      </div>
-      {/* PmTopbar's `flex-1 basis-40`: the title claims a real share of the first line, so the
-          actions wrap beneath it instead of squeezing it, and a long stage name truncates beside
-          the back arrow rather than dropping to a line of its own. From `md`, where the subtitle
-          shows, the title goes back to its own width so the subtitle sits right after it. */}
-      <h1
-        className={cn(
-          "min-w-0 flex-1 basis-40 truncate text-base font-semibold tracking-tight sm:text-lg",
-          subtitle ? "md:flex-initial md:basis-auto" : undefined,
-        )}
-      >
-        {title}
-      </h1>
-      {subtitle ? (
-        <p
-          className="hidden min-w-0 flex-1 truncate text-xs text-muted-foreground md:block"
-          title={typeof subtitle === "string" ? subtitle : undefined}
-        >
-          {subtitle}
-        </p>
-      ) : null}
-      {actions ? <div className="ml-auto flex flex-wrap items-center gap-2">{actions}</div> : null}
-    </div>
+    <PageHeader
+      icon={Icon}
+      title={title}
+      description={subtitle}
+      descriptionClassName="hidden md:block"
+      backHref={backHref}
+      backLabel={backLabel}
+      actions={actions}
+      className="mb-0 sm:mb-0"
+    />
   );
 }
 

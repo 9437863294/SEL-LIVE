@@ -1,10 +1,10 @@
 'use client';
 
 import { useState, useEffect, useMemo } from 'react';
-import Link from 'next/link';
 import ExcelJS from 'exceljs';
 import { collection, getDocs, doc, getDoc } from 'firebase/firestore';
-import { ArrowLeft, CheckCircle2, Clock, AlertTriangle, Download, Loader2, ShieldAlert } from 'lucide-react';
+import { CheckCircle2, Clock, AlertTriangle, Download, Loader2, ShieldAlert } from 'lucide-react';
+import { PageHeader } from '@/components/shared/page-header';
 import { db } from '@/lib/firebase';
 import type { Requisition, WorkflowStep, Project } from '@/lib/types';
 import { useAuthorization } from '@/hooks/useAuthorization';
@@ -249,15 +249,13 @@ export default function StageWiseAnalysisPage() {
   if (!canView) {
     return (
       <div className="w-full space-y-4 p-4 sm:p-6">
-        <div className="flex items-center gap-3">
-          <Link href="/site-fund-request/reports">
-            <Button variant="ghost" size="icon"><ArrowLeft className="h-5 w-5" /></Button>
-          </Link>
-          <div>
-            <p className="text-xs font-semibold uppercase tracking-[0.22em] text-slate-500">Site Fund Request</p>
-            <h1 className="mt-1 text-2xl font-bold tracking-tight text-slate-900">Stage-wise Analysis</h1>
-          </div>
-        </div>
+        <PageHeader
+          className="mb-0 sm:mb-0"
+          backHref="/site-fund-request/reports"
+          backLabel="Back to reports"
+          eyebrow="Site Fund Request"
+          title="Stage-wise Analysis"
+        />
         <Card className="overflow-hidden rounded-2xl border border-white/70 bg-white/70 shadow-[0_20px_70px_-55px_rgba(2,6,23,0.55)] backdrop-blur">
           <div className="h-1.5 w-full bg-gradient-to-r from-indigo-400 via-violet-400 to-blue-400 opacity-70" />
           <CardHeader>
@@ -276,33 +274,27 @@ export default function StageWiseAnalysisPage() {
   return (
     <div className="w-full space-y-4 p-4 sm:p-6">
       {/* Header */}
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
-        <div className="flex items-center gap-3">
-          <Link href="/site-fund-request/reports">
-            <Button variant="ghost" size="icon"><ArrowLeft className="h-5 w-5" /></Button>
-          </Link>
-          <div>
-            <p className="text-xs font-semibold uppercase tracking-[0.22em] text-slate-500">
-              Site Fund Request — Reports
-            </p>
-            <h1 className="mt-1 text-2xl font-bold tracking-tight text-slate-900">Stage-wise Analysis</h1>
-            <p className="mt-0.5 text-sm text-slate-600">
-              Workflow step performance with TAT compliance and user workload.
-            </p>
-          </div>
-        </div>
-        <Button
-          variant="outline"
-          onClick={handleExport}
-          disabled={isExporting || steps.length === 0}
-          className="bg-white/80 border-white/70"
-        >
-          {isExporting
-            ? <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-            : <Download className="mr-2 h-4 w-4" />}
-          {isExporting ? 'Exporting…' : 'Export Excel'}
-        </Button>
-      </div>
+      <PageHeader
+        className="mb-0 sm:mb-0"
+        backHref="/site-fund-request/reports"
+        backLabel="Back to reports"
+        eyebrow="Site Fund Request — Reports"
+        title="Stage-wise Analysis"
+        description="Workflow step performance with TAT compliance and user workload."
+        actions={
+          <Button
+            variant="outline"
+            onClick={handleExport}
+            disabled={isExporting || steps.length === 0}
+            className="bg-white/80 border-white/70"
+          >
+            {isExporting
+              ? <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              : <Download className="mr-2 h-4 w-4" />}
+            {isExporting ? 'Exporting…' : 'Export Excel'}
+          </Button>
+        }
+      />
 
       {/* Filters */}
       <Card className="overflow-hidden bg-white/70 border border-white/70 rounded-2xl shadow-[0_20px_70px_-55px_rgba(2,6,23,0.55)] backdrop-blur">
@@ -381,7 +373,7 @@ export default function StageWiseAnalysisPage() {
             <Card key={step.id} className="overflow-hidden rounded-2xl border border-white/70 bg-white/70 shadow-[0_20px_70px_-55px_rgba(2,6,23,0.55)] backdrop-blur">
               <div className="h-1.5 w-full bg-gradient-to-r from-fuchsia-400 via-violet-400 to-purple-400 opacity-70" />
               <CardHeader className="pb-2 pt-4 px-5">
-                <CardTitle className="text-base font-semibold text-slate-800">
+                <CardTitle className="text-slate-800">
                   {step.name}
                   <span className="ml-2 text-xs font-normal text-muted-foreground">TAT: {step.tat}h</span>
                 </CardTitle>

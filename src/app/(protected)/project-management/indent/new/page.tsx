@@ -35,6 +35,7 @@ import {
   PmTopbar,
   type PmListColumn,
 } from "@/components/project-management/pm-shell";
+import { PageHeader } from "@/components/shared/page-header";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -495,7 +496,7 @@ export default function NewIndentPage() {
   if (!canAdd) {
     return (
       <main className="min-h-[calc(100dvh-4rem)] p-4 sm:p-6">
-        <h1 className="mb-6 text-2xl font-bold sm:text-3xl">Create Indent</h1>
+        <PageHeader title="Create Indent" />
         <Card>
           <CardHeader>
             <CardTitle>Access Denied</CardTitle>

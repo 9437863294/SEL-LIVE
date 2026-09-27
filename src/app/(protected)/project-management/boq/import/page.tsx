@@ -6,7 +6,6 @@ import { useSearchParams } from 'next/navigation';
 import ExcelJS from 'exceljs';
 import {
   AlertTriangle,
-  ArrowLeft,
   ArrowRight,
   CheckCircle2,
   ChevronRight,
@@ -60,6 +59,7 @@ import { useAuthorization } from '@/hooks/useAuthorization';
 import { logUserActivity } from '@/lib/activity-logger';
 import { cn } from '@/lib/utils';
 import { PmDataList, type PmListColumn } from '@/components/project-management/pm-shell';
+import { PageHeader } from '@/components/shared/page-header';
 import {
   BOQ_COLUMN_SETTINGS_COLLECTION,
   BOQ_COLUMN_SETTINGS_DOC,
@@ -1110,25 +1110,15 @@ export default function ImportBoqPage() {
 
   return (
     <main className="min-h-[calc(100dvh-4rem)] min-w-0 space-y-5 p-4 max-sm:[--card-pad:1rem] sm:p-6">
-      <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-        <div className="flex min-w-0 items-center gap-3">
-          <Button variant="ghost" size="icon" className="shrink-0" asChild>
-            <Link href={`/project-management/boq?project=${encodeURIComponent(mappingId)}`} aria-label="Back to BOQ">
-              <ArrowLeft className="h-5 w-5" />
-            </Link>
-          </Button>
-          <div className="hidden h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-amber-500 to-orange-600 shadow-sm sm:flex">
-            <UploadCloud className="h-5 w-5 text-white" />
-          </div>
-          <div className="min-w-0">
-            <h1 className="text-xl font-bold sm:text-2xl">Import BOQ</h1>
-            <p className="break-words text-sm text-muted-foreground">
-              Map, validate, and import BOQ data into {currentProject?.projectName ?? 'the selected project'}.
-            </p>
-          </div>
-        </div>
-        <StepIndicator currentStep={step} />
-      </div>
+      <PageHeader
+        title="Import BOQ"
+        description={`Map, validate, and import BOQ data into ${currentProject?.projectName ?? 'the selected project'}.`}
+        icon={UploadCloud}
+        backHref={`/project-management/boq?project=${encodeURIComponent(mappingId)}`}
+        backLabel="Back to BOQ"
+        meta={<StepIndicator currentStep={step} />}
+        className="mb-0 sm:mb-0"
+      />
 
       {step === 'upload' && (
         <div className="grid grid-cols-1 gap-5 lg:grid-cols-[minmax(0,1.35fr)_minmax(320px,0.65fr)]">

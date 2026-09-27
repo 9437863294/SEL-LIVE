@@ -45,6 +45,7 @@ import {
 import { Input } from '@/components/ui/input';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { PageHeader } from '@/components/shared/page-header';
 import { cn } from '@/lib/utils';
 
 // ─── helpers ─────────────────────────────────────────────────────────────────
@@ -151,23 +152,19 @@ export default function ProjectPremiumDuePage() {
   return (
     <div className="space-y-4">
       {/* Header */}
-      <Card className="overflow-hidden border-border/60">
-        <div className="h-1 w-full bg-gradient-to-r from-amber-400 via-orange-500 to-red-500" />
-        <CardHeader className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <div className="flex items-center gap-3">
-            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-amber-50 ring-1 ring-amber-100">
-              <CalendarClock className="h-5 w-5 text-amber-600" />
-            </div>
-            <div>
-              <CardTitle className="tracking-tight">Project Premium Due</CardTitle>
-              <CardDescription>Active project policies — expiry and renewal tracking</CardDescription>
-            </div>
-          </div>
-          <Button variant="outline" size="sm" onClick={fetchPolicies} className="gap-1.5 w-fit">
+      <PageHeader
+        className="mb-0 sm:mb-0"
+        icon={CalendarClock}
+        title="Project Premium Due"
+        description="Active project policies — expiry and renewal tracking"
+        actions={
+          <Button variant="outline" size="sm" onClick={fetchPolicies} className="gap-1.5">
             <RefreshCw className="h-3.5 w-3.5" /> Refresh
           </Button>
-        </CardHeader>
-        <CardContent className="grid grid-cols-3 gap-2 border-t pt-4">
+        }
+      />
+      <Card className="overflow-hidden border-border/60">
+        <CardContent className="grid grid-cols-3 gap-2 p-4">
           {[
             { label: 'Expired',      value: stats.expired,  color: 'text-red-600' },
             { label: 'Expires Soon', value: stats.expiring, color: 'text-amber-600' },

@@ -12,7 +12,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from '@/components/ui/form';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Calendar } from '@/components/ui/calendar';
-import { Calendar as CalendarIcon, Loader2, Save, ArrowLeft, X, File as FileIcon } from 'lucide-react';
+import { Calendar as CalendarIcon, Loader2, Save, X, File as FileIcon } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { format, addYears, addMonths } from 'date-fns';
 import { useToast } from '@/hooks/use-toast';
@@ -21,8 +21,8 @@ import { storage } from '@/lib/firebase-storage';
 import { collection, addDoc, Timestamp, getDocs, query, where } from 'firebase/firestore';
 import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
 import type { InsuredAsset, InsuranceCompany, PolicyCategory, ProjectInsurancePolicy, Attachment } from '@/lib/types';
-import Link from 'next/link';
 import { useRouter } from 'next/navigation';
+import { PageHeader } from '@/components/shared/page-header';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
 
 const policySchema = z.object({
@@ -196,20 +196,17 @@ export default function NewProjectPolicyPage() {
 
   return (
     <div className="w-full">
-        <div className="mb-6 flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <Link href="/insurance/project">
-              <Button variant="ghost" size="icon"><ArrowLeft className="h-6 w-6" /></Button>
-            </Link>
-            <div>
-              <h1 className="text-xl font-bold">Add New Project Insurance Policy</h1>
-            </div>
-          </div>
-          <Button onClick={form.handleSubmit(onSubmit)} disabled={isSaving}>
-            {isSaving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
-            Save Policy
-          </Button>
-        </div>
+        <PageHeader
+          title="Add New Project Insurance Policy"
+          backHref="/insurance/project"
+          backLabel="Back to project insurance"
+          actions={
+            <Button onClick={form.handleSubmit(onSubmit)} disabled={isSaving}>
+              {isSaving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
+              Save Policy
+            </Button>
+          }
+        />
         <Form {...form}>
             <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
                 <Card>

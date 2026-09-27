@@ -1,7 +1,6 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import Link from 'next/link';
 import ExcelJS from 'exceljs';
 import {
   collection, getDocs, limit, orderBy,
@@ -9,9 +8,10 @@ import {
   type QueryConstraint,
 } from 'firebase/firestore';
 import {
-  Activity, ArrowLeft, Download, Filter,
+  Activity, Download, Filter,
   Loader2, RefreshCw, Search, X,
 } from 'lucide-react';
+import { PageHeader } from '@/components/shared/page-header';
 import { db } from '@/lib/firebase';
 import { ACTIVITY_MODULE_NAMES, canonicalModuleName, moduleBadgeClass } from '@/lib/activity-modules';
 import { useAuthorization } from '@/hooks/useAuthorization';
@@ -262,43 +262,33 @@ export default function AuditLogsPage() {
   return (
     <div className="space-y-4 px-4 py-3 sm:px-5">
 
-      {/* Header */}
-      <Card className="overflow-hidden">
-        <div className="h-1 w-full bg-gradient-to-r from-violet-500 via-indigo-500 to-cyan-500" />
-        <CardHeader className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <div className="flex items-start gap-3">
-            <Link href="/settings">
-              <Button variant="ghost" size="icon" className="h-8 w-8 shrink-0">
-                <ArrowLeft className="h-4 w-4" />
-              </Button>
-            </Link>
-            <div>
-              <div className="flex items-center gap-2">
-                <Activity className="h-5 w-5 text-indigo-500" />
-                <CardTitle className="text-lg tracking-tight">Audit Logs</CardTitle>
-                {!isLoading && (
-                  <Badge variant="outline" className="text-xs">
-                    {filtered.length}{hasMore ? '+' : ''} records
-                  </Badge>
-                )}
-              </div>
-              <CardDescription>
-                Track every action across all modules — who did what, when, and from where.
-              </CardDescription>
-            </div>
-          </div>
-          <div className="flex flex-wrap gap-2">
-            <Button variant="outline" size="sm" onClick={() => loadLogs(true, null)} disabled={isLoading} className="gap-1.5 bg-white">
+      <PageHeader
+        icon={Activity}
+        title="Audit Logs"
+        description="Track every action across all modules — who did what, when, and from where."
+        backHref="/settings"
+        backLabel="Back to settings"
+        badge={
+          !isLoading ? (
+            <Badge variant="outline" className="text-xs">
+              {filtered.length}{hasMore ? '+' : ''} records
+            </Badge>
+          ) : undefined
+        }
+        className="mb-0 sm:mb-0"
+        actions={
+          <>
+            <Button variant="outline" size="sm" onClick={() => loadLogs(true, null)} disabled={isLoading} className="gap-1.5">
               <RefreshCw className={`h-3.5 w-3.5 ${isLoading ? 'animate-spin' : ''}`} />
               Refresh
             </Button>
-            <Button variant="outline" size="sm" onClick={exportExcel} disabled={isExporting || filtered.length === 0} className="gap-1.5 bg-white">
+            <Button variant="outline" size="sm" onClick={exportExcel} disabled={isExporting || filtered.length === 0} className="gap-1.5">
               {isExporting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Download className="h-3.5 w-3.5" />}
               Export Excel
             </Button>
-          </div>
-        </CardHeader>
-      </Card>
+          </>
+        }
+      />
 
       {/* Search + filters */}
       <div className="flex flex-col gap-2">

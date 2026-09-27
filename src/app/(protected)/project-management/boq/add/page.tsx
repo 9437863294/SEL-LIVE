@@ -4,7 +4,6 @@ import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import {
-  ArrowLeft,
   Loader2,
   ListPlus,
   Plus,
@@ -45,6 +44,7 @@ import {
 } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 import { PmDataList, type PmListColumn } from "@/components/project-management/pm-shell";
+import { PageHeader } from "@/components/shared/page-header";
 import { YES_NO_OPTIONS } from "@/lib/project-management-boq-columns";
 
 const BOQ_PERMISSION = "Project Management.BOQ";
@@ -364,7 +364,7 @@ export default function AddBoqItemsPage() {
   if (!canAdd) {
     return (
       <main className="min-h-[calc(100dvh-4rem)] p-4 sm:p-6">
-        <h1 className="mb-6 text-2xl font-bold sm:text-3xl">Add BOQ Items</h1>
+        <PageHeader title="Add BOQ Items" />
         <Card>
           <CardHeader>
             <CardTitle>Access Denied</CardTitle>
@@ -437,27 +437,19 @@ export default function AddBoqItemsPage() {
 
   return (
     <main className="min-h-[calc(100dvh-4rem)] space-y-5 p-4 max-sm:[--card-pad:1rem] sm:p-6">
-      <div className="flex items-center gap-3">
-        <Button variant="ghost" size="icon" className="shrink-0" asChild>
-          <Link href={`/project-management/boq?project=${encodeURIComponent(mappingId)}`} aria-label="Back to BOQ">
-            <ArrowLeft className="h-5 w-5" />
-          </Link>
-        </Button>
-        <div className="hidden h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-blue-500 to-indigo-600 shadow-sm sm:flex">
-          <ListPlus className="h-5 w-5 text-white" />
-        </div>
-        <div className="min-w-0">
-          <h1 className="text-xl font-bold sm:text-3xl">Add BOQ Items</h1>
-          <p className="mt-1 break-words text-sm text-muted-foreground">
-            Add one or more BOQ line items to {mapping.globalProjectName} at once.
-          </p>
-        </div>
-      </div>
+      <PageHeader
+        title="Add BOQ Items"
+        description={`Add one or more BOQ line items to ${mapping.globalProjectName} at once.`}
+        icon={ListPlus}
+        backHref={`/project-management/boq?project=${encodeURIComponent(mappingId)}`}
+        backLabel="Back to BOQ"
+        className="mb-0 sm:mb-0"
+      />
 
       <Card className="overflow-hidden border-border/60">
         <div className="h-1 w-full bg-gradient-to-r from-blue-500 to-indigo-600" />
         <CardHeader>
-          <CardTitle className="text-base">Item Details</CardTitle>
+          <CardTitle>Item Details</CardTitle>
           <CardDescription>
             Scope and category apply to every row you add below. Change them any time before adding
             the next item.
@@ -549,7 +541,7 @@ export default function AddBoqItemsPage() {
         <Card className="overflow-hidden border-border/60 max-sm:overflow-visible max-sm:border-0 max-sm:bg-transparent max-sm:shadow-none">
           <CardHeader className="flex-col gap-3 space-y-0 max-sm:px-0 max-sm:pt-0 sm:flex-row sm:items-center sm:justify-between">
             <div className="min-w-0">
-              <CardTitle className="text-base">Items to Save ({rows.length})</CardTitle>
+              <CardTitle>Items to Save ({rows.length})</CardTitle>
               <CardDescription>Review the staged items, then save them all at once.</CardDescription>
             </div>
             <Button onClick={() => void handleSaveAll()} disabled={isSaving} className="w-full shrink-0 sm:w-auto">

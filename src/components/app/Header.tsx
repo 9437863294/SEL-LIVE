@@ -521,7 +521,8 @@ export default function Header() {
                 </div>
               </Link>
               <div className="border-l pl-3 md:pl-4">
-                 <h1 className="text-sm font-semibold text-foreground hidden sm:block md:text-lg">{branding.companyName}</h1>
+                 {/* Not a heading: each page's own title is its one <h1>. */}
+                 <p className="text-sm font-semibold text-foreground hidden sm:block md:text-lg">{branding.companyName}</p>
               </div>
           </div>
 

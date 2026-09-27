@@ -1,9 +1,8 @@
 'use client';
 
 import type { ReactNode } from 'react';
-import Link from 'next/link';
-import { Accessibility, ArrowLeft, Building2, LayoutPanelLeft, Palette, SwatchBook } from 'lucide-react';
-import { Button } from '@/components/ui/button';
+import { Accessibility, Building2, LayoutPanelLeft, Palette, SwatchBook } from 'lucide-react';
+import { PageHeader } from '@/components/shared/page-header';
 import { AppearanceSectionNav, SaveStatus, type SectionLink } from '@/components/appearance/controls';
 import { useAuthorization } from '@/hooks/useAuthorization';
 import { appearanceAdminRights } from '@/lib/appearance/permissions';
@@ -26,20 +25,14 @@ export default function AppearanceLayout({ children }: { children: ReactNode }) 
 
   return (
     <div className="space-y-4 px-3 py-3 sm:px-5">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div className="flex items-center gap-3">
-          <Button asChild variant="ghost" size="icon" className="rounded-full">
-            <Link href="/settings" aria-label="Back to settings">
-              <ArrowLeft className="h-5 w-5" />
-            </Link>
-          </Button>
-          <div>
-            <h1 className="text-xl font-bold tracking-tight">Appearance</h1>
-            <p className="text-xs text-muted-foreground">How SEL Live looks and behaves for you — and, for administrators, for everyone.</p>
-          </div>
-        </div>
-        <SaveStatus />
-      </div>
+      <PageHeader
+        title="Appearance"
+        description="How SEL Live looks and behaves for you — and, for administrators, for everyone."
+        backHref="/settings"
+        backLabel="Back to settings"
+        actions={<SaveStatus />}
+        className="mb-0 sm:mb-0"
+      />
       <AppearanceSectionNav links={links} />
       {children}
     </div>

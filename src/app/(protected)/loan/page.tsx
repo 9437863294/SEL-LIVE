@@ -27,6 +27,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { PageHeader } from '@/components/shared/page-header';
 import { cn } from '@/lib/utils';
 
 // ─── helpers ─────────────────────────────────────────────────────────────────
@@ -147,38 +148,34 @@ export default function LoanDashboardPage() {
     <div className="space-y-5">
 
       {/* ── Header ──────────────────────────────────────────────────────── */}
-      <Card className="relative overflow-hidden border-0 bg-gradient-to-r from-emerald-600 via-teal-500 to-cyan-600 text-white shadow-lg">
-        <div className="absolute inset-0 opacity-10 bg-[radial-gradient(ellipse_at_top_right,_white_0%,_transparent_60%)]" />
-        <CardContent className="relative flex flex-col gap-4 p-5 sm:flex-row sm:items-center sm:justify-between">
-          <div className="flex items-center gap-4">
-            <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl bg-white/20 backdrop-blur-sm">
-              <CreditCard className="h-7 w-7 text-white" />
-            </div>
-            <div>
-              <h1 className="text-2xl font-bold tracking-tight">Loan Dashboard</h1>
-              <p className="mt-0.5 text-sm text-emerald-100">Track loans, EMI schedules, and repayment progress</p>
-            </div>
-          </div>
-          <div className="flex flex-wrap items-center gap-2">
-            {stats.overdueCount > 0 && (
-              <Badge className="gap-1.5 bg-red-500/90 text-white shadow-sm text-xs">
-                <AlertTriangle className="h-3 w-3" />
-                {stats.overdueCount} EMI{stats.overdueCount !== 1 ? 's' : ''} Overdue
-              </Badge>
-            )}
-            <Button size="sm" variant="secondary" onClick={fetchData} className="gap-1.5 bg-white/20 text-white hover:bg-white/30 border-0">
+      <PageHeader
+        className="mb-0 sm:mb-0"
+        icon={CreditCard}
+        title="Loan Dashboard"
+        description="Track loans, EMI schedules, and repayment progress"
+        badge={
+          stats.overdueCount > 0 && (
+            <Badge className="gap-1.5 bg-red-500/90 text-white shadow-sm text-xs">
+              <AlertTriangle className="h-3 w-3" />
+              {stats.overdueCount} EMI{stats.overdueCount !== 1 ? 's' : ''} Overdue
+            </Badge>
+          )
+        }
+        actions={
+          <>
+            <Button size="sm" variant="outline" onClick={fetchData} className="gap-1.5">
               <RefreshCw className="h-3.5 w-3.5" /> Refresh
             </Button>
             {canCreate && (
               <Link href="/loan/new">
-                <Button size="sm" className="gap-1.5 bg-white text-emerald-700 hover:bg-emerald-50 border-0">
+                <Button size="sm" className="w-full gap-1.5 bg-emerald-600 text-white hover:bg-emerald-700">
                   <Plus className="h-3.5 w-3.5" /> New Loan
                 </Button>
               </Link>
             )}
-          </div>
-        </CardContent>
-      </Card>
+          </>
+        }
+      />
 
       {/* ── KPI row ──────────────────────────────────────────────────────── */}
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
@@ -211,7 +208,7 @@ export default function LoanDashboardPage() {
         <Card className="overflow-hidden border-border/60">
           <div className="h-1 w-full bg-gradient-to-r from-red-500 to-rose-600" />
           <CardHeader className="pb-3">
-            <CardTitle className="flex items-center gap-2 text-base">
+            <CardTitle className="flex items-center gap-2">
               <AlertTriangle className="h-4 w-4 text-red-500" /> Overdue EMIs
             </CardTitle>
             <CardDescription>Past due date and still unpaid</CardDescription>
@@ -260,7 +257,7 @@ export default function LoanDashboardPage() {
         <Card className="overflow-hidden border-border/60">
           <div className="h-1 w-full bg-gradient-to-r from-amber-400 to-orange-500" />
           <CardHeader className="pb-3">
-            <CardTitle className="flex items-center gap-2 text-base">
+            <CardTitle className="flex items-center gap-2">
               <CalendarClock className="h-4 w-4 text-amber-500" /> Upcoming EMIs
             </CardTitle>
             <CardDescription>Due in the next 30 days</CardDescription>
@@ -307,7 +304,7 @@ export default function LoanDashboardPage() {
       <Card className="overflow-hidden border-border/60">
         <CardHeader className="flex flex-row items-center justify-between pb-3">
           <div>
-            <CardTitle className="text-base">All Loans</CardTitle>
+            <CardTitle>All Loans</CardTitle>
             <CardDescription>Click a row to view full EMI schedule</CardDescription>
           </div>
           {canCreate && (

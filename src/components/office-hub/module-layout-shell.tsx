@@ -50,6 +50,7 @@ import {
   useSidebarIconsOnly,
 } from '@/components/navigation/use-sidebar-mode';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { ModuleMobileHeader } from '@/components/shared/page-header';
 import { Skeleton } from '@/components/ui/skeleton';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import { cn } from '@/lib/utils';
@@ -264,26 +265,13 @@ function OfficeHubLayoutShellInner({ children }: { children: React.ReactNode }) 
     <div className="relative w-full px-3 py-2 sm:px-6 sm:py-4 lg:px-8 xl:px-12 2xl:px-20">
       <div className="pointer-events-none absolute inset-0 -z-10 overflow-hidden rounded-3xl bg-gradient-to-br from-sky-50/60 via-white to-indigo-50/60" />
 
-      <div className="mb-2 sm:mb-3 lg:hidden">
-        <Card>
-          <CardContent className="flex items-center gap-2 px-2.5 py-2 sm:gap-3 sm:px-3 sm:py-2.5">
-            <div className="flex min-w-0 flex-1 items-center gap-2">
-              <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-gradient-to-br from-sky-500 to-indigo-600 shadow-sm">
-                <CalendarDays className="h-4 w-4 text-white" />
-              </div>
-              <div className="min-w-0">
-                <p className="truncate text-sm font-semibold leading-tight tracking-tight">Office Hub</p>
-                <p className="truncate text-[11px] leading-tight text-muted-foreground">
-                  {current?.label || 'Meetings & Tasks'}
-                </p>
-              </div>
-            </div>
-            <div className="ml-auto shrink-0">
-              <OfficeHubCommandPalette />
-            </div>
-          </CardContent>
-        </Card>
-      </div>
+      <ModuleMobileHeader
+        icon={CalendarDays}
+        title="Office Hub"
+        subtitle={current?.label || 'Meetings & Tasks'}
+        hideFrom="lg"
+        actions={<OfficeHubCommandPalette />}
+      />
 
       <div className={`grid grid-cols-1 gap-4 ${iconsOnly ? SIDEBAR_ICONS_GRID : 'lg:grid-cols-[240px_minmax(0,1fr)]'} lg:items-start`}>
         <TooltipProvider delayDuration={150}>

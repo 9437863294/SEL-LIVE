@@ -3,9 +3,9 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import Link from 'next/link';
-import { ArrowLeft, Plus, Edit, Trash2, Database, Loader2, ShieldAlert } from 'lucide-react';
+import { Plus, Edit, Trash2, Database, Loader2, ShieldAlert } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { PageHeader } from '@/components/shared/page-header';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
@@ -214,12 +214,7 @@ export default function ManageAccountsPage() {
   if(!canViewPage) {
     return (
         <div className="w-full max-w-4xl mx-auto">
-            <div className="mb-6 flex items-center justify-between">
-              <div className="flex items-center gap-4">
-                <Link href="/expenses/settings"><Button variant="ghost" size="icon"><ArrowLeft className="h-6 w-6" /></Button></Link>
-                <h1 className="text-xl font-bold">Manage Accounts</h1>
-              </div>
-            </div>
+            <PageHeader title="Manage Accounts" backHref="/expenses/settings" backLabel="Back to settings" />
             <Card>
                 <CardHeader><CardTitle>Access Denied</CardTitle><CardDescription>You do not have permission to view this page.</CardDescription></CardHeader>
                 <CardContent className="flex justify-center p-8"><ShieldAlert className="h-16 w-16 text-destructive" /></CardContent>
@@ -231,17 +226,16 @@ export default function ManageAccountsPage() {
   return (
     <>
       <div className="w-full max-w-4xl mx-auto">
-        <div className="mb-6 flex items-center justify-between">
-          <div className="flex items-center gap-4">
-            <Link href="/expenses/settings">
-              <Button variant="ghost" size="icon"><ArrowLeft className="h-6 w-6" /></Button>
-            </Link>
-            <h1 className="text-xl font-bold">Manage Accounts</h1>
-          </div>
-          <Button onClick={() => openDialog('addHead')}>
-            <Plus className="mr-2 h-4 w-4" /> Add Head of A/c
-          </Button>
-        </div>
+        <PageHeader
+          title="Manage Accounts"
+          backHref="/expenses/settings"
+          backLabel="Back to settings"
+          actions={
+            <Button onClick={() => openDialog('addHead')}>
+              <Plus className="mr-2 h-4 w-4" /> Add Head of A/c
+            </Button>
+          }
+        />
 
         {isLoading ? (
             <div className="space-y-2">

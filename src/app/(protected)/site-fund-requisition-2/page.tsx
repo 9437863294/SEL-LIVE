@@ -3,6 +3,7 @@
 
 import { useState, useEffect, useMemo, useCallback } from 'react';
 import { Card, CardHeader, CardTitle, CardContent, CardDescription } from '@/components/ui/card';
+import { PageHeader } from '@/components/shared/page-header';
 import { FileText, BarChart3, Settings, GitMerge } from 'lucide-react';
 import Link from 'next/link';
 import { useAuthorization } from '@/hooks/useAuthorization';
@@ -39,7 +40,7 @@ function DashboardCard({ item }: DashboardCardProps) {
                   <item.icon className="h-6 w-6 text-slate-900/80" />
                 </div>
                 <div className="flex-1">
-                    <CardTitle className="text-base font-semibold text-slate-900">{item.text}</CardTitle>
+                    <CardTitle className="text-slate-900">{item.text}</CardTitle>
                     <CardDescription className="mt-1 text-xs text-slate-600">{item.description}</CardDescription>
                 </div>
             </CardHeader>
@@ -143,25 +144,19 @@ export default function SiteFundRequisition2Page() {
 
   return (
     <div className="w-full px-3 py-4 sm:px-4 lg:px-6 xl:px-8">
-      <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
-        <div>
-          <p className="text-xs font-semibold uppercase tracking-[0.22em] text-slate-500">
-            Site Fund Requisition 2
-          </p>
-          <h1 className="mt-2 text-3xl font-bold tracking-tight text-slate-900">
-            Module Dashboard
-          </h1>
-          <p className="mt-1 text-sm text-slate-600">
-            Jump into requests, reports, settings, or stage-wise tasks.
-          </p>
-        </div>
-        <div className="hidden sm:flex items-center gap-2">
-          <div className="rounded-full border border-white/70 bg-white/70 px-3 py-1 text-xs text-slate-600 backdrop-blur">
-            Live workflow stages
+      <PageHeader
+        eyebrow="Site Fund Requisition 2"
+        title="Module Dashboard"
+        description="Jump into requests, reports, settings, or stage-wise tasks."
+        badge={
+          <div className="hidden sm:flex items-center gap-2">
+            <div className="rounded-full border border-white/70 bg-white/70 px-3 py-1 text-xs text-slate-600 backdrop-blur">
+              Live workflow stages
+            </div>
+            <div className="h-2 w-2 rounded-full bg-emerald-400" />
           </div>
-          <div className="h-2 w-2 rounded-full bg-emerald-400" />
-        </div>
-      </div>
+        }
+      />
 
       <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4">
         {dashboardItems.map((item) => (

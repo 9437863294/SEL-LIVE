@@ -3,8 +3,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import Link from 'next/link';
-import { ArrowLeft, Plus, Edit, Trash2, ShieldAlert, Tags } from 'lucide-react';
+import { Plus, Edit, Trash2, ShieldAlert, Tags } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
@@ -27,6 +26,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogHeader, AlertDialogTitle, AlertDialogDescription, AlertDialogFooter, AlertDialogTrigger } from '@/components/ui/alert-dialog';
 import { useAuthorization } from '@/hooks/useAuthorization';
 import { Badge } from '@/components/ui/badge';
+import { PageHeader } from '@/components/shared/page-header';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 
 const initialFormState = {
@@ -130,10 +130,11 @@ export default function ManagePolicyCategoriesPage() {
   if (!canViewPage) {
     return (
         <div className="w-full">
-            <div className="mb-6 flex items-center gap-4">
-                <Link href="/insurance/settings"><Button variant="ghost" size="icon"><ArrowLeft className="h-6 w-6"/></Button></Link>
-                <h1 className="text-xl font-bold">Manage Policy Categories</h1>
-            </div>
+            <PageHeader
+                title="Manage Policy Categories"
+                backHref="/insurance/settings"
+                backLabel="Back to settings"
+            />
             <Card>
                 <CardHeader>
                     <CardTitle>Access Denied</CardTitle>
@@ -147,16 +148,13 @@ export default function ManagePolicyCategoriesPage() {
 
   return (
     <div className="w-full">
-      <div className="mb-6 flex items-center justify-between">
-        <div className="flex items-center gap-4">
-            <Link href="/insurance/settings"><Button variant="ghost" size="icon"><ArrowLeft className="h-6 w-6"/></Button></Link>
-            <div>
-                <h1 className="text-xl font-bold">Manage Policy Categories</h1>
-                <p className="text-sm text-muted-foreground">Add, edit, or remove categories for project insurance.</p>
-            </div>
-        </div>
-        <Button onClick={() => openDialog('add')} disabled={!canAdd}><Plus className="mr-2 h-4 w-4"/> Add Category</Button>
-      </div>
+      <PageHeader
+        title="Manage Policy Categories"
+        description="Add, edit, or remove categories for project insurance."
+        backHref="/insurance/settings"
+        backLabel="Back to settings"
+        actions={<Button onClick={() => openDialog('add')} disabled={!canAdd}><Plus className="mr-2 h-4 w-4"/> Add Category</Button>}
+      />
 
       <Card>
         <CardContent className="p-0">

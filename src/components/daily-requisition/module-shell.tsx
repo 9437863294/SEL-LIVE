@@ -2,11 +2,10 @@
 
 import type { ReactNode } from 'react';
 import Link from 'next/link';
-import { ArrowLeft } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 
-import { Button } from '@/components/ui/button';
 import { Card, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { PageHeader } from '@/components/shared/page-header';
 import { cn } from '@/lib/utils';
 
 export const dailyPageContainerClass = 'w-full px-3 py-4 sm:px-4 lg:px-6 xl:px-8';
@@ -89,24 +88,8 @@ export function DailyPageHeader({
   meta,
   actions,
 }: DailyPageHeaderProps) {
-  return (
-    <div className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
-      <div className="flex items-start gap-3">
-        <Link href={backHref}>
-          <Button variant="ghost" size="icon" className="rounded-2xl border border-white/60 bg-white/60 shadow-sm backdrop-blur">
-            <ArrowLeft className="h-5 w-5" />
-          </Button>
-        </Link>
-        <div>
-          <p className="text-xs font-semibold uppercase tracking-[0.22em] text-slate-500">{eyebrow}</p>
-          <h1 className="mt-1 text-2xl font-bold tracking-tight text-slate-900 sm:text-3xl">{title}</h1>
-          <p className="mt-1 max-w-3xl text-sm text-slate-600">{description}</p>
-          {meta ? <div className="mt-3 flex flex-wrap items-center gap-2">{meta}</div> : null}
-        </div>
-      </div>
-      {actions ? <div className="flex flex-wrap items-center gap-2">{actions}</div> : null}
-    </div>
-  );
+  // The app's standard header (`shared/page-header`), with the module's name above the title.
+  return <PageHeader title={title} description={description} backHref={backHref} eyebrow={eyebrow} meta={meta} actions={actions} />;
 }
 
 export function DailyMetricCard({

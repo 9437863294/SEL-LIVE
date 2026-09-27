@@ -1,18 +1,15 @@
 'use client';
 
 /**
- * The module's page header.
+ * The module's page header, and the accent palette its badges and sidebar share.
  *
- * Colour here is doing a job, not decoration: each page carries the same accent as its entry in
- * the sidebar, so the tinted icon tile tells you where you are at a glance and the two never
- * disagree. Shared rather than hand-tinted per page, because six headers styled independently is
- * how a module ends up with six slightly different blues.
+ * The header itself is the app's standard one; the accents still colour `ExpenseBadge` and the
+ * sidebar, so a page's chip and its nav entry keep the same hue.
  */
 
 import type { ReactNode } from 'react';
-import Link from 'next/link';
-import { ArrowLeft } from 'lucide-react';
-import { Button } from '@/components/ui/button';
+import type { LucideIcon } from 'lucide-react';
+import { PageHeader } from '@/components/shared/page-header';
 import { cn } from '@/lib/utils';
 
 export type ExpenseAccent = 'blue' | 'violet' | 'fuchsia' | 'teal' | 'emerald' | 'amber';
@@ -66,16 +63,20 @@ export const EXPENSE_ACCENTS: Record<
   },
 };
 
+/**
+ * The module's page header — the app's standard one (`shared/page-header`), so an Expenses screen
+ * opens the way every other screen does. `accent` is accepted for the callers that pass it and no
+ * longer tints the header; the sidebar entry keeps its colour.
+ */
 export function ExpensesPageHeader({
-  icon: Icon,
+  icon,
   title,
   description,
-  accent = 'blue',
   backHref,
   badge,
   actions,
 }: {
-  icon: React.ElementType;
+  icon: LucideIcon;
   title: string;
   description?: string;
   accent?: ExpenseAccent;
@@ -84,49 +85,7 @@ export function ExpensesPageHeader({
   badge?: ReactNode;
   actions?: ReactNode;
 }) {
-  const tone = EXPENSE_ACCENTS[accent];
-
-  return (
-    <div className="relative overflow-hidden rounded-xl border border-white/60 bg-white/70 px-4 py-3.5 shadow-sm backdrop-blur-sm">
-      <div className={cn('pointer-events-none absolute -right-10 -top-14 h-36 w-36 rounded-full blur-3xl', tone.halo)} />
-      <div className={cn('absolute inset-x-0 top-0 h-[3px] bg-gradient-to-r to-transparent', tone.rule)} />
-
-      <div className="relative flex flex-wrap items-center justify-between gap-3">
-        <div className="flex min-w-0 items-center gap-3">
-          {backHref && (
-            <Link href={backHref} aria-label="Back">
-              <Button variant="ghost" size="icon" className="h-8 w-8 shrink-0">
-                <ArrowLeft className="h-4 w-4" />
-              </Button>
-            </Link>
-          )}
-          <div
-            className={cn(
-              'flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br shadow-sm',
-              tone.tile,
-            )}
-          >
-            <Icon className="h-5 w-5 text-white" />
-          </div>
-          <div className="min-w-0">
-            <div className="flex flex-wrap items-center gap-2">
-              <h1
-                className={cn(
-                  'bg-gradient-to-r bg-clip-text text-xl font-bold tracking-tight text-transparent',
-                  tone.title,
-                )}
-              >
-                {title}
-              </h1>
-              {badge}
-            </div>
-            {description && <p className="mt-0.5 truncate text-xs text-muted-foreground">{description}</p>}
-          </div>
-        </div>
-        {actions && <div className="flex flex-wrap items-center gap-2">{actions}</div>}
-      </div>
-    </div>
-  );
+  return <PageHeader icon={icon} title={title} description={description} backHref={backHref} badge={badge} actions={actions} />;
 }
 
 /** A small tinted pill, for the accent chip callers pass as `badge`. */

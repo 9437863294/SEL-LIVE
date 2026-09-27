@@ -1,8 +1,8 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
-import Link from 'next/link';
-import { ArrowLeft, Loader2, Save, Edit, Trash2, Plus } from 'lucide-react';
+import { Loader2, Save, Edit, Trash2, Plus } from 'lucide-react';
+import { PageHeader } from '@/components/shared/page-header';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
@@ -223,14 +223,7 @@ export default function BillingStatusPage() {
 
   return (
     <div className="w-full max-w-6xl mx-auto px-4 sm:px-6 lg:px-8">
-      <div className="mb-6 flex items-center gap-2">
-        <Link href="/billing-recon/settings">
-          <Button variant="ghost" size="icon">
-            <ArrowLeft className="h-6 w-6" />
-          </Button>
-        </Link>
-        <h1 className="text-xl font-bold">Billing Status</h1>
-      </div>
+      <PageHeader title="Billing Status" backHref="/billing-recon/settings" backLabel="Back to settings" />
 
       <Card>
         <CardHeader>

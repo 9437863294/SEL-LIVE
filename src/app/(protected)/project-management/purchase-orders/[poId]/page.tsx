@@ -5,7 +5,6 @@ import Link from "next/link";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import {
   AlertTriangle,
-  ArrowLeft,
   Ban,
   CheckCircle2,
   FileUp,
@@ -87,6 +86,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
 import { PM_DIALOG, PmDataList, PmEmptyState, type PmListColumn } from "@/components/project-management/pm-shell";
+import { PageHeader } from "@/components/shared/page-header";
 import {
   PO_COLLECTION,
   PO_PERMISSION_RESOURCE,
@@ -796,30 +796,22 @@ export default function ProjectPurchaseOrderDetailPage() {
 
   return (
     <main className="min-h-[calc(100dvh-4rem)] space-y-4 p-4 max-sm:[--card-pad:1rem] sm:space-y-5 sm:p-6">
-      <div className="flex flex-wrap items-center gap-x-4 gap-y-3">
-        <div className="flex min-w-0 flex-1 basis-64 items-center gap-2 sm:gap-3">
-          <Button variant="ghost" size="icon" className="shrink-0" asChild>
-            <Link href={`/project-management/purchase-orders?project=${encodeURIComponent(mappingId)}`} aria-label="Back to Purchase Orders">
-              <ArrowLeft className="h-5 w-5" />
-            </Link>
-          </Button>
-          <div className="hidden h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-emerald-500 to-teal-600 shadow-sm sm:flex">
-            <ShoppingCart className="h-5 w-5 text-white" />
-          </div>
-          <div className="min-w-0">
-            <h1 className="truncate text-lg font-bold sm:text-2xl">{po.poNumber}</h1>
-            <p className="break-words text-sm text-muted-foreground">
-              {po.vendorName}{po.sourceRfqNumbers?.length ? ` · from ${po.sourceRfqNumbers.join(", ")}` : ""}
-            </p>
-          </div>
-          <span className={`ml-auto shrink-0 rounded-full px-3 py-1 text-xs font-medium sm:ml-2 ${poStatusStyles[po.status]}`}>
+      <PageHeader
+        title={po.poNumber}
+        description={`${po.vendorName}${po.sourceRfqNumbers?.length ? ` · from ${po.sourceRfqNumbers.join(", ")}` : ""}`}
+        icon={ShoppingCart}
+        backHref={`/project-management/purchase-orders?project=${encodeURIComponent(mappingId)}`}
+        backLabel="Back to Purchase Orders"
+        badge={
+          <span className={`shrink-0 rounded-full px-3 py-1 text-xs font-medium ${poStatusStyles[po.status]}`}>
             {po.status}
           </span>
-        </div>
-
-        {/* On a phone the actions take a row of their own and share it; Print, the secondary
-            action, drops to its icon there. */}
-        <div className="flex w-full flex-wrap items-center gap-2 sm:ml-auto sm:w-auto sm:justify-end">
+        }
+        className="mb-0 sm:mb-0"
+        actions={
+        // On a phone the actions take a row of their own and share it; Print, the secondary
+        // action, drops to its icon there.
+        <>
           <Button variant="outline" onClick={handlePrint} aria-label="Print for Approval">
             <Printer className="h-4 w-4 sm:mr-2" />
             <span className="hidden sm:inline">Print for Approval</span>
@@ -881,8 +873,9 @@ export default function ProjectPurchaseOrderDetailPage() {
               </AlertDialogContent>
             </AlertDialog>
           )}
-        </div>
-      </div>
+        </>
+        }
+      />
 
 
       {/* Two a row on a phone, the total across the full width beneath; one row of five on a
@@ -920,7 +913,7 @@ export default function ProjectPurchaseOrderDetailPage() {
 
       {po.terms && (
         <Card>
-          <CardHeader className="pb-2"><CardTitle className="text-sm">Terms / Remarks</CardTitle></CardHeader>
+          <CardHeader className="pb-2"><CardTitle>Terms / Remarks</CardTitle></CardHeader>
           <CardContent className="break-words pt-0 text-sm text-muted-foreground">{po.terms}</CardContent>
         </Card>
       )}
@@ -943,7 +936,7 @@ export default function ProjectPurchaseOrderDetailPage() {
       {(flowDownObligations.length > 0 || commitmentExceptions.length > 0) && (
         <Card className={LIST_CARD_CLASS}>
           <CardHeader className={cn("pb-2", LIST_CARD_HEADER_CLASS)}>
-            <CardTitle className="text-sm">Commitment & Flow-Down Check</CardTitle>
+            <CardTitle>Commitment & Flow-Down Check</CardTitle>
             <CardDescription>
               Whether this project&apos;s POs impose on the vendor what the client&apos;s contract imposes on SEL,
               and whether committed value has run ahead of BOQ value.
@@ -980,7 +973,7 @@ export default function ProjectPurchaseOrderDetailPage() {
 
       <Card>
         <CardHeader className="pb-2">
-          <CardTitle className="text-sm">Approved Document</CardTitle>
+          <CardTitle>Approved Document</CardTitle>
           <CardDescription>
             Print this PO for approval, get it signed, then upload the signed copy here for the record.
           </CardDescription>

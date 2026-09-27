@@ -58,6 +58,7 @@ import { addBusinessHours, makeIsWorkingDay } from "@/lib/working-hours";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
+import { PageHeader } from "@/components/shared/page-header";
 import CollapsibleFilterCard from "./collapsible-filter-card";
 import {
   DropdownMenu,
@@ -590,17 +591,14 @@ export default function RecurringMasterRegister() {
     .reduce((sum, item) => sum + Number(item.amount), 0);
   return (
     <div className="space-y-5">
-      <Card className="border-0 bg-gradient-to-r from-indigo-700 to-violet-700 text-white">
-        <CardContent className="flex flex-col gap-4 p-5 lg:flex-row lg:items-center lg:justify-between">
-          <div>
-            <h1 className="text-2xl font-bold">Recurring Payment Masters</h1>
-            <p className="text-sm text-indigo-100">
-              Controlled templates for automated financial obligations
-            </p>
-          </div>
-          <div className="flex flex-wrap gap-2">
+      <PageHeader
+        className="mb-0 sm:mb-0"
+        title="Recurring Payment Masters"
+        description="Controlled templates for automated financial obligations"
+        actions={
+          <>
             {canExport && (
-              <Button variant="secondary" onClick={exportCsv}>
+              <Button variant="outline" onClick={exportCsv}>
                 <Download className="mr-2 h-4 w-4" />
                 Export CSV
               </Button>
@@ -615,7 +613,7 @@ export default function RecurringMasterRegister() {
                   onChange={importCsv}
                 />
                 <Button
-                  variant="secondary"
+                  variant="outline"
                   onClick={() => fileInput.current?.click()}
                 >
                   <FileUp className="mr-2 h-4 w-4" />
@@ -625,7 +623,7 @@ export default function RecurringMasterRegister() {
             )}
             {canGenerate && (
               <Button
-                variant="secondary"
+                variant="outline"
                 onClick={generateAll}
                 disabled={generatingAll}
               >
@@ -639,16 +637,16 @@ export default function RecurringMasterRegister() {
             )}
             {canAdd && (
               <Link href="/recurring-payments/masters/new">
-                <Button className="bg-white text-indigo-800 hover:bg-indigo-50">
+                <Button>
                   <Plus className="mr-2 h-4 w-4" />
                   New master
                 </Button>
               </Link>
             )}
-          </div>
-        </CardContent>
-      </Card>
-      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+          </>
+        }
+      />
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
         <Metric label="Total masters" value={rows.length} />
         <Metric
           label="Active"

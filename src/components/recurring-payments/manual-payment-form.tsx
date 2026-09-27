@@ -18,7 +18,7 @@ import {
   ref as storageRef,
   uploadBytes,
 } from "firebase/storage";
-import { ArrowLeft, FilePlus2, Loader2, Save, Send } from "lucide-react";
+import { FilePlus2, Loader2, Save, Send } from "lucide-react";
 import { db } from "@/lib/firebase";
 import { storage } from "@/lib/firebase-storage";
 import { useAuth } from "@/components/auth/AuthProvider";
@@ -43,13 +43,8 @@ import {
   type RPFieldSetting,
 } from "./use-field-control";
 import { Button } from "@/components/ui/button";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
+import { Card, CardContent, CardHeader } from "@/components/ui/card";
+import { PageHeader, SectionHeader } from "@/components/shared/page-header";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
@@ -427,17 +422,13 @@ export default function ManualPaymentForm() {
 
   return (
     <div className="mx-auto max-w-6xl space-y-5">
-      <div className="flex items-center gap-3">
-        <Button variant="outline" size="icon" onClick={() => router.back()}>
-          <ArrowLeft className="h-4 w-4" />
-        </Button>
-        <div>
-          <h1 className="text-2xl font-bold">Create Manual Payment</h1>
-          <p className="text-sm text-muted-foreground">
-            Create a one-time financial obligation outside recurring generation.
-          </p>
-        </div>
-      </div>
+      <PageHeader
+        className="mb-0 sm:mb-0"
+        backHref="/recurring-payments/payments"
+        backLabel="Back to payments"
+        title="Create Manual Payment"
+        description="Create a one-time financial obligation outside recurring generation."
+      />
       <form onSubmit={submit} className="space-y-5">
         <Section
           title="Basic information"
@@ -690,11 +681,7 @@ function Section({
   return (
     <Card>
       <CardHeader>
-        <CardTitle className="flex items-center gap-2">
-          <FilePlus2 className="h-5 w-5 text-indigo-600" />
-          {title}
-        </CardTitle>
-        <CardDescription>{description}</CardDescription>
+        <SectionHeader className="mb-0" icon={FilePlus2} title={title} description={description} />
       </CardHeader>
       <CardContent>{children}</CardContent>
     </Card>

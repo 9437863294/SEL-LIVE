@@ -24,6 +24,7 @@ import {
   type BankGuarantee,
 } from "@/lib/bank-guarantee";
 import { Button } from "@/components/ui/button";
+import { PageHeader } from "@/components/shared/page-header";
 import {
   Card,
   CardContent,
@@ -487,39 +488,37 @@ export default function BGReports() {
     ].includes(key);
   return (
     <div className="space-y-4">
-      <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-end">
-        <div>
-          <h1 className="text-2xl font-bold">BG Reports</h1>
-          <p className="text-sm text-muted-foreground">
-            Exposure, validity, collateral, commission, custody, claims,
-            closure, and exceptions.
-          </p>
-        </div>
-        <div className="flex gap-2">
-          {canExport && (
-            <>
-              <Button
-                variant="outline"
-                disabled={exporting}
-                onClick={() => void exportData(false)}
-              >
-                <Download className="mr-2 h-4 w-4" />
-                Selected
-              </Button>
-              <Button
-                disabled={exporting}
-                onClick={() => void exportData(true)}
-              >
-                <Download className="mr-2 h-4 w-4" />
-                All Reports
-              </Button>
-            </>
-          )}
-          <Button variant="outline" size="icon" onClick={() => void load()}>
-            <RefreshCw className="h-4 w-4" />
-          </Button>
-        </div>
-      </div>
+      <PageHeader
+        className="mb-0 sm:mb-0"
+        title="BG Reports"
+        description="Exposure, validity, collateral, commission, custody, claims, closure, and exceptions."
+        actions={
+          <>
+            {canExport && (
+              <>
+                <Button
+                  variant="outline"
+                  disabled={exporting}
+                  onClick={() => void exportData(false)}
+                >
+                  <Download className="mr-2 h-4 w-4" />
+                  Selected
+                </Button>
+                <Button
+                  disabled={exporting}
+                  onClick={() => void exportData(true)}
+                >
+                  <Download className="mr-2 h-4 w-4" />
+                  All Reports
+                </Button>
+              </>
+            )}
+            <Button variant="outline" size="icon" onClick={() => void load()}>
+              <RefreshCw className="h-4 w-4" />
+            </Button>
+          </>
+        }
+      />
       <Card>
         <CardContent className="p-3">
           <Select value={type} onValueChange={setType}>

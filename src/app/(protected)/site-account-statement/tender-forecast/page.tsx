@@ -12,6 +12,7 @@ import { useAuth } from '@/components/auth/AuthProvider';
 import { useAuthorization } from '@/hooks/useAuthorization';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent } from '@/components/ui/card';
+import { PageHeader } from '@/components/shared/page-header';
 import { Progress } from '@/components/ui/progress';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -359,30 +360,30 @@ export default function TenderForecastPage() {
     <div className="space-y-4">
 
       {/* Header */}
-      <div className="flex items-center justify-between gap-3 flex-wrap">
-        <div>
-          <h1 className="text-base sm:text-lg font-bold text-slate-800 flex items-center gap-2">
-            <BarChart3 className="h-5 w-5 text-teal-600" /> Tender Budget Forecast
-          </h1>
-          <p className="text-sm text-muted-foreground">Monthly actual vs planned with revised budget projections</p>
-        </div>
-        <div className="flex items-center gap-2 flex-wrap">
-          <Select value={filterStatus} onValueChange={v => setFilterStatus(v as typeof filterStatus)}>
-            <SelectTrigger className="w-[130px] h-8 text-xs"><SelectValue /></SelectTrigger>
-            <SelectContent>
-              <SelectItem value="active">Active Projects</SelectItem>
-              <SelectItem value="ended">Ended Projects</SelectItem>
-              <SelectItem value="all">All Projects</SelectItem>
-            </SelectContent>
-          </Select>
-          {configuredProjects.length > 0 && (
-            <>
-              <button className="text-xs text-teal-600 hover:underline" onClick={expandAll}>Expand All</button>
-              <button className="text-xs text-slate-500 hover:underline" onClick={collapseAll}>Collapse All</button>
-            </>
-          )}
-        </div>
-      </div>
+      <PageHeader
+        className="mb-0 sm:mb-0"
+        icon={BarChart3}
+        title="Tender Budget Forecast"
+        description="Monthly actual vs planned with revised budget projections"
+        actions={
+          <>
+            <Select value={filterStatus} onValueChange={v => setFilterStatus(v as typeof filterStatus)}>
+              <SelectTrigger className="w-[130px] h-8 text-xs"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="active">Active Projects</SelectItem>
+                <SelectItem value="ended">Ended Projects</SelectItem>
+                <SelectItem value="all">All Projects</SelectItem>
+              </SelectContent>
+            </Select>
+            {configuredProjects.length > 0 && (
+              <>
+                <button className="text-xs text-teal-600 hover:underline" onClick={expandAll}>Expand All</button>
+                <button className="text-xs text-slate-500 hover:underline" onClick={collapseAll}>Collapse All</button>
+              </>
+            )}
+          </>
+        }
+      />
 
       {configuredProjects.length === 0 && (
         <Card>

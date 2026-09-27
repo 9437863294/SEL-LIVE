@@ -28,6 +28,7 @@ import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover
 import { Calendar } from '@/components/ui/calendar';
 import { Calendar as CalendarIcon } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { PageHeader } from '@/components/shared/page-header';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogHeader, AlertDialogTitle, AlertDialogDescription, AlertDialogFooter, AlertDialogTrigger } from '@/components/ui/alert-dialog';
 
 
@@ -137,13 +138,11 @@ export default function ManagePolicyHoldersPage() {
 
   return (
     <div className="w-full">
-      <div className="mb-6 flex items-center justify-between">
-        <div>
-            <h1 className="text-xl font-bold">Manage Policy Holders</h1>
-            <p className="text-sm text-muted-foreground">Add, edit, or remove policy holders.</p>
-        </div>
-        <Button onClick={() => openDialog('add')}><Plus className="mr-2 h-4 w-4"/> Add Holder</Button>
-      </div>
+      <PageHeader
+        title="Manage Policy Holders"
+        description="Add, edit, or remove policy holders."
+        actions={<Button onClick={() => openDialog('add')}><Plus className="mr-2 h-4 w-4"/> Add Holder</Button>}
+      />
 
       <Card>
         <CardContent className="p-0">

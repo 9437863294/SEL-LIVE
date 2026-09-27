@@ -16,7 +16,8 @@ import {
   SlidersHorizontal,
 } from 'lucide-react';
 import { useAuthorization } from '@/hooks/useAuthorization';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { PageHeader } from '@/components/shared/page-header';
 import { cn } from '@/lib/utils';
 
 const SETTINGS_ITEMS = [
@@ -129,17 +130,12 @@ export default function RecurringPaymentsSettingsHub() {
 
   return (
     <div className="space-y-5">
-      <Card className="overflow-hidden border-none bg-gradient-to-r from-emerald-500 to-teal-600 text-white shadow-lg">
-        <CardContent className="flex items-center gap-3 p-6">
-          <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-white/15">
-            <Settings className="h-6 w-6" />
-          </div>
-          <div>
-            <h1 className="text-xl font-bold tracking-tight sm:text-2xl">Recurring Payments Settings</h1>
-            <p className="mt-1 text-sm text-white/85">Approval rules, notifications, automation, workflow and permissions — each in its own place.</p>
-          </div>
-        </CardContent>
-      </Card>
+      <PageHeader
+        className="mb-0 sm:mb-0"
+        icon={Settings}
+        title="Recurring Payments Settings"
+        description="Approval rules, notifications, automation, workflow and permissions — each in its own place."
+      />
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
         {visibleItems.map((item) => (

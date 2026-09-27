@@ -27,6 +27,7 @@ import { ModuleBottomNav, type ModuleNavTab } from '@/components/navigation/Modu
 import { useSidebarIconsOnly } from '@/components/navigation/use-sidebar-mode';
 import { useSidebarDefault } from '@/components/theme/use-sidebar-default';
 import { Card, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { ModuleMobileHeader } from '@/components/shared/page-header';
 import { Skeleton } from '@/components/ui/skeleton';
 import {
   Tooltip,
@@ -498,19 +499,6 @@ function ShellBody({ children }: { children: React.ReactNode }) {
 
   return (
     <TooltipProvider delayDuration={200}>
-      {/* ── Below lg: a title bar; navigation is the bottom bar and its "More" pop-up ──── */}
-      <div className="flex items-center justify-between gap-3 border-b px-4 py-3 lg:hidden">
-        <div className="flex items-center gap-2">
-          <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary/10">
-            <KeyRound className="h-4 w-4 text-primary" aria-hidden />
-          </span>
-          <div>
-            <h1 className="text-sm font-semibold leading-tight">Windows Agent</h1>
-            <p className="text-xs text-muted-foreground">Attendance &amp; activity</p>
-          </div>
-        </div>
-      </div>
-
       {/* ── lg and up: a sidebar that collapses to a rail ─────────────────────────────── */}
       <aside
         className={cn(
@@ -571,7 +559,12 @@ function ShellBody({ children }: { children: React.ReactNode }) {
           collapsed ? 'lg:pl-[4.25rem]' : 'lg:pl-64',
         )}
       >
-        <main className="min-w-0 p-3 sm:p-6">{children}</main>
+        <main className="min-w-0 p-3 sm:p-6">
+          {/* Below lg: the module's card; navigation is the bottom bar and its "More" pop-up. The
+              page's own header carries the <h1>. Inside <main> so it shares the page's padding. */}
+          <ModuleMobileHeader icon={KeyRound} title="Windows Agent" subtitle="Attendance & activity" hideFrom="lg" />
+          {children}
+        </main>
 
         <ModuleBottomNav
           tabs={bottomTabs}

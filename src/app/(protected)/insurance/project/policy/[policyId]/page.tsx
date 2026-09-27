@@ -4,7 +4,7 @@
 import { useState, useEffect } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { ArrowLeft, Plus } from 'lucide-react';
+import { Plus } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useToast } from '@/hooks/use-toast';
@@ -15,6 +15,7 @@ import { format } from 'date-fns';
 import { useAuthorization } from '@/hooks/useAuthorization';
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { PageHeader } from '@/components/shared/page-header';
 
 export default function AssetPoliciesPage() {
   const params = useParams();
@@ -102,18 +103,17 @@ export default function AssetPoliciesPage() {
 
   return (
     <div className="w-full p-4">
-      <div className="flex items-center justify-between mb-4 no-print">
-        <div className="flex items-center gap-2">
-           <Link href="/insurance/project">
-              <Button variant="ghost" size="icon"><ArrowLeft className="h-6 w-6" /></Button>
-            </Link>
-          <h1 className="text-lg font-semibold">Insurance Policy Report</h1>
-        </div>
-        <div className="flex items-center gap-2">
+      <div className="no-print">
+        <PageHeader
+          title="Insurance Policy Report"
+          backHref="/insurance/project"
+          backLabel="Back to project insurance"
+          actions={
             <Link href={`/insurance/project/new?assetId=${assetId}`}>
-                <Button disabled={!canAddPolicy} size="sm"><Plus className="mr-2 h-4 w-4" /> Add New Policy</Button>
+                <Button disabled={!canAddPolicy} size="sm" className="w-full"><Plus className="mr-2 h-4 w-4" /> Add New Policy</Button>
             </Link>
-        </div>
+          }
+        />
       </div>
       
       <Card>

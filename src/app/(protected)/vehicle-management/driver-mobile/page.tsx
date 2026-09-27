@@ -11,6 +11,7 @@ import { VEHICLE_COLLECTIONS } from '@/lib/vehicle-management';
 import { useCurrentDriverProfile } from '@/components/vehicle-management/hooks';
 import { useAuthorization } from '@/hooks/useAuthorization';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { PageHeader } from '@/components/shared/page-header';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -211,18 +212,18 @@ export default function DriverMobileHubPage() {
 
   return (
     <div className="space-y-4">
-      <Card className="vm-panel-strong overflow-hidden">
-        <div className="h-1 w-full bg-gradient-to-r from-emerald-500 via-teal-500 to-cyan-600 animate-bb-gradient" />
-        <CardHeader>
-          <CardTitle className="tracking-tight">Driver Mobile</CardTitle>
-          <CardDescription>Quick mobile workflow for fuel updates and daily running status.</CardDescription>
-        </CardHeader>
-        <CardContent className="flex flex-wrap items-center gap-2">
-          <Badge className="bg-emerald-600 text-white">{driverName}</Badge>
-          <Badge variant="outline">Mobile: {driver.mobileNumber || '-'}</Badge>
-          <Badge variant="outline">Assigned Vehicle: {driver.assignedVehicleNumber || 'Not assigned'}</Badge>
-        </CardContent>
-      </Card>
+      <PageHeader
+        title="Driver Mobile"
+        description="Quick mobile workflow for fuel updates and daily running status."
+        className="mb-0 sm:mb-0"
+        meta={
+          <>
+            <Badge className="bg-emerald-600 text-white">{driverName}</Badge>
+            <Badge variant="outline">Mobile: {driver.mobileNumber || '-'}</Badge>
+            <Badge variant="outline">Assigned Vehicle: {driver.assignedVehicleNumber || 'Not assigned'}</Badge>
+          </>
+        }
+      />
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
         <Card className="vm-panel sm:col-span-2">
@@ -287,7 +288,7 @@ export default function DriverMobileHubPage() {
 
       <Card className="vm-panel">
         <CardHeader>
-          <CardTitle className="text-lg">Latest Daily Status</CardTitle>
+          <CardTitle>Latest Daily Status</CardTitle>
         </CardHeader>
         <CardContent>
           {latestStatus ? (
@@ -314,7 +315,7 @@ export default function DriverMobileHubPage() {
       <Card className="vm-panel">
         <CardHeader className="flex flex-row items-center justify-between">
           <div>
-            <CardTitle className="text-lg">Device Diagnostics</CardTitle>
+            <CardTitle>Device Diagnostics</CardTitle>
             <CardDescription>Runtime device and battery information from this phone.</CardDescription>
           </div>
           <Button

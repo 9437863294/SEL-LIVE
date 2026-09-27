@@ -9,8 +9,7 @@ import {
 import { Card, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { cn } from '@/lib/utils';
 import type { LucideIcon } from 'lucide-react';
-import { Button } from '@/components/ui/button';
-import { ArrowLeft } from 'lucide-react';
+import { PageHeader } from '@/components/shared/page-header';
 
 interface BillingStatusCardProps {
   item: {
@@ -49,7 +48,7 @@ function BillingStatusCard({ item }: BillingStatusCardProps) {
                 <item.icon className="w-6 h-6 text-primary" />
                 </div>
                 <div className="flex-1">
-                    <CardTitle className="text-base font-bold">{item.text}</CardTitle>
+                    <CardTitle>{item.text}</CardTitle>
                     <CardDescription className="text-xs">{item.description}</CardDescription>
                 </div>
             </CardHeader>
@@ -68,14 +67,7 @@ export default function ProjectBillingSettingsPage() {
   
   return (
     <div className="w-full max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-      <div className="mb-6 flex items-center gap-2">
-        <Link href="/billing-recon">
-          <Button variant="ghost" size="icon">
-            <ArrowLeft className="h-6 w-6" />
-          </Button>
-        </Link>
-        <h1 className="text-xl font-bold">Project Billing Settings</h1>
-      </div>
+      <PageHeader title="Project Billing Settings" backHref="/billing-recon" backLabel="Back to Billing Recon" />
       <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
         {settingsItems.map((item) => (
           <BillingStatusCard key={item.text} item={item} />

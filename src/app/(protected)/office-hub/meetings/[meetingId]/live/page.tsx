@@ -37,6 +37,7 @@ import {
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
+import { PageHeader } from '@/components/shared/page-header';
 import {
   Dialog,
   DialogContent,
@@ -209,55 +210,43 @@ export default function LiveMeetingPage() {
   return (
     <div className="space-y-3">
       {/* The header is the control panel: state, timer, and the one action that ends the meeting. */}
-      <Card
-        className={cn(
-          'border-2',
-          meeting.status === 'In Progress'
-            ? overrunning
-              ? 'border-amber-300 bg-amber-50/70'
-              : 'border-emerald-300 bg-emerald-50/70'
-            : 'border-slate-200 bg-white',
-        )}
-      >
-        <CardContent className="flex flex-col gap-3 p-4 lg:flex-row lg:items-center lg:justify-between">
-          <div className="min-w-0">
-            <p className="flex flex-wrap items-center gap-2 text-[11px] font-bold uppercase tracking-[0.18em] text-emerald-700">
-              {meeting.status === 'In Progress' ? (
-                <>
-                  <Radio className="h-3.5 w-3.5 animate-pulse" />
-                  Meeting in progress
-                </>
-              ) : (
-                <span className="text-slate-500">Meeting mode</span>
+      <PageHeader
+        eyebrow="Meeting mode"
+        title={meeting.title}
+        description={
+          <>
+            {formatClockTime(meeting.startTime)} – {formatClockTime(meeting.endTime)} · booked{' '}
+            {formatDuration(booked)} · {meeting.organizerName}
+          </>
+        }
+        badge={
+          meeting.status === 'In Progress' ? (
+            <span className="inline-flex items-center gap-1.5 rounded-full border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-[11px] font-semibold text-emerald-700">
+              <Radio className="h-3 w-3 animate-pulse" />
+              In progress
+            </span>
+          ) : undefined
+        }
+        meta={
+          <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
+            <span className="flex items-center gap-1.5 text-[11px] uppercase tracking-wide text-muted-foreground">
+              <Timer className="h-3.5 w-3.5" />
+              Elapsed
+            </span>
+            <span
+              className={cn(
+                'font-mono text-2xl font-semibold tabular-nums',
+                overrunning ? 'text-amber-700' : 'text-slate-800',
               )}
-            </p>
-            <h1 className="mt-0.5 truncate text-lg font-semibold tracking-tight text-slate-800 sm:text-xl">
-              {meeting.title}
-            </h1>
-            <p className="truncate text-xs text-muted-foreground">
-              {formatClockTime(meeting.startTime)} – {formatClockTime(meeting.endTime)} · booked{' '}
-              {formatDuration(booked)} · {meeting.organizerName}
-            </p>
+              aria-live="off"
+            >
+              {elapsed == null ? '—:—:—' : formatElapsed(elapsed)}
+            </span>
+            {overrunning && <span className="text-[11px] font-medium text-amber-700">Over the booked slot</span>}
           </div>
-
-          <div className="flex flex-wrap items-center gap-3">
-            <div className="text-right">
-              <p className="flex items-center justify-end gap-1.5 text-[11px] uppercase tracking-wide text-muted-foreground">
-                <Timer className="h-3.5 w-3.5" />
-                Elapsed
-              </p>
-              <p
-                className={cn(
-                  'font-mono text-2xl font-semibold tabular-nums',
-                  overrunning ? 'text-amber-700' : 'text-slate-800',
-                )}
-                aria-live="off"
-              >
-                {elapsed == null ? '—:—:—' : formatElapsed(elapsed)}
-              </p>
-              {overrunning && <p className="text-[11px] font-medium text-amber-700">Over the booked slot</p>}
-            </div>
-
+        }
+        actions={
+          <>
             {canRun && meeting.status !== 'In Progress' && meeting.status !== 'Completed' && (
               <Button onClick={() => void doStart()} disabled={isBusy} className="gap-2">
                 <Radio className="h-4 w-4" />
@@ -273,9 +262,10 @@ export default function LiveMeetingPage() {
             <Button variant="outline" asChild>
               <Link href={`${OFFICE_HUB_BASE_PATH}/meetings/${meeting.id}`}>Exit</Link>
             </Button>
-          </div>
-        </CardContent>
-      </Card>
+          </>
+        }
+        className="mb-0 sm:mb-0"
+      />
 
       {!canRun && (
         <Card className="border-amber-200 bg-amber-50/70">

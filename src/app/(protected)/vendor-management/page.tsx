@@ -19,6 +19,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
+import { PageHeader } from "@/components/shared/page-header";
 import { useAuthorization } from "@/hooks/useAuthorization";
 import { VENDOR_COLLECTIONS, type Vendor } from "@/lib/vendor-management";
 
@@ -74,7 +75,7 @@ export default function VendorManagementPage() {
   if (!canViewModule) {
     return (
       <main className="min-h-[calc(100vh-4rem)] p-4 sm:p-6">
-        <h1 className="mb-6 text-2xl font-bold sm:text-3xl">{MODULE_NAME}</h1>
+        <PageHeader title={MODULE_NAME} icon={ShoppingCart} />
         <Card>
           <CardHeader>
             <CardTitle>Access Denied</CardTitle>
@@ -93,20 +94,12 @@ export default function VendorManagementPage() {
   return (
     <main className="min-h-[calc(100vh-4rem)] space-y-5 p-4 sm:p-6">
       {/* ── Header ──────────────────────────────────────────────────────── */}
-      <Card className="relative overflow-hidden border-0 bg-gradient-to-r from-indigo-600 via-blue-600 to-teal-600 text-white shadow-lg">
-        <div className="absolute inset-0 opacity-10 bg-[radial-gradient(ellipse_at_top_right,_white_0%,_transparent_60%)]" />
-        <CardContent className="relative flex items-center gap-4 p-5">
-          <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl bg-white/20 backdrop-blur-sm">
-            <ShoppingCart className="h-7 w-7 text-white" />
-          </div>
-          <div>
-            <h1 className="text-2xl font-bold tracking-tight">{MODULE_NAME}</h1>
-            <p className="mt-0.5 text-sm text-blue-100">
-              Global vendor registry shared across all projects
-            </p>
-          </div>
-        </CardContent>
-      </Card>
+      <PageHeader
+        title={MODULE_NAME}
+        description="Global vendor registry shared across all projects"
+        icon={ShoppingCart}
+        className="mb-0 sm:mb-0"
+      />
 
       {/* ── Stats + Quick access ────────────────────────────────────────── */}
       {canViewVendors && (

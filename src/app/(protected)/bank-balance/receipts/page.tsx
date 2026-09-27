@@ -4,7 +4,6 @@ export const dynamic = 'force-dynamic';
 import { useState, useEffect, useMemo, useCallback } from 'react';
 import Link from 'next/link';
 import {
-  ArrowLeft,
   Calendar as CalendarIcon,
   Search,
   Plus,
@@ -13,6 +12,7 @@ import {
 } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
+import { PageHeader } from '@/components/shared/page-header';
 import {
   Card,
   CardContent,
@@ -275,14 +275,7 @@ export default function ReceiptsLogPage() {
   if (!canView) {
     return (
       <div className="relative w-full px-4 sm:px-6 lg:px-8 py-6">
-        <div className="mb-6 flex items-center gap-3">
-          <Link href="/bank-balance">
-            <Button variant="ghost" size="icon" className="rounded-full">
-              <ArrowLeft className="h-5 w-5" />
-            </Button>
-          </Link>
-          <h1 className="text-xl font-bold">Receipts Log</h1>
-        </div>
+        <PageHeader title="Receipts Log" backHref="/bank-balance" backLabel="Back to dashboard" />
         <Card><CardHeader><CardTitle>Access Denied</CardTitle><CardDescription>You do not have permission to view this page.</CardDescription></CardHeader>
           <CardContent className="flex justify-center p-8"><ShieldAlert className="h-14 w-14 text-destructive" /></CardContent>
         </Card>
@@ -305,28 +298,23 @@ export default function ReceiptsLogPage() {
 
     <div className="relative w-full px-4 sm:px-6 lg:px-8 py-4">
       {/* ── Header ── */}
-      <div className="mb-4 flex items-center justify-between">
-        <div className="flex items-center gap-3">
-          <Link href="/bank-balance">
-            <Button variant="ghost" size="icon" className="rounded-full hover:bg-green-50 dark:hover:bg-green-950/30">
-              <ArrowLeft className="h-5 w-5" />
-            </Button>
-          </Link>
-          <div>
-            <h1 className="text-xl font-bold tracking-tight">Receipts Log</h1>
-            <p className="text-xs text-muted-foreground">{filteredLogEntries.length} records · {formatCurrency(totalFiltered)}</p>
-          </div>
-        </div>
-        {canAdd ? (
-          <Link href="/bank-balance/receipts/new">
-            <Button className="rounded-full shadow-md shadow-green-200/50 dark:shadow-green-900/20 bg-green-600 hover:bg-green-700">
-              <Plus className="mr-2 h-4 w-4" />New Receipt
-            </Button>
-          </Link>
-        ) : (
-          <Button disabled className="rounded-full"><Plus className="mr-2 h-4 w-4" />New Receipt</Button>
-        )}
-      </div>
+      <PageHeader
+        title="Receipts Log"
+        description={<>{filteredLogEntries.length} records · {formatCurrency(totalFiltered)}</>}
+        backHref="/bank-balance"
+        backLabel="Back to dashboard"
+        actions={
+          canAdd ? (
+            <Link href="/bank-balance/receipts/new">
+              <Button className="rounded-full shadow-md shadow-green-200/50 dark:shadow-green-900/20 bg-green-600 hover:bg-green-700">
+                <Plus className="mr-2 h-4 w-4" />New Receipt
+              </Button>
+            </Link>
+          ) : (
+            <Button disabled className="rounded-full"><Plus className="mr-2 h-4 w-4" />New Receipt</Button>
+          )
+        }
+      />
 
       {/* ── Filter Card ── */}
       <div className="mb-4 rounded-xl border border-border/50 bg-background/80 backdrop-blur-sm p-4 shadow-sm">

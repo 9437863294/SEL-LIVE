@@ -1,8 +1,8 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import Link from 'next/link';
-import { ArrowLeft, Plus, Edit, Trash2 } from 'lucide-react';
+import { Plus, Edit, Trash2 } from 'lucide-react';
+import { PageHeader } from '@/components/shared/page-header';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
@@ -198,19 +198,16 @@ export default function ManageProjectsAndSitesPage() {
 
   return (
     <div className="w-full max-w-6xl mx-auto px-4 sm:px-6 lg:px-8">
-      <div className="mb-6 flex items-center justify-between">
-        <div className="flex items-center gap-4">
-          <Link href="/store-stock-management">
-            <Button variant="ghost" size="icon">
-              <ArrowLeft className="h-6 w-6" />
-            </Button>
-          </Link>
-          <h1 className="text-xl font-bold">Manage Projects &amp; Sites</h1>
-        </div>
-        <Button onClick={() => openProjectDialog('add')}>
+      <PageHeader
+        title="Manage Projects & Sites"
+        backHref="/store-stock-management"
+        backLabel="Back to Store & Stock Management"
+        actions={
+          <Button onClick={() => openProjectDialog('add')}>
             <Plus className="mr-2 h-4 w-4" /> Add Project
-        </Button>
-      </div>
+          </Button>
+        }
+      />
 
        <Accordion type="multiple" className="w-full space-y-4">
         {isLoading ? (
@@ -222,7 +219,7 @@ export default function ManageProjectsAndSitesPage() {
                     <div className="flex items-center p-4">
                       <AccordionTrigger className="hover:no-underline flex-1">
                           <div className="flex justify-between items-center w-full">
-                              <h3 className="font-semibold text-lg">{project.projectName}</h3>
+                              <h3 className="text-[15px] font-semibold leading-snug tracking-tight sm:text-base">{project.projectName}</h3>
                               <Badge>{project.status || 'Active'}</Badge>
                           </div>
                       </AccordionTrigger>

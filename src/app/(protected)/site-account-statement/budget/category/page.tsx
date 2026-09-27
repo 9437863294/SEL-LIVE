@@ -21,6 +21,7 @@ import { useAuth } from '@/components/auth/AuthProvider';
 import { useToast } from '@/hooks/use-toast';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
+import { PageHeader } from '@/components/shared/page-header';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -296,25 +297,22 @@ export default function CategoryBudgetPage() {
   return (
     <div className="space-y-4">
       {/* Header */}
-      <div className="flex items-center justify-between gap-3 flex-wrap">
-        <div>
-          <h1 className="text-base sm:text-lg font-bold text-slate-800 flex items-center gap-2">
-            <Target className="h-5 w-5 text-emerald-600" />
-            Category-wise Monthly Budgets
-          </h1>
-          <p className="text-sm text-muted-foreground">
-            Compare previous vs current month budget and actual per category.
-          </p>
-        </div>
-        <Button
-          variant="outline" size="sm" onClick={exportExcel}
-          disabled={exporting || !selectedProjectId || categoryRows.length === 0}
-          className="gap-2"
-        >
-          {exporting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
-          Export
-        </Button>
-      </div>
+      <PageHeader
+        className="mb-0 sm:mb-0"
+        icon={Target}
+        title="Category-wise Monthly Budgets"
+        description="Compare previous vs current month budget and actual per category."
+        actions={
+          <Button
+            variant="outline" size="sm" onClick={exportExcel}
+            disabled={exporting || !selectedProjectId || categoryRows.length === 0}
+            className="gap-2"
+          >
+            {exporting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
+            Export
+          </Button>
+        }
+      />
 
       {/* Controls */}
       <div className="flex flex-wrap items-center gap-3">

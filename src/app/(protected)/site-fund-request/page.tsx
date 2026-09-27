@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useMemo } from 'react';
 import { Card, CardHeader, CardTitle, CardContent, CardDescription } from '@/components/ui/card';
+import { PageHeader } from '@/components/shared/page-header';
 import { FileText, BarChart3, Settings, GitMerge, Clock, CheckCircle2, XCircle, AlertCircle } from 'lucide-react';
 import Link from 'next/link';
 import { useAuthorization } from '@/hooks/useAuthorization';
@@ -70,7 +71,7 @@ function NavCard({ icon: Icon, text, href, description, disabled, badge }: NavCa
           )}
         </div>
         <div className="flex-1">
-          <CardTitle className="text-base font-semibold text-slate-900">{text}</CardTitle>
+          <CardTitle className="text-slate-900">{text}</CardTitle>
           <CardDescription className="mt-1 text-xs text-slate-600">{description}</CardDescription>
         </div>
       </CardHeader>
@@ -168,11 +169,12 @@ export default function SiteFundRequestDashboard() {
 
   return (
     <div className="w-full space-y-6 p-4 sm:p-6">
-      <div>
-        <p className="text-xs font-semibold uppercase tracking-[0.22em] text-slate-500">Site Fund Request</p>
-        <h1 className="mt-1 text-3xl font-bold tracking-tight text-slate-900">Dashboard</h1>
-        <p className="mt-1 text-sm text-slate-600">Overview of fund requests and workflow stages.</p>
-      </div>
+      <PageHeader
+        className="mb-0 sm:mb-0"
+        eyebrow="Site Fund Request"
+        title="Dashboard"
+        description="Overview of fund requests and workflow stages."
+      />
 
       {/* Stats */}
       <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">

@@ -35,6 +35,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Skeleton } from '@/components/ui/skeleton';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Textarea } from '@/components/ui/textarea';
+import { PageHeader } from '@/components/shared/page-header';
 
 type PackAssemblyDocument = InventoryDocument & {
   unbuildQuantity?: number;
@@ -224,15 +225,13 @@ export default function PackAssemblyPage() {
 
   return (
     <div className="space-y-6">
-      <div>
-        <div className="mb-2 flex items-center gap-2 text-sm font-medium text-fuchsia-700">
-          <Component className="h-4 w-4" />Inventory assembly
-        </div>
-        <h1 className="text-2xl font-bold tracking-tight sm:text-3xl">Build &amp; unbuild item packs</h1>
-        <p className="text-muted-foreground">
-          Create a main item from configured components or break finished stock back into those components.
-        </p>
-      </div>
+      <PageHeader
+        className="mb-0 sm:mb-0"
+        icon={Component}
+        eyebrow="Inventory assembly"
+        title="Build & unbuild item packs"
+        description="Create a main item from configured components or break finished stock back into those components."
+      />
 
       {!canBuild && !canUnbuild && (
         <Alert variant="destructive">

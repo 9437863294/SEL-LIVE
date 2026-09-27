@@ -1,10 +1,9 @@
 'use client';
 
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
-import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { collection, getDocs } from 'firebase/firestore';
-import { ArrowLeft, Calculator, Loader2, Save, Send, ShieldAlert } from 'lucide-react';
+import { Calculator, Loader2, Save, Send, ShieldAlert } from 'lucide-react';
 import { db } from '@/lib/firebase';
 import { useAuth } from '@/components/auth/AuthProvider';
 import { useAuthorization } from '@/hooks/useAuthorization';
@@ -20,6 +19,7 @@ import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Switch } from '@/components/ui/switch';
 import { Textarea } from '@/components/ui/textarea';
+import { PageHeader } from '@/components/shared/page-header';
 
 type Draft = LCRequestInput & { vendorText: string };
 type VendorRecord = { id: string; name: string; code?: string; status?: string };
@@ -31,7 +31,7 @@ const blank = (): Draft => ({
 });
 
 function Section({ title, description, children }: { title: string; description: string; children: ReactNode }) {
-  return <Card className="border-white/80 bg-white/90 shadow-sm"><CardHeader className="pb-4"><CardTitle className="text-base">{title}</CardTitle><CardDescription>{description}</CardDescription></CardHeader><CardContent className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">{children}</CardContent></Card>;
+  return <Card className="border-white/80 bg-white/90 shadow-sm"><CardHeader className="pb-4"><CardTitle>{title}</CardTitle><CardDescription>{description}</CardDescription></CardHeader><CardContent className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">{children}</CardContent></Card>;
 }
 
 function Field({ label, required, helper, children, wide = false }: { label: string; required?: boolean; helper?: string; children: ReactNode; wide?: boolean }) {
@@ -93,7 +93,7 @@ export default function NewLCRequestForm() {
   if (!canAdd) return <Card><CardHeader><CardTitle>Access Denied</CardTitle><CardDescription>You do not have permission to create LC requests.</CardDescription></CardHeader><CardContent className="flex justify-center py-8"><ShieldAlert className="h-14 w-14 text-destructive" /></CardContent></Card>;
 
   return <div className="space-y-4">
-    <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between"><div className="flex items-center gap-3"><Button asChild variant="outline" size="icon"><Link href="/letter-of-credit"><ArrowLeft className="h-4 w-4" /></Link></Button><div><h1 className="text-2xl font-bold tracking-tight">New LC Request</h1><p className="text-sm text-muted-foreground">Create the commercial request, terms, bank preference, and margin requirement.</p></div></div><div className="flex gap-2"><Button variant="outline" disabled={Boolean(saving)} onClick={() => void save('draft')}>{saving === 'draft' ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}Save Draft</Button><Button disabled={Boolean(saving)} onClick={() => void save('submit')}>{saving === 'submit' ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Send className="mr-2 h-4 w-4" />}Submit</Button></div></div>
+    <PageHeader className="mb-0 sm:mb-0" backHref="/letter-of-credit" backLabel="Back to LC dashboard" title="New LC Request" description="Create the commercial request, terms, bank preference, and margin requirement." actions={<><Button variant="outline" disabled={Boolean(saving)} onClick={() => void save('draft')}>{saving === 'draft' ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}Save Draft</Button><Button disabled={Boolean(saving)} onClick={() => void save('submit')}>{saving === 'submit' ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Send className="mr-2 h-4 w-4" />}Submit</Button></>} />
 
     <Section title="Basic details" description="Organization is derived from the signed-in user; the system reference is generated on save.">
       <Field label="Organization"><Input value={user?.organizationName || user?.organizationId || 'Default Organization'} disabled /></Field>

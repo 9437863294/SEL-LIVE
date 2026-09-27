@@ -3,7 +3,6 @@
 
 import Link from 'next/link';
 import {
-  ArrowLeft,
   GitMerge,
   ShieldAlert,
   Hash,
@@ -17,7 +16,7 @@ import {
 } from '@/components/ui/card';
 import { cn } from '@/lib/utils';
 import type { LucideIcon } from 'lucide-react';
-import { Button } from '@/components/ui/button';
+import { PageHeader } from '@/components/shared/page-header';
 import { useParams } from 'next/navigation';
 import { useAuthorization } from '@/hooks/useAuthorization';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -70,7 +69,7 @@ function SettingsCard({ item }: SettingsCardProps) {
           <item.icon className="w-6 h-6 text-primary" />
         </div>
         <div className="flex-1">
-          <CardTitle className="text-lg font-semibold">{item.text}</CardTitle>
+          <CardTitle>{item.text}</CardTitle>
           <CardDescription className="mt-1">{item.description}</CardDescription>
         </div>
       </CardHeader>
@@ -154,14 +153,7 @@ export default function JmcSettingsPage() {
   if (!canViewPage) {
     return (
       <div className="w-full px-4 sm:px-6 lg:px-8">
-        <div className="mb-6 flex items-center gap-4">
-          <Link href={`/billing-recon/${projectSlug}`}>
-            <Button variant="ghost" size="icon" aria-label="Back">
-              <ArrowLeft className="h-6 w-6" />
-            </Button>
-          </Link>
-          <h1 className="text-xl font-bold">JMC Settings</h1>
-        </div>
+        <PageHeader title="JMC Settings" backHref={`/billing-recon/${projectSlug}`} backLabel="Back to project" />
         <Card>
           <CardHeader>
             <CardTitle>Access Denied</CardTitle>
@@ -177,14 +169,7 @@ export default function JmcSettingsPage() {
 
   return (
     <div className="w-full px-4 sm:px-6 lg:px-8">
-      <div className="mb-6 flex items-center gap-4">
-        <Link href={`/billing-recon/${projectSlug}`}>
-          <Button variant="ghost" size="icon" aria-label="Back">
-            <ArrowLeft className="h-6 w-6" />
-          </Button>
-        </Link>
-        <h1 className="text-xl font-bold">JMC Settings</h1>
-      </div>
+      <PageHeader title="JMC Settings" backHref={`/billing-recon/${projectSlug}`} backLabel="Back to project" />
 
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
         {settingsItems.map((item) => (

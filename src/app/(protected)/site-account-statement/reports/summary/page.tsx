@@ -11,6 +11,7 @@ import { SortControl } from '@/components/site-account-statement/sort-control';
 import { useAuth } from '@/components/auth/AuthProvider';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { PageHeader } from '@/components/shared/page-header';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -191,18 +192,17 @@ export default function ProjectSummaryPage() {
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between gap-3 flex-wrap">
-        <div>
-          <h1 className="text-base sm:text-lg font-bold text-slate-800">Overall Project Summary</h1>
-          <p className="text-sm text-muted-foreground">Budget, opening balance, receipts, expenses, closing balance, and utilization across all enabled projects</p>
-        </div>
-        {canExport && (
+      <PageHeader
+        className="mb-0 sm:mb-0"
+        title="Overall Project Summary"
+        description="Budget, opening balance, receipts, expenses, closing balance, and utilization across all enabled projects"
+        actions={canExport ? (
           <Button variant="outline" size="sm" onClick={exportExcel} disabled={exporting} className="gap-2">
             {exporting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
             Export Excel
           </Button>
-        )}
-      </div>
+        ) : undefined}
+      />
 
       {/* Overall summary cards */}
       <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">

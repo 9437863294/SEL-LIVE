@@ -7,7 +7,7 @@ import { useState, useEffect, useMemo } from 'react';
 import { useParams } from 'next/navigation';
 import Link from 'next/link';
 import {
-  ArrowLeft, Plus, ShieldAlert, SlidersHorizontal,
+  Plus, ShieldAlert, SlidersHorizontal,
   Search, Calendar as CalendarIcon, Edit, Save, Loader2,
   Receipt, IndianRupee, FileText, TrendingUp, Filter, Upload, X, Building2, BarChart3,
 } from 'lucide-react';
@@ -310,10 +310,7 @@ export default function DepartmentExpensesPage() {
   if (!canViewPage) {
     return (
       <div className="w-full">
-        <div className="mb-6 flex items-center gap-2">
-          <Link href="/expenses"><Button variant="ghost" size="icon"><ArrowLeft className="h-5 w-5" /></Button></Link>
-          <h1 className="text-2xl font-bold">Department Expenses</h1>
-        </div>
+        <ExpensesPageHeader icon={Building2} title="Department Expenses" backHref="/expenses" />
         <Card className="border-destructive/30">
           <CardHeader className="text-center pb-2">
             <div className="mx-auto mb-3 flex h-14 w-14 items-center justify-center rounded-full bg-destructive/10">

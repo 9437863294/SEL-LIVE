@@ -2,9 +2,9 @@
 export const dynamic = 'force-dynamic';
 
 import { useState, useEffect, useMemo } from 'react';
-import Link from 'next/link';
-import { ArrowLeft, ArrowLeftRight, ArrowUpDown, Calendar as CalendarIcon, Settings2, ShieldAlert, TrendingUp, TrendingDown } from 'lucide-react';
+import { ArrowLeftRight, ArrowUpDown, Calendar as CalendarIcon, Settings2, ShieldAlert, TrendingUp, TrendingDown } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { PageHeader } from '@/components/shared/page-header';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
@@ -318,10 +318,7 @@ export default function DailyLogPage() {
   if (!canView) {
     return (
       <div className="relative w-full px-4 sm:px-6 lg:px-8 py-6">
-        <div className="mb-6 flex items-center gap-2">
-          <Link href="/bank-balance"><Button variant="ghost" size="icon" className="rounded-full"><ArrowLeft className="h-5 w-5" /></Button></Link>
-          <h1 className="text-xl font-bold">Daily Utilization Log</h1>
-        </div>
+        <PageHeader title="Daily Utilization Log" backHref="/bank-balance" backLabel="Back to dashboard" />
         <Card><CardHeader><CardTitle>Access Denied</CardTitle><CardDescription>You do not have permission.</CardDescription></CardHeader>
           <CardContent className="flex justify-center p-8"><ShieldAlert className="h-14 w-14 text-destructive" /></CardContent>
         </Card>
@@ -343,19 +340,12 @@ export default function DailyLogPage() {
       </div>
     <div className="relative w-full px-4 sm:px-6 lg:px-8">
       {/* Header */}
-      <div className="mb-5 flex items-center justify-between">
-        <div className="flex items-center gap-2">
-          <Link href="/bank-balance">
-            <Button variant="ghost" size="icon" className="rounded-full hover:bg-primary/10">
-              <ArrowLeft className="h-5 w-5" />
-            </Button>
-          </Link>
-          <div>
-            <h1 className="text-xl font-bold tracking-tight">Daily Balance Log</h1>
-            <p className="text-xs text-muted-foreground">History of daily balances and utilization across all accounts.</p>
-          </div>
-        </div>
-      </div>
+      <PageHeader
+        title="Daily Balance Log"
+        description="History of daily balances and utilization across all accounts."
+        backHref="/bank-balance"
+        backLabel="Back to dashboard"
+      />
 
       {/* Summary stats */}
       <div className="mb-4 grid grid-cols-3 gap-3">

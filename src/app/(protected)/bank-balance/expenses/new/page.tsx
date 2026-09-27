@@ -4,7 +4,6 @@ export const dynamic = 'force-dynamic';
 import { useState, useEffect, useMemo, useCallback } from 'react';
 import Link from 'next/link';
 import {
-  ArrowLeft,
   Calendar as CalendarIcon,
   Plus,
   Trash2,
@@ -17,6 +16,7 @@ import {
 } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
+import { PageHeader } from '@/components/shared/page-header';
 import {
   Card,
   CardContent,
@@ -481,14 +481,7 @@ export default function NewPaymentPage() {
   if (!canAdd) {
     return (
       <div className="w-full px-4 sm:px-6 lg:px-8">
-        <div className="mb-6 flex items-center gap-2">
-          <Link href="/bank-balance/expenses">
-            <Button variant="ghost" size="icon">
-              <ArrowLeft className="h-6 w-6" />
-            </Button>
-          </Link>
-          <h1 className="text-xl font-bold">New Payment Entry</h1>
-        </div>
+        <PageHeader title="New Payment Entry" backHref="/bank-balance/expenses" backLabel="Back to payments log" />
         <Card>
           <CardHeader>
             <CardTitle>Access Denied</CardTitle>
@@ -516,25 +509,20 @@ export default function NewPaymentPage() {
         />
       </div>
     <div className="relative w-full px-4 sm:px-6 lg:px-8 py-4">
-      <div className="mb-5 flex items-center justify-between">
-        <div className="flex items-center gap-3">
+      <PageHeader
+        title="New Payment Entry"
+        description="Record a new payment transaction"
+        backHref="/bank-balance/expenses"
+        backLabel="Back to payments log"
+        actions={
           <Link href="/bank-balance/expenses">
-            <Button variant="ghost" size="icon" className="rounded-full hover:bg-red-50 dark:hover:bg-red-950/30">
-              <ArrowLeft className="h-5 w-5" />
+            <Button variant="outline" className="rounded-full border-border/60">
+              <History className="mr-2 h-4 w-4" />
+              Payments Log
             </Button>
           </Link>
-          <div>
-            <h1 className="text-xl font-bold tracking-tight">New Payment Entry</h1>
-            <p className="text-xs text-muted-foreground">Record a new payment transaction</p>
-          </div>
-        </div>
-        <Link href="/bank-balance/expenses">
-          <Button variant="outline" className="rounded-full border-border/60">
-            <History className="mr-2 h-4 w-4" />
-            Payments Log
-          </Button>
-        </Link>
-      </div>
+        }
+      />
 
       <Card>
         <CardContent className="space-y-6 pt-6">

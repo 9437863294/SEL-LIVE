@@ -32,6 +32,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
+import { PageHeader } from '@/components/shared/page-header';
 import { cn } from '@/lib/utils';
 
 // ─── helpers ─────────────────────────────────────────────────────────────────
@@ -196,39 +197,26 @@ export default function InsuranceDashboardPage() {
     <div className="space-y-5">
 
       {/* ── Header ──────────────────────────────────────────────────────── */}
-      <Card className="relative overflow-hidden border-0 bg-gradient-to-r from-blue-600 via-blue-500 to-indigo-600 text-white shadow-lg">
-        <div className="absolute inset-0 opacity-10 bg-[radial-gradient(ellipse_at_top_right,_white_0%,_transparent_60%)]" />
-        <CardContent className="relative flex flex-col gap-4 p-5 sm:flex-row sm:items-center sm:justify-between">
-          <div className="flex items-center gap-4">
-            <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl bg-white/20 backdrop-blur-sm">
-              <ShieldHalf className="h-7 w-7 text-white" />
-            </div>
-            <div>
-              <h1 className="text-2xl font-bold tracking-tight">Insurance</h1>
-              <p className="mt-0.5 text-sm text-blue-100">
-                Comprehensive coverage management for personal &amp; project assets
-              </p>
-            </div>
-          </div>
-          <div className="flex flex-wrap items-center gap-2">
-            {criticalAlerts.length > 0 && (
-              <Badge className="gap-1.5 bg-red-500/90 text-white shadow-sm text-xs">
-                <AlertTriangle className="h-3 w-3" />
-                {criticalAlerts.length} Critical Alert{criticalAlerts.length !== 1 ? 's' : ''}
-              </Badge>
-            )}
-            <Button
-              size="sm"
-              variant="secondary"
-              onClick={load}
-              className="gap-1.5 bg-white/20 text-white hover:bg-white/30 border-0"
-            >
-              <RefreshCw className="h-3.5 w-3.5" />
-              Refresh
-            </Button>
-          </div>
-        </CardContent>
-      </Card>
+      <PageHeader
+        className="mb-0 sm:mb-0"
+        icon={ShieldHalf}
+        title="Insurance"
+        description="Comprehensive coverage management for personal & project assets"
+        badge={
+          criticalAlerts.length > 0 && (
+            <Badge className="gap-1.5 bg-red-500/90 text-white shadow-sm text-xs">
+              <AlertTriangle className="h-3 w-3" />
+              {criticalAlerts.length} Critical Alert{criticalAlerts.length !== 1 ? 's' : ''}
+            </Badge>
+          )
+        }
+        actions={
+          <Button size="sm" variant="outline" onClick={load} className="gap-1.5">
+            <RefreshCw className="h-3.5 w-3.5" />
+            Refresh
+          </Button>
+        }
+      />
 
       {/* ── KPI Stats ────────────────────────────────────────────────────── */}
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
@@ -291,7 +279,7 @@ export default function InsuranceDashboardPage() {
         <Card className="overflow-hidden border-border/60">
           <div className="h-1 w-full bg-gradient-to-r from-rose-500 to-red-600" />
           <CardHeader className="pb-3">
-            <CardTitle className="flex items-center gap-2 text-base">
+            <CardTitle className="flex items-center gap-2">
               <AlertTriangle className="h-4 w-4 text-rose-500" />
               Critical Alerts
             </CardTitle>
@@ -348,7 +336,7 @@ export default function InsuranceDashboardPage() {
         <Card className="overflow-hidden border-border/60">
           <div className="h-1 w-full bg-gradient-to-r from-amber-400 to-orange-500" />
           <CardHeader className="pb-3">
-            <CardTitle className="flex items-center gap-2 text-base">
+            <CardTitle className="flex items-center gap-2">
               <CalendarClock className="h-4 w-4 text-amber-500" />
               Upcoming Premiums
             </CardTitle>
@@ -463,7 +451,7 @@ export default function InsuranceDashboardPage() {
       {/* ── Quick Navigation ─────────────────────────────────────────────── */}
       <Card className="border-border/60">
         <CardHeader className="pb-3">
-          <CardTitle className="text-base">Quick Access</CardTitle>
+          <CardTitle>Quick Access</CardTitle>
           <CardDescription>Jump to any section of the Insurance module</CardDescription>
         </CardHeader>
         <CardContent>

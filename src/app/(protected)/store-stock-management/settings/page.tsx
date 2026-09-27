@@ -17,6 +17,7 @@ import {
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
+import { PageHeader, SectionHeader } from '@/components/shared/page-header';
 import { cn } from '@/lib/utils';
 
 type SettingsItem = {
@@ -110,30 +111,23 @@ const groups: SettingsGroup[] = [
 export default function SettingsPage() {
   return (
     <div className="space-y-8">
-      <section className="relative overflow-hidden rounded-2xl border border-indigo-200/70 bg-gradient-to-br from-indigo-700 via-violet-700 to-purple-800 p-6 text-white shadow-lg sm:p-8">
-        <div className="pointer-events-none absolute -right-12 -top-16 h-52 w-52 rounded-full bg-white/10 blur-2xl" />
-        <div className="pointer-events-none absolute -bottom-20 left-1/3 h-48 w-48 rounded-full bg-cyan-300/15 blur-3xl" />
-        <div className="relative flex flex-col gap-6 lg:flex-row lg:items-end lg:justify-between">
-          <div className="max-w-3xl">
-            <Badge className="mb-4 border-white/20 bg-white/15 text-white hover:bg-white/15"><Settings2 className="mr-1.5 h-3.5 w-3.5" />Configuration centre</Badge>
-            <h1 className="text-2xl font-bold tracking-tight sm:text-3xl">Store &amp; Stock Management Settings</h1>
-            <p className="mt-2 max-w-2xl text-sm leading-6 text-indigo-100 sm:text-base">
-              Configure inventory masters, project structure, stock availability, and transaction requirements from one place.
-            </p>
-          </div>
-          <div className="flex flex-wrap gap-2">
-            <Button asChild variant="secondary"><Link href="/store-stock-management/settings/stock-status"><SlidersHorizontal className="mr-2 h-4 w-4" />Configure stock scope</Link></Button>
-            <Button asChild className="border border-white/25 bg-white/10 text-white hover:bg-white/20"><Link href="/store-stock-management/inventory"><Boxes className="mr-2 h-4 w-4" />Open inventory</Link></Button>
-          </div>
-        </div>
-      </section>
+      <PageHeader
+        className="mb-0 sm:mb-0"
+        icon={Settings2}
+        eyebrow="Configuration centre"
+        title="Store & Stock Management Settings"
+        description="Configure inventory masters, project structure, stock availability, and transaction requirements from one place."
+        actions={
+          <>
+            <Button asChild variant="outline"><Link href="/store-stock-management/settings/stock-status"><SlidersHorizontal className="mr-2 h-4 w-4" />Configure stock scope</Link></Button>
+            <Button asChild><Link href="/store-stock-management/inventory"><Boxes className="mr-2 h-4 w-4" />Open inventory</Link></Button>
+          </>
+        }
+      />
 
       {groups.map((group) => (
         <section key={group.title} className="space-y-4">
-          <div>
-            <h2 className="text-lg font-bold tracking-tight text-slate-900">{group.title}</h2>
-            <p className="text-sm text-muted-foreground">{group.description}</p>
-          </div>
+          <SectionHeader className="mb-0" title={group.title} description={group.description} />
           <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
             {group.items.map((item) => {
               const Icon = item.icon;
@@ -145,7 +139,7 @@ export default function SettingsPage() {
                       <div className="min-w-0 flex-1">
                         <div className="flex items-start justify-between gap-2">
                           <div>
-                            <h3 className="font-bold text-slate-900">{item.title}</h3>
+                            <h3 className="text-[15px] font-semibold leading-snug tracking-tight text-slate-900 sm:text-base">{item.title}</h3>
                             {item.badge && <Badge variant="outline" className="mt-1 text-[10px]">{item.badge}</Badge>}
                           </div>
                           <ArrowRight className="mt-1 h-4 w-4 shrink-0 text-slate-400 transition-transform group-hover:translate-x-1 group-hover:text-indigo-600" />

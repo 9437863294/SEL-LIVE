@@ -4,7 +4,6 @@ import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import {
-  ArrowLeft,
   ArrowRight,
   Calculator,
   ClipboardCheck,
@@ -25,6 +24,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
+import { PageHeader } from "@/components/shared/page-header";
 import { useAuthorization } from "@/hooks/useAuthorization";
 import { cn } from "@/lib/utils";
 
@@ -160,7 +160,7 @@ export default function BoqPage() {
   if (!canViewBoq) {
     return (
       <main className="min-h-[calc(100dvh-4rem)] p-4 sm:p-6">
-        <h1 className="mb-6 text-2xl font-bold sm:text-3xl">BOQ</h1>
+        <PageHeader title="BOQ" />
         <Card>
           <CardHeader>
             <CardTitle>Access Denied</CardTitle>
@@ -182,7 +182,7 @@ export default function BoqPage() {
         <Card className="max-w-xl overflow-hidden border-border/60">
           <div className="h-1 w-full bg-gradient-to-r from-indigo-500 to-cyan-500" />
           <CardHeader>
-            <CardTitle className="flex items-center gap-2 text-base">
+            <CardTitle className="flex items-center gap-2">
               <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-gradient-to-br from-indigo-500 to-cyan-500 shadow-sm">
                 <FolderOpen className="h-4 w-4 text-white" />
               </div>
@@ -205,28 +205,14 @@ export default function BoqPage() {
   return (
     <main className="min-h-[calc(100dvh-4rem)] space-y-5 p-4 sm:p-6">
       {/* ── Header ──────────────────────────────────────────────────────── */}
-      <Card className="relative overflow-hidden border-0 bg-gradient-to-r from-emerald-600 via-teal-600 to-cyan-600 text-white shadow-lg">
-        <div className="absolute inset-0 opacity-10 bg-[radial-gradient(ellipse_at_top_right,_white_0%,_transparent_60%)]" />
-        <CardContent className="relative flex items-center gap-3 p-4 sm:gap-4 sm:p-5">
-          <Button variant="ghost" size="icon" asChild className="shrink-0 text-white hover:bg-white/20 hover:text-white">
-            <Link
-              href={`/project-management?project=${encodeURIComponent(selectedProject.id)}`}
-              aria-label="Back to Project Management"
-            >
-              <ArrowLeft className="h-5 w-5" />
-            </Link>
-          </Button>
-          <div className="hidden h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-white/20 backdrop-blur-sm sm:flex">
-            <ClipboardList className="h-6 w-6 text-white" />
-          </div>
-          <div className="min-w-0">
-            <h1 className="text-xl font-bold tracking-tight sm:text-2xl">BOQ</h1>
-            <p className="mt-0.5 break-words text-sm text-emerald-100">
-              {selectedProject.projectName} · mapped to {selectedProject.globalProjectName}
-            </p>
-          </div>
-        </CardContent>
-      </Card>
+      <PageHeader
+        title="BOQ"
+        description={`${selectedProject.projectName} · mapped to ${selectedProject.globalProjectName}`}
+        icon={ClipboardList}
+        backHref={`/project-management?project=${encodeURIComponent(selectedProject.id)}`}
+        backLabel="Back to Project Management"
+        className="mb-0 sm:mb-0"
+      />
 
       {/* ── Sections ─────────────────────────────────────────────────────── */}
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5">

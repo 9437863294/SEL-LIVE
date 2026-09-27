@@ -2,10 +2,10 @@
 export const dynamic = 'force-dynamic';
 
 import { useState, useEffect, useCallback } from 'react';
-import Link from 'next/link';
-import { ArrowLeft, Save, Loader2, ShieldAlert, Edit } from 'lucide-react';
+import { Save, Loader2, ShieldAlert, Edit } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
+import { PageHeader } from '@/components/shared/page-header';
 import {
   Card,
   CardContent,
@@ -199,16 +199,7 @@ export default function OpeningUtilizationPage() {
   if (!canView) {
     return (
       <div className="w-full px-4 sm:px-6 lg:px-8">
-        <div className="mb-6 flex items-center gap-2">
-          <Link href="/bank-balance/settings">
-            <Button variant="ghost" size="icon">
-              <ArrowLeft className="h-6 w-6" />
-            </Button>
-          </Link>
-          <h1 className="text-2xl font-bold">
-            Opening Utilization
-          </h1>
-        </div>
+        <PageHeader title="Opening Utilization" backHref="/bank-balance/settings" backLabel="Back to settings" />
         <Card>
           <CardHeader>
             <CardTitle>
@@ -238,20 +229,13 @@ export default function OpeningUtilizationPage() {
         />
       </div>
     <div className="relative w-full px-4 sm:px-6 lg:px-8 py-4">
-      <div className="mb-5 flex justify-between items-center">
-        <div className="flex items-center gap-3">
-          <Link href="/bank-balance/settings">
-            <Button variant="ghost" size="icon" className="rounded-full hover:bg-amber-50 dark:hover:bg-amber-950/30">
-              <ArrowLeft className="h-5 w-5" />
-            </Button>
-          </Link>
-          <div>
-            <h1 className="text-xl font-bold tracking-tight">Opening Utilization</h1>
-            <p className="text-xs text-muted-foreground">Manage opening utilization for Cash Credit accounts.</p>
-          </div>
-        </div>
-        <div className="flex items-center gap-2">
-          {isEditing ? (
+      <PageHeader
+        title="Opening Utilization"
+        description="Manage opening utilization for Cash Credit accounts."
+        backHref="/bank-balance/settings"
+        backLabel="Back to settings"
+        actions={
+          isEditing ? (
             <Button
               onClick={handleSaveAll}
               disabled={isSaving || !canEdit}
@@ -271,9 +255,9 @@ export default function OpeningUtilizationPage() {
               <Edit className="mr-2 h-4 w-4" />
               Edit
             </Button>
-          )}
-        </div>
-      </div>
+          )
+        }
+      />
 
       <Card>
         <CardHeader>

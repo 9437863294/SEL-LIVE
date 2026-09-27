@@ -4,8 +4,9 @@
 
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
-import { ArrowLeft, ShieldAlert, Loader2, Save } from 'lucide-react';
+import { ShieldAlert, Loader2, Save } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { PageHeader } from '@/components/shared/page-header';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Input } from '@/components/ui/input';
@@ -137,14 +138,7 @@ export default function SerialNoConfigurationPage() {
     if (!canView) {
         return (
             <div className="w-full">
-                <div className="mb-6 flex items-center gap-4">
-                  <Link href="/settings">
-                    <Button variant="ghost" size="icon">
-                      <ArrowLeft className="h-6 w-6" />
-                    </Button>
-                  </Link>
-                  <h1 className="text-xl font-bold">Serial No. Configuration</h1>
-                </div>
+                <PageHeader title="Serial No. Configuration" backHref="/settings" backLabel="Back to settings" />
                 <Card>
                     <CardHeader>
                         <CardTitle>Access Denied</CardTitle>
@@ -171,22 +165,17 @@ export default function SerialNoConfigurationPage() {
           />
         </div>
         <div className="w-full px-4 sm:px-5 py-3">
-            <div className="mb-5 flex items-center gap-3">
-                <Link href="/settings">
-                    <Button variant="ghost" size="icon" className="rounded-full hover:bg-indigo-50 dark:hover:bg-indigo-950/30">
-                        <ArrowLeft className="h-5 w-5" />
-                    </Button>
-                </Link>
-                <div>
-                  <h1 className="text-xl font-bold tracking-tight">Serial No. Configuration</h1>
-                  <p className="text-xs text-muted-foreground">Configure document numbering sequences</p>
-                </div>
-            </div>
+            <PageHeader
+                title="Serial No. Configuration"
+                description="Configure document numbering sequences"
+                backHref="/settings"
+                backLabel="Back to settings"
+            />
 
             <Card className="border-indigo-200/60 dark:border-indigo-800/30 overflow-hidden">
                 <div className="h-0.5 w-full bg-gradient-to-r from-indigo-400 to-violet-400" />
                 <CardHeader className="pb-3">
-                    <CardTitle className="text-base">Sequence Number Format</CardTitle>
+                    <CardTitle>Sequence Number Format</CardTitle>
                     <CardDescription>
                         Select a module and configure the prefix, format, suffix, and starting index for its serial numbers.
                     </CardDescription>

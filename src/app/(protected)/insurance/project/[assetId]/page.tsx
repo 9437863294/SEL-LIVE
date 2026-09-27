@@ -3,7 +3,7 @@
 import { useState, useEffect, Fragment } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { ArrowLeft, Plus, RotateCw, ChevronRight, ChevronDown } from 'lucide-react';
+import { Plus, RotateCw, ChevronRight, ChevronDown } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useToast } from '@/hooks/use-toast';
@@ -17,6 +17,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { ProjectRenewalDialog } from '@/components/insurance/ProjectRenewalDialog';
 import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
+import { PageHeader } from '@/components/shared/page-header';
 
 
 interface EnrichedPolicy extends ProjectInsurancePolicy {
@@ -153,18 +154,17 @@ export default function AssetPoliciesPage() {
   return (
     <>
     <div className="w-full p-4">
-      <div className="flex items-center justify-between mb-4 no-print">
-        <div className="flex items-center gap-2">
-           <Link href="/insurance/project">
-              <Button variant="ghost" size="icon"><ArrowLeft className="h-6 w-6" /></Button>
-            </Link>
-          <h1 className="text-lg font-semibold">Insurance Policies for: {assetName}</h1>
-        </div>
-        <div className="flex items-center gap-2">
+      <div className="no-print">
+        <PageHeader
+          title={<>Insurance Policies for: {assetName}</>}
+          backHref="/insurance/project"
+          backLabel="Back to project insurance"
+          actions={
             <Link href={`/insurance/project/new?assetId=${assetId}`}>
-                <Button disabled={!canAddPolicy} size="sm"><Plus className="mr-2 h-4 w-4" /> Add New Policy</Button>
+                <Button disabled={!canAddPolicy} size="sm" className="w-full"><Plus className="mr-2 h-4 w-4" /> Add New Policy</Button>
             </Link>
-        </div>
+          }
+        />
       </div>
       
       <Card>

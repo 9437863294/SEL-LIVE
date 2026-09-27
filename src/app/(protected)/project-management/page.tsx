@@ -45,6 +45,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
+import { PageHeader, SectionHeader } from "@/components/shared/page-header";
 import { useAuthorization } from "@/hooks/useAuthorization";
 import { cn } from "@/lib/utils";
 
@@ -291,7 +292,7 @@ export default function ProjectManagementPage() {
   if (!canViewModule) {
     return (
       <main className="min-h-[calc(100dvh-4rem)] p-4 sm:p-6">
-        <h1 className="mb-6 text-2xl font-bold sm:text-3xl">{MODULE_NAME}</h1>
+        <PageHeader title={MODULE_NAME} icon={FolderKanban} />
         <Card>
           <CardHeader>
             <CardTitle>Access Denied</CardTitle>
@@ -310,90 +311,83 @@ export default function ProjectManagementPage() {
   return (
     <main className="min-h-[calc(100dvh-4rem)] space-y-5 p-4 sm:p-6">
       {/* ── Header ──────────────────────────────────────────────────────── */}
-      <Card className="relative overflow-hidden border-0 bg-gradient-to-r from-indigo-600 via-blue-600 to-cyan-600 text-white shadow-lg">
-        <div className="absolute inset-0 opacity-10 bg-[radial-gradient(ellipse_at_top_right,_white_0%,_transparent_60%)]" />
-        <CardContent className="relative flex flex-col gap-3 p-4 sm:flex-row sm:items-center sm:justify-between sm:gap-4 sm:p-5">
-          <div className="flex min-w-0 items-center gap-4">
-            <div className="hidden h-14 w-14 shrink-0 items-center justify-center rounded-2xl bg-white/20 backdrop-blur-sm sm:flex">
-              <FolderKanban className="h-7 w-7 text-white" />
+      {/* With a project chosen the header identifies it, rather than repeating an instruction
+          that has already been followed. */}
+      <PageHeader
+        icon={FolderKanban}
+        eyebrow={selectedProject ? MODULE_NAME : undefined}
+        title={selectedProject ? selectedProject.projectName : MODULE_NAME}
+        description={
+          selectedProject
+            ? undefined
+            : "Select a project to open its mapped BOQ, costing, and configuration data"
+        }
+        badge={
+          selectedProject ? (
+            <Badge
+              variant="outline"
+              className={cn(
+                "border-0 shrink-0",
+                projectLifecycleStyles[resolveLifecycle(selectedProject)],
+              )}
+            >
+              {resolveLifecycle(selectedProject)}
+            </Badge>
+          ) : undefined
+        }
+        meta={
+          selectedProject ? (
+            <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
+              {selectedProject.projectCode && (
+                <span className="font-mono">{selectedProject.projectCode}</span>
+              )}
+              {selectedProject.projectType && <span>{selectedProject.projectType}</span>}
+              {selectedProject.globalProjectSite && (
+                <span className="inline-flex items-center gap-1">
+                  <Building2 className="h-3 w-3" />
+                  {selectedProject.globalProjectSite}
+                </span>
+              )}
+              {selectedProject.projectManagerName && (
+                <span className="inline-flex items-center gap-1">
+                  <UserRound className="h-3 w-3" />
+                  {selectedProject.projectManagerName}
+                </span>
+              )}
+              {selectedProject.endDate && (
+                <span
+                  className={cn(
+                    "inline-flex items-center gap-1",
+                    (daysRemaining(selectedProject.endDate) ?? 0) < 0 && "text-destructive",
+                  )}
+                >
+                  <CalendarClock className="h-3 w-3" />
+                  {formatDate(selectedProject.startDate)
+                    ? `${formatDate(selectedProject.startDate)} → `
+                    : "Due "}
+                  {formatDate(selectedProject.endDate)}
+                  {(() => {
+                    const remaining = daysRemaining(selectedProject.endDate);
+                    if (remaining == null) return null;
+                    return remaining < 0
+                      ? ` · ${Math.abs(remaining)}d overrun`
+                      : ` · ${remaining}d left`;
+                  })()}
+                </span>
+              )}
             </div>
-            {/* With a project chosen the header identifies it, rather than repeating an
-                instruction that has already been followed. */}
-            {selectedProject ? (
-              <div className="min-w-0">
-                <div className="flex flex-wrap items-center gap-2">
-                  {/* Wraps on a phone rather than truncating — the name is the whole point of
-                      the header once a project is chosen. */}
-                  <h1 className="min-w-0 break-words text-xl font-bold leading-tight tracking-tight sm:truncate sm:text-2xl">
-                    {selectedProject.projectName}
-                  </h1>
-                  <Badge
-                    variant="outline"
-                    className={cn(
-                      "border-0 shrink-0",
-                      projectLifecycleStyles[resolveLifecycle(selectedProject)],
-                    )}
-                  >
-                    {resolveLifecycle(selectedProject)}
-                  </Badge>
-                </div>
-                <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-blue-100">
-                  {selectedProject.projectCode && (
-                    <span className="font-mono">{selectedProject.projectCode}</span>
-                  )}
-                  {selectedProject.projectType && <span>{selectedProject.projectType}</span>}
-                  {selectedProject.globalProjectSite && (
-                    <span className="inline-flex items-center gap-1">
-                      <Building2 className="h-3 w-3" />
-                      {selectedProject.globalProjectSite}
-                    </span>
-                  )}
-                  {selectedProject.projectManagerName && (
-                    <span className="inline-flex items-center gap-1">
-                      <UserRound className="h-3 w-3" />
-                      {selectedProject.projectManagerName}
-                    </span>
-                  )}
-                  {selectedProject.endDate && (
-                    <span
-                      className={cn(
-                        "inline-flex items-center gap-1",
-                        (daysRemaining(selectedProject.endDate) ?? 0) < 0 && "text-red-200",
-                      )}
-                    >
-                      <CalendarClock className="h-3 w-3" />
-                      {formatDate(selectedProject.startDate)
-                        ? `${formatDate(selectedProject.startDate)} → `
-                        : "Due "}
-                      {formatDate(selectedProject.endDate)}
-                      {(() => {
-                        const remaining = daysRemaining(selectedProject.endDate);
-                        if (remaining == null) return null;
-                        return remaining < 0
-                          ? ` · ${Math.abs(remaining)}d overrun`
-                          : ` · ${remaining}d left`;
-                      })()}
-                    </span>
-                  )}
-                </div>
-              </div>
-            ) : (
-              <div className="min-w-0">
-                <h1 className="text-xl font-bold tracking-tight sm:text-2xl">{MODULE_NAME}</h1>
-                <p className="mt-0.5 text-[13px] text-blue-100 sm:text-sm">
-                  Select a project to open its mapped BOQ, costing, and configuration data
-                </p>
-              </div>
-            )}
-          </div>
-          {/* One row where it fits (a 430px phone), the count pill wrapping under the picker on a
-              narrower one instead of claiming a line to itself on every phone. */}
+          ) : undefined
+        }
+        className="mb-0 sm:mb-0"
+        actions={
+          // One row where it fits (a 430px phone), the count pill wrapping under the picker on a
+          // narrower one instead of claiming a line to itself on every phone.
           <div className="flex w-full flex-wrap items-center gap-2 sm:w-auto sm:flex-nowrap sm:justify-end">
             {isLoadingProjects ? (
-              <Skeleton className="h-10 min-w-[12rem] flex-1 bg-white/20 sm:h-9 sm:w-56 sm:flex-none" />
+              <Skeleton className="h-10 min-w-[12rem] flex-1 sm:h-9 sm:w-56 sm:flex-none" />
             ) : projects.length ? (
               <Select value={selectedProject?.id ?? ""} onValueChange={handleProjectChange}>
-                <SelectTrigger className="h-10 min-w-[12rem] flex-1 border-white/30 bg-white/15 text-sm text-white shadow-none backdrop-blur-sm hover:bg-white/20 focus:ring-white/40 data-[placeholder]:text-blue-100 sm:h-9 sm:w-56 sm:flex-none">
+                <SelectTrigger className="h-10 min-w-[12rem] flex-1 text-sm sm:h-9 sm:w-56 sm:flex-none">
                   <SelectValue placeholder="Select project..." />
                 </SelectTrigger>
                 <SelectContent>
@@ -405,12 +399,12 @@ export default function ProjectManagementPage() {
                 </SelectContent>
               </Select>
             ) : (
-              <div className="rounded-lg border border-white/25 bg-white/10 px-3 py-2 text-xs text-blue-50">
+              <div className="rounded-lg border bg-muted/40 px-3 py-2 text-xs text-muted-foreground">
                 No active projects.
                 {canViewSettings && (
                   <Link
                     href="/project-management/settings/projects"
-                    className="ml-1 font-semibold text-white underline underline-offset-2"
+                    className="ml-1 font-semibold text-foreground underline underline-offset-2"
                   >
                     Create one
                   </Link>
@@ -419,14 +413,14 @@ export default function ProjectManagementPage() {
             )}
 
             {!isLoadingProjects && (
-              <div className="ml-auto flex shrink-0 items-center gap-1.5 rounded-full bg-white/15 px-3 py-1.5 text-xs font-medium backdrop-blur-sm sm:ml-0">
+              <div className="ml-auto flex shrink-0 items-center gap-1.5 rounded-full bg-muted px-3 py-1.5 text-xs font-medium text-muted-foreground sm:ml-0">
                 <Building2 className="h-3.5 w-3.5" />
                 {projects.length} Active Project{projects.length !== 1 ? "s" : ""}
               </div>
             )}
           </div>
-        </CardContent>
-      </Card>
+        }
+      />
 
       {/* ── Quick access ─────────────────────────────────────────────────────
           Two columns rather than four stacked full-width grids. Each group used to own a
@@ -444,14 +438,7 @@ export default function ProjectManagementPage() {
               group.key === "scopes" || group.key === "data" ? "lg:col-span-2" : "lg:col-span-1",
             )}
           >
-            <div className="flex items-center gap-2">
-              <group.icon className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-              <h2 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                {group.title}
-              </h2>
-              {/* Hairline carries the eye across the row and keeps the heading from floating. */}
-              <span aria-hidden className="h-px flex-1 bg-border" />
-            </div>
+            <SectionHeader title={group.title} icon={group.icon} className="mb-0" />
 
             <div
               className={cn(

@@ -5,7 +5,6 @@
 import { useState, useEffect, useMemo, useCallback } from 'react';
 import Link from 'next/link';
 import {
-  ArrowLeft,
   ClipboardList,
   Truck,
   Calculator,
@@ -20,7 +19,7 @@ import {
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/components/ui/card';
 import { cn } from '@/lib/utils';
 import type { LucideIcon } from 'lucide-react';
-import { Button } from '@/components/ui/button';
+import { PageHeader } from '@/components/shared/page-header';
 import { useParams, useRouter } from 'next/navigation';
 import {
   Select,
@@ -88,7 +87,7 @@ function BillingReconCard({ item }: BillingReconCardProps) {
           <item.icon className="w-6 h-6 text-primary" />
         </div>
         <div className="flex-1">
-          <CardTitle className="text-base font-bold">{item.text}</CardTitle>
+          <CardTitle>{item.text}</CardTitle>
           <CardDescription className="text-xs">{item.description}</CardDescription>
         </div>
       </CardHeader>
@@ -255,16 +254,7 @@ export default function ProjectDashboardPage() {
   if (!safeCan('View Module', 'Billing Recon')) {
     return (
       <div className="w-full px-4 sm:px-6 lg:px-8">
-        <div className="mb-8 flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <Link href="/billing-recon">
-              <Button variant="ghost" size="icon" aria-label="Back">
-                <ArrowLeft className="h-6 w-6" />
-              </Button>
-            </Link>
-            <h1 className="text-2xl font-bold">{projectName}</h1>
-          </div>
-        </div>
+        <PageHeader title={projectName} backHref="/billing-recon" backLabel="Back to all projects" />
         <Card>
           <CardHeader>
             <CardTitle>Access Denied</CardTitle>
@@ -280,35 +270,32 @@ export default function ProjectDashboardPage() {
 
   return (
     <div className="w-full px-4 sm:px-6 lg:px-8">
-      <div className="mb-8 flex items-center justify-between">
-        <div className="flex items-center gap-2">
-          <Link href="/billing-recon">
-            <Button variant="ghost" size="icon" aria-label="Back">
-              <ArrowLeft className="h-6 w-6" />
-            </Button>
-          </Link>
-          <h1 className="text-2xl font-bold">{projectName}</h1>
-        </div>
-        <div className="flex items-center gap-2">
-          <FolderOpen className="h-5 w-5 text-muted-foreground" />
-          <Select value={selectedValue} onValueChange={handleProjectChange}>
-            <SelectTrigger className="w-full sm:w-[260px]">
-              <SelectValue placeholder="Select Project" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">All Projects</SelectItem>
-              {projects.map((p) => {
-                const value = slugify(p.projectName);
-                return (
-                  <SelectItem key={p.id} value={value}>
-                    {p.projectName}
-                  </SelectItem>
-                );
-              })}
-            </SelectContent>
-          </Select>
-        </div>
-      </div>
+      <PageHeader
+        title={projectName}
+        backHref="/billing-recon"
+        backLabel="Back to all projects"
+        actions={
+          <div className="flex items-center gap-2">
+            <FolderOpen className="h-5 w-5 shrink-0 text-muted-foreground" />
+            <Select value={selectedValue} onValueChange={handleProjectChange}>
+              <SelectTrigger className="w-full sm:w-[260px]">
+                <SelectValue placeholder="Select Project" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Projects</SelectItem>
+                {projects.map((p) => {
+                  const value = slugify(p.projectName);
+                  return (
+                    <SelectItem key={p.id} value={value}>
+                      {p.projectName}
+                    </SelectItem>
+                  );
+                })}
+              </SelectContent>
+            </Select>
+          </div>
+        }
+      />
 
       <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
         {billingItems.map((item) => (

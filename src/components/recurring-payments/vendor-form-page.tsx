@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { collection, doc, getDoc, serverTimestamp, writeBatch } from 'firebase/firestore';
-import { ArrowLeft, Loader2, Save } from 'lucide-react';
+import { Loader2, Save } from 'lucide-react';
 import { db } from '@/lib/firebase';
 import { useAuth } from '@/components/auth/AuthProvider';
 import { useAuthorization } from '@/hooks/useAuthorization';
@@ -14,6 +14,7 @@ import { ControlledField } from './controlled-field';
 import { useFieldControl, validateFieldControlRequirements } from './use-field-control';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { PageHeader } from '@/components/shared/page-header';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
@@ -137,7 +138,13 @@ export default function VendorFormPage({ vendorId }: { vendorId?: string }) {
   if (loading) return <div className="flex min-h-[45vh] items-center justify-center"><Loader2 className="h-7 w-7 animate-spin" /></div>;
 
   return <div className="mx-auto max-w-4xl space-y-4">
-    <div className="flex items-center gap-3"><Button size="icon" variant="outline" onClick={() => router.back()}><ArrowLeft className="h-4 w-4" /></Button><div><h1 className="text-2xl font-bold">{vendorId ? 'Edit Vendor' : 'Add Vendor'}</h1><p className="text-sm text-muted-foreground">Tax, contact, terms and masked banking details</p></div></div>
+    <PageHeader
+      className="mb-0 sm:mb-0"
+      backHref={vendorId ? `/recurring-payments/vendors/${vendorId}` : '/recurring-payments/vendors'}
+      backLabel={vendorId ? 'Back to vendor' : 'Back to vendors'}
+      title={vendorId ? 'Edit Vendor' : 'Add Vendor'}
+      description="Tax, contact, terms and masked banking details"
+    />
     <Card><CardHeader><CardTitle>Vendor information</CardTitle><CardDescription>Full bank account numbers should not be stored here. Banking changes are separately audited and notified.</CardDescription></CardHeader><CardContent>
       <form onSubmit={save} className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
         <ControlledField setting={field('name')}><Input value={vendor.name || ''} onChange={event => set('name', event.target.value)} required={field('name').required} /></ControlledField>

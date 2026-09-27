@@ -3,9 +3,8 @@
 'use client';
 
 import Link from 'next/link';
-import { ArrowLeft, Hash, Tags, Users, ShieldAlert, Settings2, SlidersHorizontal } from 'lucide-react';
+import { Hash, Tags, Users, ShieldAlert, Settings2, SlidersHorizontal } from 'lucide-react';
 import { ExpensesPageHeader } from '@/components/expenses/page-header';
-import { Button } from '@/components/ui/button';
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/components/ui/card';
 import type { LucideIcon } from 'lucide-react';
 import { cn } from '@/lib/utils';
@@ -123,10 +122,7 @@ export default function ExpensesSettingsPage() {
     if (!canViewPage) {
         return (
              <div className="w-full">
-                <div className="mb-6 flex items-center gap-4">
-                    <Link href="/expenses"><Button variant="ghost" size="icon"><ArrowLeft className="h-6 w-6" /></Button></Link>
-                    <h1 className="text-xl font-bold">Expenses Settings</h1>
-                </div>
+                <ExpensesPageHeader icon={Settings2} title="Expenses Settings" backHref="/expenses" />
                  <Card>
                     <CardHeader><CardTitle>Access Denied</CardTitle><CardDescription>You do not have permission to view these settings.</CardDescription></CardHeader>
                     <CardContent className="flex justify-center p-8"><ShieldAlert className="h-16 w-16 text-destructive" /></CardContent>

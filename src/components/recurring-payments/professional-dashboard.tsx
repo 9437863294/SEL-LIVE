@@ -49,6 +49,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { chartChrome } from "@/components/ui/chart";
+import { PageHeader } from "@/components/shared/page-header";
 import CollapsibleFilterCard from "./collapsible-filter-card";
 import { Input } from "@/components/ui/input";
 import {
@@ -406,64 +407,52 @@ export default function ProfessionalRecurringDashboard() {
     );
   return (
     <div className="space-y-5">
-      <Card className="overflow-hidden border border-white/60 bg-gradient-to-r from-emerald-500/10 via-white/90 to-teal-500/10 shadow-sm backdrop-blur-sm">
-        <CardContent className="space-y-5 p-5">
-          <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-            <div className="flex items-start gap-3">
-              <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-emerald-500 to-teal-600 text-white shadow-sm">
-                <WalletCards className="h-5 w-5" />
-              </div>
-              <div>
-                <p className="text-xs font-semibold uppercase tracking-[0.2em] text-emerald-700">
-                  Financial obligation control centre
-                </p>
-                <h1 className="text-2xl font-bold text-slate-900">Recurring Payments</h1>
-                <p className="text-sm text-slate-600">
-                  Real-time due dates, approvals, exceptions, cash flow and
-                  payment risk
-                </p>
-              </div>
-            </div>
-            <div className="flex flex-wrap gap-2">
-              <Button
-                variant="outline"
-                className="bg-white/90"
-                onClick={() => {
-                  setRefreshing(true);
-                  setTimeout(() => setRefreshing(false), 500);
-                }}
-              >
-                <RefreshCw
-                  className={`mr-2 h-4 w-4 ${refreshing ? "animate-spin" : ""}`}
-                />
-                Refresh
+      <PageHeader
+        className="mb-0 sm:mb-0"
+        icon={WalletCards}
+        eyebrow="Financial obligation control centre"
+        title="Recurring Payments"
+        description="Real-time due dates, approvals, exceptions, cash flow and payment risk"
+        actions={
+          <>
+            <Button
+              variant="outline"
+              className="bg-white/90"
+              onClick={() => {
+                setRefreshing(true);
+                setTimeout(() => setRefreshing(false), 500);
+              }}
+            >
+              <RefreshCw
+                className={`mr-2 h-4 w-4 ${refreshing ? "animate-spin" : ""}`}
+              />
+              Refresh
+            </Button>
+            {can("Export", "Recurring Payments.Reports") && (
+              <Button variant="outline" className="bg-white/90" onClick={exportSummary}>
+                <Download className="mr-2 h-4 w-4" />
+                Export summary
               </Button>
-              {can("Export", "Recurring Payments.Reports") && (
-                <Button variant="outline" className="bg-white/90" onClick={exportSummary}>
-                  <Download className="mr-2 h-4 w-4" />
-                  Export summary
+            )}
+            {can("Add", "Recurring Payments.Payments") && (
+              <Link href="/recurring-payments/payments/new">
+                <Button className="bg-emerald-600 text-white hover:bg-emerald-700">
+                  <Plus className="mr-2 h-4 w-4" />
+                  Manual payment
                 </Button>
-              )}
-              {can("Add", "Recurring Payments.Payments") && (
-                <Link href="/recurring-payments/payments/new">
-                  <Button className="bg-emerald-600 text-white hover:bg-emerald-700">
-                    <Plus className="mr-2 h-4 w-4" />
-                    Manual payment
-                  </Button>
-                </Link>
-              )}
-              {can("Add", "Recurring Payments.Recurring Masters") && (
-                <Link href="/recurring-payments/masters/new">
-                  <Button className="bg-teal-600 text-white hover:bg-teal-700">
-                    <Plus className="mr-2 h-4 w-4" />
-                    Recurring master
-                  </Button>
-                </Link>
-              )}
-            </div>
-          </div>
-        </CardContent>
-      </Card>
+              </Link>
+            )}
+            {can("Add", "Recurring Payments.Recurring Masters") && (
+              <Link href="/recurring-payments/masters/new">
+                <Button className="bg-teal-600 text-white hover:bg-teal-700">
+                  <Plus className="mr-2 h-4 w-4" />
+                  Recurring master
+                </Button>
+              </Link>
+            )}
+          </>
+        }
+      />
 
       <CollapsibleFilterCard activeCount={activeFilterCount} onClear={() => setFilters(defaultFilters)}>
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-7">
