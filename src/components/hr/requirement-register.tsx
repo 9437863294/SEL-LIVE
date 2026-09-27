@@ -26,13 +26,13 @@ import {
   HrFillBar,
   HrFilterCard,
   HrLoader,
-  HrPageHeader,
   HrPriorityBadge,
   HrSlaBadge,
   HrStatusBadge,
   type HrListColumn,
 } from './hr-ui';
 import { useHrCollection, useHrConfig, useHrPermissions } from './use-hr-config';
+import { PageHeader } from '@/components/shared/page-header';
 
 /**
  * The requirement register of spec section 54 — every requisition, with the columns the spec lists
@@ -284,7 +284,7 @@ export default function RequirementRegister({
 
   return (
     <div>
-      <HrPageHeader
+      <PageHeader
         title={title || 'Requirement Register'}
         description={
           description ||

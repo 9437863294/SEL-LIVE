@@ -149,7 +149,6 @@ export default function LoanDashboardPage() {
 
       {/* ── Header ──────────────────────────────────────────────────────── */}
       <PageHeader
-        className="mb-0 sm:mb-0"
         icon={CreditCard}
         title="Loan Dashboard"
         description="Track loans, EMI schedules, and repayment progress"

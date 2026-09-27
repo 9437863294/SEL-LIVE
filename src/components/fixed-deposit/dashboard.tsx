@@ -413,7 +413,6 @@ export default function FixedDepositDashboard() {
   return (
     <div className="space-y-5">
       <PageHeader
-        className="mb-0 sm:mb-0"
         eyebrow="Treasury Control"
         title="Fixed Deposit Management"
         description="Monitor principal, BG/LC utilisation, availability, maturity exposure, and interest realisation."

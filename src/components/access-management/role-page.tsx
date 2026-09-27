@@ -33,13 +33,14 @@ import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { ArrowLeft, ShieldCheck } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { HrAccessDenied, HrEmptyState, HrLoader, HrPageHeader } from '@/components/hr/hr-ui';
+import { HrAccessDenied, HrEmptyState, HrLoader } from '@/components/hr/hr-ui';
 import { useAuth } from '@/components/auth/AuthProvider';
 import { useAuthorization } from '@/hooks/useAuthorization';
 import { useAccessDirectory } from '@/hooks/useAccessDirectory';
 import { actorFromUser, canManageRoles } from '@/lib/access-control-service';
 import { AccessPageShell } from './access-ui';
 import { RoleForm } from './role-form';
+import { PageHeader } from '@/components/shared/page-header';
 
 const DEFAULT_RETURN = '/settings/access-management?tab=roles';
 
@@ -147,7 +148,7 @@ export function RolePage({ roleId }: { roleId?: string }) {
     // Full width, deliberately: the permission tree and its 27 module chips are the content of this
     // page, and a centred column on a wide monitor would just turn that room into two empty gutters.
     <AccessPageShell backHref={returnTo} backLabel="Back to roles">
-      <HrPageHeader
+      <PageHeader
         title={editing ? `Edit ${editing.name}` : duplicating ? `Duplicate ${duplicating.name}` : 'New role'}
         description={
           duplicating

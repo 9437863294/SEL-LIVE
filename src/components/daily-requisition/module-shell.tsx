@@ -5,7 +5,6 @@ import Link from 'next/link';
 import type { LucideIcon } from 'lucide-react';
 
 import { Card, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { PageHeader } from '@/components/shared/page-header';
 import { cn } from '@/lib/utils';
 
 export const dailyPageContainerClass = 'w-full px-3 py-4 sm:px-4 lg:px-6 xl:px-8';
@@ -69,27 +68,6 @@ export function DailyWorkflowCard({ item }: DailyWorkflowCardProps) {
       {cardContent}
     </Link>
   );
-}
-
-interface DailyPageHeaderProps {
-  title: string;
-  description: string;
-  backHref?: string;
-  eyebrow?: string;
-  meta?: ReactNode;
-  actions?: ReactNode;
-}
-
-export function DailyPageHeader({
-  title,
-  description,
-  backHref = '/daily-requisition',
-  eyebrow = 'Daily Requisition',
-  meta,
-  actions,
-}: DailyPageHeaderProps) {
-  // The app's standard header (`shared/page-header`), with the module's name above the title.
-  return <PageHeader title={title} description={description} backHref={backHref} eyebrow={eyebrow} meta={meta} actions={actions} />;
 }
 
 export function DailyMetricCard({

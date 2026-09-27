@@ -200,7 +200,6 @@ export default function PortfolioOverviewPage() {
     <div className="space-y-4">
       {/* ── Header card ─────────────────────────────────────────────────── */}
       <PageHeader
-        className="mb-0 sm:mb-0"
         icon={BarChart3}
         title="Portfolio Overview"
         description="All loans at a glance — outstanding, paid, and type breakdown"

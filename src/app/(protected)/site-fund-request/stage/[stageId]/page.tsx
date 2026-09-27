@@ -270,7 +270,6 @@ export default function StagePage() {
     <>
       <div className="w-full space-y-6 p-4 sm:p-6">
         <PageHeader
-          className="mb-0 sm:mb-0"
           backHref={BASE_ROUTE}
           backLabel="Back to dashboard"
           eyebrow={MODULE_LABEL}

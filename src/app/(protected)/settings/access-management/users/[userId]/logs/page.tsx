@@ -132,7 +132,6 @@ export default function UserLogsPage() {
       <PageHeader
         title={isLoading ? 'Activity' : `Activity · ${user?.name || user?.email || 'User'}`}
         description="Sign-ins, sign-outs and edits to this user's record. Access grants and revokes are on the profile's History tab."
-        descriptionClassName="hidden sm:block"
         backHref={`/settings/access-management/users/${userId}`}
         backLabel="Back to access profile"
         className="shrink-0"

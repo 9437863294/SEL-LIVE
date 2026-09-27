@@ -13,7 +13,8 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Skeleton } from '@/components/ui/skeleton';
 import { Input } from '@/components/ui/input';
 import { TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { DailyPageHeader, dailyPageContainerClass } from '@/components/daily-requisition/module-shell';
+import { dailyPageContainerClass } from '@/components/daily-requisition/module-shell';
+import { PageHeader } from '@/components/shared/page-header';
 
 const formatCurrency = (n: number) =>
   new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 0 }).format(n || 0);
@@ -204,7 +205,7 @@ export default function StatusOverviewReportPage() {
 
   return (
     <div className={dailyPageContainerClass}>
-      <DailyPageHeader
+      <PageHeader
         title="Status Overview"
         description="Count and total net amounts by requisition status across the pipeline."
         backHref="/daily-requisition/reports"

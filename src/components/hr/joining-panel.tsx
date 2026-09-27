@@ -48,7 +48,6 @@ import {
   HrField,
   HrLoader,
   HrMeter,
-  HrPageHeader,
   HrSection,
   HrStatusBadge,
   SensitiveMoney,
@@ -57,6 +56,7 @@ import {
 } from './hr-ui';
 import { ReasonDialog } from './interview-panel';
 import { useHrCollection, useHrConfig, useHrPermissions } from './use-hr-config';
+import { PageHeader } from '@/components/shared/page-header';
 
 /**
  * Pre-joining and joining — spec sections 31 to 36.
@@ -264,7 +264,7 @@ export default function JoiningPanel({
   return (
     <div>
       {!embedded && (
-        <HrPageHeader
+        <PageHeader
           title={mode === 'pre-joining' ? 'Pre-Joining' : 'Joining Management'}
           description={`${decorated.length} ${decorated.length === 1 ? 'record' : 'records'}${
             thisWeek ? ` · ${thisWeek} joining this week` : ''

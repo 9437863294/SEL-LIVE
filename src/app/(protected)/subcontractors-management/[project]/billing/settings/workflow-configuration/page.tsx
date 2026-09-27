@@ -46,7 +46,7 @@ import { logUserActivity } from '@/lib/activity-logger';
 import { useParams } from 'next/navigation';
 import { Badge } from '@/components/ui/badge';
 import { Textarea } from '@/components/ui/textarea';
-import { PmContent, PmTopbar } from '@/components/project-management/pm-shell';
+import { PmContent } from '@/components/project-management/pm-shell';
 
 /* ---------------- type guards ---------------- */
 function isUserBased(step: WorkflowStep): step is WorkflowStepUser {
@@ -393,7 +393,7 @@ export default function BillingWorkflowConfigurationPage() {
 
   return (
     <>
-      <PmTopbar
+      <PageHeader sticky
         title="Billing Workflow"
         breadcrumbs={[
           { label: 'Subcontractors', href: `/subcontractors-management/${projectSlug}` },

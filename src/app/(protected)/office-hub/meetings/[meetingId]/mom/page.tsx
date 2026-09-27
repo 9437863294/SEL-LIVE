@@ -74,11 +74,11 @@ import {
   OfficeHubCallout,
   OfficeHubEmptyState,
   OfficeHubLoader,
-  OfficeHubPageHeader,
   OfficeHubSection,
 } from '@/components/office-hub/ui';
 import { DateField, TimeField } from '@/components/office-hub/selectors';
 import { MomView } from '@/components/office-hub/mom-view';
+import { PageHeader } from '@/components/shared/page-header';
 
 export default function MeetingMomPage() {
   const params = useParams<{ meetingId: string }>();
@@ -243,7 +243,7 @@ export default function MeetingMomPage() {
 
   return (
     <div className="space-y-3">
-      <OfficeHubPageHeader
+      <PageHeader
         title="Minutes of meeting"
         description={`${meeting.title} · ${formatIsoDate(meeting.date, { withWeekday: true })}`}
         actions={

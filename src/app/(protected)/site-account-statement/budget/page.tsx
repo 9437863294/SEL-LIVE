@@ -1260,7 +1260,6 @@ export default function SiteFundBudgetPage() {
 
       {/* Header */}
       <PageHeader
-        className="mb-0 sm:mb-0"
         title="Site Fund Budget"
         description="Hierarchical tracking — Total → FY-wise → Month-wise → Category-wise"
         actions={(canExport || monthlyPerm.add || totalPerm.add || fyPerm.add) ? (

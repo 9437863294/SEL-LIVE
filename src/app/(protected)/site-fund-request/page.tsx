@@ -170,7 +170,6 @@ export default function SiteFundRequestDashboard() {
   return (
     <div className="w-full space-y-6 p-4 sm:p-6">
       <PageHeader
-        className="mb-0 sm:mb-0"
         eyebrow="Site Fund Request"
         title="Dashboard"
         description="Overview of fund requests and workflow stages."

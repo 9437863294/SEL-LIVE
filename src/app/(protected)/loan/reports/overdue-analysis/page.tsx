@@ -238,7 +238,6 @@ export default function OverdueAnalysisPage() {
     <div className="space-y-4">
       {/* ── Header card ── */}
       <PageHeader
-        className="mb-0 sm:mb-0"
         icon={AlertTriangle}
         title="Overdue Analysis"
         description="All overdue EMIs sorted by days past due — live snapshot"

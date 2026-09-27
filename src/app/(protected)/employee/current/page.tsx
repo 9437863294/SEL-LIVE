@@ -61,7 +61,6 @@ import {
   type HrListColumn,
 } from '@/components/hr/hr-ui';
 import {
-  EmployeeHeader,
   EmployeeKpiCard,
   EmployeePageShell,
   EmployeeStatusPill,
@@ -75,6 +74,7 @@ import { cn } from '@/lib/utils';
 import { exportRowsToExcel } from '@/lib/report-excel';
 import { fetchCurrentEmployeesLive, type LiveCurrentEmployeesResponse } from '@/lib/greythr-sync-client';
 import type { EmploymentState, SyncedEmployee } from '@/lib/greythr';
+import { PageHeader } from '@/components/shared/page-header';
 
 type Row = SyncedEmployee & { id: string };
 
@@ -390,17 +390,16 @@ export default function CurrentEmployeesLivePage() {
     <EmployeePageShell>
       {/*
         This screen's own header card was the best one in the module — icon tile, live pill,
-        freshness stamp — and `EmployeeHeader` is that design, generalised, so its nine siblings wear
+        freshness stamp — and `PageHeader` is that design, generalised, so its nine siblings wear
         it too. The only thing lost in the move is the bespoke pulse markup, now `pulse` on the pill.
       */}
-      <EmployeeHeader
+      <PageHeader
         icon={Users}
-        tone="emerald"
         eyebrow="Employee management"
         title="Current employees"
         backHref="/employee"
         backLabel="Back to Employee Management"
-        status={
+        badge={
           /*
             Three states, because the page now has three. Freshly fetched from greytHR is the only
             one that earns the pulsing "live" dot; the stored roster says so plainly, with its age on

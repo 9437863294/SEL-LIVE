@@ -43,7 +43,8 @@ import { Separator } from '@/components/ui/separator';
 import { getAssigneeForStep, calculateDeadline } from '@/lib/workflow-utils';
 import { projectMatchesSlug } from '@/lib/project-slug';
 import { civilBoqKey, civilBoqKeyOfBoqItem, readLooseScope } from '@/lib/civil-execution';
-import { PmContent, PmTopbar } from '@/components/project-management/pm-shell';
+import { PmContent } from '@/components/project-management/pm-shell';
+import { PageHeader } from '@/components/shared/page-header';
 
 /**
  * Local WorkOrder shim — add to lib/types.ts later for long-term fix.
@@ -706,7 +707,7 @@ export default function CreateBillPage() {
 
   return (
     <>
-      <PmTopbar
+      <PageHeader sticky
         title="Bill Entry"
         breadcrumbs={[
           { label: 'Subcontractors', href: `/subcontractors-management/${projectSlug}` },

@@ -10,7 +10,6 @@
 
 export {
   JmcPageShell as IndentPageShell,
-  JmcPageHeader as IndentPageHeader,
   JmcLoadingState as IndentLoadingState,
   JmcCardGridLoadingState as IndentCardGridLoadingState,
   JmcAccessDenied as IndentAccessDenied,

@@ -32,7 +32,6 @@ import {
   PmDataList,
   PmSectionHead,
   PmShell,
-  PmTopbar,
   type PmListColumn,
 } from "@/components/project-management/pm-shell";
 import { cn } from "@/lib/utils";
@@ -102,6 +101,7 @@ import {
   rfqAwardRequiresApproval,
   type RfqLike,
 } from "@/lib/project-management-rfq-workflow";
+import { PageHeader } from "@/components/shared/page-header";
 
 type ProjectMapping = {
   id: string;
@@ -645,7 +645,7 @@ export default function RfqDetailPage() {
   return (
     // No sidebar: a single record's detail has no views to switch between.
     <PmShell>
-      <PmTopbar
+      <PageHeader sticky
         title={rfq.rfqNumber}
         breadcrumbs={[
           { label: mapping.projectName, href: `/project-management?project=${encodeURIComponent(mappingId)}` },

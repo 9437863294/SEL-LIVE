@@ -44,10 +44,10 @@ import { PmFormActions } from "@/components/project-management/pm-shell";
 import { useTowerProgress } from "@/components/project-management/tower-progress/tower-progress-provider";
 import {
   TowerProgressGuard,
-  TowerProgressHeader,
   TowerProgressNav,
   TowerProgressShell,
 } from "@/components/project-management/tower-progress/tower-progress-ui";
+import { PageHeader } from "@/components/shared/page-header";
 
 export default function TowerProgressSettingsPage() {
   const { permissions } = useTowerProgress();
@@ -105,9 +105,9 @@ function SettingsScreen() {
 
   return (
     <TowerProgressShell>
-      <TowerProgressHeader
+      <PageHeader
         title="Tower Progress settings"
-        subtitle={
+        description={
           project
             ? `Evidence rules, progress weighting and report watermark for ${project.projectName}.`
             : "Evidence rules, progress weighting and report watermark."

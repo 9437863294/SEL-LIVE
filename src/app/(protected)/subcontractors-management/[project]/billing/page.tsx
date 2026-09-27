@@ -25,7 +25,8 @@ import type { WorkflowStep } from '@/lib/types';
 import { db } from '@/lib/firebase';
 import { doc, getDoc } from 'firebase/firestore';
 import { useToast } from '@/hooks/use-toast';
-import { PmContent, PmNavCard, PmNavCardGrid, PmTopbar } from '@/components/project-management/pm-shell';
+import { PmContent, PmNavCard, PmNavCardGrid } from '@/components/project-management/pm-shell';
+import { PageHeader } from '@/components/shared/page-header';
 
 export default function BillingDashboardPage() {
   const params = useParams();
@@ -119,7 +120,7 @@ export default function BillingDashboardPage() {
 
   return (
     <>
-      <PmTopbar
+      <PageHeader sticky
         title="Billing"
         breadcrumbs={[
           { label: 'Subcontractors', href: `/subcontractors-management/${projectSlug}` },

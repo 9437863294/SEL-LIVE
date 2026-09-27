@@ -38,10 +38,10 @@ import {
 import {
   ReportAccessDenied,
   ReportErrorBanner,
-  ReportHeader,
   ReportLoading,
   ReportMetricTile,
 } from "./report-ui";
+import { PageHeader } from "@/components/shared/page-header";
 
 type AutomationLog = {
   id: string;
@@ -226,15 +226,15 @@ export default function AutomationHealthReport() {
 
   return (
     <div className="space-y-5">
-      <ReportHeader
+      <PageHeader
         title="Automation & Generation Health"
         // This report exists to surface problems, so it leads with the count that needs someone
         // to act rather than with a total that looks reassuring.
-        hero={{
+        meta={[{
           label: "Needing attention",
           value: String(stuckNeedingAttention.length),
           hint: `of ${stuck.length} obligation(s) stuck before a workflow queue`,
-        }}
+        }]}
         description="Which masters aren't generating, which obligations never reached a workflow queue, and why"
         actions={
           <>

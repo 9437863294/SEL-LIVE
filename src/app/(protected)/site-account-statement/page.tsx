@@ -869,7 +869,7 @@ export default function SiteAccountDashboardPage() {
 
   return (
     <div className="space-y-6">
-      <PageHeader className="mb-0 sm:mb-0" eyebrow="Site Account Statement" title="Dashboard" />
+      <PageHeader eyebrow="Site Account Statement" title="Dashboard" />
 
       {/* The dashboard totals every record it holds, so it has to say when it could not hold
           them all rather than present a partial sum as the whole picture. */}

@@ -408,7 +408,6 @@ export default function ProfessionalRecurringDashboard() {
   return (
     <div className="space-y-5">
       <PageHeader
-        className="mb-0 sm:mb-0"
         icon={WalletCards}
         eyebrow="Financial obligation control centre"
         title="Recurring Payments"

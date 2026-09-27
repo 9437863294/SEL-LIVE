@@ -67,7 +67,6 @@ export {
   HrKpiCard as OfficeHubKpiCard,
   HrLoader as OfficeHubLoader,
   HrMeter as OfficeHubMeter,
-  HrPageHeader as OfficeHubPageHeader,
   HrSection as OfficeHubSection,
   hrDialog as officeHubDialog,
   type HrListColumn as OfficeHubListColumn,

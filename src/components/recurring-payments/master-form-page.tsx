@@ -552,7 +552,6 @@ export default function RecurringMasterFormPage({
   return (
     <div className="mx-auto max-w-6xl space-y-5">
       <PageHeader
-        className="mb-0 sm:mb-0"
         backHref={masterId ? `/recurring-payments/masters/${masterId}` : "/recurring-payments/masters"}
         backLabel={masterId ? "Back to master" : "Back to masters"}
         title={

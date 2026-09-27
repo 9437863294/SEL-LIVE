@@ -302,7 +302,6 @@ export default function AmortizationReportPage() {
     <div className="space-y-4">
       {/* ── Header card ─────────────────────────────────────────────────── */}
       <PageHeader
-        className="mb-0 sm:mb-0"
         icon={TrendingUp}
         title="Loan Amortization Schedule"
         description="Full EMI-by-EMI breakdown of principal vs interest"

@@ -313,7 +313,6 @@ export default function SupplyPage() {
         icon={Package}
         backHref={`/project-management?project=${encodeURIComponent(mappingId)}`}
         backLabel="Back to Project Management"
-        className="mb-0 sm:mb-0"
       />
 
       {quickLinks.length ? (

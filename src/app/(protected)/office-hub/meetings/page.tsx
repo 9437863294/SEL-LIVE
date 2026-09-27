@@ -53,7 +53,6 @@ import {
   OfficeHubDataList,
   OfficeHubEmptyState,
   OfficeHubFilterCard,
-  OfficeHubPageHeader,
   PriorityBadge,
   ResponseSummaryChip,
   ResultCount,
@@ -61,6 +60,7 @@ import {
   type OfficeHubListColumn,
 } from '@/components/office-hub/ui';
 import { DateRangePicker, MultiSelect } from '@/components/office-hub/selectors';
+import { PageHeader } from '@/components/shared/page-header';
 
 type Scope = 'mine' | 'organized' | 'team' | 'department' | 'all';
 
@@ -278,7 +278,7 @@ export default function MeetingsRegisterPage() {
 
   return (
     <div className="space-y-3">
-      <OfficeHubPageHeader
+      <PageHeader
         title="Meetings"
         description={
           awaitingOnly

@@ -120,7 +120,6 @@ export default function ProjectInsuranceHistoryPage() {
     <div className="space-y-4">
       {/* Header */}
       <PageHeader
-        className="mb-0 sm:mb-0"
         icon={History}
         title="Project Insurance History"
         description="Complete log of all project insurance policy activities"

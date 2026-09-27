@@ -157,7 +157,6 @@ export default function PaymentEditPage({ paymentId }: { paymentId: string }) {
   return (
     <div className="mx-auto max-w-4xl space-y-4">
       <PageHeader
-        className="mb-0 sm:mb-0"
         backHref={`/recurring-payments/payments/${payment.id}`}
         backLabel="Back to payment"
         title="Edit Payment"

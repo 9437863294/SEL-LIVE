@@ -169,7 +169,6 @@ export default function PersonalInsurancePage() {
 
       {/* ── Header ────────────────────────────────────────────────────────── */}
       <PageHeader
-        className="mb-0 sm:mb-0"
         icon={Shield}
         title="Personal Insurance"
         description="All personal insurance policies across holders"

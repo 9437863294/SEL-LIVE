@@ -275,7 +275,6 @@ export default function AuditLogsPage() {
             </Badge>
           ) : undefined
         }
-        className="mb-0 sm:mb-0"
         actions={
           <>
             <Button variant="outline" size="sm" onClick={() => loadLogs(true, null)} disabled={isLoading} className="gap-1.5">

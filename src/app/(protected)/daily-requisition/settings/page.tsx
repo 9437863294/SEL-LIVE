@@ -6,13 +6,13 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { useAuthorization } from '@/hooks/useAuthorization';
 import {
   DailyMetricCard,
-  DailyPageHeader,
   DailyWorkflowCard,
   dailyPageContainerClass,
   dailySurfaceCardClass,
 } from '@/components/daily-requisition/module-shell';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { ShieldAlert } from 'lucide-react';
+import { PageHeader } from '@/components/shared/page-header';
 
 /* ---- Workflow items (new) ---- */
 const workflowItems = [
@@ -87,7 +87,7 @@ export default function DailyRequisitionSettingsPage() {
   if (!canViewPage) {
     return (
       <div className={dailyPageContainerClass}>
-        <DailyPageHeader
+        <PageHeader backHref="/daily-requisition" eyebrow="Daily Requisition"
           title="Settings"
           description="Configure workflow and controls for the daily requisition module."
         />
@@ -108,7 +108,7 @@ export default function DailyRequisitionSettingsPage() {
 
   return (
     <div className={dailyPageContainerClass}>
-      <DailyPageHeader
+      <PageHeader backHref="/daily-requisition" eyebrow="Daily Requisition"
         title="Settings"
         description="Configure workflow steps, numbering, printing, and access-related controls."
         meta={

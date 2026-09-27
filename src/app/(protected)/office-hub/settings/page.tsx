@@ -53,11 +53,11 @@ import {
 import {
   OfficeHubEmptyState,
   OfficeHubLoader,
-  OfficeHubPageHeader,
   OfficeHubSection,
 } from '@/components/office-hub/ui';
 import { DateField, TimeField } from '@/components/office-hub/selectors';
 import { GoogleMeetPanel } from '@/components/office-hub/google-meet-panel';
+import { PageHeader } from '@/components/shared/page-header';
 
 /** The switches §35 lists, in its order, with the sentence each one governs. */
 const NOTIFICATION_ROWS: {
@@ -156,7 +156,7 @@ export default function OfficeHubSettingsPage() {
 
   return (
     <div className="space-y-3">
-      <OfficeHubPageHeader
+      <PageHeader
         title="Settings"
         description="Your own notification preferences, and — if you administer the module — the office-wide defaults."
       />

@@ -67,10 +67,10 @@ import {
   PmShell,
   PmSidebar,
   PmTableFoot,
-  PmTopbar,
   pmAccent,
   type PmListColumn,
 } from "@/components/project-management/pm-shell";
+import { PageHeader } from "@/components/shared/page-header";
 
 type ProjectMapping = {
   id: string;
@@ -400,7 +400,7 @@ export default function RfqRegisterPage() {
         />
       }
     >
-      <PmTopbar
+      <PageHeader sticky
         title="RFQ Register"
         breadcrumbs={[
           { label: mapping.projectName, href: `/project-management?project=${encodeURIComponent(mappingId)}` },

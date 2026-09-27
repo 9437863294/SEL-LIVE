@@ -24,11 +24,11 @@ import {
   SURVEY_SETTINGS_GRADIENT,
   SurveyAccessDenied,
   SurveyLoadingState,
-  SurveyPageHeader,
   SurveyPageShell,
   SurveyProjectNotFound,
 } from "@/components/survey/survey-page-shell";
 import { WorkflowConfigurationEditor } from "@/components/workflow/workflow-configuration-editor";
+import { PageHeader } from "@/components/shared/page-header";
 
 export default function SurveyWorkflowConfigurationPage() {
   const searchParams = useSearchParams();
@@ -70,13 +70,12 @@ export default function SurveyWorkflowConfigurationPage() {
 
   return (
     <SurveyPageShell>
-      <SurveyPageHeader
+      <PageHeader
         title="Survey Workflow"
-        subtitle="Stages a surveyed quantity passes before it is written onto the BOQ item."
+        description="Stages a surveyed quantity passes before it is written onto the BOQ item."
         icon={GitMerge}
         backHref={context.surveyHref("settings")}
         backLabel="Back to Survey Settings"
-        gradient={SURVEY_SETTINGS_GRADIENT}
       />
 
 

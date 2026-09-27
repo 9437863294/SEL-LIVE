@@ -257,7 +257,6 @@ export default function ProjectSettingsPage() {
   return (
     <div className="space-y-4">
       <PageHeader
-        className="mb-0 sm:mb-0"
         title="Project Setup"
         description="Enable projects for Site Account Statement and assign responsible persons"
         actions={

@@ -32,7 +32,6 @@ import {
   type HrListColumn,
 } from '@/components/hr/hr-ui';
 import {
-  EmployeeHeader,
   EmployeeKpiCard,
   EmployeePageShell,
   EmployeeStatusPill,
@@ -50,6 +49,7 @@ import { syncSalary } from '@/ai';
 import { cn } from '@/lib/utils';
 import { exportRowsToExcel } from '@/lib/report-excel';
 import { format, getYear } from 'date-fns';
+import { PageHeader } from '@/components/shared/page-header';
 
 interface EnrichedEmployee extends Employee {
   positions?: Record<string, string>;
@@ -516,14 +516,13 @@ export default function EmployeeSalaryPage() {
         moved is the synced/not-synced badge, which used to sit on the back arrow's row as a 10px
         chip and is now a status pill on the title's line where the scope is stated.
       */}
-      <EmployeeHeader
+      <PageHeader
         icon={IndianRupee}
-        tone="emerald"
         eyebrow="Employee management"
         title="Employee Salary"
         backHref="/employee"
         backLabel="Back to Employee Management"
-        status={
+        badge={
           !isAuthLoading && canView ? (
             lastSynced ? (
               <EmployeeStatusPill tone="emerald" icon={RefreshCw}>

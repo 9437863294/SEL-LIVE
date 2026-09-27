@@ -25,7 +25,6 @@ import {
   HrDataList,
   HrEmptyState,
   HrLoader,
-  HrPageHeader,
   hrDialog,
 } from '@/components/hr/hr-ui';
 import { hasPermission } from '@/lib/access-control';
@@ -34,6 +33,7 @@ import { canBroadcastNotifications, canSendNotifications } from '@/lib/windows-a
 import { fetchNotifications } from '@/lib/windows-agent-service';
 import { useWindowsAgent, useWindowsAgentAction, useWindowsAgentQuery } from './hooks';
 import { ClockTime } from './ui';
+import { PageHeader } from '@/components/shared/page-header';
 
 /**
  * §38's composer and §39's delivery report.
@@ -76,7 +76,7 @@ export function NotificationsPage() {
 
   return (
     <div className="space-y-5">
-      <HrPageHeader
+      <PageHeader
         title="Desktop notifications"
         description="Alerts pushed to the agent on people’s computers, and what happened to each one."
         actions={

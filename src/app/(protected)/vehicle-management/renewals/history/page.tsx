@@ -260,7 +260,6 @@ export default function RenewalHistoryPage() {
         title="Renewal History"
         description="Archive of all expired compliance records across PUC, Insurance, DL, Fitness, Road Tax, and Permit."
         icon={History}
-        className="mb-0 sm:mb-0"
         actions={
           <Button
             variant="outline"

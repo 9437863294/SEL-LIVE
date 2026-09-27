@@ -21,11 +21,11 @@ import { doc, getDoc } from 'firebase/firestore';
 import type { WorkflowStep } from '@/lib/types';
 import {
   DailyMetricCard,
-  DailyPageHeader,
   DailyWorkflowCard,
   dailyPageContainerClass,
 } from '@/components/daily-requisition/module-shell';
 import { Skeleton } from '@/components/ui/skeleton';
+import { PageHeader } from '@/components/shared/page-header';
 
 /* ─── helpers ─── */
 
@@ -180,7 +180,7 @@ export default function DailyRequisitionPage() {
 
   return (
     <div className={dailyPageContainerClass}>
-      <DailyPageHeader
+      <PageHeader eyebrow="Daily Requisition"
         title="Daily Requisition"
         description="Create entries, then track them through the workflow stages — from receiving to payment."
         backHref="/"

@@ -60,7 +60,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { cn } from '@/lib/utils';
 import { moduleBadgeClass } from '@/lib/activity-modules';
-import { KpiCard, PageHeader, type Tone } from '@/components/shared/kpi-card';
+import { KpiCard, type Tone } from '@/components/shared/kpi-card';
 import { CellLink, DataList, type ListColumn } from '@/components/shared/data-list';
 import {
   WORK_LANES,
@@ -79,6 +79,7 @@ import {
 import { useWorkDashboard } from './hooks';
 import { useCountUp } from './use-count-up';
 import WorkCalendar from './work-calendar';
+import { PageHeader } from '@/components/shared/page-header';
 
 /* ── figures ───────────────────────────────────────────────────────────────────────────────────── */
 

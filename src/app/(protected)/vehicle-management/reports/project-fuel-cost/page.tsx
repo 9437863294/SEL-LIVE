@@ -152,7 +152,6 @@ export default function ProjectFuelCostReportPage() {
         icon={Layers}
         backHref="/vehicle-management/reports"
         backLabel="Back to Reports"
-        className="mb-0 sm:mb-0"
         actions={
           <>
             <div className="flex min-w-full items-center gap-2 sm:min-w-0">

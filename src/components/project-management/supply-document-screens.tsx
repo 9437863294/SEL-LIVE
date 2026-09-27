@@ -78,7 +78,6 @@ import {
   PmSidebar,
   PmStatusPill,
   PmTableFoot,
-  PmTopbar,
   pmAccent,
   type PmListColumn,
 } from "@/components/project-management/pm-shell";
@@ -104,6 +103,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
+import { PageHeader } from "@/components/shared/page-header";
 
 /** Per-stage screen chrome the ledger definition does not carry. */
 export interface SupplyStageChrome {
@@ -616,7 +616,7 @@ export function SupplyDocumentNew({ stage }: { stage: SupplyLedgerStage }) {
 
   return (
     <PmShell>
-      <PmTopbar
+      <PageHeader sticky
         title={`New ${definition.label}`}
         breadcrumbs={[
           { label: definition.label, href: hrefWith(`${chrome.basePath}/documents`, mappingId) },
@@ -1399,7 +1399,7 @@ export function SupplyDocumentRegister({ stage }: { stage: SupplyLedgerStage }) 
         />
       }
     >
-      <PmTopbar
+      <PageHeader sticky
         title={`${definition.label} Documents`}
         // This register is the only screen under the module base, so its parent is the Supply hub
         // rather than a module landing page.

@@ -39,9 +39,9 @@ import { loadSearchCorpus } from '@/lib/office-hub-service';
 import { useDebouncedValue, useOfficeHub, useOfficeHubQuery } from '@/components/office-hub/hooks';
 import {
   OfficeHubEmptyState,
-  OfficeHubPageHeader,
   PriorityBadge,
 } from '@/components/office-hub/ui';
+import { PageHeader } from '@/components/shared/page-header';
 
 const KIND_ICON: Record<SearchResultKind, React.ElementType> = {
   meeting: CalendarDays,
@@ -114,7 +114,7 @@ export default function SearchPage() {
 
   return (
     <div className="space-y-3">
-      <OfficeHubPageHeader
+      <PageHeader
         title="Search"
         description="Across the meetings, tasks, decisions, action items, teams, people and documents you can see."
       />

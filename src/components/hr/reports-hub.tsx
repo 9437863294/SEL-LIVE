@@ -37,8 +37,9 @@ import {
   type SelectionProposal,
 } from '@/lib/hr-requirement';
 import { exportRowsToExcel } from '@/lib/report-excel';
-import { HrEmptyState, HrLoader, HrPageHeader, HrSection } from './hr-ui';
+import { HrEmptyState, HrLoader, HrSection } from './hr-ui';
 import { useHrCollection, useHrConfig, useHrPermissions } from './use-hr-config';
+import { PageHeader } from '@/components/shared/page-header';
 
 /**
  * The seventeen reports of spec section 53, from one registry rather than seventeen screens.
@@ -606,7 +607,7 @@ export default function ReportsHub({ slug }: { slug?: string }) {
     const groups: Array<ReportDefinition['group']> = ['Manpower', 'Recruitment', 'Commercial', 'Control'];
     return (
       <div>
-        <HrPageHeader
+        <PageHeader
           title="Reports"
           description={`${available.length} of ${REPORTS.length} reports available to you`}
         />
@@ -662,7 +663,7 @@ export default function ReportsHub({ slug }: { slug?: string }) {
   if (!report) {
     return (
       <div>
-        <HrPageHeader title="Report not found" />
+        <PageHeader title="Report not found" />
         <HrEmptyState
           icon={FileBarChart}
           title="That report is not available"
@@ -689,7 +690,7 @@ export default function ReportsHub({ slug }: { slug?: string }) {
 
   return (
     <div>
-      <HrPageHeader
+      <PageHeader
         title={report.title}
         description={`${report.purpose} · ${rows.length} ${rows.length === 1 ? 'row' : 'rows'}`}
         actions={

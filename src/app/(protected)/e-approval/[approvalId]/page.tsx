@@ -46,7 +46,6 @@ import {
 } from '@/components/e-approval/shared';
 import { EApprovalRichText } from '@/components/e-approval/rich-text-editor';
 import { WorkflowTimeline } from '@/components/e-approval/workflow-timeline';
-import { PageHeader } from '@/components/e-approval/page-header';
 import { EApprovalUndoButtons } from '@/components/e-approval/undo-button';
 import {
   formatEApprovalAmount,
@@ -58,6 +57,7 @@ import {
   useEApprovalRefreshOnReturn,
   useEApprovalSettings,
 } from '@/components/e-approval/hooks';
+import { PageHeader } from '@/components/shared/page-header';
 
 /**
  * The approval detail screen of spec sections 16–17 — the most important page in the module.

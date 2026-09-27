@@ -8,10 +8,10 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { cn } from '@/lib/utils';
 import { E_APPROVAL_BASE_PATH } from '@/lib/e-approval';
 import type { EApprovalAnalyticsFilter } from '@/lib/e-approval-analytics';
-import { PageHeader } from '../page-header';
 import { useEApprovalPermissions } from '../hooks';
 import { EApprovalFilterBar } from './filter-bar';
 import { useEApprovalAnalytics, type AnalyticsScope } from './use-analytics';
+import { PageHeader } from '@/components/shared/page-header';
 
 /**
  * The shell every report page sits in: permission gate, the one filter row, refresh, export, and the

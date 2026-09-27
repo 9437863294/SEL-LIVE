@@ -50,7 +50,6 @@ import {
 } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { PageHeader } from '@/components/shared/page-header';
 import {
   DropdownMenu,
   DropdownMenuCheckboxItem,
@@ -517,62 +516,6 @@ export function EmployeeStatusPill({
       {Icon && !pulse && <Icon className="h-3 w-3" />}
       {children}
     </span>
-  );
-}
-
-/**
- * The header every screen in the module wears — the app's standard one (`shared/page-header`):
- * back control beside the icon, status pills on the title's own line, actions to the right.
- *
- * The description is `hidden sm:block` by default. A sentence of orientation is worth the space on
- * a desktop; on a 600px-tall phone it is two lines between the reader and the register they opened
- * the page for.
- */
-export function EmployeeHeader({
-  icon: Icon,
-  eyebrow,
-  title,
-  description,
-  showDescriptionOnMobile = false,
-  backHref,
-  backLabel,
-  status,
-  meta,
-  actions,
-  className,
-}: {
-  icon: LucideIcon;
-  /** Accepted for existing callers; the icon now takes the user's accent like every module's. */
-  tone?: EmpTone;
-  /** A small line above the title — the module name on a sub-page, so the hub's own title is not lost. */
-  eyebrow?: string;
-  title: string;
-  description?: React.ReactNode;
-  showDescriptionOnMobile?: boolean;
-  /** Omitted on the hub, which is reached from Settings by its own breadcrumb. */
-  backHref?: string;
-  backLabel?: string;
-  /** Pills on the title's line. */
-  status?: React.ReactNode;
-  /** A line under the description — freshness stamps, period ranges, row counts. */
-  meta?: React.ReactNode;
-  actions?: React.ReactNode;
-  className?: string;
-}) {
-  return (
-    <PageHeader
-      icon={Icon}
-      eyebrow={eyebrow}
-      title={title}
-      description={description}
-      descriptionClassName={showDescriptionOnMobile ? undefined : 'hidden sm:block'}
-      backHref={backHref}
-      backLabel={backLabel}
-      badge={status}
-      meta={meta ? <span className="text-xs text-muted-foreground">{meta}</span> : undefined}
-      actions={actions}
-      className={className}
-    />
   );
 }
 

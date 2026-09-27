@@ -52,7 +52,6 @@ import {
   type ExpenseRegisterId,
   type ExpensesModuleSettings,
 } from '@/lib/expenses-settings';
-import { ExpensesPageHeader } from '@/components/expenses/page-header';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -63,6 +62,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { Switch } from '@/components/ui/switch';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { cn } from '@/lib/utils';
+import { PageHeader } from '@/components/shared/page-header';
 
 export default function ExpensesTableAndFieldsPage() {
   const { toast } = useToast();
@@ -160,10 +160,9 @@ export default function ExpensesTableAndFieldsPage() {
   if (!canViewPage) {
     return (
       <div className="w-full space-y-4">
-        <ExpensesPageHeader
+        <PageHeader
           icon={SlidersHorizontal}
           title="Table & Field Configuration"
-          accent="teal"
           backHref="/expenses/settings"
         />
         <Card className="border-destructive/30">
@@ -181,7 +180,7 @@ export default function ExpensesTableAndFieldsPage() {
 
   return (
     <div className="w-full space-y-4">
-      <ExpensesPageHeader
+      <PageHeader
         icon={SlidersHorizontal}
         title="Table & Field Configuration"
         description={
@@ -189,7 +188,6 @@ export default function ExpensesTableAndFieldsPage() {
             ? `Last changed by ${settings.updatedBy ?? 'someone'} on ${new Date(settings.updatedAt).toLocaleDateString('en-IN')}`
             : 'Registers, form fields and data rules for the whole module'
         }
-        accent="teal"
         backHref="/expenses/settings"
         actions={
           <>

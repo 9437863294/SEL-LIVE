@@ -169,7 +169,6 @@ export default function PersonExpensePage() {
   return (
     <div className="space-y-4">
       <PageHeader
-        className="mb-0 sm:mb-0"
         title="Person-wise Expense Report"
         description="Who spent what — grouped by person with category breakdown"
         actions={canExport ? (

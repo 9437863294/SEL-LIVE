@@ -16,10 +16,10 @@ import { doc, getDoc, setDoc } from 'firebase/firestore';
 import { Skeleton } from '@/components/ui/skeleton';
 import {
   DailyMetricCard,
-  DailyPageHeader,
   dailyPageContainerClass,
   dailySurfaceCardClass,
 } from '@/components/daily-requisition/module-shell';
+import { PageHeader } from '@/components/shared/page-header';
 
 interface PrintingSettings {
   paperSize: string;
@@ -99,7 +99,7 @@ export default function PrintingSetupPage() {
 
   return (
     <div className={`${dailyPageContainerClass} mx-auto max-w-5xl`}>
-      <DailyPageHeader
+      <PageHeader eyebrow="Daily Requisition"
         title="Printing Setup"
         description="Control page setup, margins, and header text for daily requisition print outputs."
         backHref="/daily-requisition/settings"

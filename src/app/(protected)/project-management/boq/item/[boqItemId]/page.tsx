@@ -709,7 +709,6 @@ export default function BoqItem360Page() {
         icon={Route}
         backHref={`/project-management/boq/costing?project=${encodeURIComponent(mappingId)}`}
         backLabel="Back to BOQ"
-        className="mb-0 sm:mb-0"
       />
 
       {/* Header facts */}

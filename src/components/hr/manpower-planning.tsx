@@ -29,11 +29,11 @@ import {
   HrKpiCard,
   HrLoader,
   HrMeter,
-  HrPageHeader,
   hrDialog,
   type HrListColumn,
 } from './hr-ui';
 import { useHrCollection, useHrConfig, useHrPermissions } from './use-hr-config';
+import { PageHeader } from '@/components/shared/page-header';
 
 /**
  * Manpower planning, spec section 4.
@@ -211,7 +211,7 @@ export default function ManpowerPlanning() {
 
   return (
     <div>
-      <HrPageHeader
+      <PageHeader
         title="Manpower Planning"
         description={`${decorated.length} plan ${decorated.length === 1 ? 'line' : 'lines'} · sanctioned ${totals.sanctioned} · on roll ${totals.existing} · vacancy ${totals.vacancy}`}
         actions={

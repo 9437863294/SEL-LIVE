@@ -30,7 +30,6 @@ import {
   IndentCardGridLoadingState,
   IndentNavCard,
   IndentNavCardGrid,
-  IndentPageHeader,
   IndentPageShell,
   IndentProjectNotFound,
 } from "@/components/indent/indent-page-shell";
@@ -39,6 +38,7 @@ import {
   INDENT_COLLECTION,
   INDENT_WORKFLOW_DOC_ID,
 } from "@/lib/project-management-indent-workflow";
+import { PageHeader } from "@/components/shared/page-header";
 
 type IndentItem = {
   icon: LucideIcon;
@@ -215,16 +215,15 @@ export default function IndentHubPage() {
 
   return (
     <IndentPageShell>
-      <IndentPageHeader
+      <PageHeader
         title="Indent"
-        subtitle={
+        description={
           projectName
             ? `Raise material indents for ${projectName}, work each stage, and review the register.`
             : "Raise material indents, work each stage, and review the register."
         }
         icon={ListChecks}
         backHref={context.parentHref}
-        gradient={INDENT_GRADIENT}
       />
 
 

@@ -171,7 +171,6 @@ export default function VehicleAgeReportPage() {
         icon={Car}
         backHref="/vehicle-management/reports"
         backLabel="Back to Reports"
-        className="mb-0 sm:mb-0"
         actions={
           canExport ? (
             <Button

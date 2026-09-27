@@ -131,7 +131,6 @@ export default function RecurringPaymentsSettingsHub() {
   return (
     <div className="space-y-5">
       <PageHeader
-        className="mb-0 sm:mb-0"
         icon={Settings}
         title="Recurring Payments Settings"
         description="Approval rules, notifications, automation, workflow and permissions — each in its own place."

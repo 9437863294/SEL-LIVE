@@ -22,11 +22,11 @@ import {
   INDENT_SETTINGS_GRADIENT,
   IndentAccessDenied,
   IndentLoadingState,
-  IndentPageHeader,
   IndentPageShell,
   IndentProjectNotFound,
 } from "@/components/indent/indent-page-shell";
 import { WorkflowConfigurationEditor } from "@/components/workflow/workflow-configuration-editor";
+import { PageHeader } from "@/components/shared/page-header";
 
 export default function IndentWorkflowConfigurationPage() {
   const searchParams = useSearchParams();
@@ -68,13 +68,12 @@ export default function IndentWorkflowConfigurationPage() {
 
   return (
     <IndentPageShell>
-      <IndentPageHeader
+      <PageHeader
         title="Indent Workflow"
-        subtitle="Stages an indent passes before its quantities reserve against the BOQ."
+        description="Stages an indent passes before its quantities reserve against the BOQ."
         icon={GitMerge}
         backHref={context.indentHref("settings")}
         backLabel="Back to Indent Settings"
-        gradient={INDENT_SETTINGS_GRADIENT}
       />
 
 

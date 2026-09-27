@@ -375,7 +375,6 @@ export default function LocationTrackingSettingsPage() {
         title="Location Tracking"
         description="Choose who shares location and how often it is captured."
         icon={LocateFixed}
-        className="mb-0 sm:mb-0"
         actions={
           <>
             <Button variant="outline" onClick={() => void loadRows(accessToken)} disabled={loadingRows}>

@@ -208,7 +208,6 @@ export default function SiteAccountFieldControlSettings() {
   return (
     <div className="space-y-5">
       <PageHeader
-        className="mb-0 sm:mb-0"
         backHref="/site-account-statement/settings"
         backLabel="Back to settings"
         title="Field Control"

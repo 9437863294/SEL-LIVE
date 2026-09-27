@@ -49,7 +49,6 @@ import {
   OfficeHubEmptyState,
   OfficeHubField,
   OfficeHubLoader,
-  OfficeHubPageHeader,
   PersonChip,
   PriorityBadge,
   TaskDueDate,
@@ -58,6 +57,7 @@ import {
 import { DecisionDialog } from '@/components/office-hub/decision-forms';
 import { DocumentsPanel } from '@/components/office-hub/documents-panel';
 import { QuickCreateTaskDialog } from '@/components/office-hub/task-form';
+import { PageHeader } from '@/components/shared/page-header';
 
 export default function DecisionDetailPage() {
   const params = useParams<{ decisionId: string }>();
@@ -125,7 +125,7 @@ export default function DecisionDetailPage() {
 
   return (
     <div className="space-y-3">
-      <OfficeHubPageHeader
+      <PageHeader
         title={decision.title}
         description={`${decision.reference} · taken ${formatIsoDate(decision.decisionDate, { withWeekday: true })}`}
         actions={

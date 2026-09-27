@@ -106,7 +106,6 @@ import {
   OfficeHubEmptyState,
   OfficeHubField,
   OfficeHubLoader,
-  OfficeHubPageHeader,
   PriorityBadge,
   ResponseSummaryChip,
   TaskDueDate,
@@ -118,6 +117,7 @@ import { AgendaEditor } from '@/components/office-hub/agenda-editor';
 import { MeetingNotesEditor } from '@/components/office-hub/notes-editor';
 import { ActionItemsPanel, DecisionsPanel } from '@/components/office-hub/decision-forms';
 import { DocumentsPanel } from '@/components/office-hub/documents-panel';
+import { PageHeader } from '@/components/shared/page-header';
 
 export default function MeetingDetailPage() {
   const params = useParams<{ meetingId: string }>();
@@ -321,7 +321,7 @@ export default function MeetingDetailPage() {
 
   return (
     <div className="space-y-3">
-      <OfficeHubPageHeader
+      <PageHeader
         title={meeting.title}
         description={`${formatIsoDate(meeting.date, { withWeekday: true })} · ${formatClockTime(
           meeting.startTime,

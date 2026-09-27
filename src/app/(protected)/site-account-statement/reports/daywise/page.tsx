@@ -272,7 +272,6 @@ export default function DaywiseStatementPage() {
     <div className="space-y-4">
       {/* Header */}
       <PageHeader
-        className="mb-0 sm:mb-0"
         title="Day-wise Statement"
         description="Every receipt and expense grouped by date with running balance"
         actions={canExport && dayGroups.length > 0 ? (

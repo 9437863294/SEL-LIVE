@@ -29,7 +29,6 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
-import { PageHeader } from "@/components/shared/page-header";
 import { cn } from "@/lib/utils";
 
 /** The rhythm every Project Management screen uses. */
@@ -42,44 +41,6 @@ const JMC_MAIN_FLAT_CLASS = "min-h-[calc(100dvh-4rem)] p-4 sm:p-6";
  */
 export const JMC_GRADIENT = "from-emerald-500 to-green-600";
 export const JMC_SETTINGS_GRADIENT = "from-slate-500 to-slate-700";
-
-/**
- * Back arrow, icon, title and subtitle — the app's standard page header (`shared/page-header`),
- * so a JMC screen opens the way every other screen does.
- *
- * These are dense data screens, so the subtitle is hidden below `md`: on a narrow screen the title
- * and the actions are worth more than a wrapped line of supporting prose.
- */
-export function JmcPageHeader({
-  title,
-  subtitle,
-  icon: Icon,
-  backHref,
-  backLabel = "Back",
-  actions,
-}: {
-  title: string;
-  subtitle?: ReactNode;
-  icon: LucideIcon;
-  backHref: string;
-  backLabel?: string;
-  /** Accepted for existing callers; the icon now takes the user's accent like every module's. */
-  gradient?: string;
-  actions?: ReactNode;
-}) {
-  return (
-    <PageHeader
-      icon={Icon}
-      title={title}
-      description={subtitle}
-      descriptionClassName="hidden md:block"
-      backHref={backHref}
-      backLabel={backLabel}
-      actions={actions}
-      className="mb-0 sm:mb-0"
-    />
-  );
-}
 
 /** The standard main wrapper, so callers never re-type the rhythm classes. */
 export function JmcPageShell({

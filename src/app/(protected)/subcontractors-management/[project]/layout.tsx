@@ -166,7 +166,7 @@ export default function ProjectLayout({
       }
     >
       {/* Below lg, where the sidebar is hidden, the module's card heads the column. The pages'
-          sticky `PmTopbar` follows directly and brings its own top padding, hence `mb-0`. */}
+          sticky `PageHeader` follows directly and brings its own top padding, hence `mb-0`. */}
       <ModuleMobileHeader
         icon={HardHat}
         title="Subcontractors"

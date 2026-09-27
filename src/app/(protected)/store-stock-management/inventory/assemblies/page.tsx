@@ -226,7 +226,6 @@ export default function PackAssemblyPage() {
   return (
     <div className="space-y-6">
       <PageHeader
-        className="mb-0 sm:mb-0"
         icon={Component}
         eyebrow="Inventory assembly"
         title="Build & unbuild item packs"

@@ -43,7 +43,6 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { HrAccessDenied, HrEmptyState, HrLoader } from '@/components/hr/hr-ui';
 import {
   EmployeeErrorBanner,
-  EmployeeHeader,
   EmployeeKpiCard,
   EmployeePageShell,
   EmployeeStatusPill,
@@ -71,6 +70,7 @@ import {
   testConnection,
   type SyncReport,
 } from '@/lib/greythr-sync-client';
+import { PageHeader } from '@/components/shared/page-header';
 
 const DAY_NAMES = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 
@@ -237,9 +237,8 @@ export function GreytHRSyncWorkspace() {
   if (!canView) {
     return (
       <EmployeePageShell>
-        <EmployeeHeader
+        <PageHeader
           icon={DownloadCloud}
-          tone="blue"
           eyebrow="Employee management"
           title="greytHR Sync"
           backHref="/employee"
@@ -289,14 +288,13 @@ export function GreytHRSyncWorkspace() {
   return (
     <EmployeePageShell>
       <div className="relative">
-        <EmployeeHeader
+        <PageHeader
           icon={DownloadCloud}
-          tone="blue"
           eyebrow="Employee management"
           title="greytHR Employee Sync"
           backHref="/employee"
           backLabel="Back to Employee Management"
-          status={
+          badge={
             /* Three states, not two. Without a report we do not *know* whether the credentials are
                set — saying they are missing would be a guess, and a misleading one: the usual reason
                the report failed is the Admin SDK, which has nothing to do with greytHR. */

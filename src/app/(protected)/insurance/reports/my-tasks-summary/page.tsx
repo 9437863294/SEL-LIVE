@@ -136,7 +136,6 @@ export default function MyTasksSummaryPage() {
     <div className="space-y-5">
       {/* Header */}
       <PageHeader
-        className="mb-0 sm:mb-0"
         icon={BarChart3}
         title="My Tasks Summary"
         description="Step-wise breakdown of insurance task performance"

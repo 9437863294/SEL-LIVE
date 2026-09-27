@@ -20,12 +20,12 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigge
 import { useAuth } from '@/components/auth/AuthProvider';
 import {
   DailyMetricCard,
-  DailyPageHeader,
   dailyPageContainerClass,
   dailySurfaceCardClass,
   dailyTableHeaderClass,
   dailyTabsListClass,
 } from '@/components/daily-requisition/module-shell';
+import { PageHeader } from '@/components/shared/page-header';
 
 type EnrichedDailyRequisitionEntry = DailyRequisitionEntry & {
   id: string;
@@ -300,7 +300,7 @@ export default function ManageDocumentsPage() {
   if (!canViewPage) {
     return (
       <div className={dailyPageContainerClass}>
-        <DailyPageHeader
+        <PageHeader backHref="/daily-requisition" eyebrow="Daily Requisition"
           title="Manage Documents"
           description="Track uploads, document exceptions, and recovery steps."
         />
@@ -320,7 +320,7 @@ export default function ManageDocumentsPage() {
   return (
     <>
       <div className={dailyPageContainerClass}>
-        <DailyPageHeader
+        <PageHeader backHref="/daily-requisition" eyebrow="Daily Requisition"
           title="Manage Documents"
           description="Keep attachments organized, highlight missing paperwork, and move resolved items back into the normal flow."
           meta={

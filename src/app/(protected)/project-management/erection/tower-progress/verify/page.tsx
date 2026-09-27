@@ -48,12 +48,12 @@ import {
   EmptyState,
   MetricCard,
   TowerProgressGuard,
-  TowerProgressHeader,
   TowerProgressNav,
   TowerProgressShell,
   TowerReportPhoto,
   VerificationBadge,
 } from "@/components/project-management/tower-progress/tower-progress-ui";
+import { PageHeader } from "@/components/shared/page-header";
 
 export default function VerifyProgressPage() {
   const { permissions } = useTowerProgress();
@@ -137,9 +137,9 @@ function VerifyQueue() {
 
   return (
     <TowerProgressShell>
-      <TowerProgressHeader
+      <PageHeader
         title="Verify progress"
-        subtitle={
+        description={
           project
             ? `Site claims awaiting sign-off on ${project.projectName}.`
             : "Site claims awaiting sign-off."

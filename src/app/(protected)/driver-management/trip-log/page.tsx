@@ -258,7 +258,6 @@ export default function DriverTripLogPage() {
       <PageHeader
         title="Driver Trip Log"
         description="All trips with summary and filters. Click row for complete details."
-        className="mb-0 sm:mb-0"
       />
 
       <Card className="vm-panel">

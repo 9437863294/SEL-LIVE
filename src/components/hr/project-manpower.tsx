@@ -26,11 +26,11 @@ import {
   HrKpiCard,
   HrLoader,
   HrMeter,
-  HrPageHeader,
   HrSection,
   type HrListColumn,
 } from './hr-ui';
 import { useHrCollection, useHrConfig, useHrPermissions } from './use-hr-config';
+import { PageHeader } from '@/components/shared/page-header';
 
 /**
  * Project manpower control — spec section 61, the screen that turns this module into a manpower
@@ -261,7 +261,7 @@ export default function ProjectManpower() {
 
   return (
     <div>
-      <HrPageHeader
+      <PageHeader
         title="Project Manpower"
         description={selected ? selected.projectName : `${byProject.length} ${byProject.length === 1 ? 'project' : 'projects'}`}
         actions={

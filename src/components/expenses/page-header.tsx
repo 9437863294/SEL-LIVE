@@ -1,15 +1,11 @@
 'use client';
 
 /**
- * The module's page header, and the accent palette its badges and sidebar share.
- *
- * The header itself is the app's standard one; the accents still colour `ExpenseBadge` and the
- * sidebar, so a page's chip and its nav entry keep the same hue.
+ * The accent palette Expenses' badges and sidebar share, so a page's chip and its nav entry keep
+ * the same hue. Page headers are the app's standard `PageHeader` (`shared/page-header`).
  */
 
 import type { ReactNode } from 'react';
-import type { LucideIcon } from 'lucide-react';
-import { PageHeader } from '@/components/shared/page-header';
 import { cn } from '@/lib/utils';
 
 export type ExpenseAccent = 'blue' | 'violet' | 'fuchsia' | 'teal' | 'emerald' | 'amber';
@@ -62,31 +58,6 @@ export const EXPENSE_ACCENTS: Record<
     chip: 'bg-amber-50 text-amber-700 border-amber-200',
   },
 };
-
-/**
- * The module's page header — the app's standard one (`shared/page-header`), so an Expenses screen
- * opens the way every other screen does. `accent` is accepted for the callers that pass it and no
- * longer tints the header; the sidebar entry keeps its colour.
- */
-export function ExpensesPageHeader({
-  icon,
-  title,
-  description,
-  backHref,
-  badge,
-  actions,
-}: {
-  icon: LucideIcon;
-  title: string;
-  description?: string;
-  accent?: ExpenseAccent;
-  /** Omit on the module's own landing page. */
-  backHref?: string;
-  badge?: ReactNode;
-  actions?: ReactNode;
-}) {
-  return <PageHeader icon={icon} title={title} description={description} backHref={backHref} badge={badge} actions={actions} />;
-}
 
 /** A small tinted pill, for the accent chip callers pass as `badge`. */
 export function ExpenseBadge({ accent = 'blue', children }: { accent?: ExpenseAccent; children: ReactNode }) {

@@ -201,7 +201,6 @@ export default function AccountStatementPage() {
   return (
     <div className="space-y-4">
       <PageHeader
-        className="mb-0 sm:mb-0"
         title="Project-Wise Account Statement"
         description="Running balance of receipts and expenses"
         actions={canExport && selectedProject ? (

@@ -201,7 +201,6 @@ export default function PremiumDuePage() {
 
       {/* ── Header ────────────────────────────────────────────────────────── */}
       <PageHeader
-        className="mb-0 sm:mb-0"
         icon={CalendarClock}
         title="Premium Due"
         description="Upcoming and overdue premium payment schedule"

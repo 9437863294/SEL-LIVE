@@ -21,12 +21,12 @@ import {
   HrEmptyState,
   HrField,
   HrLoader,
-  HrPageHeader,
   HrSection,
   HrStatusBadge,
   SensitiveMoney,
 } from './hr-ui';
 import { useHrCollection, useHrConfig, useHrPermissions } from './use-hr-config';
+import { PageHeader } from '@/components/shared/page-header';
 
 /**
  * One candidate, and every requirement they have ever been considered for (spec sections 19, 21).
@@ -92,7 +92,7 @@ export default function CandidateDetail({ candidateId }: { candidateId: string }
 
   return (
     <div>
-      <HrPageHeader
+      <PageHeader
         title={candidate.name}
         description={`${candidate.candidateNumber} · ${candidate.source}${
           candidate.sourceDetail ? ` (${candidate.sourceDetail})` : ''

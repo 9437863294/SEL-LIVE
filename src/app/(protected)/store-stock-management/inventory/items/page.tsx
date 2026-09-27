@@ -120,7 +120,7 @@ export default function ItemMasterPage() {
 
   return (
     <div className="space-y-6">
-      <PageHeader className="mb-0 sm:mb-0" title="Item Master" description="The central item catalog is independent from project BOQ." actions={<Button onClick={() => edit()}><Plus className="mr-2 h-4 w-4" />New item</Button>} />
+      <PageHeader title="Item Master" description="The central item catalog is independent from project BOQ." actions={<Button onClick={() => edit()}><Plus className="mr-2 h-4 w-4" />New item</Button>} />
       <Card>
         <CardHeader className="gap-4 sm:flex-row sm:items-center sm:justify-between"><div><CardTitle>Inventory items</CardTitle><CardDescription>{items.length} master records</CardDescription></div><div className="relative w-full sm:w-80"><Search className="absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" /><Input className="pl-9" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search items…" /></div></CardHeader>
         <CardContent className="overflow-x-auto"><Table><TableHeader><TableRow><TableHead>Code</TableHead><TableHead>Item</TableHead><TableHead>Category</TableHead><TableHead>Unit</TableHead><TableHead>Pack list</TableHead><TableHead className="text-right">Reorder</TableHead><TableHead className="text-right">Cost rate</TableHead><TableHead>Tracking</TableHead><TableHead>Status</TableHead><TableHead /></TableRow></TableHeader><TableBody>

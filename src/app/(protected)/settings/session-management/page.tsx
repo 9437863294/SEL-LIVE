@@ -1391,7 +1391,6 @@ export default function SessionManagementPage() {
         }
         backHref="/settings"
         backLabel="Back to settings"
-        className="mb-0 sm:mb-0"
         actions={
           <>
             {myOtherSessions.length > 0 && (

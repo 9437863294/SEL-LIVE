@@ -50,9 +50,9 @@ import {
   formatExpenseTimestamp,
   formatReceptionDate,
 } from '@/components/expenses/expense-details-dialog';
-import { ExpensesPageHeader } from '@/components/expenses/page-header';
 import { useExpensesSettings } from '@/components/expenses/use-expenses-settings';
 import { applyColumnSettings, resolveDatePreset } from '@/lib/expenses-settings';
+import { PageHeader } from '@/components/shared/page-header';
 
 
 export default function DepartmentExpensesPage() {
@@ -310,7 +310,7 @@ export default function DepartmentExpensesPage() {
   if (!canViewPage) {
     return (
       <div className="w-full">
-        <ExpensesPageHeader icon={Building2} title="Department Expenses" backHref="/expenses" />
+        <PageHeader icon={Building2} title="Department Expenses" backHref="/expenses" />
         <Card className="border-destructive/30">
           <CardHeader className="text-center pb-2">
             <div className="mx-auto mb-3 flex h-14 w-14 items-center justify-center rounded-full bg-destructive/10">
@@ -327,11 +327,10 @@ export default function DepartmentExpensesPage() {
   return (
     <>
       <div className="w-full space-y-4">
-        <ExpensesPageHeader
+        <PageHeader
           icon={Building2}
           title={department ? department.name : 'Department Expenses'}
           description="Expense requests raised by this department"
-          accent="blue"
           backHref="/expenses"
           actions={
             <>

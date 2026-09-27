@@ -298,7 +298,6 @@ export default function CategoryBudgetPage() {
     <div className="space-y-4">
       {/* Header */}
       <PageHeader
-        className="mb-0 sm:mb-0"
         icon={Target}
         title="Category-wise Monthly Budgets"
         description="Compare previous vs current month budget and actual per category."

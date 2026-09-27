@@ -32,7 +32,6 @@ import {
   PoCardGridLoadingState,
   PoNavCard,
   PoNavCardGrid,
-  PoPageHeader,
   PoPageShell,
   PoProjectNotFound,
 } from "@/components/po/po-page-shell";
@@ -43,6 +42,7 @@ import {
   isTerminalPoIssueStatus,
   type PoIssueApproval,
 } from "@/lib/project-management-po-workflow";
+import { PageHeader } from "@/components/shared/page-header";
 
 type PoItem = {
   icon: LucideIcon;
@@ -214,16 +214,15 @@ export default function PurchaseOrdersHubPage() {
 
   return (
     <PoPageShell>
-      <PoPageHeader
+      <PageHeader
         title="Purchase Orders"
-        subtitle={
+        description={
           projectName
             ? `Raise, approve and issue purchase orders for ${projectName}.`
             : "Raise, approve and issue purchase orders."
         }
         icon={ShoppingCart}
         backHref={context.parentHref}
-        gradient={PO_GRADIENT}
       />
 
 

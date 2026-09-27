@@ -103,7 +103,6 @@ export default function ReportsIndexPage() {
   return (
     <div className="space-y-5">
       <PageHeader
-        className="mb-0 sm:mb-0"
         title="Reports"
         description={<>{REPORTS.length} reports available — click any card to open</>}
       />

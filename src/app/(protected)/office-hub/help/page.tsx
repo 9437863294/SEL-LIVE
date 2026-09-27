@@ -31,7 +31,8 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { OFFICE_HUB_BASE_PATH } from '@/lib/office-hub';
 import { useOfficeHub } from '@/components/office-hub/hooks';
-import { OfficeHubPageHeader, OfficeHubSection } from '@/components/office-hub/ui';
+import { OfficeHubSection } from '@/components/office-hub/ui';
+import { PageHeader } from '@/components/shared/page-header';
 
 const STAGES: { icon: React.ElementType; title: string; body: string; href?: string; cta?: string }[] = [
   {
@@ -139,7 +140,7 @@ export default function OfficeHubGuidePage() {
 
   return (
     <div className="space-y-3">
-      <OfficeHubPageHeader
+      <PageHeader
         title="Guide"
         description="How Office Hub is meant to be used, and the few rules it will not let you break."
       />

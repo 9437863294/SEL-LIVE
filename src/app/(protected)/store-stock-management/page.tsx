@@ -117,7 +117,6 @@ export default function StoreStockManagementPage() {
   return (
     <div className="min-h-screen bg-slate-50 p-3 text-slate-950 sm:p-4">
       <PageHeader
-        className="mb-0 sm:mb-0"
         title="Store & Stock Management"
         description="Select where you want to manage stock."
         actions={

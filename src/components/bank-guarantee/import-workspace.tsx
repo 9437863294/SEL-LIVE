@@ -335,7 +335,6 @@ export default function BGImportWorkspace() {
   return (
     <div className="space-y-4">
       <PageHeader
-        className="mb-0 sm:mb-0"
         title="BG Import & Reconciliation"
         description="Validate legacy Bank Guarantee workbooks before activating clean organization-scoped records."
       />

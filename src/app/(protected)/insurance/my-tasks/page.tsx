@@ -349,7 +349,6 @@ export default function MyTasksPage() {
 
         {/* ── Header ──────────────────────────────────────────────────────── */}
         <PageHeader
-          className="mb-0 sm:mb-0"
           icon={ClipboardCheck}
           title="My Insurance Tasks"
           description="Premium due tasks assigned to you — approve, verify, or reject"

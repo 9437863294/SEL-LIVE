@@ -59,10 +59,10 @@ import {
   OfficeHubDataList,
   OfficeHubEmptyState,
   OfficeHubKpiCard,
-  OfficeHubPageHeader,
   OfficeHubSection,
   type OfficeHubListColumn,
 } from '@/components/office-hub/ui';
+import { PageHeader } from '@/components/shared/page-header';
 
 const OUTCOME_TONE: Record<EmployeeImportOutcome, string> = {
   create: 'border-emerald-200 bg-emerald-50 text-emerald-700',
@@ -281,7 +281,7 @@ export default function ImportEmployeesPage() {
 
   return (
     <div className="space-y-3">
-      <OfficeHubPageHeader
+      <PageHeader
         title="Import employees"
         description="Reconciles a sheet against the existing employee directory. Nothing is written until you commit."
         actions={

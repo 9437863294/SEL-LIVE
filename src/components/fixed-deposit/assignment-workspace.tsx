@@ -433,7 +433,6 @@ export default function FDAssignmentWorkspace({
   return (
     <div className="space-y-4">
       <PageHeader
-        className="mb-0 sm:mb-0"
         title="FD Assignments"
         description="Reserve and assign one or more FDs against BG and LC instruments."
         actions={

@@ -7,11 +7,12 @@ import { BadgeCheck, Loader2, ShieldAlert, Users } from 'lucide-react';
 
 import { useLoader, useMailHub } from '@/components/mail-hub/hooks';
 import { MailView } from '@/components/mail-hub/mail-view';
-import { EmptyState, ErrorNotice, PageHeader, Spinner } from '@/components/mail-hub/ui';
+import { EmptyState, ErrorNotice, Spinner } from '@/components/mail-hub/ui';
 import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useToast } from '@/hooks/use-toast';
 import { mailApi, startOAuth, type SharedMailboxRow } from '@/lib/mail-hub/client';
+import { PageHeader } from '@/components/shared/page-header';
 
 /**
  * Team mailboxes. Reading one takes both halves of access: an ERP membership (granted on the

@@ -24,7 +24,6 @@ import {
   HrDataList,
   HrEmptyState,
   HrLoader,
-  HrPageHeader,
   hrDialog,
 } from '@/components/hr/hr-ui';
 import { hasPermission } from '@/lib/access-control';
@@ -59,6 +58,7 @@ import {
 } from '@/lib/windows-agent-service';
 import { useWindowsAgent, useWindowsAgentAction, useWindowsAgentQuery } from './hooks';
 import { CategoryBadge, ClockTime, categoryLabel } from './ui';
+import { PageHeader } from '@/components/shared/page-header';
 
 /* ════════════════════════════════════════════════════════════════════════════════════════════
  * Policies (§35)
@@ -294,7 +294,7 @@ export function PoliciesPage() {
 
   return (
     <div className="space-y-5">
-      <HrPageHeader
+      <PageHeader
         title="Policies"
         description="Company, department, user and device. A narrower policy overrides only the settings it names — everything else keeps inheriting."
         actions={
@@ -714,7 +714,7 @@ export function ApplicationCatalogPage() {
 
   return (
     <div className="space-y-5">
-      <HrPageHeader
+      <PageHeader
         title="Applications"
         description="How each program is classified. Categories describe software — they are never a judgement about the person using it."
       />
@@ -844,7 +844,7 @@ export function AgentVersionsPage() {
 
   return (
     <div className="space-y-5">
-      <HrPageHeader
+      <PageHeader
         title="Agent versions"
         description="Published builds and which rollout rings receive them."
         actions={
@@ -1086,7 +1086,7 @@ export function AuditLogPage() {
 
   return (
     <div className="space-y-5">
-      <HrPageHeader
+      <PageHeader
         title="Audit log"
         description="Every administrative action in this module. Append-only — nobody can edit or delete a row, including the people who write them."
       />

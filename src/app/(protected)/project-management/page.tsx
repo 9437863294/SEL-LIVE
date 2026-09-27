@@ -378,7 +378,6 @@ export default function ProjectManagementPage() {
             </div>
           ) : undefined
         }
-        className="mb-0 sm:mb-0"
         actions={
           // One row where it fits (a 430px phone), the count pill wrapping under the picker on a
           // narrower one instead of claiming a line to itself on every phone.

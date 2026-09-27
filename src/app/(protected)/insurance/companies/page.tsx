@@ -128,7 +128,6 @@ export default function ManageInsuranceCompaniesPage() {
     <div className="space-y-4">
       {/* Header */}
       <PageHeader
-        className="mb-0 sm:mb-0"
         icon={Building2}
         title="Insurance Companies"
         description="Manage the master list of insurance providers"

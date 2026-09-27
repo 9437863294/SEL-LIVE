@@ -46,7 +46,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { useAuth } from '@/components/auth/AuthProvider';
 import { Progress } from '@/components/ui/progress';
 import { projectMatchesSlug } from '@/lib/project-slug';
-import { PmContent, PmTopbar } from '@/components/project-management/pm-shell';
+import { PmContent } from '@/components/project-management/pm-shell';
 
 
 const slugify = (text: string) => {
@@ -334,7 +334,7 @@ export default function BillingSummaryReport() {
   
   return (
       <>
-      <PmTopbar
+      <PageHeader sticky
         title="Billing Summary"
         breadcrumbs={[
           { label: 'Subcontractors', href: `/subcontractors-management/${projectSlug}` },

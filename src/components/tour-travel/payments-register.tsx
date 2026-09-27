@@ -21,7 +21,8 @@ import {
 import { TravelControlError, recordReimbursementPayment } from '@/lib/tour-travel-service';
 import { TT_PERMISSION_MODULE } from './module-layout-shell';
 import { useTravelActor, useTravelCollection } from './use-travel-config';
-import { Money, TravelDataList, TravelEmptyState, TravelFilterCard, TravelKpiCard, TravelLoader, TravelPageHeader, TravelStatusBadge, travelDialog } from './travel-ui';
+import { Money, TravelDataList, TravelEmptyState, TravelFilterCard, TravelKpiCard, TravelLoader, TravelStatusBadge, travelDialog } from './travel-ui';
+import { PageHeader } from '@/components/shared/page-header';
 
 const todayIso = () => new Date().toISOString().slice(0, 10);
 
@@ -78,7 +79,7 @@ export default function PaymentsRegister() {
 
   return (
     <div className="space-y-3">
-      <TravelPageHeader title="Reimbursements" description="Approved settlements awaiting payment to employees." />
+      <PageHeader title="Reimbursements" description="Approved settlements awaiting payment to employees." />
 
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
         <TravelKpiCard label="Pending Payment" value={<Money value={totals.pending} />} hint={`${totals.pendingCount} payment(s)`} icon={Coins} tone="orange" />

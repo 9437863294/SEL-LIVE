@@ -17,7 +17,6 @@ import {
   SURVEY_GRADIENT,
   SurveyAccessDenied,
   SurveyLoadingState,
-  SurveyPageHeader,
   SurveyPageShell,
   SurveyProjectNotFound,
 } from "@/components/survey/survey-page-shell";
@@ -49,6 +48,7 @@ import {
   AccordionItem,
   AccordionTrigger,
 } from "@/components/ui/accordion";
+import { PageHeader } from "@/components/shared/page-header";
 
 const formatQuantity = (value: number) =>
   new Intl.NumberFormat("en-IN", { maximumFractionDigits: 3 }).format(value);
@@ -221,9 +221,9 @@ export default function SurveyLogPage() {
 
   return (
     <SurveyPageShell>
-      <SurveyPageHeader
+      <PageHeader
         title="Survey Log"
-        subtitle={
+        description={
           projectName
             ? `${entries.length} survey ${entries.length === 1 ? "entry" : "entries"} on ${projectName}.`
             : `${entries.length} survey ${entries.length === 1 ? "entry" : "entries"}.`
@@ -231,7 +231,6 @@ export default function SurveyLogPage() {
         icon={History}
         backHref={context.surveyHref()}
         backLabel="Back to Survey"
-        gradient={SURVEY_GRADIENT}
       />
 
 

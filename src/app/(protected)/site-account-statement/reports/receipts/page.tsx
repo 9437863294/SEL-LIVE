@@ -136,7 +136,6 @@ export default function ReceiptReportPage() {
   return (
     <div className="space-y-4">
       <PageHeader
-        className="mb-0 sm:mb-0"
         title="Project-Wise Receipt Report"
         description="Payments received from Head Office"
         actions={canExport ? (

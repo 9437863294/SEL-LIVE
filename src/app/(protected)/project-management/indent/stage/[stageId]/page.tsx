@@ -37,7 +37,6 @@ import {
   INDENT_GRADIENT,
   IndentAccessDenied,
   IndentLoadingState,
-  IndentPageHeader,
   IndentPageShell,
   IndentProjectNotFound,
 } from "@/components/indent/indent-page-shell";
@@ -70,6 +69,7 @@ import {
 } from "@/components/ui/table";
 import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
+import { PageHeader } from "@/components/shared/page-header";
 
 type IndentLineItem = {
   boqItemId: string;
@@ -485,13 +485,12 @@ export default function IndentStagePage() {
   if (!step) {
     return (
       <IndentPageShell>
-        <IndentPageHeader
+        <PageHeader
           title="Stage not found"
-          subtitle="This stage is no longer part of the indent workflow."
+          description="This stage is no longer part of the indent workflow."
           icon={GitMerge}
           backHref={context.indentHref()}
           backLabel="Back to Indent"
-          gradient={INDENT_GRADIENT}
         />
         <Card className="border-border/60">
           <CardHeader>
@@ -510,16 +509,15 @@ export default function IndentStagePage() {
 
   return (
     <IndentPageShell>
-      <IndentPageHeader
+      <PageHeader
         title={step.name}
-        subtitle={
+        description={
           step.description ||
           (projectName ? `Indents awaiting ${step.name} for ${projectName}.` : `Indents awaiting ${step.name}.`)
         }
         icon={GitMerge}
         backHref={context.indentHref()}
         backLabel="Back to Indent"
-        gradient={INDENT_GRADIENT}
       />
 
 

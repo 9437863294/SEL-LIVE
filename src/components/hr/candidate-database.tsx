@@ -28,12 +28,12 @@ import {
   HrEmptyState,
   HrFilterCard,
   HrLoader,
-  HrPageHeader,
   SensitiveMoney,
   hrDialog,
   type HrListColumn,
 } from './hr-ui';
 import { useHrCollection, useHrConfig, useHrPermissions } from './use-hr-config';
+import { PageHeader } from '@/components/shared/page-header';
 
 /**
  * The candidate database of spec section 19 — one profile per person, never one per application.
@@ -177,7 +177,7 @@ export default function CandidateDatabase() {
 
   return (
     <div>
-      <HrPageHeader
+      <PageHeader
         title="Candidate Database"
         description={`${filtered.length} of ${candidates.length} candidates`}
         actions={

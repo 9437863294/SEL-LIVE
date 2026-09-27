@@ -31,7 +31,6 @@ export default function AppearanceLayout({ children }: { children: ReactNode }) 
         backHref="/settings"
         backLabel="Back to settings"
         actions={<SaveStatus />}
-        className="mb-0 sm:mb-0"
       />
       <AppearanceSectionNav links={links} />
       {children}

@@ -264,7 +264,6 @@ export default function LiveMeetingPage() {
             </Button>
           </>
         }
-        className="mb-0 sm:mb-0"
       />
 
       {!canRun && (

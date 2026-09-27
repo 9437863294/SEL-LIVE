@@ -312,8 +312,6 @@ export default function VehicleManagementOverviewPage() {
             {lastUpdated && <span className="ml-1">Updated {lastUpdated.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}</span>}
           </>
         }
-        descriptionClassName="hidden sm:block"
-        className="mb-0 sm:mb-0"
         actions={
           <Button type="button" size="sm" variant="outline" onClick={() => void load()} disabled={isRefreshing} className="h-8 shrink-0 bg-white/80 px-2.5" aria-label="Refresh vehicle overview">
             <RefreshCw className={cn('h-3.5 w-3.5 sm:mr-1.5', isRefreshing && 'animate-spin')} /><span className="hidden sm:inline">Refresh</span>

@@ -224,7 +224,6 @@ export default function LenderSummaryPage() {
     <div className="space-y-4">
       {/* ── Header card ── */}
       <PageHeader
-        className="mb-0 sm:mb-0"
         icon={Landmark}
         title="Lender Summary"
         description="Portfolio exposure grouped by lending institution"

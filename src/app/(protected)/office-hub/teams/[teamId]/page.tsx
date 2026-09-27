@@ -58,7 +58,6 @@ import {
   OfficeHubKpiCard,
   OfficeHubLoader,
   OfficeHubMeter,
-  OfficeHubPageHeader,
   PersonChip,
   PriorityBadge,
   ResponseSummaryChip,
@@ -73,6 +72,7 @@ import {
   TeamMemberList,
   teamDraftFrom,
 } from '@/components/office-hub/team-form';
+import { PageHeader } from '@/components/shared/page-header';
 
 export default function TeamDetailPage() {
   const params = useParams<{ teamId: string }>();
@@ -239,7 +239,7 @@ export default function TeamDetailPage() {
 
   return (
     <div className="space-y-3">
-      <OfficeHubPageHeader
+      <PageHeader
         title={team.name}
         description={
           team.description ??

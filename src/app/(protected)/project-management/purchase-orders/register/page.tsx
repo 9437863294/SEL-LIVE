@@ -53,7 +53,6 @@ import {
   PmShell,
   PmSidebar,
   PmTableFoot,
-  PmTopbar,
   type PmListColumn,
 } from "@/components/project-management/pm-shell";
 import { indentReservesQuantity } from "@/lib/project-management-indent-workflow";
@@ -71,6 +70,7 @@ import {
   PoLoadingState,
   PoProjectNotFound,
 } from "@/components/po/po-page-shell";
+import { PageHeader } from "@/components/shared/page-header";
 
 type ProjectMapping = {
   id: string;
@@ -360,7 +360,7 @@ export default function PurchaseOrderRegisterPage() {
         />
       }
     >
-      <PmTopbar
+      <PageHeader sticky
         title="PO Register"
         breadcrumbs={[
           { label: mapping.projectName, href: `/project-management?project=${encodeURIComponent(mappingId)}` },

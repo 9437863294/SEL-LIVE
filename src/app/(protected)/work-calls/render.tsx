@@ -34,11 +34,11 @@ import {
   HrEmptyState,
   HrKpiCard,
   HrLoader,
-  HrPageHeader,
   hrDialog,
 } from '@/components/hr/hr-ui';
 import { cn } from '@/lib/utils';
 import { WORK_CONTACT_TYPES, type WorkContact, type WorkContactType } from '@/lib/work-calls-model';
+import { PageHeader } from '@/components/shared/page-header';
 
 export const TYPE_LABELS: Record<WorkContactType, string> = {
   CLIENT: 'Client',
@@ -381,7 +381,7 @@ export function WorkCallsFrame({
 }) {
   return (
     <div className="space-y-5">
-      <HrPageHeader
+      <PageHeader
         title="Work calls"
         description="Call a contact from the company directory and the time appears on your work timeline."
       />

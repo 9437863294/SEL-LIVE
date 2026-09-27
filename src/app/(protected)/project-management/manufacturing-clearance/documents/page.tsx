@@ -68,13 +68,13 @@ import {
   PmShell,
   PmSidebar,
   PmTableFoot,
-  PmTopbar,
   pmAccent,
   type PmListColumn,
 } from "@/components/project-management/pm-shell";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
+import { PageHeader } from "@/components/shared/page-header";
 
 /** Register views. `all` first, then one per status that a reviewer actually works from. */
 const VIEWS = [
@@ -510,7 +510,7 @@ export default function ManufacturingClearanceDocumentsPage() {
         />
       }
     >
-      <PmTopbar
+      <PageHeader sticky
         title="MC Documents"
         breadcrumbs={[
           { label: projectName || "Project" },

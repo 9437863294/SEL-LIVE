@@ -19,7 +19,7 @@ import { Badge } from '@/components/ui/badge';
 import { useAuthorization } from '@/hooks/useAuthorization';
 import { format } from 'date-fns';
 import { projectMatchesSlug } from '@/lib/project-slug';
-import { PM_TABLE_CLASS, PmContent, PmSectionHead, PmTopbar } from '@/components/project-management/pm-shell';
+import { PM_TABLE_CLASS, PmContent, PmSectionHead } from '@/components/project-management/pm-shell';
 
 
 export default function ManageSubcontractorsPage() {
@@ -230,7 +230,7 @@ export default function ManageSubcontractorsPage() {
 
   return (
     <>
-      <PmTopbar
+      <PageHeader sticky
         title="Subcontractors"
         breadcrumbs={[
           { label: 'Subcontractors', href: `/subcontractors-management/${projectSlug}` },

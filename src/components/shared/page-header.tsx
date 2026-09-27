@@ -31,6 +31,8 @@ export interface HeaderCrumb {
 export interface HeaderMeta {
   label: string;
   value: ReactNode;
+  /** A muted qualifier after the value ("net of TDS"). */
+  hint?: ReactNode;
 }
 
 function isMetaList(meta: PageHeaderProps['meta']): meta is HeaderMeta[] {
@@ -91,8 +93,6 @@ export interface PageHeaderProps {
   title: ReactNode;
   /** One or two lines on what the page is for. Clamped to two lines on a phone. */
   description?: ReactNode;
-  /** e.g. `hidden sm:block`, for a screen whose header competes with its own content on a phone. */
-  descriptionClassName?: string;
   icon?: LucideIcon;
   /** A small line above the title: the module, or where the page sits. `breadcrumbs` wins. */
   eyebrow?: ReactNode;
@@ -106,8 +106,12 @@ export interface PageHeaderProps {
   /** Short facts under the title — a reference number, a status, a date — or chips of your own. */
   meta?: HeaderMeta[] | ReactNode;
   actions?: ReactNode;
-  /** Pinned under the app header on a bar of its own — for registers whose actions must stay in reach. */
+  /**
+   * Pinned under the app header on a bar of its own — for registers whose actions must stay in
+   * reach. Place it edge to edge (outside the page's padding), as `PmShell`'s content column does.
+   */
   sticky?: boolean;
+  /** Placement only (e.g. `print:hidden`). Sizes, colours and spacing are the header's own. */
   className?: string;
 }
 
@@ -115,7 +119,6 @@ export interface PageHeaderProps {
 export function PageHeader({
   title,
   description,
-  descriptionClassName,
   icon,
   eyebrow,
   breadcrumbs,
@@ -138,9 +141,11 @@ export function PageHeader({
   return (
     <header
       className={cn(
+        // The bottom margin is dropped by globals.css when the parent already spaces its children
+        // (`space-y-*`), so no page has to override it.
         'page-header',
         sticky
-          ? cn('sticky z-20 -mx-4 mb-4 border-b bg-background/90 px-4 py-2.5 backdrop-blur md:-mx-6 md:px-6', BELOW_APP_HEADER)
+          ? cn('page-header-sticky sticky z-20 border-b bg-background/90 px-4 py-2.5 backdrop-blur md:px-6', BELOW_APP_HEADER)
           : 'mb-4 sm:mb-5',
         className,
       )}
@@ -165,12 +170,7 @@ export function PageHeader({
               {badge}
             </div>
             {description && (
-              <div
-                className={cn(
-                  'mt-1 line-clamp-2 max-w-3xl text-xs leading-relaxed text-muted-foreground sm:line-clamp-none sm:text-sm',
-                  descriptionClassName,
-                )}
-              >
+              <div className="mt-1 line-clamp-2 max-w-3xl text-xs leading-relaxed text-muted-foreground sm:line-clamp-none sm:text-sm">
                 {description}
               </div>
             )}
@@ -181,13 +181,16 @@ export function PageHeader({
                   {meta.map((entry) => (
                     <div key={entry.label} className="flex min-w-0 items-baseline gap-1.5">
                       <dt className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">{entry.label}</dt>
-                      <dd className="truncate text-xs font-medium text-foreground">{entry.value}</dd>
+                      <dd className="truncate text-xs font-medium text-foreground">
+                        {entry.value}
+                        {entry.hint && <span className="ml-1.5 font-normal text-muted-foreground">{entry.hint}</span>}
+                      </dd>
                     </div>
                   ))}
                 </dl>
               )
             ) : meta ? (
-              <div className="mt-2 flex flex-wrap items-center gap-2">{meta}</div>
+              <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">{meta}</div>
             ) : null}
           </div>
         </div>
@@ -195,7 +198,7 @@ export function PageHeader({
             buttons share the row while square icon buttons keep their size; from `sm` they keep
             their width but may shrink, so one wrapping toolbar passed as a child wraps in place. */}
         {actions && (
-          <div className="page-header-actions flex w-full min-w-0 flex-wrap items-center gap-2 sm:ml-auto sm:w-auto sm:max-w-full sm:justify-end">
+          <div className="page-header-actions flex w-full min-w-0 flex-wrap items-center gap-2 print:hidden sm:ml-auto sm:w-auto sm:max-w-full sm:justify-end">
             {actions}
           </div>
         )}

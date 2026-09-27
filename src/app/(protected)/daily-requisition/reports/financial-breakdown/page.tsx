@@ -14,11 +14,11 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import type { DailyRequisitionEntry } from '@/lib/types';
 import {
-  DailyPageHeader,
   DailyMetricCard,
   dailyPageContainerClass,
   dailySurfaceCardClass,
 } from '@/components/daily-requisition/module-shell';
+import { PageHeader } from '@/components/shared/page-header';
 
 const VERIFIED_STATUSES: DailyRequisitionEntry['status'][] = [
   'Verified',
@@ -200,7 +200,7 @@ export default function FinancialBreakdownReportPage() {
   if (!canView) {
     return (
       <div className={dailyPageContainerClass}>
-        <DailyPageHeader
+        <PageHeader eyebrow="Daily Requisition"
           title="Financial Breakdown"
           description="Gross vs net with full deduction split across verified entries."
           backHref="/daily-requisition/reports"
@@ -220,7 +220,7 @@ export default function FinancialBreakdownReportPage() {
 
   return (
     <div className={dailyPageContainerClass}>
-      <DailyPageHeader
+      <PageHeader eyebrow="Daily Requisition"
         title="Financial Breakdown"
         description="Gross vs net analysis with full deduction split — GST, TDS, retention, and other charges. Only Verified, Received for Payment, and Paid entries."
         backHref="/daily-requisition/reports"

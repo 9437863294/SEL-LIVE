@@ -15,6 +15,14 @@ const badgeVariants = cva(
         destructive:
           "border-transparent bg-destructive text-destructive-foreground hover:bg-destructive/80",
         outline: "text-foreground",
+        // The app's six status tones (src/lib/status-tone.ts). One palette everywhere — no module
+        // colours its own statuses; dark mode comes from the dark-compat layer.
+        neutral: "border-slate-200 bg-slate-50 text-slate-700",
+        info: "border-sky-200 bg-sky-50 text-sky-700",
+        progress: "border-violet-200 bg-violet-50 text-violet-700",
+        success: "border-emerald-200 bg-emerald-50 text-emerald-700",
+        warning: "border-amber-200 bg-amber-50 text-amber-800",
+        danger: "border-rose-200 bg-rose-50 text-rose-700",
       },
     },
     defaultVariants: {

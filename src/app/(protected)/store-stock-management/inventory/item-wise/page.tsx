@@ -298,7 +298,6 @@ export default function ItemWiseInventoryPage() {
   return (
     <div className="space-y-6 print:p-0">
       <PageHeader
-        className="mb-0 sm:mb-0"
         icon={Boxes}
         eyebrow="Inventory report"
         title="Item-wise inventory"

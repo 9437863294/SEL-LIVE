@@ -1117,7 +1117,6 @@ export default function ImportBoqPage() {
         backHref={`/project-management/boq?project=${encodeURIComponent(mappingId)}`}
         backLabel="Back to BOQ"
         meta={<StepIndicator currentStep={step} />}
-        className="mb-0 sm:mb-0"
       />
 
       {step === 'upload' && (

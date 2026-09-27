@@ -11,10 +11,10 @@ import {
   PoCardGridLoadingState,
   PoNavCard,
   PoNavCardGrid,
-  PoPageHeader,
   PoPageShell,
   PoProjectNotFound,
 } from "@/components/po/po-page-shell";
+import { PageHeader } from "@/components/shared/page-header";
 
 export default function PurchaseOrderSettingsPage() {
   const searchParams = useSearchParams();
@@ -50,9 +50,9 @@ export default function PurchaseOrderSettingsPage() {
 
   return (
     <PoPageShell>
-      <PoPageHeader
+      <PageHeader
         title="Purchase Order Settings"
-        subtitle={
+        description={
           projectName
             ? `Configure how purchase orders are approved for issue on ${projectName}.`
             : "Configure how purchase orders are approved for issue."
@@ -60,7 +60,6 @@ export default function PurchaseOrderSettingsPage() {
         icon={Settings2}
         backHref={context.poHref()}
         backLabel="Back to Purchase Orders"
-        gradient={PO_SETTINGS_GRADIENT}
       />
 
 

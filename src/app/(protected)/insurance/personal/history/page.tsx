@@ -118,7 +118,6 @@ export default function PersonalInsuranceHistoryPage() {
     <div className="space-y-4">
       {/* Header */}
       <PageHeader
-        className="mb-0 sm:mb-0"
         icon={History}
         title="Personal Insurance History"
         description="Complete activity log — policy creations and premium payments"

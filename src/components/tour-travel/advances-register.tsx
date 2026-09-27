@@ -28,7 +28,8 @@ import {
 import { TravelControlError, approveTravelAdvance, recordAdvancePayment, rejectTravelAdvance } from '@/lib/tour-travel-service';
 import { TT_PERMISSION_MODULE } from './module-layout-shell';
 import { useTravelActor, useTravelCollection, useTravelConfig } from './use-travel-config';
-import { Money, TravelDataList, TravelEmptyState, TravelFilterCard, TravelLoader, TravelPageHeader, TravelSection, TravelStatusBadge, travelDialog } from './travel-ui';
+import { Money, TravelDataList, TravelEmptyState, TravelFilterCard, TravelLoader, TravelSection, TravelStatusBadge, travelDialog } from './travel-ui';
+import { PageHeader } from '@/components/shared/page-header';
 
 const todayIso = () => new Date().toISOString().slice(0, 10);
 
@@ -131,7 +132,7 @@ export default function AdvancesRegister() {
 
   return (
     <div className="space-y-3">
-      <TravelPageHeader
+      <PageHeader
         title="Travel Advances"
         description={`Advance requests, approvals and disbursement. Settlement deadline: ${deadline} days after payment.`}
       />

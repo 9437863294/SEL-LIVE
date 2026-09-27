@@ -12,7 +12,6 @@ import {
   HrEmptyState,
   HrKpiCard,
   HrLoader,
-  HrPageHeader,
   type HrListColumn,
 } from '@/components/hr/hr-ui';
 import { WINDOWS_AGENT_ROUTES } from '@/lib/windows-agent';
@@ -40,6 +39,7 @@ import {
   PresenceBadge,
   RelativeTime,
 } from './ui';
+import { PageHeader } from '@/components/shared/page-header';
 
 /**
  * §17's live board: who is signed in, on what, doing what, right now.
@@ -259,7 +259,7 @@ export default function LiveBoard() {
 
   return (
     <div className="space-y-5">
-      <HrPageHeader
+      <PageHeader
         title="Live users"
         description="Open work sessions across the fleet, refreshed as the agents report."
       />

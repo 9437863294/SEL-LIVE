@@ -21,11 +21,11 @@ import {
   PO_SETTINGS_GRADIENT,
   PoAccessDenied,
   PoLoadingState,
-  PoPageHeader,
   PoPageShell,
   PoProjectNotFound,
 } from "@/components/po/po-page-shell";
 import { WorkflowConfigurationEditor } from "@/components/workflow/workflow-configuration-editor";
+import { PageHeader } from "@/components/shared/page-header";
 
 export default function PoIssueWorkflowConfigurationPage() {
   const searchParams = useSearchParams();
@@ -67,13 +67,12 @@ export default function PoIssueWorkflowConfigurationPage() {
 
   return (
     <PoPageShell>
-      <PoPageHeader
+      <PageHeader
         title="Issue Workflow"
-        subtitle="Stages a purchase order passes before it is issued to the vendor."
+        description="Stages a purchase order passes before it is issued to the vendor."
         icon={GitMerge}
         backHref={context.poHref("settings")}
         backLabel="Back to Purchase Order Settings"
-        gradient={PO_SETTINGS_GRADIENT}
       />
 
 

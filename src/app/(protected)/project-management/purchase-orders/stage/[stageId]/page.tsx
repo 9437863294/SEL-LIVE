@@ -55,7 +55,6 @@ import {
   PmSectionHead,
   PmShell,
   PmSidebar,
-  PmTopbar,
   pmAccent,
   type PmListColumn,
   type PmSidebarLink,
@@ -75,6 +74,7 @@ import {
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
+import { PageHeader } from "@/components/shared/page-header";
 
 /** PO dates are plain yyyy-mm-dd strings, matching how the other PO screens render them. */
 const formatDate = (value?: string) => {
@@ -331,7 +331,7 @@ export default function PoIssueStagePage() {
   if (!step) {
     return (
       <PmShell sidebar={stageSidebar}>
-        <PmTopbar
+        <PageHeader sticky
           title="Stage not found"
           breadcrumbs={poBreadcrumbs}
           backHref={context.poHref()}
@@ -518,7 +518,7 @@ export default function PoIssueStagePage() {
 
   return (
     <PmShell sidebar={stageSidebar}>
-      <PmTopbar
+      <PageHeader sticky
         title={step.name}
         breadcrumbs={poBreadcrumbs}
         backHref={context.poHref()}

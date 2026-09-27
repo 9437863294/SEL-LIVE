@@ -87,7 +87,6 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { useAuth } from '@/components/auth/AuthProvider';
 import {
   DailyMetricCard,
-  DailyPageHeader,
   dailyPageContainerClass,
   dailySurfaceCardClass,
   dailyTableHeaderClass,
@@ -97,6 +96,7 @@ import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from '@/components/ui/form';
+import { PageHeader } from '@/components/shared/page-header';
 
 const toDate = (v: any): Date | undefined =>
   v?.toDate?.() instanceof Date
@@ -623,7 +623,7 @@ function EntrySheetPageComponent() {
   if (!canViewPage) {
     return (
       <div className={dailyPageContainerClass}>
-        <DailyPageHeader
+        <PageHeader backHref="/daily-requisition" eyebrow="Daily Requisition"
           title="Entry Sheet"
           description="Create, review, print, and manage daily requisition entries from one place."
         />
@@ -643,7 +643,7 @@ function EntrySheetPageComponent() {
   return (
     <>
       <div className={`${dailyPageContainerClass} no-print`}>
-        <DailyPageHeader
+        <PageHeader backHref="/daily-requisition" eyebrow="Daily Requisition"
           title="Entry Sheet"
           description="Create new entries, bulk-print checklists, and keep the front door of the workflow organized."
           meta={

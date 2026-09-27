@@ -11,10 +11,10 @@ import {
   McCardGridLoadingState,
   McNavCard,
   McNavCardGrid,
-  McPageHeader,
   McPageShell,
   McProjectNotFound,
 } from "@/components/mc/mc-page-shell";
+import { PageHeader } from "@/components/shared/page-header";
 
 export default function ManufacturingClearanceSettingsPage() {
   const searchParams = useSearchParams();
@@ -50,9 +50,9 @@ export default function ManufacturingClearanceSettingsPage() {
 
   return (
     <McPageShell>
-      <McPageHeader
+      <PageHeader
         title="Manufacturing Clearance Settings"
-        subtitle={
+        description={
           projectName
             ? `Configure how manufacturing clearances are approved on ${projectName}.`
             : "Configure how manufacturing clearances are approved."
@@ -60,7 +60,6 @@ export default function ManufacturingClearanceSettingsPage() {
         icon={Settings2}
         backHref={context.mcHref()}
         backLabel="Back to Manufacturing Clearance"
-        gradient={MC_SETTINGS_GRADIENT}
       />
 
 

@@ -130,7 +130,6 @@ export function EApprovalReportsHub() {
         icon={BarChart3}
         title="Approval Intelligence"
         description="Where approvals are stuck, who is holding them, what it is worth, and how long it took. Every figure is computed from the live record — nothing here is stored or cached."
-        className="mb-0 sm:mb-0"
       />
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">

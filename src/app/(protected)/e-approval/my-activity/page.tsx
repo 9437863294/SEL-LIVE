@@ -34,8 +34,8 @@ import { listEApprovalMyActivity, loadEApprovalSignature } from '@/lib/e-approva
 import { EApprovalEmptyState } from '@/components/e-approval/shared';
 import { EApprovalSignaturePad } from '@/components/e-approval/signature-pad';
 import { StatTile } from '@/components/e-approval/dashboard-parts';
-import { PageHeader } from '@/components/e-approval/page-header';
 import { formatEApprovalAmount, formatEApprovalDateTime, useEApprovalActor } from '@/components/e-approval/hooks';
+import { PageHeader } from '@/components/shared/page-header';
 
 /**
  * "My Activity" — everything one person has done, across every approval (the user's own request:

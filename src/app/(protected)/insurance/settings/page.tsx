@@ -112,7 +112,6 @@ export default function InsuranceSettingsPage() {
     <div className="space-y-5">
       {/* Header */}
       <PageHeader
-        className="mb-0 sm:mb-0"
         icon={Settings2}
         title="Insurance Settings"
         description="Configure masters, workflows and documentation"

@@ -32,7 +32,6 @@ import {
   SurveyCardGridLoadingState,
   SurveyNavCard,
   SurveyNavCardGrid,
-  SurveyPageHeader,
   SurveyPageShell,
   SurveyProjectNotFound,
 } from "@/components/survey/survey-page-shell";
@@ -43,6 +42,7 @@ import {
   isTerminalSurveyStatus,
   type SurveyEntry,
 } from "@/lib/project-management-survey-workflow";
+import { PageHeader } from "@/components/shared/page-header";
 
 type SurveyItem = {
   icon: LucideIcon;
@@ -214,16 +214,15 @@ export default function SurveyHubPage() {
 
   return (
     <SurveyPageShell>
-      <SurveyPageHeader
+      <PageHeader
         title="Survey"
-        subtitle={
+        description={
           projectName
             ? `Record surveyed quantities for ${projectName}, work each stage, and review the log.`
             : "Record surveyed quantities, work each stage, and review the log."
         }
         icon={Compass}
         backHref={context.parentHref}
-        gradient={SURVEY_GRADIENT}
       />
 
 

@@ -8,11 +8,12 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
 import { Textarea } from '@/components/ui/textarea';
-import { HrLoader, HrPageHeader } from '@/components/hr/hr-ui';
+import { HrLoader } from '@/components/hr/hr-ui';
 import { hasPermission } from '@/lib/access-control';
 import { DEFAULT_MONITORING_DISCLOSURE, WINDOWS_AGENT_RESOURCES } from '@/lib/windows-agent';
 import { fetchSettings, saveSettings } from '@/lib/windows-agent-service';
 import { useWindowsAgent, useWindowsAgentAction, useWindowsAgentQuery } from './hooks';
+import { PageHeader } from '@/components/shared/page-header';
 
 /**
  * §52's monitoring policy — the page an employee can always open.
@@ -58,7 +59,7 @@ export function MonitoringPolicyPage() {
 
   return (
     <div className="space-y-5">
-      <HrPageHeader
+      <PageHeader
         title="What this computer records"
         description="The SEL LIVE agent runs on company computers. This is everything it collects, and everything it does not."
       />

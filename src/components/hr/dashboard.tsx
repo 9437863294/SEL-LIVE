@@ -42,10 +42,10 @@ import {
   HrFunnel,
   HrKpiCard,
   HrLoader,
-  HrPageHeader,
   HrSection,
 } from './hr-ui';
 import { useHrCollection, useHrConfig, useHrPermissions } from './use-hr-config';
+import { PageHeader } from '@/components/shared/page-header';
 
 /**
  * The HR dashboard of spec section 3, which exists to answer one question: how many people do we
@@ -230,7 +230,7 @@ export default function HrDashboard() {
 
   return (
     <div>
-      <HrPageHeader
+      <PageHeader
         title="HR Dashboard"
         description="Manpower demand, recruitment progress and what is holding hiring up."
         actions={

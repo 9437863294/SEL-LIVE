@@ -206,7 +206,6 @@ export default function BGExpiryCalendar() {
   return (
     <div className="space-y-4">
       <PageHeader
-        className="mb-0 sm:mb-0"
         icon={CalendarClock}
         title="BG Expiry Calendar"
         description="Validity, claim periods, owner decisions, and extension/cancellation actions."

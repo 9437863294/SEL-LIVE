@@ -16,9 +16,10 @@ import { loadEApprovalDetail } from '@/lib/e-approval-service';
 import { ApprovalForm } from '@/components/e-approval/approval-form';
 import { AttachmentList } from '@/components/e-approval/attachment-list';
 import { DeleteApprovalButton } from '@/components/e-approval/delete-request-dialog';
-import { FormSection, PageHeader } from '@/components/e-approval/page-header';
+import { FormSection } from '@/components/e-approval/page-header';
 import { EApprovalStatusBadge } from '@/components/e-approval/shared';
 import { useEApprovalActor, useEApprovalPermissions } from '@/components/e-approval/hooks';
+import { PageHeader } from '@/components/shared/page-header';
 
 /**
  * Editing is allowed on a draft and on a returned request — and nowhere else.

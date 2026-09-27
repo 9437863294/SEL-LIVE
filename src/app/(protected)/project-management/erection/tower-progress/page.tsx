@@ -36,11 +36,11 @@ import {
   EmptyState,
   MetricCard,
   TowerProgressGuard,
-  TowerProgressHeader,
   TowerProgressNav,
   TowerProgressShell,
   TowerReportPhoto,
 } from "@/components/project-management/tower-progress/tower-progress-ui";
+import { PageHeader } from "@/components/shared/page-header";
 
 export default function TowerProgressDashboardPage() {
   return (
@@ -59,9 +59,9 @@ function Dashboard() {
 
   return (
     <TowerProgressShell>
-      <TowerProgressHeader
+      <PageHeader
         title="Tower Progress"
-        subtitle={
+        description={
           project
             ? `Tower-wise execution and photographic evidence for ${project.projectName}.`
             : "Tower-wise execution and photographic evidence."

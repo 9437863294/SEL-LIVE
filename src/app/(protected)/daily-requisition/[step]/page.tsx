@@ -47,12 +47,12 @@ import {
 import { GstTdsVerificationDialog } from '@/components/daily-requisition/GstTdsVerificationDialog';
 import {
   DailyMetricCard,
-  DailyPageHeader,
   dailyPageContainerClass,
   dailySurfaceCardClass,
   dailyTableHeaderClass,
   dailyTabsListClass,
 } from '@/components/daily-requisition/module-shell';
+import { PageHeader } from '@/components/shared/page-header';
 
 /* ──────────────────── helpers ──────────────────── */
 
@@ -701,7 +701,7 @@ export default function DynamicWorkflowStepPage() {
   if (workflowNotFound || !currentStep || !stepConfig) {
     return (
       <div className={dailyPageContainerClass}>
-        <DailyPageHeader
+        <PageHeader backHref="/daily-requisition" eyebrow="Daily Requisition"
           title="Step Not Found"
           description="This workflow step does not exist or the workflow has not been configured yet."
         />
@@ -724,7 +724,7 @@ export default function DynamicWorkflowStepPage() {
   if (!canViewPage) {
     return (
       <div className={dailyPageContainerClass}>
-        <DailyPageHeader title={currentStep.name} description={stepConfig.description} />
+        <PageHeader backHref="/daily-requisition" eyebrow="Daily Requisition" title={currentStep.name} description={stepConfig.description} />
         <Card className={dailySurfaceCardClass}>
           <CardHeader>
             <CardTitle>Access Denied</CardTitle>
@@ -745,7 +745,7 @@ export default function DynamicWorkflowStepPage() {
   return (
     <>
       <div className={dailyPageContainerClass}>
-        <DailyPageHeader
+        <PageHeader backHref="/daily-requisition" eyebrow="Daily Requisition"
           title={currentStep.name}
           description={stepConfig.description}
           meta={

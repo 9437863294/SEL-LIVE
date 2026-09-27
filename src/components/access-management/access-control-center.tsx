@@ -41,7 +41,6 @@ import {
   HrDataList,
   HrEmptyState,
   HrLoader,
-  HrPageHeader,
   type HrListColumn,
 } from '@/components/hr/hr-ui';
 import { useAuth } from '@/components/auth/AuthProvider';
@@ -92,6 +91,7 @@ import {
   RiskBadges,
   RoleBadge,
 } from './access-ui';
+import { PageHeader } from '@/components/shared/page-header';
 
 type TabId =
   | 'overview'
@@ -281,13 +281,12 @@ export function AccessControlCenter() {
       {/* `shrink-0` on the two fixed rows: they are flex children of a height-bounded column, and
           without it the browser shrinks *them* to fit rather than scrolling the frame below. */}
       <div className="shrink-0">
-      <HrPageHeader
+      <PageHeader
         className="mb-2 sm:mb-4"
         title="Access Control Center"
         description="Users, roles, permissions, departments, designations, projects, reports and approval rights — from one screen."
         // The page does not scroll, so every row above the frame is a row taken off the list. On a
         // phone that budget is small enough that a two-line subtitle costs a whole role card.
-        descriptionClassName="hidden sm:block"
         actions={
           <>
             <Button variant="outline" size="sm" onClick={() => void state.refresh()} disabled={state.isRefreshing}>

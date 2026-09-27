@@ -7,7 +7,6 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { PageHeader, type PageHeaderProps } from '@/components/shared/page-header';
 import { cn } from '@/lib/utils';
 import { travelCurrency, travelStatusLabel, travelStatusTone } from '@/lib/tour-travel';
 
@@ -86,11 +85,6 @@ export function Money({ value, className, exact = false }: { value: number; clas
     ? new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(Number(value) || 0)
     : travelCurrency(value);
   return <span className={cn('tabular-nums', className)}>{formatted}</span>;
-}
-
-/** The module's page header — the app's standard one (`shared/page-header`). */
-export function TravelPageHeader(props: PageHeaderProps) {
-  return <PageHeader {...props} />;
 }
 
 export function TravelLoader({ label }: { label?: string }) {

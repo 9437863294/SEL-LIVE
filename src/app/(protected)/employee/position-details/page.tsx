@@ -70,7 +70,6 @@ import {
 } from '@/components/hr/hr-ui';
 import {
   EmployeeColumnPicker,
-  EmployeeHeader,
   EmployeeKpiCard,
   EmployeeListFooter,
   EmployeePageShell,
@@ -79,6 +78,7 @@ import {
   EMP_CARD_CLASS,
   EMP_REGISTER_HEIGHT,
 } from '@/components/employee/employee-ui';
+import { PageHeader } from '@/components/shared/page-header';
 
 /** One flattened category row: an employee plus one of their effective-dated values. */
 type PositionRow = {
@@ -828,9 +828,8 @@ export default function EmployeePositionDetailsPage() {
   if (!canView) {
     return (
       <EmployeePageShell>
-        <EmployeeHeader
+        <PageHeader
           icon={Briefcase}
-          tone="violet"
           eyebrow="Employee management"
           title="Position details"
           backHref="/employee"
@@ -843,14 +842,13 @@ export default function EmployeePositionDetailsPage() {
 
   return (
     <EmployeePageShell>
-      <EmployeeHeader
+      <PageHeader
         icon={Briefcase}
-        tone="violet"
         eyebrow="Employee management"
         title="Position details"
         backHref="/employee"
         backLabel="Back to Employee Management"
-        status={
+        badge={
           lastSynced ? (
             <EmployeeStatusPill tone="emerald" icon={Clock}>
               Synced {formatDistanceToNow(lastSynced.at, { addSuffix: true })}

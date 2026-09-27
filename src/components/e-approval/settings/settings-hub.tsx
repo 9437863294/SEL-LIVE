@@ -121,7 +121,6 @@ export function EApprovalSettingsHub() {
         icon={Settings}
         title="E-Approval Settings"
         description="Everything that decides how an approval behaves before anybody touches it. Changes apply to approvals raised from now on — a request already in flight keeps the chain it was given."
-        className="mb-0 sm:mb-0"
       />
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">

@@ -99,7 +99,6 @@ export default function InventoryDashboardPage() {
   return (
     <div className="space-y-6">
       <PageHeader
-        className="mb-0 sm:mb-0"
         title="Inventory control"
         description="Item- and location-wise stock derived from posted ledger movements."
         actions={

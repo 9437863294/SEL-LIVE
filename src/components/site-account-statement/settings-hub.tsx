@@ -118,7 +118,6 @@ export default function SiteAccountStatementSettingsHub() {
   return (
     <div className="space-y-5">
       <PageHeader
-        className="mb-0 sm:mb-0"
         icon={Settings}
         title="Site Account Statement Settings"
         description="Project setup, categories, budget alerts, tender setup and field control — each in its own place."

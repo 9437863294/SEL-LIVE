@@ -393,7 +393,6 @@ export default function BudgetAlertsPage() {
 
       {/* Page header */}
       <PageHeader
-        className="mb-0 sm:mb-0"
         icon={ShieldAlert}
         title="Budget Alert Settings"
         description="Configure who gets notified when project budgets are exceeded"

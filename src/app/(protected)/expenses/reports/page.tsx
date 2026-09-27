@@ -41,7 +41,6 @@ import {
   type EnrichedExpense,
   type ExpenseReportGroup,
 } from '@/lib/expenses-reports';
-import { ExpensesPageHeader } from '@/components/expenses/page-header';
 import { useExpensesSettings } from '@/components/expenses/use-expenses-settings';
 import { PivotReport } from '@/components/expenses/pivot-report';
 import { Badge } from '@/components/ui/badge';
@@ -57,6 +56,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { format } from 'date-fns';
 import type { DateRange } from 'react-day-picker';
 import { cn } from '@/lib/utils';
+import { PageHeader } from '@/components/shared/page-header';
 
 /** The custom pivot sits in the list alongside the fixed reports, under its own id. */
 const PIVOT_ID = 'custom-pivot';
@@ -210,7 +210,7 @@ function ReportCentre() {
   if (!canViewPage) {
     return (
       <div className="w-full space-y-4">
-        <ExpensesPageHeader icon={BarChart3} title="Expense Reports" accent="fuchsia" backHref="/expenses" />
+        <PageHeader icon={BarChart3} title="Expense Reports" backHref="/expenses" />
         <Card className="border-destructive/30">
           <CardHeader className="text-center pb-2">
             <div className="mx-auto mb-3 flex h-14 w-14 items-center justify-center rounded-full bg-destructive/10">
@@ -226,11 +226,10 @@ function ReportCentre() {
 
   return (
     <div className="w-full space-y-4">
-      <ExpensesPageHeader
+      <PageHeader
         icon={BarChart3}
         title="Expense Reports"
         description={scopeLabel}
-        accent="fuchsia"
         backHref="/expenses"
         actions={
           <>

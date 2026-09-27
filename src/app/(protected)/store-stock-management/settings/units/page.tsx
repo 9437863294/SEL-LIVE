@@ -82,7 +82,6 @@ export default function ManageUnitsPage() {
   return (
     <div className="mx-auto w-full max-w-3xl space-y-6">
       <PageHeader
-        className="mb-0 sm:mb-0"
         eyebrow="Transaction configuration"
         title="Units of Measurement"
         description="Manage the measurement units available to stock and BOQ items."

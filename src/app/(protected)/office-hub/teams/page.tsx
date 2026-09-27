@@ -31,12 +31,12 @@ import {
   OfficeHubDataList,
   OfficeHubEmptyState,
   OfficeHubKpiCard,
-  OfficeHubPageHeader,
   PersonChip,
   ResultCount,
   type OfficeHubListColumn,
 } from '@/components/office-hub/ui';
 import { TeamDialog, emptyTeamDraft } from '@/components/office-hub/team-form';
+import { PageHeader } from '@/components/shared/page-header';
 
 export default function TeamsPage() {
   const searchParams = useSearchParams();
@@ -167,7 +167,7 @@ export default function TeamsPage() {
 
   return (
     <div className="space-y-3">
-      <OfficeHubPageHeader
+      <PageHeader
         title="Teams"
         description="Groups that can be invited to a meeting or assigned a task as one."
         actions={

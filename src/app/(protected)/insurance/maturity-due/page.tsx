@@ -113,7 +113,6 @@ export default function MaturityDuePage() {
 
       {/* ── Header ────────────────────────────────────────────────────────── */}
       <PageHeader
-        className="mb-0 sm:mb-0"
         icon={CalendarCheck}
         title="Maturity Due"
         description="Track policies approaching or past their maturity date"

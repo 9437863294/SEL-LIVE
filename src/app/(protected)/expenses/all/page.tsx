@@ -31,9 +31,9 @@ import {
   formatExpenseTimestamp,
   formatReceptionDate,
 } from '@/components/expenses/expense-details-dialog';
-import { ExpensesPageHeader } from '@/components/expenses/page-header';
 import { useExpensesSettings } from '@/components/expenses/use-expenses-settings';
 import { applyColumnSettings } from '@/lib/expenses-settings';
+import { PageHeader } from '@/components/shared/page-header';
 
 
 const baseTableHeaders = [
@@ -191,7 +191,7 @@ export default function AllExpensesPage() {
   if (!canViewPage) {
     return (
       <div className="w-full">
-        <ExpensesPageHeader icon={Layers} title="Consolidated Expenses" backHref="/expenses" />
+        <PageHeader icon={Layers} title="Consolidated Expenses" backHref="/expenses" />
         <Card className="border-destructive/30">
           <CardHeader className="text-center pb-2">
             <div className="mx-auto mb-3 flex h-14 w-14 items-center justify-center rounded-full bg-destructive/10">
@@ -207,11 +207,10 @@ export default function AllExpensesPage() {
 
   return (
     <div className="w-full space-y-4">
-      <ExpensesPageHeader
+      <PageHeader
         icon={Layers}
         title="Consolidated Expenses"
         description="All departments combined view"
-        accent="violet"
         backHref="/expenses"
         actions={
           can('View', 'Expenses.Settings') ? (

@@ -193,7 +193,6 @@ export default function ProjectSummaryPage() {
   return (
     <div className="space-y-4">
       <PageHeader
-        className="mb-0 sm:mb-0"
         title="Overall Project Summary"
         description="Budget, opening balance, receipts, expenses, closing balance, and utilization across all enabled projects"
         actions={canExport ? (

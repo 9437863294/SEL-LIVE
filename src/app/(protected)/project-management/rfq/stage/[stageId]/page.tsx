@@ -50,7 +50,6 @@ import {
   PmSectionHead,
   PmShell,
   PmSidebar,
-  PmTopbar,
   pmAccent,
   type PmListColumn,
   type PmSidebarLink,
@@ -70,6 +69,7 @@ import {
 } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import { PageHeader } from "@/components/shared/page-header";
 
 const toDateSafe = (value: unknown): Date | null => {
   if (!value) return null;
@@ -317,7 +317,7 @@ export default function RfqAwardStagePage() {
   if (!step) {
     return (
       <PmShell sidebar={stageSidebar}>
-        <PmTopbar
+        <PageHeader sticky
           title="Stage not found"
           breadcrumbs={rfqBreadcrumbs}
           backHref={context.rfqHref()}
@@ -485,7 +485,7 @@ export default function RfqAwardStagePage() {
 
   return (
     <PmShell sidebar={stageSidebar}>
-      <PmTopbar
+      <PageHeader sticky
         title={step.name}
         breadcrumbs={rfqBreadcrumbs}
         backHref={context.rfqHref()}

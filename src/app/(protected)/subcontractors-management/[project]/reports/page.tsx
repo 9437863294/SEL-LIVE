@@ -17,7 +17,8 @@ import { useParams } from 'next/navigation';
 import { useAuthorization } from '@/hooks/useAuthorization';
 import { Skeleton } from '@/components/ui/skeleton';
 import { ReactNode } from 'react';
-import { PmContent, PmNavCard, PmNavCardGrid, PmTopbar } from '@/components/project-management/pm-shell';
+import { PmContent, PmNavCard, PmNavCardGrid } from '@/components/project-management/pm-shell';
+import { PageHeader } from '@/components/shared/page-header';
 
 const reportItemsBase = [
   { 
@@ -82,7 +83,7 @@ export default function SubcontractorsReportsPage() {
 
   return (
     <>
-      <PmTopbar
+      <PageHeader sticky
         title="Reports"
         breadcrumbs={[
           { label: 'Subcontractors', href: `/subcontractors-management/${projectSlug}` },

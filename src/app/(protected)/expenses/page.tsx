@@ -13,8 +13,8 @@ import {
   ArrowRight,
   Sparkles,
 } from 'lucide-react';
-import { ExpenseBadge, ExpensesPageHeader } from '@/components/expenses/page-header';
-import { SectionHeader } from '@/components/shared/page-header';
+import { ExpenseBadge } from '@/components/expenses/page-header';
+import { PageHeader, SectionHeader } from '@/components/shared/page-header';
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/components/ui/card';
 import { cn } from '@/lib/utils';
 import type { LucideIcon } from 'lucide-react';
@@ -161,7 +161,7 @@ export default function ExpensesPage() {
   if (!canViewModule) {
     return (
       <div className="w-full">
-        <ExpensesPageHeader icon={IndianRupee} title="Expenses Management" backHref="/" />
+        <PageHeader icon={IndianRupee} title="Expenses Management" backHref="/" />
         <Card className="border-destructive/30">
           <CardHeader className="text-center pb-2">
             <div className="mx-auto mb-3 flex h-14 w-14 items-center justify-center rounded-full bg-destructive/10">
@@ -177,11 +177,10 @@ export default function ExpensesPage() {
 
   return (
     <div className="w-full space-y-6">
-      <ExpensesPageHeader
+      <PageHeader
         icon={IndianRupee}
         title="Expenses Management"
         description="Manage expense requests across all departments"
-        accent="blue"
         backHref="/"
         badge={<ExpenseBadge accent="blue"><Sparkles className="h-2.5 w-2.5" /> Live</ExpenseBadge>}
       />

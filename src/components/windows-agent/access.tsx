@@ -24,7 +24,6 @@ import {
   HrEmptyState,
   HrKpiCard,
   HrLoader,
-  HrPageHeader,
   hrDialog,
   type HrListColumn,
 } from '@/components/hr/hr-ui';
@@ -37,6 +36,7 @@ import {
 import { canAssignDeviceUsers, canViewDevices } from '@/lib/windows-agent-permissions';
 import { fetchDevices, fetchUserDeviceAccess, setUserDeviceAccess } from '@/lib/windows-agent-service';
 import { useWindowsAgent, useWindowsAgentAction, useWindowsAgentQuery } from './hooks';
+import { PageHeader } from '@/components/shared/page-header';
 
 /**
  * Computer access, seen from the person's side.
@@ -193,7 +193,7 @@ export function ComputerAccessPage() {
 
   return (
     <div className="space-y-5">
-      <HrPageHeader
+      <PageHeader
         title="Computer access"
         description="Which computers each person may sign in on. Everybody can use any computer until you say otherwise."
         actions={

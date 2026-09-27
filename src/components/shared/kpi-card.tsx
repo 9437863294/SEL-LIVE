@@ -146,5 +146,3 @@ export function KpiCard({
   );
 }
 
-/** The app's standard page header, re-exported where the screens have always imported it. */
-export { PageHeader } from './page-header';

@@ -19,13 +19,13 @@ import {
   HrDataList,
   HrEmptyState,
   HrLoader,
-  HrPageHeader,
   HrStatusBadge,
   Money,
   hrDialog,
   type HrListColumn,
 } from './hr-ui';
 import { useHrCollection, useHrConfig, useHrPermissions } from './use-hr-config';
+import { PageHeader } from '@/components/shared/page-header';
 
 /**
  * Recruitment agency management, spec section 47.
@@ -128,7 +128,7 @@ export default function Agencies() {
 
   return (
     <div>
-      <HrPageHeader
+      <PageHeader
         title="Recruitment Agencies"
         description={`${agencies.length} ${agencies.length === 1 ? 'agency' : 'agencies'}`}
         actions={

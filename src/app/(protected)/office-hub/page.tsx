@@ -71,7 +71,6 @@ import {
   OfficeHubDataList,
   OfficeHubEmptyState,
   OfficeHubKpiCard,
-  OfficeHubPageHeader,
   OfficeHubSection,
   PriorityBadge,
   QuickActionRow,
@@ -82,6 +81,7 @@ import {
   useTickingNow,
   type OfficeHubListColumn,
 } from '@/components/office-hub/ui';
+import { PageHeader } from '@/components/shared/page-header';
 
 export default function OfficeHubDashboardPage() {
   const { actor, viewer, capabilities, today, periods, meetingScope, isLoading } = useOfficeHub();
@@ -325,7 +325,7 @@ export default function OfficeHubDashboardPage() {
 
   return (
     <div className="space-y-3">
-      <OfficeHubPageHeader
+      <PageHeader
         title={`Good ${greeting()}, ${viewer.name.split(' ')[0]}`}
         description={`${formatIsoDate(today, { withWeekday: true })} · ${
           todaysMeetings.length

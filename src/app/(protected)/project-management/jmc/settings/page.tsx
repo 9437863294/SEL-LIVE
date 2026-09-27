@@ -13,10 +13,10 @@ import {
   JmcCardGridLoadingState,
   JmcNavCard,
   JmcNavCardGrid,
-  JmcPageHeader,
   JmcPageShell,
   JmcProjectNotFound,
 } from '@/components/jmc/jmc-page-shell';
+import { PageHeader } from '@/components/shared/page-header';
 
 type SettingsBaseItem = {
   icon: LucideIcon;
@@ -103,16 +103,15 @@ export default function JmcSettingsPage() {
 
   return (
     <JmcPageShell>
-      <JmcPageHeader
+      <PageHeader
         title="JMC Settings"
-        subtitle={
+        description={
           projectName
             ? `Configure how Joint Measurement Certificates behave for ${projectName}.`
             : 'Configure how Joint Measurement Certificates behave on this project.'
         }
         icon={Settings2}
         backHref={context.parentHref}
-        gradient={JMC_SETTINGS_GRADIENT}
       />
 
 

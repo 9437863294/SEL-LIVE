@@ -699,7 +699,6 @@ export default function DriverMobileTripsPage() {
       <PageHeader
         title="Driver Trip Tracking"
         description="Start trip when driving begins and stop trip when ride is completed."
-        className="mb-0 sm:mb-0"
         meta={
           <>
             <Badge className="bg-emerald-600 text-white">{String(driver.driverName || 'Driver')}</Badge>

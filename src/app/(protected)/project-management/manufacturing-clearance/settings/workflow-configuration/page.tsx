@@ -23,11 +23,11 @@ import {
   MC_SETTINGS_GRADIENT,
   McAccessDenied,
   McLoadingState,
-  McPageHeader,
   McPageShell,
   McProjectNotFound,
 } from "@/components/mc/mc-page-shell";
 import { WorkflowConfigurationEditor } from "@/components/workflow/workflow-configuration-editor";
+import { PageHeader } from "@/components/shared/page-header";
 
 export default function McClearanceWorkflowConfigurationPage() {
   const searchParams = useSearchParams();
@@ -69,13 +69,12 @@ export default function McClearanceWorkflowConfigurationPage() {
 
   return (
     <McPageShell>
-      <McPageHeader
+      <PageHeader
         title="Clearance Workflow"
-        subtitle="Stages a manufacturing clearance passes before the vendor may begin production."
+        description="Stages a manufacturing clearance passes before the vendor may begin production."
         icon={GitMerge}
         backHref={context.mcHref("settings")}
         backLabel="Back to Manufacturing Clearance Settings"
-        gradient={MC_SETTINGS_GRADIENT}
       />
 
 

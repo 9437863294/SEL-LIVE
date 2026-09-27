@@ -49,7 +49,6 @@ import {
   INSPECTION_GRADIENT,
   InspectionAccessDenied,
   InspectionLoadingState,
-  InspectionPageHeader,
   InspectionPageShell,
   InspectionProjectNotFound,
 } from "@/components/inspection/inspection-page-shell";
@@ -74,6 +73,7 @@ import {
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
+import { PageHeader } from "@/components/shared/page-header";
 
 const toDateSafe = (value: unknown): Date | null => {
   if (!value) return null;
@@ -275,13 +275,12 @@ export default function InspectionResultStagePage() {
   if (!step) {
     return (
       <InspectionPageShell>
-        <InspectionPageHeader
+        <PageHeader
           title="Stage not found"
-          subtitle="This stage is no longer part of the result approval workflow."
+          description="This stage is no longer part of the result approval workflow."
           icon={GitMerge}
           backHref={context.inspectionHref()}
           backLabel="Back to Inspections"
-          gradient={INSPECTION_GRADIENT}
         />
         <Card className="border-border/60">
           <CardHeader>
@@ -444,9 +443,9 @@ export default function InspectionResultStagePage() {
 
   return (
     <InspectionPageShell>
-      <InspectionPageHeader
+      <PageHeader
         title={step.name}
-        subtitle={
+        description={
           step.description ||
           (projectName
             ? `Inspection results awaiting ${step.name} for ${projectName}.`
@@ -455,7 +454,6 @@ export default function InspectionResultStagePage() {
         icon={GitMerge}
         backHref={context.inspectionHref()}
         backLabel="Back to Inspections"
-        gradient={INSPECTION_GRADIENT}
       />
 
 

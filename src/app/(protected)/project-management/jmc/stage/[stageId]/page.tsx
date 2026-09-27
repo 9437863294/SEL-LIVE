@@ -51,7 +51,6 @@ import {
   JMC_GRADIENT,
   JmcAccessDenied,
   JmcLoadingState,
-  JmcPageHeader,
   JmcPageShell,
   JmcProjectNotFound,
 } from '@/components/jmc/jmc-page-shell';
@@ -78,6 +77,7 @@ import {
 import { Calendar } from '@/components/ui/calendar';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { format, subDays } from 'date-fns';
+import { PageHeader } from '@/components/shared/page-header';
 
 /* -------- helpers -------- */
 function toDateSafe(value: any): Date | null {
@@ -666,16 +666,15 @@ export default function StagePage() {
   return (
     <>
       <JmcPageShell>
-        <JmcPageHeader
+        <PageHeader
           title={stage?.name || 'JMC Stage'}
-          subtitle={
+          description={
             projectName
               ? `Workflow stage tasks assigned to you for ${projectName}`
               : 'Workflow stage tasks assigned to you'
           }
           icon={GitMerge}
           backHref={context.jmcHref()}
-          gradient={JMC_GRADIENT}
         />
 
 

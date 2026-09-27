@@ -270,7 +270,6 @@ export default function RecurringPaymentDetailPage({ paymentId }: { paymentId: s
     </div>
     <div className="space-y-5 rp-print-hide">
     <PageHeader
-      className="mb-0 sm:mb-0"
       backHref="/recurring-payments/payments"
       backLabel="Back to payments"
       title={payment.title}

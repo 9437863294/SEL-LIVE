@@ -268,7 +268,6 @@ export default function BGMarginWorkspace() {
   return (
     <div className="space-y-4">
       <PageHeader
-        className="mb-0 sm:mb-0"
         title="Margin & FD Linkage"
         description="Reserve eligible FD value through claim expiry and monitor active collateral."
         actions={

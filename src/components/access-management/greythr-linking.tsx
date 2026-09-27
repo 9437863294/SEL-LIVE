@@ -51,7 +51,6 @@ import {
   HrDataList,
   HrEmptyState,
   HrLoader,
-  HrPageHeader,
   hrDialog,
   type HrListColumn,
 } from '@/components/hr/hr-ui';
@@ -75,6 +74,7 @@ import {
   unlinkUserFromEmployee,
   type LinkReportResponse,
 } from '@/lib/greythr-sync-client';
+import { PageHeader } from '@/components/shared/page-header';
 
 const STATUS_TONE: Record<LinkRowStatus, string> = {
   linked: 'border-emerald-200 bg-emerald-50 text-emerald-700',
@@ -382,7 +382,7 @@ export function GreytHRLinkingWorkspace() {
 
   return (
     <AccessPageShell width="wide" backHref="/settings/access-management" backLabel="Back to Access Management">
-      <HrPageHeader
+      <PageHeader
         title="greytHR linking"
         description="Match every platform login to its greytHR employee record. HR data flows in; roles and permissions stay here."
         actions={

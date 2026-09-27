@@ -1992,6 +1992,11 @@ html[data-nav-style='graphite'] {
    by the Button, or hand-sized `w-8`…`w-11`) keeps its size instead of becoming a bar with one glyph.
    From `sm` every child keeps its natural width but may shrink, so a wrapping toolbar passed as one
    child wraps inside the header instead of overflowing it. */
+/* A page header inside a parent that already spaces its children (`space-y-*`) takes no margin of
+   its own, so pages never override it and the gap above the content is the same everywhere. */
+[class*='space-y-'] > .page-header {
+  margin-bottom: 0;
+}
 .page-header-actions > * {
   min-width: 0;
 }
@@ -2121,9 +2126,11 @@ html[data-text-size='large'] {
   --control-h-sm: 2.25rem;
   --control-h-lg: 2.75rem;
   --card-pad: 1.5rem;
-  --table-head-h: 3rem;
-  --table-cell-py: 1rem;
-  --table-cell-px: 1rem;
+  /* Every table's row rhythm (ui/table.tsx). Pages don't pad cells themselves; the user's Table
+     rows setting (Appearance) switches these. */
+  --table-head-h: 2.5rem;
+  --table-cell-py: 0.625rem;
+  --table-cell-px: 0.875rem;
 }
 html[data-density='compact'] {
   --control-h: 2.25rem;
@@ -2139,12 +2146,13 @@ html[data-density='comfortable'] {
 }
 html[data-table-density='compact'] {
   --table-head-h: 2.25rem;
-  --table-cell-py: 0.4rem;
-  --table-cell-px: 0.75rem;
+  --table-cell-py: 0.375rem;
+  --table-cell-px: 0.625rem;
 }
 html[data-table-density='comfortable'] {
-  --table-head-h: 3.25rem;
-  --table-cell-py: 1.25rem;
+  --table-head-h: 3rem;
+  --table-cell-py: 0.875rem;
+  --table-cell-px: 1rem;
 }
 
 /* Border style: the radius token, plus the larger fixed radii modules use for cards. */

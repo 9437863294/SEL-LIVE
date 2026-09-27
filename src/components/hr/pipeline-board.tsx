@@ -53,8 +53,9 @@ import {
   moveApplicationStage,
   recordScreening,
 } from '@/lib/hr-requirement-service';
-import { HrEmptyState, HrLoader, HrPageHeader, HrStatusBadge, hrDialog } from './hr-ui';
+import { HrEmptyState, HrLoader, HrStatusBadge, hrDialog } from './hr-ui';
 import { useHrCollection, useHrConfig, useHrPermissions } from './use-hr-config';
+import { PageHeader } from '@/components/shared/page-header';
 
 /**
  * The recruitment pipeline of spec section 22.
@@ -306,7 +307,7 @@ export default function PipelineBoard({
   return (
     <div>
       {!embedded && (
-        <HrPageHeader
+        <PageHeader
           title="Recruitment Pipeline"
           description={`${visible.length} live ${visible.length === 1 ? 'application' : 'applications'}`}
           actions={

@@ -389,7 +389,6 @@ function PaymentRegisterView() {
   return (
     <div className="space-y-5">
       <PageHeader
-        className="mb-0 sm:mb-0"
         eyebrow="Finance operations"
         title="Payment Obligation Register"
         description="Controlled register with workflow, documents, transactions and audit history"

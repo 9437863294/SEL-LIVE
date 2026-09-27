@@ -89,7 +89,7 @@ export default function InventoryMovementsPage() {
   };
 
   return <div className="space-y-6">
-    <PageHeader className="mb-0 sm:mb-0" title="Receipts, issues & adjustments" description="Posted documents update stock through an immutable item/location ledger. BOQ is optional." />
+    <PageHeader title="Receipts, issues & adjustments" description="Posted documents update stock through an immutable item/location ledger. BOQ is optional." />
     <Alert><Send className="h-4 w-4" /><AlertTitle>Posting point</AlertTitle><AlertDescription>This screen posts immediately. Posted documents cannot be edited or deleted; corrections must use a return, adjustment, or reversal.</AlertDescription></Alert>
     <Card><CardHeader><CardTitle>Document header</CardTitle><CardDescription>Select the business movement and its controlling location.</CardDescription></CardHeader><CardContent className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
       <Field label="Movement type"><Select value={documentType} onValueChange={(value: MovementType) => setDocumentType(value)}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent>{movementTypes.map((type) => <SelectItem key={type} value={type}>{type}</SelectItem>)}</SelectContent></Select></Field>

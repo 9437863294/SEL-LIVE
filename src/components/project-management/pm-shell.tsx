@@ -27,7 +27,6 @@ import Link from "next/link";
 import { ArrowRight, ChevronLeft, ChevronRight, Inbox, type LucideIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { DataList, type ListColumn } from "@/components/shared/data-list";
-import { PageHeader } from "@/components/shared/page-header";
 import {
   SectionsSheet,
   type SectionsSheetEntry,
@@ -66,8 +65,11 @@ const SIDEBAR_HEIGHT =
  * `DataList`, whose header cells are uppercase slate small-caps; these keep a PM register reading
  * the same whether it is a plain `<Table>` or a responsive list.
  */
-export const PM_TABLE_CLASS =
-  "[&_th]:h-9 [&_th]:whitespace-nowrap [&_th]:bg-muted/40 [&_th]:px-4 [&_th]:text-xs [&_th]:font-semibold [&_th]:normal-case [&_th]:tracking-normal [&_th]:text-muted-foreground [&_td]:px-4 [&_td]:py-2.5";
+/**
+ * Kept so existing imports compile; it no longer styles anything. Every table takes the app's one
+ * format from `ui/table.tsx`, so a Project Management register reads like any other.
+ */
+export const PM_TABLE_CLASS = "";
 
 /**
  * Deterministic accents by position.
@@ -445,42 +447,6 @@ export function PmShell({
       {sidebar}
       <div className="flex min-w-0 flex-1 flex-col">{children}</div>
     </div>
-  );
-}
-
-/**
- * Back arrow, breadcrumb trail, screen title, then actions.
- *
- * The trail replaces the old stacked header's subtitle sentence: "Madanpur Rampur / Procurement /
- * PO Register" says where you are in one line and in less space than "Purchase orders raised
- * against vendors for Madanpur Rampur" took in two.
- */
-export function PmTopbar({
-  title,
-  breadcrumbs = [],
-  backHref,
-  backLabel = "Back",
-  actions,
-}: {
-  title: string;
-  /** Ancestors, nearest last. A `href` makes a crumb a link. */
-  breadcrumbs?: Array<{ label: string; href?: string }>;
-  backHref: string;
-  backLabel?: string;
-  actions?: ReactNode;
-}) {
-  // The app's standard header in its sticky form (`shared/page-header`). The topbar spans the
-  // content column edge to edge, above `PmContent`'s padding, so it takes no negative margins.
-  return (
-    <PageHeader
-      sticky
-      title={title}
-      breadcrumbs={breadcrumbs}
-      backHref={backHref}
-      backLabel={backLabel}
-      actions={actions}
-      className="mx-0 mb-0 md:mx-0"
-    />
   );
 }
 

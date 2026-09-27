@@ -11,8 +11,6 @@ import { cn } from '@/lib/utils';
 import type { MailRecoveryAdvice } from '@/lib/mail-hub/model';
 import type { AccountRow, ThreadSummary } from '@/lib/mail-hub/client';
 
-/** The app's standard page header (`shared/page-header`), under the name these screens import. */
-export { PageHeader } from '@/components/shared/page-header';
 
 export function EmptyState({ icon, title, body, action }: { icon?: ReactNode; title: string; body?: string; action?: ReactNode }) {
   return (

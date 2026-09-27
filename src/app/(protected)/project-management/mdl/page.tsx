@@ -137,8 +137,8 @@ import SidebarTabsList from "@/components/project-management/sidebar-tabs-list";
 import { PM_DIALOG, PmDataList, type PmListColumn } from "@/components/project-management/pm-shell";
 import {
   JMC_MAIN_CLASS,
-  JmcPageHeader as PmPageHeader,
 } from "@/components/jmc/jmc-page-shell";
+import { PageHeader } from "@/components/shared/page-header";
 
 type ProjectMapping = {
   id: string;
@@ -1587,13 +1587,12 @@ export default function MdlPage() {
     <main className={cn(JMC_MAIN_CLASS, "max-sm:[--card-pad:1rem]")}>
       {/* The shared Project Management header — the module's own furniture, which happens to live
           in jmc-page-shell.tsx because that is where it was first factored out. */}
-      <PmPageHeader
+      <PageHeader
         title="Design & Engineering"
-        subtitle={`Drawing submission and approval for every BOQ item marked MDL = Yes in ${mapping.projectName}.`}
+        description={`Drawing submission and approval for every BOQ item marked MDL = Yes in ${mapping.projectName}.`}
         icon={FileStack}
         backHref={`/project-management?project=${encodeURIComponent(mappingId)}`}
         backLabel="Back to Project Management"
-        gradient="from-sky-500 to-blue-600"
         actions={
           canEdit ? (
             <Button size="sm" onClick={() => setIsAddDialogOpen(true)}>

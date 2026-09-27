@@ -41,7 +41,6 @@ import {
   OfficeHubDataList,
   OfficeHubEmptyState,
   OfficeHubKpiCard,
-  OfficeHubPageHeader,
   PersonChip,
   PriorityBadge,
   ResultCount,
@@ -49,6 +48,7 @@ import {
 } from '@/components/office-hub/ui';
 import { CategoryBarChart } from '@/components/office-hub/charts';
 import { MultiSelect } from '@/components/office-hub/selectors';
+import { PageHeader } from '@/components/shared/page-header';
 
 type SortKey = 'name' | 'activeTasks' | 'overdueTasks' | 'upcomingTasks' | 'completedTasks' | 'meetings' | 'actionItems';
 
@@ -260,7 +260,7 @@ export default function WorkloadPage() {
 
   return (
     <div className="space-y-3">
-      <OfficeHubPageHeader
+      <PageHeader
         title="Workload"
         description="Where the work sits, so it can be moved. Counts only — no scores, no ranking."
         actions={

@@ -30,8 +30,9 @@ import {
   type JoiningRecord,
   type PreJoiningDocument,
 } from '@/lib/hr-requirement';
-import { HrLoader, HrPageHeader } from './hr-ui';
+import { HrLoader } from './hr-ui';
 import { useHrCollection, useHrConfig, useHrPermissions } from './use-hr-config';
+import { PageHeader } from '@/components/shared/page-header';
 
 /**
  * "My HR Tasks" — spec section 55.
@@ -205,7 +206,7 @@ export default function MyHrTasks() {
 
   return (
     <div>
-      <HrPageHeader
+      <PageHeader
         title="My HR Tasks"
         description={
           tasks.length === 0

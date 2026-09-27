@@ -32,10 +32,10 @@ import {
   JmcCardGridLoadingState,
   JmcNavCard,
   JmcNavCardGrid,
-  JmcPageHeader,
   JmcPageShell,
   JmcProjectNotFound,
 } from '@/components/jmc/jmc-page-shell';
+import { PageHeader } from '@/components/shared/page-header';
 
 /* ---------------- types ---------------- */
 type JmcItem = {
@@ -244,16 +244,15 @@ export default function JmcPage() {
 
   return (
     <JmcPageShell>
-      <JmcPageHeader
+      <PageHeader
         title="JMC Management"
-        subtitle={
+        description={
           projectName
             ? `Joint Measurement Certificates for ${projectName} — raise entries, work each stage, and review the log.`
             : 'Joint Measurement Certificates — raise entries, work each stage, and review the log.'
         }
         icon={ClipboardList}
         backHref={context.parentHref}
-        gradient={JMC_GRADIENT}
       />
 
 

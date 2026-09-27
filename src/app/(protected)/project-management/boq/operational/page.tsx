@@ -118,7 +118,6 @@ export default function OperationalBoqPage() {
         icon={ClipboardCheck}
         backHref="/project-management/boq"
         backLabel="Back to BOQ"
-        className="mb-0 sm:mb-0"
       />
 
       <Card className="mt-5 max-w-md overflow-hidden border-border/60 sm:mt-6">

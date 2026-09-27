@@ -297,7 +297,6 @@ export default function MonthlyComparisonPage() {
 
       {/* Header */}
       <PageHeader
-        className="mb-0 sm:mb-0"
         title="Month-over-Month Comparison"
         description="Budget · Received · Expenses per project — Δ% shows expense change vs previous month"
         actions={canExport ? (

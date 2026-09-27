@@ -17,7 +17,8 @@ import type { Subcontractor, ContactPerson, Project } from '@/lib/types';
 import { useRouter, useParams } from 'next/navigation';
 import { useAuth } from '@/components/auth/AuthProvider';
 import { logUserActivity } from '@/lib/activity-logger';
-import { PmContent, PmTopbar } from '@/components/project-management/pm-shell';
+import { PmContent } from '@/components/project-management/pm-shell';
+import { PageHeader } from '@/components/shared/page-header';
 
 const initialContact: Omit<ContactPerson, 'id'> = { type: 'Project', name: '', title: '', mobile: '', email: '' };
 
@@ -95,7 +96,7 @@ export default function AddSubcontractorPage() {
 
   return (
     <>
-      <PmTopbar
+      <PageHeader sticky
         title={'Add Subcontractor'}
         breadcrumbs={[
           { label: 'Subcontractors', href: `/subcontractors-management/${projectSlug}` },

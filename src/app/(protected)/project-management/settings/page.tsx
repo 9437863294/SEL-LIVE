@@ -114,7 +114,6 @@ export default function ProjectManagementSettingsPage() {
         icon={Settings2}
         backHref="/project-management"
         backLabel="Back to Project Management"
-        className="mb-0 sm:mb-0"
       />
 
       {/* ── Sections ─────────────────────────────────────────────────────── */}

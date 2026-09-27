@@ -31,7 +31,8 @@ import {
 import { TravelControlError, createTravelRequest, checkOutstandingAdvances } from '@/lib/tour-travel-service';
 import { TT_PERMISSION_MODULE } from './module-layout-shell';
 import { useTravelActor, useTravelConfig, useTravelOrganization } from './use-travel-config';
-import { Money, TravelField, TravelLoader, TravelPageHeader, TravelSection } from './travel-ui';
+import { Money, TravelField, TravelLoader, TravelSection } from './travel-ui';
+import { PageHeader } from '@/components/shared/page-header';
 
 const uid = () => Math.random().toString(36).slice(2, 10);
 const todayIso = () => new Date().toISOString().slice(0, 10);
@@ -333,7 +334,7 @@ export default function TourRequestForm() {
 
   return (
     <div className="space-y-4 pb-24">
-      <TravelPageHeader
+      <PageHeader
         title="New Tour Request"
         description="Raise the request before travelling — approval, entitlement and budget are all checked here."
       />

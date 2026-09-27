@@ -89,7 +89,8 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { Separator } from '@/components/ui/separator';
 import { projectMatchesSlug } from '@/lib/project-slug';
-import { PmContent, PmTopbar } from '@/components/project-management/pm-shell';
+import { PmContent } from '@/components/project-management/pm-shell';
+import { PageHeader } from '@/components/shared/page-header';
 
 
 // Unified Display types
@@ -684,7 +685,7 @@ export default function BillLogPage() {
 
   return (
     <>
-      <PmTopbar
+      <PageHeader sticky
         title="Billing Log"
         breadcrumbs={[
           { label: 'Subcontractors', href: `/subcontractors-management/${projectSlug}` },

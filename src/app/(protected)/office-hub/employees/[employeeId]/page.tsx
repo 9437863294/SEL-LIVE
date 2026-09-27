@@ -57,12 +57,12 @@ import {
   OfficeHubField,
   OfficeHubKpiCard,
   OfficeHubLoader,
-  OfficeHubPageHeader,
   PriorityBadge,
   TaskDueDate,
   TaskStatusBadge,
   type OfficeHubListColumn,
 } from '@/components/office-hub/ui';
+import { PageHeader } from '@/components/shared/page-header';
 
 export default function EmployeeProfilePage() {
   const params = useParams<{ employeeId: string }>();
@@ -214,7 +214,7 @@ export default function EmployeeProfilePage() {
 
   return (
     <div className="space-y-3">
-      <OfficeHubPageHeader
+      <PageHeader
         title={person.name}
         description={[person.designation, person.departmentName].filter(Boolean).join(' · ') || 'Employee'}
         actions={

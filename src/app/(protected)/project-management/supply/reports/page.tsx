@@ -70,7 +70,6 @@ import {
   PmSectionHead,
   PmShell,
   PmSidebar,
-  PmTopbar,
   pmAccent,
   type PmListColumn,
 } from "@/components/project-management/pm-shell";
@@ -79,6 +78,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
 import { Skeleton } from "@/components/ui/skeleton";
+import { PageHeader } from "@/components/shared/page-header";
 
 const VIEWS = [
   { key: "pipeline", label: "Pipeline", icon: Layers },
@@ -579,7 +579,7 @@ export default function SupplyReportsPage() {
         />
       }
     >
-      <PmTopbar
+      <PageHeader sticky
         title="Supply reports"
         breadcrumbs={[{ label: projectName || "Project" }, { label: "Supply", href: supplyHref }]}
         backHref={supplyHref}

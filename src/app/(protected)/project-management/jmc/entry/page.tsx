@@ -35,10 +35,10 @@ import {
   JMC_GRADIENT,
   JmcAccessDenied,
   JmcLoadingState,
-  JmcPageHeader,
   JmcPageShell,
   JmcProjectNotFound,
 } from '@/components/jmc/jmc-page-shell';
+import { PageHeader } from '@/components/shared/page-header';
 
 /* ---------- local types ---------- */
 type BoqItem = BoqItemBase & { projectId?: string; [k: string]: any };
@@ -622,9 +622,9 @@ export default function JmcEntryPage() {
   return (
     <>
       <JmcPageShell className="max-sm:[--card-pad:1rem]">
-        <JmcPageHeader
+        <PageHeader
           title="Create JMC Entry"
-          subtitle={
+          description={
             projectName
               ? `Raise a new Joint Measurement Certificate for ${projectName}`
               : 'Raise a new Joint Measurement Certificate'
@@ -632,7 +632,6 @@ export default function JmcEntryPage() {
           icon={FilePlus}
           backHref={context.jmcHref()}
           backLabel="Back to JMC"
-          gradient={JMC_GRADIENT}
           actions={
             <Button onClick={handleSave} disabled={isSaving}>
               {isSaving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}

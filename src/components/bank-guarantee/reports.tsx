@@ -489,7 +489,6 @@ export default function BGReports() {
   return (
     <div className="space-y-4">
       <PageHeader
-        className="mb-0 sm:mb-0"
         title="BG Reports"
         description="Exposure, validity, collateral, commission, custody, claims, closure, and exceptions."
         actions={

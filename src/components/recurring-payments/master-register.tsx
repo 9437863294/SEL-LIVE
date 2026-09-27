@@ -592,7 +592,6 @@ export default function RecurringMasterRegister() {
   return (
     <div className="space-y-5">
       <PageHeader
-        className="mb-0 sm:mb-0"
         title="Recurring Payment Masters"
         description="Controlled templates for automated financial obligations"
         actions={

@@ -66,7 +66,6 @@ import {
   SURVEY_GRADIENT,
   SurveyAccessDenied,
   SurveyLoadingState,
-  SurveyPageHeader,
   SurveyPageShell,
   SurveyProjectNotFound,
 } from "@/components/survey/survey-page-shell";
@@ -99,6 +98,7 @@ import {
 } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
+import { PageHeader } from "@/components/shared/page-header";
 
 type SurveyRow = {
   boqItem: BoqItem;
@@ -532,16 +532,15 @@ export default function RecordSurveyPage() {
 
   return (
     <SurveyPageShell>
-      <SurveyPageHeader
+      <PageHeader
         title="Record Survey"
-        subtitle={
+        description={
           `${coverage.pct}% of BOQ value certified (${formatCurrency(coverage.surveyedValue)} of ${formatCurrency(coverage.totalValue)})` +
           (projectName ? ` for ${projectName}` : "")
         }
         icon={Compass}
         backHref={context.surveyHref()}
         backLabel="Back to Survey"
-        gradient={SURVEY_GRADIENT}
       />
 
       {/* The header hides its subtitle below `md`, and here the subtitle is the screen's one

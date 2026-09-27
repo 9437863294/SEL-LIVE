@@ -59,7 +59,6 @@ import {
   OfficeHubEmptyState,
   OfficeHubFilterCard,
   OfficeHubKpiCard,
-  OfficeHubPageHeader,
   PersonChip,
   PriorityBadge,
   ResultCount,
@@ -71,6 +70,7 @@ import {
 import { DateRangePicker, MultiSelect } from '@/components/office-hub/selectors';
 import { TaskKanban, TaskKanbanSkeleton } from '@/components/office-hub/task-kanban';
 import { QuickCreateTaskDialog } from '@/components/office-hub/task-form';
+import { PageHeader } from '@/components/shared/page-header';
 
 type Scope = 'mine' | 'created' | 'team' | 'department' | 'all';
 type View = 'all' | 'overdue' | 'completed' | 'unassigned';
@@ -244,7 +244,7 @@ export default function TasksPage() {
 
   return (
     <div className="space-y-3">
-      <OfficeHubPageHeader
+      <PageHeader
         title="Tasks"
         description="One register, scoped to what you can see. Switch to the board to move work along."
         actions={

@@ -38,10 +38,10 @@ import { useProjectManagementJmcContext } from '@/components/jmc/use-jmc-host-co
 import {
   JmcAccessDenied,
   JmcLoadingState,
-  JmcPageHeader,
   JmcPageShell,
   JmcProjectNotFound,
 } from '@/components/jmc/jmc-page-shell';
+import { PageHeader } from '@/components/shared/page-header';
 
 interface SummaryStats {
     totalJMCs: number;
@@ -308,9 +308,9 @@ export default function JmcSummaryPage() {
 
   return (
     <JmcPageShell>
-      <JmcPageHeader
+      <PageHeader
         title="JMC Summary"
-        subtitle={
+        description={
           projectName
             ? `Executed and certified value with step-wise workflow performance for ${projectName}`
             : 'Executed and certified value with step-wise workflow performance'

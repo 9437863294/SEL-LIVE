@@ -476,7 +476,6 @@ export default function BankGuaranteeDashboard() {
   return (
     <div className="space-y-4">
       <PageHeader
-        className="mb-0 sm:mb-0"
         icon={ShieldCheck}
         title="Bank Guarantee Management"
         description="Limits, expiry, collateral, commission, custody, claims, and cancellation."

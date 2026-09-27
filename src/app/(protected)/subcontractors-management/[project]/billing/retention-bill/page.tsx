@@ -32,7 +32,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Checkbox } from '@/components/ui/checkbox';
 import { getAssigneeForStep, calculateDeadline } from '@/lib/workflow-utils';
 import { projectMatchesSlug } from '@/lib/project-slug';
-import { PmContent, PmTopbar } from '@/components/project-management/pm-shell';
+import { PmContent } from '@/components/project-management/pm-shell';
+import { PageHeader } from '@/components/shared/page-header';
 
 const initialDetails = {
     retentionBillNo: '',
@@ -218,7 +219,7 @@ export default function CreateRetentionBillPage() {
 
   return (
     <>
-      <PmTopbar
+      <PageHeader sticky
         title="Retention Bill"
         breadcrumbs={[
           { label: 'Subcontractors', href: `/subcontractors-management/${projectSlug}` },

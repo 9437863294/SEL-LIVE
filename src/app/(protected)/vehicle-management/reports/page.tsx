@@ -107,7 +107,6 @@ export default function VehicleReportsHubPage() {
         title="Vehicle Reports"
         description="Select a report to view focused analytics, apply date filters, and export to Excel."
         icon={BarChart3}
-        className="mb-0 sm:mb-0"
       />
 
       <div className="grid grid-cols-2 gap-2 md:grid-cols-3 lg:grid-cols-4 2xl:grid-cols-5">

@@ -15,7 +15,6 @@ import {
   HrEmptyState,
   HrKpiCard,
   HrLoader,
-  HrPageHeader,
   type HrListColumn,
 } from '@/components/hr/hr-ui';
 import { hasPermission } from '@/lib/access-control';
@@ -43,6 +42,7 @@ import {
   PersonCell,
   categoryLabel,
 } from './ui';
+import { PageHeader } from '@/components/shared/page-header';
 
 /**
  * §19–§21's reports, all built on `windowsDailyActivity`.
@@ -168,7 +168,7 @@ export function ReportsHub() {
 
   return (
     <div className="space-y-5">
-      <HrPageHeader title="Reports" description="Everything the agents recorded, aggregated." />
+      <PageHeader title="Reports" description="Everything the agents recorded, aggregated." />
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
         {cards.map((card) => (
           <Link key={card.href} href={card.href} className="block">
@@ -322,7 +322,7 @@ export function AttendanceReport() {
 
   return (
     <div className="space-y-5">
-      <HrPageHeader
+      <PageHeader
         title="Attendance"
         description="Built from what the agents recorded. Not a substitute for the HR attendance system."
         actions={
@@ -468,7 +468,7 @@ export function ApplicationsReport() {
 
   return (
     <div className="space-y-5">
-      <HrPageHeader
+      <PageHeader
         title="Application usage"
         description="Foreground time by program. An application open behind another window is not counted."
         actions={
@@ -757,7 +757,7 @@ export function DepartmentReport() {
 
   return (
     <div className="space-y-5">
-      <HrPageHeader
+      <PageHeader
         title="Departments"
         description="Computer use by department over the selected range."
         actions={

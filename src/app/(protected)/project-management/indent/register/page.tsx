@@ -75,11 +75,11 @@ import {
   PmShell,
   PmSidebar,
   PmTableFoot,
-  PmTopbar,
   pmAccent,
   type PmListColumn,
 } from "@/components/project-management/pm-shell";
 import type { WorkflowStep } from "@/lib/types";
+import { PageHeader } from "@/components/shared/page-header";
 
 type ProjectMapping = {
   id: string;
@@ -710,7 +710,7 @@ export default function ProjectIndentRegisterPage() {
         />
       }
     >
-      <PmTopbar
+      <PageHeader sticky
         title="Indent Register"
         breadcrumbs={[
           { label: mapping.projectName, href: `/project-management?project=${encodeURIComponent(mappingId)}` },

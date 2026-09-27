@@ -860,7 +860,6 @@ export default function FDImportWorkspace() {
 
   return <div className="space-y-4">
     <PageHeader
-      className="mb-0 sm:mb-0"
       title="FD Import & Reconciliation"
       description="Map any workbook onto the FD register with master-data resolution, row-level validation, duplicate prevention and a full audit trail."
       actions={<>

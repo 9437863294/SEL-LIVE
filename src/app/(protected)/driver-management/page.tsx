@@ -146,7 +146,6 @@ export default function DriverManagementOverviewPage() {
       <PageHeader
         title="Driver Management"
         description="Dedicated module for driver operations and trip execution."
-        className="mb-0 sm:mb-0"
         meta={
           <>
             <Badge className="bg-cyan-600 text-white">

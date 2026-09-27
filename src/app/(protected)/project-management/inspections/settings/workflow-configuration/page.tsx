@@ -23,11 +23,11 @@ import {
   INSPECTION_SETTINGS_GRADIENT,
   InspectionAccessDenied,
   InspectionLoadingState,
-  InspectionPageHeader,
   InspectionPageShell,
   InspectionProjectNotFound,
 } from "@/components/inspection/inspection-page-shell";
 import { WorkflowConfigurationEditor } from "@/components/workflow/workflow-configuration-editor";
+import { PageHeader } from "@/components/shared/page-header";
 
 export default function InspectionResultWorkflowConfigurationPage() {
   const searchParams = useSearchParams();
@@ -70,13 +70,12 @@ export default function InspectionResultWorkflowConfigurationPage() {
 
   return (
     <InspectionPageShell>
-      <InspectionPageHeader
+      <PageHeader
         title="Result Workflow"
-        subtitle="Stages a passing inspection result passes before it is recorded."
+        description="Stages a passing inspection result passes before it is recorded."
         icon={GitMerge}
         backHref={context.inspectionHref("settings")}
         backLabel="Back to Inspection Settings"
-        gradient={INSPECTION_SETTINGS_GRADIENT}
       />
 
 

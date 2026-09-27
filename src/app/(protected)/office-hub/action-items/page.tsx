@@ -49,7 +49,6 @@ import {
   OfficeHubEmptyState,
   OfficeHubFilterCard,
   OfficeHubKpiCard,
-  OfficeHubPageHeader,
   PersonChip,
   PriorityBadge,
   ResultCount,
@@ -57,6 +56,7 @@ import {
 } from '@/components/office-hub/ui';
 import { MultiSelect } from '@/components/office-hub/selectors';
 import { CreateTaskFromActionItemDialog } from '@/components/office-hub/decision-forms';
+import { PageHeader } from '@/components/shared/page-header';
 
 type View = 'open' | 'overdue' | 'no-task' | 'mine' | 'all';
 
@@ -236,7 +236,7 @@ export default function ActionItemsPage() {
 
   return (
     <div className="space-y-3">
-      <OfficeHubPageHeader
+      <PageHeader
         title="Action items"
         description="What meetings asked for. Turn one into a task and it starts reminding people."
         actions={

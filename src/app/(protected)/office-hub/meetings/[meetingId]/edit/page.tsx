@@ -30,9 +30,9 @@ import {
   OfficeHubCallout,
   OfficeHubEmptyState,
   OfficeHubLoader,
-  OfficeHubPageHeader,
 } from '@/components/office-hub/ui';
 import { MeetingForm, draftFromMeeting } from '@/components/office-hub/meeting-form';
+import { PageHeader } from '@/components/shared/page-header';
 
 export default function EditMeetingPage() {
   const params = useParams<{ meetingId: string }>();
@@ -118,7 +118,7 @@ export default function EditMeetingPage() {
   if (!verdict.allowed) {
     return (
       <div className="space-y-3">
-        <OfficeHubPageHeader title={meeting.title} description="This meeting cannot be edited." />
+        <PageHeader title={meeting.title} description="This meeting cannot be edited." />
         <OfficeHubCallout tone="amber" icon={AlertTriangle} title="Not editable" description={verdict.reason ?? undefined} />
         <Button variant="outline" asChild className="gap-2">
           <Link href={`${OFFICE_HUB_BASE_PATH}/meetings/${meeting.id}`}>
@@ -134,7 +134,7 @@ export default function EditMeetingPage() {
 
   return (
     <div className="space-y-3">
-      <OfficeHubPageHeader
+      <PageHeader
         title={`Edit: ${meeting.title}`}
         description={`Currently ${formatIsoDate(meeting.date, { withWeekday: true })} at ${meeting.startTime}. Changing the date, time or place notifies every participant.`}
         actions={

@@ -380,7 +380,6 @@ export default function CategoryAnalysisPage() {
 
       {/* Header */}
       <PageHeader
-        className="mb-0 sm:mb-0"
         title="Category-wise Expense Analysis"
         description="Click a category to expand entries · Click an entry for full details"
         actions={

@@ -32,7 +32,6 @@ export default function RecurringSettingsRoutePage({ tab }: { tab: SettingsSecti
   return (
     <div className="space-y-5">
       <PageHeader
-        className="mb-0 sm:mb-0"
         backHref="/recurring-payments/settings"
         backLabel="Back to settings"
         title={meta.title}

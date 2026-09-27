@@ -11,7 +11,6 @@
 
 export {
   JmcPageShell as SurveyPageShell,
-  JmcPageHeader as SurveyPageHeader,
   JmcLoadingState as SurveyLoadingState,
   JmcCardGridLoadingState as SurveyCardGridLoadingState,
   JmcAccessDenied as SurveyAccessDenied,

@@ -1089,7 +1089,6 @@ export default function NewProjectPurchaseOrderPage() {
         icon={ShoppingCart}
         backHref={`/project-management/purchase-orders?project=${encodeURIComponent(mappingId)}`}
         backLabel="Back to Purchase Orders"
-        className="mb-0 sm:mb-0"
         actions={
           // Short on a phone, where the full label is repeated at the foot of the form.
           <Button onClick={() => void handleSave()} disabled={isSaving} className="ml-auto">

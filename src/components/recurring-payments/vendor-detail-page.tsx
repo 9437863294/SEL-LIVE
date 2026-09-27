@@ -65,7 +65,6 @@ export default function VendorDetailPage({ vendorId }: { vendorId: string }) {
 
   return <div className="space-y-5">
     <PageHeader
-      className="mb-0 sm:mb-0"
       backHref="/recurring-payments/vendors"
       backLabel="Back to vendors"
       title={vendor.name}

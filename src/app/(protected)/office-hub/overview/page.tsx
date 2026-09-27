@@ -45,12 +45,12 @@ import {
   OfficeHubAccessDenied,
   OfficeHubDataList,
   OfficeHubEmptyState,
-  OfficeHubPageHeader,
   OfficeHubSection,
   PriorityBadge,
   type OfficeHubListColumn,
 } from '@/components/office-hub/ui';
 import { CategoryBarChart, HeroFigure } from '@/components/office-hub/charts';
+import { PageHeader } from '@/components/shared/page-header';
 
 export default function ManagementOverviewPage() {
   const { viewer, capabilities, today, periods, isLoading } = useOfficeHub();
@@ -160,7 +160,7 @@ export default function ManagementOverviewPage() {
 
   return (
     <div className="space-y-3">
-      <OfficeHubPageHeader
+      <PageHeader
         title="Management overview"
         description={`Operational position as at ${formatIsoDate(today, { withWeekday: true })}.`}
         actions={

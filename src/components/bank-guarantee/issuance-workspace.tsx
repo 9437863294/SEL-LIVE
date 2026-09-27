@@ -275,7 +275,6 @@ export default function BGIssuanceWorkspace({
   return (
     <div className="space-y-4">
       <PageHeader
-        className="mb-0 sm:mb-0"
         title="BG Issuance"
         description="Convert an approved request and reserved bank/FD margin into an issued Bank Guarantee."
       />

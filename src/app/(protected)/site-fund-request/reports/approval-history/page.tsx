@@ -215,7 +215,6 @@ export default function ApprovalHistoryPage() {
     return (
       <div className="w-full space-y-4 p-4 sm:p-6">
         <PageHeader
-          className="mb-0 sm:mb-0"
           backHref="/site-fund-request/reports"
           backLabel="Back to reports"
           eyebrow="Site Fund Request"
@@ -240,7 +239,6 @@ export default function ApprovalHistoryPage() {
     <div className="w-full space-y-4 p-4 sm:p-6">
       {/* Header */}
       <PageHeader
-        className="mb-0 sm:mb-0"
         backHref="/site-fund-request/reports"
         backLabel="Back to reports"
         eyebrow="Site Fund Request — Reports"

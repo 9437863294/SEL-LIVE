@@ -25,7 +25,6 @@ import {
 } from '@/components/hr/hr-ui';
 import { cn } from '@/lib/utils';
 import {
-  EmployeeHeader,
   EmployeePageShell,
   EmployeeStatusPill,
   EmployeeSubNav,
@@ -36,6 +35,7 @@ import { db } from '@/lib/firebase';
 import { collection, doc, getDoc, getDocs, orderBy, query } from 'firebase/firestore';
 import { syncGreytHRCategories } from '@/ai';
 import { useAuthorization } from '@/hooks/useAuthorization';
+import { PageHeader } from '@/components/shared/page-header';
 
 interface Category {
   id: number;
@@ -264,9 +264,8 @@ export default function ManageCategoryPage() {
   if (!canView) {
     return (
       <EmployeePageShell>
-        <EmployeeHeader
+        <PageHeader
           icon={Tags}
-          tone="teal"
           eyebrow="Employee management"
           title="Synced Categories"
           backHref="/employee"
@@ -279,14 +278,13 @@ export default function ManageCategoryPage() {
 
   return (
     <EmployeePageShell>
-      <EmployeeHeader
+      <PageHeader
         icon={Tags}
-        tone="teal"
         eyebrow="Employee management"
         title="Synced Categories"
         backHref="/employee"
         backLabel="Back to Employee Management"
-        status={
+        badge={
           lastSynced ? (
             <EmployeeStatusPill tone={lastSynced.successful ? 'emerald' : 'amber'} icon={Clock}>
               {lastSynced.successful ? 'Synced' : 'Last attempt'} {formatDistanceToNow(lastSynced.at, { addSuffix: true })}

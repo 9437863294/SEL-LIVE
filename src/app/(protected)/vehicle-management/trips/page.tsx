@@ -260,7 +260,6 @@ export default function TripManagementPage() {
       <PageHeader
         title="Trip Management"
         description="Monitor driver trips, live locations, and completed ride history."
-        className="mb-0 sm:mb-0"
         actions={
           <div className="grid w-full grid-cols-2 gap-2 sm:flex sm:w-auto sm:flex-wrap sm:justify-end">
             {/* Status filter */}

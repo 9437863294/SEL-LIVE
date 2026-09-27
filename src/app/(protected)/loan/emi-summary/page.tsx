@@ -339,7 +339,6 @@ export default function EmiSummaryPage() {
       <div className="space-y-4">
         {/* Header */}
         <PageHeader
-          className="mb-0 sm:mb-0"
           icon={CalendarCheck}
           title="EMI Tracker"
           description="Monthly EMI due and payment status"

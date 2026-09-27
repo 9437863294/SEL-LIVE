@@ -97,7 +97,6 @@ export default function GrnEntrySettingsPage() {
   return (
     <div className="mx-auto w-full max-w-3xl space-y-6">
       <PageHeader
-        className="mb-0 sm:mb-0"
         eyebrow="Transaction configuration"
         title="GRN Entry Settings"
         description="Choose the information users must provide when creating a Goods Receipt Note."

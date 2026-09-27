@@ -2,8 +2,8 @@
 
 import { MailView } from '@/components/mail-hub/mail-view';
 import { OutboundList } from '@/components/mail-hub/outbound-list';
-import { PageHeader } from '@/components/mail-hub/ui';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { PageHeader } from '@/components/shared/page-header';
 
 /**
  * Drafts written in the ERP (editable here, and mirrored to the provider's Drafts folder where it

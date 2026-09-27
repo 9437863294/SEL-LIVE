@@ -270,7 +270,6 @@ export default function SFRProjectAccessPage() {
     <div className="w-full space-y-6 p-4 sm:p-6">
       {/* Page header */}
       <PageHeader
-        className="mb-0 sm:mb-0"
         backHref="/site-fund-request/settings"
         backLabel="Back to settings"
         eyebrow="Site Fund Request / Settings"

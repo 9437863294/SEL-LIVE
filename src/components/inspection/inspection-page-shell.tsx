@@ -10,7 +10,6 @@
 
 export {
   JmcPageShell as InspectionPageShell,
-  JmcPageHeader as InspectionPageHeader,
   JmcLoadingState as InspectionLoadingState,
   JmcCardGridLoadingState as InspectionCardGridLoadingState,
   JmcAccessDenied as InspectionAccessDenied,

@@ -56,11 +56,11 @@ import {
   EmptyState,
   MetricCard,
   TowerProgressGuard,
-  TowerProgressHeader,
   TowerProgressNav,
   TowerProgressShell,
   TowerReportPhoto,
 } from "@/components/project-management/tower-progress/tower-progress-ui";
+import { PageHeader } from "@/components/shared/page-header";
 
 /** One register row: a tower with this activity's state and evidence position. */
 interface ActivityRow {
@@ -299,9 +299,9 @@ function ActivityWorkspace() {
 
   return (
     <TowerProgressShell>
-      <TowerProgressHeader
+      <PageHeader
         title={definition.label}
-        subtitle={
+        description={
           project
             ? `${definition.label} across ${towers.length} towers on ${project.projectName}.`
             : `${definition.label} across the line.`

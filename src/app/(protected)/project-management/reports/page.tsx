@@ -125,7 +125,6 @@ export default function ProjectManagementReportsPage() {
         icon={FileBarChart2}
         backHref={`/project-management${selectedProjectId ? `?project=${encodeURIComponent(selectedProjectId)}` : ""}`}
         backLabel="Back to Project Management"
-        className="mb-0 sm:mb-0"
         actions={
           projects.length > 0 ? (
             <Select value={selectedProject?.id ?? ""} onValueChange={handleProjectChange}>

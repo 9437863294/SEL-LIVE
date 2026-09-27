@@ -50,7 +50,6 @@ import {
 import { useOfficeHub, useOfficeHubLookups, useOfficeHubQuery } from '@/components/office-hub/hooks';
 import {
   OfficeHubAccessDenied,
-  OfficeHubPageHeader,
   OfficeHubSection,
 } from '@/components/office-hub/ui';
 import { DateRangePicker } from '@/components/office-hub/selectors';
@@ -61,6 +60,7 @@ import {
   MonthlyTrendChart,
   OrdinalBarChart,
 } from '@/components/office-hub/charts';
+import { PageHeader } from '@/components/shared/page-header';
 
 export default function ReportsPage() {
   const { viewer, capabilities, today, isLoading } = useOfficeHub();
@@ -179,7 +179,7 @@ export default function ReportsPage() {
 
   return (
     <div className="space-y-3">
-      <OfficeHubPageHeader
+      <PageHeader
         title="Reports"
         description="Meetings, tasks, action items and decisions over a period you choose."
         actions={

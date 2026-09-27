@@ -1275,7 +1275,6 @@ export default function SiteExpensesPage() {
     <div className="space-y-4">
       {/* Header */}
       <PageHeader
-        className="mb-0 sm:mb-0"
         title="Site Expenses"
         description="All expenses incurred at project sites"
         actions={(canExport || effectiveCanImport || effectiveCanAdd) ? (

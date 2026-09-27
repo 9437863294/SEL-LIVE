@@ -10,13 +10,14 @@ import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { Sparkles } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { HrAccessDenied, HrEmptyState, HrLoader, HrPageHeader } from '@/components/hr/hr-ui';
+import { HrAccessDenied, HrEmptyState, HrLoader } from '@/components/hr/hr-ui';
 import { useAuth } from '@/components/auth/AuthProvider';
 import { useAuthorization } from '@/hooks/useAuthorization';
 import { useAccessDirectory } from '@/hooks/useAccessDirectory';
 import { actorFromUser, canManageRoles } from '@/lib/access-control-service';
 import { AccessPageShell } from './access-ui';
 import { AccessTemplateForm } from './access-template-form';
+import { PageHeader } from '@/components/shared/page-header';
 
 const DEFAULT_RETURN = '/settings/access-management?tab=templates';
 
@@ -89,7 +90,7 @@ export function AccessTemplatePage({ templateId }: { templateId?: string }) {
     // Full width, deliberately — same reasoning as the role builder: the permission tree and its
     // module chips are the content of this page, and a centred column would waste the room.
     <AccessPageShell backHref={returnTo} backLabel="Back to templates">
-      <HrPageHeader
+      <PageHeader
         title={editing ? `Edit ${editing.name}` : 'New access template'}
         description="A reusable bundle of roles, permissions and projects — applying one adds it on top of whatever the user already has."
       />

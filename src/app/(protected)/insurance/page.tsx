@@ -198,7 +198,6 @@ export default function InsuranceDashboardPage() {
 
       {/* ── Header ──────────────────────────────────────────────────────── */}
       <PageHeader
-        className="mb-0 sm:mb-0"
         icon={ShieldHalf}
         title="Insurance"
         description="Comprehensive coverage management for personal & project assets"

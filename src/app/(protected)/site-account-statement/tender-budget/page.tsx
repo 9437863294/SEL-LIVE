@@ -214,7 +214,6 @@ export default function TenderBudgetSetupPage() {
 
       {/* Header */}
       <PageHeader
-        className="mb-0 sm:mb-0"
         icon={Settings}
         title="Tender Budget Setup"
         description="Configure tender budget, start and end month per project"

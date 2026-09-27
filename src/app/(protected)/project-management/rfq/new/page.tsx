@@ -32,7 +32,6 @@ import {
   PmContent,
   PmFormActions,
   PmShell,
-  PmTopbar,
 } from "@/components/project-management/pm-shell";
 import { PageHeader } from "@/components/shared/page-header";
 import {
@@ -376,7 +375,7 @@ export default function NewRfqPage() {
   return (
     // No sidebar: a create form has no views, and a nav rail would compete with the form.
     <PmShell>
-      <PmTopbar
+      <PageHeader sticky
         title="Create RFQ"
         breadcrumbs={[
           { label: "RFQ", href: `/project-management/rfq?project=${encodeURIComponent(mappingId)}` },

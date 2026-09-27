@@ -375,7 +375,6 @@ export default function NewBGRequestForm() {
   return (
     <div className="space-y-4">
       <PageHeader
-        className="mb-0 sm:mb-0"
         backHref="/bank-guarantee"
         backLabel="Back to Bank Guarantee dashboard"
         title="New BG Request"

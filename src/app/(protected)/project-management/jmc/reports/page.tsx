@@ -11,10 +11,10 @@ import {
   JmcCardGridLoadingState,
   JmcNavCard,
   JmcNavCardGrid,
-  JmcPageHeader,
   JmcPageShell,
   JmcProjectNotFound,
 } from '@/components/jmc/jmc-page-shell';
+import { PageHeader } from '@/components/shared/page-header';
 
 export default function JmcReportsPage() {
     const { can, isLoading } = useAuthorization();
@@ -59,9 +59,9 @@ export default function JmcReportsPage() {
 
   return (
     <JmcPageShell>
-      <JmcPageHeader
+      <PageHeader
         title="JMC Reports"
-        subtitle={`JMC status and progress summaries${projectName ? ` for ${projectName}` : ''}`}
+        description={`JMC status and progress summaries${projectName ? ` for ${projectName}` : ''}`}
         icon={BarChart3}
         backHref={context.jmcHref()}
         backLabel="Back to JMC"

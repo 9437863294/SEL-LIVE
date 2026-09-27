@@ -87,7 +87,6 @@ export default function StockStatusPage() {
   return (
     <div className="mx-auto w-full max-w-7xl space-y-6">
       <PageHeader
-        className="mb-0 sm:mb-0"
         eyebrow="Inventory availability"
         title="Stock-management scope"
         description="Enable BOQ-based project stock and property item inventory independently."

@@ -33,7 +33,8 @@ import {
 } from '@/lib/tour-travel';
 import { TT_PERMISSION_MODULE } from './module-layout-shell';
 import { useTravelCollection, useTravelConfig, useTravelOrganization } from './use-travel-config';
-import { TravelAccessDenied, TravelEmptyState, TravelLoader, TravelPageHeader, TravelSection } from './travel-ui';
+import { TravelAccessDenied, TravelEmptyState, TravelLoader, TravelSection } from './travel-ui';
+import { PageHeader } from '@/components/shared/page-header';
 
 const FLIGHT_CLASSES: FlightClass[] = ['None', 'Economy', 'Premium Economy', 'Business'];
 const TRAIN_CLASSES: TrainClass[] = ['None', 'SL', 'CC', '3A', 'EC', '2A', '1A'];
@@ -101,7 +102,7 @@ export default function TourTravelSettings() {
 
   return (
     <div className="space-y-4">
-      <TravelPageHeader
+      <PageHeader
         title="Travel Settings"
         description="Entitlement, approval matrix, city classification and controls. Everything the policy engine reads lives here."
         actions={

@@ -27,7 +27,6 @@ import {
   HrEmptyState,
   HrKpiCard,
   HrLoader,
-  HrPageHeader,
   hrDialog,
   type HrListColumn,
 } from '@/components/hr/hr-ui';
@@ -54,6 +53,7 @@ import {
 } from '@/lib/windows-agent-service';
 import { useTickingNow, useWindowsAgent, useWindowsAgentAction, useWindowsAgentQuery } from './hooks';
 import { ClockTime, DeviceStatusBadge, RelativeTime } from './ui';
+import { PageHeader } from '@/components/shared/page-header';
 
 /* ════════════════════════════════════════════════════════════════════════════════════════════
  * Device register (§34)
@@ -172,7 +172,7 @@ export function DevicesPage() {
 
   return (
     <div className="space-y-5">
-      <HrPageHeader
+      <PageHeader
         title="Devices"
         description="Every computer running the SEL LIVE agent."
         actions={
@@ -473,7 +473,7 @@ export function DeviceDetail({ deviceId }: { deviceId: string }) {
 
   return (
     <div className="space-y-5">
-      <HrPageHeader
+      <PageHeader
         title={record.deviceName}
         description={`${record.facts?.hostname ?? ''} · ${record.facts?.windowsVersion ?? 'Unknown Windows'}`}
         actions={

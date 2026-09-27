@@ -68,13 +68,13 @@ import {
   OfficeHubEmptyState,
   OfficeHubField,
   OfficeHubLoader,
-  OfficeHubPageHeader,
   OfficeHubSection,
   PriorityBadge,
   ResponseSummaryChip,
 } from '@/components/office-hub/ui';
 import { ParticipantList } from '@/components/office-hub/selectors';
 import { DocumentsPanel } from '@/components/office-hub/documents-panel';
+import { PageHeader } from '@/components/shared/page-header';
 
 export default function MeetingPreparePage() {
   const params = useParams<{ meetingId: string }>();
@@ -188,7 +188,7 @@ export default function MeetingPreparePage() {
 
   return (
     <div className="space-y-3">
-      <OfficeHubPageHeader
+      <PageHeader
         title={isAfter ? 'Post-meeting' : 'Meeting preparation'}
         description={`${meeting.title} · ${formatIsoDate(meeting.date, { withWeekday: true })} at ${formatClockTime(
           meeting.startTime,

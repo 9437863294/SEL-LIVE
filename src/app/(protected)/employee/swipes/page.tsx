@@ -55,7 +55,6 @@ import {
 import { SwipeDays, statusTone } from '@/components/employee/swipe-days';
 import {
   EmployeeErrorBanner,
-  EmployeeHeader,
   EmployeeKpiCard,
   EmployeeListFooter,
   EmployeePageShell,
@@ -81,6 +80,7 @@ import {
   type SwipeRegisterResponse,
   type SwipeRegisterRow,
 } from '@/lib/greythr-sync-client';
+import { PageHeader } from '@/components/shared/page-header';
 
 type Row = SwipeRegisterRow & { id: string };
 /** An employee plus the one day being looked at. */
@@ -521,9 +521,8 @@ export default function SwipeRegisterPage() {
   if (!canView) {
     return (
       <EmployeePageShell>
-        <EmployeeHeader
+        <PageHeader
           icon={Fingerprint}
-          tone="violet"
           eyebrow="Employee management"
           title="Daily swipes"
           backHref="/employee"
@@ -538,14 +537,13 @@ export default function SwipeRegisterPage() {
 
   return (
     <EmployeePageShell>
-      <EmployeeHeader
+      <PageHeader
         icon={Fingerprint}
-        tone="violet"
         eyebrow="Employee management"
         title="Daily swipes"
         backHref="/employee"
         backLabel="Back to Employee Management"
-        status={
+        badge={
           <>
             <EmployeeStatusPill tone="violet" icon={CalendarDays}>
               {monthLabel(month)}

@@ -2,9 +2,9 @@
 
 import { Card, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { ApprovalForm } from '@/components/e-approval/approval-form';
-import { PageHeader } from '@/components/e-approval/page-header';
 import { E_APPROVAL_BASE_PATH } from '@/lib/e-approval';
 import { useEApprovalActor, useEApprovalPermissions } from '@/components/e-approval/hooks';
+import { PageHeader } from '@/components/shared/page-header';
 
 export default function CreateEApprovalPage() {
   const { serviceActor, user } = useEApprovalActor();

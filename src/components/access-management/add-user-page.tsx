@@ -20,7 +20,7 @@ import * as React from 'react';
 import { useCallback, useMemo } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { UserPlus } from 'lucide-react';
-import { HrAccessDenied, HrLoader, HrPageHeader } from '@/components/hr/hr-ui';
+import { HrAccessDenied, HrLoader } from '@/components/hr/hr-ui';
 import { useAuth } from '@/components/auth/AuthProvider';
 import { useAuthorization } from '@/hooks/useAuthorization';
 import { useAccessDirectory } from '@/hooks/useAccessDirectory';
@@ -28,6 +28,7 @@ import { actorFromUser, canAssignAccess } from '@/lib/access-control-service';
 import { canCreateUser } from '@/lib/access-control';
 import { AccessPageShell } from './access-ui';
 import { AddUserForm } from './add-user-form';
+import { PageHeader } from '@/components/shared/page-header';
 
 const DEFAULT_RETURN = '/settings/access-management';
 
@@ -95,7 +96,7 @@ export function AddUserPage() {
     // A 2 cm gutter each side rather than a centred column: the form's sections are wide grids and
     // a role picker, and a 1024px cap on a wide monitor left more empty margin than form.
     <AccessPageShell width="inset" backHref={returnTo} backLabel="Back">
-      <HrPageHeader
+      <PageHeader
         title="Add user"
         description="Creates the login and the profile, then returns you to the assignment step with this user selected. A welcome email with the credentials is sent automatically."
       />

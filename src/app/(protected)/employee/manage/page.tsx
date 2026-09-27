@@ -74,7 +74,6 @@ import {
   type HrListColumn,
 } from '@/components/hr/hr-ui';
 import {
-  EmployeeHeader,
   EmployeeKpiCard,
   EmployeePageShell,
   EmployeeStatusPill,
@@ -90,6 +89,7 @@ import { cn } from '@/lib/utils';
 import { exportRowsToExcel } from '@/lib/report-excel';
 import { fetchEmployeeRoster, type EmployeeRosterResponse, type RosterEmployeeRow } from '@/lib/greythr-sync-client';
 import { hasExited, isWorkingState, type EmploymentState } from '@/lib/greythr';
+import { PageHeader } from '@/components/shared/page-header';
 
 /**
  * How often the roster re-verifies itself against greytHR.
@@ -634,14 +634,13 @@ export default function ManageEmployeePage() {
         rather than live, the notice further down says so at length, and the pill is the glance
         version of it. A third copy of the same sentence in the header would be noise.
       */}
-      <EmployeeHeader
+      <PageHeader
         icon={Users}
-        tone="indigo"
         eyebrow="Employee management"
         title="Manage Employee"
         backHref="/employee"
         backLabel="Back to Employee Management"
-        status={
+        badge={
           report ? (
             report.liveRoster ? (
               <EmployeeStatusPill tone="emerald" pulse>

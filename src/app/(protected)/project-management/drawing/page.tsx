@@ -70,8 +70,8 @@ import SidebarTabsList from "@/components/project-management/sidebar-tabs-list";
 import { PM_DIALOG, PmDataList, type PmListColumn } from "@/components/project-management/pm-shell";
 import {
   JMC_MAIN_CLASS,
-  JmcPageHeader as PmPageHeader,
 } from "@/components/jmc/jmc-page-shell";
+import { PageHeader } from "@/components/shared/page-header";
 
 const PERMISSION_RESOURCE = "Project Management.Drawing";
 
@@ -913,13 +913,12 @@ export default function DrawingPage() {
 
   return (
     <main className={cn(JMC_MAIN_CLASS, "max-sm:[--card-pad:1rem]")}>
-      <PmPageHeader
+      <PageHeader
         title="Drawing"
-        subtitle={`Collect vendor drawings for every MDL item under purchase order in ${mapping.projectName}.`}
+        description={`Collect vendor drawings for every MDL item under purchase order in ${mapping.projectName}.`}
         icon={PenTool}
         backHref={`/project-management/supply?project=${encodeURIComponent(mappingId)}`}
         backLabel="Back to Supply"
-        gradient="from-slate-500 to-slate-700"
         actions={
           <Button variant="outline" size="sm" className="w-9 px-0 sm:w-auto sm:px-3" asChild>
             <Link

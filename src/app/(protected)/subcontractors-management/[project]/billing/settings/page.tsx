@@ -14,7 +14,8 @@ import { Button } from '@/components/ui/button';
 import { useParams } from 'next/navigation';
 import { useAuthorization } from '@/hooks/useAuthorization';
 import { Skeleton } from '@/components/ui/skeleton';
-import { PmContent, PmNavCard, PmNavCardGrid, PmTopbar } from '@/components/project-management/pm-shell';
+import { PmContent, PmNavCard, PmNavCardGrid } from '@/components/project-management/pm-shell';
+import { PageHeader } from '@/components/shared/page-header';
 
 interface SettingsCardProps {
   item: {
@@ -121,7 +122,7 @@ export default function BillingSettingsPage() {
 
   return (
     <>
-      <PmTopbar
+      <PageHeader sticky
         title="Billing Settings"
         breadcrumbs={[
           { label: 'Subcontractors', href: `/subcontractors-management/${projectSlug}` },

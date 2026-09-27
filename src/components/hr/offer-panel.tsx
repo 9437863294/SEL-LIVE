@@ -35,7 +35,6 @@ import {
   HrEmptyState,
   HrField,
   HrLoader,
-  HrPageHeader,
   HrStatusBadge,
   SensitiveMoney,
   hrDialog,
@@ -43,6 +42,7 @@ import {
 } from './hr-ui';
 import { ReasonDialog } from './interview-panel';
 import { useHrCollection, useHrConfig, useHrPermissions } from './use-hr-config';
+import { PageHeader } from '@/components/shared/page-header';
 
 /**
  * Offer management, spec sections 29 and 30.
@@ -224,7 +224,7 @@ export default function OfferPanel({
   return (
     <div>
       {!embedded && (
-        <HrPageHeader
+        <PageHeader
           title="Offer Management"
           description={`${scoped.length} ${scoped.length === 1 ? 'offer' : 'offers'}${
             awaitingOffer.length ? ` · ${awaitingOffer.length} approved ${awaitingOffer.length === 1 ? 'selection' : 'selections'} awaiting an offer` : ''

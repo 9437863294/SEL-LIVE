@@ -18,7 +18,8 @@ import { useRouter, useParams } from 'next/navigation';
 import { useAuth } from '@/components/auth/AuthProvider';
 import { logUserActivity } from '@/lib/activity-logger';
 import { Skeleton } from '@/components/ui/skeleton';
-import { PmContent, PmTopbar } from '@/components/project-management/pm-shell';
+import { PmContent } from '@/components/project-management/pm-shell';
+import { PageHeader } from '@/components/shared/page-header';
 
 const initialContact: Omit<ContactPerson, 'id'> = { type: 'Project', name: '', title: '', mobile: '', email: '' };
 
@@ -114,7 +115,7 @@ export default function EditSubcontractorPage() {
 
   return (
     <>
-      <PmTopbar
+      <PageHeader sticky
         title="Edit Subcontractor"
         breadcrumbs={[
           { label: 'Subcontractors', href: `/subcontractors-management/${projectSlug}` },

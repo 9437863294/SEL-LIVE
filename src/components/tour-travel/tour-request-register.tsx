@@ -20,7 +20,8 @@ import {
 import { TT_PERMISSION_MODULE } from './module-layout-shell';
 import { useTravelCollection } from './use-travel-config';
 import { useGlobalScopes } from '@/components/recurring-payments/use-global-scopes';
-import { Money, TravelDataList, TravelEmptyState, TravelFilterCard, TravelLoader, TravelPageHeader, TravelStatusBadge } from './travel-ui';
+import { Money, TravelDataList, TravelEmptyState, TravelFilterCard, TravelLoader, TravelStatusBadge } from './travel-ui';
+import { PageHeader } from '@/components/shared/page-header';
 
 /**
  * The organization-wide tour register.
@@ -83,7 +84,7 @@ export default function TourRequestRegister() {
 
   return (
     <div className="space-y-3">
-      <TravelPageHeader
+      <PageHeader
         title="Tour Requests"
         description={canViewAll ? 'Every tour raised in the organization.' : 'Tours you travel on, raised or approve.'}
         actions={

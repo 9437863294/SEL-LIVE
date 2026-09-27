@@ -139,7 +139,6 @@ export default function VendorFormPage({ vendorId }: { vendorId?: string }) {
 
   return <div className="mx-auto max-w-4xl space-y-4">
     <PageHeader
-      className="mb-0 sm:mb-0"
       backHref={vendorId ? `/recurring-payments/vendors/${vendorId}` : '/recurring-payments/vendors'}
       backLabel={vendorId ? 'Back to vendor' : 'Back to vendors'}
       title={vendorId ? 'Edit Vendor' : 'Add Vendor'}

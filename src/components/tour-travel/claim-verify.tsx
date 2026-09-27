@@ -36,7 +36,8 @@ import {
 } from '@/lib/tour-travel-service';
 import { TT_PERMISSION_MODULE } from './module-layout-shell';
 import { useTravelActor } from './use-travel-config';
-import { Money, TravelAccessDenied, TravelDataList, TravelLoader, TravelPageHeader, TravelSection, TravelStatusBadge, travelDialog } from './travel-ui';
+import { Money, TravelAccessDenied, TravelDataList, TravelLoader, TravelSection, TravelStatusBadge, travelDialog } from './travel-ui';
+import { PageHeader } from '@/components/shared/page-header';
 
 const DECISION_LABEL: Record<VerificationDecision, string> = {
   PENDING: 'Pending',
@@ -186,7 +187,7 @@ export default function ClaimVerify({ claimId }: { claimId: string }) {
 
   return (
     <div className="space-y-4 pb-24">
-      <TravelPageHeader
+      <PageHeader
         title={`Verify ${claim.referenceNumber}`}
         description={`${claim.employeeName} · tour ${claim.travelRequestNumber} · ${claim.itemCount} line(s)`}
         actions={

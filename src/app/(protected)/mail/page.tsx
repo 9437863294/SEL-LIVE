@@ -4,10 +4,11 @@ import Link from 'next/link';
 import { Inbox, KeyRound, ListChecks, Plug, Users } from 'lucide-react';
 
 import { useLoader, useMailHub } from '@/components/mail-hub/hooks';
-import { AccountStatusBadge, DeadlineBadge, EmptyState, PageHeader, RecoveryPanel, formatLong } from '@/components/mail-hub/ui';
+import { AccountStatusBadge, DeadlineBadge, EmptyState, RecoveryPanel, formatLong } from '@/components/mail-hub/ui';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { mailApi } from '@/lib/mail-hub/client';
+import { PageHeader } from '@/components/shared/page-header';
 
 /** Mail Hub's landing page: mailbox health, what needs a reply, and what is due. */
 export default function MailOverviewPage() {

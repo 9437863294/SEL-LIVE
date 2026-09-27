@@ -12,7 +12,8 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { DailyPageHeader, dailyPageContainerClass } from '@/components/daily-requisition/module-shell';
+import { dailyPageContainerClass } from '@/components/daily-requisition/module-shell';
+import { PageHeader } from '@/components/shared/page-header';
 
 const formatCurrency = (n: number) =>
   new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 0 }).format(n || 0);
@@ -150,7 +151,7 @@ export default function MonthlyTrendReportPage() {
 
   return (
     <div className={dailyPageContainerClass}>
-      <DailyPageHeader
+      <PageHeader
         title="Monthly Trend"
         description="Volume and value of requisitions month-over-month — last 6 months."
         backHref="/daily-requisition/reports"

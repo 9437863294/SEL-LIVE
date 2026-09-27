@@ -798,7 +798,6 @@ export default function PaymentsPage() {
     <div className="space-y-4">
       {/* Header */}
       <PageHeader
-        className="mb-0 sm:mb-0"
         title="Payments Received"
         description="Payments received from Head Office per project"
         actions={(canExport || effectiveCanImport || effectiveCanAdd) ? (

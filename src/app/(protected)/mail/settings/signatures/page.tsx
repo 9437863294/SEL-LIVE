@@ -5,7 +5,7 @@ import { Loader2, Plus, Signature, Trash2 } from 'lucide-react';
 
 import { EApprovalRichTextEditor } from '@/components/e-approval/rich-text-editor';
 import { useMailCapabilities, useMailHub } from '@/components/mail-hub/hooks';
-import { EmptyState, PageHeader } from '@/components/mail-hub/ui';
+import { EmptyState } from '@/components/mail-hub/ui';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
@@ -15,6 +15,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { useToast } from '@/hooks/use-toast';
 import { mailApi } from '@/lib/mail-hub/client';
 import type { MailSignature } from '@/lib/mail-hub/model';
+import { PageHeader } from '@/components/shared/page-header';
 
 /**
  * Personal signatures (with a default per mailbox) and department signatures. Department ones need

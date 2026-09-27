@@ -52,8 +52,9 @@ import {
   updateRequirement,
   type RequirementInput,
 } from '@/lib/hr-requirement-service';
-import { HrAlertNotice, HrLoader, HrPageHeader, HrSection } from './hr-ui';
+import { HrAlertNotice, HrLoader, HrSection } from './hr-ui';
 import { useEmployees, useHrCollection, useHrConfig, useHrPermissions } from './use-hr-config';
+import { PageHeader } from '@/components/shared/page-header';
 
 /**
  * The create/edit wizard of spec sections 5–11.
@@ -585,7 +586,7 @@ export default function RequirementForm({ requirementId }: { requirementId?: str
   if (editing && existing && !['DRAFT', 'REJECTED'].includes(existing.status)) {
     return (
       <div>
-        <HrPageHeader title={`Edit ${existing.requirementNumber}`} />
+        <PageHeader title={`Edit ${existing.requirementNumber}`} />
         <HrAlertNotice tone="amber" title="Not editable">
           A requirement that has been submitted for approval can only be changed by sending it back to
           the requester. Open the{' '}
@@ -608,7 +609,7 @@ export default function RequirementForm({ requirementId }: { requirementId?: str
 
   return (
     <div className="pb-24">
-      <HrPageHeader
+      <PageHeader
         title={editing ? `Edit ${existing?.requirementNumber || 'requirement'}` : 'New Manpower Requirement'}
         description="The requirement ID is generated automatically when the draft is saved."
         actions={

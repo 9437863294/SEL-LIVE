@@ -27,9 +27,9 @@ import {
 import {
   PmContent,
   PmShell,
-  PmTopbar,
 } from "@/components/project-management/pm-shell";
 import { WorkflowConfigurationEditor } from "@/components/workflow/workflow-configuration-editor";
+import { PageHeader } from "@/components/shared/page-header";
 
 export default function RfqAwardWorkflowConfigurationPage() {
   const searchParams = useSearchParams();
@@ -71,7 +71,7 @@ export default function RfqAwardWorkflowConfigurationPage() {
 
   return (
     <PmShell>
-      <PmTopbar
+      <PageHeader sticky
         title="Award Workflow"
         breadcrumbs={[
           { label: "RFQ", href: context.rfqHref() },

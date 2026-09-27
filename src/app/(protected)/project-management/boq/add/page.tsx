@@ -443,7 +443,6 @@ export default function AddBoqItemsPage() {
         icon={ListPlus}
         backHref={`/project-management/boq?project=${encodeURIComponent(mappingId)}`}
         backLabel="Back to BOQ"
-        className="mb-0 sm:mb-0"
       />
 
       <Card className="overflow-hidden border-border/60">

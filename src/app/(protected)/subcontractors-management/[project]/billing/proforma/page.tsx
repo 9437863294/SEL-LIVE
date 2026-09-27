@@ -45,7 +45,8 @@ import { Separator } from '@/components/ui/separator';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { getAssigneeForStep, calculateDeadline } from '@/lib/workflow-utils';
 import { projectMatchesSlug } from '@/lib/project-slug';
-import { PmContent, PmTopbar } from '@/components/project-management/pm-shell';
+import { PmContent } from '@/components/project-management/pm-shell';
+import { PageHeader } from '@/components/shared/page-header';
 
 const initialBillDetails = {
   proformaNo: '',
@@ -396,7 +397,7 @@ export default function CreateProformaPage() {
 
   return (
     <>
-      <PmTopbar
+      <PageHeader sticky
         title="Proforma / Advance Bill"
         breadcrumbs={[
           { label: 'Subcontractors', href: `/subcontractors-management/${projectSlug}` },

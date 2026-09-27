@@ -13,10 +13,10 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Skeleton } from '@/components/ui/skeleton';
 import {
-  DailyPageHeader,
   dailyPageContainerClass,
   dailySurfaceCardClass,
 } from '@/components/daily-requisition/module-shell';
+import { PageHeader } from '@/components/shared/page-header';
 
 const formatCurrency = (amount: number) =>
   new Intl.NumberFormat('en-IN', {
@@ -171,7 +171,7 @@ export default function ProjectAnalysisPage() {
   if (!canView) {
     return (
       <div className={dailyPageContainerClass}>
-        <DailyPageHeader
+        <PageHeader eyebrow="Daily Requisition"
           title="Project Analysis"
           description="Requisitions grouped by project."
           backHref="/daily-requisition/reports"
@@ -202,7 +202,7 @@ export default function ProjectAnalysisPage() {
 
   return (
     <div className={dailyPageContainerClass}>
-      <DailyPageHeader
+      <PageHeader
         title="Project Analysis"
         description="Requisitions grouped by project for the selected date range."
         backHref="/daily-requisition/reports"

@@ -8,7 +8,8 @@ import {
 import { useAuthorization } from '@/hooks/useAuthorization';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { DailyPageHeader, dailyPageContainerClass } from '@/components/daily-requisition/module-shell';
+import { dailyPageContainerClass } from '@/components/daily-requisition/module-shell';
+import { PageHeader } from '@/components/shared/page-header';
 
 const REPORTS = [
   {
@@ -89,7 +90,7 @@ export default function DailyRequisitionReportsHubPage() {
 
   return (
     <div className={dailyPageContainerClass}>
-      <DailyPageHeader
+      <PageHeader eyebrow="Daily Requisition"
         title="Reports"
         description="Select a report to view focused analytics and export to Excel."
         backHref="/daily-requisition"

@@ -36,7 +36,6 @@ import {
 import {
   PmContent,
   PmShell,
-  PmTopbar,
 } from "@/components/project-management/pm-shell";
 import {
   DEFAULT_RFQ_AWARD_STEPS,
@@ -45,6 +44,7 @@ import {
   isTerminalRfqAwardStatus,
   type RfqAwardApproval,
 } from "@/lib/project-management-rfq-workflow";
+import { PageHeader } from "@/components/shared/page-header";
 
 type RfqItem = {
   icon: LucideIcon;
@@ -210,7 +210,7 @@ export default function RfqHubPage() {
     // No sidebar: this screen is itself a launcher, so a rail listing the same destinations as
     // the cards below it would say everything twice.
     <PmShell>
-      <PmTopbar
+      <PageHeader sticky
         title="RFQ"
         breadcrumbs={
           projectName

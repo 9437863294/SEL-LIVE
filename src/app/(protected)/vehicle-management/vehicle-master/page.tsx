@@ -804,7 +804,6 @@ export default function VehicleMasterPage() {
             {rows.length - duplicateIds.size} records
           </Badge>
         }
-        className="mb-0 sm:mb-0"
         actions={
           <>
             <Button variant="outline" onClick={() => void loadRows()} className="h-11 bg-white/80 hover:bg-white sm:h-10">

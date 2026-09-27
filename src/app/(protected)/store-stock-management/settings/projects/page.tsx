@@ -133,7 +133,6 @@ export default function ManageProjectsAndSitesPage() {
   return (
     <div className="mx-auto w-full max-w-7xl space-y-6">
       <PageHeader
-        className="mb-0 sm:mb-0"
         eyebrow="Project structure"
         title="Projects"
         description="Maintain project identity, site code, division, location, and operational status."

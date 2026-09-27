@@ -12,7 +12,6 @@ import {
   HrEmptyState,
   HrKpiCard,
   HrLoader,
-  HrPageHeader,
 } from '@/components/hr/hr-ui';
 import { hasPermission } from '@/lib/access-control';
 import {
@@ -26,6 +25,7 @@ import {
 import { fetchDailyActivity, fetchDevices } from '@/lib/windows-agent-service';
 import { useWindowsAgent, useWindowsAgentQuery } from './hooks';
 import { CategoryBadge, Duration, MeasurementNotice, categoryLabel } from './ui';
+import { PageHeader } from '@/components/shared/page-header';
 
 /**
  * §48's dashboard: today across the fleet, in one read.
@@ -125,7 +125,7 @@ export default function WindowsAgentDashboard() {
 
   return (
     <div className="space-y-5">
-      <HrPageHeader
+      <PageHeader
         title="Windows Agent"
         description={`Activity recorded today, ${new Date().toLocaleDateString('en-GB', { dateStyle: 'full' })}.`}
         actions={

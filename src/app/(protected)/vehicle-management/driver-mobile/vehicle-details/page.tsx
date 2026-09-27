@@ -272,7 +272,6 @@ export default function DriverVehicleDetailsPage() {
       <PageHeader
         title="Assigned Vehicle Details"
         description="All key details for your assigned vehicle."
-        className="mb-0 sm:mb-0"
       />
       <Card className="vm-panel-strong overflow-hidden">
         <CardContent className="grid grid-cols-1 gap-2 pt-[var(--card-pad,1.5rem)] text-sm sm:grid-cols-2">

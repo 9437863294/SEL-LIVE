@@ -48,12 +48,12 @@ import {
   TravelEmptyState,
   TravelField,
   TravelLoader,
-  TravelPageHeader,
   TravelSection,
   TravelStatusBadge,
   TravelDataList,
   travelDialog,
 } from './travel-ui';
+import { PageHeader } from '@/components/shared/page-header';
 
 const todayIso = () => new Date().toISOString().slice(0, 10);
 
@@ -290,7 +290,7 @@ export default function MyTravel() {
 
   return (
     <div className="space-y-4">
-      <TravelPageHeader
+      <PageHeader
         title="My Travel"
         description="Your tours, expenses, advances and claims."
         actions={

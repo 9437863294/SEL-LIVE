@@ -16,7 +16,8 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { Input } from '@/components/ui/input';
 import { Progress } from '@/components/ui/progress';
 import { projectMatchesSlug } from '@/lib/project-slug';
-import { PM_TABLE_CLASS, PmContent, PmTopbar } from '@/components/project-management/pm-shell';
+import { PM_TABLE_CLASS, PmContent } from '@/components/project-management/pm-shell';
+import { PageHeader } from '@/components/shared/page-header';
 
 interface EnrichedWorkOrder extends WorkOrder {
     totalBilled: number;
@@ -104,7 +105,7 @@ export default function WorkOrderProgressReport() {
 
     return (
         <>
-            <PmTopbar
+            <PageHeader sticky
                 title="Work Order Progress"
                 breadcrumbs={[
                     { label: 'Subcontractors', href: `/subcontractors-management/${projectSlug}` },

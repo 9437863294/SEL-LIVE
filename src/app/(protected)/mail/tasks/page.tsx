@@ -4,12 +4,13 @@ import Link from 'next/link';
 import { ListChecks, Users } from 'lucide-react';
 
 import { useLoader } from '@/components/mail-hub/hooks';
-import { DeadlineBadge, EmptyState, ErrorNotice, PageHeader, Spinner, formatLong } from '@/components/mail-hub/ui';
+import { DeadlineBadge, EmptyState, ErrorNotice, Spinner, formatLong } from '@/components/mail-hub/ui';
 import { Badge } from '@/components/ui/badge';
 import { Checkbox } from '@/components/ui/checkbox';
 import { useToast } from '@/hooks/use-toast';
 import { mailApi } from '@/lib/mail-hub/client';
 import { cn } from '@/lib/utils';
+import { PageHeader } from '@/components/shared/page-header';
 
 const PRIORITY_STYLE: Record<string, string> = {
   urgent: 'border-rose-200 bg-rose-50 text-rose-700',

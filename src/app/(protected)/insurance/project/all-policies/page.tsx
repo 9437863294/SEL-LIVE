@@ -126,7 +126,6 @@ export default function AllProjectPoliciesPage() {
     <div className="space-y-4">
       {/* Header */}
       <PageHeader
-        className="mb-0 sm:mb-0"
         icon={Files}
         title="All Project Policies"
         description={`Consolidated view of ${policies.length} project insurance policies`}

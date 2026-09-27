@@ -145,7 +145,6 @@ export default function MonthWiseStatusReportPage() {
     <div className="space-y-4">
       {/* Header */}
       <PageHeader
-        className="mb-0 sm:mb-0"
         icon={CalendarCheck}
         title="Month-wise EMI Status"
         description={<>Financial year EMI breakdown — {selectedYear}–{(parseInt(selectedYear) + 1).toString().slice(-2)}</>}

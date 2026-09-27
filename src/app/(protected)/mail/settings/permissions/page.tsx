@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react';
 import { BadgeCheck, Loader2, Plus, Save, ShieldAlert, Trash2, UserPlus } from 'lucide-react';
 
 import { useLoader, useMailHub } from '@/components/mail-hub/hooks';
-import { EmptyState, ErrorNotice, PageHeader, Spinner, formatLong } from '@/components/mail-hub/ui';
+import { EmptyState, ErrorNotice, Spinner, formatLong } from '@/components/mail-hub/ui';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -18,6 +18,7 @@ import { useToast } from '@/hooks/use-toast';
 import { mailApi, type SharedMailboxRow } from '@/lib/mail-hub/client';
 import type { MailHubAdminSettings, MailImapServerPreset, MailMailboxMember } from '@/lib/mail-hub/model';
 import { cn } from '@/lib/utils';
+import { PageHeader } from '@/components/shared/page-header';
 
 export default function MailPermissionsPage() {
   const { data } = useMailHub();

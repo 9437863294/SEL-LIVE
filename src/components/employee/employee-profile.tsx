@@ -68,7 +68,6 @@ import {
   type HrListColumn,
 } from '@/components/hr/hr-ui';
 import {
-  EmployeeHeader,
   EmployeePageShell,
   EmployeeStatusPill,
   EMP_CARD_CLASS,
@@ -98,6 +97,7 @@ import {
   type DocumentTreeResponse,
   type EmployeeProfileResponse,
 } from '@/lib/greythr-sync-client';
+import { PageHeader } from '@/components/shared/page-header';
 
 type FullEmployee = Employee & EmployeeOperationalDetail;
 
@@ -321,9 +321,8 @@ export function EmployeeProfile({ employeeId }: { employeeId: string }) {
   if (!canView) {
     return (
       <EmployeePageShell>
-        <EmployeeHeader
+        <PageHeader
           icon={UserRound}
-          tone="indigo"
           eyebrow="Employee record"
           title="Employee"
           backHref="/employee/manage"
@@ -337,9 +336,8 @@ export function EmployeeProfile({ employeeId }: { employeeId: string }) {
   if (loadError) {
     return (
       <EmployeePageShell>
-        <EmployeeHeader
+        <PageHeader
           icon={UserRound}
-          tone="indigo"
           eyebrow="Employee record"
           title="Employee"
           backHref="/employee/manage"
@@ -362,9 +360,8 @@ export function EmployeeProfile({ employeeId }: { employeeId: string }) {
   if (!employee) {
     return (
       <EmployeePageShell>
-        <EmployeeHeader
+        <PageHeader
           icon={UserRound}
-          tone="indigo"
           eyebrow="Employee record"
           title="Employee"
           backHref="/employee/manage"
@@ -394,9 +391,8 @@ export function EmployeeProfile({ employeeId }: { employeeId: string }) {
           buttons, where three of them used to crowd Refresh. No sub-nav here either: this is a leaf
           reached from a register row, and its way back is to that register, not to a sibling section.
         */}
-        <EmployeeHeader
+        <PageHeader
           icon={UserRound}
-          tone="indigo"
           eyebrow="Employee record"
           title={employee.name || employee.employeeNo || employee.employeeId}
           backHref="/employee/manage"
@@ -404,8 +400,7 @@ export function EmployeeProfile({ employeeId }: { employeeId: string }) {
           description={[employee.designation, employee.department, employee.projectName]
             .filter(Boolean)
             .join(' · ')}
-          showDescriptionOnMobile
-          status={
+          badge={
             <>
               <Badge variant="outline" className={cn('text-xs', STATE_TONE[state] ?? STATE_TONE.Unknown)}>
                 {state}

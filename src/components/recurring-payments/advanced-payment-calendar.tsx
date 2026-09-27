@@ -179,7 +179,6 @@ export default function AdvancedPaymentCalendar() {
   return (
     <div className="space-y-5">
       <PageHeader
-        className="mb-0 sm:mb-0"
         title="Payment Calendar"
         description="Monthly, weekly, list and agenda views of due-date commitments"
       />

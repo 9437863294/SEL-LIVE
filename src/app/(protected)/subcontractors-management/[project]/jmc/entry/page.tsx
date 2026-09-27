@@ -29,7 +29,8 @@ import { getAssigneeForStep, calculateDeadline } from '@/lib/workflow-utils';
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from '@/components/ui/select';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { projectMatchesSlug } from '@/lib/project-slug';
-import { PmContent, PmTopbar } from '@/components/project-management/pm-shell';
+import { PmContent } from '@/components/project-management/pm-shell';
+import { PageHeader } from '@/components/shared/page-header';
 
 /* ---------- local types ---------- */
 type BoqItem = BoqItemBase & { projectId?: string; [k: string]: any };
@@ -494,7 +495,7 @@ export default function JmcEntryPage() {
       {/* Back went to `/billing-recon/${projectSlug}/jmc` — a leftover from when this screen was
           copied out of Billing Recon, which dropped the user into a different module. It now stays
           inside Subcontractors Management. */}
-      <PmTopbar
+      <PageHeader sticky
         title="Create JMC Entry"
         breadcrumbs={[
           { label: 'Subcontractors', href: `/subcontractors-management/${projectSlug}` },

@@ -27,7 +27,6 @@ import {
 } from '@/components/hr/hr-ui';
 import {
   EmployeeErrorBanner,
-  EmployeeHeader,
   EmployeeKpiCard,
   EmployeeListFooter,
   EmployeePageShell,
@@ -45,6 +44,7 @@ import {
   type AttendanceRegisterResponse,
   type AttendanceRegisterRow,
 } from '@/lib/greythr-sync-client';
+import { PageHeader } from '@/components/shared/page-header';
 
 type Row = AttendanceRegisterRow & { id: string };
 
@@ -253,14 +253,13 @@ export default function AttendanceRegisterPage() {
 
   return (
     <EmployeePageShell>
-      <EmployeeHeader
+      <PageHeader
         icon={Clock}
-        tone="blue"
         eyebrow="Employee management"
         title="Attendance register"
         backHref="/employee"
         backLabel="Back to Employee Management"
-        status={
+        badge={
           <>
             {report?.period && (
               <EmployeeStatusPill tone="blue" icon={Clock}>

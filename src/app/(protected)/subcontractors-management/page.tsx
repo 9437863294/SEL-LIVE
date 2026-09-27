@@ -139,7 +139,6 @@ export default function SubcontractorsDashboardPage() {
         icon={HardHat}
         backHref="/"
         backLabel="Back to home"
-        className="mb-0 sm:mb-0"
         actions={
           <div className="flex items-center gap-2">
             <FolderOpen className="h-4 w-4 shrink-0 text-muted-foreground" />

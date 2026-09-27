@@ -807,7 +807,6 @@ export default function ProjectPurchaseOrderDetailPage() {
             {po.status}
           </span>
         }
-        className="mb-0 sm:mb-0"
         actions={
         // On a phone the actions take a row of their own and share it; Print, the secondary
         // action, drops to its icon there.

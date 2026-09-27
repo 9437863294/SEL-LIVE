@@ -51,7 +51,8 @@ import { cn } from '@/lib/utils';
 import { CustomAssemblyDialog } from '@/components/subcontractors-management/CustomAssemblyDialog';
 import { projectMatchesSlug } from '@/lib/project-slug';
 import { readErpSlNo, sortBoqItemsByErpSlNo, sortByErpSlNo } from '@/lib/civil-execution';
-import { PM_TABLE_CLASS, PmContent, PmSectionHead, PmTopbar } from '@/components/project-management/pm-shell';
+import { PM_TABLE_CLASS, PmContent, PmSectionHead } from '@/components/project-management/pm-shell';
+import { PageHeader } from '@/components/shared/page-header';
 
 // UI-level WorkOrderItem — extends backend type with UI-only fields
 type WorkOrderItem = Omit<OriginalWorkOrderItem, 'id' | 'subItems'> & {
@@ -507,7 +508,7 @@ export default function CreateWorkOrderPage() {
 
   return (
     <>
-      <PmTopbar
+      <PageHeader sticky
         title="Create Work Order"
         breadcrumbs={[
           { label: 'Subcontractors', href: `/subcontractors-management/${projectSlug}` },

@@ -125,7 +125,6 @@ export default function TripTrackingSettingsPage() {
         description="Applied when the driver starts a tracked trip."
         backHref="/vehicle-management/settings"
         backLabel="Back to settings"
-        className="mb-0 sm:mb-0"
       />
 
       <Card className="vm-panel overflow-hidden">

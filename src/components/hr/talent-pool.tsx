@@ -26,12 +26,12 @@ import {
   HrEmptyState,
   HrFilterCard,
   HrLoader,
-  HrPageHeader,
   HrSection,
   hrDialog,
   type HrListColumn,
 } from './hr-ui';
 import { useHrCollection, useHrConfig, useHrPermissions } from './use-hr-config';
+import { PageHeader } from '@/components/shared/page-header';
 
 /**
  * The talent pool of spec section 48 — good candidates who were not hired, kept findable.
@@ -161,7 +161,7 @@ export default function TalentPool() {
 
   return (
     <div>
-      <HrPageHeader
+      <PageHeader
         title="Talent Pool"
         description={`${filtered.length} of ${active.length} candidates kept for future requirements`}
         actions={

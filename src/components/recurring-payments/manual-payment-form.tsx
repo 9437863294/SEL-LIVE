@@ -423,7 +423,6 @@ export default function ManualPaymentForm() {
   return (
     <div className="mx-auto max-w-6xl space-y-5">
       <PageHeader
-        className="mb-0 sm:mb-0"
         backHref="/recurring-payments/payments"
         backLabel="Back to payments"
         title="Create Manual Payment"

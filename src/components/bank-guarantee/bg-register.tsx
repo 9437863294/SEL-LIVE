@@ -512,7 +512,6 @@ export default function BGRegister({
   return (
     <div className="space-y-4">
       <PageHeader
-        className="mb-0 sm:mb-0"
         title={mode === "approvals" ? "Pending BG Approvals" : "BG Register"}
         description={
           mode === "approvals"

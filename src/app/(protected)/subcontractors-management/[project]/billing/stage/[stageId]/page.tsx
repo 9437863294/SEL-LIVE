@@ -45,7 +45,8 @@ import { getAssigneeForStep, calculateDeadline } from '@/lib/workflow-utils';
 import ViewProformaBillDialog from '@/components/subcontractors-management/ViewProformaBillDialog';
 import { Textarea } from '@/components/ui/textarea';
 import { projectMatchesSlug } from '@/lib/project-slug';
-import { PmContent, PmTopbar } from '@/components/project-management/pm-shell';
+import { PmContent } from '@/components/project-management/pm-shell';
+import { PageHeader } from '@/components/shared/page-header';
 
 
 /* -------- helpers -------- */
@@ -325,7 +326,7 @@ export default function BillStagePage() {
 
   return (
     <>
-      <PmTopbar
+      <PageHeader sticky
         title={stage?.name || 'Billing Stage'}
         breadcrumbs={[
           { label: 'Subcontractors', href: `/subcontractors-management/${projectSlug}` },

@@ -22,7 +22,8 @@ import { cn } from '@/lib/utils';
 import { Conversation, type ConversationHandle } from './conversation';
 import { useMailHub } from './hooks';
 import { ThreadList } from './thread-list';
-import { EmptyState, ErrorNotice, PageHeader, RecoveryPanel, Spinner } from './ui';
+import { EmptyState, ErrorNotice, RecoveryPanel, Spinner } from './ui';
+import { PageHeader } from '@/components/shared/page-header';
 
 export type MailViewName = 'inbox' | 'sent' | 'drafts' | 'archive' | 'trash' | 'spam' | 'starred';
 

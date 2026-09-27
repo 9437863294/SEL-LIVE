@@ -85,7 +85,6 @@ export default function VehicleManagementSettingsHub() {
         title="Vehicle Management Settings"
         description="Vehicle types, trip tracking, insurance workflow and field control — each in its own place."
         icon={Settings}
-        className="mb-0 sm:mb-0"
       />
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">

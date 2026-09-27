@@ -23,9 +23,9 @@ import { useOfficeHub, useOfficeHubQuery } from '@/components/office-hub/hooks';
 import {
   OfficeHubAccessDenied,
   OfficeHubLoader,
-  OfficeHubPageHeader,
 } from '@/components/office-hub/ui';
 import { TaskForm, emptyTaskDraft } from '@/components/office-hub/task-form';
+import { PageHeader } from '@/components/shared/page-header';
 
 export default function NewTaskPage() {
   const searchParams = useSearchParams();
@@ -73,7 +73,7 @@ export default function NewTaskPage() {
 
   return (
     <div className="space-y-3">
-      <OfficeHubPageHeader
+      <PageHeader
         title="New task"
         description={
           sourceQuery.data?.meeting

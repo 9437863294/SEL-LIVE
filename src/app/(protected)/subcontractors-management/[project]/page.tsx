@@ -24,7 +24,7 @@ import type { Project } from '@/lib/types';
 import { Skeleton } from '@/components/ui/skeleton';
 import AllSubcontractorsDashboard from '@/components/subcontractors-management/AllSubcontractorsDashboard';
 import { projectMatchesSlug } from '@/lib/project-slug';
-import { PmContent, PmNavCard, PmNavCardGrid, PmTopbar } from '@/components/project-management/pm-shell';
+import { PmContent, PmNavCard, PmNavCardGrid } from '@/components/project-management/pm-shell';
 
 const slugify = (text: string) => {
   if (!text) return '';
@@ -215,7 +215,7 @@ export default function SubcontractorsProjectDashboard() {
 
   return (
     <>
-      <PmTopbar
+      <PageHeader sticky
         title={projectName}
         breadcrumbs={[{ label: 'Subcontractors', href: '/subcontractors-management' }]}
         backHref="/subcontractors-management"

@@ -215,7 +215,6 @@ export default function DriverMobileHubPage() {
       <PageHeader
         title="Driver Mobile"
         description="Quick mobile workflow for fuel updates and daily running status."
-        className="mb-0 sm:mb-0"
         meta={
           <>
             <Badge className="bg-emerald-600 text-white">{driverName}</Badge>

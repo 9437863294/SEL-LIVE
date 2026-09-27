@@ -35,12 +35,12 @@ import {
   OfficeHubDataList,
   OfficeHubEmptyState,
   OfficeHubKpiCard,
-  OfficeHubPageHeader,
   PersonChip,
   ResultCount,
   type OfficeHubListColumn,
 } from '@/components/office-hub/ui';
 import { MultiSelect } from '@/components/office-hub/selectors';
+import { PageHeader } from '@/components/shared/page-header';
 
 export default function EmployeesPage() {
   const { viewer, capabilities, directory, today, periods, isLoading } = useOfficeHub();
@@ -227,7 +227,7 @@ export default function EmployeesPage() {
 
   return (
     <div className="space-y-3">
-      <OfficeHubPageHeader
+      <PageHeader
         title="Employees"
         description="Read from the company directory. Office Hub adds only what it knows: meeting and task load."
         actions={

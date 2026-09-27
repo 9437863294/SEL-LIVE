@@ -110,7 +110,6 @@ export default function OperationalBoqProjectPage() {
             : "/project-management"
         }
         backLabel="Back to BOQ"
-        className="mb-0 sm:mb-0"
       />
 
       <Card className="mt-5 overflow-hidden border-border/60 sm:mt-6">

@@ -40,7 +40,6 @@ import {
   HrEmptyState,
   HrField,
   HrLoader,
-  HrPageHeader,
   HrPriorityBadge,
   HrSection,
   HrStatusBadge,
@@ -48,6 +47,7 @@ import {
   hrDialog,
 } from './hr-ui';
 import { useHrCollection, useHrConfig, useHrPermissions } from './use-hr-config';
+import { PageHeader } from '@/components/shared/page-header';
 
 /**
  * The approval inbox of spec section 14.
@@ -94,7 +94,7 @@ export default function ApprovalInbox() {
 
   return (
     <div>
-      <HrPageHeader
+      <PageHeader
         title="Approval Inbox"
         description={`${pending.length} manpower ${pending.length === 1 ? 'requirement' : 'requirements'} awaiting a decision`}
       />

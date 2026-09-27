@@ -22,7 +22,8 @@ import {
 import { TravelControlError, recordRecovery } from '@/lib/tour-travel-service';
 import { TT_PERMISSION_MODULE } from './module-layout-shell';
 import { useTravelActor, useTravelCollection } from './use-travel-config';
-import { Money, TravelDataList, TravelEmptyState, TravelFilterCard, TravelKpiCard, TravelLoader, TravelPageHeader, TravelStatusBadge, travelDialog } from './travel-ui';
+import { Money, TravelDataList, TravelEmptyState, TravelFilterCard, TravelKpiCard, TravelLoader, TravelStatusBadge, travelDialog } from './travel-ui';
+import { PageHeader } from '@/components/shared/page-header';
 
 const todayIso = () => new Date().toISOString().slice(0, 10);
 
@@ -82,7 +83,7 @@ export default function RecoveriesRegister() {
 
   return (
     <div className="space-y-3">
-      <TravelPageHeader title="Employee Recoveries" description="Unused travel advances to be recovered from employees." />
+      <PageHeader title="Employee Recoveries" description="Unused travel advances to be recovered from employees." />
 
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
         <TravelKpiCard label="Recovery Pending" value={<Money value={totals.outstanding} />} hint={`${totals.count} employee(s)`} icon={Undo2} tone="rose" />

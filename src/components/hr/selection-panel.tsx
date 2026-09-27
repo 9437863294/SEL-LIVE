@@ -35,13 +35,13 @@ import {
   HrEmptyState,
   HrField,
   HrLoader,
-  HrPageHeader,
   HrStatusBadge,
   SensitiveMoney,
   hrDialog,
   type HrListColumn,
 } from './hr-ui';
 import { useHrCollection, useHrConfig, useHrPermissions } from './use-hr-config';
+import { PageHeader } from '@/components/shared/page-header';
 
 /**
  * Selection proposals and compensation approvals — spec sections 27 and 28.
@@ -209,7 +209,7 @@ export default function SelectionPanel({
   return (
     <div>
       {!embedded && (
-        <HrPageHeader
+        <PageHeader
           title="Selection & Compensation"
           description={`${scoped.length} ${scoped.length === 1 ? 'proposal' : 'proposals'}${
             myApprovals.length ? ` · ${myApprovals.length} awaiting your approval` : ''

@@ -20,12 +20,13 @@ import { useMemo, useState } from 'react';
 import { AlertTriangle, Clock, Inbox, Loader2, Timer } from 'lucide-react';
 
 import { useLoader } from '@/components/mail-hub/hooks';
-import { EmptyState, ErrorNotice, PageHeader } from '@/components/mail-hub/ui';
+import { EmptyState, ErrorNotice } from '@/components/mail-hub/ui';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { mailApi } from '@/lib/mail-hub/client';
+import { PageHeader } from '@/components/shared/page-header';
 
 const VIZ_VARS = '[--mh-open:#2a78d6] [--mh-overdue:#d03b3b] dark:[--mh-open:#3987e5] dark:[--mh-overdue:#d03b3b]';
 

@@ -38,7 +38,6 @@ import {
   MC_GRADIENT,
   McAccessDenied,
   McLoadingState,
-  McPageHeader,
   McPageShell,
   McProjectNotFound,
 } from "@/components/mc/mc-page-shell";
@@ -63,6 +62,7 @@ import {
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
+import { PageHeader } from "@/components/shared/page-header";
 
 const toDateSafe = (value: unknown): Date | null => {
   if (!value) return null;
@@ -251,13 +251,12 @@ export default function McClearanceStagePage() {
   if (!step) {
     return (
       <McPageShell>
-        <McPageHeader
+        <PageHeader
           title="Stage not found"
-          subtitle="This stage is no longer part of the clearance approval workflow."
+          description="This stage is no longer part of the clearance approval workflow."
           icon={GitMerge}
           backHref={context.mcHref()}
           backLabel="Back to Manufacturing Clearance"
-          gradient={MC_GRADIENT}
         />
         <Card className="border-border/60">
           <CardHeader>
@@ -356,9 +355,9 @@ export default function McClearanceStagePage() {
 
   return (
     <McPageShell>
-      <McPageHeader
+      <PageHeader
         title={step.name}
-        subtitle={
+        description={
           step.description ||
           (projectName
             ? `Clearance requests awaiting ${step.name} for ${projectName}.`
@@ -367,7 +366,6 @@ export default function McClearanceStagePage() {
         icon={GitMerge}
         backHref={context.mcHref()}
         backLabel="Back to Manufacturing Clearance"
-        gradient={MC_GRADIENT}
       />
 
 

@@ -369,9 +369,7 @@ export default function VehicleHealthPage() {
       <PageHeader
         title="Vehicle Health"
         description="Compliance score is calculated only on applicable documents by vehicle type/category/fuel."
-        descriptionClassName="hidden sm:block"
         icon={Activity}
-        className="mb-0 sm:mb-0"
         actions={
           <button
             onClick={load}

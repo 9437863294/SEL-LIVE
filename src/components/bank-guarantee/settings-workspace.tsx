@@ -403,7 +403,6 @@ export default function BGSettingsWorkspace() {
   return (
     <div className="space-y-4">
       <PageHeader
-        className="mb-0 sm:mb-0"
         title="BG Settings & Global Masters"
         description="Shared bank accounts, projects, users and departments are reused; missing Beneficiary and Contract masters are managed here."
       />

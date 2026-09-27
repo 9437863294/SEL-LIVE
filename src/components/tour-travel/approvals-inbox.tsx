@@ -16,7 +16,8 @@ import {
 } from '@/lib/tour-travel';
 import { TT_PERMISSION_MODULE } from './module-layout-shell';
 import { useTravelCollection, useTravelConfig } from './use-travel-config';
-import { Money, TravelDataList, TravelEmptyState, TravelLoader, TravelPageHeader, TravelStatusBadge } from './travel-ui';
+import { Money, TravelDataList, TravelEmptyState, TravelLoader, TravelStatusBadge } from './travel-ui';
+import { PageHeader } from '@/components/shared/page-header';
 
 /**
  * Approvals inbox for this module.
@@ -81,7 +82,7 @@ export default function ApprovalsInbox() {
 
   return (
     <div className="space-y-3">
-      <TravelPageHeader
+      <PageHeader
         title="Approvals"
         description={total ? `${total} travel item(s) waiting on you.` : 'Nothing is waiting on you.'}
       />

@@ -23,7 +23,6 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { TableScrollArea } from "./module-table-card";
-import { PageHeader } from "@/components/shared/page-header";
 
 /**
  * Shared chrome for the Recurring Payments "Reports" section. Every report hand-rolled its own
@@ -56,44 +55,6 @@ const inr = (value: number) =>
     currency: "INR",
     maximumFractionDigits: 0,
   }).format(value || 0);
-
-export function ReportHeader({
-  title,
-  description,
-  hero,
-  actions,
-}: {
-  title: string;
-  description: string;
-  /** The one number this report leads with. At most one per page — the KPI tiles carry the rest. */
-  hero?: { label: string; value: string; hint?: string };
-  actions?: React.ReactNode;
-}) {
-  // The app's standard header (`shared/page-header`); the report's lead number rides along as a
-  // key fact under the title, where the KPI tiles below pick up the rest.
-  return (
-    <PageHeader
-      title={title}
-      description={description}
-      actions={actions ? <div className="flex flex-wrap gap-2 print:hidden">{actions}</div> : undefined}
-      meta={
-        hero
-          ? [
-              {
-                label: hero.label,
-                value: (
-                  <span className="text-sm font-semibold text-foreground">
-                    {hero.value}
-                    {hero.hint && <span className="ml-1.5 font-normal text-muted-foreground">{hero.hint}</span>}
-                  </span>
-                ),
-              },
-            ]
-          : undefined
-      }
-    />
-  );
-}
 
 export function ReportLoading() {
   return (

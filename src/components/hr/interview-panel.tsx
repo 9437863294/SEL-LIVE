@@ -32,12 +32,12 @@ import {
   HrDataList,
   HrEmptyState,
   HrLoader,
-  HrPageHeader,
   HrStatusBadge,
   hrDialog,
   type HrListColumn,
 } from './hr-ui';
 import { useHrCollection, useHrConfig, useHrPermissions } from './use-hr-config';
+import { PageHeader } from '@/components/shared/page-header';
 
 /**
  * Interview management, spec section 24.
@@ -189,7 +189,7 @@ export default function InterviewPanel({
   return (
     <div>
       {!embedded && (
-        <HrPageHeader
+        <PageHeader
           title="Interviews"
           description={`${visible.length} ${visible.length === 1 ? 'interview' : 'interviews'}`}
           actions={

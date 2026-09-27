@@ -304,7 +304,6 @@ export default function DriverMobileFuelPage() {
       <PageHeader
         title="Driver Fuel Entry"
         description="Submit fuel from phone in a few taps."
-        className="mb-0 sm:mb-0"
       />
       <Card className="vm-panel-strong overflow-hidden">
         <CardContent className="grid grid-cols-1 gap-3 pt-[var(--card-pad,1.5rem)] md:grid-cols-2">

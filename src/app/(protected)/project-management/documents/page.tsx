@@ -471,7 +471,6 @@ export default function ProjectDocumentsPage() {
         icon={FolderOpen}
         backHref={`/project-management?project=${encodeURIComponent(mappingId)}`}
         backLabel="Back to Project Management"
-        className="mb-0 sm:mb-0"
         actions={
         <Dialog open={isDialogOpen} onOpenChange={(open) => { setIsDialogOpen(open); if (!open) resetDialog(); }}>
           <DialogTrigger asChild>

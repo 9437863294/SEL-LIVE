@@ -141,7 +141,6 @@ export default function VehicleFieldControlSettings() {
         description="Choose which fields appear, whether they're required, and what they're called — per form."
         backHref="/vehicle-management/settings"
         backLabel="Back to settings"
-        className="mb-0 sm:mb-0"
         actions={
           canEdit ? (
             <Button onClick={save} disabled={saving} className="bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-600 hover:to-teal-700">

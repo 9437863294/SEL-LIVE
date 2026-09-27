@@ -24,13 +24,13 @@ import {
   HrDataList,
   HrEmptyState,
   HrLoader,
-  HrPageHeader,
   HrSection,
   HrStatusBadge,
   hrDialog,
   type HrListColumn,
 } from './hr-ui';
 import { useEmployees, useHrCollection, useHrConfig, useHrPermissions } from './use-hr-config';
+import { PageHeader } from '@/components/shared/page-header';
 
 /**
  * Employee referrals, spec section 46.
@@ -112,7 +112,7 @@ export default function Referrals() {
   if (!settings.referrals.enabled) {
     return (
       <div>
-        <HrPageHeader title="Employee Referrals" />
+        <PageHeader title="Employee Referrals" />
         <HrAlertNotice tone="blue" title="Referrals are switched off">
           Employee referrals are disabled for this organisation. An administrator can enable them in HR
           settings.
@@ -123,7 +123,7 @@ export default function Referrals() {
 
   return (
     <div>
-      <HrPageHeader
+      <PageHeader
         title="Employee Referrals"
         description={
           canSeeAll

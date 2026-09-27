@@ -64,10 +64,10 @@ import { useOfficeHub, useOfficeHubAction, useOfficeHubQuery } from '@/component
 import {
   OfficeHubAccessDenied,
   OfficeHubEmptyState,
-  OfficeHubPageHeader,
   officeHubDialog,
 } from '@/components/office-hub/ui';
 import { ParticipantSelector, TimeField } from '@/components/office-hub/selectors';
+import { PageHeader } from '@/components/shared/page-header';
 
 interface MeetingTemplateDraft {
   id?: string;
@@ -199,7 +199,7 @@ export default function TemplatesPage() {
 
   return (
     <div className="space-y-3">
-      <OfficeHubPageHeader
+      <PageHeader
         title="Templates"
         description="Set a recurring meeting up once. Everything is still editable when you use it."
       />

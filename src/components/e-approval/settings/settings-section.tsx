@@ -3,8 +3,8 @@
 import type { ReactNode } from 'react';
 import { Card, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { E_APPROVAL_BASE_PATH, E_APPROVAL_PERMISSION_RESOURCE } from '@/lib/e-approval';
-import { PageHeader } from '../page-header';
 import { useEApprovalPermissions } from '../hooks';
+import { PageHeader } from '@/components/shared/page-header';
 
 /**
  * The shell each settings sub-page sits in.

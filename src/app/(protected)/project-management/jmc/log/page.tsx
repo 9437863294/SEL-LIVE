@@ -27,7 +27,6 @@ import { useAuthorization } from '@/hooks/useAuthorization';
 import { useProjectManagementJmcContext } from '@/components/jmc/use-jmc-host-context';
 import {
   JmcAccessDenied,
-  JmcPageHeader,
   JmcPageShell,
   JmcProjectNotFound,
 } from '@/components/jmc/jmc-page-shell';
@@ -46,6 +45,7 @@ import {
 } from '@/components/ui/alert-dialog';
 import ExcelJS from 'exceljs';
 import { Badge } from '@/components/ui/badge';
+import { PageHeader } from '@/components/shared/page-header';
 
 /* ---------- helpers ---------- */
 function toDateSafe(value: any): Date | null {
@@ -521,9 +521,9 @@ export default function JmcLogPage() {
   return (
     <>
       <JmcPageShell>
-        <JmcPageHeader
+        <PageHeader
           title="JMC Log"
-          subtitle={
+          description={
             projectName
               ? `Every JMC raised on ${projectName}, with its workflow stage dates and certified value`
               : 'Every JMC raised on this project, with its workflow stage dates and certified value'

@@ -35,7 +35,6 @@ import {
   InspectionCardGridLoadingState,
   InspectionNavCard,
   InspectionNavCardGrid,
-  InspectionPageHeader,
   InspectionPageShell,
   InspectionProjectNotFound,
 } from "@/components/inspection/inspection-page-shell";
@@ -46,6 +45,7 @@ import {
   isTerminalInspectionApprovalStatus,
   type InspectionResultApproval,
 } from "@/lib/project-management-inspection-workflow";
+import { PageHeader } from "@/components/shared/page-header";
 
 type InspectionItem = {
   icon: LucideIcon;
@@ -224,16 +224,15 @@ export default function InspectionsHubPage() {
 
   return (
     <InspectionPageShell>
-      <InspectionPageHeader
+      <PageHeader
         title="Inspections"
-        subtitle={
+        description={
           projectName
             ? `Request and record inspections for ${projectName}, and work each approval stage.`
             : "Request and record inspections, and work each approval stage."
         }
         icon={ClipboardCheck}
         backHref={context.parentHref}
-        gradient={INSPECTION_GRADIENT}
       />
 
 

@@ -11,10 +11,10 @@ import {
   IndentCardGridLoadingState,
   IndentNavCard,
   IndentNavCardGrid,
-  IndentPageHeader,
   IndentPageShell,
   IndentProjectNotFound,
 } from "@/components/indent/indent-page-shell";
+import { PageHeader } from "@/components/shared/page-header";
 
 export default function IndentSettingsPage() {
   const searchParams = useSearchParams();
@@ -50,9 +50,9 @@ export default function IndentSettingsPage() {
 
   return (
     <IndentPageShell>
-      <IndentPageHeader
+      <PageHeader
         title="Indent Settings"
-        subtitle={
+        description={
           projectName
             ? `Configure how indents are approved for ${projectName}.`
             : "Configure how indents are approved on this project."
@@ -60,7 +60,6 @@ export default function IndentSettingsPage() {
         icon={Settings2}
         backHref={context.indentHref()}
         backLabel="Back to Indent"
-        gradient={INDENT_SETTINGS_GRADIENT}
       />
 
 

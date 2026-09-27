@@ -522,7 +522,6 @@ export default function FDExportWorkspace() {
 
   return <div className="space-y-4">
     <PageHeader
-      className="mb-0 sm:mb-0"
       title="FD Export Centre"
       description="Four steps: choose the deposits, choose the columns, choose the sheets, download. The summary on the right updates as you go."
       actions={<>

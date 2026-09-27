@@ -48,11 +48,11 @@ import {
   JMC_SETTINGS_GRADIENT,
   JmcAccessDenied,
   JmcLoadingState,
-  JmcPageHeader,
   JmcPageShell,
   JmcProjectNotFound,
 } from '@/components/jmc/jmc-page-shell';
 import { Badge } from '@/components/ui/badge';
+import { PageHeader } from '@/components/shared/page-header';
 
 /* ---------------- type guards ---------------- */
 function isUserBased(step: WorkflowStep): step is WorkflowStepUser {
@@ -386,9 +386,9 @@ export default function JmcWorkflowConfigurationPage() {
 
   return (
     <JmcPageShell className="max-sm:[--card-pad:0.75rem]">
-      <JmcPageHeader
+      <PageHeader
         title="JMC Workflow Configuration"
-        subtitle={
+        description={
           projectName
             ? `Approval steps, assignees and turnaround times for ${projectName}.`
             : 'Approval steps, assignees and turnaround times for the JMC workflow.'
@@ -396,7 +396,6 @@ export default function JmcWorkflowConfigurationPage() {
         icon={GitMerge}
         backHref={context.jmcHref('settings')}
         backLabel="Back to JMC settings"
-        gradient={JMC_SETTINGS_GRADIENT}
         actions={
           <>
             {pageInvalidMsg && (

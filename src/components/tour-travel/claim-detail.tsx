@@ -31,7 +31,8 @@ import {
 } from '@/lib/tour-travel-service';
 import { TT_PERMISSION_MODULE } from './module-layout-shell';
 import { useTravelActor } from './use-travel-config';
-import { Money, TravelDataList, TravelField, TravelLoader, TravelPageHeader, TravelSection, TravelStatusBadge, travelDialog } from './travel-ui';
+import { Money, TravelDataList, TravelField, TravelLoader, TravelSection, TravelStatusBadge, travelDialog } from './travel-ui';
+import { PageHeader } from '@/components/shared/page-header';
 
 /**
  * Claim detail — the employee's view of their tour settlement (spec section 20).
@@ -120,7 +121,7 @@ export default function ClaimDetail({ claimId }: { claimId: string }) {
 
   return (
     <div className="space-y-4">
-      <TravelPageHeader
+      <PageHeader
         title={claim.referenceNumber}
         description={`${claim.employeeName} · tour ${claim.travelRequestNumber} · claimed ${claim.claimDate}`}
         actions={

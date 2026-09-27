@@ -166,7 +166,6 @@ export default function ProjectInsurancePage() {
 
       {/* ── Header ────────────────────────────────────────────────────────── */}
       <PageHeader
-        className="mb-0 sm:mb-0"
         icon={HardHat}
         title="Project Insurance"
         description="Insurance coverage across projects and properties"

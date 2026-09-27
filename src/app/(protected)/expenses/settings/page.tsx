@@ -4,12 +4,12 @@
 
 import Link from 'next/link';
 import { Hash, Tags, Users, ShieldAlert, Settings2, SlidersHorizontal } from 'lucide-react';
-import { ExpensesPageHeader } from '@/components/expenses/page-header';
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/components/ui/card';
 import type { LucideIcon } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useAuthorization } from '@/hooks/useAuthorization';
 import { Skeleton } from '@/components/ui/skeleton';
+import { PageHeader } from '@/components/shared/page-header';
 
 
 interface ExpenseSettingCardProps {
@@ -122,7 +122,7 @@ export default function ExpensesSettingsPage() {
     if (!canViewPage) {
         return (
              <div className="w-full">
-                <ExpensesPageHeader icon={Settings2} title="Expenses Settings" backHref="/expenses" />
+                <PageHeader icon={Settings2} title="Expenses Settings" backHref="/expenses" />
                  <Card>
                     <CardHeader><CardTitle>Access Denied</CardTitle><CardDescription>You do not have permission to view these settings.</CardDescription></CardHeader>
                     <CardContent className="flex justify-center p-8"><ShieldAlert className="h-16 w-16 text-destructive" /></CardContent>
@@ -133,11 +133,10 @@ export default function ExpensesSettingsPage() {
 
   return (
     <div className="w-full space-y-5">
-      <ExpensesPageHeader
+      <PageHeader
         icon={Settings2}
         title="Expenses Settings"
         description="Numbering series, chart of accounts and access"
-        accent="teal"
         backHref="/expenses"
       />
       <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-5">

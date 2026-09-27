@@ -53,7 +53,6 @@ import {
   PmShell,
   PmStatusPill,
   PmTableFoot,
-  PmTopbar,
   type PmListColumn,
 } from "@/components/project-management/pm-shell";
 import { Badge } from "@/components/ui/badge";
@@ -70,6 +69,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
+import { PageHeader } from "@/components/shared/page-header";
 
 const today = () => {
   const date = new Date();
@@ -469,7 +469,7 @@ export default function NewManufacturingClearancePage() {
 
   return (
     <PmShell>
-      <PmTopbar
+      <PageHeader sticky
         title="New Manufacturing Clearance"
         breadcrumbs={[
           { label: "Manufacturing Clearance", href: context.mcHref() },

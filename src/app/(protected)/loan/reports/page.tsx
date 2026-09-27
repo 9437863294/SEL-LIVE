@@ -90,7 +90,6 @@ export default function LoanReportsPage() {
     <div className="space-y-5">
       {/* Header */}
       <PageHeader
-        className="mb-0 sm:mb-0"
         icon={BarChart3}
         title="Loan Reports"
         description="Analytics and month-wise summaries for loan EMIs"

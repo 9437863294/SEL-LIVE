@@ -28,7 +28,7 @@ import { hrCurrency, hrStatusLabel, hrStatusTone, priorityTone, type Requirement
  * original names so every existing call site is untouched; new code should import from the shared
  * module directly.
  */
-export { TONES as HR_TONES, KpiCard as HrKpiCard, PageHeader as HrPageHeader } from '@/components/shared/kpi-card';
+export { TONES as HR_TONES, KpiCard as HrKpiCard } from '@/components/shared/kpi-card';
 export type { Tone as HrTone } from '@/components/shared/kpi-card';
 
 /** Status badge. Always renders through `hrStatusLabel`, so no screen prints a raw token. */

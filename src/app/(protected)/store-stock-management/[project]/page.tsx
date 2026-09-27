@@ -150,7 +150,6 @@ export default function ProjectDashboardPage() {
   return (
     <div className="space-y-6">
       <PageHeader
-        className="mb-0 sm:mb-0"
         icon={Building2}
         eyebrow="Project stock workspace"
         title={currentProject.projectName}

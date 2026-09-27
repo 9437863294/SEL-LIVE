@@ -32,10 +32,10 @@ import {
 } from "@/components/project-management/tower-progress/report-views";
 import {
   TowerProgressGuard,
-  TowerProgressHeader,
   TowerProgressNav,
   TowerProgressShell,
 } from "@/components/project-management/tower-progress/tower-progress-ui";
+import { PageHeader } from "@/components/shared/page-header";
 
 export default function TowerReportPage() {
   const { permissions } = useTowerProgress();
@@ -146,9 +146,9 @@ function ReportScreen() {
 
   return (
     <TowerProgressShell>
-      <TowerProgressHeader
+      <PageHeader
         title={definition.title}
-        subtitle={
+        description={
           project
             ? `${filtered.length} of ${towers.length} towers · ${project.projectName}`
             : definition.description

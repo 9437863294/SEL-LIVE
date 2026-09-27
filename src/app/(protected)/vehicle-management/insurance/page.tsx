@@ -702,7 +702,6 @@ export default function InsuranceManagementPage() {
             {rows.length} records
           </Badge>
         }
-        className="mb-0 sm:mb-0"
         actions={
           <>
             <Button variant="outline" onClick={() => void loadRows()} className="bg-white/80 hover:bg-white">

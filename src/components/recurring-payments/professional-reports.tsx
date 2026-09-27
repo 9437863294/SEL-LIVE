@@ -20,11 +20,11 @@ import { useGlobalScopes } from './use-global-scopes';
 import {
   ReportAccessDenied,
   ReportErrorBanner,
-  ReportHeader,
   ReportLoading,
   ReportMetricTile,
   ReportSummaryTable,
 } from './report-ui';
+import { PageHeader } from '@/components/shared/page-header';
 
 const DEFAULT_FILTERS = { project: 'all', department: 'all' };
 
@@ -162,14 +162,14 @@ export default function RecurringPaymentReports() {
 
   return (
     <div className="space-y-5 print:p-0">
-      <ReportHeader
+      <PageHeader
         title="Recurring Payment Analytics"
         description="Cash-flow, category, vendor, trend and overdue analysis"
-        hero={{
+        meta={[{
           label: "Open outflow, next 30 days",
           value: currency(outflow(30)),
           hint: `${open.length} obligation(s) still open`,
-        }}
+        }]}
         actions={
           <>
             {can('Export', 'Recurring Payments.Reports') && (

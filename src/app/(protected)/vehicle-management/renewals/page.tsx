@@ -360,7 +360,6 @@ export default function RenewalsHubPage() {
         title="Renewals Hub"
         description="Consolidated view of all expired and due-soon compliance items across the fleet."
         icon={RefreshCw}
-        className="mb-0 sm:mb-0"
         actions={
           <>
             <Link

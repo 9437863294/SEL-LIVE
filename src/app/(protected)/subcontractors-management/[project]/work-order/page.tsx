@@ -17,7 +17,7 @@ import type { WorkOrder, Project } from '@/lib/types';
 import { useParams, useRouter } from 'next/navigation';
 import { useAuthorization } from '@/hooks/useAuthorization';
 import { projectMatchesSlug } from '@/lib/project-slug';
-import { PM_TABLE_CLASS, PmContent, PmSectionHead, PmTopbar } from '@/components/project-management/pm-shell';
+import { PM_TABLE_CLASS, PmContent, PmSectionHead } from '@/components/project-management/pm-shell';
 
 const slugify = (text: string) => {
   if (!text) return '';
@@ -152,7 +152,7 @@ export default function WorkOrderLogPage() {
 
   return (
     <>
-      <PmTopbar
+      <PageHeader sticky
         title="Work Orders"
         breadcrumbs={[
           { label: projectSlug === 'all' ? 'All projects' : currentProject?.projectName || 'Project' },

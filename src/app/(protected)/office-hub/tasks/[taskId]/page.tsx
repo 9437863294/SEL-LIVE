@@ -81,7 +81,6 @@ import {
   OfficeHubEmptyState,
   OfficeHubField,
   OfficeHubLoader,
-  OfficeHubPageHeader,
   PersonChip,
   PriorityBadge,
   TaskDueDate,
@@ -96,6 +95,7 @@ import {
 } from '@/components/office-hub/task-panels';
 import { DocumentsPanel } from '@/components/office-hub/documents-panel';
 import { TaskForm, draftFromTask } from '@/components/office-hub/task-form';
+import { PageHeader } from '@/components/shared/page-header';
 
 export default function TaskDetailPage() {
   const params = useParams<{ taskId: string }>();
@@ -228,7 +228,7 @@ export default function TaskDetailPage() {
 
   return (
     <div className="space-y-3">
-      <OfficeHubPageHeader
+      <PageHeader
         title={task.title}
         description={`${task.reference}${task.projectName ? ` · ${task.projectName}` : ''}`}
         actions={

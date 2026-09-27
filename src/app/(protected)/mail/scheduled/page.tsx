@@ -1,7 +1,7 @@
 'use client';
 
 import { OutboundList } from '@/components/mail-hub/outbound-list';
-import { PageHeader } from '@/components/mail-hub/ui';
+import { PageHeader } from '@/components/shared/page-header';
 
 export default function MailScheduledPage() {
   return (

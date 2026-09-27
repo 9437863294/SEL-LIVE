@@ -31,7 +31,6 @@ import {
 } from '@/components/hr/hr-ui';
 import {
   EmployeeErrorBanner,
-  EmployeeHeader,
   EmployeeKpiCard,
   EmployeeListFooter,
   EmployeePageShell,
@@ -43,6 +42,7 @@ import { useAuthorization } from '@/hooks/useAuthorization';
 import { cn } from '@/lib/utils';
 import { exportRowsToExcel } from '@/lib/report-excel';
 import { fetchLeaveRegister, type LeaveRegisterResponse, type LeaveRegisterRow } from '@/lib/greythr-sync-client';
+import { PageHeader } from '@/components/shared/page-header';
 
 type Row = LeaveRegisterRow & { id: string };
 
@@ -224,14 +224,13 @@ export default function LeaveRegisterPage() {
 
   return (
     <EmployeePageShell>
-      <EmployeeHeader
+      <PageHeader
         icon={CalendarClock}
-        tone="cyan"
         eyebrow="Employee management"
         title="Leave register"
         backHref="/employee"
         backLabel="Back to Employee Management"
-        status={
+        badge={
           <>
             {report?.year && (
               <EmployeeStatusPill tone="cyan" icon={CalendarClock}>

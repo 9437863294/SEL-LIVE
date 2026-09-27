@@ -54,8 +54,8 @@ import { OFFICE_HUB_BASE_PATH, formatRelativeToNow } from '@/lib/office-hub';
 import { useOfficeHub, useOfficeHubAction } from '@/components/office-hub/hooks';
 import {
   OfficeHubEmptyState,
-  OfficeHubPageHeader,
 } from '@/components/office-hub/ui';
+import { PageHeader } from '@/components/shared/page-header';
 
 type Group = 'all' | 'meetings' | 'tasks' | 'teams' | 'decisions' | 'system';
 
@@ -169,7 +169,7 @@ export default function NotificationsPage() {
 
   return (
     <div className="space-y-3">
-      <OfficeHubPageHeader
+      <PageHeader
         title="Notifications"
         description="Everything Office Hub has told you. The header bell shows the same records."
         actions={

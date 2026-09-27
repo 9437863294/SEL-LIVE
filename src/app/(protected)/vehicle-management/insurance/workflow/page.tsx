@@ -529,7 +529,6 @@ export default function InsuranceWorkflowPage() {
         title="Insurance Renewal Workflow"
         description="Dynamic ownership, stage TAT, escalation, approvals and policy activation."
         icon={GitBranch}
-        className="mb-0 sm:mb-0"
         actions={<>{canConfigure && <Link href="/vehicle-management/settings/insurance-workflow"><Button variant="outline" className="w-full bg-white sm:w-auto"><Settings2 className="mr-1.5 h-4 w-4" />Configure</Button></Link>}<Button variant="outline" onClick={() => void runEscalations()} disabled={!canManage || isWorking} className="bg-white"><BellRing className="mr-1.5 h-4 w-4" />Run Escalation</Button><Button onClick={() => void runScan()} disabled={!canManage || isScanning} className="bg-gradient-to-r from-violet-600 to-indigo-600">{isScanning ? <Loader2 className="mr-1.5 h-4 w-4 animate-spin" /> : <Play className="mr-1.5 h-4 w-4" />}Run Expiry Scan</Button></>}
       />
 

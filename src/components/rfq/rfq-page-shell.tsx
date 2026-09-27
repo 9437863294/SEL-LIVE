@@ -10,7 +10,6 @@
 
 export {
   JmcPageShell as RfqPageShell,
-  JmcPageHeader as RfqPageHeader,
   JmcLoadingState as RfqLoadingState,
   JmcCardGridLoadingState as RfqCardGridLoadingState,
   JmcAccessDenied as RfqAccessDenied,

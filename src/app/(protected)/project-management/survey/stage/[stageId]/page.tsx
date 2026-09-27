@@ -44,7 +44,6 @@ import {
   SURVEY_GRADIENT,
   SurveyAccessDenied,
   SurveyLoadingState,
-  SurveyPageHeader,
   SurveyPageShell,
   SurveyProjectNotFound,
 } from "@/components/survey/survey-page-shell";
@@ -69,6 +68,7 @@ import {
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
+import { PageHeader } from "@/components/shared/page-header";
 
 /** An entry with its deviation, as the list renders it. */
 type StageListRow = SurveyDeviation & { id: string; entry: SurveyEntry };
@@ -359,13 +359,12 @@ export default function SurveyStagePage() {
   if (!step) {
     return (
       <SurveyPageShell>
-        <SurveyPageHeader
+        <PageHeader
           title="Stage not found"
-          subtitle="This stage is no longer part of the survey workflow."
+          description="This stage is no longer part of the survey workflow."
           icon={GitMerge}
           backHref={context.surveyHref()}
           backLabel="Back to Survey"
-          gradient={SURVEY_GRADIENT}
         />
         <Card className="border-border/60">
           <CardHeader>
@@ -382,16 +381,15 @@ export default function SurveyStagePage() {
 
   return (
     <SurveyPageShell>
-      <SurveyPageHeader
+      <PageHeader
         title={step.name}
-        subtitle={
+        description={
           step.description ||
           (projectName ? `Survey entries awaiting ${step.name} for ${projectName}.` : `Survey entries awaiting ${step.name}.`)
         }
         icon={GitMerge}
         backHref={context.surveyHref()}
         backLabel="Back to Survey"
-        gradient={SURVEY_GRADIENT}
       />
 
 

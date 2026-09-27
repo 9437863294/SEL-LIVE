@@ -506,7 +506,6 @@ export default function BudgetReportsPage() {
 
       {/* ── Page header ── */}
       <PageHeader
-        className="mb-0 sm:mb-0"
         icon={Target}
         title="Budget Reports"
         description={<>{rangeLabel} · Budget utilization, alerts, category breakdown, and approval tracking</>}

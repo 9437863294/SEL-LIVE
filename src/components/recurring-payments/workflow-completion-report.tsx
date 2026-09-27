@@ -30,7 +30,7 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import { SectionHeader } from "@/components/shared/page-header";
+import { PageHeader, SectionHeader } from "@/components/shared/page-header";
 import CollapsibleFilterCard from "./collapsible-filter-card";
 import { Label } from "@/components/ui/label";
 import {
@@ -52,7 +52,6 @@ import { useGlobalScopes } from "./use-global-scopes";
 import {
   ReportAccessDenied,
   ReportErrorBanner,
-  ReportHeader,
   ReportLoading,
   ReportMetricTile,
 } from "./report-ui";
@@ -293,13 +292,13 @@ export default function WorkflowCompletionReport() {
 
   return (
     <div className="space-y-5">
-      <ReportHeader
+      <PageHeader
         title="Workflow Completion Summary"
-        hero={{
+        meta={[{
           label: "Total value",
           value: currency(summary.totalAmount),
           hint: `${summary.total} payment(s)`,
-        }}
+        }]}
         description="Totals, step-wise workload and on-time performance, and exactly what completed when"
         actions={
           <>

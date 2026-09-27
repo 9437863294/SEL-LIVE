@@ -6,7 +6,7 @@ import { useEffect, useState } from 'react';
 import { CheckCircle2, Globe, Loader2, Mail, Plug, RefreshCw, Server, ShieldCheck, Unplug, Users } from 'lucide-react';
 
 import { useMailHub } from '@/components/mail-hub/hooks';
-import { AccountStatusBadge, PageHeader, RecoveryPanel, formatLong } from '@/components/mail-hub/ui';
+import { AccountStatusBadge, RecoveryPanel, formatLong } from '@/components/mail-hub/ui';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -17,6 +17,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { useToast } from '@/hooks/use-toast';
 import { mailApi, startOAuth, type AccountRow } from '@/lib/mail-hub/client';
 import { cn } from '@/lib/utils';
+import { PageHeader } from '@/components/shared/page-header';
 
 const PROVIDER_ICON = { gmail: Globe, microsoft: Mail, imap: Server } as const;
 const PROVIDER_BLURB = {

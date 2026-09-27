@@ -145,7 +145,6 @@ export default function VehicleTypesSettingsPage() {
         icon={Tag}
         backHref="/vehicle-management/settings"
         backLabel="Back to settings"
-        className="mb-0 sm:mb-0"
       />
 
       {/* Stats */}

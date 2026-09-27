@@ -112,7 +112,6 @@ export default function SettingsPage() {
   return (
     <div className="space-y-8">
       <PageHeader
-        className="mb-0 sm:mb-0"
         icon={Settings2}
         eyebrow="Configuration centre"
         title="Store & Stock Management Settings"

@@ -35,11 +35,11 @@ import {
   TravelEmptyState,
   TravelKpiCard,
   TravelLoader,
-  TravelPageHeader,
   TravelSection,
   TravelStatusBadge,
   TravelDataList,
 } from './travel-ui';
+import { PageHeader } from '@/components/shared/page-header';
 
 const today = () => {
   const now = new Date();
@@ -181,7 +181,7 @@ export default function TourTravelDashboard() {
 
   return (
     <div className="space-y-4">
-      <TravelPageHeader
+      <PageHeader
         title="Tour, Travel & Expense"
         description="Tour requests, advances, expense claims and settlements."
         actions={

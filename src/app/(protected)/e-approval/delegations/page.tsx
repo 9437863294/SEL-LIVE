@@ -26,13 +26,13 @@ import {
   saveEApprovalDelegation,
 } from '@/lib/e-approval-service';
 import { eApprovalDialogClass, eApprovalDialogGuard, EApprovalEmptyState } from '@/components/e-approval/shared';
-import { PageHeader } from '@/components/e-approval/page-header';
 import {
   formatEApprovalDate,
   useEApprovalActor,
   useEApprovalDirectory,
   useEApprovalPermissions,
 } from '@/components/e-approval/hooks';
+import { PageHeader } from '@/components/shared/page-header';
 
 /**
  * Substitute approvers (spec section 23).

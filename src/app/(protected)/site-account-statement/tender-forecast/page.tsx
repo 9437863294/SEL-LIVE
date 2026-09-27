@@ -361,7 +361,6 @@ export default function TenderForecastPage() {
 
       {/* Header */}
       <PageHeader
-        className="mb-0 sm:mb-0"
         icon={BarChart3}
         title="Tender Budget Forecast"
         description="Monthly actual vs planned with revised budget projections"

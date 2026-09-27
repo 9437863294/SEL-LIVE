@@ -37,13 +37,13 @@ import { listMeetings, listMyTasks, listTasks, updateMeeting } from '@/lib/offic
 import { useOfficeHub, useOfficeHubAction, useOfficeHubQuery } from '@/components/office-hub/hooks';
 import {
   OfficeHubAccessDenied,
-  OfficeHubPageHeader,
   useTickingNow,
 } from '@/components/office-hub/ui';
 import {
   MeetingCalendar,
   buildCalendarEntries,
 } from '@/components/office-hub/meeting-calendar';
+import { PageHeader } from '@/components/shared/page-header';
 
 type Scope = 'mine' | 'organized' | 'team' | 'department' | 'all';
 
@@ -180,7 +180,7 @@ export default function CalendarPage() {
 
   return (
     <div className="space-y-3">
-      <OfficeHubPageHeader
+      <PageHeader
         title="Calendar"
         description={`Meetings, task deadlines and holidays. Times in ${viewer.timeZone ?? settings.defaultTimeZone}.`}
         actions={

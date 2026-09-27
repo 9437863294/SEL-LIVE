@@ -167,7 +167,6 @@ export default function RecurringPaymentsHandbook() {
   return (
     <div className="space-y-6">
       <PageHeader
-        className="mb-0 sm:mb-0"
         icon={BookOpen}
         title="Recurring Payments Handbook"
         description="A step-by-step guide to collecting bills, verifying, approving, paying and closing recurring obligations in this module — written for anyone new here."

@@ -10,7 +10,6 @@
 
 export {
   JmcPageShell as McPageShell,
-  JmcPageHeader as McPageHeader,
   JmcLoadingState as McLoadingState,
   JmcCardGridLoadingState as McCardGridLoadingState,
   JmcAccessDenied as McAccessDenied,

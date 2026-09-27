@@ -76,12 +76,12 @@ import {
   EmptyState,
   MetricCard,
   TowerProgressGuard,
-  TowerProgressHeader,
   TowerProgressNav,
   TowerProgressShell,
   TowerReportPhoto,
   VerificationBadge,
 } from "./tower-progress-ui";
+import { PageHeader } from "@/components/shared/page-header";
 
 export type TowerDetailTab = "progress" | "photos" | "timeline";
 
@@ -367,9 +367,9 @@ function TowerDetail({ defaultTab }: { defaultTab: TowerDetailTab }) {
 
   return (
     <TowerProgressShell>
-      <TowerProgressHeader
+      <PageHeader
         title={tower.towerNo}
-        subtitle={
+        description={
           [tower.towerType, tower.location, tower.section, tower.contractor]
             .filter(Boolean)
             .join(" · ") || "No tower details recorded"

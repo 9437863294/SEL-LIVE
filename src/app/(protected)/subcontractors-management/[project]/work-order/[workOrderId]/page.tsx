@@ -15,7 +15,8 @@ import { useToast } from '@/hooks/use-toast';
 import { Skeleton } from '@/components/ui/skeleton';
 import { format } from 'date-fns';
 import { Progress } from '@/components/ui/progress';
-import { PmContent, PmTopbar } from '@/components/project-management/pm-shell';
+import { PmContent } from '@/components/project-management/pm-shell';
+import { PageHeader } from '@/components/shared/page-header';
 
 type EnrichedWorkOrderItem = WorkOrderItem & {
   boqQty: string;
@@ -210,7 +211,7 @@ export default function WorkOrderDetailsPage() {
 
   return (
     <>
-      <PmTopbar
+      <PageHeader sticky
         title={`Work Order ${workOrder.workOrderNo}`}
         breadcrumbs={[
           { label: 'Subcontractors', href: `/subcontractors-management/${projectSlug}` },

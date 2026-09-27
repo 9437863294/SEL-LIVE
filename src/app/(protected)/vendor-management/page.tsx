@@ -98,7 +98,6 @@ export default function VendorManagementPage() {
         title={MODULE_NAME}
         description="Global vendor registry shared across all projects"
         icon={ShoppingCart}
-        className="mb-0 sm:mb-0"
       />
 
       {/* ── Stats + Quick access ────────────────────────────────────────── */}

@@ -10,7 +10,6 @@
 
 export {
   JmcPageShell as PoPageShell,
-  JmcPageHeader as PoPageHeader,
   JmcLoadingState as PoLoadingState,
   JmcCardGridLoadingState as PoCardGridLoadingState,
   JmcAccessDenied as PoAccessDenied,

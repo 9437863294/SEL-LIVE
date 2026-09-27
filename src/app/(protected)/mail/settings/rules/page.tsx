@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react';
 import { Bot, Loader2, Plus, Trash2 } from 'lucide-react';
 
 import { useLoader, useMailHub } from '@/components/mail-hub/hooks';
-import { EmptyState, ErrorNotice, PageHeader } from '@/components/mail-hub/ui';
+import { EmptyState, ErrorNotice } from '@/components/mail-hub/ui';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -14,6 +14,7 @@ import { Switch } from '@/components/ui/switch';
 import { useToast } from '@/hooks/use-toast';
 import { mailApi } from '@/lib/mail-hub/client';
 import type { MailMailboxMember, MailRoutingRule, MailUserSettings } from '@/lib/mail-hub/model';
+import { PageHeader } from '@/components/shared/page-header';
 
 export default function MailRulesPage() {
   const { data } = useMailHub();

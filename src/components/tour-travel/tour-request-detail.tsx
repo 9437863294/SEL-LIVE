@@ -52,12 +52,12 @@ import {
   Money,
   TravelField,
   TravelLoader,
-  TravelPageHeader,
   TravelSection,
   TravelStatusBadge,
   TravelDataList,
   travelDialog,
 } from './travel-ui';
+import { PageHeader } from '@/components/shared/page-header';
 
 /**
  * Tour detail and action surface.
@@ -265,7 +265,7 @@ export default function TourRequestDetail({ requestId }: { requestId: string }) 
 
   return (
     <div className="space-y-4">
-      <TravelPageHeader
+      <PageHeader
         title={request.referenceNumber}
         description={`${request.tourType} · ${request.employeeName} · ${request.departureDate} → ${request.returnDate}`}
         actions={

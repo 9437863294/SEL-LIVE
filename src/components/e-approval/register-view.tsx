@@ -17,8 +17,8 @@ import {
 import { listEApprovals, subscribeEApprovals, type EApprovalListFilter } from '@/lib/e-approval-service';
 import { DeleteApprovalDialog, DeleteApprovalRowButton } from './delete-request-dialog';
 import { EApprovalRequestTable } from './request-table';
-import { PageHeader } from './page-header';
 import { useEApprovalActor, useEApprovalPermissions, useEApprovalRefreshOnReturn } from './hooks';
+import { PageHeader } from '@/components/shared/page-header';
 
 export type RegisterScope =
   | 'inbox'

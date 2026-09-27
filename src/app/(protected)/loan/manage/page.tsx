@@ -181,7 +181,6 @@ export default function ManageLoanPage() {
     <div className="space-y-4">
       {/* Header */}
       <PageHeader
-        className="mb-0 sm:mb-0"
         icon={Briefcase}
         title="Manage Loans"
         description="Add, view, and close loan facilities"

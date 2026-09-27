@@ -23,7 +23,6 @@ import {
 } from '@/components/hr/hr-ui';
 import {
   EmployeeErrorBanner,
-  EmployeeHeader,
   EmployeeKpiCard,
   EmployeePageShell,
   EmployeeStatusPill,
@@ -32,6 +31,7 @@ import {
 import { useAuthorization } from '@/hooks/useAuthorization';
 import { isWorkingState } from '@/lib/greythr';
 import { fetchEmployeeRoster, type EmployeeRosterResponse, type RosterEmployeeRow } from '@/lib/greythr-sync-client';
+import { PageHeader } from '@/components/shared/page-header';
 
 /** Group and count, sorted largest first — every breakdown on this page is this one shape. */
 function tally(rows: RosterEmployeeRow[], key: (row: RosterEmployeeRow) => string | null | undefined) {
@@ -177,14 +177,13 @@ export default function EmployeeReportsPage() {
 
   return (
     <EmployeePageShell>
-      <EmployeeHeader
+      <PageHeader
         icon={BarChart3}
-        tone="violet"
         eyebrow="Employee management"
         title="Reports"
         backHref="/employee"
         backLabel="Back to Employee Management"
-        status={
+        badge={
           rows.length > 0 ? (
             report?.liveRoster ? (
               <EmployeeStatusPill tone="emerald" pulse>

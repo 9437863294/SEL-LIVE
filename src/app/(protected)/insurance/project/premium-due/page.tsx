@@ -153,7 +153,6 @@ export default function ProjectPremiumDuePage() {
     <div className="space-y-4">
       {/* Header */}
       <PageHeader
-        className="mb-0 sm:mb-0"
         icon={CalendarClock}
         title="Project Premium Due"
         description="Active project policies — expiry and renewal tracking"

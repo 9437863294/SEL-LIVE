@@ -52,7 +52,6 @@ export default function ProfilePage() {
         description="Your details, access and account security."
         backHref="/settings"
         backLabel="Back to settings"
-        className="mb-0 sm:mb-0"
       />
 
       <ProfileHero onJumpToSecurity={jumpToSecurity} />

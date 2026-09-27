@@ -48,10 +48,10 @@ import { useGlobalScopes } from "./use-global-scopes";
 import {
   ReportAccessDenied,
   ReportErrorBanner,
-  ReportHeader,
   ReportLoading,
   ReportMetricTile,
 } from "./report-ui";
+import { PageHeader } from "@/components/shared/page-header";
 
 /**
  * Vendor is a first-class entity in this module (its own register, its own masked banking
@@ -253,14 +253,14 @@ export default function VendorSpendReport() {
 
   return (
     <div className="space-y-5">
-      <ReportHeader
+      <PageHeader
         title="Vendor Spend & Ageing"
         description="Total billed, paid and outstanding value per vendor, with overdue ageing"
-        hero={{
+        meta={[{
           label: "Outstanding",
           value: currency(totals.outstanding),
           hint: `across ${totals.vendorCount} vendor(s)`,
-        }}
+        }]}
         actions={
           <>
             {can("Export", "Recurring Payments.Reports") && (

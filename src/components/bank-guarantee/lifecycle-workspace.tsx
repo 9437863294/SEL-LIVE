@@ -369,7 +369,6 @@ export default function BGLifecycleWorkspace({ kind }: { kind: Kind }) {
   return (
     <div className="space-y-4">
       <PageHeader
-        className="mb-0 sm:mb-0"
         title={title}
         description="Separate event history with controlled approvals, bank confirmation, and consolidated BG updates."
         actions={

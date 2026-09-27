@@ -28,10 +28,10 @@ import { useTowerProgress } from "@/components/project-management/tower-progress
 import { GenerateReportDialog } from "@/components/project-management/tower-progress/generate-report-dialog";
 import {
   TowerProgressGuard,
-  TowerProgressHeader,
   TowerProgressNav,
   TowerProgressShell,
 } from "@/components/project-management/tower-progress/tower-progress-ui";
+import { PageHeader } from "@/components/shared/page-header";
 
 const groupBlurb: Record<TowerReportGroup, string> = {
   Executive: "Where the line stands, for management and the client.",
@@ -70,9 +70,9 @@ function ReportsHub() {
 
   return (
     <TowerProgressShell>
-      <TowerProgressHeader
+      <PageHeader
         title="Project reports"
-        subtitle={
+        description={
           project
             ? `Live projections of ${towers.length} towers on ${project.projectName} — nothing here is prepared by hand.`
             : "Live projections of the tower register."

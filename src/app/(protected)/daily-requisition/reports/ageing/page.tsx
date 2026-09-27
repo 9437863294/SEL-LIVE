@@ -13,11 +13,11 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import type { DailyRequisitionEntry } from '@/lib/types';
 import {
-  DailyPageHeader,
   DailyMetricCard,
   dailyPageContainerClass,
   dailySurfaceCardClass,
 } from '@/components/daily-requisition/module-shell';
+import { PageHeader } from '@/components/shared/page-header';
 
 const CLOSED_STATUSES: DailyRequisitionEntry['status'][] = ['Paid', 'Cancelled'];
 
@@ -216,7 +216,7 @@ export default function AgeingReportPage() {
   if (!canView) {
     return (
       <div className={dailyPageContainerClass}>
-        <DailyPageHeader
+        <PageHeader eyebrow="Daily Requisition"
           title="Ageing Report"
           description="Open requisitions bucketed by age — spot what is stuck and for how long."
           backHref="/daily-requisition/reports"
@@ -236,7 +236,7 @@ export default function AgeingReportPage() {
 
   return (
     <div className={dailyPageContainerClass}>
-      <DailyPageHeader
+      <PageHeader eyebrow="Daily Requisition"
         title="Ageing Report"
         description="Open requisitions (excluding Paid and Cancelled) sorted by age — oldest first. Live snapshot, no date filter."
         backHref="/daily-requisition/reports"

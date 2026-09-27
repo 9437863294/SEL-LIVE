@@ -6,12 +6,13 @@ import { Search } from 'lucide-react';
 
 import { Conversation } from '@/components/mail-hub/conversation';
 import { ThreadList } from '@/components/mail-hub/thread-list';
-import { EmptyState, ErrorNotice, PageHeader, Spinner } from '@/components/mail-hub/ui';
+import { EmptyState, ErrorNotice, Spinner } from '@/components/mail-hub/ui';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Switch } from '@/components/ui/switch';
 import { mailApi, type ThreadSummary } from '@/lib/mail-hub/client';
 import { cn } from '@/lib/utils';
+import { PageHeader } from '@/components/shared/page-header';
 
 /**
  * Search every mailbox you can read. Local search covers subjects, senders, recipients and

@@ -32,7 +32,6 @@ import {
   PmDataList,
   PmShell,
   PmTableFoot,
-  PmTopbar,
   type PmListColumn,
 } from "@/components/project-management/pm-shell";
 import { PageHeader } from "@/components/shared/page-header";
@@ -530,7 +529,7 @@ export default function NewIndentPage() {
     // No sidebar: a create form has no views, and a nav rail beside it would compete with the
     // thing you came here to fill in.
     <PmShell>
-      <PmTopbar
+      <PageHeader sticky
         title="Create indent"
         breadcrumbs={[
           { label: mapping.projectName, href: `/project-management?project=${encodeURIComponent(mappingId)}` },

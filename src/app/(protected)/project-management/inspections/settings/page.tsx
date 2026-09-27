@@ -11,10 +11,10 @@ import {
   InspectionCardGridLoadingState,
   InspectionNavCard,
   InspectionNavCardGrid,
-  InspectionPageHeader,
   InspectionPageShell,
   InspectionProjectNotFound,
 } from "@/components/inspection/inspection-page-shell";
+import { PageHeader } from "@/components/shared/page-header";
 
 export default function InspectionSettingsPage() {
   const searchParams = useSearchParams();
@@ -51,9 +51,9 @@ export default function InspectionSettingsPage() {
 
   return (
     <InspectionPageShell>
-      <InspectionPageHeader
+      <PageHeader
         title="Inspection Settings"
-        subtitle={
+        description={
           projectName
             ? `Configure how inspection results are approved on ${projectName}.`
             : "Configure how inspection results are approved."
@@ -61,7 +61,6 @@ export default function InspectionSettingsPage() {
         icon={Settings2}
         backHref={context.inspectionHref()}
         backLabel="Back to Inspections"
-        gradient={INSPECTION_SETTINGS_GRADIENT}
       />
 
 

@@ -159,7 +159,6 @@ export default function InsuranceWorkflowSettingsPage() {
         icon={GitBranch}
         backHref="/vehicle-management/settings"
         backLabel="Back to settings"
-        className="mb-0 sm:mb-0"
         actions={<><Button variant="outline" onClick={() => { const defaults = normalizeInsuranceWorkflowConfig(DEFAULT_INSURANCE_WORKFLOW_CONFIG); setConfig(defaults); setTriggerDaysText(defaults.triggerDays.join(', ')); }} disabled={!canEdit}><RotateCcw className="mr-1.5 h-4 w-4" />Defaults</Button><Button onClick={() => void save()} disabled={!canEdit || isSaving || !dirty} className="bg-gradient-to-r from-violet-600 to-indigo-600"><Save className="mr-1.5 h-4 w-4" />{isSaving ? 'Saving...' : 'Save Workflow'}</Button></>}
       />
 

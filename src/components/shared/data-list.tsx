@@ -320,19 +320,13 @@ export function DataList<T extends { id: string }>({
             outer wrapper already handles sideways overflow.
           */}
           <Table className={tableClassName} containerClassName={maxHeightClassName ? 'overflow-visible' : undefined}>
-            {/*
-              The header row used to render with the same near-white background as the body and a
-              `text-muted-foreground` weight barely darker than the page behind it — on a
-              backdrop-blur card it all but disappeared. A tinted band, bolder small-caps labels and a
-              firmer bottom border give it the contrast a header needs to read as one at a glance.
-            */}
-            <TableHeader className="bg-slate-100/80">
-              <TableRow className="hover:bg-transparent">
+            {/* The header band, type and row rhythm are the app's table format (ui/table.tsx). */}
+            <TableHeader>
+              <TableRow>
                 {columns.map(column => (
                   <TableHead
                     key={column.header}
                     className={cn(
-                      'h-10 text-[11px] font-semibold uppercase tracking-wide text-slate-600',
                       dense && 'h-9 px-3',
                       // Pinned per cell, not on <thead>: collapsed row borders do not travel with a
                       // sticky cell, so the rule under the header is an inset shadow instead.
@@ -358,7 +352,7 @@ export function DataList<T extends { id: string }>({
                       {columns.map(column => (
                         <TableCell
                           key={column.header}
-                          className={cn('text-sm', dense && 'px-3 py-1.5', column.align === 'right' && 'text-right', column.className)}
+                          className={cn(dense && 'px-3 py-1.5', column.align === 'right' && 'text-right', column.className)}
                         >
                           {column.cell(row)}
                         </TableCell>

@@ -16,8 +16,8 @@ import {
 import {
   PmContent,
   PmShell,
-  PmTopbar,
 } from "@/components/project-management/pm-shell";
+import { PageHeader } from "@/components/shared/page-header";
 
 export default function RfqSettingsPage() {
   const searchParams = useSearchParams();
@@ -53,7 +53,7 @@ export default function RfqSettingsPage() {
 
   return (
     <PmShell>
-      <PmTopbar
+      <PageHeader sticky
         title="RFQ Settings"
         breadcrumbs={[
           ...(projectName

@@ -77,7 +77,6 @@ import {
   PmShell,
   PmSidebar,
   PmTableFoot,
-  PmTopbar,
   pmAccent,
   type PmListColumn,
 } from "@/components/project-management/pm-shell";
@@ -102,6 +101,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
+import { PageHeader } from "@/components/shared/page-header";
 
 const VIEWS = [
   { key: "all", label: "All calls", icon: ClipboardList },
@@ -725,7 +725,7 @@ export default function InspectionCallsPage() {
         />
       }
     >
-      <PmTopbar
+      <PageHeader sticky
         title="Inspection Calls"
         breadcrumbs={[
           { label: projectName || "Project" },

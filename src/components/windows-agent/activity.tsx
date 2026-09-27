@@ -15,7 +15,6 @@ import {
   HrEmptyState,
   HrKpiCard,
   HrLoader,
-  HrPageHeader,
   type HrListColumn,
 } from '@/components/hr/hr-ui';
 import { cn } from '@/lib/utils';
@@ -43,6 +42,7 @@ import {
   PersonCell,
   SessionStatusBadge,
 } from './ui';
+import { PageHeader } from '@/components/shared/page-header';
 
 /* ════════════════════════════════════════════════════════════════════════════════════════════
  * One person's day (§18) — also §37's self-view, which is the same screen pointed at yourself
@@ -126,7 +126,7 @@ export function EmployeeActivity({ userId, selfView = false }: { userId: string;
 
   return (
     <div className="space-y-5">
-      <HrPageHeader
+      <PageHeader
         title={name}
         description={
           selfView
@@ -544,7 +544,7 @@ export function EmployeeActivityDirectory() {
 
   return (
     <div className="space-y-5">
-      <HrPageHeader
+      <PageHeader
         title="Employee activity"
         description="One row per person per day. Open a row for the hour-by-hour timeline."
         actions={
@@ -617,7 +617,7 @@ export function SessionsRegister() {
 
   return (
     <div className="space-y-5">
-      <HrPageHeader
+      <PageHeader
         title="Sessions"
         description="Every sign-in and sign-out the agents recorded."
         actions={

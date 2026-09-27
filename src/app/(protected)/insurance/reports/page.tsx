@@ -65,7 +65,6 @@ export default function InsuranceReportsPage() {
 
       {/* ── Header ────────────────────────────────────────────────────────── */}
       <PageHeader
-        className="mb-0 sm:mb-0"
         icon={BarChart3}
         title="Insurance Reports"
         description="Analytics and summaries for insurance policies and tasks"

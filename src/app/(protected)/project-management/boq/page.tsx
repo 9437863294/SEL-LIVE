@@ -211,7 +211,6 @@ export default function BoqPage() {
         icon={ClipboardList}
         backHref={`/project-management?project=${encodeURIComponent(selectedProject.id)}`}
         backLabel="Back to Project Management"
-        className="mb-0 sm:mb-0"
       />
 
       {/* ── Sections ─────────────────────────────────────────────────────── */}

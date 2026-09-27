@@ -32,7 +32,6 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
-import { PageHeader } from "@/components/shared/page-header";
 import { cn } from "@/lib/utils";
 import {
   activityStatusStyles,
@@ -63,25 +62,6 @@ export function TowerProgressShell({ children }: { children: ReactNode }) {
     <main className="min-h-[calc(100dvh-4rem)] min-w-0 space-y-4 p-4 max-sm:[--card-pad:1rem] sm:space-y-5 sm:p-6">
       {children}
     </main>
-  );
-}
-
-export function TowerProgressHeader({
-  title,
-  subtitle,
-  icon: Icon,
-  backHref,
-  actions,
-}: {
-  title: string;
-  subtitle: string;
-  icon: LucideIcon;
-  backHref: string;
-  actions?: ReactNode;
-}) {
-  // The app's standard header (`shared/page-header`); the shell's `space-y` spaces it.
-  return (
-    <PageHeader icon={Icon} title={title} description={subtitle} backHref={backHref} actions={actions} className="mb-0 sm:mb-0" />
   );
 }
 

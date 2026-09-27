@@ -4,12 +4,6 @@ import type { ReactNode } from 'react';
 import { cn } from '@/lib/utils';
 
 /**
- * The header every screen in the module opens with — the app's standard one (`shared/page-header`):
- * title, one line of explanation, optional back link and key facts, actions on the right.
- */
-export { PageHeader } from '@/components/shared/page-header';
-
-/**
  * A titled block inside a form or detail screen.
  *
  * Sections carry the hierarchy so the page reads as "these four things", not as four identical

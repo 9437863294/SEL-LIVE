@@ -23,8 +23,9 @@ import {
   type HrSettings,
 } from '@/lib/hr-requirement';
 import { HrControlError, saveHrSettings } from '@/lib/hr-requirement-service';
-import { HrAccessDenied, HrAlertNotice, HrLoader, HrPageHeader, HrSection } from './hr-ui';
+import { HrAccessDenied, HrAlertNotice, HrLoader, HrSection } from './hr-ui';
 import { useHrConfig, useHrPermissions } from './use-hr-config';
+import { PageHeader } from '@/components/shared/page-header';
 
 /**
  * HR settings, spec section 58.
@@ -93,7 +94,7 @@ export default function HrSettingsHub() {
 
   return (
     <div>
-      <HrPageHeader
+      <PageHeader
         title="HR Settings"
         description="Spec section 58 — masters, approval matrix, CTC rules, SLA and escalation, checklists and notifications."
       />

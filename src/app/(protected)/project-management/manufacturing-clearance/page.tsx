@@ -34,7 +34,6 @@ import {
   McCardGridLoadingState,
   McNavCard,
   McNavCardGrid,
-  McPageHeader,
   McPageShell,
   McProjectNotFound,
 } from "@/components/mc/mc-page-shell";
@@ -45,6 +44,7 @@ import {
   isTerminalMcApprovalStatus,
   type McClearanceApproval,
 } from "@/lib/project-management-mc-workflow";
+import { PageHeader } from "@/components/shared/page-header";
 
 type McItem = {
   icon: LucideIcon;
@@ -215,16 +215,15 @@ export default function ManufacturingClearanceHubPage() {
 
   return (
     <McPageShell>
-      <McPageHeader
+      <PageHeader
         title="Manufacturing Clearance"
-        subtitle={
+        description={
           projectName
             ? `Clear vendors to begin manufacturing on ${projectName}, and work each approval stage.`
             : "Clear vendors to begin manufacturing, and work each approval stage."
         }
         icon={Factory}
         backHref={context.parentHref}
-        gradient={MC_GRADIENT}
       />
 
 

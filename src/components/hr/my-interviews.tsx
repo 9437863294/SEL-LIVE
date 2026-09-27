@@ -24,8 +24,9 @@ import {
   type InterviewRecommendation,
 } from '@/lib/hr-requirement';
 import { HrControlError, submitInterviewFeedback } from '@/lib/hr-requirement-service';
-import { HrAlertNotice, HrEmptyState, HrField, HrLoader, HrPageHeader, HrSection, HrStatusBadge, hrDialog } from './hr-ui';
+import { HrAlertNotice, HrEmptyState, HrField, HrLoader, HrSection, HrStatusBadge, hrDialog } from './hr-ui';
 import { useHrCollection, useHrConfig, useHrPermissions } from './use-hr-config';
+import { PageHeader } from '@/components/shared/page-header';
 
 /**
  * The interviewer's own screen, spec sections 25 and 26.
@@ -162,7 +163,7 @@ export default function MyInterviews() {
 
   return (
     <div>
-      <HrPageHeader
+      <PageHeader
         title="My Interviews"
         description={`${pending.length} awaiting your feedback · ${done.length} completed`}
       />

@@ -287,7 +287,6 @@ export default function ProjectRegisterPage() {
         icon={FolderKanban}
         backHref="/project-management"
         backLabel="Back to Project Management"
-        className="mb-0 sm:mb-0"
         actions={
           canManage ? (
             <Button asChild>

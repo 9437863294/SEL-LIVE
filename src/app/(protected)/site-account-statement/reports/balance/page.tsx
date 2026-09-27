@@ -162,7 +162,6 @@ export default function BalanceStatusPage() {
   return (
     <div className="space-y-4">
       <PageHeader
-        className="mb-0 sm:mb-0"
         title="Project Balance Status"
         description={<>Health overview — Healthy ≥ ₹{(HEALTHY_THRESHOLD / 1000).toFixed(0)}k · Warning ≥ ₹0 · Critical &lt; ₹0</>}
         actions={canExport ? (

@@ -148,7 +148,6 @@ export default function CashFlowPage() {
   return (
     <div className="space-y-4">
       <PageHeader
-        className="mb-0 sm:mb-0"
         title="Month-wise Cash Flow"
         description={<>Monthly receipts, expenses and running balance for {filterYear}</>}
         actions={canExport ? (

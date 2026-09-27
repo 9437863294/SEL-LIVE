@@ -14,11 +14,11 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import type { DailyRequisitionEntry } from '@/lib/types';
 import {
-  DailyPageHeader,
   DailyMetricCard,
   dailyPageContainerClass,
   dailySurfaceCardClass,
 } from '@/components/daily-requisition/module-shell';
+import { PageHeader } from '@/components/shared/page-header';
 
 const fmt = (n: number) =>
   new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 0 }).format(n);
@@ -164,7 +164,7 @@ export default function PartyAnalysisReportPage() {
   if (!canView) {
     return (
       <div className={dailyPageContainerClass}>
-        <DailyPageHeader
+        <PageHeader eyebrow="Daily Requisition"
           title="Party Analysis"
           description="Group requisitions by party and compare volumes and values."
           backHref="/daily-requisition/reports"
@@ -184,7 +184,7 @@ export default function PartyAnalysisReportPage() {
 
   return (
     <div className={dailyPageContainerClass}>
-      <DailyPageHeader
+      <PageHeader eyebrow="Daily Requisition"
         title="Party / Vendor Analysis"
         description="Group requisitions by party name — count, gross, net, and paid entries."
         backHref="/daily-requisition/reports"

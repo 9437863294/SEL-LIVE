@@ -12,7 +12,8 @@ import { useAuthorization } from '@/hooks/useAuthorization';
 import { CLAIM_STATUSES, TT_COLLECTIONS, roundMoney, type TravelClaim } from '@/lib/tour-travel';
 import { TT_PERMISSION_MODULE } from './module-layout-shell';
 import { useTravelCollection } from './use-travel-config';
-import { Money, TravelDataList, TravelEmptyState, TravelFilterCard, TravelLoader, TravelPageHeader, TravelStatusBadge } from './travel-ui';
+import { Money, TravelDataList, TravelEmptyState, TravelFilterCard, TravelLoader, TravelStatusBadge } from './travel-ui';
+import { PageHeader } from '@/components/shared/page-header';
 
 /**
  * Expense claim register.
@@ -67,7 +68,7 @@ export default function ClaimsRegister() {
 
   return (
     <div className="space-y-3">
-      <TravelPageHeader title="Expense Claims" description="Travel expense claims, verification and settlement." />
+      <PageHeader title="Expense Claims" description="Travel expense claims, verification and settlement." />
 
       <TravelFilterCard summary={`${filtered.length} claim(s) · claimed ${totals.claimed.toLocaleString('en-IN')} · approved ${totals.approved.toLocaleString('en-IN')}`}>
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">

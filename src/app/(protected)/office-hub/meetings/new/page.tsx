@@ -42,13 +42,13 @@ import {
   OfficeHubAccessDenied,
   OfficeHubCallout,
   OfficeHubLoader,
-  OfficeHubPageHeader,
 } from '@/components/office-hub/ui';
 import {
   MeetingForm,
   emptyMeetingDraft,
   type MeetingDraft,
 } from '@/components/office-hub/meeting-form';
+import { PageHeader } from '@/components/shared/page-header';
 
 export default function NewMeetingPage() {
   const searchParams = useSearchParams();
@@ -235,7 +235,7 @@ export default function NewMeetingPage() {
 
   return (
     <div className="space-y-3">
-      <OfficeHubPageHeader
+      <PageHeader
         title={source ? 'Schedule a follow-up meeting' : template ? `New meeting from "${template.name}"` : 'Schedule a meeting'}
         description={
           source

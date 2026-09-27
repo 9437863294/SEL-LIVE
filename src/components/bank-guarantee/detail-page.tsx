@@ -186,7 +186,6 @@ export default function BGDetailPage({ id }: { id: string }) {
   return (
     <div className="space-y-4">
       <PageHeader
-        className="mb-0 sm:mb-0"
         backHref="/bank-guarantee/register"
         backLabel="Back to BG register"
         title={title}

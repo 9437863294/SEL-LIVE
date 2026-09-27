@@ -54,12 +54,11 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { SectionHeader } from "@/components/shared/page-header";
+import { PageHeader, SectionHeader } from "@/components/shared/page-header";
 import { useGlobalScopes } from "./use-global-scopes";
 import {
   ReportAccessDenied,
   ReportErrorBanner,
-  ReportHeader,
   ReportLoading,
   ReportMetricTile,
 } from "./report-ui";
@@ -381,16 +380,16 @@ function ReportRouteView({ kind }: { kind: ReportKind }) {
   if (!can("View", "Recurring Payments.Reports")) return <ReportAccessDenied />;
   return (
     <div className="space-y-5">
-      <ReportHeader
+      <PageHeader
         title={titles[kind][0]}
         description={titles[kind][1]}
         // Each report kind leads with the figure it is actually about: what's owed for the
         // forward-looking views, what's been billed for the expense summary.
-        hero={{
+        meta={[{
           label: kind === "expenses" ? "Confirmed bill total" : "Expected total",
           value: currency(kind === "expenses" ? confirmed : expected),
           hint: `${rows.length.toLocaleString("en-IN")} obligation(s) in scope`,
-        }}
+        }]}
         actions={
           <>
             {can("Export", "Recurring Payments.Reports") && (

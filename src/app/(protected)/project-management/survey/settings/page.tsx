@@ -11,10 +11,10 @@ import {
   SurveyCardGridLoadingState,
   SurveyNavCard,
   SurveyNavCardGrid,
-  SurveyPageHeader,
   SurveyPageShell,
   SurveyProjectNotFound,
 } from "@/components/survey/survey-page-shell";
+import { PageHeader } from "@/components/shared/page-header";
 
 export default function SurveySettingsPage() {
   const searchParams = useSearchParams();
@@ -50,9 +50,9 @@ export default function SurveySettingsPage() {
 
   return (
     <SurveyPageShell>
-      <SurveyPageHeader
+      <PageHeader
         title="Survey Settings"
-        subtitle={
+        description={
           projectName
             ? `Configure how surveyed quantities are reviewed for ${projectName}.`
             : "Configure how surveyed quantities are reviewed on this project."
@@ -60,7 +60,6 @@ export default function SurveySettingsPage() {
         icon={Settings2}
         backHref={context.surveyHref()}
         backLabel="Back to Survey"
-        gradient={SURVEY_SETTINGS_GRADIENT}
       />
 
 

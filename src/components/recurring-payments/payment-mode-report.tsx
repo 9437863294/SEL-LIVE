@@ -43,11 +43,11 @@ import {
 import {
   ReportAccessDenied,
   ReportErrorBanner,
-  ReportHeader,
   ReportLoading,
   ReportMetricTile,
   ReportSummaryTable,
 } from "./report-ui";
+import { PageHeader } from "@/components/shared/page-header";
 
 /**
  * How money actually moved: aggregates every recorded payment transaction (across all payment
@@ -204,10 +204,10 @@ export default function PaymentModeReport() {
 
   return (
     <div className="space-y-5">
-      <ReportHeader
+      <PageHeader
         title="Payment Mode & Bank Reconciliation"
         description="How recorded payments actually moved — by mode, bank account and who recorded them"
-        hero={{ label: "Total recorded", value: currency(total), hint: "net of TDS and deductions shown below" }}
+        meta={[{ label: "Total recorded", value: currency(total), hint: "net of TDS and deductions shown below" }]}
         actions={
           <>
             {can("Export", "Recurring Payments.Reports") && (

@@ -30,13 +30,14 @@ import { cn } from '@/lib/utils';
 import { logUserActivity } from '@/lib/activity-logger';
 import { useState, useEffect, useMemo } from 'react';
 import { Skeleton } from '@/components/ui/skeleton';
-import { ExpenseBadge, ExpensesPageHeader } from '@/components/expenses/page-header';
+import { ExpenseBadge } from '@/components/expenses/page-header';
 import { useExpensesSettings } from '@/components/expenses/use-expenses-settings';
 import {
   defaultExpensesSettings,
   resolveFormField,
   type ExpensesModuleSettings,
 } from '@/lib/expenses-settings';
+import { PageHeader } from '@/components/shared/page-header';
 
 
 /**
@@ -308,11 +309,10 @@ function NewExpenseRequestForm() {
 
   return (
     <div className="w-full space-y-4">
-      <ExpensesPageHeader
+      <PageHeader
         icon={Receipt}
         title="New Expense Request"
         description="Fill in the details below to create a new expense request."
-        accent="emerald"
         backHref="/expenses"
         badge={<ExpenseBadge accent="emerald"><Sparkles className="h-2.5 w-2.5" /> New</ExpenseBadge>}
       />

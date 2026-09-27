@@ -33,7 +33,7 @@ import {
   type ManualPart,
   type ManualSection,
 } from '@/lib/e-approval-manual';
-import { PageHeader } from '@/components/e-approval/page-header';
+import { PageHeader } from '@/components/shared/page-header';
 
 /**
  * The in-app handbook (spec section 33).

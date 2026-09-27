@@ -209,7 +209,6 @@ export default function CivilPage() {
         icon={Building2}
         backHref={`/project-management?project=${encodeURIComponent(mappingId)}`}
         backLabel="Back to Project Management"
-        className="mb-0 sm:mb-0"
       />
 
       {quickLinks.length ? (

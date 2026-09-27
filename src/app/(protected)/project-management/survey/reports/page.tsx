@@ -21,7 +21,6 @@ import {
   SURVEY_GRADIENT,
   SurveyAccessDenied,
   SurveyLoadingState,
-  SurveyPageHeader,
   SurveyPageShell,
   SurveyProjectNotFound,
 } from "@/components/survey/survey-page-shell";
@@ -43,6 +42,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { PageHeader } from "@/components/shared/page-header";
 
 const toNumber = (value: unknown) => {
   const parsed = Number(String(value ?? "").replace(/,/g, "").trim());
@@ -152,13 +152,12 @@ export default function SurveyReportsPage() {
 
   return (
     <SurveyPageShell>
-      <SurveyPageHeader
+      <PageHeader
         title="Survey Reports"
-        subtitle={projectName ? `Coverage and pipeline for ${projectName}.` : "Coverage and pipeline."}
+        description={projectName ? `Coverage and pipeline for ${projectName}.` : "Coverage and pipeline."}
         icon={BarChart3}
         backHref={context.surveyHref()}
         backLabel="Back to Survey"
-        gradient={SURVEY_GRADIENT}
       />
 
 

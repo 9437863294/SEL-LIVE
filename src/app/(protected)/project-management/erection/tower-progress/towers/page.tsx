@@ -61,10 +61,10 @@ import {
 import {
   EmptyState,
   TowerProgressGuard,
-  TowerProgressHeader,
   TowerProgressNav,
   TowerProgressShell,
 } from "@/components/project-management/tower-progress/tower-progress-ui";
+import { PageHeader } from "@/components/shared/page-header";
 
 export default function TowerRegisterPage() {
   return (
@@ -322,9 +322,9 @@ function TowerRegister() {
 
   return (
     <TowerProgressShell>
-      <TowerProgressHeader
+      <PageHeader
         title="Tower register"
-        subtitle={
+        description={
           project
             ? `${towers.length} towers on ${project.projectName}. Click an activity to record progress.`
             : "Click any activity to record progress."

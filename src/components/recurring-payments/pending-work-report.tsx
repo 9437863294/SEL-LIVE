@@ -48,10 +48,10 @@ import { useGlobalScopes } from "./use-global-scopes";
 import {
   ReportAccessDenied,
   ReportErrorBanner,
-  ReportHeader,
   ReportLoading,
   ReportMetricTile,
 } from "./report-ui";
+import { PageHeader } from '@/components/shared/page-header';
 
 /**
  * The one question none of this module's other reports answer: "what's stuck right now, at which
@@ -251,13 +251,13 @@ export default function PendingWorkReport() {
 
   return (
     <div className="space-y-5">
-      <ReportHeader
+      <PageHeader
         title="Pending Work Aging"
-        hero={{
+        meta={[{
           label: "Value awaiting action",
           value: currency(summary.value),
           hint: `${summary.total} obligation(s) in the workflow`,
-        }}
+        }]}
         description="Every obligation currently sitting inside the workflow — which step, how long, and who's holding it"
         actions={
           <>
