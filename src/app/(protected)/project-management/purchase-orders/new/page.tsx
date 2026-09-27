@@ -976,10 +976,7 @@ export default function NewProjectPurchaseOrderPage() {
         if (line.source === "manual") {
           return (
             <Input
-              // `w-screen` gives the input a width to ask for inside a phone card's headline, which
-              // otherwise sizes to its content; `max-w-full` then holds it to the space left
-              // beside the amount.
-              className="max-w-full font-normal max-sm:w-screen"
+              className="font-normal"
               value={line.row.description}
               onChange={(e) => updateManualRow(line.row.rowId, { description: e.target.value })}
               placeholder="Item description"

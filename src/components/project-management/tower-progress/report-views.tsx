@@ -744,7 +744,7 @@ function DailyProgressReport({ ctx }: { ctx: ReportContext }) {
       </div>
 
       {report.completions.length ? (
-        <div className="grid gap-3 sm:grid-cols-2">
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           {report.completions.map((line) => (
             <div key={line.activity} className="break-inside-avoid rounded-lg border p-3">
               <p className="text-sm font-semibold">
@@ -802,7 +802,7 @@ function DailyProgressReport({ ctx }: { ctx: ReportContext }) {
       {report.photos.length && ctx.include.photos ? (
         <div>
           <h4 className="mb-2 text-sm font-semibold">Photographic progress</h4>
-          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
             {report.photos.map((entry) => (
               <div key={`${entry.updateId}-${entry.photo.id}`} className="space-y-1">
                 <TowerReportPhoto
@@ -947,7 +947,7 @@ function PeriodProgressReport({ ctx }: { ctx: ReportContext }) {
           <h4 className="mb-2 text-sm font-semibold">
             Photographic progress ({report.photos.length})
           </h4>
-          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
             {report.photos.map((entry) => (
               <div key={`${entry.updateId}-${entry.photo.id}`} className="space-y-1">
                 <TowerReportPhoto
@@ -1028,7 +1028,7 @@ function MonthlyProgressReport({ ctx }: { ctx: ReportContext }) {
       </div>
 
       <Section title="Project Overview">
-        <div className="grid gap-x-6 gap-y-1 text-sm sm:grid-cols-2">
+        <div className="grid grid-cols-1 gap-x-6 gap-y-1 text-sm sm:grid-cols-2">
           <p>
             <span className="text-muted-foreground">Project:</span> {ctx.projectName || "—"}
           </p>
@@ -1172,7 +1172,7 @@ function MonthlyProgressReport({ ctx }: { ctx: ReportContext }) {
 
       <Section title="Photographic Progress">
         {ctx.include.photos && report.photos.length ? (
-          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
             {report.photos.map((entry) => (
               <div key={`${entry.updateId}-${entry.photo.id}`} className="space-y-1">
                 <TowerReportPhoto
@@ -1266,7 +1266,7 @@ function PhotoPagesReport({ ctx }: { ctx: ReportContext }) {
               Overall progress {page.overallPct}%
             </span>
           </div>
-          <div className="grid gap-x-6 gap-y-1 text-sm sm:grid-cols-2 lg:grid-cols-4">
+          <div className="grid grid-cols-1 gap-x-6 gap-y-1 text-sm sm:grid-cols-2 lg:grid-cols-4">
             <p>
               <span className="text-muted-foreground">Location:</span> {dash(page.tower.location)}
             </p>
@@ -1323,7 +1323,7 @@ function PhotoPagesReport({ ctx }: { ctx: ReportContext }) {
           {ctx.include.photos ? (
             <div>
               <h4 className="mb-2 text-sm font-semibold">Site photographs</h4>
-              <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
                 {page.activities.map((entry) =>
                   entry.photo ? (
                     <TowerReportPhoto
@@ -1374,7 +1374,7 @@ function BeforeAfterReport({ ctx }: { ctx: ReportContext }) {
             TOWER {row.towerNo}
             {row.location ? <span className="ml-2 text-sm font-normal text-muted-foreground">{row.location}</span> : null}
           </h3>
-          <div className="grid gap-4 sm:grid-cols-2">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <div className="space-y-1">
               <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
                 Before — survey
@@ -1461,7 +1461,7 @@ function TimelineReport({ ctx }: { ctx: ReportContext }) {
                     <p className="text-xs text-red-700">{entry.reason}</p>
                   ) : null}
                   {entry.photos.length && ctx.include.photos ? (
-                    <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                    <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
                       {entry.photos.map((photo) => (
                         <TowerReportPhoto
                           key={photo.id}

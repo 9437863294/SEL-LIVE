@@ -725,7 +725,7 @@ export default function ProjectMappingsPage() {
 
             {/* Each step panel is the part of the phone sheet that scrolls (`hr-dialog-body`); only
                 one is ever shown, so the class sits on all three rather than on a wrapper. */}
-            <div className={cn("hr-dialog-body grid gap-4 py-4", wizardStep !== 0 && "hidden")}>
+            <div className={cn("hr-dialog-body grid grid-cols-1 gap-4 py-4", wizardStep !== 0 && "hidden")}>
               <ControlledField setting={field("projectName")}>
                 <Input
                   id="project-name"
@@ -775,7 +775,7 @@ export default function ProjectMappingsPage() {
                 />
               </ControlledField>
 
-              <div className="grid gap-4 sm:grid-cols-2">
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                 <ControlledField setting={field("startDate")}>
                   <Input
                     id="project-start-date"
@@ -806,7 +806,7 @@ export default function ProjectMappingsPage() {
                 </ControlledField>
               </div>
 
-              <div className="grid gap-4 sm:grid-cols-2">
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                 <div className="space-y-2">
                   <Label htmlFor="project-code">Project Code</Label>
                   <Input
@@ -840,14 +840,14 @@ export default function ProjectMappingsPage() {
             </div>
 
             {/* Step 2 — scope and team */}
-            <div className={cn("hr-dialog-body grid gap-5 py-4", wizardStep !== 1 && "hidden")}>
+            <div className={cn("hr-dialog-body grid grid-cols-1 gap-5 py-4", wizardStep !== 1 && "hidden")}>
               <div className="space-y-2">
                 <Label>Scope</Label>
                 <p className="text-xs text-muted-foreground">
                   Which lanes this project actually runs. Determines which workflow a BOQ line
                   follows and which sections are worth showing.
                 </p>
-                <div className="grid gap-2 sm:grid-cols-2">
+                <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
                   {PROJECT_SCOPES.map((scope) => (
                     <label
                       key={scope}
@@ -863,7 +863,7 @@ export default function ProjectMappingsPage() {
                 </div>
               </div>
 
-              <div className="grid gap-4 sm:grid-cols-2">
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                 <div className="space-y-2">
                   <Label htmlFor="project-manager">Project Manager</Label>
                   <Select
@@ -993,7 +993,7 @@ export default function ProjectMappingsPage() {
               <div className="rounded-lg border p-3 text-xs">
                 <p className="mb-2 text-sm font-medium">Summary</p>
                 {/* Label beside value on a phone too, rather than each stacked over the other. */}
-                <div className="grid gap-1.5 max-sm:grid-cols-[auto_1fr] max-sm:gap-x-3 sm:grid-cols-2">
+                <div className="grid grid-cols-1 gap-1.5 max-sm:grid-cols-[auto_1fr] max-sm:gap-x-3 sm:grid-cols-2">
                   <span className="text-muted-foreground">Name</span>
                   <span>{form.projectName || "—"}</span>
                   <span className="text-muted-foreground">Code</span>

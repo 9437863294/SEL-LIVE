@@ -528,7 +528,7 @@ function TowerDetail({ defaultTab }: { defaultTab: TowerDetailTab }) {
                         </div>
                         {/* One plate per row on a phone: each carries its evidence caption over the
                             image, and at half a phone's width that caption covers the photograph. */}
-                        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+                        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
                           {group.map((entry) => {
                             const update = updates.find((item) => item.id === entry.updateId);
                             return (
@@ -643,7 +643,7 @@ function TowerDetail({ defaultTab }: { defaultTab: TowerDetailTab }) {
                         <p className="mt-1 break-words text-xs">{entry.remarks}</p>
                       ) : null}
                       {entry.photos.length ? (
-                        <div className="mt-2 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                        <div className="mt-2 grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
                           {entry.photos.map((photo) => (
                             <TowerReportPhoto
                               key={photo.id}

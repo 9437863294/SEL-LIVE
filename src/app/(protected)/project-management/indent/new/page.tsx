@@ -404,9 +404,7 @@ export default function NewIndentPage() {
       className: "min-w-[220px]",
       mobile: "title",
       cell: (row) => (
-        // On a phone the card's title slot sizes to its content; `w-screen max-w-full` lets the
-        // picker claim the card's full width instead of shrinking to its placeholder text.
-        <div className="max-sm:w-screen max-sm:max-w-full">
+        <div className="min-w-0">
           <BoqItemSelector
             boqItems={boqItems}
             selectedSlNo={row.boqSlNo || null}

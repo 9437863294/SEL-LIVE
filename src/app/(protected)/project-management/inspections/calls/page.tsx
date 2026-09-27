@@ -875,7 +875,7 @@ export default function InspectionCallsPage() {
               `display: contents`, leaving the panel pinned and the line list scrolling as before. */}
           <div className={cn(PM_DIALOG.body, "space-y-4 sm:contents sm:space-y-0")}>
           {/* Who inspected and when — one panel, visually separate from the per-line work below. */}
-          <div className="grid shrink-0 gap-3 rounded-lg border border-border/60 bg-muted/30 p-3 sm:grid-cols-[minmax(0,14rem)_minmax(0,1fr)]">
+          <div className="grid grid-cols-1 shrink-0 gap-3 rounded-lg border border-border/60 bg-muted/30 p-3 sm:grid-cols-[minmax(0,14rem)_minmax(0,1fr)]">
             <div className="space-y-1.5">
               <Label htmlFor="result-date" className="text-xs">
                 Inspection date
@@ -1009,7 +1009,7 @@ export default function InspectionCallsPage() {
                     </div>
 
                     {/* Secondary to the quantity: an observation only matters once something passed. */}
-                    <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_10rem]">
+                    <div className="grid grid-cols-1 gap-3 sm:grid-cols-[minmax(0,1fr)_10rem]">
                       <div className="space-y-1">
                         <Label htmlFor={`punch-${item.id}`} className="text-xs">
                           Punch item <span className="text-muted-foreground">(optional)</span>

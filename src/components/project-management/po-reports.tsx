@@ -254,7 +254,7 @@ export default function PoReports({
         <StatCard label="Overdue" value={overdueOrders.length} icon={CalendarClock} tone="bg-orange-100 text-orange-700" />
       </div>
 
-      <div className="grid gap-4 lg:grid-cols-2">
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
         <Card>
           <CardHeader className="pb-2">
             <CardTitle className="text-base">PO value by status</CardTitle>
@@ -354,7 +354,7 @@ export default function PoReports({
         </CardContent>
       </Card>
 
-      <div className="grid gap-4 lg:grid-cols-2">
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
         <Card className={topSavings.length ? LIST_CARD_CLASS : undefined}>
           <CardHeader className={topSavings.length ? LIST_CARD_HEADER_CLASS : "pb-2"}>
             <CardTitle className="text-base text-emerald-700">Top savings</CardTitle>

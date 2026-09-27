@@ -204,8 +204,14 @@ export function DataList<T extends { id: string }>({
             .filter(({ node }) => node !== null && node !== undefined && node !== false && node !== '');
           const body = (
             <>
+              {/*
+                A card is never wider than the phone. Cells are shared with the desktop table, where
+                `whitespace-nowrap`/`truncate` and a one-line row of buttons are right — on a 360px card they
+                spilled past the edge. So titles wrap (breaking long codes if they must), the aside is capped,
+                and action rows wrap onto a second line.
+              */}
               <div className="mb-2 flex items-start justify-between gap-2">
-                <div className="min-w-0 flex-1 space-y-0.5">
+                <div className="min-w-0 flex-1 space-y-0.5 [overflow-wrap:anywhere] [&_.truncate]:whitespace-normal [&_.whitespace-nowrap]:whitespace-normal">
                   {titles.map((column, index) => (
                     <div key={column.header} className={index === 0 ? 'text-sm font-semibold text-slate-800' : 'text-xs text-muted-foreground'}>
                       {column.cell(row)}
@@ -213,7 +219,7 @@ export function DataList<T extends { id: string }>({
                   ))}
                 </div>
                 {asides.length > 0 && (
-                  <div className="flex shrink-0 flex-col items-end gap-1">
+                  <div className="flex min-w-0 max-w-[55%] shrink-0 flex-col items-end gap-1 text-right [overflow-wrap:anywhere]">
                     {asides.map(column => (
                       <div key={column.header}>{column.cell(row)}</div>
                     ))}
@@ -238,9 +244,9 @@ export function DataList<T extends { id: string }>({
               {footerCells.length > 0 && (
                 // Radix checkboxes render as <button role="checkbox">; stretching one to a 44px
                 // flex column would turn a tick box into a slab.
-                <div className="mt-2.5 flex flex-wrap gap-2 border-t border-slate-100 pt-2.5 [&_button:not([role=checkbox])]:min-h-11 [&_button:not([role=checkbox])]:flex-1">
+                <div className="mt-2.5 flex flex-wrap gap-2 border-t border-slate-100 pt-2.5 [&_.flex]:flex-wrap [&_button:not([role=checkbox])]:min-h-11 [&_button:not([role=checkbox])]:flex-1">
                   {footerCells.map(({ column, node }) => (
-                    <div key={column.header} className="flex flex-1 gap-2">{node}</div>
+                    <div key={column.header} className="flex min-w-0 flex-1 flex-wrap gap-2">{node}</div>
                   ))}
                 </div>
               )}
@@ -256,7 +262,7 @@ export function DataList<T extends { id: string }>({
           );
 
           const shell = cn(
-            'rounded-xl border border-white/70 bg-white/85 p-3.5 shadow-sm transition-transform active:scale-[0.99]',
+            'min-w-0 rounded-xl border border-white/70 bg-white/85 p-3.5 shadow-sm transition-transform active:scale-[0.99]',
             rowClassName?.(row),
           );
 

@@ -1795,9 +1795,9 @@ export default function MdlPage() {
 
           {/* `content-start`: on a phone the body fills the sheet, and a grid would otherwise stretch
               its rows apart to fill it. */}
-          <div className={cn(PM_DIALOG.body, "grid content-start gap-4 space-y-0 py-2")}>
+          <div className={cn(PM_DIALOG.body, "grid grid-cols-1 content-start gap-4 space-y-0 py-2")}>
             {editTarget?.sub && (
-              <div className="grid gap-4 rounded-lg border bg-muted/30 p-3 sm:grid-cols-2">
+              <div className="grid grid-cols-1 gap-4 rounded-lg border bg-muted/30 p-3 sm:grid-cols-2">
                 <div className="space-y-2">
                   <Label htmlFor="sub-title">
                     Sub-drawing Title <span className="text-destructive">*</span>
@@ -1832,7 +1832,7 @@ export default function MdlPage() {
               </div>
             )}
 
-            <div className="grid gap-4 sm:grid-cols-2">
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
               <div className="space-y-2">
                 <Label htmlFor="doc-no">Doc No.</Label>
                 <Input id="doc-no" value={form.docNo} onChange={(e) => setForm((c) => ({ ...c, docNo: e.target.value }))} />
@@ -1986,7 +1986,7 @@ export default function MdlPage() {
                     <div className="mb-2 flex items-center gap-2">
                       <span className="rounded-full bg-primary/10 px-2 py-0.5 text-xs font-semibold text-primary">{revision.round}</span>
                     </div>
-                    <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                    <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
                       <div className="space-y-1.5">
                         <Label className="text-xs">Submission Date</Label>
                         <Input
@@ -2072,7 +2072,7 @@ export default function MdlPage() {
 
             <div className="h-px bg-border" />
 
-            <div className="grid gap-4 sm:grid-cols-2">
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
               <div className="space-y-2">
                 <Label htmlFor="approve-date">Approve Date</Label>
                 <Input id="approve-date" type="date" value={form.approveDate} onChange={(e) => setForm((c) => ({ ...c, approveDate: e.target.value }))} />

@@ -444,7 +444,7 @@ export default function ProjectManagementBoqSettingsPage() {
             The column key must exactly match the Excel header or stored BOQ field.
           </CardDescription>
         </CardHeader>
-        <CardContent className="grid gap-4 sm:grid-cols-2 lg:grid-cols-[1fr_1fr_220px_auto] lg:items-end">
+        <CardContent className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-[1fr_1fr_220px_auto] lg:items-end">
           <div className="space-y-2">
             <Label htmlFor="column-key">Column key</Label>
             <Input

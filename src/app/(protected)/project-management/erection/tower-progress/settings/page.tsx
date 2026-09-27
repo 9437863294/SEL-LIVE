@@ -188,7 +188,7 @@ function SettingsScreen() {
             </label>
           </RadioGroup>
 
-          <div className="grid gap-3 sm:grid-cols-2">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <SettingSwitch
               id="require-gps"
               label="Require a GPS fix"

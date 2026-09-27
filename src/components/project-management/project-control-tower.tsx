@@ -430,7 +430,7 @@ export default function ProjectControlTower({ mapping }: ProjectControlTowerProp
         </Card>
       )}
 
-      <div className="grid gap-4 lg:grid-cols-2">
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
         <Card>
           <CardHeader className="pb-3">
             <CardTitle className="flex items-center gap-2 text-base">
@@ -530,7 +530,7 @@ export default function ProjectControlTower({ mapping }: ProjectControlTowerProp
         </CardHeader>
         <CardContent>
           {summary.attention.length ? (
-            <div className="grid gap-2 lg:grid-cols-2">
+            <div className="grid grid-cols-1 gap-2 lg:grid-cols-2">
               {summary.attention.slice(0, 8).map((item) => (
                 <Link
                   key={item.id}

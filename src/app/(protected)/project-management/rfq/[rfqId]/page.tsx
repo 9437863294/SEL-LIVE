@@ -693,7 +693,7 @@ export default function RfqDetailPage() {
           <CardTitle className="text-xl sm:text-2xl">Vendor Quotes</CardTitle>
           <CardDescription>{receivedQuotes.length} of {rfq.vendorIds.length} vendor(s) have submitted a quote.</CardDescription>
         </CardHeader>
-        <CardContent className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+        <CardContent className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
           {quotes.map((quote) => (
             <div key={quote.id} className="min-w-0 rounded-lg border p-3">
               <div className="flex items-start justify-between gap-2 sm:items-center">
@@ -886,7 +886,7 @@ export default function RfqDetailPage() {
             <DialogDescription>Record the rates and terms this vendor quoted for the RFQ items.</DialogDescription>
           </DialogHeader>
           <div className={cn(PM_DIALOG.body, "space-y-4 py-2")}>
-            <div className="grid gap-4 sm:grid-cols-2">
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
               <div className="space-y-2">
                 <Label htmlFor="submitted-date">Quote Submitted Date</Label>
                 <Input id="submitted-date" type="date" value={quoteForm.submittedDate} onChange={(e) => setQuoteForm((c) => ({ ...c, submittedDate: e.target.value }))} />
@@ -916,7 +916,7 @@ export default function RfqDetailPage() {
                 Quoted as one lump sum for this RFQ, not per line. GST is excluded from the comparable landed cost
                 (input credit is available) but shown separately as actual cash outflow.
               </p>
-              <div className="grid gap-3 sm:grid-cols-3">
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
                 <div className="space-y-1">
                   <Label htmlFor="discount-amount">Discount (₹)</Label>
                   <Input id="discount-amount" type="number" min="0" step="1" value={quoteForm.discountAmount} onChange={(e) => setQuoteForm((c) => ({ ...c, discountAmount: e.target.value }))} />

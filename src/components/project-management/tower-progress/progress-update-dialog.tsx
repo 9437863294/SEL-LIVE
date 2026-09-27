@@ -369,7 +369,7 @@ export function ProgressUpdateDialog({
         </DialogHeader>
 
         <div className={PM_DIALOG.body}>
-          <div className="grid gap-4 sm:grid-cols-2">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <div className="space-y-2">
               <Label>Activity</Label>
               <Select
@@ -552,7 +552,7 @@ export function ProgressUpdateDialog({
             ) : null}
 
             {photos.length ? (
-              <div className="grid gap-2 sm:grid-cols-2">
+              <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
                 {photos.map((photo) => (
                   <div key={photo.id} className="flex gap-2 rounded-md border p-2">
                     {/* eslint-disable-next-line @next/next/no-img-element */}

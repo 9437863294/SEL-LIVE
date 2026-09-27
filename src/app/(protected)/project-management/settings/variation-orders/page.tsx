@@ -466,7 +466,7 @@ export default function VariationOrdersPage() {
                 billed without an approved variation covering the excess.
               </DialogDescription>
             </DialogHeader>
-            <div className={cn(PM_DIALOG.body, "grid gap-4 space-y-0 py-4")}>
+            <div className={cn(PM_DIALOG.body, "grid grid-cols-1 gap-4 space-y-0 py-4")}>
               <div className="space-y-2">
                 <Label>Project</Label>
                 <Select value={selectedMappingId} onValueChange={handleMappingChange}>

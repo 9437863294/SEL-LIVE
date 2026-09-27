@@ -356,7 +356,7 @@ export function WorkflowConfigurationEditor({
                   </div>
                 </AccordionTrigger>
                 <AccordionContent className="space-y-4 pb-4">
-                  <div className="grid gap-4 sm:grid-cols-2">
+                  <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                     <div className="space-y-2">
                       <Label htmlFor={`name-${step.id}`}>Stage name</Label>
                       <Input
@@ -391,7 +391,7 @@ export function WorkflowConfigurationEditor({
                     />
                   </div>
 
-                  <div className="grid gap-4 sm:grid-cols-2">
+                  <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                     <div className="space-y-2">
                       <Label>Assignment</Label>
                       <Select
@@ -442,7 +442,7 @@ export function WorkflowConfigurationEditor({
                   </div>
 
                   {step.assignmentType === "User-based" ? (
-                    <div className="grid gap-4 sm:grid-cols-2">
+                    <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                       <div className="space-y-2">
                         <Label>Primary reviewer</Label>
                         <Select

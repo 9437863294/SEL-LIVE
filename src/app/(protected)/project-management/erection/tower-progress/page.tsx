@@ -175,7 +175,7 @@ function Dashboard() {
                 line has {summary.totalSpans} spans.
               </CardDescription>
             </CardHeader>
-            <CardContent className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
+            <CardContent className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-4">
               {/* Each card opens that trade's working screen — the crew running foundations should
                   reach their own list from here rather than filtering the whole register. */}
               {summary.activities.map((activity) => (

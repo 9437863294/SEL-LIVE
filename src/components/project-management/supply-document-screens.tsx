@@ -1546,7 +1546,7 @@ export function SupplyDocumentRegister({ stage }: { stage: SupplyLedgerStage }) 
             )}
           >
             {/* Who decided and when — one panel, visually separate from the per-line work below. */}
-            <div className="grid shrink-0 gap-3 rounded-lg border border-border/60 bg-muted/30 p-3 sm:grid-cols-[minmax(0,14rem)_minmax(0,1fr)]">
+            <div className="grid grid-cols-1 shrink-0 gap-3 rounded-lg border border-border/60 bg-muted/30 p-3 sm:grid-cols-[minmax(0,14rem)_minmax(0,1fr)]">
               <div className="space-y-1.5">
                 <Label htmlFor="decision-date" className="text-xs">
                   Date
@@ -1715,7 +1715,7 @@ export function SupplyDocumentRegister({ stage }: { stage: SupplyLedgerStage }) 
                       {/* Secondary to the quantity: an observation only matters once something passed. */}
                       <div
                         className={cn(
-                          "grid gap-3",
+                          "grid grid-cols-1 gap-3",
                           stage !== "grn" && "sm:grid-cols-[minmax(0,1fr)_10rem]",
                         )}
                       >

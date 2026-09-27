@@ -141,7 +141,7 @@ export function JmcCardGridLoadingState({ tiles = 6 }: { tiles?: number }) {
   return (
     <main className={JMC_MAIN_CLASS}>
       <Skeleton className="h-9 w-64" />
-      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5">
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5">
         {Array.from({ length: tiles }).map((_, index) => (
           <Skeleton key={index} className="h-16 rounded-xl" />
         ))}
@@ -260,7 +260,7 @@ export function JmcNavCard({
 /** The grid the nav cards sit in — same breakpoints as the Project Management landing page. */
 export function JmcNavCardGrid({ children }: { children: ReactNode }) {
   return (
-    <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5">
+    <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5">
       {children}
     </div>
   );

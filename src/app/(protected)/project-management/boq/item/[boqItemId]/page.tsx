@@ -540,7 +540,7 @@ export default function BoqItem360Page() {
   if (isAuthLoading || (isLoading && canView)) {
     return (
       <main className="min-h-[calc(100dvh-4rem)] space-y-5 p-4 sm:p-6">
-        <Skeleton className="h-9 w-80" />
+        <Skeleton className="h-9 w-80 max-w-full" />
         <Skeleton className="h-32 w-full" />
         <Skeleton className="h-96 w-full" />
       </main>

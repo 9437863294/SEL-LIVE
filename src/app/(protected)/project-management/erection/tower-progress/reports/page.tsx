@@ -98,7 +98,7 @@ function ReportsHub() {
               <h2 className="text-lg font-semibold">{group} reports</h2>
               <p className="text-sm text-muted-foreground">{groupBlurb[group]}</p>
             </div>
-            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
               {reports.map((report) => {
                 const count = exceptionCounts[report.id];
                 return (

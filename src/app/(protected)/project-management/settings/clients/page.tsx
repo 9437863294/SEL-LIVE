@@ -425,7 +425,7 @@ export default function ClientMasterPage() {
               </DialogDescription>
             </DialogHeader>
 
-            <div className={cn(PM_DIALOG.bodyScroll, "grid gap-4 space-y-0 py-4")}>
+            <div className={cn(PM_DIALOG.bodyScroll, "grid grid-cols-1 gap-4 space-y-0 py-4")}>
               <ControlledField setting={fieldControl("name")}>
                 <Input
                   value={form.name}
@@ -434,7 +434,7 @@ export default function ClientMasterPage() {
                 />
               </ControlledField>
 
-              <div className="grid gap-4 sm:grid-cols-2">
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                 <ControlledField setting={fieldControl("gstin")}>
                   <Input value={form.gstin} onChange={(event) => setForm((current) => ({ ...current, gstin: event.target.value }))} />
                 </ControlledField>
@@ -447,7 +447,7 @@ export default function ClientMasterPage() {
                 <Input value={form.address} onChange={(event) => setForm((current) => ({ ...current, address: event.target.value }))} />
               </ControlledField>
 
-              <div className="grid gap-4 sm:grid-cols-3">
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
                 <ControlledField setting={fieldControl("paymentTermsDays")}>
                   <Input
                     type="number"
@@ -483,7 +483,7 @@ export default function ClientMasterPage() {
                   these before issue.
                 </p>
               </div>
-              <div className="grid gap-4 sm:grid-cols-3">
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
                 <ControlledField setting={fieldControl("warrantyMonths")}>
                   <Input
                     type="number"
@@ -512,7 +512,7 @@ export default function ClientMasterPage() {
                   />
                 </ControlledField>
               </div>
-              <div className="grid gap-4 sm:grid-cols-2">
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                 <ControlledField setting={fieldControl("performanceSecurityPct")}>
                   <Input
                     type="number"

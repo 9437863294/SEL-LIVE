@@ -434,7 +434,7 @@ export default function ProjectManagementPage() {
           Configuration group left four — most of the page was gaps. Delivery Scopes, the four
           screens people actually work in, now leads a wide left column; the project-independent
           and admin groups sit in a narrower right column and fill the space beside it. */}
-      <div className="grid gap-5 lg:grid-cols-3">
+      <div className="grid grid-cols-1 gap-5 lg:grid-cols-3">
         {linkGroups.map((group) => (
           <section
             key={group.key}
@@ -455,7 +455,7 @@ export default function ProjectManagementPage() {
 
             <div
               className={cn(
-                "grid gap-3",
+                "grid grid-cols-1 gap-3",
                 // Column counts are chosen per group so its tiles fill the row they are given
                 // instead of trailing off into empty cells.
                 group.key === "scopes"

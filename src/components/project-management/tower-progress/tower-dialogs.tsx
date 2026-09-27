@@ -186,7 +186,7 @@ export function TowerFormDialog({
         </DialogHeader>
 
         <div className={PM_DIALOG.body}>
-          <div className="grid gap-4 sm:grid-cols-2">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <div className="space-y-2">
               <Label htmlFor="tower-no">Tower number *</Label>
               <Input

@@ -515,7 +515,7 @@ export default function NewManufacturingClearancePage() {
         )}
 
         <Card className="mb-4 border-border/60">
-          <CardContent className="grid gap-4 py-4 md:grid-cols-[minmax(0,2fr)_minmax(0,1fr)_minmax(0,2fr)]">
+          <CardContent className="grid grid-cols-1 gap-4 py-4 md:grid-cols-[minmax(0,2fr)_minmax(0,1fr)_minmax(0,2fr)]">
             <div className="space-y-1.5">
               <Label htmlFor="mc-vendor">Vendor</Label>
               <Select

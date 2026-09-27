@@ -324,7 +324,7 @@ export default function SupplyPage() {
         /* Two columns rather than one flat grid, with each group's span and inner column count
            chosen so its tiles fill the row they are given: Plan(4)+Analyse(1), then
            Procure(3)+Manufacture(2), then Dispatch across the full width. */
-        <div className="grid gap-5 lg:grid-cols-3">
+        <div className="grid grid-cols-1 gap-5 lg:grid-cols-3">
           {linkGroups.map((group) => (
             <section
               key={group.key}
@@ -347,7 +347,7 @@ export default function SupplyPage() {
 
               <div
                 className={cn(
-                  "grid gap-3",
+                  "grid grid-cols-1 gap-3",
                   group.key === "deliver"
                     ? "sm:grid-cols-2 lg:grid-cols-4"
                     : group.key === "plan"

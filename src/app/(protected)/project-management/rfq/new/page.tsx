@@ -486,7 +486,7 @@ export default function NewRfqPage() {
         </CardHeader>
         <CardContent>
           {vendors.length ? (
-            <div className="grid gap-2 sm:grid-cols-2 md:grid-cols-3">
+            <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 md:grid-cols-3">
               {vendors.map((vendor) => (
                 <label key={vendor.id} className="flex items-center gap-2.5 rounded-lg border p-2.5 hover:bg-muted/30 cursor-pointer">
                   <Checkbox

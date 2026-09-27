@@ -500,8 +500,8 @@ export default function ProjectDocumentsPage() {
             </DialogHeader>
             {/* `content-start`: in the full-height phone sheet a grid would otherwise stretch its
                 rows apart to fill the screen. */}
-            <div className={cn(PM_DIALOG.body, "grid content-start gap-4 space-y-0 py-4")}>
-              <div className="grid gap-4 sm:grid-cols-2">
+            <div className={cn(PM_DIALOG.body, "grid grid-cols-1 content-start gap-4 space-y-0 py-4")}>
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                 <div className="space-y-2">
                   <Label>Category</Label>
                   <Select value={category} onValueChange={(value: DocumentCategory) => setCategory(value)}>

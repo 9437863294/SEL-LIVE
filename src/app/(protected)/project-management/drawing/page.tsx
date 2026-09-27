@@ -1064,7 +1064,7 @@ export default function DrawingPage() {
 
           {/* `content-start`: on a phone the body fills the sheet, and a grid would otherwise stretch
               its rows apart to fill it. */}
-          <div className={cn(PM_DIALOG.body, "grid content-start gap-4 space-y-0 py-2")}>
+          <div className={cn(PM_DIALOG.body, "grid grid-cols-1 content-start gap-4 space-y-0 py-2")}>
             {collecting?.sub.recollectionRequested && (
               <div className="rounded-md border border-rose-200 bg-rose-50 p-2 text-xs text-rose-900">
                 <p className="font-medium">
@@ -1085,7 +1085,7 @@ export default function DrawingPage() {
                 </p>
               </div>
             )}
-            <div className="grid gap-4 sm:grid-cols-2">
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
               <div className="space-y-2">
                 <Label htmlFor="received-on">
                   Received On <span className="text-destructive">*</span>
