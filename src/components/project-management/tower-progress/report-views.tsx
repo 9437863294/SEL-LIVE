@@ -154,6 +154,28 @@ const visibleColumns = (columns: GenericColumn[], include: ReportInclude): Gener
     return section ? include[section] : true;
   });
 
+/*
+ * Phones. A report stays a table on a phone — it is the same document that prints — so a wide one
+ * scrolls sideways inside its own container, with the tower column pinned and the cells tightened.
+ * Everything is `max-sm:`: the print sheet lays out at A4 width, never below `sm`, and passes `print`
+ * besides, so none of it reaches paper.
+ */
+const PHONE_TABLE = "max-sm:[--table-cell-px:0.75rem]";
+const PHONE_STICKY_CELL =
+  "max-sm:sticky max-sm:left-0 max-sm:z-10 max-sm:bg-card max-sm:shadow-[inset_-1px_0_0_hsl(var(--border))]";
+
+/** Enough width that a many-column report does not wrap every cell to one word per line. */
+const phoneMinWidth = (columnCount: number) =>
+  columnCount >= 7 ? "max-sm:min-w-[720px]" : columnCount >= 5 ? "max-sm:min-w-[560px]" : undefined;
+
+function SwipeHint({ className }: { className?: string }) {
+  return (
+    <p className={cn("text-xs text-muted-foreground sm:hidden print:hidden", className)}>
+      Swipe sideways to see all columns
+    </p>
+  );
+}
+
 function GenericReportTable({
   table,
   print,
@@ -167,20 +189,24 @@ function GenericReportTable({
     return <p className="p-6 text-center text-sm text-muted-foreground">{table.emptyMessage}</p>;
   }
   const columns = visibleColumns(table.columns, include);
+  // Four columns fit a phone; beyond that the table scrolls and the first column pins.
+  const wide = !print && columns.length >= 5;
   return (
     <div className={cn(!print && "overflow-x-auto")}>
       {table.headline && include.summary ? (
         <p className="px-4 pt-3 text-sm font-semibold">{table.headline}</p>
       ) : null}
-      <Table className={print ? "text-[8pt]" : undefined}>
+      {wide ? <SwipeHint className="px-4 pt-2" /> : null}
+      <Table className={print ? "text-[8pt]" : cn(PHONE_TABLE, phoneMinWidth(columns.length))}>
         <TableHeader>
           <TableRow>
-            {columns.map((column) => (
+            {columns.map((column, index) => (
               <TableHead
                 key={column.key}
                 className={cn(
                   column.align === "right" && "text-right",
                   column.align === "center" && "text-center",
+                  index === 0 && wide && PHONE_STICKY_CELL,
                 )}
               >
                 {column.label}
@@ -191,12 +217,13 @@ function GenericReportTable({
         <TableBody>
           {table.rows.map((row) => (
             <TableRow key={row.id} className={row.tone ? toneClass[row.tone] : undefined}>
-              {columns.map((column) => (
+              {columns.map((column, index) => (
                 <TableCell
                   key={column.key}
                   className={cn(
                     column.align === "right" && "text-right",
                     column.align === "center" && "text-center",
+                    index === 0 && wide && PHONE_STICKY_CELL,
                   )}
                 >
                   {row.cells[column.key] ?? "—"}
@@ -638,10 +665,15 @@ function TowerStatusReport({ ctx }: { ctx: ReportContext }) {
   const rows = buildTowerStatusRows(ctx.towers, ctx.settings);
   return (
     <div className={cn(!ctx.print && "overflow-x-auto")}>
-      <Table className={ctx.print ? "text-[8pt]" : undefined}>
+      {!ctx.print && rows.length ? <SwipeHint className="px-4 pt-3" /> : null}
+      <Table
+        className={
+          ctx.print ? "text-[8pt]" : cn(PHONE_TABLE, phoneMinWidth(4 + TOWER_ACTIVITY_LIST.length))
+        }
+      >
         <TableHeader>
           <TableRow>
-            <TableHead>Tower</TableHead>
+            <TableHead className={cn(!ctx.print && PHONE_STICKY_CELL)}>Tower</TableHead>
             <TableHead>Location</TableHead>
             <TableHead>Type</TableHead>
             {TOWER_ACTIVITY_LIST.map((definition) => (
@@ -655,7 +687,9 @@ function TowerStatusReport({ ctx }: { ctx: ReportContext }) {
         <TableBody>
           {rows.map((row) => (
             <TableRow key={row.towerId} className={row.evidenceGap ? "bg-amber-50/60" : undefined}>
-              <TableCell>{towerLink(ctx, row.towerId, row.towerNo)}</TableCell>
+              <TableCell className={cn(!ctx.print && PHONE_STICKY_CELL)}>
+                {towerLink(ctx, row.towerId, row.towerNo)}
+              </TableCell>
               <TableCell className="max-w-40 truncate text-xs">{dash(row.location)}</TableCell>
               <TableCell className="text-xs">{dash(row.towerType)}</TableCell>
               {row.cells.map((cell) => (
@@ -1256,7 +1290,7 @@ function PhotoPagesReport({ ctx }: { ctx: ReportContext }) {
           </div>
 
           {ctx.include.status ? (
-            <Table className={ctx.print ? "text-[8pt]" : "text-sm"}>
+            <Table className={ctx.print ? "text-[8pt]" : cn("text-sm", PHONE_TABLE)}>
               <TableHeader>
                 <TableRow>
                   <TableHead>Activity</TableHead>
@@ -1335,7 +1369,7 @@ function BeforeAfterReport({ ctx }: { ctx: ReportContext }) {
   return (
     <div className="space-y-6">
       {rows.map((row) => (
-        <section key={row.towerId} className="break-inside-avoid space-y-2 rounded-lg border p-4">
+        <section key={row.towerId} className="break-inside-avoid space-y-2 rounded-lg border p-3 sm:p-4">
           <h3 className="text-base font-bold">
             TOWER {row.towerNo}
             {row.location ? <span className="ml-2 text-sm font-normal text-muted-foreground">{row.location}</span> : null}

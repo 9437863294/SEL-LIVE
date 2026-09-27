@@ -58,31 +58,27 @@ import {
   buildSupplyVendorScores,
   slowestSupplyStep,
   supplyLinesCsv,
+  type SupplyBottleneck,
   type SupplyChainGate,
   type SupplyChainLine,
+  type SupplyCycleTime,
+  type SupplyVendorScore,
 } from "@/lib/project-management-supply-analytics";
 import {
-  PM_TABLE_CLASS,
   PmContent,
+  PmDataList,
   PmSectionHead,
   PmShell,
   PmSidebar,
   PmTopbar,
   pmAccent,
+  type PmListColumn,
 } from "@/components/project-management/pm-shell";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
 import { Skeleton } from "@/components/ui/skeleton";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
 
 const VIEWS = [
   { key: "pipeline", label: "Pipeline", icon: Layers },
@@ -340,9 +336,9 @@ export default function SupplyReportsPage() {
     return (
       <main className="min-h-[calc(100dvh-4rem)] space-y-4 p-4 sm:p-6">
         <Skeleton className="h-9 w-72" />
-        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
           {[1, 2, 3, 4].map((index) => (
-            <Skeleton key={index} className="h-24 rounded-xl" />
+            <Skeleton key={index} className="h-20 rounded-xl sm:h-24" />
           ))}
         </div>
         <Skeleton className="h-96 w-full" />
@@ -383,6 +379,177 @@ export default function SupplyReportsPage() {
 
   const supplyHref = `/project-management/supply?project=${encodeURIComponent(mappingId)}`;
 
+  const bottleneckColumns: PmListColumn<SupplyBottleneck & { id: string }>[] = [
+    { header: "Gate", className: "font-medium", mobile: "title", cell: (entry) => entry.label },
+    {
+      header: "Waiting on",
+      className: "text-xs text-muted-foreground",
+      mobile: "title",
+      cell: (entry) => entry.owner,
+    },
+    {
+      header: "Lines",
+      align: "right",
+      cell: (entry) => <span className="tabular-nums">{entry.stuckLineCount || "—"}</span>,
+    },
+    {
+      header: "Value waiting",
+      align: "right",
+      cell: (entry) => (
+        <span
+          className={cn("font-semibold tabular-nums", entry.stuckValue > 0 && "text-amber-700")}
+        >
+          {entry.stuckValue > 0 ? money(entry.stuckValue) : "—"}
+        </span>
+      ),
+    },
+    {
+      header: "Of that, undecided",
+      align: "right",
+      cell: (entry) => (
+        <span className="tabular-nums">
+          {entry.inFlightValue > 0 ? money(entry.inFlightValue) : "—"}
+        </span>
+      ),
+    },
+    {
+      header: "Oldest",
+      align: "right",
+      cell: (entry) => <span className="tabular-nums">{days(entry.oldestDays)}</span>,
+    },
+    {
+      header: "Avg age by value",
+      align: "right",
+      cell: (entry) => (
+        <span
+          className={cn(
+            "tabular-nums",
+            (entry.valueWeightedAgeDays ?? 0) > 30 && "text-red-700",
+          )}
+        >
+          {days(entry.valueWeightedAgeDays)}
+        </span>
+      ),
+    },
+  ];
+
+  const cycleColumns: PmListColumn<SupplyCycleTime & { id: string }>[] = [
+    { header: "Step", className: "font-medium", mobile: "title", cell: (step) => step.label },
+    {
+      header: "Owner",
+      className: "text-xs text-muted-foreground",
+      mobile: "title",
+      cell: (step) => step.owner,
+    },
+    {
+      header: "Lines measured",
+      align: "right",
+      cell: (step) => <span className="tabular-nums">{step.sampleSize || "—"}</span>,
+    },
+    {
+      header: "Median",
+      align: "right",
+      cell: (step) => (
+        <span
+          className={cn(
+            "font-semibold tabular-nums",
+            slowest && step.label === slowest.label && "text-amber-700",
+          )}
+        >
+          {days(step.medianDays)}
+        </span>
+      ),
+    },
+    {
+      header: "90th percentile",
+      align: "right",
+      cell: (step) => <span className="tabular-nums">{days(step.p90Days)}</span>,
+    },
+    {
+      header: "Worst",
+      align: "right",
+      cell: (step) => (
+        <span className="tabular-nums text-muted-foreground">{days(step.worstDays)}</span>
+      ),
+    },
+  ];
+
+  const vendorColumns: PmListColumn<SupplyVendorScore & { id: string }>[] = [
+    {
+      header: "Vendor",
+      className: "max-w-[14rem] truncate font-medium",
+      mobile: "title",
+      cell: (vendor) => vendor.vendorName,
+    },
+    {
+      header: "Lines",
+      align: "right",
+      cell: (vendor) => <span className="tabular-nums">{vendor.lineCount}</span>,
+    },
+    {
+      header: "Ordered",
+      align: "right",
+      cell: (vendor) => <span className="tabular-nums">{money(vendor.orderedValue)}</span>,
+    },
+    {
+      header: "Delivered",
+      align: "right",
+      cell: (vendor) => (
+        <span className="tabular-nums">
+          {money(vendor.deliveredValue)}
+          <span className="ml-1.5 text-xs text-muted-foreground">{vendor.deliveredPct}%</span>
+        </span>
+      ),
+    },
+    {
+      header: "Rejection",
+      align: "right",
+      cell: (vendor) =>
+        vendor.rejectionPct > 0 ? (
+          <Badge
+            variant="outline"
+            className={
+              vendor.rejectionPct >= 10 ? "bg-red-100 text-red-700" : "bg-amber-100 text-amber-800"
+            }
+          >
+            {vendor.rejectionPct}%
+          </Badge>
+        ) : (
+          <span className="text-xs text-muted-foreground">—</span>
+        ),
+    },
+    {
+      header: "Median lead",
+      align: "right",
+      cell: (vendor) => <span className="tabular-nums">{days(vendor.medianLeadDays)}</span>,
+    },
+    {
+      header: "Overdue",
+      align: "right",
+      cell: (vendor) => (
+        <span
+          className={cn(
+            "tabular-nums",
+            vendor.overdueLineCount > 0 && "font-semibold text-red-700",
+          )}
+        >
+          {vendor.overdueLineCount || "—"}
+        </span>
+      ),
+    },
+    {
+      header: "Short / damaged",
+      align: "right",
+      cell: (vendor) => (
+        <span className="text-xs tabular-nums text-muted-foreground">
+          {vendor.shortQty || vendor.damagedQty
+            ? `${formatQuantity(vendor.shortQty)} / ${formatQuantity(vendor.damagedQty)}`
+            : "—"}
+        </span>
+      ),
+    },
+  ];
+
   return (
     <PmShell
       sidebar={
@@ -419,13 +586,18 @@ export default function SupplyReportsPage() {
         backLabel="Back to Supply"
         actions={
           <>
-            <Button variant="outline" size="sm" onClick={() => void loadData()}>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => void loadData()}
+              aria-label="Refresh"
+            >
               {isLoading ? (
-                <Loader2 className="mr-1.5 h-4 w-4 animate-spin" />
+                <Loader2 className="h-4 w-4 animate-spin sm:mr-1.5" />
               ) : (
-                <RefreshCw className="mr-1.5 h-4 w-4" />
+                <RefreshCw className="h-4 w-4 sm:mr-1.5" />
               )}
-              Refresh
+              <span className="hidden sm:inline">Refresh</span>
             </Button>
             <Button size="sm" onClick={handleExport} disabled={!lines.length}>
               <Download className="mr-1.5 h-4 w-4" />
@@ -444,7 +616,7 @@ export default function SupplyReportsPage() {
         )}
 
         {/* ── Headline: the whole book in four figures ─────────────────────────────────── */}
-        <div className="mb-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        <div className="mb-5 grid grid-cols-2 gap-3 lg:grid-cols-4">
           {[
             {
               label: "Ordered",
@@ -472,11 +644,11 @@ export default function SupplyReportsPage() {
             },
           ].map((tile) => (
             <Card key={tile.label} className="border-border/60">
-              <CardContent className="p-4">
+              <CardContent className="p-3 sm:p-4">
                 <p className="text-xs font-medium text-muted-foreground">{tile.label}</p>
                 <p
                   className={cn(
-                    "mt-1 text-2xl font-bold tabular-nums",
+                    "mt-1 text-lg font-bold tabular-nums sm:text-2xl",
                     tile.tone === "warn" && "text-amber-700",
                   )}
                 >
@@ -595,62 +767,12 @@ export default function SupplyReportsPage() {
                     },
                   ]}
                 />
-                <Card className="border-border/60">
-                  <CardContent className="p-0">
-                    <div className="overflow-x-auto">
-                      <Table className={PM_TABLE_CLASS}>
-                        <TableHeader>
-                          <TableRow>
-                            <TableHead>Gate</TableHead>
-                            <TableHead>Waiting on</TableHead>
-                            <TableHead className="text-right">Lines</TableHead>
-                            <TableHead className="text-right">Value waiting</TableHead>
-                            <TableHead className="text-right">Of that, undecided</TableHead>
-                            <TableHead className="text-right">Oldest</TableHead>
-                            <TableHead className="text-right">Avg age by value</TableHead>
-                          </TableRow>
-                        </TableHeader>
-                        <TableBody>
-                          {[...bottlenecks]
-                            .sort((a, b) => b.stuckValue - a.stuckValue)
-                            .map((entry) => (
-                              <TableRow key={entry.gate}>
-                                <TableCell className="font-medium">{entry.label}</TableCell>
-                                <TableCell className="text-xs text-muted-foreground">
-                                  {entry.owner}
-                                </TableCell>
-                                <TableCell className="text-right tabular-nums">
-                                  {entry.stuckLineCount || "—"}
-                                </TableCell>
-                                <TableCell
-                                  className={cn(
-                                    "text-right font-semibold tabular-nums",
-                                    entry.stuckValue > 0 && "text-amber-700",
-                                  )}
-                                >
-                                  {entry.stuckValue > 0 ? money(entry.stuckValue) : "—"}
-                                </TableCell>
-                                <TableCell className="text-right tabular-nums">
-                                  {entry.inFlightValue > 0 ? money(entry.inFlightValue) : "—"}
-                                </TableCell>
-                                <TableCell className="text-right tabular-nums">
-                                  {days(entry.oldestDays)}
-                                </TableCell>
-                                <TableCell
-                                  className={cn(
-                                    "text-right tabular-nums",
-                                    (entry.valueWeightedAgeDays ?? 0) > 30 && "text-red-700",
-                                  )}
-                                >
-                                  {days(entry.valueWeightedAgeDays)}
-                                </TableCell>
-                              </TableRow>
-                            ))}
-                        </TableBody>
-                      </Table>
-                    </div>
-                  </CardContent>
-                </Card>
+                <PmDataList
+                  rows={[...bottlenecks]
+                    .sort((a, b) => b.stuckValue - a.stuckValue)
+                    .map((entry) => ({ ...entry, id: entry.gate }))}
+                  columns={bottleneckColumns}
+                />
                 <p className="mt-2 text-xs text-muted-foreground">
                   Average age is weighted by value, so a large sum waiting a short time outranks a
                   trivial one waiting a long time — which is the order these should be chased in.
@@ -675,51 +797,10 @@ export default function SupplyReportsPage() {
                       : []
                   }
                 />
-                <Card className="border-border/60">
-                  <CardContent className="p-0">
-                    <div className="overflow-x-auto">
-                      <Table className={PM_TABLE_CLASS}>
-                        <TableHeader>
-                          <TableRow>
-                            <TableHead>Step</TableHead>
-                            <TableHead>Owner</TableHead>
-                            <TableHead className="text-right">Lines measured</TableHead>
-                            <TableHead className="text-right">Median</TableHead>
-                            <TableHead className="text-right">90th percentile</TableHead>
-                            <TableHead className="text-right">Worst</TableHead>
-                          </TableRow>
-                        </TableHeader>
-                        <TableBody>
-                          {cycleTimes.map((step) => (
-                            <TableRow key={`${step.from}-${step.to}`}>
-                              <TableCell className="font-medium">{step.label}</TableCell>
-                              <TableCell className="text-xs text-muted-foreground">
-                                {step.owner}
-                              </TableCell>
-                              <TableCell className="text-right tabular-nums">
-                                {step.sampleSize || "—"}
-                              </TableCell>
-                              <TableCell
-                                className={cn(
-                                  "text-right font-semibold tabular-nums",
-                                  slowest && step.label === slowest.label && "text-amber-700",
-                                )}
-                              >
-                                {days(step.medianDays)}
-                              </TableCell>
-                              <TableCell className="text-right tabular-nums">
-                                {days(step.p90Days)}
-                              </TableCell>
-                              <TableCell className="text-right tabular-nums text-muted-foreground">
-                                {days(step.worstDays)}
-                              </TableCell>
-                            </TableRow>
-                          ))}
-                        </TableBody>
-                      </Table>
-                    </div>
-                  </CardContent>
-                </Card>
+                <PmDataList
+                  rows={cycleTimes.map((step) => ({ ...step, id: `${step.from}-${step.to}` }))}
+                  columns={cycleColumns}
+                />
                 <p className="mt-2 text-xs text-muted-foreground">
                   Measured only on lines that have completed the step. Work still in progress is
                   counted as waiting time under “Where value is stuck”, never as a fast cycle here.
@@ -734,79 +815,10 @@ export default function SupplyReportsPage() {
                   title="Vendor scorecard"
                   stats={[{ label: "vendors", value: String(vendors.length) }]}
                 />
-                <Card className="border-border/60">
-                  <CardContent className="p-0">
-                    <div className="overflow-x-auto">
-                      <Table className={PM_TABLE_CLASS}>
-                        <TableHeader>
-                          <TableRow>
-                            <TableHead>Vendor</TableHead>
-                            <TableHead className="text-right">Lines</TableHead>
-                            <TableHead className="text-right">Ordered</TableHead>
-                            <TableHead className="text-right">Delivered</TableHead>
-                            <TableHead className="text-right">Rejection</TableHead>
-                            <TableHead className="text-right">Median lead</TableHead>
-                            <TableHead className="text-right">Overdue</TableHead>
-                            <TableHead className="text-right">Short / damaged</TableHead>
-                          </TableRow>
-                        </TableHeader>
-                        <TableBody>
-                          {vendors.map((vendor) => (
-                            <TableRow key={vendor.vendorId}>
-                              <TableCell className="max-w-[14rem] truncate font-medium">
-                                {vendor.vendorName}
-                              </TableCell>
-                              <TableCell className="text-right tabular-nums">
-                                {vendor.lineCount}
-                              </TableCell>
-                              <TableCell className="text-right tabular-nums">
-                                {money(vendor.orderedValue)}
-                              </TableCell>
-                              <TableCell className="text-right tabular-nums">
-                                {money(vendor.deliveredValue)}
-                                <span className="ml-1.5 text-xs text-muted-foreground">
-                                  {vendor.deliveredPct}%
-                                </span>
-                              </TableCell>
-                              <TableCell className="text-right">
-                                {vendor.rejectionPct > 0 ? (
-                                  <Badge
-                                    variant="outline"
-                                    className={
-                                      vendor.rejectionPct >= 10
-                                        ? "bg-red-100 text-red-700"
-                                        : "bg-amber-100 text-amber-800"
-                                    }
-                                  >
-                                    {vendor.rejectionPct}%
-                                  </Badge>
-                                ) : (
-                                  <span className="text-xs text-muted-foreground">—</span>
-                                )}
-                              </TableCell>
-                              <TableCell className="text-right tabular-nums">
-                                {days(vendor.medianLeadDays)}
-                              </TableCell>
-                              <TableCell
-                                className={cn(
-                                  "text-right tabular-nums",
-                                  vendor.overdueLineCount > 0 && "font-semibold text-red-700",
-                                )}
-                              >
-                                {vendor.overdueLineCount || "—"}
-                              </TableCell>
-                              <TableCell className="text-right text-xs tabular-nums text-muted-foreground">
-                                {vendor.shortQty || vendor.damagedQty
-                                  ? `${formatQuantity(vendor.shortQty)} / ${formatQuantity(vendor.damagedQty)}`
-                                  : "—"}
-                              </TableCell>
-                            </TableRow>
-                          ))}
-                        </TableBody>
-                      </Table>
-                    </div>
-                  </CardContent>
-                </Card>
+                <PmDataList
+                  rows={vendors.map((vendor) => ({ ...vendor, id: vendor.vendorId }))}
+                  columns={vendorColumns}
+                />
                 <p className="mt-2 text-xs text-muted-foreground">
                   Rejection is measured against what the vendor presented at inspection and GRN, not
                   against the whole order — a vendor part-way through a PO is not judged on what

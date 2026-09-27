@@ -43,13 +43,14 @@ import {
   InspectionProjectNotFound,
 } from "@/components/inspection/inspection-page-shell";
 import {
-  PM_TABLE_CLASS,
   PmContent,
+  PmDataList,
   PmSectionHead,
   PmShell,
   PmStatusPill,
   PmTableFoot,
   PmTopbar,
+  type PmListColumn,
 } from "@/components/project-management/pm-shell";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -64,14 +65,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
 import { Textarea } from "@/components/ui/textarea";
 
 const today = () => {
@@ -320,6 +313,157 @@ export default function NewInspectionCallPage() {
     );
   }
 
+  // Quantity columns right-align through `className` (desktop only) rather than `align`, so the
+  // phone card's two-column grid stays left-aligned; colours sit on the value so both keep them.
+  const lineColumns: PmListColumn<CandidateRow & { id: string }>[] = [
+    {
+      header: "",
+      className: "w-10",
+      mobile: "aside",
+      cell: (row) => (
+        <Checkbox
+          className="h-5 w-5 sm:h-4 sm:w-4"
+          checked={qtyByKey[row.key] !== undefined}
+          disabled={!(row.ledger.availableQty > 0) || !canRequest}
+          onCheckedChange={(checked) => toggleLine(row, checked === true)}
+          aria-label={`Offer ${row.ledger.itemDescription} on ${row.ledger.poNumber}`}
+        />
+      ),
+    },
+    { header: "PO", mobile: "title", cell: (row) => <span className="font-medium">{row.ledger.poNumber}</span> },
+    {
+      header: "Item",
+      mobile: "title",
+      cell: (row) => (
+        <span className="block break-words sm:max-w-[20rem] sm:truncate">{row.ledger.itemDescription}</span>
+      ),
+    },
+    { header: "Unit", cell: (row) => <span className="text-muted-foreground">{row.ledger.unit}</span> },
+    {
+      header: "Ordered",
+      className: "text-right tabular-nums",
+      cell: (row) => <span className="text-muted-foreground">{formatQuantity(row.ledger.orderedQty)}</span>,
+    },
+    {
+      header: "Cleared",
+      className: "text-right tabular-nums",
+      cell: (row) => <span className="font-medium">{formatQuantity(row.ledger.clearedQty)}</span>,
+    },
+    {
+      header: "Accepted",
+      className: "text-right tabular-nums",
+      cell: (row) => (
+        <span className="text-emerald-700">
+          {row.ledger.acceptedQty ? formatQuantity(row.ledger.acceptedQty) : "—"}
+        </span>
+      ),
+    },
+    {
+      header: "Rejected",
+      className: "text-right tabular-nums",
+      cell: (row) => (
+        <span className="text-red-700">
+          {row.ledger.rejectedQty ? formatQuantity(row.ledger.rejectedQty) : "—"}
+        </span>
+      ),
+    },
+    {
+      header: "Under inspection",
+      className: "text-right tabular-nums",
+      cell: (row) => (
+        <span className="text-amber-700">
+          {row.ledger.offeredPendingQty ? formatQuantity(row.ledger.offeredPendingQty) : "—"}
+        </span>
+      ),
+    },
+    {
+      header: "Available",
+      className: "text-right tabular-nums",
+      cell: (row) => <span className="font-semibold">{formatQuantity(row.ledger.availableQty)}</span>,
+    },
+    {
+      header: "Line status",
+      mobile: "aside",
+      cell: ({ ledger }) =>
+        ledger.awaitingClearance ? (
+          <PmStatusPill label="Awaiting MC" tone="neutral" />
+        ) : (
+          <>
+            <PmStatusPill
+              label={ledger.status}
+              tone={
+                ledger.status === "Fully Inspected"
+                  ? "ok"
+                  : ledger.status === "Partially Inspected"
+                    ? "wait"
+                    : "neutral"
+              }
+            />
+            {ledger.acceptedPct > 0 && !ledger.fullyInspected && (
+              <span className="ml-1 text-xs text-muted-foreground tabular-nums">
+                {ledger.acceptedPct}%
+              </span>
+            )}
+          </>
+        ),
+    },
+    {
+      header: "Offer",
+      className: "w-32 text-right",
+      // The quantity input and its errors need the card's full width; a label stands in for the
+      // column header, which a footer row does not show.
+      mobile: "footer",
+      cell: (row) => {
+        const { ledger } = row;
+        const selected = qtyByKey[row.key] !== undefined;
+        const draft = draftLines.find((line) => line.row.key === row.key);
+        const offerable = ledger.availableQty > 0;
+        return (
+          <div className="w-full sm:w-auto">
+            {!ledger.awaitingClearance && offerable && (
+              <p className="mb-1 text-[10px] font-medium uppercase tracking-wide text-muted-foreground sm:hidden">
+                Offer
+              </p>
+            )}
+            {ledger.awaitingClearance ? (
+              <Link
+                href={`/project-management/manufacturing-clearance/new?project=${encodeURIComponent(mappingId)}`}
+                className="inline-flex min-h-11 items-center text-xs text-blue-700 hover:underline sm:min-h-0"
+              >
+                Clear it first
+              </Link>
+            ) : !offerable ? (
+              <span className="text-xs text-muted-foreground">No balance</span>
+            ) : (
+              <Input
+                type="number"
+                min={0}
+                step="any"
+                inputMode="decimal"
+                className="h-10 w-full text-right tabular-nums sm:h-8 sm:w-28"
+                placeholder="0"
+                disabled={!selected || !canRequest}
+                value={qtyByKey[row.key] ?? ""}
+                onChange={(event) => setQty(row.key, event.target.value)}
+                aria-invalid={Boolean(draft?.error)}
+              />
+            )}
+            {draft?.error && (
+              <p className="mt-1 text-xs text-red-700 sm:max-w-[16rem] sm:text-right">
+                {draft.error}
+              </p>
+            )}
+            {ledger.draftQty > 0 && !draft && (
+              <p className="mt-1 text-xs text-muted-foreground sm:text-right">
+                {formatQuantity(ledger.draftQty)} on other drafts
+              </p>
+            )}
+          </div>
+        );
+      },
+    },
+  ];
+
   return (
     <PmShell>
       <PmTopbar
@@ -337,9 +481,10 @@ export default function NewInspectionCallPage() {
               size="sm"
               disabled={!canRequest || !draftLines.length || isSaving}
               onClick={() => void handleSave(false)}
+              aria-label="Save draft"
             >
-              <Save className="mr-1.5 h-4 w-4" />
-              Save draft
+              <Save className="h-4 w-4 sm:mr-1.5" />
+              <span className="hidden sm:inline">Save draft</span>
             </Button>
             <Button size="sm" disabled={!canRequest || !canSubmit} onClick={() => void handleSave(true)}>
               {isSaving ? (
@@ -355,7 +500,7 @@ export default function NewInspectionCallPage() {
 
       <PmContent>
         {!canRequest && (
-          <Card className="mb-4 border-amber-300 bg-amber-50/60">
+          <Card className="mb-4 border-amber-300 bg-amber-50/60 max-sm:[--card-pad:1rem]">
             <CardContent className="flex items-start gap-2 py-3 text-sm text-amber-900">
               <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
               <span>
@@ -366,8 +511,8 @@ export default function NewInspectionCallPage() {
           </Card>
         )}
 
-        <Card className="mb-4 border-border/60">
-          <CardContent className="grid gap-4 py-4 md:grid-cols-4">
+        <Card className="mb-4 border-border/60 max-sm:[--card-pad:1rem]">
+          <CardContent className="grid grid-cols-1 gap-4 py-4 sm:grid-cols-2 md:grid-cols-4">
             <div className="space-y-1.5">
               <Label htmlFor="ic-vendor">Vendor</Label>
               <Select
@@ -429,7 +574,7 @@ export default function NewInspectionCallPage() {
               />
             </div>
 
-            <div className="space-y-1.5 md:col-span-4">
+            <div className="space-y-1.5 sm:col-span-2 md:col-span-4">
               <Label htmlFor="ic-remarks">Remarks</Label>
               <Textarea
                 id="ic-remarks"
@@ -463,178 +608,57 @@ export default function NewInspectionCallPage() {
           ]}
         />
 
-        <Card className="overflow-hidden border-border/60">
-          {isLoading ? (
-            <CardContent className="flex items-center gap-2 py-10 text-sm text-muted-foreground">
-              <Loader2 className="h-4 w-4 animate-spin" />
-              Loading cleared quantity balances…
-            </CardContent>
-          ) : !vendorId ? (
-            <CardContent className="py-10 text-center text-sm text-muted-foreground">
-              <ClipboardCheck className="mx-auto mb-2 h-8 w-8 opacity-40" />
-              Choose a vendor to see what has been cleared and is ready to inspect.
-            </CardContent>
-          ) : rows.length === 0 ? (
-            <CardContent className="py-10 text-center text-sm text-muted-foreground">
-              This vendor has no purchase order lines on an issued order.
-            </CardContent>
-          ) : (
-            <>
-              <div className="overflow-x-auto">
-                <Table className={PM_TABLE_CLASS}>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead className="w-10" />
-                      <TableHead>PO</TableHead>
-                      <TableHead>Item</TableHead>
-                      <TableHead>Unit</TableHead>
-                      <TableHead className="text-right">Ordered</TableHead>
-                      <TableHead className="text-right">Cleared</TableHead>
-                      <TableHead className="text-right">Accepted</TableHead>
-                      <TableHead className="text-right">Rejected</TableHead>
-                      <TableHead className="text-right">Under inspection</TableHead>
-                      <TableHead className="text-right">Available</TableHead>
-                      <TableHead>Line status</TableHead>
-                      <TableHead className="w-32 text-right">Offer</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {rows.map((row) => {
-                      const { ledger } = row;
-                      const selected = qtyByKey[row.key] !== undefined;
-                      const draft = draftLines.find((line) => line.row.key === row.key);
-                      const offerable = ledger.availableQty > 0;
-                      return (
-                        <TableRow
-                          key={row.key}
-                          className={
-                            draft?.error ? "bg-red-50/60" : !offerable ? "opacity-60" : undefined
-                          }
-                        >
-                          <TableCell>
-                            <Checkbox
-                              checked={selected}
-                              disabled={!offerable || !canRequest}
-                              onCheckedChange={(checked) => toggleLine(row, checked === true)}
-                              aria-label={`Offer ${ledger.itemDescription} on ${ledger.poNumber}`}
-                            />
-                          </TableCell>
-                          <TableCell className="font-medium">{ledger.poNumber}</TableCell>
-                          <TableCell>
-                            <span className="block max-w-[20rem] truncate">
-                              {ledger.itemDescription}
-                            </span>
-                          </TableCell>
-                          <TableCell className="text-muted-foreground">{ledger.unit}</TableCell>
-                          <TableCell className="text-right tabular-nums text-muted-foreground">
-                            {formatQuantity(ledger.orderedQty)}
-                          </TableCell>
-                          <TableCell className="text-right font-medium tabular-nums">
-                            {formatQuantity(ledger.clearedQty)}
-                          </TableCell>
-                          <TableCell className="text-right tabular-nums text-emerald-700">
-                            {ledger.acceptedQty ? formatQuantity(ledger.acceptedQty) : "—"}
-                          </TableCell>
-                          <TableCell className="text-right tabular-nums text-red-700">
-                            {ledger.rejectedQty ? formatQuantity(ledger.rejectedQty) : "—"}
-                          </TableCell>
-                          <TableCell className="text-right tabular-nums text-amber-700">
-                            {ledger.offeredPendingQty
-                              ? formatQuantity(ledger.offeredPendingQty)
-                              : "—"}
-                          </TableCell>
-                          <TableCell className="text-right font-semibold tabular-nums">
-                            {formatQuantity(ledger.availableQty)}
-                          </TableCell>
-                          <TableCell>
-                            {ledger.awaitingClearance ? (
-                              <PmStatusPill label="Awaiting MC" tone="neutral" />
-                            ) : (
-                              <>
-                                <PmStatusPill
-                                  label={ledger.status}
-                                  tone={
-                                    ledger.status === "Fully Inspected"
-                                      ? "ok"
-                                      : ledger.status === "Partially Inspected"
-                                        ? "wait"
-                                        : "neutral"
-                                  }
-                                />
-                                {ledger.acceptedPct > 0 && !ledger.fullyInspected && (
-                                  <span className="ml-1 text-xs text-muted-foreground tabular-nums">
-                                    {ledger.acceptedPct}%
-                                  </span>
-                                )}
-                              </>
-                            )}
-                          </TableCell>
-                          <TableCell className="text-right">
-                            {ledger.awaitingClearance ? (
-                              <Link
-                                href={`/project-management/manufacturing-clearance/new?project=${encodeURIComponent(mappingId)}`}
-                                className="text-xs text-blue-700 hover:underline"
-                              >
-                                Clear it first
-                              </Link>
-                            ) : !offerable ? (
-                              <span className="text-xs text-muted-foreground">No balance</span>
-                            ) : (
-                              <Input
-                                type="number"
-                                min={0}
-                                step="any"
-                                inputMode="decimal"
-                                className="h-8 w-28 text-right tabular-nums"
-                                placeholder="0"
-                                disabled={!selected || !canRequest}
-                                value={qtyByKey[row.key] ?? ""}
-                                onChange={(event) => setQty(row.key, event.target.value)}
-                                aria-invalid={Boolean(draft?.error)}
-                              />
-                            )}
-                            {draft?.error && (
-                              <p className="mt-1 max-w-[16rem] text-right text-xs text-red-700">
-                                {draft.error}
-                              </p>
-                            )}
-                            {ledger.draftQty > 0 && !draft && (
-                              <p className="mt-1 text-right text-xs text-muted-foreground">
-                                {formatQuantity(ledger.draftQty)} on other drafts
-                              </p>
-                            )}
-                          </TableCell>
-                        </TableRow>
-                      );
-                    })}
-                  </TableBody>
-                </Table>
-              </div>
-              <PmTableFoot
-                left={
-                  <>
-                    {rows.length} line{rows.length === 1 ? "" : "s"} ·{" "}
-                    {awaitingClearanceCount} awaiting clearance ·{" "}
-                    {rows.filter((row) => row.ledger.fullyInspected).length} fully inspected
-                  </>
-                }
-                right={
-                  draftLines.length > 0 ? (
-                    <span className="font-medium text-foreground">
-                      Offering {formatQuantity(totalQty)} across {draftLines.length} line
-                      {draftLines.length === 1 ? "" : "s"}
-                    </span>
-                  ) : (
-                    "Tick a line to offer it"
-                  )
-                }
-              />
-            </>
-          )}
-        </Card>
+        {/* Loading and "choose a vendor" are shown in the list's empty frame, so all three states
+            sit in the same bordered box the table does. */}
+        <PmDataList
+          rows={isLoading || !vendorId ? [] : rows.map((row) => ({ ...row, id: row.key }))}
+          columns={lineColumns}
+          rowClassName={(row) => {
+            const draft = draftLines.find((line) => line.row.key === row.key);
+            return draft?.error ? "bg-red-50/60" : !(row.ledger.availableQty > 0) ? "opacity-60" : undefined;
+          }}
+          empty={
+            isLoading ? (
+              <CardContent className="flex items-center gap-2 py-10 text-sm text-muted-foreground">
+                <Loader2 className="h-4 w-4 animate-spin" />
+                Loading cleared quantity balances…
+              </CardContent>
+            ) : !vendorId ? (
+              <CardContent className="py-10 text-center text-sm text-muted-foreground">
+                <ClipboardCheck className="mx-auto mb-2 h-8 w-8 opacity-40" />
+                Choose a vendor to see what has been cleared and is ready to inspect.
+              </CardContent>
+            ) : (
+              <CardContent className="py-10 text-center text-sm text-muted-foreground">
+                This vendor has no purchase order lines on an issued order.
+              </CardContent>
+            )
+          }
+          foot={
+            <PmTableFoot
+              left={
+                <>
+                  {rows.length} line{rows.length === 1 ? "" : "s"} ·{" "}
+                  {awaitingClearanceCount} awaiting clearance ·{" "}
+                  {rows.filter((row) => row.ledger.fullyInspected).length} fully inspected
+                </>
+              }
+              right={
+                draftLines.length > 0 ? (
+                  <span className="font-medium text-foreground">
+                    Offering {formatQuantity(totalQty)} across {draftLines.length} line
+                    {draftLines.length === 1 ? "" : "s"}
+                  </span>
+                ) : (
+                  "Tick a line to offer it"
+                )
+              }
+            />
+          }
+        />
 
         {/* A div, not a p: Badge renders a div, and a div inside a p is invalid HTML. */}
-        <div className="mt-3 flex items-start gap-1.5 text-xs text-muted-foreground">
+        <div className="mt-3 flex flex-col items-start gap-1.5 text-xs text-muted-foreground sm:flex-row">
           <Badge variant="outline" className="shrink-0 font-normal">
             How the balance works
           </Badge>

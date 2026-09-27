@@ -308,14 +308,68 @@ export function UpdateCertifiedQtyDialog({
 
   return (
     <Dialog open={isOpen} onOpenChange={(o) => (canClose() ? onOpenChange(o) : undefined)}>
-      <DialogContent className={cn("max-h-[90vh] flex flex-col min-h-0", dialogSizeClass)}>
-        <DialogHeader>
+      {/* `hr-mobile-dialog` & co. (globals.css, ≤640px): a full-screen sheet on a phone in which only
+          the body scrolls, the centred modal from `sm` up. */}
+      <DialogContent className={cn("hr-mobile-dialog sm:max-h-[90vh] flex flex-col min-h-0", dialogSizeClass)}>
+        <DialogHeader className="hr-dialog-header">
           <DialogTitle>Update Certified Quantities</DialogTitle>
           <DialogDescription>JMC No: {jmcEntry?.jmcNo}</DialogDescription>
         </DialogHeader>
 
+        {/* Items and attachments share one body: on a phone it is the only part that scrolls, and
+            from `sm` it keeps the item table as the flexing scroller above the attachments. */}
+        <div className="hr-dialog-body flex-1 min-h-0 sm:flex sm:flex-col">
+        {/* Phone: one card per item, in place of the table. */}
+        <div className="space-y-2.5 sm:hidden">
+          {items.map((item, idx) => (
+            <div
+              key={`${item.boqSlNo}-${idx}`}
+              className="rounded-xl border border-border/60 bg-card p-3.5 shadow-sm"
+            >
+              <p className="text-sm font-semibold">{item.boqSlNo ?? '-'}</p>
+              <p className="mt-0.5 line-clamp-3 whitespace-pre-line break-words text-xs text-muted-foreground">
+                {item.description}
+              </p>
+              <div className="mt-2 grid grid-cols-2 gap-x-3 border-t border-border/60 pt-2">
+                <div className="min-w-0">
+                  <p className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+                    Executed Qty
+                  </p>
+                  <p className="text-sm">{item.executedQty}</p>
+                </div>
+                <div className="min-w-0">
+                  <label
+                    htmlFor={`cert-qty-m-${idx}`}
+                    className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground"
+                  >
+                    Certified Qty
+                  </label>
+                  <Input
+                    id={`cert-qty-m-${idx}`}
+                    className="w-full"
+                    type="number"
+                    inputMode="decimal"
+                    step="any"
+                    min={0}
+                    max={Number(item.executedQty) || undefined}
+                    value={item.__certStr ?? ''}
+                    onChange={(e) => handleCertifiedQtyChange(idx, e.target.value)}
+                    aria-invalid={!!item.__error}
+                    aria-describedby={item.__error ? `cert-error-m-${idx}` : undefined}
+                  />
+                  {item.__error && (
+                    <p id={`cert-error-m-${idx}`} className="text-xs text-destructive mt-1">
+                      {item.__error}
+                    </p>
+                  )}
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+
         {/* Native scroller so sticky header works */}
-        <div className="flex-1 min-h-0 overflow-y-auto border rounded-md">
+        <div className="hidden flex-1 min-h-0 overflow-y-auto border rounded-md sm:block">
           <div className="overflow-x-auto">
             <Table className="w-full">
               {/* sticky header */}
@@ -451,12 +505,21 @@ export function UpdateCertifiedQtyDialog({
             </div>
           )}
         </div>
+        </div>
 
-        <DialogFooter className="flex justify-between w-full">
-          <Button variant="outline" size="icon" onClick={toggleDialogSize}>
+        {/* On a phone the button group dissolves into the footer's two-column grid, and the size
+            toggle — with nothing to resize on a full-screen sheet — is hidden. */}
+        <DialogFooter className="hr-dialog-footer flex justify-between w-full">
+          <Button
+            variant="outline"
+            size="icon"
+            onClick={toggleDialogSize}
+            className="hidden sm:inline-flex"
+            aria-label={dialogSize === 'full' ? 'Shrink dialog' : 'Enlarge dialog'}
+          >
             {dialogSize === 'full' ? <Minimize className="h-4 w-4" /> : <Maximize className="h-4 w-4" />}
           </Button>
-          <div className="flex gap-2">
+          <div className="flex gap-2 max-sm:contents">
             <DialogClose asChild>
               <Button variant="outline" disabled={isSaving || isUploading}>
                 Cancel

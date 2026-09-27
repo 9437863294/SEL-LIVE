@@ -92,6 +92,7 @@ import { cn } from '@/lib/utils';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import type { CheckedState } from '@radix-ui/react-checkbox';
 import { ScrollArea } from '@/components/ui/scroll-area';
+import { PM_DIALOG } from '@/components/project-management/pm-shell';
 
 
 export type BoqItem = {
@@ -1231,10 +1232,13 @@ export default function ViewBoqPage() {
   }
 
   return (
-    <div className="flex flex-col h-[calc(100dvh-8rem)] w-full px-4 sm:px-6 lg:px-8">
+    // A fixed-height column from `sm`, so the sheet scrolls inside its own box under a pinned
+    // header. On a phone the stacked filters would leave that box a sliver, so the page flows and
+    // the sheet gets a viewport-relative height of its own instead.
+    <div className="flex w-full min-w-0 flex-col px-4 pb-4 sm:h-[calc(100dvh-8rem)] sm:px-6 sm:pb-0 lg:px-8">
       {/* Header */}
-      <div className="py-6 flex items-center justify-between">
-        <div className="flex items-center gap-2">
+      <div className="flex flex-col gap-3 py-4 sm:py-6 lg:flex-row lg:items-center lg:justify-between">
+        <div className="flex min-w-0 items-center gap-2">
           <Link href={backHref}>
             <Button variant="ghost" size="icon" aria-label="Back">
               <ArrowLeft className="h-6 w-6" />
@@ -1243,19 +1247,24 @@ export default function ViewBoqPage() {
           <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-gradient-to-br from-emerald-500 to-teal-600 shadow-sm">
             <Calculator className="h-4 w-4 text-white" />
           </div>
-          <h1 className="text-xl font-bold">View BOQ</h1>
+          <h1 className="truncate text-xl font-bold">View BOQ</h1>
         </div>
 
-        <div className="flex items-center gap-2 flex-wrap">
+        {/* Phones: search on top, the filters paired beneath it, the actions last — a 2-column grid
+            reordered with `max-sm:order-*` so the desktop row keeps its source order. */}
+        <div className="grid grid-cols-2 gap-2 sm:flex sm:flex-wrap sm:items-center lg:justify-end">
           {canAddManual && (
-            <Link href={`/project-management/boq/add?project=${encodeURIComponent(mappingId)}`}>
-              <Button variant="outline">
+            <Link
+              href={`/project-management/boq/add?project=${encodeURIComponent(mappingId)}`}
+              className="max-sm:order-last"
+            >
+              <Button variant="outline" className="w-full sm:w-auto">
                 <ListPlus className="mr-2 h-4 w-4" /> Add Items
               </Button>
             </Link>
           )}
 
-          <div className="relative">
+          <div className="relative col-span-2 max-sm:order-first">
             <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
             <Input
               placeholder="Search..."
@@ -1274,7 +1283,7 @@ export default function ViewBoqPage() {
                 value={filters[key as keyof typeof filters]}
                 onValueChange={(v) => handleFilterChange(key as keyof typeof filters, v)}
               >
-                <SelectTrigger className="w-[180px]">
+                <SelectTrigger className="w-full min-w-0 sm:w-[180px]">
                   <SelectValue placeholder={`Filter by ${key}`} />
                 </SelectTrigger>
                 <SelectContent>
@@ -1296,7 +1305,7 @@ export default function ViewBoqPage() {
           {canDelete && selectedItemIds.length > 0 && (
             <AlertDialog>
               <AlertDialogTrigger asChild>
-                <Button variant="destructive" disabled={isDeleting}>
+                <Button variant="destructive" disabled={isDeleting} className="max-sm:order-last">
                   {isDeleting ? (
                     <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                   ) : (
@@ -1332,19 +1341,20 @@ export default function ViewBoqPage() {
 
           <Dialog open={isColumnEditorOpen} onOpenChange={setIsColumnEditorOpen}>
             <DialogTrigger asChild>
-              <Button variant="outline">
+              <Button variant="outline" className="max-sm:order-last">
                 <Settings className="mr-2 h-4 w-4" /> Columns
               </Button>
             </DialogTrigger>
-            <DialogContent className="max-w-md">
-                <DialogHeader>
+            <DialogContent className={cn(PM_DIALOG.content, 'sm:max-w-md')}>
+                <DialogHeader className={PM_DIALOG.header}>
                     <DialogTitle>Customize Columns</DialogTitle>
                     <DialogDescription>Reorder and toggle visibility of columns.</DialogDescription>
                 </DialogHeader>
-                <ScrollArea className="h-[60vh]">
-                    <div className="py-4 space-y-2 pr-6">
+                {/* On a phone the sheet's body is what scrolls, so the fixed height gives way to it. */}
+                <ScrollArea className="hr-dialog-body h-[60vh] max-sm:h-auto">
+                    <div className="py-4 space-y-2 pr-6 max-sm:py-0 max-sm:pr-0">
                         {columnOrder.map((header) => (
-                            <div key={header} className="flex items-center gap-2 p-2 border rounded-md">
+                            <div key={header} className="flex items-center gap-2 p-2 border rounded-md max-sm:p-3">
                                 <Checkbox
                                     id={`vis-${header}`}
                                     checked={!!columnVisibility[header]}
@@ -1357,7 +1367,7 @@ export default function ViewBoqPage() {
                         ))}
                     </div>
                 </ScrollArea>
-                <DialogFooter>
+                <DialogFooter className={cn(PM_DIALOG.footer, 'max-sm:[&>*]:col-span-2')}>
                     <DialogClose asChild>
                         <Button>Done</Button>
                     </DialogClose>
@@ -1368,16 +1378,19 @@ export default function ViewBoqPage() {
       </div>
 
       {/* Table */}
-      <div className="flex-1 min-h-0">
+      <p className="mb-2 text-xs text-muted-foreground sm:hidden">Swipe sideways to see all columns</p>
+      <div className="h-[70dvh] min-h-0 min-w-0 sm:h-auto sm:flex-1">
         <div className="h-full border rounded-lg flex flex-col min-w-0">
-          <div className="relative flex-1 min-h-0 w-full">
+          <div className="relative flex-1 min-h-0 w-full min-w-0">
               <div className="h-full">
                 <Table className="text-sm" containerClassName="h-full overflow-auto">
                   <TableHeader>
                     <TableRow>
-                      {/* Sticky selection cell */}
+                      {/* Sticky selection cell — pinned sideways from `sm` only: on a phone the
+                          selection and expand columns would take a third of the width, so there the
+                          Description column is the one that stays in view. */}
                       <TableHead
-                        className="sticky left-0 top-0 bg-background z-30 w-[50px] shadow-[1px_0_0_0_var(--border)]"
+                        className="sticky top-0 bg-background z-30 w-[50px] shadow-[1px_0_0_0_var(--border)] sm:left-0"
                         aria-sort="none"
                       >
                         <Checkbox
@@ -1388,14 +1401,18 @@ export default function ViewBoqPage() {
                         />
                       </TableHead>
                       {/* Sticky expand cell */}
-                      <TableHead className="sticky left-[50px] top-0 bg-background z-30 w-12 shadow-[1px_0_0_0_var(--border)]">
+                      <TableHead className="sticky top-0 bg-background z-30 w-12 shadow-[1px_0_0_0_var(--border)] sm:left-[50px]">
                         <span className="sr-only">Expand</span>
                       </TableHead>
 
                       {visibleHeaders.map((header) => (
                         <TableHead
                           key={header}
-                          className="sticky top-0 bg-background z-20 whitespace-nowrap px-4 cursor-pointer select-none"
+                          className={cn(
+                            'sticky top-0 bg-background z-20 whitespace-nowrap px-4 cursor-pointer select-none',
+                            header === 'Description' &&
+                              'max-sm:left-0 max-sm:z-30 max-sm:shadow-[1px_0_0_0_hsl(var(--border))]',
+                          )}
                           onClick={() => handleSort(header)}
                           title="Sort"
                           aria-sort={sortKey === header ? (sortDirection === 'asc' ? 'ascending' : 'descending') : 'none'}
@@ -1422,10 +1439,10 @@ export default function ViewBoqPage() {
                     {isLoading ? (
                       Array.from({ length: 6 }).map((_, i) => (
                         <TableRow key={i}>
-                          <TableCell className="sticky left-0 bg-background z-10 shadow-[1px_0_0_0_var(--border)]">
+                          <TableCell className="sm:sticky sm:left-0 bg-background z-10 shadow-[1px_0_0_0_var(--border)]">
                             <Skeleton className="h-5 w-5" />
                           </TableCell>
-                          <TableCell className="sticky left-[50px] bg-background z-10 shadow-[1px_0_0_0_var(--border)] px-2">
+                          <TableCell className="sm:sticky sm:left-[50px] bg-background z-10 shadow-[1px_0_0_0_var(--border)] px-2">
                             <Skeleton className="h-5 w-5" />
                           </TableCell>
                           {visibleHeaders.map((_, j) => (
@@ -1457,7 +1474,7 @@ export default function ViewBoqPage() {
                             >
                               {/* Sticky selection cell */}
                               <TableCell
-                                className="sticky left-0 bg-background z-10 shadow-[1px_0_0_0_var(--border)]"
+                                className="sm:sticky sm:left-0 bg-background z-10 shadow-[1px_0_0_0_var(--border)]"
                                 onClick={(e) => e.stopPropagation()}
                               >
                                 <Checkbox
@@ -1469,7 +1486,7 @@ export default function ViewBoqPage() {
                               </TableCell>
 
                               {/* Sticky expand cell */}
-                              <TableCell className="sticky left-[50px] bg-background z-10 shadow-[1px_0_0_0_var(--border)] px-2">
+                              <TableCell className="sm:sticky sm:left-[50px] bg-background z-10 shadow-[1px_0_0_0_var(--border)] px-2">
                                 {hasBom ? (
                                   <Button
                                     size="icon"
@@ -1611,9 +1628,20 @@ export default function ViewBoqPage() {
                                 const titleText = typeof display === 'string' || typeof display === 'number' ? String(display) : undefined;
 
                                 return (
-                                  <TableCell key={`${item.id}-${header}`} className={cn(shouldTruncate && 'max-w-xs')}>
+                                  <TableCell
+                                    key={`${item.id}-${header}`}
+                                    className={cn(
+                                      shouldTruncate && 'max-w-xs',
+                                      header === 'Description' &&
+                                        'max-sm:sticky max-sm:left-0 max-sm:z-10 max-sm:bg-background max-sm:shadow-[1px_0_0_0_hsl(var(--border))]',
+                                    )}
+                                  >
                                     <p
-                                      className={cn('truncate', isHeaderRow && header === 'Description' && 'font-semibold')}
+                                      className={cn(
+                                        'truncate',
+                                        isHeaderRow && header === 'Description' && 'font-semibold',
+                                        header === 'Description' && 'max-sm:max-w-[10rem]',
+                                      )}
                                       title={titleText}
                                     >
                                       {display}
@@ -1649,7 +1677,9 @@ export default function ViewBoqPage() {
                             {isExpanded && hasBom && (
                               <TableRow className="bg-muted/50 hover:bg-muted/50">
                                 <TableCell colSpan={visibleHeaders.length + 3} className="p-0">
-                                  <div className="p-4">
+                                  {/* The row spans the whole sheet; on a phone the panel stays pinned to the
+                                      visible width of the scroll box instead of starting off-screen. */}
+                                  <div className="p-4 max-sm:sticky max-sm:left-0 max-sm:w-[calc(100vw-2.25rem)] max-sm:p-3">
                                     <h4 className="font-semibold mb-2 ml-2 text-sm">Bill of Materials</h4>
                                     <Table>
                                       <TableHeader>
@@ -1700,9 +1730,9 @@ export default function ViewBoqPage() {
       />
 
       <Dialog open={isEditDialogOpen} onOpenChange={setIsEditDialogOpen}>
-        <DialogContent className="max-w-2xl">
-          <DialogHeader><DialogTitle>Edit BOQ Item</DialogTitle></DialogHeader>
-          <div className="py-4 grid grid-cols-2 gap-4 max-h-[60vh] overflow-y-auto">
+        <DialogContent className={cn(PM_DIALOG.content, 'sm:max-w-2xl')}>
+          <DialogHeader className={PM_DIALOG.header}><DialogTitle>Edit BOQ Item</DialogTitle></DialogHeader>
+          <div className={cn(PM_DIALOG.bodyGrid, 'sm:max-h-[60vh] sm:gap-4 sm:overflow-y-auto sm:py-4')}>
               {editingItem && dialogFields.map((key: keyof BoqItem) => (
                   <div className="space-y-1" key={key}>
                       <Label htmlFor={`edit-${String(key)}`}>
@@ -1745,7 +1775,7 @@ export default function ViewBoqPage() {
                   </div>
               ))}
           </div>
-          <DialogFooter>
+          <DialogFooter className={PM_DIALOG.footer}>
             <DialogClose asChild><Button variant="outline">Cancel</Button></DialogClose>
             <Button onClick={handleSaveChanges} disabled={isSaving}>
               {isSaving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}

@@ -112,25 +112,25 @@ export default function OperationalBoqPage() {
   }
 
   return (
-    <main className="min-h-[calc(100dvh-4rem)] p-4 sm:p-6">
+    <main className="min-h-[calc(100dvh-4rem)] p-4 max-sm:[--card-pad:1rem] sm:p-6">
       <div className="flex items-center gap-3">
-        <Button variant="ghost" size="icon" asChild>
+        <Button variant="ghost" size="icon" className="shrink-0" asChild>
           <Link href="/project-management/boq" aria-label="Back to BOQ">
             <ArrowLeft className="h-5 w-5" />
           </Link>
         </Button>
-        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-violet-500 to-purple-600 shadow-sm">
+        <div className="hidden h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-violet-500 to-purple-600 shadow-sm sm:flex">
           <ClipboardCheck className="h-5 w-5 text-white" />
         </div>
-        <div>
-          <h1 className="text-2xl font-bold sm:text-3xl">Operational BOQ</h1>
+        <div className="min-w-0">
+          <h1 className="text-xl font-bold sm:text-3xl">Operational BOQ</h1>
           <p className="mt-1 text-sm text-muted-foreground">
             Select a project to track its execution quantities against the BOQ.
           </p>
         </div>
       </div>
 
-      <Card className="mt-6 max-w-md overflow-hidden border-border/60">
+      <Card className="mt-5 max-w-md overflow-hidden border-border/60 sm:mt-6">
         <div className="h-1 w-full bg-gradient-to-r from-violet-500 to-purple-600" />
         <CardHeader>
           <CardTitle className="text-base">Select Project</CardTitle>

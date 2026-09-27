@@ -16,7 +16,6 @@ import {
   Trash2,
   Users,
 } from "lucide-react";
-import { Fragment } from "react";
 import {
   collection,
   deleteDoc,
@@ -30,13 +29,6 @@ import { logUserActivity } from "@/lib/activity-logger";
 import { exportWorkbook } from "@/lib/report-excel";
 import { Button } from "@/components/ui/button";
 import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
-import {
   AlertDialog,
   AlertDialogAction,
   AlertDialogCancel,
@@ -47,14 +39,6 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
 import { useAuthorization } from "@/hooks/useAuthorization";
@@ -65,6 +49,7 @@ import {
   formatDate,
   rfqStatusStyles,
   type Rfq,
+  type RfqItem,
 } from "@/lib/rfq";
 import { isLegacyRfq, type RfqLike } from "@/lib/project-management-rfq-workflow";
 import { useProjectManagementRfqContext } from "@/components/rfq/use-rfq-host-context";
@@ -75,14 +60,16 @@ import {
   RfqProjectNotFound,
 } from "@/components/rfq/rfq-page-shell";
 import {
-  PM_TABLE_CLASS,
   PmContent,
+  PmDataList,
+  PmEmptyState,
   PmSectionHead,
   PmShell,
   PmSidebar,
   PmTableFoot,
   PmTopbar,
   pmAccent,
+  type PmListColumn,
 } from "@/components/project-management/pm-shell";
 
 type ProjectMapping = {
@@ -266,6 +253,110 @@ export default function RfqRegisterPage() {
     );
   }
 
+  const itemColumns: PmListColumn<RfqItem & { id: string }>[] = [
+    { header: "BOQ SL No", cell: (item) => item.boqSlNo || "—" },
+    {
+      header: "Description",
+      className: "max-w-sm truncate",
+      mobile: "title",
+      cell: (item) => <span title={item.description}>{item.description}</span>,
+    },
+    { header: "Qty", cell: (item) => <>{item.qty} {item.unit}</> },
+    { header: "Source Indent", cell: (item) => item.sourceIndentNumber },
+    { header: "Awarded To", cell: (item) => item.awardedVendorName || "—" },
+  ];
+
+  const columns: PmListColumn<Rfq>[] = [
+    {
+      header: "",
+      className: "w-10",
+      // Phones toggle from a button in the card's footer instead — a card with actions is not
+      // itself a tap target.
+      mobile: "omit",
+      cell: (rfq) => {
+        const isExpanded = expandedIds.has(rfq.id);
+        return (
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={(e) => {
+              e.stopPropagation();
+              toggleExpanded(rfq.id);
+            }}
+            aria-label={isExpanded ? "Collapse" : "Expand"}
+          >
+            {isExpanded ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
+          </Button>
+        );
+      },
+    },
+    { header: "RFQ No.", mobile: "title", cell: (rfq) => <span className="font-medium">{rfq.rfqNumber}</span> },
+    { header: "RFQ Date", className: "whitespace-nowrap", cell: (rfq) => formatDate(rfq.rfqDate) },
+    { header: "Due Date", className: "whitespace-nowrap", cell: (rfq) => formatDate(rfq.dueDate) },
+    { header: "Items", cell: (rfq) => rfq.items?.length ?? 0 },
+    { header: "Vendors", cell: (rfq) => rfq.vendorIds?.length ?? 0 },
+    {
+      header: "Status",
+      mobile: "aside",
+      cell: (rfq) => (
+        <>
+          <span className={`whitespace-nowrap rounded-full px-2.5 py-1 text-xs font-medium ${rfqStatusStyles[rfq.status]}`}>{rfq.status}</span>
+          {isLegacyRfq(rfq as RfqLike) && (
+            <p
+              className="mt-1 text-xs text-muted-foreground"
+              title="Raised before award approval existed — awards on this RFQ create a purchase order directly."
+            >
+              Legacy
+            </p>
+          )}
+        </>
+      ),
+    },
+    {
+      header: "Open",
+      align: "right",
+      mobile: "footer",
+      cell: (rfq) => {
+        const isExpanded = expandedIds.has(rfq.id);
+        return (
+          <div className="flex w-full items-center justify-end gap-2 sm:w-auto sm:gap-1" onClick={(e) => e.stopPropagation()}>
+            <Button variant="outline" size="sm" className="sm:hidden" onClick={() => toggleExpanded(rfq.id)}>
+              {isExpanded ? "Hide items" : "Show items"}
+            </Button>
+            {/* A bordered, thumb-sized button on a phone; the register's plain text link from `sm`. */}
+            <Link
+              href={`/project-management/rfq/${rfq.id}?project=${encodeURIComponent(mappingId)}`}
+              className="inline-flex min-h-11 flex-1 items-center justify-center rounded-md border border-input bg-background px-3 text-sm font-medium text-primary hover:underline sm:min-h-0 sm:flex-none sm:border-0 sm:bg-transparent sm:px-0"
+            >
+              Open
+            </Link>
+            {canDelete && rfq.status === "Draft" && (
+              <AlertDialog>
+                <AlertDialogTrigger asChild>
+                  <Button variant="ghost" size="icon" disabled={deletingId === rfq.id} aria-label={`Delete ${rfq.rfqNumber}`}>
+                    {deletingId === rfq.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4 text-destructive" />}
+                  </Button>
+                </AlertDialogTrigger>
+                <AlertDialogContent>
+                  <AlertDialogHeader>
+                    <AlertDialogTitle>Delete draft RFQ?</AlertDialogTitle>
+                    <AlertDialogDescription>
+                      This permanently deletes {rfq.rfqNumber} and its vendor quotes. This action cannot be undone.
+                    </AlertDialogDescription>
+                  </AlertDialogHeader>
+                  <AlertDialogFooter>
+                    <AlertDialogCancel>Cancel</AlertDialogCancel>
+                    <AlertDialogAction onClick={() => void handleDelete(rfq)}>Delete Draft</AlertDialogAction>
+                  </AlertDialogFooter>
+                </AlertDialogContent>
+              </AlertDialog>
+            )}
+          </div>
+        );
+      },
+    },
+  ];
+
   return (
     <PmShell
       sidebar={
@@ -320,8 +411,9 @@ export default function RfqRegisterPage() {
         actions={
           <>
             {rfqs.length > 0 && (
-              <Button variant="outline" size="sm" onClick={exportRfqs}>
-                <Download className="mr-2 h-4 w-4" /> Export
+              <Button variant="outline" size="sm" onClick={exportRfqs} aria-label="Export">
+                <Download className="h-4 w-4 sm:mr-2" />
+                <span className="hidden sm:inline">Export</span>
               </Button>
             )}
             {canAdd && (
@@ -351,136 +443,39 @@ export default function RfqRegisterPage() {
           Each RFQ can bundle items from multiple indents and go out to multiple vendors.
         </p>
 
-      <Card className="overflow-hidden border-border/60">
-        <CardContent className="p-0">
-          <div className="overflow-x-auto">
-            <Table className={PM_TABLE_CLASS}>
-              <TableHeader>
-                <TableRow>
-                  <TableHead className="w-10" />
-                  <TableHead>RFQ No.</TableHead>
-                  <TableHead>RFQ Date</TableHead>
-                  <TableHead>Due Date</TableHead>
-                  <TableHead>Items</TableHead>
-                  <TableHead>Vendors</TableHead>
-                  <TableHead>Status</TableHead>
-                  <TableHead className="text-right">Open</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {filteredRfqs.length ? filteredRfqs.map((rfq) => {
-                  const isExpanded = expandedIds.has(rfq.id);
-                  return (
-                    <Fragment key={rfq.id}>
-                      <TableRow className="cursor-pointer" onClick={() => toggleExpanded(rfq.id)}>
-                        <TableCell onClick={(e) => e.stopPropagation()}>
-                          <Button variant="ghost" size="icon" onClick={() => toggleExpanded(rfq.id)} aria-label={isExpanded ? "Collapse" : "Expand"}>
-                            {isExpanded ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
-                          </Button>
-                        </TableCell>
-                        <TableCell className="font-medium">{rfq.rfqNumber}</TableCell>
-                        <TableCell className="whitespace-nowrap">{formatDate(rfq.rfqDate)}</TableCell>
-                        <TableCell className="whitespace-nowrap">{formatDate(rfq.dueDate)}</TableCell>
-                        <TableCell>{rfq.items?.length ?? 0}</TableCell>
-                        <TableCell>{rfq.vendorIds?.length ?? 0}</TableCell>
-                        <TableCell>
-                          <span className={`rounded-full px-2.5 py-1 text-xs font-medium ${rfqStatusStyles[rfq.status]}`}>{rfq.status}</span>
-                          {isLegacyRfq(rfq as RfqLike) && (
-                            <p
-                              className="mt-1 text-xs text-muted-foreground"
-                              title="Raised before award approval existed — awards on this RFQ create a purchase order directly."
-                            >
-                              Legacy
-                            </p>
-                          )}
-                        </TableCell>
-                        <TableCell className="text-right" onClick={(e) => e.stopPropagation()}>
-                          <div className="flex items-center justify-end gap-1">
-                            <Link href={`/project-management/rfq/${rfq.id}?project=${encodeURIComponent(mappingId)}`} className="text-sm font-medium text-primary hover:underline">
-                              Open
-                            </Link>
-                            {canDelete && rfq.status === "Draft" && (
-                              <AlertDialog>
-                                <AlertDialogTrigger asChild>
-                                  <Button variant="ghost" size="icon" disabled={deletingId === rfq.id} aria-label={`Delete ${rfq.rfqNumber}`}>
-                                    {deletingId === rfq.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4 text-destructive" />}
-                                  </Button>
-                                </AlertDialogTrigger>
-                                <AlertDialogContent>
-                                  <AlertDialogHeader>
-                                    <AlertDialogTitle>Delete draft RFQ?</AlertDialogTitle>
-                                    <AlertDialogDescription>
-                                      This permanently deletes {rfq.rfqNumber} and its vendor quotes. This action cannot be undone.
-                                    </AlertDialogDescription>
-                                  </AlertDialogHeader>
-                                  <AlertDialogFooter>
-                                    <AlertDialogCancel>Cancel</AlertDialogCancel>
-                                    <AlertDialogAction onClick={() => void handleDelete(rfq)}>Delete Draft</AlertDialogAction>
-                                  </AlertDialogFooter>
-                                </AlertDialogContent>
-                              </AlertDialog>
-                            )}
-                          </div>
-                        </TableCell>
-                      </TableRow>
-                      {isExpanded && (
-                        <TableRow className="bg-muted/40 hover:bg-muted/40">
-                          <TableCell colSpan={8} className="p-0">
-                            <div className="p-3">
-                              <p className="mb-2 px-1 text-xs font-medium uppercase tracking-wide text-muted-foreground">Vendors invited</p>
-                              <div className="mb-3 flex flex-wrap gap-1.5 px-1">
-                                {(rfq.vendorNames ?? []).map((name) => (
-                                  <span key={name} className="rounded-full border bg-background px-2.5 py-1 text-xs">{name}</span>
-                                ))}
-                              </div>
-                              <Table>
-                                <TableHeader>
-                                  <TableRow>
-                                    <TableHead>BOQ SL No</TableHead>
-                                    <TableHead>Description</TableHead>
-                                    <TableHead>Qty</TableHead>
-                                    <TableHead>Source Indent</TableHead>
-                                    <TableHead>Awarded To</TableHead>
-                                  </TableRow>
-                                </TableHeader>
-                                <TableBody>
-                                  {(rfq.items ?? []).map((item) => (
-                                    <TableRow key={item.rfqItemId}>
-                                      <TableCell>{item.boqSlNo || "—"}</TableCell>
-                                      <TableCell className="max-w-sm truncate" title={item.description}>{item.description}</TableCell>
-                                      <TableCell>{item.qty} {item.unit}</TableCell>
-                                      <TableCell>{item.sourceIndentNumber}</TableCell>
-                                      <TableCell>{item.awardedVendorName || "—"}</TableCell>
-                                    </TableRow>
-                                  ))}
-                                </TableBody>
-                              </Table>
-                            </div>
-                          </TableCell>
-                        </TableRow>
-                      )}
-                    </Fragment>
-                  );
-                }) : (
-                  <TableRow>
-                    <TableCell colSpan={8} className="h-36 text-center">
-                      <FileSearch className="mx-auto mb-2 h-8 w-8 text-muted-foreground" />
-                      <p className="font-medium">No RFQs created</p>
-                      <p className="text-sm text-muted-foreground">Create an RFQ from one or more indents to invite vendor quotes.</p>
-                    </TableCell>
-                  </TableRow>
-                )}
-              </TableBody>
-            </Table>
-          </div>
-          {filteredRfqs.length > 0 && (
+        <PmDataList
+          rows={filteredRfqs}
+          columns={columns}
+          onRowClick={(rfq) => toggleExpanded(rfq.id)}
+          expandedIds={expandedIds}
+          renderExpanded={(rfq) => (
+            <div className="sm:p-3">
+              <p className="mb-2 px-1 text-xs font-medium uppercase tracking-wide text-muted-foreground">Vendors invited</p>
+              <div className="mb-3 flex flex-wrap gap-1.5 px-1">
+                {(rfq.vendorNames ?? []).map((name) => (
+                  <span key={name} className="max-w-full truncate rounded-full border bg-background px-2.5 py-1 text-xs">{name}</span>
+                ))}
+              </div>
+              <PmDataList
+                rows={(rfq.items ?? []).map((item) => ({ ...item, id: item.rfqItemId }))}
+                columns={itemColumns}
+              />
+            </div>
+          )}
+          empty={
+            <PmEmptyState
+              icon={FileSearch}
+              title="No RFQs created"
+              description="Create an RFQ from one or more indents to invite vendor quotes."
+            />
+          }
+          foot={
             <PmTableFoot
               left={<>Showing <b className="font-semibold tabular-nums text-foreground">{filteredRfqs.length}</b> of <b className="font-semibold tabular-nums text-foreground">{rfqs.length}</b> RFQs</>}
               right={<>Open <b className="font-semibold tabular-nums text-foreground">{totalOpen}</b></>}
             />
-          )}
-        </CardContent>
-      </Card>
+          }
+        />
       </PmContent>
     </PmShell>
   );

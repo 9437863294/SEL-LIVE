@@ -70,15 +70,20 @@ function Dashboard() {
         backHref={`/project-management/erection?project=${encodeURIComponent(mappingId)}`}
         actions={
           <>
-            <Button variant="outline" onClick={() => void reload()}>
-              <RefreshCw className="mr-2 h-4 w-4" />
-              Refresh
+            <Button
+              variant="outline"
+              onClick={() => void reload()}
+              aria-label="Refresh"
+              className="max-sm:px-3"
+            >
+              <RefreshCw className="h-4 w-4 sm:mr-2" />
+              <span className="hidden sm:inline">Refresh</span>
             </Button>
             {permissions.viewReports ? (
-              <Button variant="outline" asChild>
-                <Link href={towerProgressHref(mappingId, "reports")}>
-                  <BarChart3 className="mr-2 h-4 w-4" />
-                  Reports
+              <Button variant="outline" asChild className="max-sm:px-3">
+                <Link href={towerProgressHref(mappingId, "reports")} aria-label="Reports">
+                  <BarChart3 className="h-4 w-4 sm:mr-2" />
+                  <span className="hidden sm:inline">Reports</span>
                 </Link>
               </Button>
             ) : null}
@@ -122,7 +127,7 @@ function Dashboard() {
         </Card>
       ) : (
         <>
-          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
+          <div className="grid grid-cols-2 gap-3 lg:grid-cols-3 xl:grid-cols-6">
             <MetricCard
               label="Total towers"
               value={summary.totalTowers}
@@ -217,11 +222,16 @@ function Dashboard() {
               </div>
             </CardHeader>
             <CardContent className="p-0">
+              {/* A cross-tab — the columns are the point — so it scrolls sideways on a phone with
+                  the activity pinned, rather than becoming seven cards of seven numbers. */}
+              <p className="px-4 pb-2 text-xs text-muted-foreground sm:hidden">
+                Swipe sideways to see all columns
+              </p>
               <div className="overflow-x-auto">
-                <Table>
+                <Table className="min-w-[720px]">
                   <TableHeader>
                     <TableRow>
-                      <TableHead>Activity</TableHead>
+                      <TableHead className="sticky left-0 z-10 bg-card">Activity</TableHead>
                       <TableHead className="text-right">Total</TableHead>
                       <TableHead className="text-right">Completed</TableHead>
                       <TableHead className="text-right">In Progress</TableHead>
@@ -235,7 +245,7 @@ function Dashboard() {
                   <TableBody>
                     {summary.activities.map((activity) => (
                       <TableRow key={activity.activity}>
-                        <TableCell className="font-medium">
+                        <TableCell className="sticky left-0 z-10 bg-card font-medium">
                           {activity.label}
                           {activity.measure === "span" ? (
                             <span className="ml-1 text-xs text-muted-foreground">(spans)</span>
@@ -300,10 +310,12 @@ function Dashboard() {
                   ) : null}
                 </div>
               </CardHeader>
-              <CardContent className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+              {/* A swipeable strip on a phone — eight full-width photographs stacked one under
+                  another would bury the rest of the dashboard — and the grid from `sm`. */}
+              <CardContent className="no-scrollbar flex snap-x snap-mandatory scroll-px-4 gap-3 overflow-x-auto sm:grid sm:snap-none sm:grid-cols-2 sm:overflow-visible lg:grid-cols-4">
                 {latestPhotos.map((row) =>
                   row.photo ? (
-                    <div key={row.towerId} className="space-y-1.5">
+                    <div key={row.towerId} className="w-[78%] shrink-0 snap-start space-y-1.5 sm:w-auto">
                       <div className="flex items-center justify-between gap-2">
                         <Link
                           href={towerProgressHref(mappingId, `towers/${row.towerId}`)}

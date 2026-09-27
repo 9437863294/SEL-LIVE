@@ -38,7 +38,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Skeleton } from '@/components/ui/skeleton';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { Checkbox } from '@/components/ui/checkbox';
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { PmDataList } from '@/components/project-management/pm-shell';
 import { useAuthorization } from '@/hooks/useAuthorization';
 import { useAuth } from '@/components/auth/AuthProvider';
 import { logUserActivity } from '@/lib/activity-logger';
@@ -385,7 +385,7 @@ export default function JmcWorkflowConfigurationPage() {
   }
 
   return (
-    <JmcPageShell>
+    <JmcPageShell className="max-sm:[--card-pad:0.75rem]">
       <JmcPageHeader
         title="JMC Workflow Configuration"
         subtitle={
@@ -400,7 +400,8 @@ export default function JmcWorkflowConfigurationPage() {
         actions={
           <>
             {pageInvalidMsg && (
-              <Badge variant="destructive" className="whitespace-nowrap">
+              // Wraps on a phone: a one-line validation message is wider than the screen.
+              <Badge variant="destructive" className="whitespace-normal sm:whitespace-nowrap">
                 {pageInvalidMsg}
               </Badge>
             )}
@@ -432,15 +433,19 @@ export default function JmcWorkflowConfigurationPage() {
                 <AccordionItem
                   value={step.id}
                   key={step.id}
-                  className="mb-2 rounded-lg border border-border/60 bg-background px-4"
+                  className="mb-2 rounded-lg border border-border/60 bg-background px-3 sm:px-4"
                 >
+                  {/* The grip is decorative (steps move with the arrows), so a phone spends its width
+                      on the step name instead. */}
                   <div className="flex items-center gap-2 py-2">
-                    <GripVertical className="h-5 w-5 text-muted-foreground" />
-                    <AccordionTrigger className="flex-1 text-base hover:no-underline">
-                      {index + 1}. {step.name}
+                    <GripVertical className="hidden h-5 w-5 shrink-0 text-muted-foreground sm:block" />
+                    <AccordionTrigger className="min-w-0 flex-1 gap-2 text-left text-base hover:no-underline">
+                      <span className="min-w-0 break-words">
+                        {index + 1}. {step.name}
+                      </span>
                     </AccordionTrigger>
 
-                    <div className="flex items-center gap-1">
+                    <div className="flex shrink-0 items-center gap-1">
                       <Button
                         variant="ghost"
                         size="icon"
@@ -472,9 +477,9 @@ export default function JmcWorkflowConfigurationPage() {
                   </div>
 
                   <AccordionContent>
-                    <div className="space-y-6 p-4 border-t">
+                    <div className="space-y-5 px-0 py-4 border-t sm:space-y-6 sm:p-4">
                       {/* Step name + TAT */}
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 sm:gap-6">
                         <div className="space-y-2">
                           <Label htmlFor={`step-name-${step.id}`}>Step Name</Label>
                           <Input
@@ -512,7 +517,7 @@ export default function JmcWorkflowConfigurationPage() {
                           onValueChange={(v) =>
                             handleStepChange(step.id, 'assignmentType', v as WorkflowStep['assignmentType'])
                           }
-                          className="flex flex-wrap gap-4"
+                          className="flex flex-wrap gap-x-4 gap-y-3"
                         >
                           {(['User-based', 'Project-based', 'Department-based'] as const).map((type) => (
                             <div key={type} className="flex items-center space-x-2">
@@ -581,77 +586,89 @@ export default function JmcWorkflowConfigurationPage() {
                       {isMapped(step) && (
                         <div className="space-y-2">
                           <Label>Assign Users</Label>
-                          <Card className="mt-2 border-border/60">
-                            <CardContent className="p-0">
-                              <div className="overflow-x-auto">
-                              <Table className="min-w-[720px]">
-                                <TableHeader>
-                                  <TableRow>
-                                    <TableHead className="whitespace-nowrap">
-                                      {step.assignmentType === 'Project-based' ? 'Project' : 'Department'}
-                                    </TableHead>
-                                    <TableHead className="whitespace-nowrap">Primary User</TableHead>
-                                    <TableHead className="whitespace-nowrap">Alternative User</TableHead>
-                                  </TableRow>
-                                </TableHeader>
-                                <TableBody>
-                                  {(step.assignmentType === 'Project-based' ? projects : departments).map((item) => {
-                                    const map = (step.assignedTo ?? {}) as Record<string, AssignedTo>;
-                                    const row = map[item.id] ?? { primary: '', alternative: '' };
-                                    return (
-                                      <TableRow key={item.id}>
-                                        <TableCell className="whitespace-nowrap">
-                                          {'projectName' in item ? item.projectName : item.name}
-                                        </TableCell>
-                                        <TableCell>
-                                          <Select
-                                            value={row.primary || ''}
-                                            onValueChange={(value) =>
-                                              handleAssignmentDetailChange(step.id, item.id, 'primary', value)
-                                            }
-                                            disabled={!canEditPage}
-                                          >
-                                            <SelectTrigger>
-                                              <SelectValue placeholder="Select primary user" />
-                                            </SelectTrigger>
-                                            <SelectContent>
-                                              {users.map((u) => (
-                                                <SelectItem key={u.id} value={u.id}>
-                                                  {personOptionLabel(u)}
-                                                </SelectItem>
-                                              ))}
-                                            </SelectContent>
-                                          </Select>
-                                        </TableCell>
-                                        <TableCell>
-                                          <Select
-                                            value={row.alternative || 'none'}
-                                            onValueChange={(value) =>
-                                              handleAssignmentDetailChange(step.id, item.id, 'alternative', value)
-                                            }
-                                            disabled={!canEditPage}
-                                          >
-                                            <SelectTrigger>
-                                              <SelectValue placeholder="Select alternative user" />
-                                            </SelectTrigger>
-                                            <SelectContent>
-                                              <SelectItem value="none">None</SelectItem>
-                                              {users.map((u) => (
-                                                <SelectItem key={u.id} value={u.id}>
-                                                  {personOptionLabel(u)}
-                                                </SelectItem>
-                                              ))}
-                                            </SelectContent>
-                                          </Select>
-                                        </TableCell>
-                                      </TableRow>
-                                    );
-                                  })}
-                                </TableBody>
-                              </Table>
-                              </div>
-                            </CardContent>
-                          </Card>
+                          {/* A card per project/department on a phone, the three-column table from
+                              `sm`. The pickers sit in the card's footer row; their `min-w` makes that
+                              row wrap, so each picker gets the full width rather than half of it. */}
+                          <PmDataList<Project | Department>
+                            className="mt-2"
+                            tableClassName="min-w-[720px]"
+                            rows={step.assignmentType === 'Project-based' ? projects : departments}
+                            columns={[
+                              {
+                                header: step.assignmentType === 'Project-based' ? 'Project' : 'Department',
+                                mobile: 'title',
+                                className: 'sm:whitespace-nowrap',
+                                cell: (item) => ('projectName' in item ? item.projectName : item.name),
+                              },
+                              {
+                                header: 'Primary User',
+                                mobile: 'footer',
+                                cell: (item) => {
+                                  const map = (step.assignedTo ?? {}) as Record<string, AssignedTo>;
+                                  const row = map[item.id] ?? { primary: '', alternative: '' };
+                                  return (
+                                    <div className="w-full space-y-1 max-sm:min-w-[14rem]">
+                                      <p className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground sm:hidden">
+                                        Primary User
+                                      </p>
+                                      <Select
+                                        value={row.primary || ''}
+                                        onValueChange={(value) =>
+                                          handleAssignmentDetailChange(step.id, item.id, 'primary', value)
+                                        }
+                                        disabled={!canEditPage}
+                                      >
+                                        <SelectTrigger>
+                                          <SelectValue placeholder="Select primary user" />
+                                        </SelectTrigger>
+                                        <SelectContent>
+                                          {users.map((u) => (
+                                            <SelectItem key={u.id} value={u.id}>
+                                              {personOptionLabel(u)}
+                                            </SelectItem>
+                                          ))}
+                                        </SelectContent>
+                                      </Select>
+                                    </div>
+                                  );
+                                },
+                              },
+                              {
+                                header: 'Alternative User',
+                                mobile: 'footer',
+                                cell: (item) => {
+                                  const map = (step.assignedTo ?? {}) as Record<string, AssignedTo>;
+                                  const row = map[item.id] ?? { primary: '', alternative: '' };
+                                  return (
+                                    <div className="w-full space-y-1 max-sm:min-w-[14rem]">
+                                      <p className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground sm:hidden">
+                                        Alternative User
+                                      </p>
+                                      <Select
+                                        value={row.alternative || 'none'}
+                                        onValueChange={(value) =>
+                                          handleAssignmentDetailChange(step.id, item.id, 'alternative', value)
+                                        }
+                                        disabled={!canEditPage}
+                                      >
+                                        <SelectTrigger>
+                                          <SelectValue placeholder="Select alternative user" />
+                                        </SelectTrigger>
+                                        <SelectContent>
+                                          <SelectItem value="none">None</SelectItem>
+                                          {users.map((u) => (
+                                            <SelectItem key={u.id} value={u.id}>
+                                              {personOptionLabel(u)}
+                                            </SelectItem>
+                                          ))}
+                                        </SelectContent>
+                                      </Select>
+                                    </div>
+                                  );
+                                },
+                              },
+                            ]}
+                          />
                         </div>
                       )}
 
@@ -692,7 +709,7 @@ export default function JmcWorkflowConfigurationPage() {
                         <RadioGroup
                           value={step.upload}
                           onValueChange={(v) => handleStepChange(step.id, 'upload', v as UploadRequirement)}
-                          className="flex gap-4"
+                          className="flex flex-wrap gap-x-4 gap-y-3"
                         >
                           {(['Required', 'Not Required', 'Optional'] as const).map((opt) => (
                             <div key={opt} className="flex items-center space-x-2">
@@ -776,7 +793,7 @@ export default function JmcWorkflowConfigurationPage() {
                           {step.escalationUserId && (
                             <div className="space-y-1 pt-1">
                               <Label className="text-xs text-muted-foreground">Escalate after % of TAT elapsed</Label>
-                              <div className="flex items-center gap-2">
+                              <div className="flex flex-wrap items-center gap-2">
                                 <Input
                                   type="number" min={10} max={100} step={10}
                                   value={step.escalationThreshold ?? 80}
@@ -800,7 +817,7 @@ export default function JmcWorkflowConfigurationPage() {
             </Accordion>
           )}
 
-          <Button variant="outline" onClick={handleAddStep} disabled={!canEditPage}>
+          <Button variant="outline" onClick={handleAddStep} disabled={!canEditPage} className="w-full sm:w-auto">
             <Plus className="mr-2 h-4 w-4" /> Add Step
           </Button>
         </CardContent>

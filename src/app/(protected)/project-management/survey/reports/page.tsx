@@ -162,11 +162,13 @@ export default function SurveyReportsPage() {
       />
 
 
-      <div className="grid gap-3 sm:grid-cols-3">
+      {/* Two up on a phone, with the third spanning beneath, and the cards' own padding
+          compacted so three figures do not cost a screenful. */}
+      <div className="grid grid-cols-2 gap-3 max-sm:[--card-pad:0.75rem] sm:grid-cols-3">
         <Card>
           <CardHeader className="pb-2">
             <CardDescription>Certified coverage</CardDescription>
-            <CardTitle className="text-2xl">{summary.certifiedPct}%</CardTitle>
+            <CardTitle className="text-lg sm:text-2xl">{summary.certifiedPct}%</CardTitle>
           </CardHeader>
           <CardContent className="pt-0 text-xs text-muted-foreground">
             {formatCurrency(summary.certifiedValue)} of {formatCurrency(summary.totalValue)} BOQ value
@@ -175,16 +177,16 @@ export default function SurveyReportsPage() {
         <Card>
           <CardHeader className="pb-2">
             <CardDescription>Awaiting review</CardDescription>
-            <CardTitle className="text-2xl">{summary.inReviewCount}</CardTitle>
+            <CardTitle className="text-lg sm:text-2xl">{summary.inReviewCount}</CardTitle>
           </CardHeader>
           <CardContent className="pt-0 text-xs text-muted-foreground">
             {formatCurrency(summary.inReviewValue)} of BOQ value in the pipeline
           </CardContent>
         </Card>
-        <Card>
+        <Card className="col-span-2 sm:col-span-1">
           <CardHeader className="pb-2">
             <CardDescription>Total entries</CardDescription>
-            <CardTitle className="text-2xl">{entries.length}</CardTitle>
+            <CardTitle className="text-lg sm:text-2xl">{entries.length}</CardTitle>
           </CardHeader>
           <CardContent className="pt-0 text-xs text-muted-foreground">
             Across {boqItems.length} BOQ {boqItems.length === 1 ? "item" : "items"}

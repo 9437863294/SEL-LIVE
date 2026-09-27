@@ -113,18 +113,18 @@ export default function ProjectManagementSettingsPage() {
       {/* ── Header ──────────────────────────────────────────────────────── */}
       <Card className="relative overflow-hidden border-0 bg-gradient-to-r from-slate-700 via-slate-600 to-slate-500 text-white shadow-lg">
         <div className="absolute inset-0 opacity-10 bg-[radial-gradient(ellipse_at_top_right,_white_0%,_transparent_60%)]" />
-        <CardContent className="relative flex items-center gap-4 p-5">
+        <CardContent className="relative flex items-center gap-3 p-4 sm:gap-4 sm:p-5">
           <Button variant="ghost" size="icon" asChild className="shrink-0 text-white hover:bg-white/20 hover:text-white">
             <Link href="/project-management" aria-label="Back to Project Management">
               <ArrowLeft className="h-5 w-5" />
             </Link>
           </Button>
-          <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-white/20 backdrop-blur-sm">
+          <div className="hidden h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-white/20 backdrop-blur-sm sm:flex">
             <Settings2 className="h-6 w-6 text-white" />
           </div>
-          <div>
-            <h1 className="text-2xl font-bold tracking-tight">Project Management Settings</h1>
-            <p className="mt-0.5 text-sm text-slate-200">
+          <div className="min-w-0">
+            <h1 className="text-xl font-bold leading-tight tracking-tight sm:text-2xl">Project Management Settings</h1>
+            <p className="mt-0.5 text-[13px] text-slate-200 sm:text-sm">
               Manage projects and configure module-wide behavior
             </p>
           </div>

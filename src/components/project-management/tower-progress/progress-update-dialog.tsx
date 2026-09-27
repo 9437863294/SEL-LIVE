@@ -67,6 +67,7 @@ import {
   todayKey,
   type PhotoUploadInput,
 } from "@/lib/project-management-tower-service";
+import { PM_DIALOG } from "@/components/project-management/pm-shell";
 import { useTowerProgress } from "./tower-progress-provider";
 import { ActivityStatusBadge } from "./tower-progress-ui";
 
@@ -352,8 +353,12 @@ export function ProgressUpdateDialog({
 
   return (
     <Dialog open={open} onOpenChange={(next) => (isSaving ? undefined : onOpenChange(next))}>
-      <DialogContent className="max-h-[92dvh] overflow-y-auto sm:max-w-3xl">
-        <DialogHeader>
+      {/* A full-screen sheet on a phone — the site engineer's one form — with Cancel / Record
+          pinned at the foot while the fields and photographs scroll. */}
+      <DialogContent
+        className={cn(PM_DIALOG.content, "sm:max-h-[92dvh] sm:max-w-3xl sm:overflow-y-auto")}
+      >
+        <DialogHeader className={PM_DIALOG.header}>
           <DialogTitle>
             {tower.towerNo} · {definition.label}
           </DialogTitle>
@@ -363,294 +368,303 @@ export function ProgressUpdateDialog({
           </DialogDescription>
         </DialogHeader>
 
-        <div className="grid gap-4 sm:grid-cols-2">
-          <div className="space-y-2">
-            <Label>Activity</Label>
-            <Select
-              value={selectedActivity}
-              onValueChange={(value) => setSelectedActivity(value as TowerActivity)}
-            >
-              <SelectTrigger>
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {TOWER_ACTIVITY_LIST.map((entry) => (
-                  <SelectItem key={entry.key} value={entry.key}>
-                    {entry.label} — {tower.activities[entry.key].status}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-
-          <div className="space-y-2">
-            <Label>New status</Label>
-            <div className="flex items-center gap-2">
-              <ActivityStatusBadge status={fromStatus} />
-              <span className="text-muted-foreground">→</span>
+        <div className={PM_DIALOG.body}>
+          <div className="grid gap-4 sm:grid-cols-2">
+            <div className="space-y-2">
+              <Label>Activity</Label>
               <Select
-                value={toStatus}
-                onValueChange={(value) => setToStatus(value as TowerActivityStatus)}
+                value={selectedActivity}
+                onValueChange={(value) => setSelectedActivity(value as TowerActivity)}
               >
-                <SelectTrigger className="flex-1">
+                <SelectTrigger>
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  {nextActivityStatuses(fromStatus).map((status) => (
-                    <SelectItem key={status} value={status}>
-                      {status}
+                  {TOWER_ACTIVITY_LIST.map((entry) => (
+                    <SelectItem key={entry.key} value={entry.key}>
+                      {entry.label} — {tower.activities[entry.key].status}
                     </SelectItem>
                   ))}
                 </SelectContent>
               </Select>
             </div>
-          </div>
 
-          <div className="space-y-2">
-            <Label htmlFor="progress-date">Progress date *</Label>
-            <Input
-              id="progress-date"
-              type="date"
-              value={progressDate}
-              max={todayKey()}
-              onChange={(event) => setProgressDate(event.target.value)}
-            />
-          </div>
-
-          {showQuantity ? (
             <div className="space-y-2">
-              <Label htmlFor="progress-quantity">
-                Length completed (m){isActivityComplete(toStatus) ? " *" : ""}
-              </Label>
-              <Input
-                id="progress-quantity"
-                type="number"
-                min={0}
-                step={1}
-                inputMode="numeric"
-                value={quantity}
-                onChange={(event) => setQuantity(event.target.value)}
-                placeholder={
-                  tower.spanToNextM ? `Span to next tower: ${tower.spanToNextM}` : "e.g. 320"
-                }
-              />
-            </div>
-          ) : null}
-
-          <div className="space-y-2">
-            <Label>
-              Location fix{settings.requireGps ? " *" : ""}
-            </Label>
-            <div className="flex items-center gap-2">
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                onClick={() => void handleCaptureGps()}
-                disabled={isCapturingGps}
-              >
-                {isCapturingGps ? (
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                ) : (
-                  <Crosshair className="mr-2 h-4 w-4" />
-                )}
-                {gps ? "Recapture" : "Capture GPS"}
-              </Button>
-              <span className="truncate text-xs text-muted-foreground">
-                {gps ? `${formatGps(gps)}${gps.accuracyM ? ` ±${gps.accuracyM}m` : ""}` : "Not recorded"}
-              </span>
-            </div>
-          </div>
-
-          {needsReason ? (
-            <div className="space-y-2 sm:col-span-2">
-              <Label htmlFor="progress-reason">Reason *</Label>
-              <Textarea
-                id="progress-reason"
-                value={reason}
-                onChange={(event) => setReason(event.target.value)}
-                maxLength={500}
-                placeholder="Why is this on hold, blocked or rejected? This appears in the exception reports."
-              />
-            </div>
-          ) : null}
-
-          <div className="space-y-2 sm:col-span-2">
-            <Label htmlFor="progress-remarks">Remarks</Label>
-            <Textarea
-              id="progress-remarks"
-              value={remarks}
-              onChange={(event) => setRemarks(event.target.value)}
-              maxLength={500}
-            />
-          </div>
-        </div>
-
-        {/* ── Evidence ───────────────────────────────────────────────────────────────────── */}
-        <div className="space-y-3 rounded-lg border p-3">
-          <div className="flex flex-wrap items-center justify-between gap-2">
-            <div>
-              <p className="text-sm font-semibold">Site photographs</p>
-              <p className="text-xs text-muted-foreground">
-                {settings.evidenceEnforcement === "block"
-                  ? "This project requires the full set before an activity can be completed."
-                  : "Completion is allowed without the full set, but the tower is flagged until it arrives."}
-              </p>
-            </div>
-            <div className="flex gap-2">
-              <input
-                ref={fileInputRef}
-                type="file"
-                accept="image/*"
-                capture="environment"
-                multiple
-                className="hidden"
-                onChange={(event) => handleFiles(event.target.files)}
-              />
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                onClick={() => fileInputRef.current?.click()}
-                disabled={photos.length >= MAX_PHOTOS_PER_UPDATE}
-              >
-                <Camera className="mr-2 h-4 w-4" />
-                Add photographs
-              </Button>
-            </div>
-          </div>
-
-          {evidence.length ? (
-            <div className="flex flex-wrap gap-1.5">
-              {evidence.map((entry) => (
-                <Badge
-                  key={entry.kind}
-                  variant="outline"
-                  className={cn(
-                    "text-[11px]",
-                    entry.onRecord
-                      ? "border-emerald-200 bg-emerald-50 text-emerald-700"
-                      : entry.staged
-                        ? "border-blue-200 bg-blue-50 text-blue-700"
-                        : "border-red-200 bg-red-50 text-red-700",
-                  )}
+              <Label>New status</Label>
+              <div className="flex items-center gap-2">
+                <ActivityStatusBadge status={fromStatus} />
+                <span className="text-muted-foreground">→</span>
+                <Select
+                  value={toStatus}
+                  onValueChange={(value) => setToStatus(value as TowerActivityStatus)}
                 >
-                  {entry.onRecord || entry.staged ? "✓" : "✗"} {entry.label}
-                  {entry.staged && !entry.onRecord ? " (attaching)" : ""}
-                </Badge>
-              ))}
+                  <SelectTrigger className="min-w-0 flex-1">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {nextActivityStatuses(fromStatus).map((status) => (
+                      <SelectItem key={status} value={status}>
+                        {status}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
             </div>
-          ) : null}
 
-          {photos.length ? (
-            <div className="grid gap-2 sm:grid-cols-2">
-              {photos.map((photo) => (
-                <div key={photo.id} className="flex gap-2 rounded-md border p-2">
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img
-                    src={photo.previewUrl}
-                    alt={photo.file.name}
-                    className="h-20 w-24 shrink-0 rounded object-cover"
-                  />
-                  <div className="min-w-0 flex-1 space-y-1.5">
-                    <Select
-                      value={photo.kind}
-                      onValueChange={(value) => updatePhoto(photo.id, { kind: value as TowerPhotoKind })}
-                    >
-                      <SelectTrigger className="h-8 text-xs">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {photoKindsForActivity(selectedActivity).map((kind) => (
-                          <SelectItem key={kind} value={kind}>
-                            {TOWER_PHOTO_KIND_LABELS[kind]}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                    <div className="flex items-center justify-between gap-2">
-                      <label className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
-                        <Checkbox
-                          checked={photo.isReportPhoto}
-                          onCheckedChange={(checked) =>
-                            updatePhoto(photo.id, { isReportPhoto: checked === true })
-                          }
-                        />
-                        Report photo
-                      </label>
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="icon"
-                        className="h-6 w-6"
-                        onClick={() => removePhoto(photo.id)}
-                        aria-label={`Remove ${photo.file.name}`}
+            <div className="space-y-2">
+              <Label htmlFor="progress-date">Progress date *</Label>
+              <Input
+                id="progress-date"
+                type="date"
+                value={progressDate}
+                max={todayKey()}
+                onChange={(event) => setProgressDate(event.target.value)}
+              />
+            </div>
+
+            {showQuantity ? (
+              <div className="space-y-2">
+                <Label htmlFor="progress-quantity">
+                  Length completed (m){isActivityComplete(toStatus) ? " *" : ""}
+                </Label>
+                <Input
+                  id="progress-quantity"
+                  type="number"
+                  min={0}
+                  step={1}
+                  inputMode="numeric"
+                  value={quantity}
+                  onChange={(event) => setQuantity(event.target.value)}
+                  placeholder={
+                    tower.spanToNextM ? `Span to next tower: ${tower.spanToNextM}` : "e.g. 320"
+                  }
+                />
+              </div>
+            ) : null}
+
+            <div className="space-y-2">
+              <Label>
+                Location fix{settings.requireGps ? " *" : ""}
+              </Label>
+              <div className="flex items-center gap-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="shrink-0"
+                  onClick={() => void handleCaptureGps()}
+                  disabled={isCapturingGps}
+                >
+                  {isCapturingGps ? (
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  ) : (
+                    <Crosshair className="mr-2 h-4 w-4" />
+                  )}
+                  {gps ? "Recapture" : "Capture GPS"}
+                </Button>
+                <span className="min-w-0 truncate text-xs text-muted-foreground">
+                  {gps ? `${formatGps(gps)}${gps.accuracyM ? ` ±${gps.accuracyM}m` : ""}` : "Not recorded"}
+                </span>
+              </div>
+            </div>
+
+            {needsReason ? (
+              <div className="space-y-2 sm:col-span-2">
+                <Label htmlFor="progress-reason">Reason *</Label>
+                <Textarea
+                  id="progress-reason"
+                  value={reason}
+                  onChange={(event) => setReason(event.target.value)}
+                  maxLength={500}
+                  placeholder="Why is this on hold, blocked or rejected? This appears in the exception reports."
+                />
+              </div>
+            ) : null}
+
+            <div className="space-y-2 sm:col-span-2">
+              <Label htmlFor="progress-remarks">Remarks</Label>
+              <Textarea
+                id="progress-remarks"
+                value={remarks}
+                onChange={(event) => setRemarks(event.target.value)}
+                maxLength={500}
+              />
+            </div>
+          </div>
+
+          {/* ── Evidence ───────────────────────────────────────────────────────────────────── */}
+          <div className="space-y-3 rounded-lg border p-3">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div>
+                <p className="text-sm font-semibold">Site photographs</p>
+                <p className="text-xs text-muted-foreground">
+                  {settings.evidenceEnforcement === "block"
+                    ? "This project requires the full set before an activity can be completed."
+                    : "Completion is allowed without the full set, but the tower is flagged until it arrives."}
+                </p>
+              </div>
+              {/* Full width on a phone: the one control the engineer is on site to press. */}
+              <div className="flex w-full gap-2 sm:w-auto">
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept="image/*"
+                  capture="environment"
+                  multiple
+                  className="hidden"
+                  onChange={(event) => handleFiles(event.target.files)}
+                />
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="w-full border-dashed max-sm:h-12 sm:w-auto sm:border-solid"
+                  onClick={() => fileInputRef.current?.click()}
+                  disabled={photos.length >= MAX_PHOTOS_PER_UPDATE}
+                >
+                  <Camera className="mr-2 h-4 w-4" />
+                  Add photographs
+                </Button>
+              </div>
+            </div>
+
+            {evidence.length ? (
+              <div className="flex flex-wrap gap-1.5">
+                {evidence.map((entry) => (
+                  <Badge
+                    key={entry.kind}
+                    variant="outline"
+                    className={cn(
+                      "text-[11px]",
+                      entry.onRecord
+                        ? "border-emerald-200 bg-emerald-50 text-emerald-700"
+                        : entry.staged
+                          ? "border-blue-200 bg-blue-50 text-blue-700"
+                          : "border-red-200 bg-red-50 text-red-700",
+                    )}
+                  >
+                    {entry.onRecord || entry.staged ? "✓" : "✗"} {entry.label}
+                    {entry.staged && !entry.onRecord ? " (attaching)" : ""}
+                  </Badge>
+                ))}
+              </div>
+            ) : null}
+
+            {photos.length ? (
+              <div className="grid gap-2 sm:grid-cols-2">
+                {photos.map((photo) => (
+                  <div key={photo.id} className="flex gap-2 rounded-md border p-2">
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img
+                      src={photo.previewUrl}
+                      alt={photo.file.name}
+                      className="h-20 w-24 shrink-0 rounded object-cover"
+                    />
+                    <div className="min-w-0 flex-1 space-y-1.5">
+                      <Select
+                        value={photo.kind}
+                        onValueChange={(value) => updatePhoto(photo.id, { kind: value as TowerPhotoKind })}
                       >
-                        <X className="h-3.5 w-3.5" />
-                      </Button>
+                        <SelectTrigger className="h-8 text-xs">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {photoKindsForActivity(selectedActivity).map((kind) => (
+                            <SelectItem key={kind} value={kind}>
+                              {TOWER_PHOTO_KIND_LABELS[kind]}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      <div className="flex items-center justify-between gap-2">
+                        <label className="flex items-center gap-1.5 text-[11px] text-muted-foreground max-sm:min-h-9 max-sm:pr-2 max-sm:text-xs">
+                          <Checkbox
+                            checked={photo.isReportPhoto}
+                            onCheckedChange={(checked) =>
+                              updatePhoto(photo.id, { isReportPhoto: checked === true })
+                            }
+                          />
+                          Report photo
+                        </label>
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon"
+                          className="hr-inline-action h-9 w-9 sm:h-6 sm:w-6"
+                          onClick={() => removePhoto(photo.id)}
+                          aria-label={`Remove ${photo.file.name}`}
+                        >
+                          <X className="h-3.5 w-3.5" />
+                        </Button>
+                      </div>
                     </div>
                   </div>
-                </div>
-              ))}
-            </div>
+                ))}
+              </div>
+            ) : null}
+          </div>
+
+          {validation.errors.length ? (
+            <Alert variant="destructive">
+              <AlertTriangle className="h-4 w-4" />
+              <AlertTitle>Fix before saving</AlertTitle>
+              <AlertDescription>
+                <ul className="list-inside list-disc space-y-1">
+                  {validation.errors.map((message) => (
+                    <li key={message}>{message}</li>
+                  ))}
+                </ul>
+              </AlertDescription>
+            </Alert>
+          ) : null}
+
+          {validation.warnings.length ? (
+            <Alert>
+              <Info className="h-4 w-4" />
+              <AlertTitle>Worth knowing</AlertTitle>
+              <AlertDescription>
+                <ul className="list-inside list-disc space-y-1">
+                  {validation.warnings.map((message) => (
+                    <li key={message}>{message}</li>
+                  ))}
+                </ul>
+              </AlertDescription>
+            </Alert>
+          ) : null}
+
+          {!validation.errors.length &&
+          isActivityComplete(toStatus) &&
+          !missingRequiredPhotoKinds(selectedActivity, [
+            ...(state?.presentPhotoKinds ?? []),
+            ...stagedKinds,
+          ]).length ? (
+            <p className="flex items-center gap-1.5 text-xs text-emerald-700">
+              <CheckCircle2 className="h-3.5 w-3.5" />
+              Evidence set complete
+              {settings.requireVerification ? " — goes to the verification queue on save." : "."}
+            </p>
           ) : null}
         </div>
 
-        {validation.errors.length ? (
-          <Alert variant="destructive">
-            <AlertTriangle className="h-4 w-4" />
-            <AlertTitle>Fix before saving</AlertTitle>
-            <AlertDescription>
-              <ul className="list-inside list-disc space-y-1">
-                {validation.errors.map((message) => (
-                  <li key={message}>{message}</li>
-                ))}
-              </ul>
-            </AlertDescription>
-          </Alert>
-        ) : null}
-
-        {validation.warnings.length ? (
-          <Alert>
-            <Info className="h-4 w-4" />
-            <AlertTitle>Worth knowing</AlertTitle>
-            <AlertDescription>
-              <ul className="list-inside list-disc space-y-1">
-                {validation.warnings.map((message) => (
-                  <li key={message}>{message}</li>
-                ))}
-              </ul>
-            </AlertDescription>
-          </Alert>
-        ) : null}
-
-        {!validation.errors.length &&
-        isActivityComplete(toStatus) &&
-        !missingRequiredPhotoKinds(selectedActivity, [
-          ...(state?.presentPhotoKinds ?? []),
-          ...stagedKinds,
-        ]).length ? (
-          <p className="flex items-center gap-1.5 text-xs text-emerald-700">
-            <CheckCircle2 className="h-3.5 w-3.5" />
-            Evidence set complete
-            {settings.requireVerification ? " — goes to the verification queue on save." : "."}
-          </p>
-        ) : null}
-
-        <DialogFooter>
+        <DialogFooter className={PM_DIALOG.footer}>
           <Button variant="outline" onClick={() => onOpenChange(false)} disabled={isSaving}>
             Cancel
           </Button>
           <Button
+            className="min-w-0"
             onClick={() => void handleSave()}
             disabled={isSaving || validation.errors.length > 0}
           >
-            {isSaving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-            {isSaving
-              ? photos.length
-                ? `Uploading ${photos.length} photograph${photos.length === 1 ? "" : "s"}…`
-                : "Saving…"
-              : "Record progress"}
+            {isSaving && <Loader2 className="mr-2 h-4 w-4 shrink-0 animate-spin" />}
+            {/* Truncates rather than overflowing the half-width phone footer while uploading. */}
+            <span className="truncate">
+              {isSaving
+                ? photos.length
+                  ? `Uploading ${photos.length} photograph${photos.length === 1 ? "" : "s"}…`
+                  : "Saving…"
+                : "Record progress"}
+            </span>
           </Button>
         </DialogFooter>
       </DialogContent>

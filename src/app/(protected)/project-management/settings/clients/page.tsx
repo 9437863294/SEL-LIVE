@@ -59,7 +59,6 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
-  AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
 import { Input } from "@/components/ui/input";
 import {
@@ -69,15 +68,14 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
 import { Skeleton } from "@/components/ui/skeleton";
+import {
+  PM_DIALOG,
+  PmDataList,
+  PmEmptyState,
+  type PmListColumn,
+} from "@/components/project-management/pm-shell";
+import { cn } from "@/lib/utils";
 
 const COLLECTION_NAME = "clients";
 const PERMISSION_RESOURCE = "Project Management.Clients";
@@ -325,21 +323,85 @@ export default function ClientMasterPage() {
     );
   }
 
+  const columns: PmListColumn<Client>[] = [
+    { header: "Client", mobile: "title", className: "font-medium", cell: (client) => client.name },
+    { header: "GSTIN", cell: (client) => client.gstin || "—" },
+    { header: "PAN", cell: (client) => client.pan || "—" },
+    {
+      header: "Payment Terms",
+      align: "right",
+      cell: (client) => (client.paymentTermsDays != null ? `${client.paymentTermsDays} days` : "—"),
+    },
+    {
+      header: "Retention %",
+      align: "right",
+      cell: (client) => (client.retentionPct != null ? `${client.retentionPct}%` : "—"),
+    },
+    {
+      header: "Status",
+      mobile: "aside",
+      cell: (client) => (
+        <span
+          className={`rounded-full px-2.5 py-1 text-xs font-medium ${
+            client.status === "Active" ? "bg-emerald-100 text-emerald-700" : "bg-muted text-muted-foreground"
+          }`}
+        >
+          {client.status}
+        </span>
+      ),
+    },
+    {
+      header: "Actions",
+      align: "right",
+      mobile: "footer",
+      className: "w-24",
+      cell: (client) => (
+        // Icon-only in the table; on a phone card each stretches into a labelled button.
+        <div className="flex w-full justify-end gap-1 sm:w-auto">
+          <Button
+            variant="ghost"
+            size="icon"
+            className="max-sm:border"
+            aria-label={`Edit ${client.name}`}
+            disabled={!canEdit}
+            onClick={() => openEditDialog(client)}
+          >
+            <Pencil className="h-4 w-4" />
+            <span className="ml-2 sm:hidden">Edit</span>
+          </Button>
+          {/* Opens the confirmation rendered after the list — this cell renders twice (phone card
+              and table row), so a dialog controlled from in here would open twice. */}
+          <Button
+            variant="ghost"
+            size="icon"
+            className="max-sm:border"
+            aria-label={`Delete ${client.name}`}
+            disabled={!canDelete}
+            onClick={() => setDeleteTarget(client)}
+          >
+            <Trash2 className="h-4 w-4 text-destructive" />
+            <span className="ml-2 text-destructive sm:hidden">Delete</span>
+          </Button>
+        </div>
+      ),
+    },
+  ];
+
   return (
     <main className="min-h-[calc(100dvh-4rem)] p-4 sm:p-6">
-      <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-        <div className="flex items-center gap-3">
-          <Button variant="ghost" size="icon" asChild>
+      <div className="mb-4 flex flex-col gap-3 sm:mb-6 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
+        <div className="flex min-w-0 items-center gap-2 sm:gap-3">
+          <Button variant="ghost" size="icon" className="shrink-0" asChild>
             <Link href="/project-management/settings" aria-label="Back to Settings">
               <ArrowLeft className="h-5 w-5" />
             </Link>
           </Button>
-          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-indigo-500 to-blue-600 shadow-sm">
+          <div className="hidden h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-indigo-500 to-blue-600 shadow-sm sm:flex">
             <Building2 className="h-5 w-5 text-white" />
           </div>
-          <div>
-            <h1 className="text-2xl font-bold sm:text-3xl">Clients</h1>
-            <p className="mt-1 text-sm text-muted-foreground">
+          <div className="min-w-0">
+            <h1 className="text-xl font-bold sm:text-3xl">Clients</h1>
+            <p className="mt-0.5 text-[13px] text-muted-foreground sm:mt-1 sm:text-sm">
               {clients.length} client{clients.length === 1 ? "" : "s"} · {activeCount} active
             </p>
           </div>
@@ -352,8 +414,10 @@ export default function ClientMasterPage() {
               New Client
             </Button>
           </DialogTrigger>
-          <DialogContent className="sm:max-w-xl">
-            <DialogHeader>
+          {/* The tall variant: a dozen fields outgrow a short laptop screen too, so the body
+              scrolls at every width rather than the footer being clipped off. */}
+          <DialogContent className={cn(PM_DIALOG.contentTall, "sm:max-w-xl")}>
+            <DialogHeader className={PM_DIALOG.header}>
               <DialogTitle>{editingClient ? "Edit Client" : "Create Client"}</DialogTitle>
               <DialogDescription>
                 Clients are the paying customer for one or more projects — contract terms like retention and
@@ -361,7 +425,7 @@ export default function ClientMasterPage() {
               </DialogDescription>
             </DialogHeader>
 
-            <div className="grid gap-4 py-4">
+            <div className={cn(PM_DIALOG.bodyScroll, "grid gap-4 space-y-0 py-4")}>
               <ControlledField setting={fieldControl("name")}>
                 <Input
                   value={form.name}
@@ -483,7 +547,7 @@ export default function ClientMasterPage() {
               </div>
             </div>
 
-            <DialogFooter>
+            <DialogFooter className={PM_DIALOG.footer}>
               <DialogClose asChild>
                 <Button variant="outline">Cancel</Button>
               </DialogClose>
@@ -496,86 +560,41 @@ export default function ClientMasterPage() {
         </Dialog>
       </div>
 
-      <Card>
-        <CardContent className="p-0">
-          <div className="overflow-x-auto">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Client</TableHead>
-                  <TableHead>GSTIN</TableHead>
-                  <TableHead>PAN</TableHead>
-                  <TableHead className="text-right">Payment Terms</TableHead>
-                  <TableHead className="text-right">Retention %</TableHead>
-                  <TableHead>Status</TableHead>
-                  <TableHead className="w-24 text-right">Actions</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {clients.length ? (
-                  clients.map((client) => (
-                    <TableRow key={client.id}>
-                      <TableCell className="font-medium">{client.name}</TableCell>
-                      <TableCell>{client.gstin || "—"}</TableCell>
-                      <TableCell>{client.pan || "—"}</TableCell>
-                      <TableCell className="text-right">
-                        {client.paymentTermsDays != null ? `${client.paymentTermsDays} days` : "—"}
-                      </TableCell>
-                      <TableCell className="text-right">{client.retentionPct != null ? `${client.retentionPct}%` : "—"}</TableCell>
-                      <TableCell>
-                        <span
-                          className={`rounded-full px-2.5 py-1 text-xs font-medium ${
-                            client.status === "Active" ? "bg-emerald-100 text-emerald-700" : "bg-muted text-muted-foreground"
-                          }`}
-                        >
-                          {client.status}
-                        </span>
-                      </TableCell>
-                      <TableCell className="text-right">
-                        <div className="flex justify-end gap-1">
-                          <Button variant="ghost" size="icon" disabled={!canEdit} onClick={() => openEditDialog(client)}>
-                            <Pencil className="h-4 w-4" />
-                          </Button>
-                          <AlertDialog open={deleteTarget?.id === client.id} onOpenChange={(open) => !open && setDeleteTarget(null)}>
-                            <AlertDialogTrigger asChild>
-                              <Button variant="ghost" size="icon" disabled={!canDelete} onClick={() => setDeleteTarget(client)}>
-                                <Trash2 className="h-4 w-4 text-destructive" />
-                              </Button>
-                            </AlertDialogTrigger>
-                            <AlertDialogContent>
-                              <AlertDialogHeader>
-                                <AlertDialogTitle>Delete &quot;{client.name}&quot;?</AlertDialogTitle>
-                                <AlertDialogDescription>
-                                  This action cannot be undone. Projects still linked to this client will block the delete.
-                                </AlertDialogDescription>
-                              </AlertDialogHeader>
-                              <AlertDialogFooter>
-                                <AlertDialogCancel disabled={isDeleting}>Cancel</AlertDialogCancel>
-                                <AlertDialogAction disabled={isDeleting} onClick={() => void handleDelete(client)}>
-                                  {isDeleting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
-                                  Delete
-                                </AlertDialogAction>
-                              </AlertDialogFooter>
-                            </AlertDialogContent>
-                          </AlertDialog>
-                        </div>
-                      </TableCell>
-                    </TableRow>
-                  ))
-                ) : (
-                  <TableRow>
-                    <TableCell colSpan={7} className="h-32 text-center">
-                      <Users className="mx-auto mb-2 h-8 w-8 text-muted-foreground" />
-                      <p className="font-medium">No clients yet</p>
-                      <p className="mt-1 text-sm text-muted-foreground">Add the customers projects are executed for.</p>
-                    </TableCell>
-                  </TableRow>
-                )}
-              </TableBody>
-            </Table>
-          </div>
-        </CardContent>
-      </Card>
+      <PmDataList
+        rows={clients}
+        columns={columns}
+        empty={
+          <PmEmptyState
+            icon={Users}
+            title="No clients yet"
+            description="Add the customers projects are executed for."
+          />
+        }
+      />
+
+      {clients.map((client) => (
+        <AlertDialog
+          key={client.id}
+          open={deleteTarget?.id === client.id}
+          onOpenChange={(open) => !open && setDeleteTarget(null)}
+        >
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>Delete &quot;{client.name}&quot;?</AlertDialogTitle>
+              <AlertDialogDescription>
+                This action cannot be undone. Projects still linked to this client will block the delete.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel disabled={isDeleting}>Cancel</AlertDialogCancel>
+              <AlertDialogAction disabled={isDeleting} onClick={() => void handleDelete(client)}>
+                {isDeleting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+                Delete
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
+      ))}
     </main>
   );
 }

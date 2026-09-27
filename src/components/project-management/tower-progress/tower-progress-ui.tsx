@@ -57,7 +57,13 @@ export const TOWER_PROGRESS_GRADIENT = "from-orange-500 to-red-600";
 /* ── Shell ──────────────────────────────────────────────────────────────────────────────────── */
 
 export function TowerProgressShell({ children }: { children: ReactNode }) {
-  return <main className="min-h-[calc(100dvh-4rem)] space-y-5 p-4 sm:p-6">{children}</main>;
+  // Phones take 1rem card padding instead of the density default (1.5rem), so a card's content is
+  // not framed in 48px of air on a 360px screen.
+  return (
+    <main className="min-h-[calc(100dvh-4rem)] min-w-0 space-y-4 p-4 max-sm:[--card-pad:1rem] sm:space-y-5 sm:p-6">
+      {children}
+    </main>
+  );
 }
 
 export function TowerProgressHeader({
@@ -74,27 +80,31 @@ export function TowerProgressHeader({
   actions?: ReactNode;
 }) {
   return (
-    <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-      <div className="flex items-center gap-3">
-        <Button variant="ghost" size="icon" asChild>
+    // `basis-64` gives the title the whole first line on a phone, so the actions wrap beneath it
+    // instead of squeezing the title down to "Tower Pr…".
+    <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+      <div className="flex min-w-0 flex-1 basis-64 items-center gap-2 sm:gap-3">
+        <Button variant="ghost" size="icon" className="shrink-0" asChild>
           <Link href={backHref} aria-label="Back">
             <ArrowLeft className="h-5 w-5" />
           </Link>
         </Button>
         <div
           className={cn(
-            "flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br shadow-sm",
+            "hidden h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br shadow-sm sm:flex",
             TOWER_PROGRESS_GRADIENT,
           )}
         >
           <Icon className="h-5 w-5 text-white" />
         </div>
         <div className="min-w-0">
-          <h1 className="truncate text-2xl font-bold">{title}</h1>
+          <h1 className="truncate text-xl font-bold sm:text-2xl">{title}</h1>
           <p className="text-sm text-muted-foreground">{subtitle}</p>
         </div>
       </div>
-      {actions ? <div className="flex flex-wrap gap-2">{actions}</div> : null}
+      {actions ? (
+        <div className="ml-auto flex flex-wrap items-center justify-end gap-2">{actions}</div>
+      ) : null}
     </div>
   );
 }
@@ -124,8 +134,10 @@ export function TowerProgressNav() {
     { label: "Settings", sub: "settings", icon: SettingsIcon, show: permissions.viewSettings },
   ];
 
+  // One swipeable row on a phone — bled to the screen edges — rather than two or three wrapped rows
+  // of pills above every screen; the wrapping row from `sm`.
   return (
-    <nav className="flex flex-wrap gap-2 border-b pb-3">
+    <nav className="no-scrollbar -mx-4 flex gap-2 overflow-x-auto border-b px-4 pb-3 max-sm:pt-1 sm:mx-0 sm:flex-wrap sm:overflow-visible sm:px-0">
       {items
         .filter((item) => item.show)
         .map((item) => {
@@ -143,7 +155,7 @@ export function TowerProgressNav() {
               variant={active ? "default" : "outline"}
               size="sm"
               asChild
-              className="relative"
+              className="relative shrink-0"
             >
               <Link href={href}>
                 <item.icon className="mr-2 h-4 w-4" />
@@ -166,10 +178,10 @@ export function TowerProgressNav() {
 export function TowerProgressLoading({ tiles = 5 }: { tiles?: number }) {
   return (
     <TowerProgressShell>
-      <Skeleton className="h-12 w-80" />
-      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+      <Skeleton className="h-12 w-full max-w-80" />
+      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
         {Array.from({ length: tiles }).map((_, index) => (
-          <Skeleton key={index} className="h-24 rounded-xl" />
+          <Skeleton key={index} className="h-20 rounded-xl sm:h-24" />
         ))}
       </div>
       <Skeleton className="h-96 rounded-xl" />
@@ -275,9 +287,9 @@ export function MetricCard({
   }[tone];
   return (
     <Card className={cn(toneClass)}>
-      <CardContent className="p-4">
+      <CardContent className="p-3 sm:p-4">
         <p className="text-xs font-medium text-muted-foreground">{label}</p>
-        <p className="mt-1 text-xl font-bold">{value}</p>
+        <p className="mt-1 text-lg font-bold sm:text-xl">{value}</p>
         {detail ? <p className="mt-1 text-xs text-muted-foreground">{detail}</p> : null}
       </CardContent>
     </Card>
@@ -294,7 +306,7 @@ export function EmptyState({
   action?: ReactNode;
 }) {
   return (
-    <div className="flex flex-col items-center gap-3 p-10 text-center">
+    <div className="flex flex-col items-center gap-3 p-6 text-center sm:p-10">
       <CheckCircle2 className="h-10 w-10 text-muted-foreground" />
       <div>
         <p className="font-medium">{title}</p>
@@ -434,7 +446,8 @@ export function TowerReportPhoto({
           size="sm"
           onClick={() => void handleDownload()}
           disabled={isDownloading}
-          className="h-7 px-2"
+          aria-label="Download watermarked copy"
+          className="h-9 w-9 shrink-0 p-0 sm:h-7 sm:w-auto sm:px-2"
         >
           {isDownloading ? (
             <Loader2 className="h-3.5 w-3.5 animate-spin" />

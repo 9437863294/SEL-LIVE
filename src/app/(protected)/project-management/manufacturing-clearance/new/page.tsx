@@ -47,13 +47,14 @@ import {
   McProjectNotFound,
 } from "@/components/mc/mc-page-shell";
 import {
-  PM_TABLE_CLASS,
   PmContent,
+  PmDataList,
   PmSectionHead,
   PmShell,
   PmStatusPill,
   PmTableFoot,
   PmTopbar,
+  type PmListColumn,
 } from "@/components/project-management/pm-shell";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -68,14 +69,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
 import { Textarea } from "@/components/ui/textarea";
 
 const today = () => {
@@ -189,6 +182,9 @@ export default function NewManufacturingClearancePage() {
         ),
     [allCandidates, vendorId],
   );
+
+  /** The same rows with the `id` the responsive list keys its cards and table rows by. */
+  const listRows = useMemo(() => rows.map((row) => ({ ...row, id: row.key })), [rows]);
 
   /** The lines actually going on the MC, with their typed quantity resolved. */
   const draftLines = useMemo<Array<{ row: CandidateRow; qty: number; error?: string }>>(() => {
@@ -336,6 +332,141 @@ export default function NewManufacturingClearancePage() {
     );
   }
 
+  // Each PO line: a table row from `sm`, a card on a phone — the quantity input sits in the card's
+  // footer, full width, since typing it is the one thing a buyer does on this screen.
+  const lineColumns: PmListColumn<(typeof listRows)[number]>[] = [
+    {
+      header: "",
+      className: "w-10",
+      mobile: "aside",
+      cell: (row) => (
+        <Checkbox
+          checked={qtyByKey[row.key] !== undefined}
+          disabled={row.ledger.fullyCleared || !canCreate}
+          onCheckedChange={(checked) => toggleLine(row, checked === true)}
+          aria-label={`Clear ${row.ledger.itemDescription} on ${row.ledger.poNumber}`}
+          className="h-5 w-5 sm:h-4 sm:w-4"
+        />
+      ),
+    },
+    { header: "PO", className: "font-medium", mobile: "title", cell: (row) => row.ledger.poNumber },
+    {
+      header: "Item",
+      mobile: "title",
+      cell: (row) => (
+        <span className="block sm:max-w-[22rem] sm:truncate">{row.ledger.itemDescription}</span>
+      ),
+    },
+    { header: "Unit", className: "text-muted-foreground", cell: (row) => row.ledger.unit },
+    {
+      header: "Ordered",
+      align: "right",
+      cell: (row) => <span className="tabular-nums">{formatQuantity(row.ledger.orderedQty)}</span>,
+    },
+    {
+      header: "Cancelled",
+      align: "right",
+      cell: (row) => (
+        <span className="tabular-nums text-muted-foreground">
+          {row.ledger.cancelledQty ? formatQuantity(row.ledger.cancelledQty) : "—"}
+        </span>
+      ),
+    },
+    {
+      header: "Cleared",
+      align: "right",
+      cell: (row) => (
+        <span className="tabular-nums">
+          {row.ledger.approvedQty ? formatQuantity(row.ledger.approvedQty) : "—"}
+        </span>
+      ),
+    },
+    {
+      header: "Reserved",
+      align: "right",
+      cell: (row) => (
+        <span className="tabular-nums text-amber-700">
+          {row.ledger.reservedQty ? formatQuantity(row.ledger.reservedQty) : "—"}
+        </span>
+      ),
+    },
+    {
+      header: "Available",
+      align: "right",
+      cell: (row) => (
+        <span className="font-semibold tabular-nums">{formatQuantity(row.ledger.availableQty)}</span>
+      ),
+    },
+    {
+      header: "Line status",
+      mobile: "aside",
+      cell: ({ ledger }) => (
+        <>
+          <PmStatusPill
+            label={ledger.status}
+            tone={
+              ledger.status === "Fully Cleared"
+                ? "ok"
+                : ledger.status === "Partially Cleared"
+                  ? "wait"
+                  : "neutral"
+            }
+          />
+          {ledger.clearedPct > 0 && !ledger.fullyCleared && (
+            <span className="ml-1 text-xs text-muted-foreground tabular-nums">
+              {ledger.clearedPct}%
+            </span>
+          )}
+        </>
+      ),
+    },
+    {
+      header: "This MC",
+      align: "right",
+      className: "w-32",
+      mobile: "footer",
+      cell: (row) => {
+        const { ledger } = row;
+        const selected = qtyByKey[row.key] !== undefined;
+        const draft = draftLines.find((line) => line.row.key === row.key);
+        return (
+          <div className="w-full sm:w-auto">
+            {/* The card footer carries no column label of its own. */}
+            <p className="mb-1 text-[10px] font-medium uppercase tracking-wide text-muted-foreground sm:hidden">
+              This MC
+            </p>
+            {ledger.fullyCleared ? (
+              <span className="text-xs text-muted-foreground">No balance</span>
+            ) : (
+              <Input
+                type="number"
+                min={0}
+                step="any"
+                inputMode="decimal"
+                className="h-10 w-full text-right tabular-nums sm:h-8 sm:w-28"
+                placeholder="0"
+                disabled={!selected || !canCreate}
+                value={qtyByKey[row.key] ?? ""}
+                onChange={(event) => setQty(row.key, event.target.value)}
+                aria-invalid={Boolean(draft?.error)}
+              />
+            )}
+            {draft?.error && (
+              <p className="mt-1 text-xs text-red-700 sm:max-w-[16rem] sm:text-right">
+                {draft.error}
+              </p>
+            )}
+            {ledger.draftQty > 0 && !draft && (
+              <p className="mt-1 text-xs text-muted-foreground sm:text-right">
+                {formatQuantity(ledger.draftQty)} on other drafts
+              </p>
+            )}
+          </div>
+        );
+      },
+    },
+  ];
+
   return (
     <PmShell>
       <PmTopbar
@@ -353,9 +484,10 @@ export default function NewManufacturingClearancePage() {
               size="sm"
               disabled={!canCreate || !draftLines.length || isSaving}
               onClick={() => void handleSave(false)}
+              aria-label="Save draft"
             >
-              <Save className="mr-1.5 h-4 w-4" />
-              Save draft
+              <Save className="h-4 w-4 sm:mr-1.5" />
+              <span className="hidden sm:inline">Save draft</span>
             </Button>
             <Button size="sm" disabled={!canCreate || !canSubmit} onClick={() => void handleSave(true)}>
               {isSaving ? (
@@ -462,137 +594,38 @@ export default function NewManufacturingClearancePage() {
           </Card>
         )}
 
-        <Card className="overflow-hidden border-border/60">
-          {isLoading ? (
+        {isLoading ? (
+          <Card className="overflow-hidden border-border/60">
             <CardContent className="flex items-center gap-2 py-10 text-sm text-muted-foreground">
               <Loader2 className="h-4 w-4 animate-spin" />
               Loading purchase order balances…
             </CardContent>
-          ) : !vendorId ? (
+          </Card>
+        ) : !vendorId ? (
+          <Card className="overflow-hidden border-border/60">
             <CardContent className="py-10 text-center text-sm text-muted-foreground">
               <Factory className="mx-auto mb-2 h-8 w-8 opacity-40" />
               Choose a vendor to see the purchase order lines you can clear.
             </CardContent>
-          ) : rows.length === 0 ? (
-            <CardContent className="py-10 text-center text-sm text-muted-foreground">
-              This vendor has no purchase order lines on an issued order.
-            </CardContent>
-          ) : (
-            <>
-              <div className="overflow-x-auto">
-                <Table className={PM_TABLE_CLASS}>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead className="w-10" />
-                      <TableHead>PO</TableHead>
-                      <TableHead>Item</TableHead>
-                      <TableHead>Unit</TableHead>
-                      <TableHead className="text-right">Ordered</TableHead>
-                      <TableHead className="text-right">Cancelled</TableHead>
-                      <TableHead className="text-right">Cleared</TableHead>
-                      <TableHead className="text-right">Reserved</TableHead>
-                      <TableHead className="text-right">Available</TableHead>
-                      <TableHead>Line status</TableHead>
-                      <TableHead className="w-32 text-right">This MC</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {rows.map((row) => {
-                      const { ledger } = row;
-                      const selected = qtyByKey[row.key] !== undefined;
-                      const draft = draftLines.find((line) => line.row.key === row.key);
-                      return (
-                        <TableRow
-                          key={row.key}
-                          className={
-                            draft?.error
-                              ? "bg-red-50/60"
-                              : ledger.fullyCleared
-                                ? "opacity-60"
-                                : undefined
-                          }
-                        >
-                          <TableCell>
-                            <Checkbox
-                              checked={selected}
-                              disabled={ledger.fullyCleared || !canCreate}
-                              onCheckedChange={(checked) => toggleLine(row, checked === true)}
-                              aria-label={`Clear ${ledger.itemDescription} on ${ledger.poNumber}`}
-                            />
-                          </TableCell>
-                          <TableCell className="font-medium">{ledger.poNumber}</TableCell>
-                          <TableCell>
-                            <span className="block max-w-[22rem] truncate">
-                              {ledger.itemDescription}
-                            </span>
-                          </TableCell>
-                          <TableCell className="text-muted-foreground">{ledger.unit}</TableCell>
-                          <TableCell className="text-right tabular-nums">
-                            {formatQuantity(ledger.orderedQty)}
-                          </TableCell>
-                          <TableCell className="text-right tabular-nums text-muted-foreground">
-                            {ledger.cancelledQty ? formatQuantity(ledger.cancelledQty) : "—"}
-                          </TableCell>
-                          <TableCell className="text-right tabular-nums">
-                            {ledger.approvedQty ? formatQuantity(ledger.approvedQty) : "—"}
-                          </TableCell>
-                          <TableCell className="text-right tabular-nums text-amber-700">
-                            {ledger.reservedQty ? formatQuantity(ledger.reservedQty) : "—"}
-                          </TableCell>
-                          <TableCell className="text-right font-semibold tabular-nums">
-                            {formatQuantity(ledger.availableQty)}
-                          </TableCell>
-                          <TableCell>
-                            <PmStatusPill
-                              label={ledger.status}
-                              tone={
-                                ledger.status === "Fully Cleared"
-                                  ? "ok"
-                                  : ledger.status === "Partially Cleared"
-                                    ? "wait"
-                                    : "neutral"
-                              }
-                            />
-                            {ledger.clearedPct > 0 && !ledger.fullyCleared && (
-                              <span className="ml-1 text-xs text-muted-foreground tabular-nums">
-                                {ledger.clearedPct}%
-                              </span>
-                            )}
-                          </TableCell>
-                          <TableCell className="text-right">
-                            {ledger.fullyCleared ? (
-                              <span className="text-xs text-muted-foreground">No balance</span>
-                            ) : (
-                              <Input
-                                type="number"
-                                min={0}
-                                step="any"
-                                inputMode="decimal"
-                                className="h-8 w-28 text-right tabular-nums"
-                                placeholder="0"
-                                disabled={!selected || !canCreate}
-                                value={qtyByKey[row.key] ?? ""}
-                                onChange={(event) => setQty(row.key, event.target.value)}
-                                aria-invalid={Boolean(draft?.error)}
-                              />
-                            )}
-                            {draft?.error && (
-                              <p className="mt-1 max-w-[16rem] text-right text-xs text-red-700">
-                                {draft.error}
-                              </p>
-                            )}
-                            {ledger.draftQty > 0 && !draft && (
-                              <p className="mt-1 text-right text-xs text-muted-foreground">
-                                {formatQuantity(ledger.draftQty)} on other drafts
-                              </p>
-                            )}
-                          </TableCell>
-                        </TableRow>
-                      );
-                    })}
-                  </TableBody>
-                </Table>
-              </div>
+          </Card>
+        ) : (
+          <PmDataList
+            rows={listRows}
+            columns={lineColumns}
+            rowClassName={(row) => {
+              const draft = draftLines.find((line) => line.row.key === row.key);
+              return draft?.error
+                ? "bg-red-50/60"
+                : row.ledger.fullyCleared
+                  ? "opacity-60"
+                  : undefined;
+            }}
+            empty={
+              <p className="px-6 py-10 text-center text-sm text-muted-foreground">
+                This vendor has no purchase order lines on an issued order.
+              </p>
+            }
+            foot={
               <PmTableFoot
                 left={
                   <>
@@ -611,13 +644,13 @@ export default function NewManufacturingClearancePage() {
                   )
                 }
               />
-            </>
-          )}
-        </Card>
+            }
+          />
+        )}
 
         {/* A div, not a p: Badge renders a div, and a div inside a p is invalid HTML that the
             browser silently reparents — which shows up as a hydration mismatch. */}
-        <div className="mt-3 flex items-start gap-1.5 text-xs text-muted-foreground">
+        <div className="mt-3 flex flex-col items-start gap-1.5 text-xs text-muted-foreground sm:flex-row">
           <Badge variant="outline" className="shrink-0 font-normal">
             How the balance works
           </Badge>

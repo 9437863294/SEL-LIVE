@@ -12,7 +12,8 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { Search } from "lucide-react";
+import { ChevronDown, Search, SlidersHorizontal } from "lucide-react";
+import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -35,6 +36,7 @@ import {
   type TowerReportDefinition,
   type TowerReportFilters,
 } from "@/lib/project-management-tower-reports";
+import { cn } from "@/lib/utils";
 
 /** Query-parameter names, kept short because they end up in a shared link. */
 const PARAM = {
@@ -209,9 +211,21 @@ export function ReportFilterBar({
   const isMonthly = definition.id === "monthly-progress";
   const isWeekly = definition.id === "weekly-progress";
   const isDaily = definition.kind === "daily";
+  // Phones only: the period and the search stay out, everything else folds behind a toggle, so the
+  // report is not pushed a full screen down the page. From `sm` the fold is `display: contents` and
+  // every control sits in the one wrapping row, as before.
+  const [showMore, setShowMore] = useState(false);
+  const isSet = (value: string | undefined) => Boolean(value) && value !== "All";
+  const activeCount =
+    [
+      state.filters.section,
+      state.filters.towerType,
+      state.filters.contractor,
+      String(state.filters.status ?? "All"),
+    ].filter(isSet).length + (state.filters.fromTowerNo || state.filters.toTowerNo ? 1 : 0);
 
   return (
-    <div className="flex flex-wrap items-end gap-2 rounded-lg border p-3 print:hidden">
+    <div className="flex flex-col gap-2 rounded-lg border p-3 print:hidden sm:flex-row sm:flex-wrap sm:items-end">
       {isDaily ? (
         <Field label="Date">
           <Input
@@ -219,7 +233,7 @@ export function ReportFilterBar({
             value={state.dateKey}
             max={toDateKey(new Date())}
             onChange={(event) => state.update("date", event.target.value)}
-            className="h-9 w-40"
+            className="h-10 w-full sm:h-9 sm:w-40"
           />
         </Field>
       ) : null}
@@ -232,7 +246,7 @@ export function ReportFilterBar({
             onChange={(event) =>
               state.update("week", weekStartKey(new Date(`${event.target.value}T00:00:00`)))
             }
-            className="h-9 w-40"
+            className="h-10 w-full sm:h-9 sm:w-40"
           />
         </Field>
       ) : null}
@@ -243,7 +257,7 @@ export function ReportFilterBar({
             type="month"
             value={state.monthKey.slice(0, 7)}
             onChange={(event) => state.update("month", `${event.target.value}-01`)}
-            className="h-9 w-40"
+            className="h-10 w-full sm:h-9 sm:w-40"
           />
         </Field>
       ) : null}
@@ -255,91 +269,110 @@ export function ReportFilterBar({
         />
       </Field>
 
-      {sections.length ? (
-        <Field label="Section">
-          <FilterSelect
-            value={state.filters.section ?? "All"}
-            onChange={(value) => state.update("section", value)}
-            options={sections}
-            allLabel="All sections"
-          />
-        </Field>
-      ) : null}
-
-      {towerTypes.length ? (
-        <Field label="Tower type">
-          <FilterSelect
-            value={state.filters.towerType ?? "All"}
-            onChange={(value) => state.update("towerType", value)}
-            options={towerTypes}
-            allLabel="All types"
-          />
-        </Field>
-      ) : null}
-
-      {contractors.length ? (
-        <Field label="Contractor">
-          <FilterSelect
-            value={state.filters.contractor ?? "All"}
-            onChange={(value) => state.update("contractor", value)}
-            options={contractors}
-            allLabel="All contractors"
-          />
-        </Field>
-      ) : null}
-
-      <Field label="Status">
-        <FilterSelect
-          value={String(state.filters.status ?? "All")}
-          onChange={(value) => state.update("status", value)}
-          options={[...TOWER_ACTIVITY_STATUSES]}
-          allLabel="Any status"
-        />
-      </Field>
-
-      <Field label="Tower range">
-        <div className="flex items-center gap-1">
-          <Input
-            value={state.filters.fromTowerNo ?? ""}
-            onChange={(event) => state.update("fromTowerNo", event.target.value)}
-            placeholder="T-001"
-            className="h-9 w-24"
-          />
-          <span className="text-muted-foreground">–</span>
-          <Input
-            value={state.filters.toTowerNo ?? ""}
-            onChange={(event) => state.update("toTowerNo", event.target.value)}
-            placeholder="T-050"
-            className="h-9 w-24"
-          />
-        </div>
-      </Field>
-
-      <button
+      <Button
         type="button"
-        onClick={state.reset}
-        className="h-9 rounded-md px-3 text-sm text-muted-foreground underline-offset-4 hover:underline"
+        variant="outline"
+        className="justify-between sm:hidden"
+        aria-expanded={showMore}
+        onClick={() => setShowMore((open) => !open)}
       >
-        Clear filters
-      </button>
+        <span className="inline-flex items-center gap-2">
+          <SlidersHorizontal className="h-4 w-4" />
+          Filters{activeCount ? ` · ${activeCount}` : ""}
+        </span>
+        <ChevronDown className={cn("h-4 w-4 transition-transform", showMore && "rotate-180")} />
+      </Button>
 
-      <div className="w-full border-t pt-2">
-        <p className="mb-1 text-[11px] text-muted-foreground">Include in this report</p>
-        <div className="flex flex-wrap gap-x-4 gap-y-1.5">
-          {REPORT_SECTIONS.map((section) => (
-            <label key={section} className="flex cursor-pointer items-center gap-1.5 text-xs">
-              <Checkbox
-                checked={state.include[section]}
-                onCheckedChange={(checked) =>
-                  state.update(
-                    "exclude",
-                    encodeExclusions({ ...state.include, [section]: checked === true }),
-                  )
-                }
-              />
-              {REPORT_SECTION_LABELS[section]}
-            </label>
-          ))}
+      <div className={cn(showMore ? "grid grid-cols-2 gap-2" : "hidden", "sm:contents")}>
+        {sections.length ? (
+          <Field label="Section">
+            <FilterSelect
+              value={state.filters.section ?? "All"}
+              onChange={(value) => state.update("section", value)}
+              options={sections}
+              allLabel="All sections"
+            />
+          </Field>
+        ) : null}
+
+        {towerTypes.length ? (
+          <Field label="Tower type">
+            <FilterSelect
+              value={state.filters.towerType ?? "All"}
+              onChange={(value) => state.update("towerType", value)}
+              options={towerTypes}
+              allLabel="All types"
+            />
+          </Field>
+        ) : null}
+
+        {contractors.length ? (
+          <Field label="Contractor">
+            <FilterSelect
+              value={state.filters.contractor ?? "All"}
+              onChange={(value) => state.update("contractor", value)}
+              options={contractors}
+              allLabel="All contractors"
+            />
+          </Field>
+        ) : null}
+
+        <Field label="Status">
+          <FilterSelect
+            value={String(state.filters.status ?? "All")}
+            onChange={(value) => state.update("status", value)}
+            options={[...TOWER_ACTIVITY_STATUSES]}
+            allLabel="Any status"
+          />
+        </Field>
+
+        <Field label="Tower range" className="col-span-2">
+          <div className="flex items-center gap-1">
+            <Input
+              value={state.filters.fromTowerNo ?? ""}
+              onChange={(event) => state.update("fromTowerNo", event.target.value)}
+              placeholder="T-001"
+              className="h-10 min-w-0 flex-1 sm:h-9 sm:w-24 sm:flex-none"
+            />
+            <span className="text-muted-foreground">–</span>
+            <Input
+              value={state.filters.toTowerNo ?? ""}
+              onChange={(event) => state.update("toTowerNo", event.target.value)}
+              placeholder="T-050"
+              className="h-10 min-w-0 flex-1 sm:h-9 sm:w-24 sm:flex-none"
+            />
+          </div>
+        </Field>
+
+        <button
+          type="button"
+          onClick={state.reset}
+          className="col-span-2 h-10 justify-self-start rounded-md px-3 text-sm text-muted-foreground underline-offset-4 hover:underline sm:h-9"
+        >
+          Clear filters
+        </button>
+
+        <div className="col-span-2 w-full border-t pt-2">
+          <p className="mb-1 text-[11px] text-muted-foreground">Include in this report</p>
+          <div className="grid grid-cols-2 gap-x-4 sm:flex sm:flex-wrap sm:gap-y-1.5">
+            {REPORT_SECTIONS.map((section) => (
+              <label
+                key={section}
+                className="flex min-h-9 cursor-pointer items-center gap-1.5 text-sm sm:min-h-0 sm:text-xs"
+              >
+                <Checkbox
+                  checked={state.include[section]}
+                  onCheckedChange={(checked) =>
+                    state.update(
+                      "exclude",
+                      encodeExclusions({ ...state.include, [section]: checked === true }),
+                    )
+                  }
+                />
+                {REPORT_SECTION_LABELS[section]}
+              </label>
+            ))}
+          </div>
         </div>
       </div>
     </div>
@@ -382,21 +415,29 @@ function SearchField({
   }, [draft, value]);
 
   return (
-    <div className="relative w-52">
-      <Search className="absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
+    <div className="relative w-full sm:w-52">
+      <Search className="absolute left-3 top-3 h-4 w-4 text-muted-foreground sm:top-2.5" />
       <Input
         value={draft}
         onChange={(event) => setDraft(event.target.value)}
         placeholder="Tower, location, contractor"
-        className="h-9 pl-9"
+        className="h-10 pl-9 sm:h-9"
       />
     </div>
   );
 }
 
-function Field({ label, children }: { label: string; children: React.ReactNode }) {
+function Field({
+  label,
+  children,
+  className,
+}: {
+  label: string;
+  children: React.ReactNode;
+  className?: string;
+}) {
   return (
-    <div className="space-y-1">
+    <div className={cn("min-w-0 space-y-1", className)}>
       <Label className="text-[11px] text-muted-foreground">{label}</Label>
       {children}
     </div>
@@ -416,7 +457,7 @@ function FilterSelect({
 }) {
   return (
     <Select value={value} onValueChange={onChange}>
-      <SelectTrigger className="h-9 w-40">
+      <SelectTrigger className="h-10 w-full sm:h-9 sm:w-40">
         <SelectValue />
       </SelectTrigger>
       <SelectContent>

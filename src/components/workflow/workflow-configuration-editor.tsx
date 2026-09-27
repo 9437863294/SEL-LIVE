@@ -278,7 +278,7 @@ export function WorkflowConfigurationEditor({
 
   return (
     <>
-      <Card className="border-border/60">
+      <Card className="border-border/60 max-sm:[--card-pad:1rem]">
         <CardHeader className="pb-3">
           <CardTitle className="text-base">How this workflow behaves</CardTitle>
           <CardDescription>{behaviourDescription}</CardDescription>
@@ -306,7 +306,7 @@ export function WorkflowConfigurationEditor({
       ) : null}
 
       {validationError ? (
-        <Card className="border-destructive/50 bg-destructive/5">
+        <Card className="border-destructive/50 bg-destructive/5 max-sm:[--card-pad:1rem]">
           <CardHeader className="py-3">
             <CardDescription className="text-destructive">{validationError}</CardDescription>
           </CardHeader>
@@ -314,9 +314,9 @@ export function WorkflowConfigurationEditor({
       ) : null}
 
       {steps.length === 0 ? (
-        <Card className="border-border/60">
+        <Card className="border-border/60 max-sm:[--card-pad:1rem]">
           <CardHeader>
-            <CardTitle>No stages configured</CardTitle>
+            <CardTitle className="text-lg sm:text-2xl">No stages configured</CardTitle>
             <CardDescription>{emptyStateDescription}</CardDescription>
           </CardHeader>
         </Card>
@@ -339,10 +339,12 @@ export function WorkflowConfigurationEditor({
               <AccordionItem
                 key={step.id}
                 value={step.id}
-                className="rounded-lg border border-border/60 bg-card px-4"
+                className="rounded-lg border border-border/60 bg-card px-3 sm:px-4"
               >
                 <AccordionTrigger className="hover:no-underline">
-                  <div className="flex flex-1 items-center gap-3 pr-3 text-left">
+                  {/* Wraps so the name keeps the line on a phone and the assignment/TAT meta
+                      drops beneath it, instead of the two squeezing into side-by-side columns. */}
+                  <div className="flex min-w-0 flex-1 flex-wrap items-center gap-x-3 gap-y-0.5 pr-3 text-left">
                     <Badge variant="outline" className="shrink-0">
                       {index + 1}
                     </Badge>
@@ -490,11 +492,12 @@ export function WorkflowConfigurationEditor({
                       <div className="max-h-64 space-y-2 overflow-y-auto rounded-md border p-3">
                         {mappingTargets.length ? (
                           mappingTargets.map((target) => (
+                            // Phone: the name on its own line, the two pickers side by side beneath it.
                             <div
                               key={target.id}
-                              className="grid gap-2 sm:grid-cols-[1fr_1fr_1fr] sm:items-center"
+                              className="grid grid-cols-2 gap-2 sm:grid-cols-[1fr_1fr_1fr] sm:items-center"
                             >
-                              <span className="truncate text-sm" title={target.label}>
+                              <span className="col-span-2 truncate text-sm sm:col-span-1" title={target.label}>
                                 {target.label}
                               </span>
                               <Select
@@ -502,7 +505,7 @@ export function WorkflowConfigurationEditor({
                                 disabled={!canEdit}
                                 onValueChange={(value) => setMappedAssignee(index, target.id, "primary", value)}
                               >
-                                <SelectTrigger className="h-8">
+                                <SelectTrigger className="h-9 sm:h-8">
                                   <SelectValue placeholder="Primary" />
                                 </SelectTrigger>
                                 <SelectContent>
@@ -521,7 +524,7 @@ export function WorkflowConfigurationEditor({
                                   setMappedAssignee(index, target.id, "alternative", value)
                                 }
                               >
-                                <SelectTrigger className="h-8">
+                                <SelectTrigger className="h-9 sm:h-8">
                                   <SelectValue placeholder="Alternative" />
                                 </SelectTrigger>
                                 <SelectContent>
@@ -561,7 +564,8 @@ export function WorkflowConfigurationEditor({
                   </div>
 
                   {canEdit ? (
-                    <div className="flex flex-wrap items-center gap-2 border-t pt-3">
+                    // Phone: Move up | Move down across the first row, Remove stage full width beneath.
+                    <div className="grid grid-cols-2 gap-2 border-t pt-3 sm:flex sm:flex-wrap sm:items-center">
                       <Button variant="outline" size="sm" disabled={index === 0} onClick={() => moveStep(index, -1)}>
                         <ArrowUp className="mr-1.5 h-3.5 w-3.5" />
                         Move up
@@ -578,7 +582,7 @@ export function WorkflowConfigurationEditor({
                       <Button
                         variant="outline"
                         size="sm"
-                        className="text-destructive hover:text-destructive"
+                        className="text-destructive hover:text-destructive max-sm:col-span-2"
                         onClick={() =>
                           setSteps((previous) => previous.filter((_, position) => position !== index))
                         }

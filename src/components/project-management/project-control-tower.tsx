@@ -191,9 +191,9 @@ export default function ProjectControlTower({ mapping }: ProjectControlTowerProp
     return (
       <section aria-label="Loading project control tower" className="space-y-3">
         <Skeleton className="h-7 w-56" />
-        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
           {[1, 2, 3, 4].map((item) => (
-            <Skeleton key={item} className="h-28 rounded-xl" />
+            <Skeleton key={item} className="h-24 rounded-xl sm:h-28" />
           ))}
         </div>
         <Skeleton className="h-36 rounded-xl" />
@@ -222,7 +222,8 @@ export default function ProjectControlTower({ mapping }: ProjectControlTowerProp
     : 0;
 
   return (
-    <section className="space-y-4" aria-labelledby="control-tower-title">
+    // A phone gets 16px card padding in place of the density default (24px at the standard density).
+    <section className="space-y-4 max-sm:[--card-pad:1rem]" aria-labelledby="control-tower-title">
       <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
         <div>
           <h2 id="control-tower-title" className="text-lg font-semibold">Project control tower</h2>
@@ -230,7 +231,7 @@ export default function ProjectControlTower({ mapping }: ProjectControlTowerProp
             Live commercial, engineering, procurement, and site-control indicators for {mapping.projectName}.
           </p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           {summary.schedule.daysRemaining != null && (
             <span
               className={cn(
@@ -253,14 +254,14 @@ export default function ProjectControlTower({ mapping }: ProjectControlTowerProp
         </div>
       </div>
 
-      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
         <Card className={metricCard}>
-          <CardContent className="p-4">
-            <div className="mb-3 flex items-center justify-between">
-              <span className="text-sm font-medium text-muted-foreground">BOQ baseline</span>
+          <CardContent className="p-3 sm:p-4">
+            <div className="mb-2 flex items-center justify-between gap-2 sm:mb-3">
+              <span className="text-xs font-medium text-muted-foreground sm:text-sm">BOQ baseline</span>
               <ClipboardCheck className="h-4 w-4 text-emerald-600" />
             </div>
-            <p className="text-2xl font-bold">{formatCurrency(summary.boq.budgetValue)}</p>
+            <p className="text-lg font-bold sm:text-2xl">{formatCurrency(summary.boq.budgetValue)}</p>
             <p className="mt-1 text-xs text-muted-foreground">
               {summary.boq.itemCount} line{summary.boq.itemCount === 1 ? "" : "s"} · {summary.boq.surveyCoveragePct}% surveyed
             </p>
@@ -268,13 +269,13 @@ export default function ProjectControlTower({ mapping }: ProjectControlTowerProp
         </Card>
 
         <Card className={cn(metricCard, summary.cost.overBudget && "border-red-300")}>
-          <CardContent className="p-4">
-            <div className="mb-3 flex items-center justify-between">
-              <span className="text-sm font-medium text-muted-foreground">Committed vs budget</span>
+          <CardContent className="p-3 sm:p-4">
+            <div className="mb-2 flex items-center justify-between gap-2 sm:mb-3">
+              <span className="text-xs font-medium text-muted-foreground sm:text-sm">Committed vs budget</span>
               <IndianRupee className={cn("h-4 w-4", summary.cost.overBudget ? "text-red-600" : "text-blue-600")} />
             </div>
-            <div className="flex items-end justify-between gap-3">
-              <p className={cn("text-2xl font-bold", summary.cost.overBudget && "text-red-600")}>
+            <div className="flex flex-wrap items-end justify-between gap-x-3">
+              <p className={cn("text-lg font-bold sm:text-2xl", summary.cost.overBudget && "text-red-600")}>
                 {formatCurrency(summary.cost.committedValue)}
               </p>
               {summary.cost.budgetValue > 0 && (
@@ -300,13 +301,13 @@ export default function ProjectControlTower({ mapping }: ProjectControlTowerProp
         </Card>
 
         <Card className={metricCard}>
-          <CardContent className="p-4">
-            <div className="mb-3 flex items-center justify-between">
-              <span className="text-sm font-medium text-muted-foreground">Engineering approval</span>
+          <CardContent className="p-3 sm:p-4">
+            <div className="mb-2 flex items-center justify-between gap-2 sm:mb-3">
+              <span className="text-xs font-medium text-muted-foreground sm:text-sm">Engineering approval</span>
               <FileStack className="h-4 w-4 text-violet-600" />
             </div>
-            <div className="flex items-end justify-between gap-3">
-              <p className="text-2xl font-bold">{engineeringProgress}%</p>
+            <div className="flex flex-wrap items-end justify-between gap-x-3">
+              <p className="text-lg font-bold sm:text-2xl">{engineeringProgress}%</p>
               <span className="text-xs text-muted-foreground">
                 {summary.engineering.approvedDrawingCount}/{summary.engineering.drawingCount}
               </span>
@@ -316,12 +317,12 @@ export default function ProjectControlTower({ mapping }: ProjectControlTowerProp
         </Card>
 
         <Card className={metricCard}>
-          <CardContent className="p-4">
-            <div className="mb-3 flex items-center justify-between">
-              <span className="text-sm font-medium text-muted-foreground">Open procurement</span>
+          <CardContent className="p-3 sm:p-4">
+            <div className="mb-2 flex items-center justify-between gap-2 sm:mb-3">
+              <span className="text-xs font-medium text-muted-foreground sm:text-sm">Open procurement</span>
               <Route className="h-4 w-4 text-orange-600" />
             </div>
-            <p className="text-2xl font-bold">
+            <p className="text-lg font-bold sm:text-2xl">
               {summary.procurement.openIndentCount + summary.procurement.openRfqCount}
             </p>
             <p className="mt-1 text-xs text-muted-foreground">
@@ -371,18 +372,18 @@ export default function ProjectControlTower({ mapping }: ProjectControlTowerProp
           <CardContent>
             <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-5">
               <div className="rounded-lg border bg-muted/20 px-3 py-3">
-                <p className="text-xl font-bold">{summary.civil.workOrderCount}</p>
+                <p className="text-lg font-bold sm:text-xl">{summary.civil.workOrderCount}</p>
                 <p className="text-xs text-muted-foreground">
                   Work order{summary.civil.workOrderCount === 1 ? "" : "s"} ·{" "}
                   {formatCurrency(summary.civil.workOrderValue)}
                 </p>
               </div>
               <div className="rounded-lg border bg-muted/20 px-3 py-3">
-                <p className="text-xl font-bold">{formatCurrency(summary.civil.executedValue)}</p>
+                <p className="text-lg font-bold sm:text-xl">{formatCurrency(summary.civil.executedValue)}</p>
                 <p className="text-xs text-muted-foreground">Executed (JMC/MVAC)</p>
               </div>
               <div className="rounded-lg border bg-muted/20 px-3 py-3">
-                <p className="text-xl font-bold">{formatCurrency(summary.civil.certifiedValue)}</p>
+                <p className="text-lg font-bold sm:text-xl">{formatCurrency(summary.civil.certifiedValue)}</p>
                 <p className="text-xs text-muted-foreground">Certified</p>
               </div>
               <div
@@ -393,7 +394,7 @@ export default function ProjectControlTower({ mapping }: ProjectControlTowerProp
               >
                 <p
                   className={cn(
-                    "text-xl font-bold",
+                    "text-lg font-bold sm:text-xl",
                     summary.civil.openMeasurementCount && "text-amber-700",
                   )}
                 >
@@ -405,13 +406,13 @@ export default function ProjectControlTower({ mapping }: ProjectControlTowerProp
                 </p>
               </div>
               <div className="rounded-lg border bg-muted/20 px-3 py-3">
-                <p className="text-xl font-bold">
+                <p className="text-lg font-bold sm:text-xl">
                   {formatCurrency(summary.civil.subcontractorBilledValue)}
                 </p>
                 <p className="text-xs text-muted-foreground">Subcontractor billed</p>
               </div>
             </div>
-            <div className="mt-2 flex gap-2">
+            <div className="mt-2 flex flex-wrap gap-2">
               <Button size="sm" variant="outline" asChild>
                 <Link href={`/project-management/civil?project=${encodeURIComponent(mapping.id)}`}>
                   Civil workspace
@@ -518,7 +519,7 @@ export default function ProjectControlTower({ mapping }: ProjectControlTowerProp
       <Card>
         <CardHeader className="pb-3">
           <div className="flex items-center justify-between gap-3">
-            <div>
+            <div className="min-w-0">
               <CardTitle className="text-base">Management attention</CardTitle>
               <CardDescription>Exceptions that can delay delivery, dispatch, acceptance, or billing.</CardDescription>
             </div>

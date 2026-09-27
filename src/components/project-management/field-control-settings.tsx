@@ -9,7 +9,7 @@ import { useAuth } from '@/components/auth/AuthProvider';
 import { useAuthorization } from '@/hooks/useAuthorization';
 import { useToast } from '@/hooks/use-toast';
 import { logUserActivity } from '@/lib/activity-logger';
-import { PM_FORM_KEYS, PM_FORM_REGISTRY, type PMFormKey } from '@/lib/project-management-field-registry';
+import { PM_FORM_KEYS, PM_FORM_REGISTRY, type PMFieldDef, type PMFormKey } from '@/lib/project-management-field-registry';
 import { PM_FIELD_CONTROL_DOC_ID, PM_SETTINGS_COLLECTION, type PMFieldSetting } from './use-field-control';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -17,12 +17,15 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Switch } from '@/components/ui/switch';
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { PmDataList, type PmListColumn } from '@/components/project-management/pm-shell';
 
 const MODULE = 'Project Management';
 const PERMISSION_RESOURCE = `${MODULE}.Settings`;
 
 type Draft = Record<PMFormKey, Record<string, PMFieldSetting>>;
+
+/** One register row: the registry's field and its current setting, keyed for the list. */
+type FieldRow = { id: string; field: PMFieldDef; setting: PMFieldSetting };
 
 function buildDefaultDraft(): Draft {
   const draft = {} as Draft;
@@ -144,16 +147,82 @@ export default function ProjectManagementFieldControlSettings() {
   const fields = formDef.fields;
   const formFieldState = draft[activeForm] || {};
 
+  const fieldRows: FieldRow[] = fields.map((field) => ({
+    id: field.key,
+    field,
+    setting: formFieldState[field.key] || {
+      visible: true,
+      required: field.defaultRequired,
+      label: field.defaultLabel,
+    },
+  }));
+
+  const columns: PmListColumn<FieldRow>[] = [
+    {
+      // The card's full-width bottom row on a phone: the title slot sizes an input to its text and
+      // a detail slot to half the card.
+      header: 'Label',
+      mobile: 'footer',
+      className: 'w-64',
+      cell: ({ field, setting }) => (
+        <Input
+          aria-label={`Label for ${field.key}`}
+          value={setting.label}
+          disabled={!canEdit}
+          onChange={(event) => update(activeForm, field.key, { label: event.target.value })}
+        />
+      ),
+    },
+    {
+      header: 'Required',
+      className: 'w-28 text-center',
+      cell: ({ field, setting }) => (
+        <Switch
+          checked={setting.required}
+          disabled={!canEdit || field.locked}
+          onCheckedChange={(value) => update(activeForm, field.key, { required: value })}
+        />
+      ),
+    },
+    {
+      header: 'Visible',
+      className: 'w-28 text-center',
+      cell: ({ field, setting }) => (
+        <Switch
+          checked={setting.visible}
+          disabled={!canEdit || field.locked}
+          onCheckedChange={(value) => update(activeForm, field.key, { visible: value })}
+        />
+      ),
+    },
+    {
+      // The phone card's headline.
+      header: 'Field key',
+      mobile: 'title',
+      className: 'whitespace-nowrap text-xs text-muted-foreground',
+      cell: ({ field }) => (
+        <>
+          {field.key}
+          {field.locked && (
+            <Badge variant="outline" className="ml-2 gap-1 text-[10px]">
+              <Lock className="h-2.5 w-2.5" /> Locked
+            </Badge>
+          )}
+        </>
+      ),
+    },
+  ];
+
   return (
-    <div className="space-y-5">
+    <div className="space-y-4 sm:space-y-5">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <div className="flex items-center gap-2">
-          <Link href="/project-management/settings">
+        <div className="flex min-w-0 items-center gap-2">
+          <Link href="/project-management/settings" className="shrink-0">
             <Button variant="ghost" size="icon">
               <ArrowLeft className="h-5 w-5" />
             </Button>
           </Link>
-          <div>
+          <div className="min-w-0">
             <h1 className="text-xl font-bold">Field Control</h1>
             <p className="text-sm text-muted-foreground">
               Choose which fields appear, whether they're required, and what they're called — per form.
@@ -174,18 +243,20 @@ export default function ProjectManagementFieldControlSettings() {
         </div>
       )}
 
-      <Card>
-        <CardHeader className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <div>
-            <CardTitle className="flex items-center gap-2">
-              <SlidersHorizontal className="h-5 w-5 text-indigo-600" />
+      {/* On a phone the card drops its frame: the header reads as a section heading and the field
+          cards stand on the page, rather than sitting as cards inside a card. */}
+      <Card className="max-sm:border-0 max-sm:bg-transparent max-sm:shadow-none">
+        <CardHeader className="flex flex-col gap-3 max-sm:px-0 max-sm:pt-0 sm:flex-row sm:items-center sm:justify-between">
+          <div className="min-w-0">
+            <CardTitle className="flex items-center gap-2 text-lg sm:text-2xl">
+              <SlidersHorizontal className="h-5 w-5 shrink-0 text-indigo-600" />
               {formDef.title}
             </CardTitle>
             <CardDescription>{formDef.description}</CardDescription>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex w-full items-center gap-2 sm:w-auto">
             <Select value={activeForm} onValueChange={(value) => setActiveForm(value as PMFormKey)}>
-              <SelectTrigger className="w-64">
+              <SelectTrigger className="min-w-0 flex-1 sm:w-64 sm:flex-none">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -205,60 +276,11 @@ export default function ProjectManagementFieldControlSettings() {
           </div>
         </CardHeader>
         <CardContent className="p-0">
-          <div className="overflow-x-auto">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead className="w-64">Label</TableHead>
-                  <TableHead className="w-28 text-center">Required</TableHead>
-                  <TableHead className="w-28 text-center">Visible</TableHead>
-                  <TableHead>Field key</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {fields.map((field) => {
-                  const setting = formFieldState[field.key] || {
-                    visible: true,
-                    required: field.defaultRequired,
-                    label: field.defaultLabel,
-                  };
-                  return (
-                    <TableRow key={field.key}>
-                      <TableCell>
-                        <Input
-                          value={setting.label}
-                          disabled={!canEdit}
-                          onChange={(event) => update(activeForm, field.key, { label: event.target.value })}
-                        />
-                      </TableCell>
-                      <TableCell className="text-center">
-                        <Switch
-                          checked={setting.required}
-                          disabled={!canEdit || field.locked}
-                          onCheckedChange={(value) => update(activeForm, field.key, { required: value })}
-                        />
-                      </TableCell>
-                      <TableCell className="text-center">
-                        <Switch
-                          checked={setting.visible}
-                          disabled={!canEdit || field.locked}
-                          onCheckedChange={(value) => update(activeForm, field.key, { visible: value })}
-                        />
-                      </TableCell>
-                      <TableCell className="whitespace-nowrap text-xs text-muted-foreground">
-                        {field.key}
-                        {field.locked && (
-                          <Badge variant="outline" className="ml-2 gap-1 text-[10px]">
-                            <Lock className="h-2.5 w-2.5" /> Locked
-                          </Badge>
-                        )}
-                      </TableCell>
-                    </TableRow>
-                  );
-                })}
-              </TableBody>
-            </Table>
-          </div>
+          <PmDataList
+            rows={fieldRows}
+            columns={columns}
+            className="sm:rounded-none sm:border-0 sm:shadow-none"
+          />
         </CardContent>
       </Card>
       <p className="text-xs text-muted-foreground">

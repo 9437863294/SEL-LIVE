@@ -27,12 +27,15 @@ import { useAuthorization } from "@/hooks/useAuthorization";
 import { useToast } from "@/hooks/use-toast";
 import { Button } from "@/components/ui/button";
 import {
-  PM_TABLE_CLASS,
+  PM_DIALOG,
   PmContent,
+  PmDataList,
   PmSectionHead,
   PmShell,
   PmTopbar,
+  type PmListColumn,
 } from "@/components/project-management/pm-shell";
+import { cn } from "@/lib/utils";
 import {
   Card,
   CardContent,
@@ -581,6 +584,64 @@ export default function RfqDetailPage() {
     );
   }
 
+  const itemColumns: PmListColumn<RfqItem & { id: string }>[] = [
+    { header: "BOQ SL No", cell: (item) => item.boqSlNo || "—" },
+    {
+      header: "Description",
+      className: "max-w-sm truncate",
+      mobile: "title",
+      cell: (item) => <span title={item.description}>{item.description}</span>,
+    },
+    { header: "Qty", cell: (item) => <>{formatQuantity(item.qty)} {item.unit}</> },
+    { header: "Source Indent", cell: (item) => item.sourceIndentNumber },
+    {
+      header: "Awarded To",
+      // A sub-line under the description on a phone: vendor and amount do not fit a half-width
+      // detail cell without truncating.
+      mobile: "title",
+      cell: (item) =>
+        item.awardedVendorName ? (
+          <span className="inline-flex items-center gap-1 text-emerald-700">
+            <Trophy className="h-3.5 w-3.5 shrink-0" /> {item.awardedVendorName} · {formatCurrency(item.awardedAmount ?? 0)}
+          </span>
+        ) : "—",
+    },
+  ];
+
+  // Rate-entry rows of the quote dialog — the item as the headline, the rate input as a detail.
+  const quoteItemColumns: PmListColumn<RfqItem & { id: string }>[] = [
+    {
+      header: "Item",
+      className: "max-w-xs truncate",
+      mobile: "title",
+      cell: (item) => <span title={item.description}>{item.description}</span>,
+    },
+    { header: "Qty", className: "whitespace-nowrap", cell: (item) => <>{formatQuantity(item.qty)} {item.unit}</> },
+    {
+      header: "Rate",
+      cell: (item) => (
+        <Input
+          className="w-full sm:w-28"
+          type="number"
+          min="0"
+          step="0.01"
+          value={quoteForm.rates[item.rfqItemId] ?? ""}
+          onChange={(e) => setQuoteForm((c) => ({ ...c, rates: { ...c.rates, [item.rfqItemId]: e.target.value } }))}
+        />
+      ),
+    },
+    {
+      header: "Amount",
+      className: "whitespace-nowrap",
+      cell: (item) => formatCurrency(Math.round(toNumber(quoteForm.rates[item.rfqItemId]) * item.qty * 100) / 100),
+    },
+  ];
+
+  // The comparison matrix scrolls sideways on a phone with the item column pinned; the sticky
+  // cells need an opaque fill, and the tinted summary rows lay their tint over it.
+  const stickyItemCell = "sticky left-0 z-10 bg-card";
+  const stickySummaryCell = "sticky left-0 z-10 bg-card bg-gradient-to-r from-muted/30 to-muted/30";
+
   return (
     // No sidebar: a single record's detail has no views to switch between.
     <PmShell>
@@ -622,52 +683,22 @@ export default function RfqDetailPage() {
           ]}
         />
 
-      <Card className="overflow-hidden border-border/60">
-        <CardContent className="p-0">
-          <div className="overflow-x-auto">
-            <Table className={PM_TABLE_CLASS}>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>BOQ SL No</TableHead>
-                  <TableHead>Description</TableHead>
-                  <TableHead>Qty</TableHead>
-                  <TableHead>Source Indent</TableHead>
-                  <TableHead>Awarded To</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {rfq.items.map((item) => (
-                  <TableRow key={item.rfqItemId}>
-                    <TableCell>{item.boqSlNo || "—"}</TableCell>
-                    <TableCell className="max-w-sm truncate" title={item.description}>{item.description}</TableCell>
-                    <TableCell>{formatQuantity(item.qty)} {item.unit}</TableCell>
-                    <TableCell>{item.sourceIndentNumber}</TableCell>
-                    <TableCell>
-                      {item.awardedVendorName ? (
-                        <span className="inline-flex items-center gap-1 text-emerald-700">
-                          <Trophy className="h-3.5 w-3.5" /> {item.awardedVendorName} · {formatCurrency(item.awardedAmount ?? 0)}
-                        </span>
-                      ) : "—"}
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          </div>
-        </CardContent>
-      </Card>
+      <PmDataList
+        rows={rfq.items.map((item) => ({ ...item, id: item.rfqItemId }))}
+        columns={itemColumns}
+      />
 
-      <Card>
+      <Card className="max-sm:[--card-pad:1rem]">
         <CardHeader>
-          <CardTitle>Vendor Quotes</CardTitle>
+          <CardTitle className="text-xl sm:text-2xl">Vendor Quotes</CardTitle>
           <CardDescription>{receivedQuotes.length} of {rfq.vendorIds.length} vendor(s) have submitted a quote.</CardDescription>
         </CardHeader>
         <CardContent className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
           {quotes.map((quote) => (
-            <div key={quote.id} className="rounded-lg border p-3">
-              <div className="flex items-center justify-between gap-2">
-                <p className="font-medium">{quote.vendorName}</p>
-                <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${quote.status === "Received" ? "bg-emerald-100 text-emerald-700" : "bg-muted text-muted-foreground"}`}>
+            <div key={quote.id} className="min-w-0 rounded-lg border p-3">
+              <div className="flex items-start justify-between gap-2 sm:items-center">
+                <p className="min-w-0 break-words font-medium">{quote.vendorName}</p>
+                <span className={`shrink-0 rounded-full px-2 py-0.5 text-xs font-medium ${quote.status === "Received" ? "bg-emerald-100 text-emerald-700" : "bg-muted text-muted-foreground"}`}>
                   {quote.status}
                 </span>
               </div>
@@ -692,9 +723,9 @@ export default function RfqDetailPage() {
       </Card>
 
       {receivedQuotes.length > 0 && (
-        <Card>
+        <Card className="max-sm:[--card-pad:1rem]">
           <CardHeader>
-            <CardTitle>Compare Quotes</CardTitle>
+            <CardTitle className="text-xl sm:text-2xl">Compare Quotes</CardTitle>
             <CardDescription>
               Lowest rate per item, and lowest overall landed cost, are highlighted. BOQ benchmark for this package:{" "}
               <span className="font-semibold text-foreground">{formatCurrency(boqBenchmarkValue)}</span>. Choose an
@@ -702,11 +733,14 @@ export default function RfqDetailPage() {
             </CardDescription>
           </CardHeader>
           <CardContent className="p-0">
+            <p className="mb-2 px-4 text-xs text-muted-foreground sm:hidden">Swipe sideways to see all columns</p>
+            {/* The vendors are the columns, so this stays a table — scrolling sideways inside its
+                own container with the item column pinned. */}
             <div className="overflow-x-auto">
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead className="min-w-[200px]">Item</TableHead>
+                    <TableHead className={cn(stickyItemCell, "min-w-[160px] sm:min-w-[200px]")}>Item</TableHead>
                     {receivedQuotes.map((quote) => (
                       <TableHead key={quote.vendorId} className="min-w-[120px] text-right">{quote.vendorName}</TableHead>
                     ))}
@@ -719,7 +753,9 @@ export default function RfqDetailPage() {
                     const vendorsForItem = receivedQuotes.filter((q) => q.items.some((qi) => qi.rfqItemId === item.rfqItemId && qi.rate > 0));
                     return (
                       <TableRow key={item.rfqItemId}>
-                        <TableCell className="max-w-xs truncate" title={item.description}>{item.description}</TableCell>
+                        {/* Wraps on a phone, where a truncated description in a pinned 160px
+                            column would leave nothing readable. */}
+                        <TableCell className={cn(stickyItemCell, "max-w-[160px] break-words sm:max-w-xs sm:truncate")} title={item.description}>{item.description}</TableCell>
                         {receivedQuotes.map((quote) => {
                           const rate = quote.items.find((qi) => qi.rfqItemId === item.rfqItemId)?.rate;
                           const isBest = typeof rate === "number" && rate > 0 && rate === bestRate;
@@ -738,7 +774,7 @@ export default function RfqDetailPage() {
                               onValueChange={(value) => setAwardSelections((current) => ({ ...current, [item.rfqItemId]: value }))}
                               disabled={!canAward}
                             >
-                              <SelectTrigger className="h-8"><SelectValue placeholder="Not awarded" /></SelectTrigger>
+                              <SelectTrigger className="h-9 sm:h-8"><SelectValue placeholder="Not awarded" /></SelectTrigger>
                               <SelectContent>
                                 {vendorsForItem.map((quote) => (
                                   <SelectItem key={quote.vendorId} value={quote.vendorId}>{quote.vendorName}</SelectItem>
@@ -751,28 +787,28 @@ export default function RfqDetailPage() {
                     );
                   })}
                   <TableRow className="bg-muted/30">
-                    <TableCell className="font-medium">Payment Terms</TableCell>
+                    <TableCell className={cn(stickySummaryCell, "font-medium")}>Payment Terms</TableCell>
                     {receivedQuotes.map((quote) => (
                       <TableCell key={quote.vendorId} colSpan={1} className="text-right text-xs">{quote.paymentTerms || "—"}</TableCell>
                     ))}
                     <TableCell />
                   </TableRow>
                   <TableRow className="bg-muted/30">
-                    <TableCell className="font-medium">Delivery Time</TableCell>
+                    <TableCell className={cn(stickySummaryCell, "font-medium")}>Delivery Time</TableCell>
                     {receivedQuotes.map((quote) => (
                       <TableCell key={quote.vendorId} className="text-right text-xs">{quote.deliveryTime || "—"}</TableCell>
                     ))}
                     <TableCell />
                   </TableRow>
                   <TableRow className="bg-muted/30">
-                    <TableCell className="font-medium">Basic Total</TableCell>
+                    <TableCell className={cn(stickySummaryCell, "font-medium")}>Basic Total</TableCell>
                     {receivedQuotes.map((quote) => (
                       <TableCell key={quote.vendorId} className="text-right text-xs">{formatCurrency(quote.totalAmount)}</TableCell>
                     ))}
                     <TableCell />
                   </TableRow>
                   <TableRow className="bg-muted/30">
-                    <TableCell className="font-medium">Landed Cost (excl. GST)</TableCell>
+                    <TableCell className={cn(stickySummaryCell, "font-medium")}>Landed Cost (excl. GST)</TableCell>
                     {receivedQuotes.map((quote) => {
                       const landedCost = landedCostByVendor.get(quote.vendorId) ?? quote.totalAmount;
                       const isBest = typeof bestLandedCost === "number" && landedCost === bestLandedCost;
@@ -790,7 +826,7 @@ export default function RfqDetailPage() {
                     <TableCell />
                   </TableRow>
                   <TableRow className="bg-muted/30">
-                    <TableCell className="font-medium">Cash Outflow (incl. GST)</TableCell>
+                    <TableCell className={cn(stickySummaryCell, "font-medium")}>Cash Outflow (incl. GST)</TableCell>
                     {receivedQuotes.map((quote) => {
                       const landedCost = landedCostByVendor.get(quote.vendorId) ?? quote.totalAmount;
                       const cashOutflow = quote.cashOutflowInclGst ?? computeCashOutflow(landedCost, quote.gstPct ?? 0);
@@ -806,7 +842,7 @@ export default function RfqDetailPage() {
               </Table>
             </div>
             {canAward && (
-              <div className="flex flex-col items-end gap-1 p-4">
+              <div className="flex flex-col items-stretch gap-1 p-4 sm:items-end">
                 {rfqAwardRequiresApproval(rfq as RfqLike, awardSteps) && (
                   <p className="text-xs text-muted-foreground">
                     Awards go to {awardSteps[0]?.name} for approval. The purchase order is raised
@@ -844,12 +880,12 @@ export default function RfqDetailPage() {
       </PmContent>
 
       <Dialog open={!!quoteDialogVendorId} onOpenChange={(open) => !open && setQuoteDialogVendorId(null)}>
-        <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-2xl">
-          <DialogHeader>
+        <DialogContent className={cn(PM_DIALOG.content, "sm:max-h-[90dvh] sm:max-w-2xl sm:overflow-y-auto")}>
+          <DialogHeader className={PM_DIALOG.header}>
             <DialogTitle>Enter Vendor Quote</DialogTitle>
             <DialogDescription>Record the rates and terms this vendor quoted for the RFQ items.</DialogDescription>
           </DialogHeader>
-          <div className="grid gap-4 py-2">
+          <div className={cn(PM_DIALOG.body, "space-y-4 py-2")}>
             <div className="grid gap-4 sm:grid-cols-2">
               <div className="space-y-2">
                 <Label htmlFor="submitted-date">Quote Submitted Date</Label>
@@ -869,40 +905,10 @@ export default function RfqDetailPage() {
               </div>
             </div>
 
-            <div className="overflow-x-auto rounded-lg border">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Item</TableHead>
-                    <TableHead>Qty</TableHead>
-                    <TableHead>Rate</TableHead>
-                    <TableHead>Amount</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {(rfq?.items ?? []).map((item) => {
-                    const rate = toNumber(quoteForm.rates[item.rfqItemId]);
-                    return (
-                      <TableRow key={item.rfqItemId}>
-                        <TableCell className="max-w-xs truncate" title={item.description}>{item.description}</TableCell>
-                        <TableCell className="whitespace-nowrap">{formatQuantity(item.qty)} {item.unit}</TableCell>
-                        <TableCell>
-                          <Input
-                            className="w-28"
-                            type="number"
-                            min="0"
-                            step="0.01"
-                            value={quoteForm.rates[item.rfqItemId] ?? ""}
-                            onChange={(e) => setQuoteForm((c) => ({ ...c, rates: { ...c.rates, [item.rfqItemId]: e.target.value } }))}
-                          />
-                        </TableCell>
-                        <TableCell className="whitespace-nowrap">{formatCurrency(Math.round(rate * item.qty * 100) / 100)}</TableCell>
-                      </TableRow>
-                    );
-                  })}
-                </TableBody>
-              </Table>
-            </div>
+            <PmDataList
+              rows={(rfq?.items ?? []).map((item) => ({ ...item, id: item.rfqItemId }))}
+              columns={quoteItemColumns}
+            />
 
             <div className="space-y-2 rounded-lg border p-3">
               <p className="text-sm font-medium">Landed Cost Adjustments</p>
@@ -944,7 +950,7 @@ export default function RfqDetailPage() {
               <Textarea id="quote-remarks" placeholder="Optional" value={quoteForm.remarks} onChange={(e) => setQuoteForm((c) => ({ ...c, remarks: e.target.value }))} />
             </div>
           </div>
-          <DialogFooter>
+          <DialogFooter className={PM_DIALOG.footer}>
             <DialogClose asChild><Button variant="outline">Cancel</Button></DialogClose>
             <Button onClick={() => void handleSaveQuote()} disabled={isSavingQuote}>
               {isSavingQuote ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}

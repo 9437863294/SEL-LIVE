@@ -43,15 +43,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
 import { Skeleton } from "@/components/ui/skeleton";
+import { PmDataList, type PmListColumn } from "@/components/project-management/pm-shell";
 import { useAuthorization } from "@/hooks/useAuthorization";
 import { useToast } from "@/hooks/use-toast";
 import {
@@ -65,6 +58,9 @@ import {
 
 const SETTINGS_PERMISSION = "Project Management.Settings";
 const PROJECT_MAPPINGS_COLLECTION = "projectManagementProjects";
+
+/** One register row: the column config, keyed for the list, with its position for the move buttons. */
+type BoqColumnRow = { id: string; column: BoqColumnConfig; index: number };
 
 export default function ProjectManagementBoqSettingsPage() {
   const { can, isLoading: isAuthLoading } = useAuthorization();
@@ -264,21 +260,151 @@ export default function ProjectManagementBoqSettingsPage() {
     );
   }
 
+  const listColumns: PmListColumn<BoqColumnRow>[] = [
+    {
+      // On a phone card the pair becomes two full-width buttons along the foot — far easier to
+      // hit than two arrows in a table cell.
+      header: "Order",
+      mobile: "footer",
+      className: "w-28",
+      cell: ({ column, index }) => (
+        <div className="flex w-full gap-1 sm:w-auto">
+          <Button
+            variant="ghost"
+            size="icon"
+            className="max-sm:border"
+            onClick={() => moveColumn(index, -1)}
+            disabled={!canEdit || index === 0}
+            aria-label={`Move ${column.label} up`}
+          >
+            <ArrowUp className="h-4 w-4" />
+          </Button>
+          <Button
+            variant="ghost"
+            size="icon"
+            className="max-sm:border"
+            onClick={() => moveColumn(index, 1)}
+            disabled={!canEdit || index === columns.length - 1}
+            aria-label={`Move ${column.label} down`}
+          >
+            <ArrowDown className="h-4 w-4" />
+          </Button>
+        </div>
+      ),
+    },
+    {
+      header: "Stored key",
+      mobile: "title",
+      className: "text-xs",
+      cell: ({ column }) => <span className="break-words font-mono">{column.key}</span>,
+    },
+    {
+      header: "Display label",
+      className: "min-w-56",
+      cell: ({ column }) => (
+        <Input
+          value={column.label}
+          onChange={(event) =>
+            updateColumn(column.key, { label: event.target.value })
+          }
+          disabled={!canEdit}
+        />
+      ),
+    },
+    {
+      header: "Validation type",
+      className: "min-w-48",
+      cell: ({ column }) => (
+        <Select
+          value={column.dataType}
+          onValueChange={(dataType: BoqColumnDataType) =>
+            updateColumn(column.key, { dataType })
+          }
+          disabled={!canEdit}
+        >
+          <SelectTrigger aria-label={`Validation type for ${column.label}`}>
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="text">Text</SelectItem>
+            <SelectItem value="number">Number</SelectItem>
+            <SelectItem value="percentage">Percentage (0–100)</SelectItem>
+            <SelectItem value="date">Date</SelectItem>
+            <SelectItem value="yesno">Yes/No</SelectItem>
+          </SelectContent>
+        </Select>
+      ),
+    },
+    {
+      header: "BOQ Costing",
+      className: "text-center",
+      cell: ({ column }) => (
+        // Left-aligned under its label on a phone card, centred in its column on a desktop.
+        <div className="flex sm:justify-center">
+          <Switch
+            checked={column.showInCosting}
+            onCheckedChange={(showInCosting) =>
+              updateColumn(column.key, { showInCosting })
+            }
+            disabled={!canEdit}
+            aria-label={`Show ${column.label} in BOQ Costing`}
+          />
+        </div>
+      ),
+    },
+    {
+      header: "Operational BOQ",
+      className: "text-center",
+      cell: ({ column }) => (
+        <div className="flex sm:justify-center">
+          <Switch
+            checked={column.showInOperational}
+            onCheckedChange={(showInOperational) =>
+              updateColumn(column.key, { showInOperational })
+            }
+            disabled={!canEdit}
+            aria-label={`Show ${column.label} in Operational BOQ`}
+          />
+        </div>
+      ),
+    },
+    {
+      header: "Remove",
+      align: "right",
+      mobile: "aside",
+      className: "w-20",
+      cell: ({ column }) => (
+        <Button
+          variant="ghost"
+          size="icon"
+          onClick={() => removeColumn(column.key)}
+          disabled={
+            !canEdit ||
+            DEFAULT_BOQ_COLUMNS.some((defaultColumn) => defaultColumn.key === column.key)
+          }
+          aria-label={`Remove ${column.label}`}
+        >
+          <Trash2 className="h-4 w-4 text-destructive" />
+        </Button>
+      ),
+    },
+  ];
+
   return (
-    <main className="min-h-[calc(100dvh-4rem)] p-4 sm:p-6">
-      <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-        <div className="flex items-center gap-3">
-          <Button variant="ghost" size="icon" asChild>
+    <main className="min-h-[calc(100dvh-4rem)] p-4 max-sm:[--card-pad:1rem] sm:p-6">
+      <div className="mb-4 flex flex-col gap-3 sm:mb-6 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
+        <div className="flex min-w-0 items-center gap-2 sm:gap-3">
+          <Button variant="ghost" size="icon" className="shrink-0" asChild>
             <Link href="/project-management/settings" aria-label="Back to Settings">
               <ArrowLeft className="h-5 w-5" />
             </Link>
           </Button>
-          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-violet-500 to-purple-600 shadow-sm">
+          <div className="hidden h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-violet-500 to-purple-600 shadow-sm sm:flex">
             <ClipboardList className="h-5 w-5 text-white" />
           </div>
-          <div>
-            <h1 className="text-2xl font-bold sm:text-3xl">BOQ Column Settings</h1>
-            <p className="mt-1 text-sm text-muted-foreground">
+          <div className="min-w-0">
+            <h1 className="text-xl font-bold sm:text-3xl">BOQ Column Settings</h1>
+            <p className="mt-0.5 text-[13px] text-muted-foreground sm:mt-1 sm:text-sm">
               Configure labels, validation data types, order, and visibility for both BOQ views.
             </p>
           </div>
@@ -363,8 +489,10 @@ export default function ProjectManagementBoqSettingsPage() {
         </CardContent>
       </Card>
 
-      <Card>
-        <CardHeader>
+      {/* On a phone the card drops its frame: the header reads as a section heading and the
+          column cards stand on the page, rather than sitting as cards inside a card. */}
+      <Card className="max-sm:border-0 max-sm:bg-transparent max-sm:shadow-none">
+        <CardHeader className="max-sm:px-0 max-sm:pt-0">
           <CardTitle className="flex items-center gap-2 text-lg">
             <ClipboardList className="h-5 w-5 text-primary" />
             BOQ Columns
@@ -374,120 +502,11 @@ export default function ProjectManagementBoqSettingsPage() {
           </CardDescription>
         </CardHeader>
         <CardContent className="p-0">
-          <div className="overflow-x-auto">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead className="w-28">Order</TableHead>
-                  <TableHead>Stored key</TableHead>
-                  <TableHead className="min-w-56">Display label</TableHead>
-                  <TableHead className="min-w-48">Validation type</TableHead>
-                  <TableHead className="text-center">BOQ Costing</TableHead>
-                  <TableHead className="text-center">Operational BOQ</TableHead>
-                  <TableHead className="w-20 text-right">Remove</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {columns.map((column, index) => {
-                  const isStandard = DEFAULT_BOQ_COLUMNS.some(
-                    (defaultColumn) => defaultColumn.key === column.key,
-                  );
-
-                  return (
-                    <TableRow key={column.key}>
-                      <TableCell>
-                        <div className="flex gap-1">
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            onClick={() => moveColumn(index, -1)}
-                            disabled={!canEdit || index === 0}
-                            aria-label={`Move ${column.label} up`}
-                          >
-                            <ArrowUp className="h-4 w-4" />
-                          </Button>
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            onClick={() => moveColumn(index, 1)}
-                            disabled={!canEdit || index === columns.length - 1}
-                            aria-label={`Move ${column.label} down`}
-                          >
-                            <ArrowDown className="h-4 w-4" />
-                          </Button>
-                        </div>
-                      </TableCell>
-                      <TableCell className="font-mono text-xs">{column.key}</TableCell>
-                      <TableCell>
-                        <Input
-                          value={column.label}
-                          onChange={(event) =>
-                            updateColumn(column.key, { label: event.target.value })
-                          }
-                          disabled={!canEdit}
-                        />
-                      </TableCell>
-                      <TableCell>
-                        <Select
-                          value={column.dataType}
-                          onValueChange={(dataType: BoqColumnDataType) =>
-                            updateColumn(column.key, { dataType })
-                          }
-                          disabled={!canEdit}
-                        >
-                          <SelectTrigger aria-label={`Validation type for ${column.label}`}>
-                            <SelectValue />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="text">Text</SelectItem>
-                            <SelectItem value="number">Number</SelectItem>
-                            <SelectItem value="percentage">Percentage (0–100)</SelectItem>
-                            <SelectItem value="date">Date</SelectItem>
-                            <SelectItem value="yesno">Yes/No</SelectItem>
-                          </SelectContent>
-                        </Select>
-                      </TableCell>
-                      <TableCell>
-                        <div className="flex justify-center">
-                          <Switch
-                            checked={column.showInCosting}
-                            onCheckedChange={(showInCosting) =>
-                              updateColumn(column.key, { showInCosting })
-                            }
-                            disabled={!canEdit}
-                            aria-label={`Show ${column.label} in BOQ Costing`}
-                          />
-                        </div>
-                      </TableCell>
-                      <TableCell>
-                        <div className="flex justify-center">
-                          <Switch
-                            checked={column.showInOperational}
-                            onCheckedChange={(showInOperational) =>
-                              updateColumn(column.key, { showInOperational })
-                            }
-                            disabled={!canEdit}
-                            aria-label={`Show ${column.label} in Operational BOQ`}
-                          />
-                        </div>
-                      </TableCell>
-                      <TableCell className="text-right">
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          onClick={() => removeColumn(column.key)}
-                          disabled={!canEdit || isStandard}
-                          aria-label={`Remove ${column.label}`}
-                        >
-                          <Trash2 className="h-4 w-4 text-destructive" />
-                        </Button>
-                      </TableCell>
-                    </TableRow>
-                  );
-                })}
-              </TableBody>
-            </Table>
-          </div>
+          <PmDataList
+            rows={columns.map((column, index) => ({ id: column.key, column, index }))}
+            columns={listColumns}
+            className="sm:rounded-none sm:border-0 sm:shadow-none"
+          />
         </CardContent>
       </Card>
     </main>

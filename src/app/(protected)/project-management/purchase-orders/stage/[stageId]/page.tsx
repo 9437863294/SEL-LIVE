@@ -8,7 +8,7 @@
  * accepted are shown inline, because accepting them is the substance of the decision.
  */
 
-import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useParams, useSearchParams } from "next/navigation";
 import {
   AlertTriangle,
@@ -48,18 +48,21 @@ import {
   PoProjectNotFound,
 } from "@/components/po/po-page-shell";
 import {
-  PM_TABLE_CLASS,
+  PM_DIALOG,
   PmContent,
+  PmDataList,
+  PmEmptyState,
   PmSectionHead,
   PmShell,
   PmSidebar,
   PmTopbar,
   pmAccent,
+  type PmListColumn,
   type PmSidebarLink,
 } from "@/components/project-management/pm-shell";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   Dialog,
   DialogClose,
@@ -70,15 +73,8 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
 import { Textarea } from "@/components/ui/textarea";
+import { cn } from "@/lib/utils";
 
 /** PO dates are plain yyyy-mm-dd strings, matching how the other PO screens render them. */
 const formatDate = (value?: string) => {
@@ -358,6 +354,168 @@ export default function PoIssueStagePage() {
 
   const isFinalStep = steps[steps.length - 1]?.id === step.id;
 
+  const renderActions = (approval: PoIssueApproval) => {
+    const mayAct = user ? canActOnPoIssue(approval, user.id) : false;
+    const isExpanded = expandedIds.has(approval.id);
+    return (
+      <div
+        className="flex w-full flex-wrap items-center justify-end gap-2 sm:w-auto sm:gap-1"
+        onClick={(event) => event.stopPropagation()}
+      >
+        {mayAct ? (
+          allowedActions.map((action) => (
+            <Button
+              key={action}
+              size="sm"
+              variant={action === "Approve" ? "default" : "outline"}
+              onClick={() => {
+                setPending({ approval, action });
+                setComment("");
+              }}
+            >
+              {action}
+            </Button>
+          ))
+        ) : (
+          <span className="mr-auto text-xs text-muted-foreground sm:mr-0">Not assigned to you</span>
+        )}
+        {/* A phone card carrying actions is not itself a tap target, so it gets its own toggle;
+            a desktop row still opens on a click anywhere. */}
+        <Button variant="outline" size="sm" className="sm:hidden" onClick={() => toggleExpanded(approval.id)}>
+          {isExpanded ? "Hide details" : "Show details"}
+        </Button>
+      </div>
+    );
+  };
+
+  const approvalColumns: PmListColumn<PoIssueApproval>[] = [
+    {
+      header: "",
+      className: "w-10",
+      mobile: "omit",
+      cell: (approval) => {
+        const isExpanded = expandedIds.has(approval.id);
+        return (
+          <div onClick={(event) => event.stopPropagation()}>
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={() => toggleExpanded(approval.id)}
+              aria-label={isExpanded ? "Collapse" : "Expand"}
+            >
+              {isExpanded ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
+            </Button>
+          </div>
+        );
+      },
+    },
+    { header: "PO No.", className: "font-medium", mobile: "title", cell: (approval) => approval.poNumber },
+    { header: "PO Date", className: "whitespace-nowrap", cell: (approval) => formatDate(approval.poDate) },
+    { header: "Vendor", mobile: "title", cell: (approval) => approval.vendorName },
+    { header: "Items", cell: (approval) => approval.itemCount },
+    {
+      header: "Value",
+      align: "right",
+      className: "whitespace-nowrap font-medium",
+      cell: (approval) => formatCurrency(approval.totalAmount),
+    },
+    {
+      header: "Exceptions",
+      className: "text-xs",
+      cell: (approval) => {
+        const exceptionCount = approval.exceptions?.length ?? 0;
+        return exceptionCount ? (
+          <span className="flex items-center gap-1 font-medium text-amber-700">
+            <AlertTriangle className="h-3 w-3" />
+            {exceptionCount}
+          </span>
+        ) : (
+          <span className="text-muted-foreground">None</span>
+        );
+      },
+    },
+    { header: "Requested By", className: "text-sm", cell: (approval) => approval.requestedByName || "—" },
+    {
+      header: "Status",
+      mobile: "aside",
+      cell: (approval) => (
+        <Badge variant="outline" className={poIssueStatusStyles[approval.status]}>
+          {approval.status}
+        </Badge>
+      ),
+    },
+    {
+      header: "Due",
+      className: "text-xs text-muted-foreground",
+      cell: (approval) => {
+        const due = toDateSafe(approval.deadline);
+        return due ? (
+          <span className="flex items-center gap-1">
+            <Clock className="h-3 w-3" />
+            {due.toLocaleDateString()}
+          </span>
+        ) : (
+          "—"
+        );
+      },
+    },
+    { header: "Actions", align: "right", mobile: "footer", cell: renderActions },
+  ];
+
+  const renderApprovalDetail = (approval: PoIssueApproval) => {
+    const exceptionCount = approval.exceptions?.length ?? 0;
+    return (
+      <div className="space-y-3 sm:p-3">
+        <Button variant="outline" size="sm" asChild>
+          <Link href={`${context.poHref(approval.poId)}`}>
+            Open {approval.poNumber}
+          </Link>
+        </Button>
+
+        {exceptionCount ? (
+          <div className="rounded-md border border-amber-200 bg-amber-50 p-3">
+            <p className="text-xs font-semibold text-amber-900">
+              The buyer is asking you to accept {exceptionCount} exception
+              {exceptionCount === 1 ? "" : "s"}:
+            </p>
+            <ul className="mt-1.5 space-y-1">
+              {approval.exceptions.map((exception, index) => (
+                <li key={index} className="break-words text-xs text-amber-900">
+                  <span className="font-medium">
+                    {exception.kind === "flow-down"
+                      ? "Flow-down gap"
+                      : "Commitment over BOQ"}
+                    :
+                  </span>{" "}
+                  {exception.label}
+                  {exception.detail ? ` — ${exception.detail}` : ""}
+                </li>
+              ))}
+            </ul>
+            {approval.overrideReason ? (
+              <p className="mt-2 break-words text-xs text-amber-900">
+                <span className="font-medium">Stated reason:</span>{" "}
+                {approval.overrideReason}
+              </p>
+            ) : null}
+          </div>
+        ) : null}
+
+        {approval.actionLogs?.length ? (
+          <ul className="space-y-1">
+            {approval.actionLogs.map((log, index) => (
+              <li key={index} className="break-words text-xs text-muted-foreground">
+                <span className="font-medium text-foreground">{log.action}</span>
+                {log.stepName ? ` at ${log.stepName}` : ""} — {log.userName}
+                {log.comment ? `: ${log.comment}` : ""}
+              </li>
+            ))}
+          </ul>
+        ) : null}
+      </div>
+    );
+  };
+
   return (
     <PmShell sidebar={stageSidebar}>
       <PmTopbar
@@ -392,189 +550,31 @@ export default function PoIssueStagePage() {
           </p>
         )}
 
-      <Card className="overflow-hidden border-border/60">
-        <CardContent className="p-0">
-          <div className="overflow-x-auto">
-            <Table className={PM_TABLE_CLASS}>
-              <TableHeader>
-                <TableRow>
-                  <TableHead className="w-10" />
-                  <TableHead>PO No.</TableHead>
-                  <TableHead>PO Date</TableHead>
-                  <TableHead>Vendor</TableHead>
-                  <TableHead>Items</TableHead>
-                  <TableHead className="text-right">Value</TableHead>
-                  <TableHead>Exceptions</TableHead>
-                  <TableHead>Requested By</TableHead>
-                  <TableHead>Status</TableHead>
-                  <TableHead>Due</TableHead>
-                  <TableHead className="text-right">Actions</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {stageApprovals.length ? (
-                  stageApprovals.map((approval) => {
-                    const isExpanded = expandedIds.has(approval.id);
-                    const mayAct = user ? canActOnPoIssue(approval, user.id) : false;
-                    const due = toDateSafe(approval.deadline);
-                    const exceptionCount = approval.exceptions?.length ?? 0;
-
-                    return (
-                      <Fragment key={approval.id}>
-                        <TableRow className="cursor-pointer" onClick={() => toggleExpanded(approval.id)}>
-                          <TableCell onClick={(event) => event.stopPropagation()}>
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              onClick={() => toggleExpanded(approval.id)}
-                              aria-label={isExpanded ? "Collapse" : "Expand"}
-                            >
-                              {isExpanded ? (
-                                <ChevronDown className="h-4 w-4" />
-                              ) : (
-                                <ChevronRight className="h-4 w-4" />
-                              )}
-                            </Button>
-                          </TableCell>
-                          <TableCell className="font-medium">{approval.poNumber}</TableCell>
-                          <TableCell className="whitespace-nowrap">{formatDate(approval.poDate)}</TableCell>
-                          <TableCell>{approval.vendorName}</TableCell>
-                          <TableCell>{approval.itemCount}</TableCell>
-                          <TableCell className="whitespace-nowrap text-right font-medium">
-                            {formatCurrency(approval.totalAmount)}
-                          </TableCell>
-                          <TableCell className="text-xs">
-                            {exceptionCount ? (
-                              <span className="flex items-center gap-1 font-medium text-amber-700">
-                                <AlertTriangle className="h-3 w-3" />
-                                {exceptionCount}
-                              </span>
-                            ) : (
-                              <span className="text-muted-foreground">None</span>
-                            )}
-                          </TableCell>
-                          <TableCell className="text-sm">{approval.requestedByName || "—"}</TableCell>
-                          <TableCell>
-                            <Badge variant="outline" className={poIssueStatusStyles[approval.status]}>
-                              {approval.status}
-                            </Badge>
-                          </TableCell>
-                          <TableCell className="text-xs text-muted-foreground">
-                            {due ? (
-                              <span className="flex items-center gap-1">
-                                <Clock className="h-3 w-3" />
-                                {due.toLocaleDateString()}
-                              </span>
-                            ) : (
-                              "—"
-                            )}
-                          </TableCell>
-                          <TableCell className="text-right" onClick={(event) => event.stopPropagation()}>
-                            {mayAct ? (
-                              <div className="flex flex-wrap justify-end gap-1">
-                                {allowedActions.map((action) => (
-                                  <Button
-                                    key={action}
-                                    size="sm"
-                                    variant={action === "Approve" ? "default" : "outline"}
-                                    onClick={() => {
-                                      setPending({ approval, action });
-                                      setComment("");
-                                    }}
-                                  >
-                                    {action}
-                                  </Button>
-                                ))}
-                              </div>
-                            ) : (
-                              <span className="text-xs text-muted-foreground">Not assigned to you</span>
-                            )}
-                          </TableCell>
-                        </TableRow>
-                        {isExpanded && (
-                          <TableRow className="bg-muted/40 hover:bg-muted/40">
-                            <TableCell colSpan={11} className="p-0">
-                              <div className="space-y-3 p-3">
-                                <Button variant="outline" size="sm" asChild>
-                                  <Link href={`${context.poHref(approval.poId)}`}>
-                                    Open {approval.poNumber}
-                                  </Link>
-                                </Button>
-
-                                {exceptionCount ? (
-                                  <div className="rounded-md border border-amber-200 bg-amber-50 p-3">
-                                    <p className="text-xs font-semibold text-amber-900">
-                                      The buyer is asking you to accept {exceptionCount} exception
-                                      {exceptionCount === 1 ? "" : "s"}:
-                                    </p>
-                                    <ul className="mt-1.5 space-y-1">
-                                      {approval.exceptions.map((exception, index) => (
-                                        <li key={index} className="text-xs text-amber-900">
-                                          <span className="font-medium">
-                                            {exception.kind === "flow-down"
-                                              ? "Flow-down gap"
-                                              : "Commitment over BOQ"}
-                                            :
-                                          </span>{" "}
-                                          {exception.label}
-                                          {exception.detail ? ` — ${exception.detail}` : ""}
-                                        </li>
-                                      ))}
-                                    </ul>
-                                    {approval.overrideReason ? (
-                                      <p className="mt-2 text-xs text-amber-900">
-                                        <span className="font-medium">Stated reason:</span>{" "}
-                                        {approval.overrideReason}
-                                      </p>
-                                    ) : null}
-                                  </div>
-                                ) : null}
-
-                                {approval.actionLogs?.length ? (
-                                  <ul className="space-y-1">
-                                    {approval.actionLogs.map((log, index) => (
-                                      <li key={index} className="text-xs text-muted-foreground">
-                                        <span className="font-medium text-foreground">{log.action}</span>
-                                        {log.stepName ? ` at ${log.stepName}` : ""} — {log.userName}
-                                        {log.comment ? `: ${log.comment}` : ""}
-                                      </li>
-                                    ))}
-                                  </ul>
-                                ) : null}
-                              </div>
-                            </TableCell>
-                          </TableRow>
-                        )}
-                      </Fragment>
-                    );
-                  })
-                ) : (
-                  <TableRow>
-                    <TableCell colSpan={11} className="h-32 text-center">
-                      <GitMerge className="mx-auto mb-2 h-8 w-8 text-muted-foreground" />
-                      <p className="font-medium">Nothing waiting at this stage</p>
-                      <p className="mt-1 text-sm text-muted-foreground">
-                        Purchase orders submitted for issue will appear here.
-                      </p>
-                    </TableCell>
-                  </TableRow>
-                )}
-              </TableBody>
-            </Table>
-          </div>
-        </CardContent>
-      </Card>
+      <PmDataList
+        rows={stageApprovals}
+        columns={approvalColumns}
+        onRowClick={(approval) => toggleExpanded(approval.id)}
+        expandedIds={expandedIds}
+        renderExpanded={renderApprovalDetail}
+        empty={
+          <PmEmptyState
+            icon={GitMerge}
+            title="Nothing waiting at this stage"
+            description="Purchase orders submitted for issue will appear here."
+          />
+        }
+      />
       </PmContent>
 
       <Dialog open={Boolean(pending)} onOpenChange={(open) => !open && setPending(null)}>
-        <DialogContent>
-          <DialogHeader>
+        <DialogContent className={PM_DIALOG.content}>
+          <DialogHeader className={PM_DIALOG.header}>
             <DialogTitle>{pending?.action} issue request</DialogTitle>
             <DialogDescription>
               {pending ? `${pending.approval.poNumber} — ${pending.approval.vendorName}` : ""}
             </DialogDescription>
           </DialogHeader>
-          <div className="grid gap-3 py-2">
+          <div className={cn(PM_DIALOG.body, "py-2")}>
             <p className="text-sm">
               Order value:{" "}
               <span className="font-medium">
@@ -610,7 +610,7 @@ export default function PoIssueStagePage() {
               />
             </div>
           </div>
-          <DialogFooter>
+          <DialogFooter className={PM_DIALOG.footer}>
             <DialogClose asChild>
               <Button variant="outline">Cancel</Button>
             </DialogClose>

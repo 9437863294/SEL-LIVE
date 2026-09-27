@@ -17,8 +17,8 @@ import {
 } from "recharts";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { chartChrome } from "@/components/ui/chart";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import StatCard from "@/components/project-management/stat-card";
+import { PmDataList, type PmListColumn } from "@/components/project-management/pm-shell";
 import { cn } from "@/lib/utils";
 import {
   PO_STATUSES,
@@ -57,6 +57,22 @@ const formatDate = (value?: string) => {
   return Number.isNaN(date.getTime())
     ? value
     : date.toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" });
+};
+
+/**
+ * A report Card whose body is a list: framed on a desktop, only its heading on a phone — the list
+ * brings its own cards there, and a card inside a card is just a thicker border.
+ */
+const LIST_CARD_CLASS = "max-sm:border-0 max-sm:bg-transparent max-sm:shadow-none";
+const LIST_CARD_HEADER_CLASS = "pb-2 max-sm:px-0";
+/** The Card frames the list on a desktop, so the list drops its own. */
+const LIST_IN_CARD_CLASS = "sm:rounded-none sm:border-0 sm:shadow-none";
+
+type VarianceLine = {
+  id: string;
+  po: PurchaseOrder;
+  description: string;
+  variance: number;
 };
 
 export default function PoReports({
@@ -179,9 +195,53 @@ export default function PoReports({
     [matchedLines],
   );
 
+  const toVarianceRows = (lines: typeof matchedLines): VarianceLine[] =>
+    lines.map((line, index) => ({ id: String(index), po: line.po, description: line.description, variance: line.variance }));
+
+  // Savings and overruns are the same list with a different last column. The amount carries its
+  // own colour because a phone card's aside does not get the column's classes.
+  const varianceColumns = (kind: "savings" | "overrun"): PmListColumn<VarianceLine>[] => [
+    { header: "Item", className: "max-w-[180px] truncate", mobile: "title", cell: (line) => line.description },
+    { header: "PO", className: "whitespace-nowrap text-xs text-muted-foreground", cell: (line) => line.po.poNumber },
+    kind === "savings"
+      ? {
+          header: "Savings",
+          className: "whitespace-nowrap",
+          mobile: "aside",
+          cell: (line) => <span className="font-medium text-emerald-600">{formatCurrency(line.variance)}</span>,
+        }
+      : {
+          header: "Overrun",
+          className: "whitespace-nowrap",
+          mobile: "aside",
+          cell: (line) => <span className="font-medium text-red-600">{formatCurrency(Math.abs(line.variance))}</span>,
+        },
+  ];
+
+  const overdueColumns: PmListColumn<PurchaseOrder>[] = [
+    { header: "PO Number", className: "font-medium", mobile: "title", cell: (po) => po.poNumber },
+    { header: "Vendor", mobile: "title", cell: (po) => po.vendorName },
+    {
+      header: "End Date",
+      className: "whitespace-nowrap",
+      cell: (po) => <span className="text-red-600">{formatDate(po.endDate)}</span>,
+    },
+    {
+      header: "Status",
+      mobile: "aside",
+      cell: (po) => (
+        <span className={cn("rounded-full px-2 py-0.5 text-xs font-medium", poStatusStyles[po.status])}>{po.status}</span>
+      ),
+    },
+  ];
+
   return (
-    <div className="space-y-5">
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-5">
+    <div className="space-y-5 max-sm:[--card-pad:1rem]">
+      {/* Five tiles: two a row on a phone, three on a tablet or a narrow desktop, all five from
+          `xl` — five a row at `sm` squeezed each rupee figure out of its tile. On a phone
+          StatCard is compacted from here (tighter padding, no icon chip, a smaller figure) so an
+          amount fits half a row. */}
+      <div className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-5 [&>*]:min-w-0 max-sm:[&_.h-10]:hidden max-sm:[&_.p-4]:p-3 max-sm:[&_.text-2xl]:text-lg">
         <StatCard label="Total PO Value" value={formatCurrency(totalPurchaseValue)} icon={ShoppingCart} tone="bg-slate-100 text-slate-700" />
         <StatCard label="Budget Value (matched)" value={formatCurrency(totalBudgetValue)} icon={IndianRupee} tone="bg-blue-100 text-blue-700" />
         <StatCard
@@ -223,7 +283,7 @@ export default function PoReports({
             <CardTitle className="text-base">Monthly spend trend</CardTitle>
             <CardDescription>Total PO value raised per month</CardDescription>
           </CardHeader>
-          <CardContent className="h-64">
+          <CardContent className="h-56 sm:h-64">
             {monthlyTrend.length ? (
               <ResponsiveContainer>
                 <BarChart data={monthlyTrend}>
@@ -246,7 +306,7 @@ export default function PoReports({
           <CardTitle className="text-base">Budget vs Purchase price by vendor</CardTitle>
           <CardDescription>Top vendors by purchase value, limited to items matched against a BOQ budget price</CardDescription>
         </CardHeader>
-        <CardContent className="h-72">
+        <CardContent className="h-60 sm:h-72">
           {vendorComparison.length ? (
             <ResponsiveContainer>
               <BarChart data={vendorComparison}>
@@ -273,9 +333,10 @@ export default function PoReports({
           {scopeComparison.length ? (
             scopeComparison.map(({ scope, budget, purchase, percentUsed }) => (
               <div key={scope}>
-                <div className="mb-1 flex items-center justify-between text-sm">
-                  <span className="font-medium">{scope}</span>
-                  <span className="text-muted-foreground">
+                {/* Wraps on a phone: the figures drop under the scope name rather than crushing it. */}
+                <div className="mb-1 flex flex-wrap items-baseline justify-between gap-x-3 gap-y-0.5 text-sm">
+                  <span className="min-w-0 break-words font-medium">{scope}</span>
+                  <span className="tabular-nums text-muted-foreground">
                     {formatCurrency(purchase)} / {formatCurrency(budget)} · {percentUsed}%
                   </span>
                 </div>
@@ -294,62 +355,38 @@ export default function PoReports({
       </Card>
 
       <div className="grid gap-4 lg:grid-cols-2">
-        <Card>
-          <CardHeader className="pb-2">
+        <Card className={topSavings.length ? LIST_CARD_CLASS : undefined}>
+          <CardHeader className={topSavings.length ? LIST_CARD_HEADER_CLASS : "pb-2"}>
             <CardTitle className="text-base text-emerald-700">Top savings</CardTitle>
             <CardDescription>Line items purchased below their BOQ budget price</CardDescription>
           </CardHeader>
           <CardContent className="p-0">
             {topSavings.length ? (
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Item</TableHead>
-                    <TableHead>PO</TableHead>
-                    <TableHead>Savings</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {topSavings.map((line, index) => (
-                    <TableRow key={index} className="cursor-pointer" onClick={() => onSelectPo(line.po.id)}>
-                      <TableCell className="max-w-[180px] truncate">{line.description}</TableCell>
-                      <TableCell className="whitespace-nowrap text-xs text-muted-foreground">{line.po.poNumber}</TableCell>
-                      <TableCell className="whitespace-nowrap font-medium text-emerald-600">{formatCurrency(line.variance)}</TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
+              <PmDataList
+                rows={toVarianceRows(topSavings)}
+                columns={varianceColumns("savings")}
+                onRowClick={(line) => onSelectPo(line.po.id)}
+                className={LIST_IN_CARD_CLASS}
+              />
             ) : (
               <p className="p-4 text-sm text-muted-foreground">No savings recorded yet.</p>
             )}
           </CardContent>
         </Card>
 
-        <Card>
-          <CardHeader className="pb-2">
+        <Card className={topOverruns.length ? LIST_CARD_CLASS : undefined}>
+          <CardHeader className={topOverruns.length ? LIST_CARD_HEADER_CLASS : "pb-2"}>
             <CardTitle className="text-base text-red-700">Top overruns</CardTitle>
             <CardDescription>Line items purchased above their BOQ budget price</CardDescription>
           </CardHeader>
           <CardContent className="p-0">
             {topOverruns.length ? (
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Item</TableHead>
-                    <TableHead>PO</TableHead>
-                    <TableHead>Overrun</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {topOverruns.map((line, index) => (
-                    <TableRow key={index} className="cursor-pointer" onClick={() => onSelectPo(line.po.id)}>
-                      <TableCell className="max-w-[180px] truncate">{line.description}</TableCell>
-                      <TableCell className="whitespace-nowrap text-xs text-muted-foreground">{line.po.poNumber}</TableCell>
-                      <TableCell className="whitespace-nowrap font-medium text-red-600">{formatCurrency(Math.abs(line.variance))}</TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
+              <PmDataList
+                rows={toVarianceRows(topOverruns)}
+                columns={varianceColumns("overrun")}
+                onRowClick={(line) => onSelectPo(line.po.id)}
+                className={LIST_IN_CARD_CLASS}
+              />
             ) : (
               <p className="p-4 text-sm text-muted-foreground">No overruns recorded yet.</p>
             )}
@@ -357,35 +394,19 @@ export default function PoReports({
         </Card>
       </div>
 
-      <Card>
-        <CardHeader className="pb-2">
+      <Card className={overdueOrders.length ? LIST_CARD_CLASS : undefined}>
+        <CardHeader className={overdueOrders.length ? LIST_CARD_HEADER_CLASS : "pb-2"}>
           <CardTitle className="text-base">Overdue purchase orders ({overdueOrders.length})</CardTitle>
           <CardDescription>Planned end date has passed without being received</CardDescription>
         </CardHeader>
         <CardContent className="p-0">
           {overdueOrders.length ? (
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>PO Number</TableHead>
-                  <TableHead>Vendor</TableHead>
-                  <TableHead>End Date</TableHead>
-                  <TableHead>Status</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {overdueOrders.map((po) => (
-                  <TableRow key={po.id} className="cursor-pointer" onClick={() => onSelectPo(po.id)}>
-                    <TableCell className="font-medium">{po.poNumber}</TableCell>
-                    <TableCell>{po.vendorName}</TableCell>
-                    <TableCell className="whitespace-nowrap text-red-600">{formatDate(po.endDate)}</TableCell>
-                    <TableCell>
-                      <span className={cn("rounded-full px-2 py-0.5 text-xs font-medium", poStatusStyles[po.status])}>{po.status}</span>
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
+            <PmDataList
+              rows={overdueOrders}
+              columns={overdueColumns}
+              onRowClick={(po) => onSelectPo(po.id)}
+              className={LIST_IN_CARD_CLASS}
+            />
           ) : (
             <p className="p-4 text-sm text-muted-foreground flex items-center gap-2">
               <AlertTriangle className="h-4 w-4 text-muted-foreground" /> Nothing overdue.

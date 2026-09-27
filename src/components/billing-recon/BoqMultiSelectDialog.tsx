@@ -279,18 +279,20 @@ export function BoqMultiSelectDialog({
 
   return (
     <Dialog open={isOpen} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-4xl">
-        <DialogHeader>
+      {/* `hr-mobile-dialog` & co. (globals.css, ≤640px): a full-screen sheet on a phone in which only
+          the body scrolls, the centred modal from `sm` up. */}
+      <DialogContent className="hr-mobile-dialog sm:max-w-4xl">
+        <DialogHeader className="hr-dialog-header">
           <DialogTitle>Select BOQ Items</DialogTitle>
           <DialogDescription>
             Filter by Site / Scope and select multiple BOQ items to add.
           </DialogDescription>
         </DialogHeader>
 
-        <div className="py-4">
+        <div className="hr-dialog-body py-4">
           <div className="flex flex-col sm:flex-row items-center gap-2 mb-4">
             <div className="relative flex-grow w-full">
-              <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+              <Search className="absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
               <Input
                 placeholder="Search..."
                 aria-label="Search items"
@@ -325,10 +327,12 @@ export function BoqMultiSelectDialog({
             })}
           </div>
 
-          <ScrollArea className="h-96 border rounded-md">
+          {/* No fixed height on a phone: the sheet's body is already the scroller. */}
+          <ScrollArea className="border rounded-md sm:h-96">
             <div className="p-1">
-              <div className="grid grid-cols-[auto_1fr_1fr_3fr_1fr_1fr_1fr] items-center px-2 py-1.5 text-xs font-medium text-muted-foreground bg-muted">
-                <div className="w-[50px] flex justify-center">
+              {/* Phone: a wrapping row of sort controls; the column grid from `sm`. */}
+              <div className="flex flex-wrap items-center gap-x-3 gap-y-1 px-2 py-1.5 text-xs font-medium text-muted-foreground bg-muted sm:grid sm:grid-cols-[auto_1fr_1fr_3fr_1fr_1fr_1fr] sm:gap-0">
+                <div className="w-10 flex justify-center sm:w-[50px]">
                   <Checkbox
                     aria-label="Select all"
                     checked={selectAllState}
@@ -337,7 +341,7 @@ export function BoqMultiSelectDialog({
                 </div>
                 <button
                   type="button"
-                  className="cursor-pointer flex items-center text-left"
+                  className="hr-inline-action cursor-pointer flex items-center text-left"
                   onClick={() => toggleSort('erpSlNo')}
                 >
                   ERP Sl. No.
@@ -345,7 +349,7 @@ export function BoqMultiSelectDialog({
                 </button>
                 <button
                   type="button"
-                  className="cursor-pointer flex items-center text-left"
+                  className="hr-inline-action cursor-pointer flex items-center text-left"
                   onClick={() => toggleSort('boqSlNo')}
                 >
                   BOQ Sl.No.
@@ -353,7 +357,7 @@ export function BoqMultiSelectDialog({
                 </button>
                 <button
                   type="button"
-                  className="cursor-pointer flex items-center text-left"
+                  className="hr-inline-action cursor-pointer flex items-center text-left"
                   onClick={() => toggleSort('description')}
                 >
                   Description
@@ -361,16 +365,16 @@ export function BoqMultiSelectDialog({
                 </button>
                 <button
                   type="button"
-                  className="text-right cursor-pointer flex items-center justify-end"
+                  className="hr-inline-action text-right cursor-pointer flex items-center sm:justify-end"
                   onClick={() => toggleSort('qty')}
                 >
                   BOQ Qty
                   {sortKey === 'qty' && <ArrowUpDown className="ml-1 h-3 w-3" />}
                 </button>
-                <div className="text-left">Unit</div>
+                <div className="hidden text-left sm:block">Unit</div>
                 <button
                   type="button"
-                  className="text-right cursor-pointer flex items-center justify-end"
+                  className="hr-inline-action text-right cursor-pointer flex items-center sm:justify-end"
                   onClick={() => toggleSort('rate')}
                 >
                   Unit Rate
@@ -389,9 +393,10 @@ export function BoqMultiSelectDialog({
                   const rate = rateKey ? (item as any)[rateKey] : 0;
 
                   return (
+                    // Phone: the checkbox beside three lines — ERP | BOQ, the description, QTY + unit | rate.
                     <div
                       key={(item as any).id}
-                      className={`grid grid-cols-[auto_1fr_1fr_3fr_1fr_1fr_1fr] items-center p-2 border-b last:border-b-0 cursor-pointer ${
+                      className={`grid grid-cols-[auto_1fr_auto] items-center gap-y-0.5 p-2 border-b last:border-b-0 cursor-pointer sm:grid-cols-[auto_1fr_1fr_3fr_1fr_1fr_1fr] sm:gap-y-0 ${
                         rowChecked ? 'bg-muted' : 'hover:bg-muted/50'
                       }`}
                       onClick={() => handleSelectRow((item as any).id, !rowChecked)}
@@ -404,7 +409,7 @@ export function BoqMultiSelectDialog({
                         }
                       }}
                     >
-                      <div className="w-[50px] flex justify-center">
+                      <div className="row-span-3 w-10 flex justify-center self-start pt-0.5 sm:row-span-1 sm:w-[50px] sm:self-auto sm:pt-0">
                         <Checkbox
                           aria-label={`Select ${getItemDescription(item)}`}
                           checked={rowChecked}
@@ -415,12 +420,22 @@ export function BoqMultiSelectDialog({
                           onClick={(e) => e.stopPropagation()}
                         />
                       </div>
-                      <div className="truncate pr-2">{getErpSlNo(item)}</div>
-                      <div className="truncate pr-2">{getSlNo(item)}</div>
-                      <div className="truncate pr-2">{getItemDescription(item)}</div>
-                      <div className="text-right pr-2">{getBoqQty(item)}</div>
-                      <div className="truncate pr-2">{getUnit(item)}</div>
-                      <div className="text-right pr-2">{formatCurrency(getRateNumber(rate))}</div>
+                      <div className="truncate pr-2 max-sm:text-sm">
+                        <span className="text-xs text-muted-foreground sm:hidden">ERP </span>
+                        {getErpSlNo(item)}
+                      </div>
+                      <div className="truncate pr-2 max-sm:text-right max-sm:text-sm">
+                        <span className="text-xs text-muted-foreground sm:hidden">BOQ </span>
+                        {getSlNo(item)}
+                      </div>
+                      <div className="col-span-2 truncate pr-2 max-sm:text-sm max-sm:font-medium sm:col-span-1">{getItemDescription(item)}</div>
+                      <div className="pr-2 max-sm:text-xs max-sm:text-muted-foreground sm:text-right">
+                        <span className="sm:hidden">QTY </span>
+                        {getBoqQty(item)}
+                        <span className="sm:hidden"> {getUnit(item)}</span>
+                      </div>
+                      <div className="hidden truncate pr-2 sm:block">{getUnit(item)}</div>
+                      <div className="text-right pr-2 max-sm:text-xs">{formatCurrency(getRateNumber(rate))}</div>
                     </div>
                   );
                 })
@@ -431,7 +446,7 @@ export function BoqMultiSelectDialog({
           </ScrollArea>
         </div>
 
-        <DialogFooter>
+        <DialogFooter className="hr-dialog-footer">
           <DialogClose asChild>
             <Button type="button" variant="outline">
               Cancel

@@ -43,15 +43,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
 import { Skeleton } from "@/components/ui/skeleton";
+import { PmDataList, type PmListColumn } from "@/components/project-management/pm-shell";
 import { YES_NO_OPTIONS } from "@/lib/project-management-boq-columns";
 
 const BOQ_PERMISSION = "Project Management.BOQ";
@@ -403,20 +396,59 @@ export default function AddBoqItemsPage() {
     );
   }
 
+  const stagedColumns: PmListColumn<StagedRow & { id: string }>[] = [
+    { header: "BOQ SL No", cell: (row) => row["BOQ SL No"], mobile: "title" },
+    {
+      header: "Description",
+      cell: (row) => <span title={row.Description}>{row.Description}</span>,
+      className: "max-w-xs truncate",
+      mobile: "title",
+    },
+    {
+      header: "Qty",
+      cell: (row) => `${formatQuantity(toNumber(row.QTY))} ${row.Unit}`,
+      className: "whitespace-nowrap",
+    },
+    { header: "Unit Rate", cell: (row) => formatCurrency(toNumber(row["Unit Rate"])), className: "whitespace-nowrap" },
+    {
+      header: "Total Amount",
+      cell: (row) => <span className="font-medium">{formatCurrency(toNumber(row["Total Amount"]))}</span>,
+      className: "whitespace-nowrap",
+    },
+    { header: "Budget Price", cell: (row) => formatCurrency(toNumber(row["Budget Price"])), className: "whitespace-nowrap" },
+    {
+      header: "Total Budget Price",
+      cell: (row) => formatCurrency(toNumber(row["Total Budget Price"])),
+      className: "whitespace-nowrap",
+    },
+    { header: "MDL", cell: (row) => row.MDL || "—" },
+    {
+      header: "",
+      className: "w-12",
+      mobile: "footer",
+      cell: (row) => (
+        <Button variant="ghost" size="icon" onClick={() => handleRemoveRow(row.__key)} aria-label={`Remove ${row.Description}`}>
+          <Trash2 className="h-4 w-4 text-destructive" />
+          <span className="ml-2 text-destructive sm:hidden">Remove</span>
+        </Button>
+      ),
+    },
+  ];
+
   return (
-    <main className="min-h-[calc(100dvh-4rem)] space-y-5 p-4 sm:p-6">
+    <main className="min-h-[calc(100dvh-4rem)] space-y-5 p-4 max-sm:[--card-pad:1rem] sm:p-6">
       <div className="flex items-center gap-3">
-        <Button variant="ghost" size="icon" asChild>
+        <Button variant="ghost" size="icon" className="shrink-0" asChild>
           <Link href={`/project-management/boq?project=${encodeURIComponent(mappingId)}`} aria-label="Back to BOQ">
             <ArrowLeft className="h-5 w-5" />
           </Link>
         </Button>
-        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-blue-500 to-indigo-600 shadow-sm">
+        <div className="hidden h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-blue-500 to-indigo-600 shadow-sm sm:flex">
           <ListPlus className="h-5 w-5 text-white" />
         </div>
-        <div>
-          <h1 className="text-2xl font-bold sm:text-3xl">Add BOQ Items</h1>
-          <p className="mt-1 text-sm text-muted-foreground">
+        <div className="min-w-0">
+          <h1 className="text-xl font-bold sm:text-3xl">Add BOQ Items</h1>
+          <p className="mt-1 break-words text-sm text-muted-foreground">
             Add one or more BOQ line items to {mapping.globalProjectName} at once.
           </p>
         </div>
@@ -432,7 +464,7 @@ export default function AddBoqItemsPage() {
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
-          <div className="grid gap-3 sm:grid-cols-4">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
             <ControlledField setting={fieldControl("subDivision")}>
               <Input id="sub-division" value={sticky.subDivision} onChange={(e) => setSticky((c) => ({ ...c, subDivision: e.target.value }))} />
             </ControlledField>
@@ -458,7 +490,7 @@ export default function AddBoqItemsPage() {
 
           <div className="h-px bg-border" />
 
-          <div className="grid gap-3 sm:grid-cols-4">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
             <ControlledField setting={fieldControl("erpSlNo")}>
               <Input id="erp-sl-no" value={line.erpSlNo} onChange={(e) => setLine((c) => ({ ...c, erpSlNo: e.target.value }))} />
             </ControlledField>
@@ -505,66 +537,39 @@ export default function AddBoqItemsPage() {
             </ControlledField>
           </div>
 
-          <Button onClick={handleAddRow}>
+          <Button onClick={handleAddRow} className="w-full sm:w-auto">
             <Plus className="mr-2 h-4 w-4" /> Add to List
           </Button>
         </CardContent>
       </Card>
 
       {rows.length > 0 && (
-        <Card className="overflow-hidden border-border/60">
-          <CardHeader className="flex-row items-center justify-between space-y-0">
-            <div>
+        // On a phone the staged rows are cards standing on the page, so this card drops its own
+        // frame there rather than boxing the cards inside a second border.
+        <Card className="overflow-hidden border-border/60 max-sm:overflow-visible max-sm:border-0 max-sm:bg-transparent max-sm:shadow-none">
+          <CardHeader className="flex-col gap-3 space-y-0 max-sm:px-0 max-sm:pt-0 sm:flex-row sm:items-center sm:justify-between">
+            <div className="min-w-0">
               <CardTitle className="text-base">Items to Save ({rows.length})</CardTitle>
               <CardDescription>Review the staged items, then save them all at once.</CardDescription>
             </div>
-            <Button onClick={() => void handleSaveAll()} disabled={isSaving}>
+            <Button onClick={() => void handleSaveAll()} disabled={isSaving} className="w-full shrink-0 sm:w-auto">
               {isSaving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
               Save {rows.length} Item{rows.length === 1 ? "" : "s"}
             </Button>
           </CardHeader>
           <CardContent className="p-0">
-            <div className="overflow-x-auto">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>BOQ SL No</TableHead>
-                    <TableHead>Description</TableHead>
-                    <TableHead>Qty</TableHead>
-                    <TableHead>Unit Rate</TableHead>
-                    <TableHead>Total Amount</TableHead>
-                    <TableHead>Budget Price</TableHead>
-                    <TableHead>Total Budget Price</TableHead>
-                    <TableHead>MDL</TableHead>
-                    <TableHead className="w-12" />
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {rows.map((row) => (
-                    <TableRow key={row.__key}>
-                      <TableCell>{row["BOQ SL No"]}</TableCell>
-                      <TableCell className="max-w-xs truncate" title={row.Description}>{row.Description}</TableCell>
-                      <TableCell className="whitespace-nowrap">{formatQuantity(toNumber(row.QTY))} {row.Unit}</TableCell>
-                      <TableCell className="whitespace-nowrap">{formatCurrency(toNumber(row["Unit Rate"]))}</TableCell>
-                      <TableCell className="whitespace-nowrap font-medium">{formatCurrency(toNumber(row["Total Amount"]))}</TableCell>
-                      <TableCell className="whitespace-nowrap">{formatCurrency(toNumber(row["Budget Price"]))}</TableCell>
-                      <TableCell className="whitespace-nowrap">{formatCurrency(toNumber(row["Total Budget Price"]))}</TableCell>
-                      <TableCell>{row.MDL || "—"}</TableCell>
-                      <TableCell>
-                        <Button variant="ghost" size="icon" onClick={() => handleRemoveRow(row.__key)} aria-label={`Remove ${row.Description}`}>
-                          <Trash2 className="h-4 w-4 text-destructive" />
-                        </Button>
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-              <div className="flex items-center justify-end gap-6 border-t bg-muted/30 px-4 py-2 text-sm">
-                <span className="text-muted-foreground">Total Qty: <span className="font-medium text-foreground">{formatQuantity(totals.qty)}</span></span>
-                <span className="text-muted-foreground">Total Amount: <span className="font-medium text-foreground">{formatCurrency(totals.amount)}</span></span>
-                <span className="text-muted-foreground">Total Budget Price: <span className="font-semibold text-foreground">{formatCurrency(totals.budget)}</span></span>
-              </div>
-            </div>
+            <PmDataList
+              rows={rows.map((row) => ({ ...row, id: row.__key }))}
+              columns={stagedColumns}
+              className="sm:rounded-none sm:border-0 sm:shadow-none"
+              foot={
+                <div className="flex flex-col gap-1 border-t bg-muted/30 px-4 py-2 text-sm sm:flex-row sm:flex-wrap sm:items-center sm:justify-end sm:gap-x-6">
+                  <span className="text-muted-foreground">Total Qty: <span className="font-medium text-foreground">{formatQuantity(totals.qty)}</span></span>
+                  <span className="text-muted-foreground">Total Amount: <span className="font-medium text-foreground">{formatCurrency(totals.amount)}</span></span>
+                  <span className="text-muted-foreground">Total Budget Price: <span className="font-semibold text-foreground">{formatCurrency(totals.budget)}</span></span>
+                </div>
+              }
+            />
           </CardContent>
         </Card>
       )}

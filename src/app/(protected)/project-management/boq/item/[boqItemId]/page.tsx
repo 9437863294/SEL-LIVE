@@ -99,6 +99,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { cn } from "@/lib/utils";
+import { PmDataList, type PmListColumn } from "@/components/project-management/pm-shell";
 
 type ProjectMapping = {
   id: string;
@@ -134,6 +135,13 @@ const toDateString = (value: unknown): string | undefined => {
   if (!date || Number.isNaN(date.getTime())) return undefined;
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
 };
+
+// On a phone a section's rows are cards of their own, so the section card drops its frame and side
+// padding there rather than boxing those cards in a second border; on a desktop the register sits
+// flush inside the card, as the table it replaced did.
+const SECTION_CARD = "max-sm:border-0 max-sm:bg-transparent max-sm:shadow-none";
+const SECTION_CARD_HEADER = "max-sm:px-0 max-sm:pt-0";
+const IN_CARD_LIST = "sm:rounded-none sm:border-0 sm:shadow-none";
 
 /** Civil and Erection are both delivered as work packages, so they share the civil lane. */
 const resolveLane = (boqItem: BoqItemDoc | null): TraceLane =>
@@ -580,10 +588,120 @@ export default function BoqItem360Page() {
   const boqSlNo = text(boqItem["BOQ SL No"]) || text(boqItem["SL. No."]);
   const unit = text(boqItem.Unit);
 
+  const lifecycleColumns: PmListColumn<TraceStage & { id: string }>[] = [
+    { header: "Stage", className: "whitespace-nowrap font-medium", mobile: "title", cell: (stage) => stage.label },
+    {
+      header: "Status",
+      mobile: "aside",
+      cell: (stage) => (
+        <Badge variant="outline" className={traceStageStatusStyles[stage.status]}>
+          {stage.status === "na" ? "N/A" : stage.status}
+        </Badge>
+      ),
+    },
+    {
+      header: "Date",
+      className: "whitespace-nowrap text-xs",
+      cell: (stage) => (stage.date ? formatGateDate(stage.date) : "—"),
+    },
+    { header: "Reference", className: "whitespace-nowrap text-xs", cell: (stage) => stage.reference || "—" },
+    {
+      header: "Qty",
+      align: "right",
+      className: "text-xs",
+      cell: (stage) => (stage.qty != null ? formatQuantity(stage.qty) : "—"),
+    },
+    {
+      header: "Detail",
+      className: "max-w-xs text-xs text-muted-foreground",
+      // A sentence, so on a phone it wraps under the stage name rather than truncating in the grid.
+      mobile: "title",
+      cell: (stage) => (
+        <>
+          {stage.status === "blocked" && stage.blockedReason ? (
+            <span className="font-medium text-red-600">{stage.blockedReason}</span>
+          ) : (
+            stage.detail || "—"
+          )}
+          {stage.actor ? <div className="mt-0.5">{stage.actor}</div> : null}
+        </>
+      ),
+    },
+    {
+      header: "Open",
+      align: "right",
+      className: "w-24",
+      mobile: "omit",
+      cell: (stage) => {
+        const href = stageHref(stage);
+        return href && stage.status !== "na" ? (
+          <Button variant="ghost" size="icon" asChild aria-label={`Open ${stage.label}`}>
+            <Link href={href}>
+              <ExternalLink className="h-4 w-4" />
+            </Link>
+          </Button>
+        ) : null;
+      },
+    },
+  ];
+
+  type CivilRecordRow = NonNullable<typeof civilRecords>["workOrders"][number] & { id: string };
+  const civilRecordColumns: PmListColumn<CivilRecordRow>[] = [
+    { header: "Type", mobile: "aside", cell: (record) => <Badge variant="outline">{record.kind}</Badge> },
+    { header: "Reference", className: "whitespace-nowrap text-xs", mobile: "title", cell: (record) => record.reference || "—" },
+    {
+      header: "Date",
+      className: "whitespace-nowrap text-xs",
+      cell: (record) => (record.date ? formatGateDate(record.date) : "—"),
+    },
+    { header: "Party", className: "max-w-40 truncate text-xs", cell: (record) => record.party || "—" },
+    { header: "Qty", align: "right", className: "text-xs", cell: (record) => formatQuantity(record.qty) },
+    {
+      header: "Certified",
+      align: "right",
+      className: "text-xs",
+      cell: (record) => (record.certifiedQty != null ? formatQuantity(record.certifiedQty) : "—"),
+    },
+    { header: "Status", className: "text-xs", cell: (record) => record.status || "—" },
+  ];
+
+  const documentColumns: PmListColumn<ProjectManagementDocument>[] = [
+    {
+      header: "File",
+      className: "max-w-xs truncate",
+      mobile: "title",
+      cell: (document) => (
+        <span className="break-words" title={document.fileName}>
+          {document.fileName}
+        </span>
+      ),
+    },
+    { header: "Category", mobile: "aside", cell: (document) => <Badge variant="outline">{document.category}</Badge> },
+    {
+      header: "Uploaded by",
+      className: "text-xs text-muted-foreground",
+      cell: (document) => document.uploadedByName || "—",
+    },
+    {
+      header: "Open",
+      align: "right",
+      className: "w-20",
+      mobile: "footer",
+      cell: (document) => (
+        <Button variant="ghost" size="icon" asChild aria-label="Open document" className="max-sm:h-11 max-sm:w-full">
+          <a href={document.fileUrl} target="_blank" rel="noreferrer">
+            <ExternalLink className="h-4 w-4" />
+            <span className="ml-2 sm:hidden">Open</span>
+          </a>
+        </Button>
+      ),
+    },
+  ];
+
   return (
-    <main className="min-h-[calc(100dvh-4rem)] space-y-5 p-4 sm:p-6">
-      <div className="flex items-center gap-3">
-        <Button variant="ghost" size="icon" asChild>
+    <main className="min-h-[calc(100dvh-4rem)] min-w-0 space-y-5 p-4 max-sm:[--card-pad:1rem] sm:p-6">
+      <div className="flex items-start gap-3 sm:items-center">
+        <Button variant="ghost" size="icon" className="shrink-0" asChild>
           <Link
             href={`/project-management/boq/costing?project=${encodeURIComponent(mappingId)}`}
             aria-label="Back to BOQ"
@@ -591,11 +709,13 @@ export default function BoqItem360Page() {
             <ArrowLeft className="h-5 w-5" />
           </Link>
         </Button>
-        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-cyan-500 to-blue-600 shadow-sm">
+        <div className="hidden h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-cyan-500 to-blue-600 shadow-sm sm:flex">
           <Route className="h-5 w-5 text-white" />
         </div>
+        {/* The description is the item's only full statement on this page, so a phone wraps it
+            rather than cutting it to one line. */}
         <div className="min-w-0">
-          <h1 className="truncate text-2xl font-bold">
+          <h1 className="break-words text-lg font-bold sm:truncate sm:text-2xl">
             {boqSlNo ? `${boqSlNo} — ` : ""}
             {text(boqItem.Description) || "BOQ item"}
           </h1>
@@ -607,7 +727,7 @@ export default function BoqItem360Page() {
 
       {/* Header facts */}
       <Card>
-        <CardContent className="grid gap-4 p-4 sm:grid-cols-3 lg:grid-cols-6">
+        <CardContent className="grid grid-cols-2 gap-3 p-4 sm:grid-cols-3 sm:gap-4 lg:grid-cols-6">
           {[
             { label: "Unit", value: unit || "—" },
             { label: "BOQ Qty", value: formatQuantity(boqQty) },
@@ -619,12 +739,12 @@ export default function BoqItem360Page() {
             },
             { label: "Scope", value: text(boqItem["Scope 2"]) || "—" },
           ].map((fact) => (
-            <div key={fact.label}>
+            <div key={fact.label} className="min-w-0">
               <p className="text-xs text-muted-foreground">{fact.label}</p>
-              <p className="font-semibold">{fact.value}</p>
+              <p className="break-words font-semibold">{fact.value}</p>
             </div>
           ))}
-          <div className="sm:col-span-3 lg:col-span-6">
+          <div className="col-span-2 sm:col-span-3 lg:col-span-6">
             <div className="mb-1 flex items-center justify-between text-xs">
               <span className="text-muted-foreground">
                 Lifecycle progress ({lane === "civil" ? "Civil" : "Supply"} lane)
@@ -660,68 +780,25 @@ export default function BoqItem360Page() {
       )}
 
       {/* Lifecycle timeline */}
-      <Card>
-        <CardHeader className="pb-3">
+      <Card className={SECTION_CARD}>
+        <CardHeader className={cn("pb-3", SECTION_CARD_HEADER)}>
           <CardTitle className="text-base">Lifecycle</CardTitle>
           <CardDescription>
             Every stage this BOQ line passes through, with the record and date behind each one.
           </CardDescription>
         </CardHeader>
         <CardContent className="p-0">
-          <div className="overflow-x-auto">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Stage</TableHead>
-                  <TableHead>Status</TableHead>
-                  <TableHead>Date</TableHead>
-                  <TableHead>Reference</TableHead>
-                  <TableHead className="text-right">Qty</TableHead>
-                  <TableHead>Detail</TableHead>
-                  <TableHead className="w-24 text-right">Open</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {stages.map((stage) => {
-                  const href = stageHref(stage);
-                  return (
-                    <TableRow key={stage.key} className={cn(stage.status === "na" && "opacity-60")}>
-                      <TableCell className="whitespace-nowrap font-medium">{stage.label}</TableCell>
-                      <TableCell>
-                        <Badge variant="outline" className={traceStageStatusStyles[stage.status]}>
-                          {stage.status === "na" ? "N/A" : stage.status}
-                        </Badge>
-                      </TableCell>
-                      <TableCell className="whitespace-nowrap text-xs">
-                        {stage.date ? formatGateDate(stage.date) : "—"}
-                      </TableCell>
-                      <TableCell className="whitespace-nowrap text-xs">{stage.reference || "—"}</TableCell>
-                      <TableCell className="text-right text-xs">
-                        {stage.qty != null ? formatQuantity(stage.qty) : "—"}
-                      </TableCell>
-                      <TableCell className="max-w-xs text-xs text-muted-foreground">
-                        {stage.status === "blocked" && stage.blockedReason ? (
-                          <span className="font-medium text-red-600">{stage.blockedReason}</span>
-                        ) : (
-                          stage.detail || "—"
-                        )}
-                        {stage.actor ? <div className="mt-0.5">{stage.actor}</div> : null}
-                      </TableCell>
-                      <TableCell className="text-right">
-                        {href && stage.status !== "na" ? (
-                          <Button variant="ghost" size="icon" asChild aria-label={`Open ${stage.label}`}>
-                            <Link href={href}>
-                              <ExternalLink className="h-4 w-4" />
-                            </Link>
-                          </Button>
-                        ) : null}
-                      </TableCell>
-                    </TableRow>
-                  );
-                })}
-              </TableBody>
-            </Table>
-          </div>
+          <PmDataList
+            rows={stages.map((stage) => ({ ...stage, id: stage.key }))}
+            columns={lifecycleColumns}
+            rowClassName={(stage) => cn(stage.status === "na" && "opacity-60")}
+            // On a phone the whole stage card opens the stage, in place of the Open column.
+            cardHref={(stage) => {
+              const href = stageHref(stage);
+              return href && stage.status !== "na" ? href : "";
+            }}
+            className={IN_CARD_LIST}
+          />
         </CardContent>
       </Card>
 
@@ -737,18 +814,19 @@ export default function BoqItem360Page() {
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="overflow-x-auto">
-              <Table>
+              {/* Three columns fit a phone once the cell padding tightens and the stage may wrap. */}
+              <Table className="max-sm:[--table-cell-px:0.5rem] max-sm:[--table-cell-py:0.625rem]">
                 <TableHeader>
                   <TableRow>
                     <TableHead>Stage</TableHead>
                     <TableHead className="text-right">Qty</TableHead>
-                    <TableHead className="text-right">vs previous</TableHead>
+                    <TableHead className="whitespace-nowrap text-right">vs previous</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {ledger.rungs.map((rung) => (
                     <TableRow key={rung.key}>
-                      <TableCell className="whitespace-nowrap">{rung.label}</TableCell>
+                      <TableCell className="sm:whitespace-nowrap">{rung.label}</TableCell>
                       <TableCell className="text-right">
                         {rung.qty != null ? formatQuantity(rung.qty) : "—"}
                       </TableCell>
@@ -810,8 +888,8 @@ export default function BoqItem360Page() {
         (civilRecords.workOrders.length > 0 ||
           civilRecords.measurements.length > 0 ||
           civilRecords.bills.length > 0) && (
-          <Card>
-            <CardHeader className="pb-3">
+          <Card className={SECTION_CARD}>
+            <CardHeader className={cn("pb-3", SECTION_CARD_HEADER)}>
               <CardTitle className="text-base">Subcontract &amp; measurement records</CardTitle>
               <CardDescription>
                 Work orders, JMC/MVAC measurement entries, and subcontractor bills that reference
@@ -819,96 +897,28 @@ export default function BoqItem360Page() {
               </CardDescription>
             </CardHeader>
             <CardContent className="p-0">
-              <div className="overflow-x-auto">
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Type</TableHead>
-                      <TableHead>Reference</TableHead>
-                      <TableHead>Date</TableHead>
-                      <TableHead>Party</TableHead>
-                      <TableHead className="text-right">Qty</TableHead>
-                      <TableHead className="text-right">Certified</TableHead>
-                      <TableHead>Status</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {[
-                      ...civilRecords.workOrders,
-                      ...civilRecords.measurements,
-                      ...civilRecords.bills,
-                    ].map((record, index) => (
-                      <TableRow key={`${record.kind}-${record.reference}-${index}`}>
-                        <TableCell>
-                          <Badge variant="outline">{record.kind}</Badge>
-                        </TableCell>
-                        <TableCell className="whitespace-nowrap text-xs">
-                          {record.reference || "—"}
-                        </TableCell>
-                        <TableCell className="whitespace-nowrap text-xs">
-                          {record.date ? formatGateDate(record.date) : "—"}
-                        </TableCell>
-                        <TableCell className="max-w-40 truncate text-xs">
-                          {record.party || "—"}
-                        </TableCell>
-                        <TableCell className="text-right text-xs">
-                          {formatQuantity(record.qty)}
-                        </TableCell>
-                        <TableCell className="text-right text-xs">
-                          {record.certifiedQty != null ? formatQuantity(record.certifiedQty) : "—"}
-                        </TableCell>
-                        <TableCell className="text-xs">{record.status || "—"}</TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              </div>
+              <PmDataList
+                rows={[
+                  ...civilRecords.workOrders,
+                  ...civilRecords.measurements,
+                  ...civilRecords.bills,
+                ].map((record, index) => ({ ...record, id: `${record.kind}-${record.reference}-${index}` }))}
+                columns={civilRecordColumns}
+                className={IN_CARD_LIST}
+              />
             </CardContent>
           </Card>
         )}
 
       {/* Linked documents */}
-      <Card>
-        <CardHeader className="pb-3">
+      <Card className={cn(documents.length > 0 && SECTION_CARD)}>
+        <CardHeader className={cn("pb-3", documents.length > 0 && SECTION_CARD_HEADER)}>
           <CardTitle className="text-base">Linked documents</CardTitle>
           <CardDescription>Evidence filed against this BOQ item in the document vault.</CardDescription>
         </CardHeader>
         <CardContent className="p-0">
           {documents.length ? (
-            <div className="overflow-x-auto">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>File</TableHead>
-                    <TableHead>Category</TableHead>
-                    <TableHead>Uploaded by</TableHead>
-                    <TableHead className="w-20 text-right">Open</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {documents.map((document) => (
-                    <TableRow key={document.id}>
-                      <TableCell className="max-w-xs truncate" title={document.fileName}>
-                        {document.fileName}
-                      </TableCell>
-                      <TableCell>
-                        <Badge variant="outline">{document.category}</Badge>
-                      </TableCell>
-                      <TableCell className="text-xs text-muted-foreground">
-                        {document.uploadedByName || "—"}
-                      </TableCell>
-                      <TableCell className="text-right">
-                        <Button variant="ghost" size="icon" asChild aria-label="Open document">
-                          <a href={document.fileUrl} target="_blank" rel="noreferrer">
-                            <ExternalLink className="h-4 w-4" />
-                          </a>
-                        </Button>
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </div>
+            <PmDataList rows={documents} columns={documentColumns} className={IN_CARD_LIST} />
           ) : (
             <p className="p-6 text-center text-sm text-muted-foreground">
               No documents filed against this BOQ item yet.

@@ -11,7 +11,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useParams, useSearchParams } from "next/navigation";
 import { ChevronDown, ChevronRight, Clock, GitMerge, Loader2 } from "lucide-react";
-import { Fragment } from "react";
 import { collection, doc, getDoc, getDocs } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import type { WorkflowStep } from "@/lib/types";
@@ -42,9 +41,15 @@ import {
   IndentPageShell,
   IndentProjectNotFound,
 } from "@/components/indent/indent-page-shell";
+import {
+  PM_DIALOG,
+  PmDataList,
+  PmEmptyState,
+  type PmListColumn,
+} from "@/components/project-management/pm-shell";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   Dialog,
   DialogClose,
@@ -64,6 +69,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Textarea } from "@/components/ui/textarea";
+import { cn } from "@/lib/utils";
 
 type IndentLineItem = {
   boqItemId: string;
@@ -302,6 +308,163 @@ export default function IndentStagePage() {
     }
   };
 
+  const renderLineItems = (indent: StageIndent) => (
+    <div className="sm:p-3">
+      {indent.remarks && (
+        <p className="mb-2 px-1 text-sm text-muted-foreground">
+          <span className="font-medium text-foreground">Remarks: </span>
+          {indent.remarks}
+        </p>
+      )}
+      {/* Phones: one stacked row per item — five columns of figures beside a description do not
+          fit a 360px card. */}
+      <ul className="divide-y divide-border rounded-lg border border-border/60 sm:hidden">
+        {indent.items.map((item, index) => (
+          <li key={`${indent.id}-${item.boqItemId}-${index}`} className="px-3 py-2">
+            <p className="break-words text-sm">
+              <span className="font-medium">{item.boqSlNo || "—"}</span>
+              <span className="text-muted-foreground"> · </span>
+              {item.description || "—"}
+            </p>
+            <div className="mt-1 flex flex-wrap items-baseline justify-between gap-x-3 text-xs text-muted-foreground">
+              <span>
+                {formatQuantity(toNumber(item.requestedQty))} {item.unit} ×{" "}
+                {formatCurrency(toNumber(item.budgetPrice))}
+              </span>
+              <span className="font-medium text-foreground">{formatCurrency(toNumber(item.lineTotal))}</span>
+            </div>
+          </li>
+        ))}
+      </ul>
+      <Table containerClassName="hidden sm:block">
+        <TableHeader>
+          <TableRow>
+            <TableHead>BOQ SL No</TableHead>
+            <TableHead>Description</TableHead>
+            <TableHead>Qty</TableHead>
+            <TableHead>Budget Price</TableHead>
+            <TableHead>Line Total</TableHead>
+          </TableRow>
+        </TableHeader>
+        <TableBody>
+          {indent.items.map((item, index) => (
+            <TableRow key={`${indent.id}-${item.boqItemId}-${index}`}>
+              <TableCell>{item.boqSlNo || "—"}</TableCell>
+              <TableCell className="max-w-sm truncate" title={item.description}>
+                {item.description || "—"}
+              </TableCell>
+              <TableCell className="whitespace-nowrap">
+                {formatQuantity(toNumber(item.requestedQty))} {item.unit}
+              </TableCell>
+              <TableCell className="whitespace-nowrap">
+                {formatCurrency(toNumber(item.budgetPrice))}
+              </TableCell>
+              <TableCell className="whitespace-nowrap font-medium">
+                {formatCurrency(toNumber(item.lineTotal))}
+              </TableCell>
+            </TableRow>
+          ))}
+        </TableBody>
+      </Table>
+    </div>
+  );
+
+  const columns: PmListColumn<StageIndent>[] = [
+    {
+      header: "",
+      className: "w-10",
+      // Desktop only: a phone card carries the approval actions, so it cannot be the toggle
+      // itself — its "Show items" button sits with those actions instead.
+      mobile: "omit",
+      cell: (indent) => (
+        <div onClick={(event) => event.stopPropagation()}>
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={() => toggleExpanded(indent.id)}
+            aria-label={expandedIds.has(indent.id) ? "Collapse" : "Expand"}
+          >
+            {expandedIds.has(indent.id) ? (
+              <ChevronDown className="h-4 w-4" />
+            ) : (
+              <ChevronRight className="h-4 w-4" />
+            )}
+          </Button>
+        </div>
+      ),
+    },
+    { header: "Indent No.", mobile: "title", cell: (indent) => <span className="font-medium">{indent.indentNumber}</span> },
+    { header: "Date", className: "whitespace-nowrap", cell: (indent) => formatDate(indent.indentDate) },
+    { header: "Items", cell: (indent) => indent.items.length },
+    {
+      header: "Total Qty",
+      align: "right",
+      className: "whitespace-nowrap",
+      cell: (indent) =>
+        formatQuantity(indent.items.reduce((sum, item) => sum + toNumber(item.requestedQty), 0)),
+    },
+    {
+      header: "Total Amount",
+      align: "right",
+      className: "whitespace-nowrap",
+      cell: (indent) => <span className="font-medium">{formatCurrency(toNumber(indent.totalAmount))}</span>,
+    },
+    { header: "Required", className: "whitespace-nowrap", cell: (indent) => formatDate(indent.requiredDate) },
+    { header: "Raised By", cell: (indent) => indent.createdByName || "—" },
+    {
+      header: "Due",
+      cell: (indent) => {
+        const due = toDateSafe(indent.deadline);
+        return (
+          <div className="text-xs text-muted-foreground">
+            {due ? (
+              <span className="flex items-center gap-1">
+                <Clock className="h-3 w-3" />
+                {due.toLocaleDateString()}
+              </span>
+            ) : (
+              "—"
+            )}
+          </div>
+        );
+      },
+    },
+    {
+      header: "Actions",
+      align: "right",
+      mobile: "footer",
+      cell: (indent) => {
+        const mayAct = user ? canActOnIndent(indent, user.id) : false;
+        return (
+          <div className="flex w-full flex-col gap-2 sm:w-auto" onClick={(event) => event.stopPropagation()}>
+            <Button variant="outline" size="sm" className="sm:hidden" onClick={() => toggleExpanded(indent.id)}>
+              {expandedIds.has(indent.id) ? "Hide items" : "Show items"}
+            </Button>
+            {mayAct ? (
+              <div className="flex flex-wrap justify-end gap-2 sm:gap-1">
+                {allowedActions.map((action) => (
+                  <Button
+                    key={action}
+                    size="sm"
+                    variant={action === "Approve" ? "default" : "outline"}
+                    onClick={() => {
+                      setPending({ indent, action });
+                      setComment("");
+                    }}
+                  >
+                    {action}
+                  </Button>
+                ))}
+              </div>
+            ) : (
+              <span className="text-xs text-muted-foreground">Not assigned to you</span>
+            )}
+          </div>
+        );
+      },
+    },
+  ];
+
   if (isAuthLoading || isResolving || (isLoading && canViewModule)) {
     return <IndentLoadingState />;
   }
@@ -360,166 +523,30 @@ export default function IndentStagePage() {
       />
 
 
-      <Card>
-        <CardContent className="p-0">
-          <div className="overflow-x-auto">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead className="w-10" />
-                  <TableHead>Indent No.</TableHead>
-                  <TableHead>Date</TableHead>
-                  <TableHead>Items</TableHead>
-                  <TableHead className="text-right">Total Qty</TableHead>
-                  <TableHead className="text-right">Total Amount</TableHead>
-                  <TableHead>Required</TableHead>
-                  <TableHead>Raised By</TableHead>
-                  <TableHead>Due</TableHead>
-                  <TableHead className="text-right">Actions</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {stageIndents.length ? (
-                  stageIndents.map((indent) => {
-                    const isExpanded = expandedIds.has(indent.id);
-                    const totalQty = indent.items.reduce(
-                      (sum, item) => sum + toNumber(item.requestedQty),
-                      0,
-                    );
-                    const mayAct = user ? canActOnIndent(indent, user.id) : false;
-                    const due = toDateSafe(indent.deadline);
-
-                    return (
-                      <Fragment key={indent.id}>
-                        <TableRow className="cursor-pointer" onClick={() => toggleExpanded(indent.id)}>
-                          <TableCell onClick={(event) => event.stopPropagation()}>
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              onClick={() => toggleExpanded(indent.id)}
-                              aria-label={isExpanded ? "Collapse" : "Expand"}
-                            >
-                              {isExpanded ? (
-                                <ChevronDown className="h-4 w-4" />
-                              ) : (
-                                <ChevronRight className="h-4 w-4" />
-                              )}
-                            </Button>
-                          </TableCell>
-                          <TableCell className="font-medium">{indent.indentNumber}</TableCell>
-                          <TableCell className="whitespace-nowrap">{formatDate(indent.indentDate)}</TableCell>
-                          <TableCell>{indent.items.length}</TableCell>
-                          <TableCell className="whitespace-nowrap text-right">{formatQuantity(totalQty)}</TableCell>
-                          <TableCell className="whitespace-nowrap text-right font-medium">
-                            {formatCurrency(toNumber(indent.totalAmount))}
-                          </TableCell>
-                          <TableCell className="whitespace-nowrap">{formatDate(indent.requiredDate)}</TableCell>
-                          <TableCell className="text-sm">{indent.createdByName || "—"}</TableCell>
-                          <TableCell className="text-xs text-muted-foreground">
-                            {due ? (
-                              <span className="flex items-center gap-1">
-                                <Clock className="h-3 w-3" />
-                                {due.toLocaleDateString()}
-                              </span>
-                            ) : (
-                              "—"
-                            )}
-                          </TableCell>
-                          <TableCell className="text-right" onClick={(event) => event.stopPropagation()}>
-                            {mayAct ? (
-                              <div className="flex flex-wrap justify-end gap-1">
-                                {allowedActions.map((action) => (
-                                  <Button
-                                    key={action}
-                                    size="sm"
-                                    variant={action === "Approve" ? "default" : "outline"}
-                                    onClick={() => {
-                                      setPending({ indent, action });
-                                      setComment("");
-                                    }}
-                                  >
-                                    {action}
-                                  </Button>
-                                ))}
-                              </div>
-                            ) : (
-                              <span className="text-xs text-muted-foreground">Not assigned to you</span>
-                            )}
-                          </TableCell>
-                        </TableRow>
-                        {isExpanded && (
-                          <TableRow className="bg-muted/40 hover:bg-muted/40">
-                            <TableCell colSpan={10} className="p-0">
-                              <div className="p-3">
-                                {indent.remarks && (
-                                  <p className="mb-2 px-1 text-sm text-muted-foreground">
-                                    <span className="font-medium text-foreground">Remarks: </span>
-                                    {indent.remarks}
-                                  </p>
-                                )}
-                                <Table>
-                                  <TableHeader>
-                                    <TableRow>
-                                      <TableHead>BOQ SL No</TableHead>
-                                      <TableHead>Description</TableHead>
-                                      <TableHead>Qty</TableHead>
-                                      <TableHead>Budget Price</TableHead>
-                                      <TableHead>Line Total</TableHead>
-                                    </TableRow>
-                                  </TableHeader>
-                                  <TableBody>
-                                    {indent.items.map((item, index) => (
-                                      <TableRow key={`${indent.id}-${item.boqItemId}-${index}`}>
-                                        <TableCell>{item.boqSlNo || "—"}</TableCell>
-                                        <TableCell className="max-w-sm truncate" title={item.description}>
-                                          {item.description || "—"}
-                                        </TableCell>
-                                        <TableCell className="whitespace-nowrap">
-                                          {formatQuantity(toNumber(item.requestedQty))} {item.unit}
-                                        </TableCell>
-                                        <TableCell className="whitespace-nowrap">
-                                          {formatCurrency(toNumber(item.budgetPrice))}
-                                        </TableCell>
-                                        <TableCell className="whitespace-nowrap font-medium">
-                                          {formatCurrency(toNumber(item.lineTotal))}
-                                        </TableCell>
-                                      </TableRow>
-                                    ))}
-                                  </TableBody>
-                                </Table>
-                              </div>
-                            </TableCell>
-                          </TableRow>
-                        )}
-                      </Fragment>
-                    );
-                  })
-                ) : (
-                  <TableRow>
-                    <TableCell colSpan={10} className="h-32 text-center">
-                      <GitMerge className="mx-auto mb-2 h-8 w-8 text-muted-foreground" />
-                      <p className="font-medium">Nothing waiting at this stage</p>
-                      <p className="mt-1 text-sm text-muted-foreground">
-                        Indents submitted from the register will appear here.
-                      </p>
-                    </TableCell>
-                  </TableRow>
-                )}
-              </TableBody>
-            </Table>
-          </div>
-        </CardContent>
-      </Card>
+      <PmDataList
+        rows={stageIndents}
+        columns={columns}
+        onRowClick={(indent) => toggleExpanded(indent.id)}
+        expandedIds={expandedIds}
+        renderExpanded={renderLineItems}
+        empty={
+          <PmEmptyState
+            icon={GitMerge}
+            title="Nothing waiting at this stage"
+            description="Indents submitted from the register will appear here."
+          />
+        }
+      />
 
       <Dialog open={Boolean(pending)} onOpenChange={(open) => !open && setPending(null)}>
-        <DialogContent>
-          <DialogHeader>
+        <DialogContent className={PM_DIALOG.content}>
+          <DialogHeader className={PM_DIALOG.header}>
             <DialogTitle>{pending?.action} indent</DialogTitle>
             <DialogDescription>
               {pending ? `${pending.indent.indentNumber} — ${pending.indent.items.length} item(s)` : ""}
             </DialogDescription>
           </DialogHeader>
-          <div className="grid gap-3 py-2">
+          <div className={cn(PM_DIALOG.body, "py-2")}>
             <p className="text-sm">
               Total value:{" "}
               <span className="font-medium">
@@ -546,7 +573,7 @@ export default function IndentStagePage() {
               />
             </div>
           </div>
-          <DialogFooter>
+          <DialogFooter className={PM_DIALOG.footer}>
             <DialogClose asChild>
               <Button variant="outline">Cancel</Button>
             </DialogClose>

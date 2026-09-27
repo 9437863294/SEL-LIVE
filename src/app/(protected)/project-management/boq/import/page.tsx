@@ -59,6 +59,7 @@ import { useAuth } from '@/components/auth/AuthProvider';
 import { useAuthorization } from '@/hooks/useAuthorization';
 import { logUserActivity } from '@/lib/activity-logger';
 import { cn } from '@/lib/utils';
+import { PmDataList, type PmListColumn } from '@/components/project-management/pm-shell';
 import {
   BOQ_COLUMN_SETTINGS_COLLECTION,
   BOQ_COLUMN_SETTINGS_DOC,
@@ -391,6 +392,12 @@ function parseNumber(value: unknown): { value: number; valid: boolean; empty: bo
     empty: false,
   };
 }
+
+// On a phone the mapping rows are cards of their own and the preview scrolls in its own box, so a
+// step's card drops its frame and side padding there rather than boxing them in a second border.
+const STEP_CARD = 'max-sm:border-0 max-sm:bg-transparent max-sm:shadow-none';
+const STEP_CARD_HEADER = 'max-sm:px-0 max-sm:pt-0';
+const STEP_CARD_CONTENT = 'max-sm:px-0 max-sm:pb-0';
 
 function StepIndicator({ currentStep }: { currentStep: ImportStep }) {
   const activeIndex = IMPORT_STEPS.findIndex((step) => step.key === currentStep);
@@ -1023,21 +1030,99 @@ export default function ImportBoqPage() {
     );
   }
 
+  const mappingColumns: PmListColumn<ImportField & { id: string }>[] = [
+    {
+      header: 'BOQ field',
+      mobile: 'title',
+      cell: (field) => (
+        <>
+          <div className="flex flex-wrap items-center gap-2">
+            <p className="font-medium">
+              {field.label}{field.required && <span className="ml-1 text-destructive">*</span>}
+            </p>
+            <Badge variant="outline" className="capitalize">{field.type}</Badge>
+          </div>
+          {field.hint && <p className="text-xs text-muted-foreground">{field.hint}</p>}
+        </>
+      ),
+    },
+    {
+      header: 'Source Excel column',
+      className: 'min-w-64',
+      // The full-width row at the foot of the phone card: a select squeezed into the half-width
+      // detail grid could not show a column name.
+      mobile: 'footer',
+      cell: (field) => {
+        const mappedColumn = columnMap[field.key] ?? '';
+        return (
+          <Select
+            value={mappedColumn || SKIP_COLUMN}
+            onValueChange={(value) =>
+              setColumnMap((current) => ({
+                ...current,
+                [field.key]: value === SKIP_COLUMN ? '' : value,
+              }))
+            }
+          >
+            <SelectTrigger><SelectValue placeholder="Skip this field" /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value={SKIP_COLUMN}>— Not mapped —</SelectItem>
+              {headers.map((header) => (
+                <SelectItem
+                  key={header}
+                  value={header}
+                  disabled={mappedSourceColumns.has(header) && mappedColumn !== header}
+                >
+                  {header}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        );
+      },
+    },
+    {
+      header: 'Sample value',
+      className: 'max-w-56 truncate text-sm text-muted-foreground',
+      cell: (field) => {
+        const mappedColumn = columnMap[field.key] ?? '';
+        return mappedColumn ? cellValueToString(rawRows[0]?.[mappedColumn]) || 'Empty' : '—';
+      },
+    },
+    {
+      header: 'Status',
+      mobile: 'aside',
+      cell: (field) => {
+        const mappedColumn = columnMap[field.key] ?? '';
+        const duplicate = duplicateMappedColumns.has(mappedColumn);
+        return duplicate ? (
+          <Badge variant="destructive">Duplicate mapping</Badge>
+        ) : mappedColumn ? (
+          <Badge className="bg-emerald-100 text-emerald-700 hover:bg-emerald-100">Mapped</Badge>
+        ) : field.required ? (
+          <Badge variant="destructive">Required</Badge>
+        ) : (
+          <Badge variant="outline">Skipped</Badge>
+        );
+      },
+    },
+  ];
+
   return (
-    <main className="min-h-[calc(100dvh-4rem)] space-y-5 p-4 sm:p-6">
+    <main className="min-h-[calc(100dvh-4rem)] min-w-0 space-y-5 p-4 max-sm:[--card-pad:1rem] sm:p-6">
       <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-        <div className="flex items-center gap-3">
-          <Button variant="ghost" size="icon" asChild>
+        <div className="flex min-w-0 items-center gap-3">
+          <Button variant="ghost" size="icon" className="shrink-0" asChild>
             <Link href={`/project-management/boq?project=${encodeURIComponent(mappingId)}`} aria-label="Back to BOQ">
               <ArrowLeft className="h-5 w-5" />
             </Link>
           </Button>
-          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-amber-500 to-orange-600 shadow-sm">
+          <div className="hidden h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-amber-500 to-orange-600 shadow-sm sm:flex">
             <UploadCloud className="h-5 w-5 text-white" />
           </div>
-          <div>
-            <h1 className="text-2xl font-bold">Import BOQ</h1>
-            <p className="text-sm text-muted-foreground">
+          <div className="min-w-0">
+            <h1 className="text-xl font-bold sm:text-2xl">Import BOQ</h1>
+            <p className="break-words text-sm text-muted-foreground">
               Map, validate, and import BOQ data into {currentProject?.projectName ?? 'the selected project'}.
             </p>
           </div>
@@ -1058,7 +1143,7 @@ export default function ImportBoqPage() {
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
-              <div className="rounded-xl border-2 border-dashed p-8 text-center">
+              <div className="rounded-xl border-2 border-dashed p-5 text-center sm:p-8">
                 <FileSpreadsheet className="mx-auto mb-3 h-12 w-12 text-emerald-500" />
                 <p className="font-medium">Select your BOQ workbook</p>
                 <p className="mb-4 mt-1 text-sm text-muted-foreground">Excel .xlsx files only</p>
@@ -1105,18 +1190,18 @@ export default function ImportBoqPage() {
       )}
 
       {step === 'mapping' && (
-        <Card>
-          <CardHeader className="gap-4 sm:flex-row sm:items-start sm:justify-between">
-            <div>
+        <Card className={STEP_CARD}>
+          <CardHeader className={cn('gap-4 sm:flex-row sm:items-start sm:justify-between', STEP_CARD_HEADER)}>
+            <div className="min-w-0">
               <CardTitle>Column Mapping</CardTitle>
-              <CardDescription className="mt-1">
+              <CardDescription className="mt-1 break-words">
                 {file?.name} · {rawRows.length} rows · {headers.length} source columns
               </CardDescription>
             </div>
-            <div className="flex flex-wrap gap-2">
+            <div className="grid grid-cols-2 gap-2 sm:flex sm:flex-wrap">
               {sheetNames.length > 1 && (
                 <Select value={activeSheet} onValueChange={handleSheetChange}>
-                  <SelectTrigger className="w-44"><SelectValue /></SelectTrigger>
+                  <SelectTrigger className="col-span-2 w-full sm:w-44"><SelectValue /></SelectTrigger>
                   <SelectContent>
                     {sheetNames.map((sheet) => <SelectItem key={sheet} value={sheet}>{sheet}</SelectItem>)}
                   </SelectContent>
@@ -1128,77 +1213,11 @@ export default function ImportBoqPage() {
               <Button variant="ghost" onClick={resetImport}>Change File</Button>
             </div>
           </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="overflow-x-auto rounded-lg border">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>BOQ field</TableHead>
-                    <TableHead>Source Excel column</TableHead>
-                    <TableHead>Sample value</TableHead>
-                    <TableHead>Status</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {importFields.map((field) => {
-                    const mappedColumn = columnMap[field.key] ?? '';
-                    const duplicate = duplicateMappedColumns.has(mappedColumn);
-                    return (
-                      <TableRow key={field.key}>
-                        <TableCell>
-                          <div className="flex flex-wrap items-center gap-2">
-                            <p className="font-medium">
-                              {field.label}{field.required && <span className="ml-1 text-destructive">*</span>}
-                            </p>
-                            <Badge variant="outline" className="capitalize">{field.type}</Badge>
-                          </div>
-                          {field.hint && <p className="text-xs text-muted-foreground">{field.hint}</p>}
-                        </TableCell>
-                        <TableCell className="min-w-64">
-                          <Select
-                            value={mappedColumn || SKIP_COLUMN}
-                            onValueChange={(value) =>
-                              setColumnMap((current) => ({
-                                ...current,
-                                [field.key]: value === SKIP_COLUMN ? '' : value,
-                              }))
-                            }
-                          >
-                            <SelectTrigger><SelectValue placeholder="Skip this field" /></SelectTrigger>
-                            <SelectContent>
-                              <SelectItem value={SKIP_COLUMN}>— Not mapped —</SelectItem>
-                              {headers.map((header) => (
-                                <SelectItem
-                                  key={header}
-                                  value={header}
-                                  disabled={mappedSourceColumns.has(header) && mappedColumn !== header}
-                                >
-                                  {header}
-                                </SelectItem>
-                              ))}
-                            </SelectContent>
-                          </Select>
-                        </TableCell>
-                        <TableCell className="max-w-56 truncate text-sm text-muted-foreground">
-                          {mappedColumn ? cellValueToString(rawRows[0]?.[mappedColumn]) || 'Empty' : '—'}
-                        </TableCell>
-                        <TableCell>
-                          {duplicate ? (
-                            <Badge variant="destructive">Duplicate mapping</Badge>
-                          ) : mappedColumn ? (
-                            <Badge className="bg-emerald-100 text-emerald-700 hover:bg-emerald-100">Mapped</Badge>
-                          ) : field.required ? (
-                            <Badge variant="destructive">Required</Badge>
-                          ) : (
-                            <Badge variant="outline">Skipped</Badge>
-                          )}
-                        </TableCell>
-                      </TableRow>
-                    );
-                  })}
-                </TableBody>
-              </Table>
-            </div>
+          <CardContent className={cn('space-y-4', STEP_CARD_CONTENT)}>
+            <PmDataList
+              rows={importFields.map((field) => ({ ...field, id: field.key }))}
+              columns={mappingColumns}
+            />
 
             {customColumns.length > 0 && (
               <div className="rounded-lg border border-blue-200 bg-blue-50/70 p-4">
@@ -1221,7 +1240,7 @@ export default function ImportBoqPage() {
               </div>
             )}
 
-            <div className="flex justify-between gap-3">
+            <div className="flex flex-col-reverse justify-between gap-3 sm:flex-row">
               <Button variant="outline" onClick={resetImport}>Cancel</Button>
               <Button
                 onClick={buildValidation}
@@ -1235,10 +1254,10 @@ export default function ImportBoqPage() {
       )}
 
       {step === 'validation' && (
-        <Card>
-          <CardHeader>
+        <Card className={STEP_CARD}>
+          <CardHeader className={STEP_CARD_HEADER}>
             <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-              <div>
+              <div className="min-w-0">
                 <CardTitle>Data Validation</CardTitle>
                 <CardDescription>Review row-level errors before importing valid BOQ items.</CardDescription>
               </div>
@@ -1253,7 +1272,7 @@ export default function ImportBoqPage() {
               </div>
             </div>
           </CardHeader>
-          <CardContent className="space-y-4">
+          <CardContent className={cn('space-y-4', STEP_CARD_CONTENT)}>
             <div className="flex gap-1 rounded-lg bg-muted p-1 sm:w-fit">
               {(['all', 'valid', 'invalid'] as ValidationFilter[]).map((filter) => (
                 <Button
@@ -1261,14 +1280,17 @@ export default function ImportBoqPage() {
                   size="sm"
                   variant={validationFilter === filter ? 'default' : 'ghost'}
                   onClick={() => setValidationFilter(filter)}
-                  className="capitalize"
+                  className="flex-1 capitalize sm:flex-none"
                 >
                   {filter}
                 </Button>
               ))}
             </div>
 
-            <div className="max-h-[55vh] overflow-auto rounded-lg border">
+            {/* A preview of the sheet itself, so it stays a sheet: scrolled in its own box, with the
+                Description pinned on a phone so each row stays identifiable while swiping. */}
+            <p className="-mb-2 text-xs text-muted-foreground sm:hidden">Swipe sideways to see all columns</p>
+            <div className="max-h-[55vh] overflow-auto rounded-lg border bg-card">
               <Table>
                 <TableHeader className="sticky top-0 z-10 bg-background">
                   <TableRow>
@@ -1276,7 +1298,9 @@ export default function ImportBoqPage() {
                     <TableHead>Status</TableHead>
                     <TableHead>ERP SL NO</TableHead>
                     <TableHead>BOQ SL No</TableHead>
-                    <TableHead>Description</TableHead>
+                    <TableHead className="max-sm:sticky max-sm:left-0 max-sm:z-[1] max-sm:bg-background max-sm:shadow-[1px_0_0_0_hsl(var(--border))]">
+                      Description
+                    </TableHead>
                     <TableHead>QTY</TableHead>
                     <TableHead>Unit Rate</TableHead>
                     <TableHead>Budget Price</TableHead>
@@ -1299,7 +1323,10 @@ export default function ImportBoqPage() {
                       </TableCell>
                       <TableCell>{String(row.data['ERP SL NO'] ?? '') || '—'}</TableCell>
                       <TableCell>{String(row.data['BOQ SL No'] ?? '')}</TableCell>
-                      <TableCell className="max-w-64 truncate" title={String(row.data.Description ?? '')}>
+                      <TableCell
+                        className="max-w-64 truncate max-sm:sticky max-sm:left-0 max-sm:max-w-[10rem] max-sm:bg-background max-sm:shadow-[1px_0_0_0_hsl(var(--border))]"
+                        title={String(row.data.Description ?? '')}
+                      >
                         {String(row.data.Description ?? '')}
                       </TableCell>
                       <TableCell>{String(row.data.QTY ?? '')}</TableCell>
@@ -1356,21 +1383,21 @@ export default function ImportBoqPage() {
         <Card>
           <CardHeader>
             <CardTitle>Import Summary</CardTitle>
-            <CardDescription>{file?.name} · {activeSheet} · {currentProject?.projectName}</CardDescription>
+            <CardDescription className="break-words">{file?.name} · {activeSheet} · {currentProject?.projectName}</CardDescription>
           </CardHeader>
           <CardContent className="space-y-5">
-            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-              <div className="rounded-xl border bg-muted/30 p-4 text-center">
-                <p className="text-3xl font-bold">{summary.totalRows}</p><p className="text-sm text-muted-foreground">Rows Read</p>
+            <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+              <div className="rounded-xl border bg-muted/30 p-3 text-center sm:p-4">
+                <p className="text-2xl font-bold sm:text-3xl">{summary.totalRows}</p><p className="text-sm text-muted-foreground">Rows Read</p>
               </div>
-              <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-4 text-center">
-                <p className="text-3xl font-bold text-emerald-700">{summary.importedRows}</p><p className="text-sm text-emerald-700">Imported</p>
+              <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-3 text-center sm:p-4">
+                <p className="text-2xl font-bold text-emerald-700 sm:text-3xl">{summary.importedRows}</p><p className="text-sm text-emerald-700">Imported</p>
               </div>
-              <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-center">
-                <p className="text-3xl font-bold text-amber-700">{summary.skippedRows}</p><p className="text-sm text-amber-700">Skipped by Validation</p>
+              <div className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-center sm:p-4">
+                <p className="text-2xl font-bold text-amber-700 sm:text-3xl">{summary.skippedRows}</p><p className="text-sm text-amber-700">Skipped by Validation</p>
               </div>
-              <div className="rounded-xl border border-red-200 bg-red-50 p-4 text-center">
-                <p className="text-3xl font-bold text-red-700">{summary.failedRows.length}</p><p className="text-sm text-red-700">Import Failed</p>
+              <div className="rounded-xl border border-red-200 bg-red-50 p-3 text-center sm:p-4">
+                <p className="text-2xl font-bold text-red-700 sm:text-3xl">{summary.failedRows.length}</p><p className="text-sm text-red-700">Import Failed</p>
               </div>
             </div>
 

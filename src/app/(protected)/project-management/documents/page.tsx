@@ -80,17 +80,16 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
 import { Textarea } from "@/components/ui/textarea";
 import { Skeleton } from "@/components/ui/skeleton";
 import { BoqItemSelector } from "@/components/billing-recon/BoqItemSelector";
+import {
+  PM_DIALOG,
+  PmDataList,
+  PmEmptyState,
+  type PmListColumn,
+} from "@/components/project-management/pm-shell";
+import { cn } from "@/lib/utils";
 
 type ProjectMapping = {
   id: string;
@@ -317,6 +316,112 @@ export default function ProjectDocumentsPage() {
     });
   }, [documents, categoryFilter, search]);
 
+  /* The register: a card per file on a phone, the table from `sm`. */
+  const columns: PmListColumn<ProjectManagementDocument>[] = [
+    {
+      header: "File",
+      mobile: "title",
+      className: "max-w-xs",
+      cell: (item) => (
+        <div className="flex items-center gap-2">
+          <FileText className="h-4 w-4 shrink-0 text-muted-foreground" />
+          <div className="min-w-0">
+            <a
+              href={item.fileUrl}
+              target="_blank"
+              rel="noreferrer"
+              className="block truncate font-medium text-indigo-700 hover:underline"
+              title={item.fileName}
+            >
+              {item.fileName}
+            </a>
+            {item.remarks ? (
+              <p className="truncate text-xs text-muted-foreground" title={item.remarks}>
+                {item.remarks}
+              </p>
+            ) : null}
+          </div>
+        </div>
+      ),
+    },
+    {
+      header: "Category",
+      mobile: "aside",
+      cell: (item) => (
+        <Badge variant="outline" className={categoryStyles[item.category]}>
+          {item.category}
+        </Badge>
+      ),
+    },
+    {
+      header: "Linked To",
+      className: "max-w-[200px] truncate",
+      cell: (item) => (
+        <span title={item.linkedLabel || undefined}>
+          {item.linkedType !== "None" ? (
+            <span>
+              <span className="text-xs text-muted-foreground">{item.linkedType}: </span>
+              {item.linkedLabel || "—"}
+            </span>
+          ) : (
+            "—"
+          )}
+        </span>
+      ),
+    },
+    { header: "Uploaded By", className: "whitespace-nowrap", cell: (item) => item.uploadedByName },
+    { header: "Uploaded On", className: "whitespace-nowrap", cell: (item) => formatDate(item.uploadedAt) },
+    {
+      header: "Size",
+      align: "right",
+      className: "whitespace-nowrap",
+      cell: (item) => formatFileSize(item.fileSize),
+    },
+    {
+      header: "Actions",
+      align: "right",
+      mobile: "footer",
+      className: "w-24",
+      cell: (item) => (
+        <div className="flex w-full justify-end gap-2 sm:w-auto sm:gap-1">
+          {/* Icon-only in the table; labelled on a phone, where the buttons span the card. */}
+          <Button variant="ghost" size="icon" className="max-sm:min-h-11 max-sm:flex-1" asChild title="Download">
+            <a href={item.fileUrl} target="_blank" rel="noreferrer">
+              <Download className="h-4 w-4" />
+              <span className="ml-2 sm:hidden">Download</span>
+            </a>
+          </Button>
+          <AlertDialog>
+            <AlertDialogTrigger asChild>
+              <Button variant="ghost" size="icon" disabled={!canDelete} title="Delete">
+                <Trash2 className="h-4 w-4 text-destructive" />
+                <span className="ml-2 text-destructive sm:hidden">Delete</span>
+              </Button>
+            </AlertDialogTrigger>
+            <AlertDialogContent>
+              <AlertDialogHeader>
+                <AlertDialogTitle>Delete &quot;{item.fileName}&quot;?</AlertDialogTitle>
+                <AlertDialogDescription>
+                  This action cannot be undone. The file will be removed from storage.
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter>
+                <AlertDialogCancel disabled={deletingId === item.id}>Cancel</AlertDialogCancel>
+                <AlertDialogAction
+                  disabled={deletingId === item.id}
+                  onClick={() => void handleDelete(item)}
+                >
+                  {deletingId === item.id ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+                  Delete
+                </AlertDialogAction>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
+        </div>
+      ),
+    },
+  ];
+
   if (isAuthLoading || (isLoading && canView)) {
     return (
       <main className="min-h-[calc(100dvh-4rem)] space-y-5 p-4 sm:p-6">
@@ -361,18 +466,18 @@ export default function ProjectDocumentsPage() {
   return (
     <main className="min-h-[calc(100dvh-4rem)] space-y-5 p-4 sm:p-6">
       <div className="mb-1 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-        <div className="flex items-center gap-3">
-          <Button variant="ghost" size="icon" asChild>
+        <div className="flex min-w-0 items-center gap-3">
+          <Button variant="ghost" size="icon" className="shrink-0" asChild>
             <Link href={`/project-management?project=${encodeURIComponent(mappingId)}`} aria-label="Back to Project Management">
               <ArrowLeft className="h-5 w-5" />
             </Link>
           </Button>
-          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-purple-500 to-fuchsia-600 shadow-sm">
+          <div className="hidden h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-purple-500 to-fuchsia-600 shadow-sm sm:flex">
             <FolderOpen className="h-5 w-5 text-white" />
           </div>
-          <div>
-            <h1 className="text-2xl font-bold sm:text-3xl">Documents</h1>
-            <p className="mt-1 text-sm text-muted-foreground">
+          <div className="min-w-0">
+            <h1 className="text-xl font-bold sm:text-3xl">Documents</h1>
+            <p className="mt-0.5 break-words text-sm text-muted-foreground sm:mt-1">
               {documents.length} file{documents.length === 1 ? "" : "s"} for {mapping.projectName}
             </p>
           </div>
@@ -385,15 +490,17 @@ export default function ProjectDocumentsPage() {
               Upload Document
             </Button>
           </DialogTrigger>
-          <DialogContent className="sm:max-w-xl">
-            <DialogHeader>
+          <DialogContent className={cn(PM_DIALOG.content, "sm:max-w-xl")}>
+            <DialogHeader className={PM_DIALOG.header}>
               <DialogTitle>Upload a Document</DialogTitle>
               <DialogDescription>
                 Drawings, QC certificates, inspection reports, and other project files, optionally linked to a
                 specific BOQ item or indent.
               </DialogDescription>
             </DialogHeader>
-            <div className="grid gap-4 py-4">
+            {/* `content-start`: in the full-height phone sheet a grid would otherwise stretch its
+                rows apart to fill the screen. */}
+            <div className={cn(PM_DIALOG.body, "grid content-start gap-4 space-y-0 py-4")}>
               <div className="grid gap-4 sm:grid-cols-2">
                 <div className="space-y-2">
                   <Label>Category</Label>
@@ -478,7 +585,7 @@ export default function ProjectDocumentsPage() {
                 />
               </div>
             </div>
-            <DialogFooter>
+            <DialogFooter className={PM_DIALOG.footer}>
               <DialogClose asChild>
                 <Button variant="outline">Cancel</Button>
               </DialogClose>
@@ -516,116 +623,17 @@ export default function ProjectDocumentsPage() {
         </Select>
       </div>
 
-      <Card>
-        <CardContent className="p-0">
-          <div className="overflow-x-auto">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>File</TableHead>
-                  <TableHead>Category</TableHead>
-                  <TableHead>Linked To</TableHead>
-                  <TableHead>Uploaded By</TableHead>
-                  <TableHead>Uploaded On</TableHead>
-                  <TableHead className="text-right">Size</TableHead>
-                  <TableHead className="w-24 text-right">Actions</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {filteredDocuments.length ? (
-                  filteredDocuments.map((item) => (
-                    <TableRow key={item.id}>
-                      <TableCell className="max-w-xs">
-                        <div className="flex items-center gap-2">
-                          <FileText className="h-4 w-4 shrink-0 text-muted-foreground" />
-                          <div className="min-w-0">
-                            <a
-                              href={item.fileUrl}
-                              target="_blank"
-                              rel="noreferrer"
-                              className="block truncate font-medium text-indigo-700 hover:underline"
-                              title={item.fileName}
-                            >
-                              {item.fileName}
-                            </a>
-                            {item.remarks ? (
-                              <p className="truncate text-xs text-muted-foreground" title={item.remarks}>
-                                {item.remarks}
-                              </p>
-                            ) : null}
-                          </div>
-                        </div>
-                      </TableCell>
-                      <TableCell>
-                        <Badge variant="outline" className={categoryStyles[item.category]}>
-                          {item.category}
-                        </Badge>
-                      </TableCell>
-                      <TableCell className="max-w-[200px] truncate" title={item.linkedLabel || undefined}>
-                        {item.linkedType !== "None" ? (
-                          <span>
-                            <span className="text-xs text-muted-foreground">{item.linkedType}: </span>
-                            {item.linkedLabel || "—"}
-                          </span>
-                        ) : (
-                          "—"
-                        )}
-                      </TableCell>
-                      <TableCell className="whitespace-nowrap">{item.uploadedByName}</TableCell>
-                      <TableCell className="whitespace-nowrap">{formatDate(item.uploadedAt)}</TableCell>
-                      <TableCell className="text-right whitespace-nowrap">{formatFileSize(item.fileSize)}</TableCell>
-                      <TableCell className="text-right">
-                        <div className="flex justify-end gap-1">
-                          <Button variant="ghost" size="icon" asChild title="Download">
-                            <a href={item.fileUrl} target="_blank" rel="noreferrer">
-                              <Download className="h-4 w-4" />
-                            </a>
-                          </Button>
-                          <AlertDialog>
-                            <AlertDialogTrigger asChild>
-                              <Button variant="ghost" size="icon" disabled={!canDelete} title="Delete">
-                                <Trash2 className="h-4 w-4 text-destructive" />
-                              </Button>
-                            </AlertDialogTrigger>
-                            <AlertDialogContent>
-                              <AlertDialogHeader>
-                                <AlertDialogTitle>Delete &quot;{item.fileName}&quot;?</AlertDialogTitle>
-                                <AlertDialogDescription>
-                                  This action cannot be undone. The file will be removed from storage.
-                                </AlertDialogDescription>
-                              </AlertDialogHeader>
-                              <AlertDialogFooter>
-                                <AlertDialogCancel disabled={deletingId === item.id}>Cancel</AlertDialogCancel>
-                                <AlertDialogAction
-                                  disabled={deletingId === item.id}
-                                  onClick={() => void handleDelete(item)}
-                                >
-                                  {deletingId === item.id ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
-                                  Delete
-                                </AlertDialogAction>
-                              </AlertDialogFooter>
-                            </AlertDialogContent>
-                          </AlertDialog>
-                        </div>
-                      </TableCell>
-                    </TableRow>
-                  ))
-                ) : (
-                  <TableRow>
-                    <TableCell colSpan={7} className="h-32 text-center">
-                      <FolderOpen className="mx-auto mb-2 h-8 w-8 text-muted-foreground" />
-                      <p className="font-medium">No documents yet</p>
-                      <p className="mt-1 text-sm text-muted-foreground">
-                        Upload drawings, QC certificates, and other project files here.
-                      </p>
-                    </TableCell>
-                  </TableRow>
-                )}
-              </TableBody>
-            </Table>
-          </div>
-        </CardContent>
-      </Card>
+      <PmDataList
+        rows={filteredDocuments}
+        columns={columns}
+        empty={
+          <PmEmptyState
+            icon={FolderOpen}
+            title="No documents yet"
+            description="Upload drawings, QC certificates, and other project files here."
+          />
+        }
+      />
     </main>
   );
 }

@@ -136,19 +136,19 @@ export default function ProjectManagementGeneralSettingsPage() {
   }
 
   return (
-    <main className="min-h-[calc(100dvh-4rem)] p-4 sm:p-6">
-      <div className="mb-6 flex items-center gap-3">
-        <Button variant="ghost" size="icon" asChild>
+    <main className="min-h-[calc(100dvh-4rem)] p-4 max-sm:[--card-pad:1rem] sm:p-6">
+      <div className="mb-4 flex items-center gap-2 sm:mb-6 sm:gap-3">
+        <Button variant="ghost" size="icon" className="shrink-0" asChild>
           <Link href="/project-management/settings" aria-label="Back to Settings">
             <ArrowLeft className="h-5 w-5" />
           </Link>
         </Button>
-        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-slate-500 to-slate-700 shadow-sm">
+        <div className="hidden h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-slate-500 to-slate-700 shadow-sm sm:flex">
           <Settings2 className="h-5 w-5 text-white" />
         </div>
-        <div>
-          <h1 className="text-2xl font-bold sm:text-3xl">General Settings</h1>
-          <p className="mt-1 text-sm text-muted-foreground">Module-wide defaults for Project Management.</p>
+        <div className="min-w-0">
+          <h1 className="text-xl font-bold sm:text-3xl">General Settings</h1>
+          <p className="mt-0.5 text-[13px] text-muted-foreground sm:mt-1 sm:text-sm">Module-wide defaults for Project Management.</p>
         </div>
       </div>
 
@@ -259,7 +259,7 @@ export default function ProjectManagementGeneralSettingsPage() {
       </Card>
 
       {canEdit && (
-        <Button className="mt-4" onClick={handleSave} disabled={isSaving}>
+        <Button className="mt-4 w-full sm:w-auto" onClick={handleSave} disabled={isSaving}>
           {isSaving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
           Save
         </Button>

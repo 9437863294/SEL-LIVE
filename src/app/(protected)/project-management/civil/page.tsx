@@ -204,7 +204,7 @@ export default function CivilPage() {
   return (
     <main className="min-h-[calc(100dvh-4rem)] space-y-5 p-4 sm:p-6">
       <div className="flex items-center gap-3">
-        <Button variant="ghost" size="icon" asChild>
+        <Button variant="ghost" size="icon" className="shrink-0" asChild>
           <Link
             href={`/project-management?project=${encodeURIComponent(mappingId)}`}
             aria-label="Back to Project Management"
@@ -212,12 +212,12 @@ export default function CivilPage() {
             <ArrowLeft className="h-5 w-5" />
           </Link>
         </Button>
-        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-stone-500 to-stone-700 shadow-sm">
+        <div className="hidden h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-stone-500 to-stone-700 shadow-sm sm:flex">
           <Building2 className="h-5 w-5 text-white" />
         </div>
-        <div>
-          <h1 className="text-2xl font-bold">Civil</h1>
-          <p className="text-sm text-muted-foreground">
+        <div className="min-w-0">
+          <h1 className="text-xl font-bold sm:text-2xl">Civil</h1>
+          <p className="break-words text-sm text-muted-foreground">
             Civil scope for {mapping.projectName}.
           </p>
         </div>

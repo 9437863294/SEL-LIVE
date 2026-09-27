@@ -52,15 +52,13 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
 import { Skeleton } from "@/components/ui/skeleton";
+import {
+  PmDataList,
+  PmEmptyState,
+  PmFormActions,
+  type PmListColumn,
+} from "@/components/project-management/pm-shell";
 import {
   PO_COLLECTION,
   PO_PERMISSION_RESOURCE,
@@ -137,6 +135,37 @@ type ManualRow = {
 };
 
 type Selection = { qty: string; rate: string };
+
+/** A row of the RFQ or indent picker; `id` is the selection key. */
+type RfqPickRow = { id: string; item: RfqItem };
+type IndentPickRow = { id: string; item: IndentLineItem };
+
+/**
+ * A line of the order being raised, from whichever of the four sources it came. `id` is prefixed
+ * with the source, since the keys of different sources are not guaranteed distinct.
+ */
+type LineRow =
+  | { id: string; source: "rfq"; key: string; sel: Selection; rfqId: string; rfqNumber: string; item: RfqItem }
+  | { id: string; source: "indent"; key: string; sel: Selection; indentId: string; indentNumber: string; item: IndentLineItem }
+  | { id: string; source: "boq"; sel: Selection; item: BoqItem }
+  | { id: string; source: "manual"; row: ManualRow };
+
+/**
+ * A Card on a desktop; on a phone just its heading and contents, so the item cards inside are not
+ * boxed twice.
+ */
+const PHONE_BARE_CARD = "max-sm:border-0 max-sm:bg-transparent max-sm:shadow-none";
+const PHONE_BARE_CARD_SECTION = "max-sm:px-0";
+/** A list inside a Card or a bordered group, which already frames it on a desktop. */
+const LIST_IN_FRAME = "sm:rounded-none sm:border-0 sm:shadow-none";
+
+/**
+ * An input in a line-item cell: full width on a phone card, the table's fixed width from `sm`.
+ * A card's detail cell clips its overflow (it truncates text values), so on a phone the focus ring
+ * is drawn inside the box rather than around it, where it would be cut off.
+ */
+const cellInput = (width: string) =>
+  cn("w-full max-sm:focus-visible:ring-inset max-sm:focus-visible:ring-offset-0", width);
 
 const emptyManualRow = (): ManualRow => ({
   rowId: Math.random().toString(36).slice(2),
@@ -754,23 +783,327 @@ export default function NewProjectPurchaseOrderPage() {
     );
   }
 
+  // The picker columns: the description leads a phone card and the checkbox sits top-right; the
+  // whole card toggles the selection, as the whole row does on a desktop.
+  const rfqPickColumns = (
+    rfqId: string,
+    quote: RfqQuote | null,
+  ): PmListColumn<RfqPickRow>[] => [
+    {
+      header: "",
+      className: "w-10",
+      mobile: "aside",
+      cell: ({ id, item }) => (
+        <div onClick={(e) => e.stopPropagation()}>
+          <Checkbox
+            checked={id in selectedRfqItems}
+            onCheckedChange={(value) => toggleRfqItem(rfqId, item, quote, value === true)}
+          />
+        </div>
+      ),
+    },
+    { header: "BOQ SL No", className: "whitespace-nowrap text-xs text-muted-foreground", cell: ({ item }) => item.boqSlNo || "—" },
+    {
+      header: "Description",
+      className: "min-w-[200px] max-w-xs truncate",
+      mobile: "title",
+      cell: ({ item }) => <span title={item.description}>{item.description}</span>,
+    },
+    { header: "Unit", cell: ({ item }) => item.unit || "—" },
+    {
+      header: "BOQ Qty",
+      className: "text-muted-foreground",
+      cell: ({ item }) => {
+        const boqQty = boqQtyByItemId[item.boqItemId];
+        return typeof boqQty === "number" ? formatQuantity(boqQty) : "—";
+      },
+    },
+    { header: "RFQ Qty", cell: ({ item }) => formatQuantity(item.qty) },
+    {
+      header: "Quoted Rate",
+      className: "font-medium",
+      cell: ({ item }) => formatCurrency(quote?.items.find((qi) => qi.rfqItemId === item.rfqItemId)?.rate ?? 0),
+    },
+  ];
+
+  const indentPickColumns = (indentId: string): PmListColumn<IndentPickRow>[] => [
+    {
+      header: "",
+      className: "w-10",
+      mobile: "aside",
+      cell: ({ id, item }) => (
+        <div onClick={(e) => e.stopPropagation()}>
+          <Checkbox
+            checked={id in selectedIndentItems}
+            onCheckedChange={(value) => toggleIndentItem(indentId, item, value === true)}
+          />
+        </div>
+      ),
+    },
+    { header: "BOQ SL No", className: "whitespace-nowrap text-xs text-muted-foreground", cell: ({ item }) => item.boqSlNo || "—" },
+    {
+      header: "Description",
+      className: "min-w-[200px] max-w-xs truncate",
+      mobile: "title",
+      cell: ({ item }) => <span title={item.description}>{item.description}</span>,
+    },
+    { header: "Unit", cell: ({ item }) => item.unit || "—" },
+    {
+      header: "BOQ Qty",
+      className: "text-muted-foreground",
+      cell: ({ item }) => {
+        const boqQty = boqQtyByItemId[item.boqItemId];
+        return typeof boqQty === "number" ? formatQuantity(boqQty) : "—";
+      },
+    },
+    { header: "Indent Qty", cell: ({ item }) => formatQuantity(item.requestedQty) },
+  ];
+
+  const boqPickColumns: PmListColumn<BoqItem>[] = [
+    {
+      header: "",
+      className: "w-10",
+      mobile: "aside",
+      cell: (item) => (
+        <div onClick={(e) => e.stopPropagation()}>
+          <Checkbox
+            checked={item.id in selectedBoqItems}
+            onCheckedChange={(checked) => toggleBoqItem(item, checked === true)}
+          />
+        </div>
+      ),
+    },
+    { header: "ERP SL No", className: "whitespace-nowrap text-xs text-muted-foreground", cell: (item) => String(item["ERP SL NO"] ?? "—") },
+    { header: "BOQ SL No", className: "whitespace-nowrap text-xs text-muted-foreground", cell: (item) => String(item["BOQ SL No"] ?? "—") },
+    {
+      header: "Description",
+      className: "min-w-[200px] max-w-xs truncate",
+      mobile: "title",
+      cell: (item) => <span title={String(item.Description ?? "")}>{String(item.Description ?? "—")}</span>,
+    },
+    { header: "Units", cell: (item) => String(item.Unit ?? "—") },
+    { header: "QTY", cell: (item) => formatQuantity(toNumber(item.QTY)) },
+    { header: "Unit Rate", cell: (item) => formatCurrency(toNumber(item["Unit Rate"])) },
+    { header: "Budget Price", className: "text-muted-foreground", cell: (item) => formatCurrency(toNumber(item["Budget Price"])) },
+    // The two totals are QTY times a rate already on the card, so a phone leaves them out of a
+    // picker that may list hundreds of items.
+    {
+      header: "Total Budget Price",
+      className: "text-muted-foreground",
+      mobile: "omit",
+      cell: (item) => formatCurrency(toNumber(item.QTY) * toNumber(item["Budget Price"])),
+    },
+    {
+      header: "Total Amount",
+      className: "font-medium",
+      mobile: "omit",
+      cell: (item) => formatCurrency(toNumber(item["Total Amount"]) || toNumber(item.QTY) * toNumber(item["Unit Rate"])),
+    },
+    { header: "Indent Qty", className: "text-muted-foreground", cell: (item) => formatQuantity(indentQtyByBoqItemId.get(item.id) ?? 0) },
+    { header: "PO Qty", className: "text-muted-foreground", cell: (item) => formatQuantity(poQtyByBoqItemId.get(item.id) ?? 0) },
+  ];
+
+  const lineRows: LineRow[] = [
+    ...Object.entries(selectedRfqItems).flatMap(([key, sel]): LineRow[] => {
+      const [rfqId, rfqItemId] = key.split("__");
+      const rfq = rfqs.find((r) => r.id === rfqId);
+      const item = findRfqItem(rfqId, rfqItemId);
+      if (!rfq || !item) return [];
+      return [{ id: `rfq:${key}`, source: "rfq", key, sel, rfqId, rfqNumber: rfq.rfqNumber, item }];
+    }),
+    ...Object.entries(selectedIndentItems).flatMap(([key, sel]): LineRow[] => {
+      const [indentId, boqItemId] = key.split("__");
+      const indent = indents.find((i) => i.id === indentId);
+      const item = findIndentItem(indentId, boqItemId);
+      if (!indent || !item) return [];
+      return [{ id: `indent:${key}`, source: "indent", key, sel, indentId, indentNumber: indent.indentNumber, item }];
+    }),
+    ...Object.entries(selectedBoqItems).flatMap(([boqItemId, sel]): LineRow[] => {
+      const item = findBoqItem(boqItemId);
+      if (!item) return [];
+      return [{ id: `boq:${boqItemId}`, source: "boq", sel, item }];
+    }),
+    ...manualRows.map((row): LineRow => ({ id: `manual:${row.rowId}`, source: "manual", row })),
+  ];
+
+  const qtyInput = (line: LineRow) => {
+    const className = cellInput("sm:w-24");
+    switch (line.source) {
+      case "rfq":
+        return <Input className={className} type="number" min="0" step="0.001" value={line.sel.qty} onChange={(e) => updateSelection(setSelectedRfqItems, line.key, { qty: e.target.value })} />;
+      case "indent":
+        return <Input className={className} type="number" min="0" step="0.001" value={line.sel.qty} onChange={(e) => updateSelection(setSelectedIndentItems, line.key, { qty: e.target.value })} />;
+      case "boq":
+        return <Input className={className} type="number" min="0" step="0.001" value={line.sel.qty} onChange={(e) => updateSelection(setSelectedBoqItems, line.item.id, { qty: e.target.value })} />;
+      case "manual":
+        return <Input className={className} type="number" min="0" step="0.001" value={line.row.qty} onChange={(e) => updateManualRow(line.row.rowId, { qty: e.target.value })} />;
+    }
+  };
+
+  const rateInput = (line: LineRow) => {
+    const className = cellInput("sm:w-28");
+    switch (line.source) {
+      case "rfq":
+        return <Input className={className} type="number" min="0" step="0.01" value={line.sel.rate} onChange={(e) => updateSelection(setSelectedRfqItems, line.key, { rate: e.target.value })} />;
+      case "indent":
+        return <Input className={className} type="number" min="0" step="0.01" value={line.sel.rate} onChange={(e) => updateSelection(setSelectedIndentItems, line.key, { rate: e.target.value })} />;
+      case "boq":
+        return <Input className={className} type="number" min="0" step="0.01" value={line.sel.rate} onChange={(e) => updateSelection(setSelectedBoqItems, line.item.id, { rate: e.target.value })} />;
+      case "manual":
+        return <Input className={className} type="number" min="0" step="0.01" value={line.row.rate} onChange={(e) => updateManualRow(line.row.rowId, { rate: e.target.value })} />;
+    }
+  };
+
+  const removeLine = (line: LineRow) => {
+    switch (line.source) {
+      case "rfq":
+        return toggleRfqItem(line.rfqId, line.item, null, false);
+      case "indent":
+        return toggleIndentItem(line.indentId, line.item, false);
+      case "boq":
+        return toggleBoqItem(line.item, false);
+      case "manual":
+        return removeManualRow(line.row.rowId);
+    }
+  };
+
+  const lineColumns: PmListColumn<LineRow>[] = [
+    {
+      header: "Description",
+      className: "min-w-[200px] max-w-xs truncate",
+      mobile: "title",
+      cell: (line) => {
+        if (line.source === "manual") {
+          return (
+            <Input
+              // `w-screen` gives the input a width to ask for inside a phone card's headline, which
+              // otherwise sizes to its content; `max-w-full` then holds it to the space left
+              // beside the amount.
+              className="max-w-full font-normal max-sm:w-screen"
+              value={line.row.description}
+              onChange={(e) => updateManualRow(line.row.rowId, { description: e.target.value })}
+              placeholder="Item description"
+            />
+          );
+        }
+        const description = line.source === "boq" ? String(line.item.Description ?? "") : line.item.description;
+        return <span title={description}>{description}</span>;
+      },
+    },
+    {
+      header: "Unit",
+      cell: (line) =>
+        line.source === "manual" ? (
+          <Input
+            className={cellInput("sm:w-20")}
+            value={line.row.unit}
+            onChange={(e) => updateManualRow(line.row.rowId, { unit: e.target.value })}
+            placeholder="Unit"
+          />
+        ) : line.source === "boq" ? (
+          String(line.item.Unit ?? "—")
+        ) : (
+          line.item.unit || "—"
+        ),
+    },
+    {
+      header: "BOQ Qty",
+      className: "text-muted-foreground",
+      cell: (line) => {
+        if (line.source === "manual") return "—";
+        if (line.source === "boq") return formatQuantity(toNumber(line.item.QTY));
+        const boqQty = boqQtyByItemId[line.item.boqItemId];
+        return typeof boqQty === "number" ? formatQuantity(boqQty) : "—";
+      },
+    },
+    {
+      header: "Indent Qty",
+      className: "text-muted-foreground",
+      cell: (line) =>
+        line.source === "rfq"
+          ? formatQuantity(line.item.qty)
+          : line.source === "indent"
+            ? formatQuantity(line.item.requestedQty)
+            : "—",
+    },
+    { header: "PO Qty", cell: qtyInput },
+    { header: "Rate", cell: rateInput },
+    {
+      header: "Amount",
+      className: "whitespace-nowrap",
+      mobile: "aside",
+      cell: (line) => (
+        <span className="font-medium">
+          {formatCurrency(line.source === "manual" ? manualLineAmount(line.row) : lineAmount(line.sel))}
+        </span>
+      ),
+    },
+    {
+      header: "Source",
+      className: "text-xs text-muted-foreground",
+      mobile: "title",
+      cell: (line) =>
+        line.source === "rfq"
+          ? line.rfqNumber
+          : line.source === "indent"
+            ? line.indentNumber
+            : line.source === "boq"
+              ? "BOQ"
+              : "Manual",
+    },
+    {
+      header: "MDL",
+      cell: (line) =>
+        line.source === "manual" ? (
+          <span className="text-xs text-muted-foreground">—</span>
+        ) : (
+          renderMdlCell(line.source === "boq" ? line.item.id : line.item.boqItemId)
+        ),
+    },
+    {
+      header: "",
+      className: "w-12",
+      mobile: "footer",
+      cell: (line) => (
+        <Button
+          variant="ghost"
+          size="icon"
+          onClick={() => removeLine(line)}
+          aria-label={line.source === "manual" ? "Remove row" : "Remove item"}
+        >
+          <Trash2 className="h-4 w-4 text-destructive" />
+          <span className="ml-2 text-destructive sm:hidden">Remove</span>
+        </Button>
+      ),
+    },
+  ];
+
+  const saveLabel = (
+    <>
+      {isSaving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
+      Save Purchase Order
+    </>
+  );
+
   return (
-    <main className="w-full space-y-5 px-4 py-4 sm:px-6 sm:py-6">
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-3">
-          <Button variant="ghost" size="icon" asChild>
+    <main className="w-full space-y-4 px-4 py-4 max-sm:[--card-pad:1rem] sm:space-y-5 sm:px-6 sm:py-6">
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+        <div className="flex min-w-0 flex-1 items-center gap-2 sm:gap-3">
+          <Button variant="ghost" size="icon" className="shrink-0" asChild>
             <Link href={`/project-management/purchase-orders?project=${encodeURIComponent(mappingId)}`} aria-label="Back to Purchase Orders">
               <ArrowLeft className="h-6 w-6" />
             </Link>
           </Button>
-          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-emerald-500 to-teal-600 shadow-sm">
+          <div className="hidden h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-emerald-500 to-teal-600 shadow-sm sm:flex">
             <ShoppingCart className="h-4 w-4 text-white" />
           </div>
-          <h1 className="text-xl font-bold">Create Purchase Order</h1>
+          <h1 className="truncate text-base font-bold sm:text-xl">Create Purchase Order</h1>
         </div>
-        <Button onClick={() => void handleSave()} disabled={isSaving}>
+        {/* Short on a phone, where the full label is repeated at the foot of the form. */}
+        <Button onClick={() => void handleSave()} disabled={isSaving} className="ml-auto">
           {isSaving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
-          Save Purchase Order
+          <span className="sm:hidden">Save</span>
+          <span className="hidden sm:inline">Save Purchase Order</span>
         </Button>
       </div>
 
@@ -780,7 +1113,7 @@ export default function NewProjectPurchaseOrderPage() {
           <CardDescription>For {mapping.projectName}. Select the vendor this purchase order is for.</CardDescription>
         </CardHeader>
         <CardContent>
-          <div className="grid grid-cols-1 gap-6 md:grid-cols-4">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 md:gap-6 lg:grid-cols-4">
             <ControlledField setting={fieldControl("vendorId")} className="space-y-2">
               <Select value={vendorId} onValueChange={setVendorId}>
                 <SelectTrigger id="vendor"><SelectValue placeholder="Select a vendor" /></SelectTrigger>
@@ -818,7 +1151,7 @@ export default function NewProjectPurchaseOrderPage() {
                 : "Map this project to a client under Settings → Clients to auto-default these from the client's contract terms."}
             </p>
           </div>
-          <div className="grid grid-cols-1 gap-6 md:grid-cols-4">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 md:gap-6 lg:grid-cols-4">
             <ControlledField setting={fieldControl("warrantyMonths")} className="space-y-2">
               <Input id="warranty-months" type="number" min="0" value={warrantyMonths} onChange={(e) => setWarrantyMonths(e.target.value)} />
             </ControlledField>
@@ -835,19 +1168,20 @@ export default function NewProjectPurchaseOrderPage() {
         </CardContent>
       </Card>
 
-      <Card>
-        <CardHeader>
+      <Card className={PHONE_BARE_CARD}>
+        <CardHeader className={PHONE_BARE_CARD_SECTION}>
           <CardTitle className="flex items-center gap-2">
             <Library className="h-4 w-4" /> Add Items
           </CardTitle>
           <CardDescription>Pull items directly from an RFQ quote, an indent, or the BOQ.</CardDescription>
         </CardHeader>
-        <CardContent>
+        <CardContent className={PHONE_BARE_CARD_SECTION}>
           <Tabs defaultValue="rfq">
-            <TabsList>
-              <TabsTrigger value="rfq">From RFQ Quotes</TabsTrigger>
-              <TabsTrigger value="indent">From Indent</TabsTrigger>
-              <TabsTrigger value="boq">From BOQ</TabsTrigger>
+            {/* Across the full width on a phone, where "From" is dropped so all three fit. */}
+            <TabsList className="w-full sm:w-auto">
+              <TabsTrigger value="rfq" className="flex-1 sm:flex-none"><span className="hidden sm:inline">From&nbsp;</span>RFQ Quotes</TabsTrigger>
+              <TabsTrigger value="indent" className="flex-1 sm:flex-none"><span className="hidden sm:inline">From&nbsp;</span>Indent</TabsTrigger>
+              <TabsTrigger value="boq" className="flex-1 sm:flex-none"><span className="hidden sm:inline">From&nbsp;</span>BOQ</TabsTrigger>
             </TabsList>
 
             <TabsContent value="rfq" className="space-y-3 pt-3">
@@ -859,58 +1193,25 @@ export default function NewProjectPurchaseOrderPage() {
                 availableRfqSections.map(({ rfq, items, quote }) => {
                   const isExpanded = expandedRfqs.has(rfq.id);
                   return (
-                    <div key={rfq.id} className="rounded-lg border">
-                      <div className="flex items-center gap-2 border-b bg-muted/30 px-3 py-2">
-                        <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => toggleRfqExpanded(rfq.id)}>
+                    // A bordered group on a desktop; on a phone a tinted heading strip with the item
+                    // cards beneath it.
+                    <div key={rfq.id} className="sm:rounded-lg sm:border">
+                      <div className="flex items-center gap-2 rounded-lg bg-muted/30 px-2 py-1.5 sm:rounded-none sm:border-b sm:px-3 sm:py-2">
+                        <Button variant="ghost" size="icon" className="h-9 w-9 shrink-0 sm:h-6 sm:w-6" onClick={() => toggleRfqExpanded(rfq.id)}>
                           {isExpanded ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
                         </Button>
-                        <span className="text-sm font-semibold">{rfq.rfqNumber}</span>
-                        <span className="text-xs text-muted-foreground">({items.length} quoted item{items.length === 1 ? "" : "s"} available)</span>
+                        <div className="flex min-w-0 flex-wrap items-baseline gap-x-2">
+                          <span className="break-all text-sm font-semibold">{rfq.rfqNumber}</span>
+                          <span className="text-xs text-muted-foreground">({items.length} quoted item{items.length === 1 ? "" : "s"} available)</span>
+                        </div>
                       </div>
                       {isExpanded && (
-                        <div className="overflow-x-auto">
-                          <Table>
-                            <TableHeader>
-                              <TableRow>
-                                <TableHead className="w-10" />
-                                <TableHead>BOQ SL No</TableHead>
-                                <TableHead className="min-w-[200px]">Description</TableHead>
-                                <TableHead>Unit</TableHead>
-                                <TableHead>BOQ Qty</TableHead>
-                                <TableHead>RFQ Qty</TableHead>
-                                <TableHead>Quoted Rate</TableHead>
-                              </TableRow>
-                            </TableHeader>
-                            <TableBody>
-                              {items.map((item) => {
-                                const key = rfqItemKey(rfq.id, item.rfqItemId);
-                                const quotedRate = quote?.items.find((qi) => qi.rfqItemId === item.rfqItemId)?.rate ?? 0;
-                                const boqQty = boqQtyByItemId[item.boqItemId];
-                                const checked = key in selectedRfqItems;
-                                return (
-                                  <TableRow
-                                    key={key}
-                                    className="cursor-pointer"
-                                    onClick={() => toggleRfqItem(rfq.id, item, quote, !checked)}
-                                  >
-                                    <TableCell onClick={(e) => e.stopPropagation()}>
-                                      <Checkbox
-                                        checked={checked}
-                                        onCheckedChange={(value) => toggleRfqItem(rfq.id, item, quote, value === true)}
-                                      />
-                                    </TableCell>
-                                    <TableCell className="whitespace-nowrap text-xs text-muted-foreground">{item.boqSlNo || "—"}</TableCell>
-                                    <TableCell className="max-w-xs truncate" title={item.description}>{item.description}</TableCell>
-                                    <TableCell>{item.unit || "—"}</TableCell>
-                                    <TableCell className="text-muted-foreground">{typeof boqQty === "number" ? formatQuantity(boqQty) : "—"}</TableCell>
-                                    <TableCell>{formatQuantity(item.qty)}</TableCell>
-                                    <TableCell className="font-medium">{formatCurrency(quotedRate)}</TableCell>
-                                  </TableRow>
-                                );
-                              })}
-                            </TableBody>
-                          </Table>
-                        </div>
+                        <PmDataList
+                          rows={items.map((item): RfqPickRow => ({ id: rfqItemKey(rfq.id, item.rfqItemId), item }))}
+                          columns={rfqPickColumns(rfq.id, quote)}
+                          onRowClick={({ id, item }) => toggleRfqItem(rfq.id, item, quote, !(id in selectedRfqItems))}
+                          className={cn("mt-2 sm:mt-0", LIST_IN_FRAME)}
+                        />
                       )}
                     </div>
                   );
@@ -926,55 +1227,23 @@ export default function NewProjectPurchaseOrderPage() {
               {indents.length ? indents.map((indent) => {
                 const isExpanded = expandedIndents.has(indent.id);
                 return (
-                  <div key={indent.id} className="rounded-lg border">
-                    <div className="flex items-center gap-2 border-b bg-muted/30 px-3 py-2">
-                      <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => toggleIndentExpanded(indent.id)}>
+                  <div key={indent.id} className="sm:rounded-lg sm:border">
+                    <div className="flex items-center gap-2 rounded-lg bg-muted/30 px-2 py-1.5 sm:rounded-none sm:border-b sm:px-3 sm:py-2">
+                      <Button variant="ghost" size="icon" className="h-9 w-9 shrink-0 sm:h-6 sm:w-6" onClick={() => toggleIndentExpanded(indent.id)}>
                         {isExpanded ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
                       </Button>
-                      <span className="text-sm font-semibold">{indent.indentNumber}</span>
-                      <span className="text-xs text-muted-foreground">({indent.items.length} item{indent.items.length === 1 ? "" : "s"})</span>
+                      <div className="flex min-w-0 flex-wrap items-baseline gap-x-2">
+                        <span className="break-all text-sm font-semibold">{indent.indentNumber}</span>
+                        <span className="text-xs text-muted-foreground">({indent.items.length} item{indent.items.length === 1 ? "" : "s"})</span>
+                      </div>
                     </div>
                     {isExpanded && (
-                      <div className="overflow-x-auto">
-                        <Table>
-                          <TableHeader>
-                            <TableRow>
-                              <TableHead className="w-10" />
-                              <TableHead>BOQ SL No</TableHead>
-                              <TableHead className="min-w-[200px]">Description</TableHead>
-                              <TableHead>Unit</TableHead>
-                              <TableHead>BOQ Qty</TableHead>
-                              <TableHead>Indent Qty</TableHead>
-                            </TableRow>
-                          </TableHeader>
-                          <TableBody>
-                            {indent.items.map((item) => {
-                              const key = indentItemKey(indent.id, item.boqItemId);
-                              const boqQty = boqQtyByItemId[item.boqItemId];
-                              const checked = key in selectedIndentItems;
-                              return (
-                                <TableRow
-                                  key={key}
-                                  className="cursor-pointer"
-                                  onClick={() => toggleIndentItem(indent.id, item, !checked)}
-                                >
-                                  <TableCell onClick={(e) => e.stopPropagation()}>
-                                    <Checkbox
-                                      checked={checked}
-                                      onCheckedChange={(value) => toggleIndentItem(indent.id, item, value === true)}
-                                    />
-                                  </TableCell>
-                                  <TableCell className="whitespace-nowrap text-xs text-muted-foreground">{item.boqSlNo || "—"}</TableCell>
-                                  <TableCell className="max-w-xs truncate" title={item.description}>{item.description}</TableCell>
-                                  <TableCell>{item.unit || "—"}</TableCell>
-                                  <TableCell className="text-muted-foreground">{typeof boqQty === "number" ? formatQuantity(boqQty) : "—"}</TableCell>
-                                  <TableCell>{formatQuantity(item.requestedQty)}</TableCell>
-                                </TableRow>
-                              );
-                            })}
-                          </TableBody>
-                        </Table>
-                      </div>
+                      <PmDataList
+                        rows={indent.items.map((item): IndentPickRow => ({ id: indentItemKey(indent.id, item.boqItemId), item }))}
+                        columns={indentPickColumns(indent.id)}
+                        onRowClick={({ id, item }) => toggleIndentItem(indent.id, item, !(id in selectedIndentItems))}
+                        className={cn("mt-2 sm:mt-0", LIST_IN_FRAME)}
+                      />
                     )}
                   </div>
                 );
@@ -994,65 +1263,17 @@ export default function NewProjectPurchaseOrderPage() {
                 <Input placeholder="Search ERP SL No, BOQ SL No or description..." className="pl-8" value={boqSearch} onChange={(e) => setBoqSearch(e.target.value)} />
               </div>
               <p className="text-xs text-muted-foreground">Showing Scope 2 = Supply items only.</p>
-              <div className="max-h-96 overflow-auto rounded-lg border">
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead className="w-10" />
-                      <TableHead>ERP SL No</TableHead>
-                      <TableHead>BOQ SL No</TableHead>
-                      <TableHead className="min-w-[200px]">Description</TableHead>
-                      <TableHead>Units</TableHead>
-                      <TableHead>QTY</TableHead>
-                      <TableHead>Unit Rate</TableHead>
-                      <TableHead>Budget Price</TableHead>
-                      <TableHead>Total Budget Price</TableHead>
-                      <TableHead>Total Amount</TableHead>
-                      <TableHead>Indent Qty</TableHead>
-                      <TableHead>PO Qty</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {filteredBoqItems.length ? filteredBoqItems.map((item) => {
-                      const qty = toNumber(item.QTY);
-                      const rate = toNumber(item["Unit Rate"]);
-                      const budgetPrice = toNumber(item["Budget Price"]);
-                      const totalAmount = toNumber(item["Total Amount"]) || qty * rate;
-                      const totalBudgetPrice = qty * budgetPrice;
-                      return (
-                        <TableRow
-                          key={item.id}
-                          className="cursor-pointer"
-                          onClick={() => toggleBoqItem(item, !(item.id in selectedBoqItems))}
-                        >
-                          <TableCell onClick={(e) => e.stopPropagation()}>
-                            <Checkbox
-                              checked={item.id in selectedBoqItems}
-                              onCheckedChange={(checked) => toggleBoqItem(item, checked === true)}
-                            />
-                          </TableCell>
-                          <TableCell className="whitespace-nowrap text-xs text-muted-foreground">{String(item["ERP SL NO"] ?? "—")}</TableCell>
-                          <TableCell className="whitespace-nowrap text-xs text-muted-foreground">{String(item["BOQ SL No"] ?? "—")}</TableCell>
-                          <TableCell className="max-w-xs truncate" title={String(item.Description ?? "")}>{String(item.Description ?? "—")}</TableCell>
-                          <TableCell>{String(item.Unit ?? "—")}</TableCell>
-                          <TableCell>{formatQuantity(qty)}</TableCell>
-                          <TableCell>{formatCurrency(rate)}</TableCell>
-                          <TableCell className="text-muted-foreground">{formatCurrency(budgetPrice)}</TableCell>
-                          <TableCell className="text-muted-foreground">{formatCurrency(totalBudgetPrice)}</TableCell>
-                          <TableCell className="font-medium">{formatCurrency(totalAmount)}</TableCell>
-                          <TableCell className="text-muted-foreground">{formatQuantity(indentQtyByBoqItemId.get(item.id) ?? 0)}</TableCell>
-                          <TableCell className="text-muted-foreground">{formatQuantity(poQtyByBoqItemId.get(item.id) ?? 0)}</TableCell>
-                        </TableRow>
-                      );
-                    }) : (
-                      <TableRow>
-                        <TableCell colSpan={12} className="h-24 text-center text-sm text-muted-foreground">
-                          No Scope 2 = Supply BOQ items match your search.
-                        </TableCell>
-                      </TableRow>
-                    )}
-                  </TableBody>
-                </Table>
+              {/* The picker scrolls inside its own box at every width, so a long BOQ does not push
+                  the items table out of reach: this wrapper on a phone, the table's own wrapper
+                  (with its header pinned) from `sm`. */}
+              <div className="max-h-[60dvh] overflow-y-auto sm:max-h-none sm:overflow-visible">
+                <PmDataList
+                  rows={filteredBoqItems}
+                  columns={boqPickColumns}
+                  onRowClick={(item) => toggleBoqItem(item, !(item.id in selectedBoqItems))}
+                  maxHeightClassName="sm:max-h-96"
+                  empty={<PmEmptyState title="No Scope 2 = Supply BOQ items match your search." />}
+                />
               </div>
               <p className="text-xs text-muted-foreground">
                 Bypasses the indent step entirely. Enter the quantity to order in the items table below.
@@ -1062,164 +1283,35 @@ export default function NewProjectPurchaseOrderPage() {
         </CardContent>
       </Card>
 
-      <Card>
-        <CardHeader>
+      <Card className={PHONE_BARE_CARD}>
+        <CardHeader className={PHONE_BARE_CARD_SECTION}>
           <CardTitle>Items</CardTitle>
           <CardDescription>Review quantities and rates, then add any extra items manually if needed.</CardDescription>
         </CardHeader>
-        <CardContent>
-          <div className="overflow-x-auto">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead className="min-w-[200px]">Description</TableHead>
-                  <TableHead>Unit</TableHead>
-                  <TableHead>BOQ Qty</TableHead>
-                  <TableHead>Indent Qty</TableHead>
-                  <TableHead>PO Qty</TableHead>
-                  <TableHead>Rate</TableHead>
-                  <TableHead>Amount</TableHead>
-                  <TableHead>Source</TableHead>
-                  <TableHead>MDL</TableHead>
-                  <TableHead className="w-12" />
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {Object.entries(selectedRfqItems).map(([key, sel]) => {
-                  const [rfqId, rfqItemId] = key.split("__");
-                  const rfq = rfqs.find((r) => r.id === rfqId);
-                  const item = findRfqItem(rfqId, rfqItemId);
-                  if (!rfq || !item) return null;
-                  const boqQty = boqQtyByItemId[item.boqItemId];
-                  return (
-                    <TableRow key={key}>
-                      <TableCell className="max-w-xs truncate" title={item.description}>{item.description}</TableCell>
-                      <TableCell>{item.unit || "—"}</TableCell>
-                      <TableCell className="text-muted-foreground">{typeof boqQty === "number" ? formatQuantity(boqQty) : "—"}</TableCell>
-                      <TableCell className="text-muted-foreground">{formatQuantity(item.qty)}</TableCell>
-                      <TableCell>
-                        <Input className="w-24" type="number" min="0" step="0.001" value={sel.qty} onChange={(e) => updateSelection(setSelectedRfqItems, key, { qty: e.target.value })} />
-                      </TableCell>
-                      <TableCell>
-                        <Input className="w-28" type="number" min="0" step="0.01" value={sel.rate} onChange={(e) => updateSelection(setSelectedRfqItems, key, { rate: e.target.value })} />
-                      </TableCell>
-                      <TableCell className="whitespace-nowrap font-medium">{formatCurrency(lineAmount(sel))}</TableCell>
-                      <TableCell className="text-xs text-muted-foreground">{rfq.rfqNumber}</TableCell>
-                      <TableCell>{renderMdlCell(item.boqItemId)}</TableCell>
-                      <TableCell>
-                        <Button variant="ghost" size="icon" onClick={() => toggleRfqItem(rfqId, item, null, false)} aria-label="Remove item">
-                          <Trash2 className="h-4 w-4 text-destructive" />
-                        </Button>
-                      </TableCell>
-                    </TableRow>
-                  );
-                })}
-
-                {Object.entries(selectedIndentItems).map(([key, sel]) => {
-                  const [indentId, boqItemId] = key.split("__");
-                  const indent = indents.find((i) => i.id === indentId);
-                  const item = findIndentItem(indentId, boqItemId);
-                  if (!indent || !item) return null;
-                  const boqQty = boqQtyByItemId[item.boqItemId];
-                  return (
-                    <TableRow key={key}>
-                      <TableCell className="max-w-xs truncate" title={item.description}>{item.description}</TableCell>
-                      <TableCell>{item.unit || "—"}</TableCell>
-                      <TableCell className="text-muted-foreground">{typeof boqQty === "number" ? formatQuantity(boqQty) : "—"}</TableCell>
-                      <TableCell className="text-muted-foreground">{formatQuantity(item.requestedQty)}</TableCell>
-                      <TableCell>
-                        <Input className="w-24" type="number" min="0" step="0.001" value={sel.qty} onChange={(e) => updateSelection(setSelectedIndentItems, key, { qty: e.target.value })} />
-                      </TableCell>
-                      <TableCell>
-                        <Input className="w-28" type="number" min="0" step="0.01" value={sel.rate} onChange={(e) => updateSelection(setSelectedIndentItems, key, { rate: e.target.value })} />
-                      </TableCell>
-                      <TableCell className="whitespace-nowrap font-medium">{formatCurrency(lineAmount(sel))}</TableCell>
-                      <TableCell className="text-xs text-muted-foreground">{indent.indentNumber}</TableCell>
-                      <TableCell>{renderMdlCell(item.boqItemId)}</TableCell>
-                      <TableCell>
-                        <Button variant="ghost" size="icon" onClick={() => toggleIndentItem(indentId, item, false)} aria-label="Remove item">
-                          <Trash2 className="h-4 w-4 text-destructive" />
-                        </Button>
-                      </TableCell>
-                    </TableRow>
-                  );
-                })}
-
-                {Object.entries(selectedBoqItems).map(([boqItemId, sel]) => {
-                  const item = findBoqItem(boqItemId);
-                  if (!item) return null;
-                  return (
-                    <TableRow key={boqItemId}>
-                      <TableCell className="max-w-xs truncate" title={String(item.Description ?? "")}>{String(item.Description ?? "")}</TableCell>
-                      <TableCell>{String(item.Unit ?? "—")}</TableCell>
-                      <TableCell className="text-muted-foreground">{formatQuantity(toNumber(item.QTY))}</TableCell>
-                      <TableCell className="text-muted-foreground">—</TableCell>
-                      <TableCell>
-                        <Input className="w-24" type="number" min="0" step="0.001" value={sel.qty} onChange={(e) => updateSelection(setSelectedBoqItems, boqItemId, { qty: e.target.value })} />
-                      </TableCell>
-                      <TableCell>
-                        <Input className="w-28" type="number" min="0" step="0.01" value={sel.rate} onChange={(e) => updateSelection(setSelectedBoqItems, boqItemId, { rate: e.target.value })} />
-                      </TableCell>
-                      <TableCell className="whitespace-nowrap font-medium">{formatCurrency(lineAmount(sel))}</TableCell>
-                      <TableCell className="text-xs text-muted-foreground">BOQ</TableCell>
-                      <TableCell>{renderMdlCell(boqItemId)}</TableCell>
-                      <TableCell>
-                        <Button variant="ghost" size="icon" onClick={() => toggleBoqItem(item, false)} aria-label="Remove item">
-                          <Trash2 className="h-4 w-4 text-destructive" />
-                        </Button>
-                      </TableCell>
-                    </TableRow>
-                  );
-                })}
-
-                {manualRows.map((row) => (
-                  <TableRow key={row.rowId}>
-                    <TableCell>
-                      <Input value={row.description} onChange={(e) => updateManualRow(row.rowId, { description: e.target.value })} placeholder="Item description" />
-                    </TableCell>
-                    <TableCell>
-                      <Input className="w-20" value={row.unit} onChange={(e) => updateManualRow(row.rowId, { unit: e.target.value })} placeholder="Unit" />
-                    </TableCell>
-                    <TableCell className="text-muted-foreground">—</TableCell>
-                    <TableCell className="text-muted-foreground">—</TableCell>
-                    <TableCell>
-                      <Input className="w-24" type="number" min="0" step="0.001" value={row.qty} onChange={(e) => updateManualRow(row.rowId, { qty: e.target.value })} />
-                    </TableCell>
-                    <TableCell>
-                      <Input className="w-28" type="number" min="0" step="0.01" value={row.rate} onChange={(e) => updateManualRow(row.rowId, { rate: e.target.value })} />
-                    </TableCell>
-                    <TableCell className="whitespace-nowrap font-medium">{formatCurrency(manualLineAmount(row))}</TableCell>
-                    <TableCell className="text-xs text-muted-foreground">Manual</TableCell>
-                    <TableCell className="text-xs text-muted-foreground">—</TableCell>
-                    <TableCell>
-                      <Button variant="ghost" size="icon" onClick={() => removeManualRow(row.rowId)} aria-label="Remove row">
-                        <Trash2 className="h-4 w-4 text-destructive" />
-                      </Button>
-                    </TableCell>
-                  </TableRow>
-                ))}
-
-                {!hasAnyItems && (
-                  <TableRow>
-                    <TableCell colSpan={10} className="h-20 text-center text-sm text-muted-foreground">
-                      No items added yet.
-                    </TableCell>
-                  </TableRow>
-                )}
-              </TableBody>
-            </Table>
-          </div>
+        <CardContent className={PHONE_BARE_CARD_SECTION}>
+          <PmDataList
+            rows={lineRows}
+            columns={lineColumns}
+            empty={<PmEmptyState title="No items added yet." />}
+          />
 
           <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
-            <Button variant="outline" onClick={addManualRow}>
+            <Button variant="outline" onClick={addManualRow} className="w-full sm:w-auto">
               <Plus className="mr-2 h-4 w-4" /> Add Manual Item
             </Button>
-            <span className="text-sm text-muted-foreground">
+            <span className="ml-auto text-sm text-muted-foreground">
               Total Amount: <span className="font-semibold text-foreground">{formatCurrency(totalAmount)}</span>
             </span>
           </div>
         </CardContent>
       </Card>
+
+      {/* A phone has scrolled well past the header's Save by the time the items are in. */}
+      <PmFormActions className="sm:hidden">
+        <Button onClick={() => void handleSave()} disabled={isSaving}>
+          {saveLabel}
+        </Button>
+      </PmFormActions>
     </main>
   );
 }

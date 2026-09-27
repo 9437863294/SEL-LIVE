@@ -11,7 +11,7 @@ import { useToast } from '@/hooks/use-toast';
 import { db } from '@/lib/firebase';
 import { collection, getDocs, doc, getDoc, Timestamp, runTransaction } from 'firebase/firestore';
 import { Label } from '@/components/ui/label';
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { PmDataList, type PmListColumn } from '@/components/project-management/pm-shell';
 import type {
   BoqItem as BoqItemBase,
   JmcEntry as JmcEntryType,
@@ -64,6 +64,8 @@ const initialItem = {
 };
 
 type JmcItem = typeof initialItem;
+/** A line item as the register renders it — keyed and carrying its position for the handlers. */
+type JmcItemRow = JmcItem & { id: string; index: number };
 
 /* ---------- helpers ---------- */
 const normalizeKey = (obj: Record<string, unknown>, target: string) => {
@@ -519,6 +521,89 @@ export default function JmcEntryPage() {
       Number.isFinite(amount) ? amount : 0
     );
 
+  /* ---------- line-item register: cards on a phone, the table from `sm` ---------- */
+  const itemRows: JmcItemRow[] = items.map((item, index) => ({
+    ...item,
+    id: `${item.erpSlNo || 'erp'}_${item.boqSlNo || 'boq'}_${index}`,
+    index,
+  }));
+
+  const itemColumns: PmListColumn<JmcItemRow>[] = [
+    { header: 'ERP Sl. No.', cell: (item) => item.erpSlNo || '-', className: 'whitespace-nowrap' },
+    {
+      // The card's headline on a phone: picking the BOQ item is what fills in the rest of the row.
+      header: 'BOQ Sl. No.',
+      mobile: 'title',
+      cell: (item) => (
+        <BoqItemSelector
+          boqItems={boqItems}
+          selectedSlNo={item.boqSlNo}
+          onSelect={(boq) => handleBoqSelect(item.index, boq)}
+          isLoading={isBoqLoading}
+        />
+      ),
+    },
+    {
+      header: 'Description',
+      mobile: 'title',
+      cell: (item) => (
+        <TooltipProvider>
+          <Tooltip>
+            <TooltipTrigger>
+              {/* Wraps to three lines on a phone card; one truncated line in the table. */}
+              <p className="max-w-xs text-left max-sm:line-clamp-3 sm:truncate">{item.description}</p>
+            </TooltipTrigger>
+            <TooltipContent>
+              <p className="max-w-md">{item.description}</p>
+            </TooltipContent>
+          </Tooltip>
+        </TooltipProvider>
+      ),
+    },
+    { header: 'Unit', cell: (item) => item.unit, className: 'whitespace-nowrap' },
+    { header: 'BOQ Qty', cell: (item) => item.boqQty, className: 'whitespace-nowrap' },
+    { header: 'Rate', cell: (item) => item.rate, className: 'whitespace-nowrap' },
+    { header: 'Scope 1', cell: (item) => item.scope1 || '-', className: 'whitespace-nowrap' },
+    { header: 'Total Certified Qty', cell: (item) => item.totalCertifiedQty, className: 'whitespace-nowrap' },
+    {
+      header: 'Executed Qty',
+      cell: (item) => (
+        <Input
+          name="executedQty"
+          type="number"
+          step="any"
+          min={0}
+          value={item.executedQty}
+          onChange={(e) => handleItemChange(item.index, e)}
+          className="w-full sm:w-28"
+        />
+      ),
+    },
+    {
+      header: 'Total Amount',
+      align: 'right',
+      className: 'whitespace-nowrap',
+      cell: (item) =>
+        new Intl.NumberFormat('en-IN', {
+          style: 'currency',
+          currency: 'INR',
+          maximumFractionDigits: 2,
+        }).format(Number.isFinite(item.totalAmount) ? item.totalAmount : 0),
+    },
+    {
+      header: 'Action',
+      align: 'right',
+      mobile: 'footer',
+      className: 'w-20',
+      cell: (item) => (
+        <Button variant="ghost" size="icon" onClick={() => removeItem(item.index)} aria-label="Remove row">
+          <Trash2 className="h-4 w-4 text-destructive" />
+          <span className="ml-2 text-destructive sm:hidden">Remove</span>
+        </Button>
+      ),
+    },
+  ];
+
   /* ---------- resolution & access states ---------- */
   if (authIsLoading || isResolving) {
     return <JmcLoadingState blocks={2} />;
@@ -536,7 +621,7 @@ export default function JmcEntryPage() {
 
   return (
     <>
-      <JmcPageShell>
+      <JmcPageShell className="max-sm:[--card-pad:1rem]">
         <JmcPageHeader
           title="Create JMC Entry"
           subtitle={
@@ -563,7 +648,7 @@ export default function JmcEntryPage() {
             <CardDescription>Provide the main details for this Joint Measurement Certificate.</CardDescription>
           </CardHeader>
           <CardContent>
-            <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 md:grid-cols-4 md:gap-6">
               <div className="space-y-2">
                 <Label htmlFor="project">Project</Label>
                 <Select value={selectedProjectId} onValueChange={handleProjectChange}>
@@ -619,83 +704,16 @@ export default function JmcEntryPage() {
             </div>
           </CardHeader>
           <CardContent className="p-0">
-            <div className="overflow-x-auto border-y border-border/60">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>ERP Sl. No.</TableHead>
-                    <TableHead>BOQ Sl. No.</TableHead>
-                    <TableHead>Description</TableHead>
-                    <TableHead>Unit</TableHead>
-                    <TableHead>BOQ Qty</TableHead>
-                    <TableHead>Rate</TableHead>
-                    <TableHead>Scope 1</TableHead>
-                    <TableHead>Total Certified Qty</TableHead>
-                    <TableHead>Executed Qty</TableHead>
-                    <TableHead className="text-right">Total Amount</TableHead>
-                    <TableHead className="w-20 text-right">Action</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {items.map((item, index) => (
-                    <TableRow key={`${item.erpSlNo || 'erp'}_${item.boqSlNo || 'boq'}_${index}`}>
-                      <TableCell className="whitespace-nowrap">{item.erpSlNo || '-'}</TableCell>
-                      <TableCell>
-                        <BoqItemSelector
-                          boqItems={boqItems}
-                          selectedSlNo={item.boqSlNo}
-                          onSelect={(boq) => handleBoqSelect(index, boq)}
-                          isLoading={isBoqLoading}
-                        />
-                      </TableCell>
-                      <TableCell>
-                        <TooltipProvider>
-                          <Tooltip>
-                            <TooltipTrigger>
-                              <p className="truncate max-w-xs">{item.description}</p>
-                            </TooltipTrigger>
-                            <TooltipContent>
-                              <p className="max-w-md">{item.description}</p>
-                            </TooltipContent>
-                          </Tooltip>
-                        </TooltipProvider>
-                      </TableCell>
-                      <TableCell className="whitespace-nowrap">{item.unit}</TableCell>
-                      <TableCell className="whitespace-nowrap">{item.boqQty}</TableCell>
-                      <TableCell className="whitespace-nowrap">{item.rate}</TableCell>
-                      <TableCell className="whitespace-nowrap">{item.scope1 || '-'}</TableCell>
-                      <TableCell className="whitespace-nowrap">{item.totalCertifiedQty}</TableCell>
-                      <TableCell>
-                        <Input
-                          name="executedQty"
-                          type="number"
-                          step="any"
-                          min={0}
-                          value={item.executedQty}
-                          onChange={(e) => handleItemChange(index, e)}
-                          className="w-28"
-                        />
-                      </TableCell>
-                      <TableCell className="whitespace-nowrap text-right">
-                        {new Intl.NumberFormat('en-IN', {
-                          style: 'currency',
-                          currency: 'INR',
-                          maximumFractionDigits: 2,
-                        }).format(Number.isFinite(item.totalAmount) ? item.totalAmount : 0)}
-                      </TableCell>
-                      <TableCell className="text-right">
-                        <Button variant="ghost" size="icon" onClick={() => removeItem(index)} aria-label="Remove row">
-                          <Trash2 className="h-4 w-4 text-destructive" />
-                        </Button>
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </div>
+            {/* Inside this card the register keeps only top and bottom rules on a desktop; on a
+                phone its cards sit inset under the card's heading. */}
+            <PmDataList
+              rows={itemRows}
+              columns={itemColumns}
+              className="max-sm:px-4 sm:rounded-none sm:border-x-0 sm:shadow-none"
+            />
 
             <div className="p-4 sm:p-6">
-              <Button variant="outline" size="sm" onClick={addItem}>
+              <Button variant="outline" size="sm" onClick={addItem} className="w-full sm:w-auto">
                 <Plus className="mr-2 h-4 w-4" /> Add Item
               </Button>
             </div>

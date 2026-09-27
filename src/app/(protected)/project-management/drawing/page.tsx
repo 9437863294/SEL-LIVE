@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState, type KeyboardEvent } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import {
@@ -67,6 +67,7 @@ import {
 } from "@/lib/mdl";
 import { PO_COLLECTION, type PurchaseOrder } from "@/lib/purchase-orders";
 import SidebarTabsList from "@/components/project-management/sidebar-tabs-list";
+import { PM_DIALOG, PmDataList, type PmListColumn } from "@/components/project-management/pm-shell";
 import {
   JMC_MAIN_CLASS,
   JmcPageHeader as PmPageHeader,
@@ -106,7 +107,29 @@ type CollectForm = {
   remark: string;
 };
 
+// A collection row as a phone card: keyed on the sub-drawing, numbered like its desktop row.
+type CollectionCardRow = CollectionRow & { id: string; outline: number[] };
+
 const todayIso = () => new Date().toISOString().slice(0, 10);
+
+/** The replacement notice, worded once for the desktop cell and the phone card. */
+const redoDetailFor = (sub: MdlSubDrawing) => {
+  const redo = sub.recollectionRequested;
+  return redo
+    ? `Requested ${formatMdlDate(redo.requestedOn)}${
+        redo.afterRound ? ` after ${redo.afterRound}` : ""
+      }${redo.reason ? ` — ${redo.reason}` : ""}`
+    : "";
+};
+
+/** Enter/Space on a `role="button"` strip — but not when the key was meant for a link inside it. */
+const onStripKey = (event: KeyboardEvent, action: () => void) => {
+  if (event.target !== event.currentTarget) return;
+  if (event.key === "Enter" || event.key === " ") {
+    event.preventDefault();
+    action();
+  }
+};
 
 export default function DrawingPage() {
   const router = useRouter();
@@ -512,11 +535,7 @@ export default function DrawingPage() {
       // the MDL register uses for editing it.
       const canCollectThis = canEditMdlSubDrawing(sub, user?.id, canCollect);
       const redo = sub.recollectionRequested;
-      const redoDetail = redo
-        ? `Requested ${formatMdlDate(redo.requestedOn)}${
-            redo.afterRound ? ` after ${redo.afterRound}` : ""
-          }${redo.reason ? ` — ${redo.reason}` : ""}`
-        : "";
+      const redoDetail = redoDetailFor(sub);
       return (
         <TableRow key={`${item.id}-${sub.id}`}>
           <TableCell className="whitespace-nowrap font-medium">
@@ -606,6 +625,62 @@ export default function DrawingPage() {
       );
     });
 
+  /** A purchase order's group-row contents — the desktop table's full-width cell and the phone strip. */
+  const drawingGroupHeading = (
+    outlineIndex: number,
+    rows: CollectionRow[],
+    isOpen: boolean,
+    po?: MdlPoRef,
+  ) => {
+    const awaitingRedo = rows.filter((row) => row.sub.recollectionRequested).length;
+    return (
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+        <ChevronRight
+          aria-hidden
+          className={cn("h-4 w-4 shrink-0 transition-transform", isOpen && "rotate-90")}
+        />
+        <span className="text-xs font-medium tabular-nums text-muted-foreground">
+          {mdlOutlineNo(outlineIndex)}.
+        </span>
+        {po ? (
+          <>
+            <ShoppingCart className="h-4 w-4 shrink-0 text-emerald-600" />
+            {/* The PO number is a link, so it must not also toggle the row. */}
+            <Link
+              href={`/project-management/purchase-orders/${po.poId}?project=${encodeURIComponent(mappingId)}`}
+              className="font-semibold hover:underline"
+              onClick={(event) => event.stopPropagation()}
+            >
+              {po.poNumber}
+            </Link>
+            {po.vendorName && (
+              <span className="text-sm text-muted-foreground">{po.vendorName}</span>
+            )}
+            <span className="text-xs text-muted-foreground">
+              Ordered {formatMdlDate(po.poDate)}
+            </span>
+          </>
+        ) : (
+          <>
+            <FolderOpen className="h-4 w-4 shrink-0 text-slate-500" />
+            <span className="font-semibold">Other drawings</span>
+          </>
+        )}
+        <div className="ml-auto flex items-center gap-2">
+          {awaitingRedo > 0 && (
+            <span className="flex items-center gap-1 whitespace-nowrap rounded-full bg-rose-100 px-2 py-0.5 text-[11px] font-semibold text-rose-700">
+              <RotateCcw className="h-3 w-3" />
+              {awaitingRedo} replacement{awaitingRedo === 1 ? "" : "s"}
+            </span>
+          )}
+          <span className="whitespace-nowrap rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-medium text-amber-800">
+            {rows.length} drawing{rows.length === 1 ? "" : "s"}
+          </span>
+        </div>
+      </div>
+    );
+  };
+
   /** One collapsible purchase-order row, plus its drawings when open. */
   const drawingGroupRow = (
     key: string,
@@ -615,7 +690,6 @@ export default function DrawingPage() {
     po?: MdlPoRef,
   ) => {
     const isOpen = expandedGroups.has(key);
-    const awaitingRedo = rows.filter((row) => row.sub.recollectionRequested).length;
     return [
       <TableRow
         key={key}
@@ -623,54 +697,136 @@ export default function DrawingPage() {
         onClick={() => toggleGroup(key)}
       >
         <TableCell colSpan={DRAWING_COLUMN_COUNT}>
-          <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
-            <ChevronRight
-              aria-hidden
-              className={cn("h-4 w-4 shrink-0 transition-transform", isOpen && "rotate-90")}
-            />
-            <span className="text-xs font-medium tabular-nums text-muted-foreground">
-              {mdlOutlineNo(outlineIndex)}.
-            </span>
-            {po ? (
-              <>
-                <ShoppingCart className="h-4 w-4 shrink-0 text-emerald-600" />
-                {/* The PO number is a link, so it must not also toggle the row. */}
-                <Link
-                  href={`/project-management/purchase-orders/${po.poId}?project=${encodeURIComponent(mappingId)}`}
-                  className="font-semibold hover:underline"
-                  onClick={(event) => event.stopPropagation()}
-                >
-                  {po.poNumber}
-                </Link>
-                {po.vendorName && (
-                  <span className="text-sm text-muted-foreground">{po.vendorName}</span>
-                )}
-                <span className="text-xs text-muted-foreground">
-                  Ordered {formatMdlDate(po.poDate)}
-                </span>
-              </>
-            ) : (
-              <>
-                <FolderOpen className="h-4 w-4 shrink-0 text-slate-500" />
-                <span className="font-semibold">Other drawings</span>
-              </>
-            )}
-            <div className="ml-auto flex items-center gap-2">
-              {awaitingRedo > 0 && (
-                <span className="flex items-center gap-1 whitespace-nowrap rounded-full bg-rose-100 px-2 py-0.5 text-[11px] font-semibold text-rose-700">
-                  <RotateCcw className="h-3 w-3" />
-                  {awaitingRedo} replacement{awaitingRedo === 1 ? "" : "s"}
-                </span>
-              )}
-              <span className="whitespace-nowrap rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-medium text-amber-800">
-                {rows.length} drawing{rows.length === 1 ? "" : "s"}
-              </span>
-            </div>
-          </div>
+          {drawingGroupHeading(outlineIndex, rows, isOpen, po)}
         </TableCell>
       </TableRow>,
       ...(isOpen ? drawingRows(rows, [outlineIndex], mode) : []),
     ];
+  };
+
+  /* ── Phone ──────────────────────────────────────────────────────────────────────────────────
+     The desktop list is one table across every purchase order, with full-width group rows —
+     which PmDataList cannot draw — so below `sm` the same groups become tappable strips, and an
+     open group lists its drawings as PmDataList cards. */
+
+  const drawingCardColumns = (mode: "pending" | "collected"): PmListColumn<CollectionCardRow>[] => [
+    {
+      header: "Drawing",
+      mobile: "title",
+      cell: ({ sub, outline }) => (
+        <>
+          <span className="mr-1 tabular-nums text-muted-foreground">{mdlOutlineNo(...outline)}.</span>
+          {sub.title || "Untitled drawing"}
+        </>
+      ),
+    },
+    {
+      header: "Item Description",
+      mobile: "title",
+      cell: ({ item }) => `BOQ SL No ${String(item["BOQ SL No"] ?? "—")} · ${String(item.Description ?? "—")}`,
+    },
+    {
+      header: "Replacement",
+      mobile: "title",
+      cell: ({ sub }) =>
+        sub.recollectionRequested ? (
+          <span className="mt-0.5 flex items-start gap-1 text-rose-700">
+            <RotateCcw className="mt-0.5 h-3 w-3 shrink-0" />
+            <span>{redoDetailFor(sub)}</span>
+          </span>
+        ) : null,
+    },
+    {
+      header: "Stage",
+      mobile: "aside",
+      cell: ({ sub }) => {
+        const stage = computeMdlDrawingStage(sub, true);
+        return (
+          <span className={cn("whitespace-nowrap rounded-full px-2 py-0.5 text-[11px] font-medium", mdlDrawingStageStyles[stage])}>
+            {stage}
+          </span>
+        );
+      },
+    },
+    {
+      header: "Assigned To",
+      cell: ({ sub }) => sub.assignedToName || <span className="text-muted-foreground">Unassigned</span>,
+    },
+    {
+      header: mode === "pending" ? "Planned End" : "Received On",
+      cell: ({ sub }) =>
+        mode === "pending" ? formatMdlDate(sub.plannedEndDate) : formatMdlDate(sub.collection?.receivedOn),
+    },
+    { header: "Collected From", cell: ({ sub }) => sub.collection?.vendorName || "—" },
+    {
+      header: "Actions",
+      mobile: "footer",
+      cell: (row) => (
+        <>
+          {row.sub.collection?.fileUrl && (
+            // An anchor, so the footer's 44px button sizing is given explicitly.
+            <Button variant="outline" size="sm" className="min-h-11 flex-1" asChild>
+              <a
+                href={row.sub.collection.fileUrl}
+                target="_blank"
+                rel="noreferrer"
+                aria-label={`Open vendor drawing for ${row.sub.title}`}
+              >
+                <Download className="mr-1.5 h-3.5 w-3.5" />
+                Vendor drawing
+              </a>
+            </Button>
+          )}
+          <Button
+            variant={mode === "pending" ? "default" : "outline"}
+            size="sm"
+            onClick={() => openCollectDialog(row)}
+            // Being the drawing's assignee is itself the authority to collect it.
+            disabled={!canEditMdlSubDrawing(row.sub, user?.id, canCollect)}
+          >
+            {mode === "collected" ? "Update" : row.sub.recollectionRequested ? "Re-collect" : "Collect"}
+          </Button>
+        </>
+      ),
+    },
+  ];
+
+  /** A collapsible purchase-order strip, and its drawing cards when open. */
+  const drawingPhoneGroup = (
+    key: string,
+    outlineIndex: number,
+    rows: CollectionRow[],
+    mode: "pending" | "collected",
+    po?: MdlPoRef,
+  ) => {
+    const isOpen = expandedGroups.has(key);
+    return (
+      <div key={key}>
+        <div
+          role="button"
+          tabIndex={0}
+          aria-expanded={isOpen}
+          onClick={() => toggleGroup(key)}
+          onKeyDown={(event) => onStripKey(event, () => toggleGroup(key))}
+          className="cursor-pointer bg-muted/40 px-3 py-3"
+        >
+          {drawingGroupHeading(outlineIndex, rows, isOpen, po)}
+        </div>
+        {isOpen && (
+          <div className="border-t bg-muted/30 p-2.5">
+            <PmDataList
+              cardsOnly
+              rows={rows.map((row, index) => ({
+                ...row,
+                id: `${row.item.id}-${row.sub.id}`,
+                outline: [outlineIndex, index],
+              }))}
+              columns={drawingCardColumns(mode)}
+            />
+          </div>
+        )}
+      </div>
+    );
   };
 
   const renderTable = (rows: CollectionRow[], mode: "pending" | "collected") => {
@@ -701,7 +857,7 @@ export default function DrawingPage() {
             <Button
               variant="ghost"
               size="sm"
-              className="h-7 px-2 text-xs"
+              className="h-9 px-2 text-xs sm:h-7"
               onClick={() => setExpandedGroups(new Set(groupKeys))}
               // Checked per key, not by size: the two tabs share this state, so a size match
               // could be satisfied by groups belonging to the other tab.
@@ -712,7 +868,7 @@ export default function DrawingPage() {
             <Button
               variant="ghost"
               size="sm"
-              className="h-7 px-2 text-xs"
+              className="h-9 px-2 text-xs sm:h-7"
               onClick={() => setExpandedGroups(new Set())}
               disabled={expandedGroups.size === 0}
             >
@@ -720,7 +876,7 @@ export default function DrawingPage() {
             </Button>
           </div>
         </div>
-        <div className="overflow-x-auto">
+        <div className="hidden overflow-x-auto sm:block">
           <Table className={DRAWING_TABLE_DENSITY}>
             <TableHeader>
               <TableRow>
@@ -745,12 +901,18 @@ export default function DrawingPage() {
             </TableBody>
           </Table>
         </div>
+        <div className="divide-y sm:hidden">
+          {groups.map((group, groupIndex) =>
+            drawingPhoneGroup(`po:${group.po.poId}`, groupIndex, group.rows, mode, group.po),
+          )}
+          {ungrouped.length > 0 && drawingPhoneGroup("other", groups.length, ungrouped, mode)}
+        </div>
       </>
     );
   };
 
   return (
-    <main className={JMC_MAIN_CLASS}>
+    <main className={cn(JMC_MAIN_CLASS, "max-sm:[--card-pad:1rem]")}>
       <PmPageHeader
         title="Drawing"
         subtitle={`Collect vendor drawings for every MDL item under purchase order in ${mapping.projectName}.`}
@@ -759,10 +921,13 @@ export default function DrawingPage() {
         backLabel="Back to Supply"
         gradient="from-slate-500 to-slate-700"
         actions={
-          <Button variant="outline" size="sm" asChild>
-            <Link href={`/project-management/documents?project=${encodeURIComponent(mappingId)}&category=Drawing`}>
-              <FolderOpen className="mr-2 h-4 w-4" />
-              Document Library
+          <Button variant="outline" size="sm" className="w-9 px-0 sm:w-auto sm:px-3" asChild>
+            <Link
+              href={`/project-management/documents?project=${encodeURIComponent(mappingId)}&category=Drawing`}
+              aria-label="Document Library"
+            >
+              <FolderOpen className="h-4 w-4 sm:mr-2" />
+              <span className="hidden sm:inline">Document Library</span>
             </Link>
           </Button>
         }
@@ -883,8 +1048,8 @@ export default function DrawingPage() {
       </div>
 
       <Dialog open={!!collecting} onOpenChange={(open) => !open && setCollecting(null)}>
-        <DialogContent className="sm:max-w-lg">
-          <DialogHeader>
+        <DialogContent className={PM_DIALOG.content}>
+          <DialogHeader className={PM_DIALOG.header}>
             <DialogTitle>
               {collecting?.sub.recollectionRequested
                 ? "Re-collect Drawing from Vendor"
@@ -897,7 +1062,9 @@ export default function DrawingPage() {
             </DialogDescription>
           </DialogHeader>
 
-          <div className="grid gap-4 py-2">
+          {/* `content-start`: on a phone the body fills the sheet, and a grid would otherwise stretch
+              its rows apart to fill it. */}
+          <div className={cn(PM_DIALOG.body, "grid content-start gap-4 space-y-0 py-2")}>
             {collecting?.sub.recollectionRequested && (
               <div className="rounded-md border border-rose-200 bg-rose-50 p-2 text-xs text-rose-900">
                 <p className="font-medium">
@@ -1001,7 +1168,7 @@ export default function DrawingPage() {
             </p>
           </div>
 
-          <DialogFooter>
+          <DialogFooter className={PM_DIALOG.footer}>
             <DialogClose asChild><Button variant="outline">Cancel</Button></DialogClose>
             <Button onClick={() => void handleSaveCollection()} disabled={isSaving}>
               {isSaving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Truck className="mr-2 h-4 w-4" />}

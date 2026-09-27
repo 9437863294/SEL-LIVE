@@ -74,20 +74,32 @@ export function JmcPageHeader({
 }) {
   return (
     <div className="flex flex-wrap items-center gap-x-2.5 gap-y-2">
-      <Button variant="ghost" size="icon" className="h-8 w-8 shrink-0" asChild>
+      <Button variant="ghost" size="icon" className="h-9 w-9 shrink-0 sm:h-8 sm:w-8" asChild>
         <Link href={backHref} aria-label={backLabel}>
           <ArrowLeft className="h-4 w-4" />
         </Link>
       </Button>
+      {/* Decoration, so it gives its 42px back to the title on a phone. */}
       <div
         className={cn(
-          "flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-gradient-to-br shadow-sm",
+          "hidden h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-gradient-to-br shadow-sm sm:flex",
           gradient,
         )}
       >
         <Icon className="h-4 w-4 text-white" />
       </div>
-      <h1 className="truncate text-lg font-semibold tracking-tight">{title}</h1>
+      {/* PmTopbar's `flex-1 basis-40`: the title claims a real share of the first line, so the
+          actions wrap beneath it instead of squeezing it, and a long stage name truncates beside
+          the back arrow rather than dropping to a line of its own. From `md`, where the subtitle
+          shows, the title goes back to its own width so the subtitle sits right after it. */}
+      <h1
+        className={cn(
+          "min-w-0 flex-1 basis-40 truncate text-base font-semibold tracking-tight sm:text-lg",
+          subtitle ? "md:flex-initial md:basis-auto" : undefined,
+        )}
+      >
+        {title}
+      </h1>
       {subtitle ? (
         <p
           className="hidden min-w-0 flex-1 truncate text-xs text-muted-foreground md:block"

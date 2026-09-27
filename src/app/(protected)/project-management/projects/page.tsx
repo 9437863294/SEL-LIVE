@@ -47,13 +47,11 @@ import {
 } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
+  PmDataList,
+  PmEmptyState,
+  PmToolbar,
+  type PmListColumn,
+} from "@/components/project-management/pm-shell";
 import { cn } from "@/lib/utils";
 
 const MODULE_NAME = "Project Management";
@@ -180,27 +178,127 @@ export default function ProjectRegisterPage() {
     );
   }
 
+  const columns: PmListColumn<PmProject>[] = [
+    {
+      header: "Code",
+      className: "whitespace-nowrap text-xs text-muted-foreground",
+      cell: (project) => project.projectCode || "—",
+    },
+    {
+      header: "Project",
+      mobile: "title",
+      className: "max-w-xs",
+      cell: (project) => (
+        <>
+          {/* Wraps on a phone card, where the name is the card's headline. */}
+          <p className="break-words font-medium sm:truncate" title={project.projectName}>
+            {project.projectName}
+          </p>
+          {project.projectType ? (
+            <p className="text-[10px] text-muted-foreground">{project.projectType}</p>
+          ) : null}
+        </>
+      ),
+    },
+    {
+      header: "Client",
+      className: "max-w-[10rem] truncate text-xs",
+      cell: (project) => globalProjects.get(project.globalProjectId)?.clientName || "—",
+    },
+    {
+      header: "Location",
+      className: "max-w-[10rem] truncate text-xs",
+      cell: (project) => {
+        const global = globalProjects.get(project.globalProjectId);
+        return global?.location || global?.projectSite || "—";
+      },
+    },
+    {
+      header: "Project Manager",
+      className: "text-xs",
+      cell: (project) => project.projectManagerName || "—",
+    },
+    {
+      header: "Scope",
+      cell: (project) =>
+        project.scopes?.length ? (
+          <div className="flex flex-wrap gap-1">
+            {project.scopes.map((scope) => (
+              <Badge key={scope} variant="outline" className="text-[10px]">
+                {scope}
+              </Badge>
+            ))}
+          </div>
+        ) : (
+          <span className="text-xs text-muted-foreground">—</span>
+        ),
+    },
+    {
+      header: "Contract Value",
+      align: "right",
+      className: "whitespace-nowrap text-xs",
+      cell: (project) => formatCurrency(globalProjects.get(project.globalProjectId)?.contractValue),
+    },
+    {
+      // A sub-line on the phone card: two dates do not fit a half-width detail cell.
+      header: "Schedule",
+      mobile: "title",
+      className: "whitespace-nowrap text-xs",
+      cell: (project) => (
+        <>
+          {formatDate(project.startDate)} → {formatDate(project.endDate)}
+        </>
+      ),
+    },
+    {
+      header: "Status",
+      mobile: "aside",
+      cell: (project) => {
+        const lifecycle = resolveLifecycle(project);
+        return (
+          <Badge variant="outline" className={projectLifecycleStyles[lifecycle]}>
+            {lifecycle}
+          </Badge>
+        );
+      },
+    },
+    {
+      // The phone card is itself the link (`cardHref`), so the button is desktop-only.
+      header: "Open",
+      align: "right",
+      mobile: "omit",
+      className: "w-28",
+      cell: (project) => (
+        <Button variant="outline" size="sm" asChild>
+          <Link href={`/project-management?project=${encodeURIComponent(project.id)}`}>
+            Open
+          </Link>
+        </Button>
+      ),
+    },
+  ];
+
   return (
-    <main className="min-h-[calc(100dvh-4rem)] space-y-5 p-4 sm:p-6">
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-        <div className="flex items-center gap-3">
-          <Button variant="ghost" size="icon" asChild>
+    <main className="min-h-[calc(100dvh-4rem)] space-y-4 p-4 sm:space-y-5 sm:p-6">
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+        <div className="flex min-w-0 flex-1 basis-48 items-center gap-2 sm:gap-3">
+          <Button variant="ghost" size="icon" className="shrink-0" asChild>
             <Link href="/project-management" aria-label="Back to Project Management">
               <ArrowLeft className="h-5 w-5" />
             </Link>
           </Button>
-          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-indigo-500 to-blue-600 shadow-sm">
+          <div className="hidden h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-indigo-500 to-blue-600 shadow-sm sm:flex">
             <FolderKanban className="h-5 w-5 text-white" />
           </div>
-          <div>
-            <h1 className="text-2xl font-bold">Projects</h1>
-            <p className="text-sm text-muted-foreground">
+          <div className="min-w-0">
+            <h1 className="truncate text-xl font-bold sm:text-2xl">Projects</h1>
+            <p className="text-[13px] text-muted-foreground sm:text-sm">
               {projects.length} project{projects.length === 1 ? "" : "s"} in Project Management
             </p>
           </div>
         </div>
         {canManage && (
-          <Button asChild>
+          <Button asChild className="ml-auto">
             <Link href="/project-management/settings/projects">Manage projects</Link>
           </Button>
         )}
@@ -224,7 +322,7 @@ export default function ProjectRegisterPage() {
         ))}
       </div>
 
-      <div className="flex flex-col gap-2 sm:flex-row">
+      <PmToolbar className="mb-0">
         <div className="relative flex-1">
           <Search className="absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
           <Input
@@ -248,103 +346,20 @@ export default function ProjectRegisterPage() {
             ))}
           </SelectContent>
         </Select>
-      </div>
+      </PmToolbar>
 
-      <Card>
-        <CardContent className="p-0">
-          <div className="overflow-x-auto">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Code</TableHead>
-                  <TableHead>Project</TableHead>
-                  <TableHead>Client</TableHead>
-                  <TableHead>Location</TableHead>
-                  <TableHead>Project Manager</TableHead>
-                  <TableHead>Scope</TableHead>
-                  <TableHead className="text-right">Contract Value</TableHead>
-                  <TableHead>Schedule</TableHead>
-                  <TableHead>Status</TableHead>
-                  <TableHead className="w-28 text-right">Open</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {rows.length ? (
-                  rows.map((project) => {
-                    const global = globalProjects.get(project.globalProjectId);
-                    const lifecycle = resolveLifecycle(project);
-                    return (
-                      <TableRow key={project.id}>
-                        <TableCell className="whitespace-nowrap text-xs text-muted-foreground">
-                          {project.projectCode || "—"}
-                        </TableCell>
-                        <TableCell className="max-w-xs">
-                          <p className="truncate font-medium" title={project.projectName}>
-                            {project.projectName}
-                          </p>
-                          {project.projectType ? (
-                            <p className="text-[10px] text-muted-foreground">{project.projectType}</p>
-                          ) : null}
-                        </TableCell>
-                        <TableCell className="max-w-[10rem] truncate text-xs">
-                          {global?.clientName || "—"}
-                        </TableCell>
-                        <TableCell className="max-w-[10rem] truncate text-xs">
-                          {global?.location || global?.projectSite || "—"}
-                        </TableCell>
-                        <TableCell className="text-xs">{project.projectManagerName || "—"}</TableCell>
-                        <TableCell>
-                          {project.scopes?.length ? (
-                            <div className="flex flex-wrap gap-1">
-                              {project.scopes.map((scope) => (
-                                <Badge key={scope} variant="outline" className="text-[10px]">
-                                  {scope}
-                                </Badge>
-                              ))}
-                            </div>
-                          ) : (
-                            <span className="text-xs text-muted-foreground">—</span>
-                          )}
-                        </TableCell>
-                        <TableCell className="whitespace-nowrap text-right text-xs">
-                          {formatCurrency(global?.contractValue)}
-                        </TableCell>
-                        <TableCell className="whitespace-nowrap text-xs">
-                          {formatDate(project.startDate)} → {formatDate(project.endDate)}
-                        </TableCell>
-                        <TableCell>
-                          <Badge variant="outline" className={projectLifecycleStyles[lifecycle]}>
-                            {lifecycle}
-                          </Badge>
-                        </TableCell>
-                        <TableCell className="text-right">
-                          <Button variant="outline" size="sm" asChild>
-                            <Link
-                              href={`/project-management?project=${encodeURIComponent(project.id)}`}
-                            >
-                              Open
-                            </Link>
-                          </Button>
-                        </TableCell>
-                      </TableRow>
-                    );
-                  })
-                ) : (
-                  <TableRow>
-                    <TableCell colSpan={10} className="h-32 text-center">
-                      <FolderKanban className="mx-auto mb-2 h-8 w-8 text-muted-foreground" />
-                      <p className="font-medium">No projects match</p>
-                      <p className="mt-1 text-sm text-muted-foreground">
-                        Adjust the search or status filter, or create a project in Settings.
-                      </p>
-                    </TableCell>
-                  </TableRow>
-                )}
-              </TableBody>
-            </Table>
-          </div>
-        </CardContent>
-      </Card>
+      <PmDataList
+        rows={rows}
+        columns={columns}
+        cardHref={(project) => `/project-management?project=${encodeURIComponent(project.id)}`}
+        empty={
+          <PmEmptyState
+            icon={FolderKanban}
+            title="No projects match"
+            description="Adjust the search or status filter, or create a project in Settings."
+          />
+        }
+      />
 
       <p className="text-xs text-muted-foreground">
         Progress is shown on each project&apos;s own dashboard rather than here — it is derived from

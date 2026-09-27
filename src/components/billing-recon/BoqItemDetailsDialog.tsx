@@ -2,7 +2,7 @@
 
 'use client';
 
-import { useMemo, useState, useEffect, useCallback, useRef } from 'react';
+import { useMemo, useState, useEffect, useCallback, useRef, type ReactNode } from 'react';
 import {
   Dialog,
   DialogContent,
@@ -17,6 +17,7 @@ import { Label } from '@/components/ui/label';
 import { Separator } from '@/components/ui/separator';
 import type { BoqItem, JmcEntry, Bill, MvacEntry, MvacItem, Project } from '@/lib/types';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { DataList, type ListColumn } from '@/components/shared/data-list';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { format } from 'date-fns';
 import ViewJmcEntryDialog from './ViewJmcEntryDialog';
@@ -114,6 +115,25 @@ const getScope2 = (x: any): string | undefined => {
 
 const compositeKey = (scope2: unknown, slNo: unknown) =>
   `${String(scope2 ?? '').trim().toLowerCase()}__${String(slNo ?? '').trim()}`;
+
+/**
+ * The breakdowns render through the shared DataList so a phone gets one card per entry. On a
+ * desktop these put back this dialog's own table look — sentence-case headers on the card
+ * background — over the list's tinted small-caps header band.
+ */
+const BREAKDOWN_TABLE =
+  '[&_thead]:bg-transparent [&_th]:h-12 [&_th]:text-sm [&_th]:font-medium [&_th]:normal-case [&_th]:tracking-normal [&_th]:text-muted-foreground';
+
+/** The list's phone cards are near-white on near-white inside this dialog; a real border separates them. */
+const breakdownCard = () => 'max-sm:border-border';
+
+function BreakdownEmpty({ children }: { children: ReactNode }) {
+  return (
+    <div className="flex h-24 items-center justify-center rounded-md border px-4 text-center text-sm sm:rounded-none sm:border-0">
+      {children}
+    </div>
+  );
+}
 
 /* ---------- Component ---------- */
 
@@ -325,129 +345,145 @@ export default function BoqItemDetailsDialog({
 
   const scope2Lower = scope2?.toLowerCase();
 
+  const quantitySummary = [
+    { label: 'BOQ Quantity', value: boqQty ?? 0 },
+    { label: 'JMC/MVAC Executed', value: totalExecutedQty ?? 0 },
+    { label: 'JMC/MVAC Certified', value: totalCertifiedQty ?? 0 },
+    { label: 'Billed Qty', value: totalBilledQty ?? 0 },
+    { label: 'Balance Qty', value: (boqQty || 0) - (totalExecutedQty || 0) },
+  ];
+
+  const jmcColumns: ListColumn<JmcRow & { id: string }>[] = [
+    { header: 'JMC No.', className: 'text-center', mobile: 'title', cell: (j) => j.jmcNo ?? '—' },
+    { header: 'JMC Date', className: 'text-center', cell: (j) => formatDateSafe(j.jmcDate) },
+    { header: 'Executed Qty', className: 'text-center', cell: (j) => j.executedQty ?? 0 },
+    { header: 'Certified Qty', className: 'text-center', cell: (j) => j.certifiedQty ?? 0 },
+    { header: 'Cumulative Executed', className: 'text-center', cell: (j) => j.runningExecuted ?? 0 },
+    { header: 'Cumulative Certified', className: 'text-center', cell: (j) => j.runningCertified ?? 0 },
+    {
+      header: 'Actions',
+      className: 'text-center',
+      mobile: 'footer',
+      cell: (j) => (
+        <Button variant="ghost" size="sm" onClick={() => handleViewJmc(j.jmcNo || '')}>
+          <Eye className="mr-2 h-4 w-4" />
+          View
+        </Button>
+      ),
+    },
+  ];
+
+  const mvacColumns: ListColumn<any>[] = [
+    { header: 'MVAC No.', className: 'text-center', mobile: 'title', cell: (m) => m?.mvacEntry?.mvacNo ?? '—' },
+    { header: 'Date', className: 'text-center', cell: (m) => formatDateSafe(m?.mvacEntry?.mvacDate) },
+    { header: 'Executed Qty', className: 'text-center', cell: (m) => m?.executedQty ?? 0 },
+    { header: 'Certified Qty', className: 'text-center', cell: (m) => m?.certifiedQty ?? 0 },
+    { header: 'Status', className: 'text-center', mobile: 'aside', cell: (m) => m?.mvacEntry?.status ?? '—' },
+    {
+      header: 'Actions',
+      className: 'text-center',
+      mobile: 'footer',
+      cell: (m) => (
+        <Button variant="ghost" size="sm" onClick={() => handleViewMvac(m.mvacEntry?.mvacNo || '')}>
+          <Eye className="mr-2 h-4 w-4" />View
+        </Button>
+      ),
+    },
+  ];
+
+  const billColumns: ListColumn<BillRow & { id: string }>[] = [
+    { header: 'Bill No.', className: 'text-center', mobile: 'title', cell: (b) => b.billNo ?? '—' },
+    { header: 'Bill Date', className: 'text-center', cell: (b) => formatDateSafe(b.billDate) },
+    { header: 'Billed Qty', className: 'text-center', cell: (b) => b.billedQty ?? 0 },
+    { header: 'Total Amount', className: 'text-center', cell: (b) => formatCurrency(b.totalAmount) },
+  ];
+
   return (
     <>
       <Dialog open={isOpen} onOpenChange={onOpenChange}>
-        <DialogContent className={cn('h-[90vh] flex flex-col min-h-0', dialogSizeClass)}>
-            <DialogHeader className="text-center shrink-0">
+        {/* Full-screen sheet on a phone (hr-mobile-dialog, see globals.css): the header and footer
+            stay put and only the body scrolls. */}
+        <DialogContent className={cn('hr-mobile-dialog h-[90vh] flex flex-col min-h-0', dialogSizeClass)}>
+            <DialogHeader className="hr-dialog-header text-center shrink-0">
                 <DialogTitle>Item Breakdown: Sl. No. {boqSlNo || '—'}</DialogTitle>
                 <DialogDescription className="mx-auto max-w-3xl">{description || '—'}</DialogDescription>
             </DialogHeader>
 
-            <ScrollArea className="flex-1 min-h-0 pr-6 -mr-6">
+            <ScrollArea className="hr-dialog-body flex-1 min-h-0 pr-6 -mr-6 max-sm:mr-0">
               {isLoading ? (
                 <div className="flex justify-center items-center h-64"><Loader2 className="h-8 w-8 animate-spin" /></div>
               ) : (
-                <div className="space-y-6 mt-6 px-1">
+                <div className="space-y-6 mt-2 px-1 sm:mt-6">
                     <section>
-                      <h3 className="text-lg font-semibold mb-2 text-center">Quantity Summary</h3>
-                      <div className="border rounded-md">
+                      <h3 className="text-base sm:text-lg font-semibold mb-2 text-center">Quantity Summary</h3>
+                      {/* Five figures side by side do not fit a phone, so there they pair up as tiles. */}
+                      <dl className="grid grid-cols-2 gap-2 sm:hidden">
+                        {quantitySummary.map((fact, index) => (
+                          <div
+                            key={fact.label}
+                            className={cn('rounded-md border p-3 text-center', index === quantitySummary.length - 1 && 'col-span-2')}
+                          >
+                            <dt className="text-xs text-muted-foreground">{fact.label}</dt>
+                            <dd className="mt-0.5 break-words text-base font-semibold">{fact.value}</dd>
+                          </div>
+                        ))}
+                      </dl>
+                      <div className="hidden border rounded-md sm:block">
                         <Table>
                           <TableHeader>
                             <TableRow>
-                              <TableHead className="text-center">BOQ Quantity</TableHead>
-                              <TableHead className="text-center">JMC/MVAC Executed</TableHead>
-                              <TableHead className="text-center">JMC/MVAC Certified</TableHead>
-                              <TableHead className="text-center">Billed Qty</TableHead>
-                              <TableHead className="text-center">Balance Qty</TableHead>
+                              {quantitySummary.map((fact) => (
+                                <TableHead key={fact.label} className="text-center">{fact.label}</TableHead>
+                              ))}
                             </TableRow>
                           </TableHeader>
                           <TableBody>
                             <TableRow>
-                              <TableCell className="text-center">{boqQty ?? 0}</TableCell>
-                              <TableCell className="text-center">{totalExecutedQty ?? 0}</TableCell>
-                              <TableCell className="text-center">{totalCertifiedQty ?? 0}</TableCell>
-                              <TableCell className="text-center">{totalBilledQty ?? 0}</TableCell>
-                              <TableCell className="text-center">{(boqQty || 0) - (totalExecutedQty || 0)}</TableCell>
+                              {quantitySummary.map((fact) => (
+                                <TableCell key={fact.label} className="text-center">{fact.value}</TableCell>
+                              ))}
                             </TableRow>
                           </TableBody>
                         </Table>
                       </div>
                     </section>
-                    
+
                     <Separator />
-                    
+
                     { (scope2Lower === 'civil' || !scope2Lower) && (
                       <section>
-                        <h3 className="text-lg font-semibold mb-2 text-center">JMC Breakdown</h3>
-                        <div className="border rounded-md">
-                          <Table>
-                            <TableHeader>
-                              <TableRow>
-                                <TableHead className="text-center">JMC No.</TableHead>
-                                <TableHead className="text-center">JMC Date</TableHead>
-                                <TableHead className="text-center">Executed Qty</TableHead>
-                                <TableHead className="text-center">Certified Qty</TableHead>
-                                <TableHead className="text-center">Cumulative Executed</TableHead>
-                                <TableHead className="text-center">Cumulative Certified</TableHead>
-                                <TableHead className="text-center">Actions</TableHead>
-                              </TableRow>
-                            </TableHeader>
-                            <TableBody>
-                              {jmcWithRunning?.length ? (
-                                jmcWithRunning.map((j: JmcRow, idx: number) => (
-                                  <TableRow key={`jmc-${j.jmcNo ?? '—'}-${idx}`}>
-                                    <TableCell className="text-center">{j.jmcNo ?? '—'}</TableCell>
-                                    <TableCell className="text-center">{formatDateSafe(j.jmcDate)}</TableCell>
-                                    <TableCell className="text-center">{j.executedQty ?? 0}</TableCell>
-                                    <TableCell className="text-center">{j.certifiedQty ?? 0}</TableCell>
-                                    <TableCell className="text-center">{j.runningExecuted ?? 0}</TableCell>
-                                    <TableCell className="text-center">{j.runningCertified ?? 0}</TableCell>
-                                    <TableCell className="text-center">
-                                      <Button variant="ghost" size="sm" onClick={() => handleViewJmc(j.jmcNo || '')}>
-                                        <Eye className="mr-2 h-4 w-4" />
-                                        View
-                                      </Button>
-                                    </TableCell>
-                                  </TableRow>
-                                ))
-                              ) : (
-                                <TableRow>
-                                  <TableCell colSpan={7} className="text-center h-24">No JMC entries found for this item.</TableCell>
-                                </TableRow>
-                              )}
-                            </TableBody>
-                          </Table>
+                        <h3 className="text-base sm:text-lg font-semibold mb-2 text-center">JMC Breakdown</h3>
+                        <div className="sm:border sm:rounded-md">
+                          <DataList
+                            rows={(jmcWithRunning ?? []).map((j: JmcRow, idx: number) => ({
+                              ...j,
+                              id: `jmc-${j.jmcNo ?? '—'}-${idx}`,
+                            }))}
+                            columns={jmcColumns}
+                            frameless
+                            tableClassName={BREAKDOWN_TABLE}
+                            rowClassName={breakdownCard}
+                            empty={<BreakdownEmpty>No JMC entries found for this item.</BreakdownEmpty>}
+                          />
                         </div>
                       </section>
                     )}
 
                     { (scope2Lower === 'supply' || !scope2Lower) && (
                       <section>
-                        <h3 className="text-lg font-semibold mb-2 text-center">MVAC Breakdown</h3>
-                        <div className="border rounded-md">
-                           <Table>
-                            <TableHeader>
-                                <TableRow>
-                                    <TableHead className="text-center">MVAC No.</TableHead>
-                                    <TableHead className="text-center">Date</TableHead>
-                                    <TableHead className="text-center">Executed Qty</TableHead>
-                                    <TableHead className="text-center">Certified Qty</TableHead>
-                                    <TableHead className="text-center">Status</TableHead>
-                                    <TableHead className="text-center">Actions</TableHead>
-                                </TableRow>
-                            </TableHeader>
-                            <TableBody>
-                                {mvacWithRunning?.length ? (
-                                    mvacWithRunning.map((m: any, idx: number) => (
-                                        <TableRow key={m?.mvacEntry?.id ?? `${m?.mvacEntry?.mvacNo ?? '—'}-${idx}`}>
-                                            <TableCell className="text-center">{m?.mvacEntry?.mvacNo ?? '—'}</TableCell>
-                                            <TableCell className="text-center">{formatDateSafe(m?.mvacEntry?.mvacDate)}</TableCell>
-                                            <TableCell className="text-center">{m?.executedQty ?? 0}</TableCell>
-                                            <TableCell className="text-center">{m?.certifiedQty ?? 0}</TableCell>
-                                            <TableCell className="text-center">{m?.mvacEntry?.status ?? '—'}</TableCell>
-                                            <TableCell className="text-center">
-                                                <Button variant="ghost" size="sm" onClick={() => handleViewMvac(m.mvacEntry?.mvacNo || '')}>
-                                                    <Eye className="mr-2 h-4 w-4" />View
-                                                </Button>
-                                            </TableCell>
-                                        </TableRow>
-                                    ))
-                                ) : (
-                                    <TableRow><TableCell colSpan={6} className="text-center h-24">No MVAC entries found.</TableCell></TableRow>
-                                )}
-                            </TableBody>
-                           </Table>
+                        <h3 className="text-base sm:text-lg font-semibold mb-2 text-center">MVAC Breakdown</h3>
+                        <div className="sm:border sm:rounded-md">
+                          <DataList
+                            rows={(mvacWithRunning ?? []).map((m: any, idx: number) => ({
+                              ...m,
+                              id: `${m?.mvacEntry?.id ?? m?.mvacEntry?.mvacNo ?? '—'}-${idx}`,
+                            }))}
+                            columns={mvacColumns}
+                            frameless
+                            tableClassName={BREAKDOWN_TABLE}
+                            rowClassName={breakdownCard}
+                            empty={<BreakdownEmpty>No MVAC entries found.</BreakdownEmpty>}
+                          />
                         </div>
                       </section>
                     )}
@@ -455,39 +491,26 @@ export default function BoqItemDetailsDialog({
                     <Separator />
 
                     <section>
-                      <h3 className="text-lg font-semibold mb-2 text-center">Billing Breakdown</h3>
-                      <div className="border rounded-md">
-                        <Table>
-                          <TableHeader>
-                            <TableRow>
-                              <TableHead className="text-center">Bill No.</TableHead>
-                              <TableHead className="text-center">Bill Date</TableHead>
-                              <TableHead className="text-center">Billed Qty</TableHead>
-                              <TableHead className="text-center">Total Amount</TableHead>
-                            </TableRow>
-                          </TableHeader>
-                          <TableBody>
-                            {relevantBillItems?.length ? (
-                              relevantBillItems.map((b: BillRow, idx: number) => (
-                                <TableRow key={`bill-${b.billNo ?? '—'}-${idx}`}>
-                                  <TableCell className="text-center">{b.billNo ?? '—'}</TableCell>
-                                  <TableCell className="text-center">{formatDateSafe(b.billDate)}</TableCell>
-                                  <TableCell className="text-center">{b.billedQty ?? 0}</TableCell>
-                                  <TableCell className="text-center">{formatCurrency(b.totalAmount)}</TableCell>
-                                </TableRow>
-                              ))
-                            ) : (
-                              <TableRow><TableCell colSpan={4} className="text-center h-24">No bills found for this item.</TableCell></TableRow>
-                            )}
-                          </TableBody>
-                        </Table>
+                      <h3 className="text-base sm:text-lg font-semibold mb-2 text-center">Billing Breakdown</h3>
+                      <div className="sm:border sm:rounded-md">
+                        <DataList
+                          rows={(relevantBillItems ?? []).map((b: BillRow, idx: number) => ({
+                            ...b,
+                            id: `bill-${b.billNo ?? '—'}-${idx}`,
+                          }))}
+                          columns={billColumns}
+                          frameless
+                          tableClassName={BREAKDOWN_TABLE}
+                          rowClassName={breakdownCard}
+                          empty={<BreakdownEmpty>No bills found for this item.</BreakdownEmpty>}
+                        />
                       </div>
                     </section>
                 </div>
               )}
             </ScrollArea>
-            
-            <DialogFooter className="mt-4 pr-4 sm:justify-between shrink-0">
+
+            <DialogFooter className="hr-dialog-footer mt-4 pr-4 sm:justify-between shrink-0 max-sm:mt-0 max-sm:[&>*]:col-span-2">
               <Button variant="outline" size="icon" onClick={toggleDialogSize} className="hidden sm:inline-flex">
                 {dialogSize === 'full' ? <Minimize className="h-4 w-4" /> : <Maximize className="h-4 w-4" />}
               </Button>

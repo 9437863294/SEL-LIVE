@@ -13,7 +13,7 @@
  * exists, and the expanded one tells you what it actually authorises.
  */
 
-import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import {
@@ -62,26 +62,19 @@ import {
   McProjectNotFound,
 } from "@/components/mc/mc-page-shell";
 import {
-  PM_TABLE_CLASS,
   PmContent,
+  PmDataList,
   PmSectionHead,
   PmShell,
   PmSidebar,
   PmTableFoot,
   PmTopbar,
   pmAccent,
+  type PmListColumn,
 } from "@/components/project-management/pm-shell";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
 
 /** Register views. `all` first, then one per status that a reviewer actually works from. */
 const VIEWS = [
@@ -179,6 +172,9 @@ export default function ManufacturingClearanceDocumentsPage() {
           ),
     [allRows, view],
   );
+
+  /** The same rows with the `id` the responsive list keys its cards and table rows by. */
+  const listRows = useMemo(() => rows.map((row) => ({ ...row, id: row.mcId })), [rows]);
 
   const countFor = useCallback(
     (key: ViewKey) =>
@@ -311,6 +307,174 @@ export default function ManufacturingClearanceDocumentsPage() {
 
   const totalQty = rows.reduce((sum, row) => sum + row.currentMcQty, 0);
 
+  const columns: PmListColumn<(typeof listRows)[number]>[] = [
+    {
+      header: "",
+      className: "w-8",
+      mobile: "omit",
+      cell: (row) =>
+        expanded.has(row.mcId) ? (
+          <ChevronDown className="h-4 w-4 text-muted-foreground" />
+        ) : (
+          <ChevronRight className="h-4 w-4 text-muted-foreground" />
+        ),
+    },
+    { header: "MC No.", className: "font-medium", mobile: "title", cell: (row) => row.mcNumber },
+    { header: "Date", className: "text-muted-foreground", cell: (row) => formatDate(row.mcDate) },
+    { header: "Vendor", mobile: "title", cell: (row) => row.vendorName },
+    {
+      header: "POs",
+      align: "right",
+      cell: (row) => <span className="tabular-nums">{row.poCount}</span>,
+    },
+    {
+      header: "Lines",
+      align: "right",
+      cell: (row) => <span className="tabular-nums">{row.itemCount}</span>,
+    },
+    {
+      header: "Quantity",
+      align: "right",
+      cell: (row) => (
+        <span className="font-semibold tabular-nums">{formatQuantity(row.currentMcQty)}</span>
+      ),
+    },
+    {
+      header: "Status",
+      mobile: "aside",
+      cell: (row) => (
+        <Badge
+          variant="outline"
+          className={`border-transparent ${mcHeaderStatusStyles[row.status as McHeaderStatus] ?? ""}`}
+        >
+          {row.status}
+        </Badge>
+      ),
+    },
+    {
+      header: "Action",
+      align: "right",
+      className: "w-44",
+      mobile: "footer",
+      cell: (row) => {
+        const isOpen = expanded.has(row.mcId);
+        const isBusy = busyMcId === row.mcId;
+        const isDecidable = row.status === "Submitted" || row.status === "Partially Approved";
+        return (
+          <div
+            className="flex w-full flex-wrap items-center justify-end gap-2 sm:w-auto sm:gap-1"
+            onClick={(event) => event.stopPropagation()}
+          >
+            {isBusy ? (
+              <Loader2 className="ml-auto h-4 w-4 animate-spin text-muted-foreground" />
+            ) : isDecidable ? (
+              <>
+                {canDecide && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="h-7 px-2 text-emerald-700"
+                    onClick={() => void handleDecision(row.mcId, row.mcNumber, "Approved")}
+                  >
+                    <Check className="mr-1 h-3.5 w-3.5" />
+                    Approve
+                  </Button>
+                )}
+                {canReject && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="h-7 px-2 text-red-700"
+                    onClick={() => void handleDecision(row.mcId, row.mcNumber, "Rejected")}
+                  >
+                    <X className="mr-1 h-3.5 w-3.5" />
+                    Reject
+                  </Button>
+                )}
+                {/* Withdrawing is not rejecting: the raiser pulling back an MC
+                    nobody needs is not a decision about its merit, and it
+                    releases the reserved quantity either way. */}
+                {canCreate && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="h-7 px-2 text-muted-foreground"
+                    onClick={() => void handleDecision(row.mcId, row.mcNumber, "Cancelled")}
+                  >
+                    <Ban className="mr-1 h-3.5 w-3.5" />
+                    Withdraw
+                  </Button>
+                )}
+              </>
+            ) : row.status === "Draft" && canCreate ? (
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-7 px-2 text-muted-foreground"
+                onClick={() => void handleDelete(row.mcId, row.mcNumber)}
+              >
+                <Trash2 className="mr-1 h-3.5 w-3.5" />
+                Delete
+              </Button>
+            ) : (
+              <span className="hidden text-xs text-muted-foreground sm:inline">—</span>
+            )}
+            {/* A phone card carries actions, so it cannot toggle on tap as the table row does. */}
+            <Button
+              variant="outline"
+              size="sm"
+              className="sm:hidden"
+              onClick={() => toggleRow(row.mcId)}
+            >
+              {isOpen ? "Hide lines" : "Show lines"}
+            </Button>
+          </div>
+        );
+      },
+    },
+  ];
+
+  /** The purchase order lines under an expanded clearance: one row on a desktop, stacked on a phone. */
+  const renderLines = (row: (typeof listRows)[number]) => (
+    <ul className="divide-y divide-border/60 sm:pl-12">
+      {(itemsByMcId.get(row.mcId) ?? []).map((line) => {
+        const ledger = workspace?.ledgers.get(poLineKey(line.poId, line.poLineId));
+        return (
+          <li
+            key={line.id}
+            className="flex flex-wrap items-center gap-x-3 gap-y-1 py-2 sm:flex-nowrap sm:gap-4"
+          >
+            <span className="w-full text-xs text-muted-foreground sm:w-36 sm:shrink-0">
+              {line.poNumber}
+            </span>
+            <span className="w-full break-words text-sm sm:w-auto sm:min-w-0 sm:flex-1 sm:truncate">
+              {line.itemDescription}
+            </span>
+            <span className="text-sm tabular-nums sm:w-44 sm:shrink-0 sm:text-right">
+              {formatQuantity(line.currentMcQty)} {line.unit}
+              {ledger ? (
+                <span className="ml-1.5 text-xs text-muted-foreground">
+                  of {formatQuantity(ledger.effectiveQty)}
+                </span>
+              ) : null}
+            </span>
+            {ledger ? (
+              <span className="text-xs text-muted-foreground sm:w-24 sm:shrink-0 sm:text-right">
+                {ledger.clearedPct}% cleared
+              </span>
+            ) : null}
+            <Badge
+              variant="outline"
+              className={`ml-auto shrink-0 border-transparent text-[11px] ${mcItemStatusStyles[line.status] ?? ""}`}
+            >
+              {line.status}
+            </Badge>
+          </li>
+        );
+      })}
+    </ul>
+  );
+
   return (
     <PmShell
       sidebar={
@@ -362,13 +526,14 @@ export default function ManufacturingClearanceDocumentsPage() {
               disabled={busyMcId === "rebuild" || !canDecide}
               onClick={() => void handleRebuild()}
               title="Recompute the per-PO-line balance guards from the clearance records."
+              aria-label="Rebuild balances"
             >
               {busyMcId === "rebuild" ? (
-                <Loader2 className="mr-1.5 h-4 w-4 animate-spin" />
+                <Loader2 className="h-4 w-4 animate-spin sm:mr-1.5" />
               ) : (
-                <RotateCcw className="mr-1.5 h-4 w-4" />
+                <RotateCcw className="h-4 w-4 sm:mr-1.5" />
               )}
-              Rebuild balances
+              <span className="hidden sm:inline">Rebuild balances</span>
             </Button>
             <Button size="sm" disabled={!canCreate} asChild={canCreate}>
               {canCreate ? (
@@ -405,199 +570,43 @@ export default function ManufacturingClearanceDocumentsPage() {
           ]}
         />
 
-        <Card className="overflow-hidden border-border/60">
-          {isLoading ? (
+        {isLoading ? (
+          <Card className="overflow-hidden border-border/60">
             <CardContent className="flex items-center gap-2 py-10 text-sm text-muted-foreground">
               <Loader2 className="h-4 w-4 animate-spin" />
               Loading manufacturing clearances…
             </CardContent>
-          ) : rows.length === 0 ? (
-            <CardContent className="py-12 text-center">
-              <FileStack className="mx-auto mb-3 h-9 w-9 text-muted-foreground/40" />
-              <p className="text-sm font-medium">
-                {allRows.length === 0
-                  ? "No manufacturing clearance has been raised yet"
-                  : `No ${VIEWS.find((entry) => entry.key === view)?.label.toLowerCase()}`}
-              </p>
-              <p className="mx-auto mt-1 max-w-md text-sm text-muted-foreground">
-                A clearance authorises one vendor to begin production against quantity on one or
-                more purchase order lines.
-              </p>
-              {canCreate && allRows.length === 0 && (
-                <Button size="sm" className="mt-4" asChild>
-                  <Link href={context.mcHref("new")}>
-                    <Plus className="mr-1.5 h-4 w-4" />
-                    Raise the first clearance
-                  </Link>
-                </Button>
-              )}
-            </CardContent>
-          ) : (
-            <>
-              <div className="overflow-x-auto">
-                <Table className={PM_TABLE_CLASS}>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead className="w-8" />
-                      <TableHead>MC No.</TableHead>
-                      <TableHead>Date</TableHead>
-                      <TableHead>Vendor</TableHead>
-                      <TableHead className="text-right">POs</TableHead>
-                      <TableHead className="text-right">Lines</TableHead>
-                      <TableHead className="text-right">Quantity</TableHead>
-                      <TableHead>Status</TableHead>
-                      <TableHead className="w-44 text-right">Action</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {rows.map((row) => {
-                      const isOpen = expanded.has(row.mcId);
-                      const lines = itemsByMcId.get(row.mcId) ?? [];
-                      const isBusy = busyMcId === row.mcId;
-                      const isDecidable =
-                        row.status === "Submitted" || row.status === "Partially Approved";
-                      return (
-                        <Fragment key={row.mcId}>
-                          <TableRow
-                            className="cursor-pointer hover:bg-muted/40"
-                            onClick={() => toggleRow(row.mcId)}
-                          >
-                            <TableCell>
-                              {isOpen ? (
-                                <ChevronDown className="h-4 w-4 text-muted-foreground" />
-                              ) : (
-                                <ChevronRight className="h-4 w-4 text-muted-foreground" />
-                              )}
-                            </TableCell>
-                            <TableCell className="font-medium">{row.mcNumber}</TableCell>
-                            <TableCell className="text-muted-foreground">
-                              {formatDate(row.mcDate)}
-                            </TableCell>
-                            <TableCell>{row.vendorName}</TableCell>
-                            <TableCell className="text-right tabular-nums">{row.poCount}</TableCell>
-                            <TableCell className="text-right tabular-nums">
-                              {row.itemCount}
-                            </TableCell>
-                            <TableCell className="text-right font-semibold tabular-nums">
-                              {formatQuantity(row.currentMcQty)}
-                            </TableCell>
-                            <TableCell>
-                              <Badge
-                                variant="outline"
-                                className={`border-transparent ${mcHeaderStatusStyles[row.status as McHeaderStatus] ?? ""}`}
-                              >
-                                {row.status}
-                              </Badge>
-                            </TableCell>
-                            <TableCell
-                              className="text-right"
-                              onClick={(event) => event.stopPropagation()}
-                            >
-                              {isBusy ? (
-                                <Loader2 className="ml-auto h-4 w-4 animate-spin text-muted-foreground" />
-                              ) : isDecidable ? (
-                                <div className="flex justify-end gap-1">
-                                  {canDecide && (
-                                    <Button
-                                      variant="outline"
-                                      size="sm"
-                                      className="h-7 px-2 text-emerald-700"
-                                      onClick={() =>
-                                        void handleDecision(row.mcId, row.mcNumber, "Approved")
-                                      }
-                                    >
-                                      <Check className="mr-1 h-3.5 w-3.5" />
-                                      Approve
-                                    </Button>
-                                  )}
-                                  {canReject && (
-                                    <Button
-                                      variant="outline"
-                                      size="sm"
-                                      className="h-7 px-2 text-red-700"
-                                      onClick={() =>
-                                        void handleDecision(row.mcId, row.mcNumber, "Rejected")
-                                      }
-                                    >
-                                      <X className="mr-1 h-3.5 w-3.5" />
-                                      Reject
-                                    </Button>
-                                  )}
-                                  {/* Withdrawing is not rejecting: the raiser pulling back an MC
-                                      nobody needs is not a decision about its merit, and it
-                                      releases the reserved quantity either way. */}
-                                  {canCreate && (
-                                    <Button
-                                      variant="ghost"
-                                      size="sm"
-                                      className="h-7 px-2 text-muted-foreground"
-                                      onClick={() =>
-                                        void handleDecision(row.mcId, row.mcNumber, "Cancelled")
-                                      }
-                                    >
-                                      <Ban className="mr-1 h-3.5 w-3.5" />
-                                      Withdraw
-                                    </Button>
-                                  )}
-                                </div>
-                              ) : row.status === "Draft" && canCreate ? (
-                                <Button
-                                  variant="ghost"
-                                  size="sm"
-                                  className="h-7 px-2 text-muted-foreground"
-                                  onClick={() => void handleDelete(row.mcId, row.mcNumber)}
-                                >
-                                  <Trash2 className="mr-1 h-3.5 w-3.5" />
-                                  Delete
-                                </Button>
-                              ) : (
-                                <span className="text-xs text-muted-foreground">—</span>
-                              )}
-                            </TableCell>
-                          </TableRow>
-
-                          {isOpen &&
-                            lines.map((line) => {
-                              const ledger = workspace?.ledgers.get(
-                                poLineKey(line.poId, line.poLineId),
-                              );
-                              return (
-                                <TableRow key={line.id} className="bg-muted/20">
-                                  <TableCell />
-                                  <TableCell className="text-xs text-muted-foreground">
-                                    {line.poNumber}
-                                  </TableCell>
-                                  <TableCell colSpan={3} className="text-sm">
-                                    <span className="block max-w-[26rem] truncate">
-                                      {line.itemDescription}
-                                    </span>
-                                  </TableCell>
-                                  <TableCell className="text-right text-xs text-muted-foreground tabular-nums">
-                                    {ledger ? `of ${formatQuantity(ledger.effectiveQty)}` : ""}
-                                  </TableCell>
-                                  <TableCell className="text-right tabular-nums">
-                                    {formatQuantity(line.currentMcQty)} {line.unit}
-                                  </TableCell>
-                                  <TableCell>
-                                    <Badge
-                                      variant="outline"
-                                      className={`border-transparent text-[11px] ${mcItemStatusStyles[line.status] ?? ""}`}
-                                    >
-                                      {line.status}
-                                    </Badge>
-                                  </TableCell>
-                                  <TableCell className="text-right text-xs text-muted-foreground">
-                                    {ledger ? `${ledger.clearedPct}% cleared` : ""}
-                                  </TableCell>
-                                </TableRow>
-                              );
-                            })}
-                        </Fragment>
-                      );
-                    })}
-                  </TableBody>
-                </Table>
+          </Card>
+        ) : (
+          <PmDataList
+            rows={listRows}
+            columns={columns}
+            onRowClick={(row) => toggleRow(row.mcId)}
+            expandedIds={expanded}
+            renderExpanded={renderLines}
+            empty={
+              <div className="px-6 py-12 text-center">
+                <FileStack className="mx-auto mb-3 h-9 w-9 text-muted-foreground/40" />
+                <p className="text-sm font-medium">
+                  {allRows.length === 0
+                    ? "No manufacturing clearance has been raised yet"
+                    : `No ${VIEWS.find((entry) => entry.key === view)?.label.toLowerCase()}`}
+                </p>
+                <p className="mx-auto mt-1 max-w-md text-sm text-muted-foreground">
+                  A clearance authorises one vendor to begin production against quantity on one or
+                  more purchase order lines.
+                </p>
+                {canCreate && allRows.length === 0 && (
+                  <Button size="sm" className="mt-4" asChild>
+                    <Link href={context.mcHref("new")}>
+                      <Plus className="mr-1.5 h-4 w-4" />
+                      Raise the first clearance
+                    </Link>
+                  </Button>
+                )}
               </div>
+            }
+            foot={
               <PmTableFoot
                 left={
                   <>
@@ -611,9 +620,9 @@ export default function ManufacturingClearanceDocumentsPage() {
                   </span>
                 }
               />
-            </>
-          )}
-        </Card>
+            }
+          />
+        )}
       </PmContent>
     </PmShell>
   );

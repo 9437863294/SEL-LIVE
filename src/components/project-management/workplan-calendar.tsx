@@ -100,7 +100,7 @@ function MonthGrid({
                 key={key}
                 onClick={() => onDrillDown?.(day)}
                 className={cn(
-                  "flex min-h-[30px] flex-col items-center justify-center gap-0.5 bg-background p-0.5 hover:bg-muted",
+                  "flex min-h-9 flex-col items-center justify-center gap-0.5 bg-background p-0.5 hover:bg-muted sm:min-h-[30px]",
                   !inMonth && "bg-muted/30 text-muted-foreground",
                 )}
               >
@@ -119,16 +119,19 @@ function MonthGrid({
           return (
             <div
               key={key}
-              className={cn("min-h-[92px] bg-background p-1.5", !inMonth && "bg-muted/30 text-muted-foreground")}
+              className={cn(
+                "min-h-[76px] bg-background p-1 sm:min-h-[92px] sm:p-1.5",
+                !inMonth && "bg-muted/30 text-muted-foreground",
+              )}
             >
               <p className={cn("mb-1 text-xs font-medium", isToday(day) && "text-primary")}>{format(day, "d")}</p>
-              <div className="space-y-1">
+              <div className="space-y-0.5 sm:space-y-1">
                 {events.slice(0, 3).map((event, index) => (
                   <button
                     key={`${event.id}-${index}`}
                     type="button"
                     onClick={() => onSelectEvent(event.id)}
-                    className="flex w-full items-center gap-1 truncate rounded px-1 py-0.5 text-left text-[11px] hover:bg-muted"
+                    className="flex w-full items-center gap-1 truncate rounded px-0.5 py-1 text-left text-[10px] hover:bg-muted sm:px-1 sm:py-0.5 sm:text-[11px]"
                     title={event.label}
                   >
                     <span className={cn("h-1.5 w-1.5 shrink-0 rounded-full", event.colorClass)} />
@@ -136,7 +139,7 @@ function MonthGrid({
                   </button>
                 ))}
                 {events.length > 3 && (
-                  <p className="px-1 text-[11px] text-muted-foreground">+{events.length - 3} more</p>
+                  <p className="px-0.5 text-[10px] text-muted-foreground sm:px-1 sm:text-[11px]">+{events.length - 3} more</p>
                 )}
               </div>
             </div>
@@ -207,7 +210,7 @@ export default function WorkplanCalendar({
   }, [viewMode, anchorDate]);
 
   return (
-    <Card className="border-border/60">
+    <Card className="border-border/60 max-sm:[--card-pad:1rem]">
       <CardHeader className="flex flex-col gap-3 pb-3 sm:flex-row sm:items-center sm:justify-between">
         <CardTitle className="text-base">{periodLabel}</CardTitle>
         <div className="flex flex-wrap items-center gap-2">
@@ -218,7 +221,7 @@ export default function WorkplanCalendar({
                 type="button"
                 onClick={() => setViewMode(mode.value)}
                 className={cn(
-                  "rounded-sm px-2.5 py-1 text-xs font-medium transition-colors",
+                  "rounded-sm px-3 py-1.5 text-xs font-medium transition-colors sm:px-2.5 sm:py-1",
                   viewMode === mode.value ? "bg-background shadow-sm" : "text-muted-foreground hover:text-foreground",
                 )}
               >
@@ -227,13 +230,13 @@ export default function WorkplanCalendar({
             ))}
           </div>
           <div className="flex items-center gap-1.5">
-            <Button variant="outline" size="icon" className="h-8 w-8" onClick={goPrev} aria-label="Previous period">
+            <Button variant="outline" size="icon" className="h-9 w-9 sm:h-8 sm:w-8" onClick={goPrev} aria-label="Previous period">
               <ChevronLeft className="h-4 w-4" />
             </Button>
-            <Button variant="outline" size="sm" className="h-8" onClick={goToday}>
+            <Button variant="outline" size="sm" className="h-9 sm:h-8" onClick={goToday}>
               Today
             </Button>
-            <Button variant="outline" size="icon" className="h-8 w-8" onClick={goNext} aria-label="Next period">
+            <Button variant="outline" size="icon" className="h-9 w-9 sm:h-8 sm:w-8" onClick={goNext} aria-label="Next period">
               <ChevronRight className="h-4 w-4" />
             </Button>
           </div>
@@ -249,7 +252,16 @@ export default function WorkplanCalendar({
         </div>
 
         {viewMode === "month" ? (
-          <MonthGrid monthStart={monthsToRender[0]} eventsByDay={eventsByDay} onSelectEvent={onSelectEvent} compact={false} />
+          <>
+            {/* Seven columns in 300-odd pixels leave an event label two letters wide, so on a phone
+                the month keeps a small tablet's width and scrolls sideways in its own box. */}
+            <p className="mb-2 text-xs text-muted-foreground sm:hidden">Swipe sideways to see the whole week</p>
+            <div className="overflow-x-auto">
+              <div className="min-w-[34rem] sm:min-w-0">
+                <MonthGrid monthStart={monthsToRender[0]} eventsByDay={eventsByDay} onSelectEvent={onSelectEvent} compact={false} />
+              </div>
+            </div>
+          </>
         ) : (
           <div className={cn("grid gap-4", viewMode === "quarter" ? "sm:grid-cols-3" : "sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4")}>
             {monthsToRender.map((monthStart) => (

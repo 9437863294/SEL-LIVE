@@ -36,9 +36,11 @@ import {
   towerProgressHref,
   validateTowerProgressSettings,
   type EvidenceEnforcementMode,
+  type TowerPhotoKind,
   type TowerProgressSettings,
 } from "@/lib/project-management-tower-progress";
 import { saveTowerProgressSettings } from "@/lib/project-management-tower-service";
+import { PmFormActions } from "@/components/project-management/pm-shell";
 import { useTowerProgress } from "@/components/project-management/tower-progress/tower-progress-provider";
 import {
   TowerProgressGuard,
@@ -225,7 +227,7 @@ function SettingsScreen() {
                 onChange={(event) =>
                   set("delayThresholdDays", Number(event.target.value) || 0)
                 }
-                className="h-9 w-28"
+                className="h-10 w-28 sm:h-9"
               />
               <p className="text-xs text-muted-foreground">
                 How long an activity may sit in one status before the Delayed report picks it up.
@@ -270,7 +272,7 @@ function SettingsScreen() {
           </div>
         </CardHeader>
         <CardContent className="space-y-3">
-          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+          <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
             {TOWER_ACTIVITY_LIST.map((definition) => (
               <div key={definition.key} className="space-y-1.5">
                 <Label htmlFor={`weight-${definition.key}`} className="text-xs">
@@ -290,7 +292,7 @@ function SettingsScreen() {
                       [definition.key]: Number(event.target.value) || 0,
                     })
                   }
-                  className="h-9"
+                  className="h-10 sm:h-9"
                 />
               </div>
             ))}
@@ -353,7 +355,31 @@ function SettingsScreen() {
           </CardDescription>
         </CardHeader>
         <CardContent className="p-0">
-          <div className="overflow-x-auto">
+          {/* A stacked list on a phone — two columns of badge lists do not fit beside the
+              activity at 360px — and the table from `sm`. */}
+          <ul className="divide-y border-t sm:hidden">
+            {TOWER_ACTIVITY_LIST.map((definition) => (
+              <li key={definition.key} className="space-y-2 px-4 py-3">
+                <p className="flex flex-wrap items-baseline justify-between gap-x-2">
+                  <span className="text-sm font-medium">{definition.label}</span>
+                  <span className="text-xs text-muted-foreground">
+                    Measured per {definition.measure}
+                  </span>
+                </p>
+                <div className="space-y-1">
+                  <p className="text-[11px] font-medium text-muted-foreground">Required photographs</p>
+                  <PhotoKindBadges kinds={definition.requiredPhotoKinds} required />
+                </div>
+                {definition.optionalPhotoKinds.length ? (
+                  <div className="space-y-1">
+                    <p className="text-[11px] font-medium text-muted-foreground">Also offered</p>
+                    <PhotoKindBadges kinds={definition.optionalPhotoKinds} />
+                  </div>
+                ) : null}
+              </li>
+            ))}
+          </ul>
+          <div className="hidden overflow-x-auto sm:block">
             <Table>
               <TableHeader>
                 <TableRow>
@@ -369,26 +395,10 @@ function SettingsScreen() {
                     <TableCell className="font-medium">{definition.label}</TableCell>
                     <TableCell className="text-xs capitalize">{definition.measure}</TableCell>
                     <TableCell>
-                      <div className="flex flex-wrap gap-1">
-                        {definition.requiredPhotoKinds.map((kind) => (
-                          <Badge
-                            key={kind}
-                            variant="outline"
-                            className="border-red-200 bg-red-50 text-[10px] text-red-700"
-                          >
-                            {TOWER_PHOTO_KIND_LABELS[kind]}
-                          </Badge>
-                        ))}
-                      </div>
+                      <PhotoKindBadges kinds={definition.requiredPhotoKinds} required />
                     </TableCell>
                     <TableCell>
-                      <div className="flex flex-wrap gap-1">
-                        {definition.optionalPhotoKinds.map((kind) => (
-                          <Badge key={kind} variant="outline" className="text-[10px]">
-                            {TOWER_PHOTO_KIND_LABELS[kind]}
-                          </Badge>
-                        ))}
-                      </div>
+                      <PhotoKindBadges kinds={definition.optionalPhotoKinds} />
                     </TableCell>
                   </TableRow>
                 ))}
@@ -411,7 +421,42 @@ function SettingsScreen() {
           </AlertDescription>
         </Alert>
       ) : null}
+
+      {/* The header's Save is a long scroll back up from the weights on a phone, so the form ends
+          with it as well. Same handler, same guard. */}
+      {canEdit ? (
+        <PmFormActions className="sm:hidden">
+          <Button onClick={() => void handleSave()} disabled={isSaving || errors.length > 0}>
+            {isSaving ? (
+              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+            ) : (
+              <Save className="mr-2 h-4 w-4" />
+            )}
+            Save settings
+          </Button>
+        </PmFormActions>
+      ) : null}
     </TowerProgressShell>
+  );
+}
+
+/** An activity's photograph kinds as badges — red for the required set, plain for the optional. */
+function PhotoKindBadges({ kinds, required }: { kinds: TowerPhotoKind[]; required?: boolean }) {
+  return (
+    <div className="flex flex-wrap gap-1">
+      {kinds.map((kind) => (
+        <Badge
+          key={kind}
+          variant="outline"
+          className={cn(
+            "text-[10px]",
+            required && "border-red-200 bg-red-50 text-red-700",
+          )}
+        >
+          {TOWER_PHOTO_KIND_LABELS[kind]}
+        </Badge>
+      ))}
+    </div>
   );
 }
 

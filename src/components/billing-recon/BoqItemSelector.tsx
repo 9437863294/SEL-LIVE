@@ -81,13 +81,14 @@ export function BoqItemSelector({
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>
         <Button variant="outline" role="combobox" aria-expanded={open} className="w-full justify-between">
-          {selectedItem ? getBoqSlNo(selectedItem) : 'Select BOQ Item...'}
+          <span className="truncate">{selectedItem ? getBoqSlNo(selectedItem) : 'Select BOQ Item...'}</span>
           <Search className="ml-2 h-4 w-4 shrink-0 opacity-50" />
         </Button>
       </PopoverTrigger>
 
+      {/* Capped to the viewport so a phone does not get a 700px panel hanging off its edge. */}
       <PopoverContent
-        className="w-[700px] p-0 z-[99999]"
+        className="w-[min(700px,calc(100vw_-_1.5rem))] p-0 z-[99999]"
         side="bottom"
         align="start"
         sideOffset={4}
@@ -99,7 +100,8 @@ export function BoqItemSelector({
             <CommandEmpty>{isLoading ? 'Loading...' : 'No BOQ item found.'}</CommandEmpty>
 
             <CommandGroup>
-              <div className="grid grid-cols-[1fr_1fr_3fr_1fr_1fr] items-center px-4 py-2 text-xs font-medium text-muted-foreground border-b">
+              {/* On a phone the rows stack into labelled lines, so only the sort control is kept here. */}
+              <div className="flex items-center px-4 py-2 text-xs font-medium text-muted-foreground border-b sm:grid sm:grid-cols-[1fr_1fr_3fr_1fr_1fr]">
                 <button
                   type="button"
                   onClick={toggleSort}
@@ -109,10 +111,10 @@ export function BoqItemSelector({
                   ERP SL No
                   <ArrowUpDown className={cn('h-3 w-3 transition-transform', sortDirection === 'desc' && 'rotate-180')} />
                 </button>
-                <div className="text-left">BOQ SL No</div>
-                <div className="text-left">Description</div>
-                <div className="text-right">QTY</div>
-                <div className="text-right">Rate</div>
+                <div className="hidden text-left sm:block">BOQ SL No</div>
+                <div className="hidden text-left sm:block">Description</div>
+                <div className="hidden text-right sm:block">QTY</div>
+                <div className="hidden text-right sm:block">Rate</div>
               </div>
 
               {sortedItems.map((item) => {
@@ -133,14 +135,22 @@ export function BoqItemSelector({
                     onSelect={(id) => commitSelect(id)}
                     className={cn('px-2 py-2', isSelected && 'bg-accent text-accent-foreground')}
                   >
-                    <div className="grid grid-cols-[1fr_1fr_3fr_1fr_1fr] w-full items-center gap-2">
+                    {/* Phone: ERP | BOQ, then the description across, then QTY | rate. */}
+                    <div className="grid w-full grid-cols-2 items-center gap-x-2 gap-y-0.5 sm:grid-cols-[1fr_1fr_3fr_1fr_1fr] sm:gap-2">
                       <div className="text-sm flex items-center gap-2">
                         {isSelected && <Check className="h-4 w-4 text-primary" />}
+                        <span className="text-xs text-muted-foreground sm:hidden">ERP</span>
                         {erpSlNo}
                       </div>
-                      <div className="text-sm">{boqSlNo}</div>
-                      <div className="text-sm font-medium truncate pr-2">{description}</div>
-                      <div className="text-right text-sm">{boqQty}</div>
+                      <div className="text-sm max-sm:text-right">
+                        <span className="text-xs text-muted-foreground sm:hidden">BOQ </span>
+                        {boqSlNo}
+                      </div>
+                      <div className="col-span-2 text-sm font-medium truncate pr-2 sm:col-span-1">{description}</div>
+                      <div className="text-sm sm:text-right">
+                        <span className="text-xs text-muted-foreground sm:hidden">QTY </span>
+                        {boqQty}
+                      </div>
                       <div className="text-right text-xs text-muted-foreground">
                         {rate} {unit && `/ ${unit}`}
                       </div>

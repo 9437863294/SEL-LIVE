@@ -9,7 +9,11 @@ import {
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import {
+  PmDataList,
+  PmEmptyState,
+  type PmListColumn,
+} from '@/components/project-management/pm-shell';
 import { db } from '@/lib/firebase';
 import { collection, getDocs, orderBy, query, deleteDoc, doc, getDoc, Timestamp } from 'firebase/firestore';
 import { useToast } from '@/hooks/use-toast';
@@ -377,9 +381,132 @@ export default function JmcLogPage() {
     }
   };
 
-  const skeletonCols = 9 + (workflowSteps?.length || 0);
   /* Hold the table's existing skeleton until auth, the project mapping and the data have settled. */
   const showSkeleton = authIsLoading || isResolving || isLoading;
+
+  /* The register: a card per JMC on a phone, the wide stage-date table from `sm`. Each workflow
+     stage is its own column, so the column list is built from the configured steps. */
+  const columns: PmListColumn<EnrichedJmcEntry>[] = [
+    {
+      header: 'JMC No.',
+      mobile: 'title',
+      cell: (entry) => <span className="font-medium">{entry.jmcNo ?? '-'}</span>,
+    },
+    {
+      header: 'JMC Date',
+      cell: (entry) => {
+        const jmcDate = toDateSafe((entry as any).jmcDate) ?? toDateSafe(entry.createdAt);
+        return jmcDate ? format(jmcDate, 'dd MMM, yyyy') : '-';
+      },
+    },
+    ...workflowSteps.map(
+      (step): PmListColumn<EnrichedJmcEntry> => ({
+        header: step.name,
+        cell: (entry) => entry.stageDates[step.name] ?? '-',
+      })
+    ),
+    { header: 'JMC Value', cell: (entry) => formatCurrency(entry.totalAmount) },
+    { header: 'Certified Value', cell: (entry) => formatCurrency(entry.certifiedValue) },
+    { header: 'Stage', cell: (entry) => entry.stage ?? '-' },
+    {
+      header: 'Stage Status',
+      mobile: 'aside',
+      cell: (entry) => (
+        <Badge
+          variant={
+            entry.status === 'Completed'
+              ? 'default'
+              : entry.status === 'Rejected' || entry.status === 'Cancelled'
+              ? 'destructive'
+              : 'secondary'
+          }
+        >
+          {entry.status}
+        </Badge>
+      ),
+    },
+    {
+      header: 'Actions',
+      align: 'right',
+      mobile: 'footer',
+      cell: (entry) => {
+        // Prefer workflow attachment, fallback to first certifiedAttachments
+        const docUrl =
+          entry.certifiedJmcAttachment?.url ||
+          (Array.isArray(entry.certifiedAttachments) && entry.certifiedAttachments[0]?.url);
+
+        return (
+          <div className="flex w-full justify-end gap-2 sm:w-auto sm:gap-1">
+            {/* A card with actions is not itself a tap target, so the phone gets the row
+                click's destination as a button of its own. */}
+            <Button
+              variant="outline"
+              size="sm"
+              className="sm:hidden"
+              onClick={() => handleViewDetails(entry)}
+            >
+              Details
+            </Button>
+            {/* Action button: ONLY for opening uploaded doc */}
+            {docUrl ? (
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-8 max-sm:min-h-11 max-sm:flex-1"
+                asChild
+                onClick={(e) => e.stopPropagation()} // don't trigger row click
+              >
+                <a href={docUrl} target="_blank" rel="noopener noreferrer">
+                  <FileIcon className="mr-2 h-4 w-4" /> View Doc
+                </a>
+              </Button>
+            ) : (
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-8"
+                disabled
+                onClick={(e) => e.stopPropagation()}
+              >
+                <FileIcon className="mr-2 h-4 w-4" /> No Doc
+              </Button>
+            )}
+
+            {canDeleteJmc && (
+              <AlertDialog>
+                <AlertDialogTrigger asChild>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="text-destructive h-8 w-8"
+                    aria-label="Delete"
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    <Trash2 className="h-4 w-4" />
+                  </Button>
+                </AlertDialogTrigger>
+                <AlertDialogContent onClick={(e) => e.stopPropagation()}>
+                  <AlertDialogHeader>
+                    <AlertDialogTitle>Are you sure?</AlertDialogTitle>
+                    <AlertDialogDescription>
+                      This will permanently delete JMC {entry.jmcNo}. This action cannot be
+                      undone.
+                    </AlertDialogDescription>
+                  </AlertDialogHeader>
+                  <AlertDialogFooter>
+                    <AlertDialogCancel>Cancel</AlertDialogCancel>
+                    <AlertDialogAction onClick={() => handleDelete(entry)}>
+                      Delete
+                    </AlertDialogAction>
+                  </AlertDialogFooter>
+                </AlertDialogContent>
+              </AlertDialog>
+            )}
+          </div>
+        );
+      },
+    },
+  ];
 
   if (!authIsLoading && !canViewLog) {
     return <JmcAccessDenied description="You do not have permission to view the JMC log." />;
@@ -405,193 +532,38 @@ export default function JmcLogPage() {
           backHref={context.jmcHref()}
           backLabel="Back to JMC"
           actions={
-            <Button onClick={handleExportAll} disabled={jmcEntries.length === 0}>
-              <Download className="mr-2 h-4 w-4" /> Export All as Excel
+            <Button
+              onClick={handleExportAll}
+              disabled={jmcEntries.length === 0}
+              aria-label="Export All as Excel"
+            >
+              <Download className="mr-2 h-4 w-4" />
+              <span className="sm:hidden">Export</span>
+              <span className="hidden sm:inline">Export All as Excel</span>
             </Button>
           }
         />
 
 
-        <Card className="border-border/60">
-          <CardContent className="p-0">
-            {/* Make the wide table scroll horizontally inside the card */}
-            <div className="overflow-x-auto">
-              {/* Give the table a sensible min width so columns don’t squish */}
-              <Table className="min-w-[1200px]">
-                <TableHeader>
-                  <TableRow>
-                    <TableHead className="whitespace-nowrap">JMC No.</TableHead>
-                    <TableHead className="whitespace-nowrap">JMC Date</TableHead>
-                    {workflowSteps.map((step) => (
-                      <TableHead key={step.id} className="whitespace-nowrap">
-                        {step.name}
-                      </TableHead>
-                    ))}
-                    <TableHead className="whitespace-nowrap">JMC Value</TableHead>
-                    <TableHead className="whitespace-nowrap">
-                      Certified Value
-                    </TableHead>
-                    <TableHead className="whitespace-nowrap">Stage</TableHead>
-                    <TableHead className="whitespace-nowrap">
-                      Stage Status
-                    </TableHead>
-                    <TableHead className="text-right whitespace-nowrap">
-                      Actions
-                    </TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {showSkeleton ? (
-                    Array.from({ length: 5 }).map((_, i) => (
-                      <TableRow key={i}>
-                        {/* one skeleton cell spanning the visible columns */}
-                        <TableCell colSpan={skeletonCols}>
-                          <Skeleton className="h-5" />
-                        </TableCell>
-                      </TableRow>
-                    ))
-                  ) : jmcEntries.length > 0 ? (
-                    jmcEntries.map((entry) => {
-                      const jmcDate =
-                        toDateSafe((entry as any).jmcDate) ??
-                        toDateSafe(entry.createdAt);
-  
-                      // Prefer workflow attachment, fallback to first certifiedAttachments
-                      const docUrl =
-                        entry.certifiedJmcAttachment?.url ||
-                        (Array.isArray(entry.certifiedAttachments) &&
-                          entry.certifiedAttachments[0]?.url);
-  
-                      return (
-                        <TableRow
-                          key={entry.id}
-                          className="cursor-pointer hover:bg-muted/40"
-                          onClick={() => handleViewDetails(entry)}
-                        >
-                          <TableCell className="font-medium">
-                            {entry.jmcNo ?? '-'}
-                          </TableCell>
-                          <TableCell>
-                            {jmcDate ? format(jmcDate, 'dd MMM, yyyy') : '-'}
-                          </TableCell>
-  
-                          {workflowSteps.map((step) => (
-                            <TableCell key={step.id}>
-                              {entry.stageDates[step.name] ?? '-'}
-                            </TableCell>
-                          ))}
-  
-                          <TableCell>
-                            {formatCurrency(entry.totalAmount)}
-                          </TableCell>
-                          <TableCell>
-                            {formatCurrency(entry.certifiedValue)}
-                          </TableCell>
-                          <TableCell>{entry.stage ?? '-'}</TableCell>
-                          <TableCell>
-                            <Badge
-                              variant={
-                                entry.status === 'Completed'
-                                  ? 'default'
-                                  : entry.status === 'Rejected' ||
-                                    entry.status === 'Cancelled'
-                                  ? 'destructive'
-                                  : 'secondary'
-                              }
-                            >
-                              {entry.status}
-                            </Badge>
-                          </TableCell>
-                          <TableCell className="text-right">
-                            <div className="flex gap-1 justify-end">
-                              {/* Action button: ONLY for opening uploaded doc */}
-                              {docUrl ? (
-                                <Button
-                                  variant="outline"
-                                  size="sm"
-                                  className="h-8"
-                                  asChild
-                                  onClick={(e) => e.stopPropagation()} // don't trigger row click
-                                >
-                                  <a
-                                    href={docUrl}
-                                    target="_blank"
-                                    rel="noopener noreferrer"
-                                  >
-                                    <FileIcon className="mr-2 h-4 w-4" /> View Doc
-                                  </a>
-                                </Button>
-                              ) : (
-                                <Button
-                                  variant="outline"
-                                  size="sm"
-                                  className="h-8"
-                                  disabled
-                                  onClick={(e) => e.stopPropagation()}
-                                >
-                                  <FileIcon className="mr-2 h-4 w-4" /> No Doc
-                                </Button>
-                              )}
-  
-                              {canDeleteJmc && (
-                                <AlertDialog>
-                                  <AlertDialogTrigger asChild>
-                                    <Button
-                                      variant="ghost"
-                                      size="icon"
-                                      className="text-destructive h-8 w-8"
-                                      aria-label="Delete"
-                                      onClick={(e) => e.stopPropagation()}
-                                    >
-                                      <Trash2 className="h-4 w-4" />
-                                    </Button>
-                                  </AlertDialogTrigger>
-                                  <AlertDialogContent
-                                    onClick={(e) => e.stopPropagation()}
-                                  >
-                                    <AlertDialogHeader>
-                                      <AlertDialogTitle>
-                                        Are you sure?
-                                      </AlertDialogTitle>
-                                      <AlertDialogDescription>
-                                        This will permanently delete JMC{' '}
-                                        {entry.jmcNo}. This action cannot be
-                                        undone.
-                                      </AlertDialogDescription>
-                                    </AlertDialogHeader>
-                                    <AlertDialogFooter>
-                                      <AlertDialogCancel>
-                                        Cancel
-                                      </AlertDialogCancel>
-                                      <AlertDialogAction
-                                        onClick={() => handleDelete(entry)}
-                                      >
-                                        Delete
-                                      </AlertDialogAction>
-                                    </AlertDialogFooter>
-                                  </AlertDialogContent>
-                                </AlertDialog>
-                              )}
-                            </div>
-                          </TableCell>
-                        </TableRow>
-                      );
-                    })
-                  ) : (
-                    <TableRow>
-                      <TableCell
-                        colSpan={skeletonCols}
-                        className="text-center h-24"
-                      >
-                        No JMC entries found.
-                      </TableCell>
-                    </TableRow>
-                  )}
-                </TableBody>
-              </Table>
-            </div>
-          </CardContent>
-        </Card>
+        {showSkeleton ? (
+          <Card className="border-border/60">
+            <CardContent className="space-y-2 p-3">
+              {Array.from({ length: 5 }).map((_, i) => (
+                <Skeleton key={i} className="h-5" />
+              ))}
+            </CardContent>
+          </Card>
+        ) : (
+          <PmDataList
+            rows={jmcEntries}
+            columns={columns}
+            onRowClick={handleViewDetails}
+            // A sensible min width so the stage-date columns don’t squish; the table scrolls
+            // sideways inside its own frame.
+            tableClassName="min-w-[1200px]"
+            empty={<PmEmptyState icon={History} title="No JMC entries found." />}
+          />
+        )}
       </JmcPageShell>
 
       <ViewJmcEntryDialog

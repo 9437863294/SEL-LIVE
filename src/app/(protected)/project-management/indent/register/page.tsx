@@ -1,6 +1,6 @@
 "use client";
 
-import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import {
@@ -68,14 +68,16 @@ import {
   IndentProjectNotFound,
 } from "@/components/indent/indent-page-shell";
 import {
-  PM_TABLE_CLASS,
   PmContent,
+  PmDataList,
+  PmEmptyState,
   PmSectionHead,
   PmShell,
   PmSidebar,
   PmTableFoot,
   PmTopbar,
   pmAccent,
+  type PmListColumn,
 } from "@/components/project-management/pm-shell";
 import type { WorkflowStep } from "@/lib/types";
 
@@ -493,6 +495,154 @@ export default function ProjectIndentRegisterPage() {
     });
   };
 
+  const renderLineItems = (indent: IndentRecord) => (
+    <div className="sm:p-3">
+      {indent.remarks && (
+        <p className="mb-2 px-1 text-sm text-muted-foreground">
+          <span className="font-medium text-foreground">Remarks: </span>{indent.remarks}
+        </p>
+      )}
+      {/* Phones: one stacked row per item — five columns of figures beside a description do not
+          fit a 360px card. */}
+      <ul className="divide-y divide-border rounded-lg border border-border/60 sm:hidden">
+        {indent.items.map((item, index) => (
+          <li key={`${indent.id}-${item.boqItemId}-${index}`} className="px-3 py-2">
+            <p className="break-words text-sm">
+              <span className="font-medium">{item.boqSlNo || "—"}</span>
+              <span className="text-muted-foreground"> · </span>
+              {item.description || "—"}
+            </p>
+            <div className="mt-1 flex flex-wrap items-baseline justify-between gap-x-3 text-xs text-muted-foreground">
+              <span>
+                {formatQuantity(item.requestedQty)} {item.unit} × {formatCurrency(item.budgetPrice)}
+              </span>
+              <span className="font-medium text-foreground">{formatCurrency(item.lineTotal)}</span>
+            </div>
+          </li>
+        ))}
+      </ul>
+      <Table containerClassName="hidden sm:block">
+        <TableHeader>
+          <TableRow>
+            <TableHead>BOQ SL No</TableHead>
+            <TableHead>Description</TableHead>
+            <TableHead>Qty</TableHead>
+            <TableHead>Budget Price</TableHead>
+            <TableHead>Line Total</TableHead>
+          </TableRow>
+        </TableHeader>
+        <TableBody>
+          {indent.items.map((item, index) => (
+            <TableRow key={`${indent.id}-${item.boqItemId}-${index}`}>
+              <TableCell>{item.boqSlNo || "—"}</TableCell>
+              <TableCell className="max-w-sm truncate" title={item.description}>{item.description || "—"}</TableCell>
+              <TableCell className="whitespace-nowrap">{formatQuantity(item.requestedQty)} {item.unit}</TableCell>
+              <TableCell className="whitespace-nowrap">{formatCurrency(item.budgetPrice)}</TableCell>
+              <TableCell className="whitespace-nowrap font-medium">{formatCurrency(item.lineTotal)}</TableCell>
+            </TableRow>
+          ))}
+        </TableBody>
+      </Table>
+    </div>
+  );
+
+  const columns: PmListColumn<IndentRecord>[] = [
+    {
+      header: "",
+      className: "w-10",
+      // Desktop only: a phone card has footer actions, so it cannot be the toggle itself — its
+      // "Show items" button lives in the Actions cell instead.
+      mobile: "omit",
+      cell: (indent) => (
+        <div onClick={(event) => event.stopPropagation()}>
+          <Button variant="ghost" size="icon" onClick={() => toggleExpanded(indent.id)} aria-label={expandedIds.has(indent.id) ? "Collapse" : "Expand"}>
+            {expandedIds.has(indent.id) ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
+          </Button>
+        </div>
+      ),
+    },
+    { header: "Indent No.", mobile: "title", cell: (indent) => <span className="font-medium">{indent.indentNumber}</span> },
+    { header: "Indent Date", className: "whitespace-nowrap", cell: (indent) => formatDate(indent.indentDate) },
+    { header: "Items", cell: (indent) => indent.items.length },
+    {
+      header: "Total Qty",
+      className: "whitespace-nowrap",
+      cell: (indent) =>
+        formatQuantity(indent.items.reduce((sum, item) => sum + toNumber(item.requestedQty), 0)),
+    },
+    {
+      header: "Total Amount",
+      className: "whitespace-nowrap",
+      cell: (indent) => <span className="font-medium">{formatCurrency(indent.totalAmount)}</span>,
+    },
+    { header: "Required Date", className: "whitespace-nowrap", cell: (indent) => formatDate(indent.requiredDate) },
+    {
+      header: "Status",
+      mobile: "aside",
+      cell: (indent) => (
+        <div className="max-sm:text-right">
+          <Badge variant="outline" className={indentStatusStyles[indent.status] ?? ""}>
+            {indent.status}
+          </Badge>
+          <div className="mt-1 space-y-0.5">
+            {indent.status === "Submitted" && indent.currentStepName && (
+              <p className="text-xs text-muted-foreground">at {indent.currentStepName}</p>
+            )}
+            {isLegacyIndent(indent) && (
+              <p className="text-xs text-muted-foreground" title="Raised before the approval workflow existed — keeps its BOQ reservation.">
+                Legacy
+              </p>
+            )}
+            <p className={`text-xs ${indentReservesQuantity(indent) ? "text-emerald-700" : "text-muted-foreground"}`}>
+              {indentReservesQuantity(indent) ? "Reserves BOQ qty" : "No reservation"}
+            </p>
+          </div>
+        </div>
+      ),
+    },
+    {
+      header: "Actions",
+      align: "right",
+      mobile: "footer",
+      cell: (indent) => (
+        <div className="flex w-full justify-end gap-2 sm:w-auto sm:gap-0" onClick={(event) => event.stopPropagation()}>
+          <Button variant="outline" size="sm" className="sm:hidden" onClick={() => toggleExpanded(indent.id)}>
+            {expandedIds.has(indent.id) ? "Hide items" : "Show items"}
+          </Button>
+          {indent.status === "Draft" && canAdd && (
+            <Button
+              variant="outline"
+              size="sm"
+              className="sm:mr-1"
+              disabled={submittingId === indent.id}
+              onClick={() => void handleSubmitForApproval(indent)}
+            >
+              {submittingId === indent.id ? (
+                <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
+              ) : (
+                <SendHorizontal className="mr-1.5 h-3.5 w-3.5" />
+              )}
+              Submit
+            </Button>
+          )}
+          {indent.status === "Draft" && (
+            <AlertDialog>
+              <AlertDialogTrigger asChild>
+                <Button variant="ghost" size="icon" disabled={!canDelete || deletingId === indent.id} aria-label={`Delete ${indent.indentNumber}`}>
+                  {deletingId === indent.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4 text-destructive" />}
+                </Button>
+              </AlertDialogTrigger>
+              <AlertDialogContent>
+                <AlertDialogHeader><AlertDialogTitle>Delete draft indent?</AlertDialogTitle><AlertDialogDescription>This releases all reserved BOQ quantities in this indent. This action cannot be undone.</AlertDialogDescription></AlertDialogHeader>
+                <AlertDialogFooter><AlertDialogCancel>Cancel</AlertDialogCancel><AlertDialogAction onClick={() => void handleDelete(indent)}>Delete Draft</AlertDialogAction></AlertDialogFooter>
+              </AlertDialogContent>
+            </AlertDialog>
+          )}
+        </div>
+      ),
+    },
+  ];
+
   if (isAuthLoading || isResolving || isLoading) {
     return <IndentLoadingState />;
   }
@@ -571,8 +721,8 @@ export default function ProjectIndentRegisterPage() {
         actions={
           <>
             {indents.length > 0 && (
-              <Button variant="outline" size="sm" onClick={exportIndents}>
-                <Download className="mr-2 h-4 w-4" /> Export
+              <Button variant="outline" size="sm" onClick={exportIndents} aria-label="Export">
+                <Download className="h-4 w-4 sm:mr-2" /><span className="hidden sm:inline">Export</span>
               </Button>
             )}
             <Button size="sm" asChild disabled={!canAdd || !boqItems.length}>
@@ -609,166 +759,43 @@ export default function ProjectIndentRegisterPage() {
         />
 
       {/* The card's title said "Indents" directly under a heading that already says it. What was
-          worth keeping is the rule about reservation, which is not obvious from the table. */}
-      <p className="mb-3 max-w-4xl text-[13px] text-muted-foreground">
+          worth keeping is the rule about reservation, which is not obvious from the table. Hidden
+          on a phone, where it would push the first indent below the fold: each card's status
+          already says whether it reserves, and a draft carries its own Submit button. */}
+      <p className="mb-3 hidden max-w-4xl text-[13px] text-muted-foreground sm:block">
         Each indent can contain multiple BOQ items. Only approved indents reserve quantity from
         their linked BOQ items — submit a draft to send it for approval. Indents raised before the
         workflow existed are marked <span className="font-medium text-foreground">Legacy</span> and
         keep their reservation.
       </p>
 
-      <Card className="overflow-hidden border-border/60">
-        <CardContent className="p-0">
-          <div className="overflow-x-auto">
-            <Table className={PM_TABLE_CLASS}>
-              <TableHeader>
-                <TableRow>
-                  <TableHead className="w-10" />
-                  <TableHead>Indent No.</TableHead>
-                  <TableHead>Indent Date</TableHead>
-                  <TableHead>Items</TableHead>
-                  <TableHead>Total Qty</TableHead>
-                  <TableHead>Total Amount</TableHead>
-                  <TableHead>Required Date</TableHead>
-                  <TableHead>Status</TableHead>
-                  <TableHead className="text-right">Actions</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {filteredIndents.length ? filteredIndents.map((indent) => {
-                  const isExpanded = expandedIds.has(indent.id);
-                  const totalQty = indent.items.reduce((sum, item) => sum + toNumber(item.requestedQty), 0);
-
-                  return (
-                    <Fragment key={indent.id}>
-                      <TableRow className="cursor-pointer" onClick={() => toggleExpanded(indent.id)}>
-                        <TableCell onClick={(event) => event.stopPropagation()}>
-                          <Button variant="ghost" size="icon" onClick={() => toggleExpanded(indent.id)} aria-label={isExpanded ? "Collapse" : "Expand"}>
-                            {isExpanded ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
-                          </Button>
-                        </TableCell>
-                        <TableCell className="font-medium">{indent.indentNumber}</TableCell>
-                        <TableCell className="whitespace-nowrap">{formatDate(indent.indentDate)}</TableCell>
-                        <TableCell>{indent.items.length}</TableCell>
-                        <TableCell className="whitespace-nowrap">{formatQuantity(totalQty)}</TableCell>
-                        <TableCell className="whitespace-nowrap font-medium">{formatCurrency(indent.totalAmount)}</TableCell>
-                        <TableCell className="whitespace-nowrap">{formatDate(indent.requiredDate)}</TableCell>
-                        <TableCell>
-                          <Badge variant="outline" className={indentStatusStyles[indent.status] ?? ""}>
-                            {indent.status}
-                          </Badge>
-                          <div className="mt-1 space-y-0.5">
-                            {indent.status === "Submitted" && indent.currentStepName && (
-                              <p className="text-xs text-muted-foreground">at {indent.currentStepName}</p>
-                            )}
-                            {isLegacyIndent(indent) && (
-                              <p className="text-xs text-muted-foreground" title="Raised before the approval workflow existed — keeps its BOQ reservation.">
-                                Legacy
-                              </p>
-                            )}
-                            <p className={`text-xs ${indentReservesQuantity(indent) ? "text-emerald-700" : "text-muted-foreground"}`}>
-                              {indentReservesQuantity(indent) ? "Reserves BOQ qty" : "No reservation"}
-                            </p>
-                          </div>
-                        </TableCell>
-                        <TableCell className="text-right" onClick={(event) => event.stopPropagation()}>
-                          {indent.status === "Draft" && canAdd && (
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              className="mr-1"
-                              disabled={submittingId === indent.id}
-                              onClick={() => void handleSubmitForApproval(indent)}
-                            >
-                              {submittingId === indent.id ? (
-                                <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
-                              ) : (
-                                <SendHorizontal className="mr-1.5 h-3.5 w-3.5" />
-                              )}
-                              Submit
-                            </Button>
-                          )}
-                          {indent.status === "Draft" && (
-                            <AlertDialog>
-                              <AlertDialogTrigger asChild>
-                                <Button variant="ghost" size="icon" disabled={!canDelete || deletingId === indent.id} aria-label={`Delete ${indent.indentNumber}`}>
-                                  {deletingId === indent.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4 text-destructive" />}
-                                </Button>
-                              </AlertDialogTrigger>
-                              <AlertDialogContent>
-                                <AlertDialogHeader><AlertDialogTitle>Delete draft indent?</AlertDialogTitle><AlertDialogDescription>This releases all reserved BOQ quantities in this indent. This action cannot be undone.</AlertDialogDescription></AlertDialogHeader>
-                                <AlertDialogFooter><AlertDialogCancel>Cancel</AlertDialogCancel><AlertDialogAction onClick={() => void handleDelete(indent)}>Delete Draft</AlertDialogAction></AlertDialogFooter>
-                              </AlertDialogContent>
-                            </AlertDialog>
-                          )}
-                        </TableCell>
-                      </TableRow>
-                      {isExpanded && (
-                        <TableRow className="bg-muted/40 hover:bg-muted/40">
-                          <TableCell colSpan={9} className="p-0">
-                            <div className="p-3">
-                              {indent.remarks && (
-                                <p className="mb-2 px-1 text-sm text-muted-foreground">
-                                  <span className="font-medium text-foreground">Remarks: </span>{indent.remarks}
-                                </p>
-                              )}
-                              <Table>
-                                <TableHeader>
-                                  <TableRow>
-                                    <TableHead>BOQ SL No</TableHead>
-                                    <TableHead>Description</TableHead>
-                                    <TableHead>Qty</TableHead>
-                                    <TableHead>Budget Price</TableHead>
-                                    <TableHead>Line Total</TableHead>
-                                  </TableRow>
-                                </TableHeader>
-                                <TableBody>
-                                  {indent.items.map((item, index) => (
-                                    <TableRow key={`${indent.id}-${item.boqItemId}-${index}`}>
-                                      <TableCell>{item.boqSlNo || "—"}</TableCell>
-                                      <TableCell className="max-w-sm truncate" title={item.description}>{item.description || "—"}</TableCell>
-                                      <TableCell className="whitespace-nowrap">{formatQuantity(item.requestedQty)} {item.unit}</TableCell>
-                                      <TableCell className="whitespace-nowrap">{formatCurrency(item.budgetPrice)}</TableCell>
-                                      <TableCell className="whitespace-nowrap font-medium">{formatCurrency(item.lineTotal)}</TableCell>
-                                    </TableRow>
-                                  ))}
-                                </TableBody>
-                              </Table>
-                            </div>
-                          </TableCell>
-                        </TableRow>
-                      )}
-                    </Fragment>
-                  );
-                }) : (
-                  <TableRow>
-                    <TableCell colSpan={9} className="h-36 text-center">
-                      <ListChecks className="mx-auto mb-2 h-8 w-8 text-muted-foreground" />
-                      <p className="font-medium">
-                        {indents.length ? `No ${activeTab} indents` : "No indents created"}
-                      </p>
-                      <p className="text-sm text-muted-foreground">
-                        {indents.length
-                          ? "Pick another status in the sidebar to see the rest of the register."
-                          : "Create the first indent against one or more BOQ items."}
-                      </p>
-                    </TableCell>
-                  </TableRow>
-                )}
-              </TableBody>
-            </Table>
-          </div>
-          {filteredIndents.length > 0 && (
-            <PmTableFoot
-              left={<>Showing <b className="font-semibold tabular-nums text-foreground">{filteredIndents.length}</b> of <b className="font-semibold tabular-nums text-foreground">{indents.length}</b> indents</>}
-              right={<>Indent value <b className="font-semibold tabular-nums text-foreground">{formatCurrency(totalIndentValue)}</b></>}
-            />
-          )}
-        </CardContent>
-      </Card>
+      <PmDataList
+        rows={filteredIndents}
+        columns={columns}
+        onRowClick={(indent) => toggleExpanded(indent.id)}
+        expandedIds={expandedIds}
+        renderExpanded={renderLineItems}
+        empty={
+          <PmEmptyState
+            icon={ListChecks}
+            title={indents.length ? `No ${activeTab} indents` : "No indents created"}
+            description={
+              indents.length
+                ? "Pick another status in the sidebar to see the rest of the register."
+                : "Create the first indent against one or more BOQ items."
+            }
+          />
+        }
+        foot={
+          <PmTableFoot
+            left={<>Showing <b className="font-semibold tabular-nums text-foreground">{filteredIndents.length}</b> of <b className="font-semibold tabular-nums text-foreground">{indents.length}</b> indents</>}
+            right={<>Indent value <b className="font-semibold tabular-nums text-foreground">{formatCurrency(totalIndentValue)}</b></>}
+          />
+        }
+      />
 
       {!boqItems.length && (
-        <Card className="border-dashed">
+        <Card className="mt-4 border-dashed">
           <CardContent className="flex flex-col items-center gap-3 p-6 text-center">
             <CalendarDays className="h-9 w-9 text-muted-foreground" />
             <div><p className="font-medium">No BOQ items available</p><p className="text-sm text-muted-foreground">Import or configure the project BOQ before creating an indent.</p></div>

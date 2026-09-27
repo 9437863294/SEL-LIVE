@@ -44,15 +44,13 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
 import { Skeleton } from "@/components/ui/skeleton";
+import {
+  PmDataList,
+  PmEmptyState,
+  PmToolbar,
+  type PmListColumn,
+} from "@/components/project-management/pm-shell";
 
 type ProjectMapping = {
   id: string;
@@ -72,6 +70,15 @@ type PlannerRow = {
   indentedQty: number;
   netRequirement: number;
   requiredAtSiteDate: string;
+};
+
+/** A planner row with its schedule, as the list renders it — `PmDataList` needs an `id`. */
+type PlannerListRow = {
+  id: string;
+  row: PlannerRow;
+  indentByDate: string | null;
+  status: RequirementStatus;
+  slippageDays: number;
 };
 
 const toNumber = (value: unknown) => {
@@ -243,6 +250,89 @@ export default function RequirementPlannerPage() {
     router.push(`/project-management/indent/new?${params.toString()}`);
   };
 
+  const columns: PmListColumn<PlannerListRow>[] = [
+    {
+      header: "",
+      className: "w-10",
+      mobile: "aside",
+      cell: ({ row }) => (
+        // A 16px box is a poor thumb target; on a phone the label pads it out to one without
+        // moving it. The label forwards its click to the checkbox button inside.
+        <label className="-m-2 inline-flex p-2 sm:m-0 sm:p-0">
+          <Checkbox
+            checked={selectedIds.has(row.boqItem.id)}
+            disabled={row.netRequirement <= 0}
+            onCheckedChange={() => toggleSelected(row.boqItem.id)}
+          />
+        </label>
+      ),
+    },
+    { header: "BOQ SL No", className: "whitespace-nowrap", mobile: "title", cell: ({ row }) => row.boqSlNo || "—" },
+    {
+      header: "Description",
+      className: "max-w-xs truncate",
+      mobile: "title",
+      cell: ({ row }) => <span title={row.description}>{row.description}</span>,
+    },
+    {
+      header: "Approved Qty",
+      align: "right",
+      cell: ({ row }) => (
+        <>
+          {formatQuantity(row.surveyedQty ?? row.boqQty)}
+          {row.surveyedQty != null && row.surveyedQty !== row.boqQty && (
+            <div className="text-xs text-muted-foreground">BOQ: {formatQuantity(row.boqQty)}</div>
+          )}
+        </>
+      ),
+    },
+    {
+      header: "Surveyed",
+      align: "right",
+      cell: ({ row }) => (row.surveyedQty != null ? formatQuantity(row.surveyedQty) : "—"),
+    },
+    { header: "Indented", align: "right", cell: ({ row }) => formatQuantity(row.indentedQty) },
+    {
+      header: "Net Requirement",
+      align: "right",
+      cell: ({ row }) => <span className="font-medium">{formatQuantity(row.netRequirement)}</span>,
+    },
+    {
+      header: "Required At Site",
+      cell: ({ row }) => (
+        <Input
+          type="date"
+          className="h-9 w-full sm:h-8 sm:w-36"
+          value={row.requiredAtSiteDate}
+          disabled={!canEditSchedule}
+          onChange={(event) => void handleRequiredDateChange(row.boqItem.id, event.target.value)}
+        />
+      ),
+    },
+    {
+      header: "Indent By",
+      className: "whitespace-nowrap",
+      cell: ({ indentByDate, status, slippageDays }) =>
+        indentByDate ? (
+          <span className={status === "Late" ? "font-medium text-red-600" : ""}>
+            {indentByDate}
+            {status === "Late" && ` (${slippageDays}d late)`}
+          </span>
+        ) : (
+          "—"
+        ),
+    },
+    {
+      header: "Status",
+      mobile: "aside",
+      cell: ({ status }) => (
+        <Badge variant="outline" className={requirementStatusStyles[status]}>
+          {status}
+        </Badge>
+      ),
+    },
+  ];
+
   if (isAuthLoading || (isLoading && canView)) {
     return (
       <main className="min-h-[calc(100dvh-4rem)] space-y-5 p-4 sm:p-6">
@@ -286,27 +376,28 @@ export default function RequirementPlannerPage() {
 
   return (
     <main className="min-h-[calc(100dvh-4rem)] space-y-5 p-4 sm:p-6">
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-        <div className="flex items-center gap-3">
-          <Button variant="ghost" size="icon" asChild>
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-3">
+        <div className="flex min-w-0 items-center gap-3">
+          <Button variant="ghost" size="icon" className="shrink-0" asChild>
             <Link href={`/project-management/supply?project=${encodeURIComponent(mappingId)}`} aria-label="Back to Supply">
               <ArrowLeft className="h-5 w-5" />
             </Link>
           </Button>
-          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-amber-500 to-orange-600 shadow-sm">
+          <div className="hidden h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-amber-500 to-orange-600 shadow-sm sm:flex">
             <ClipboardList className="h-5 w-5 text-white" />
           </div>
-          <div>
-            <h1 className="text-2xl font-bold">Requirement Planner</h1>
+          <div className="min-w-0">
+            <h1 className="truncate text-xl font-bold sm:text-2xl">Requirement Planner</h1>
             <p className="text-sm text-muted-foreground">
               {rows.length} supply-lane BOQ line{rows.length === 1 ? "" : "s"} for {mapping.projectName}
             </p>
           </div>
         </div>
         {canCreateIndent && (
-          <Button disabled={!selectedIds.size} onClick={handleCreateIndentFromSelection}>
+          <Button className="ml-auto w-full sm:w-auto" disabled={!selectedIds.size} onClick={handleCreateIndentFromSelection}>
             <ListChecks className="mr-2 h-4 w-4" />
-            Create Indent from Selection ({selectedIds.size})
+            <span className="sm:hidden">Create indent ({selectedIds.size})</span>
+            <span className="hidden sm:inline">Create Indent from Selection ({selectedIds.size})</span>
           </Button>
         )}
       </div>
@@ -321,7 +412,7 @@ export default function RequirementPlannerPage() {
         </div>
       )}
 
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+      <PmToolbar>
         <div className="relative w-full sm:max-w-xs">
           <Search className="absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
           <Input
@@ -344,90 +435,19 @@ export default function RequirementPlannerPage() {
             ))}
           </SelectContent>
         </Select>
-      </div>
+      </PmToolbar>
 
-      <Card>
-        <CardContent className="p-0">
-          <div className="overflow-x-auto">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead className="w-10" />
-                  <TableHead>BOQ SL No</TableHead>
-                  <TableHead>Description</TableHead>
-                  <TableHead className="text-right">Approved Qty</TableHead>
-                  <TableHead className="text-right">Surveyed</TableHead>
-                  <TableHead className="text-right">Indented</TableHead>
-                  <TableHead className="text-right">Net Requirement</TableHead>
-                  <TableHead>Required At Site</TableHead>
-                  <TableHead>Indent By</TableHead>
-                  <TableHead>Status</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {filteredRows.length ? (
-                  filteredRows.map(({ row, indentByDate, status, slippageDays }) => (
-                    <TableRow key={row.boqItem.id}>
-                      <TableCell>
-                        <Checkbox
-                          checked={selectedIds.has(row.boqItem.id)}
-                          disabled={row.netRequirement <= 0}
-                          onCheckedChange={() => toggleSelected(row.boqItem.id)}
-                        />
-                      </TableCell>
-                      <TableCell className="whitespace-nowrap">{row.boqSlNo || "—"}</TableCell>
-                      <TableCell className="max-w-xs truncate" title={row.description}>{row.description}</TableCell>
-                      <TableCell className="text-right">
-                        {formatQuantity(row.surveyedQty ?? row.boqQty)}
-                        {row.surveyedQty != null && row.surveyedQty !== row.boqQty && (
-                          <div className="text-xs text-muted-foreground">BOQ: {formatQuantity(row.boqQty)}</div>
-                        )}
-                      </TableCell>
-                      <TableCell className="text-right">
-                        {row.surveyedQty != null ? formatQuantity(row.surveyedQty) : "—"}
-                      </TableCell>
-                      <TableCell className="text-right">{formatQuantity(row.indentedQty)}</TableCell>
-                      <TableCell className="text-right font-medium">{formatQuantity(row.netRequirement)}</TableCell>
-                      <TableCell>
-                        <Input
-                          type="date"
-                          className="h-8 w-36"
-                          value={row.requiredAtSiteDate}
-                          disabled={!canEditSchedule}
-                          onChange={(event) => void handleRequiredDateChange(row.boqItem.id, event.target.value)}
-                        />
-                      </TableCell>
-                      <TableCell className="whitespace-nowrap text-sm">
-                        {indentByDate ? (
-                          <span className={status === "Late" ? "font-medium text-red-600" : ""}>
-                            {indentByDate}
-                            {status === "Late" && ` (${slippageDays}d late)`}
-                          </span>
-                        ) : (
-                          "—"
-                        )}
-                      </TableCell>
-                      <TableCell>
-                        <Badge variant="outline" className={requirementStatusStyles[status]}>
-                          {status}
-                        </Badge>
-                      </TableCell>
-                    </TableRow>
-                  ))
-                ) : (
-                  <TableRow>
-                    <TableCell colSpan={10} className="h-32 text-center">
-                      <ClipboardList className="mx-auto mb-2 h-8 w-8 text-muted-foreground" />
-                      <p className="font-medium">No supply-lane BOQ items match</p>
-                      <p className="mt-1 text-sm text-muted-foreground">Try a different search or status filter.</p>
-                    </TableCell>
-                  </TableRow>
-                )}
-              </TableBody>
-            </Table>
-          </div>
-        </CardContent>
-      </Card>
+      <PmDataList
+        rows={filteredRows.map((item) => ({ ...item, id: item.row.boqItem.id }))}
+        columns={columns}
+        empty={
+          <PmEmptyState
+            icon={ClipboardList}
+            title="No supply-lane BOQ items match"
+            description="Try a different search or status filter."
+          />
+        }
+      />
     </main>
   );
 }

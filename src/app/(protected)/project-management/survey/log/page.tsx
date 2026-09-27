@@ -28,8 +28,13 @@ import {
   type SurveyEntry,
   type SurveyEntryStatus,
 } from "@/lib/project-management-survey-workflow";
+import {
+  PmDataList,
+  PmEmptyState,
+  PmToolbar,
+  type PmListColumn,
+} from "@/components/project-management/pm-shell";
 import { Badge } from "@/components/ui/badge";
-import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import {
   Select,
@@ -38,14 +43,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
 import {
   Accordion,
   AccordionContent,
@@ -139,6 +136,72 @@ export default function SurveyLogPage() {
     });
   }, [entries, search, statusFilter]);
 
+  const columns: PmListColumn<SurveyEntry>[] = [
+    { header: "BOQ SL No", className: "whitespace-nowrap", mobile: "title", cell: (entry) => entry.boqSlNo || "—" },
+    {
+      header: "Description",
+      className: "max-w-xs truncate",
+      mobile: "title",
+      cell: (entry) => <span title={entry.description}>{entry.description}</span>,
+    },
+    { header: "BOQ Qty", align: "right", cell: (entry) => formatQuantity(entry.boqQty) },
+    {
+      header: "Surveyed Qty",
+      align: "right",
+      cell: (entry) => (
+        <span className="font-medium">
+          {formatQuantity(entry.surveyedQty)} {entry.unit}
+        </span>
+      ),
+    },
+    { header: "Surveyed By", cell: (entry) => entry.surveyedByName || "—" },
+    { header: "Stage", cell: (entry) => entry.currentStepName || "—" },
+    {
+      header: "Status",
+      mobile: "aside",
+      cell: (entry) => (
+        <Badge variant="outline" className={surveyStatusStyles[entry.status]}>
+          {entry.status}
+        </Badge>
+      ),
+    },
+    {
+      header: "Trail",
+      className: "min-w-[220px]",
+      // The footer rather than a detail: a detail truncates to one line, which would clip the
+      // expanded trail.
+      mobile: "footer",
+      cell: (entry) =>
+        entry.actionLogs?.length ? (
+          <Accordion type="single" collapsible className="w-full">
+            <AccordionItem value={entry.id} className="border-0">
+              <AccordionTrigger className="py-1 text-xs">
+                {entry.actionLogs.length} {entry.actionLogs.length === 1 ? "action" : "actions"}
+              </AccordionTrigger>
+              <AccordionContent>
+                <ul className="space-y-1.5">
+                  {entry.actionLogs.map((log, index) => (
+                    <li key={index} className="text-xs">
+                      <span className="font-medium">{log.action}</span>
+                      {log.stepName ? ` at ${log.stepName}` : ""} — {log.userName}
+                      {toDateSafe(log.timestamp)
+                        ? ` · ${toDateSafe(log.timestamp)!.toLocaleString()}`
+                        : ""}
+                      {log.comment ? (
+                        <p className="text-muted-foreground">{log.comment}</p>
+                      ) : null}
+                    </li>
+                  ))}
+                </ul>
+              </AccordionContent>
+            </AccordionItem>
+          </Accordion>
+        ) : (
+          <span className="text-xs text-muted-foreground">No actions yet</span>
+        ),
+    },
+  ];
+
   if (isAuthLoading || isResolving || (isLoading && canViewModule)) {
     return <SurveyLoadingState />;
   }
@@ -172,7 +235,7 @@ export default function SurveyLogPage() {
       />
 
 
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+      <PmToolbar>
         <div className="relative w-full sm:max-w-xs">
           <Search className="absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
           <Input
@@ -195,90 +258,19 @@ export default function SurveyLogPage() {
             ))}
           </SelectContent>
         </Select>
-      </div>
+      </PmToolbar>
 
-      <Card>
-        <CardContent className="p-0">
-          <div className="overflow-x-auto">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>BOQ SL No</TableHead>
-                  <TableHead>Description</TableHead>
-                  <TableHead className="text-right">BOQ Qty</TableHead>
-                  <TableHead className="text-right">Surveyed Qty</TableHead>
-                  <TableHead>Surveyed By</TableHead>
-                  <TableHead>Stage</TableHead>
-                  <TableHead>Status</TableHead>
-                  <TableHead>Trail</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {filtered.length ? (
-                  filtered.map((entry) => (
-                    <TableRow key={entry.id}>
-                      <TableCell className="whitespace-nowrap">{entry.boqSlNo || "—"}</TableCell>
-                      <TableCell className="max-w-xs truncate" title={entry.description}>
-                        {entry.description}
-                      </TableCell>
-                      <TableCell className="text-right">{formatQuantity(entry.boqQty)}</TableCell>
-                      <TableCell className="text-right font-medium">
-                        {formatQuantity(entry.surveyedQty)} {entry.unit}
-                      </TableCell>
-                      <TableCell className="text-sm">{entry.surveyedByName || "—"}</TableCell>
-                      <TableCell className="text-sm">{entry.currentStepName || "—"}</TableCell>
-                      <TableCell>
-                        <Badge variant="outline" className={surveyStatusStyles[entry.status]}>
-                          {entry.status}
-                        </Badge>
-                      </TableCell>
-                      <TableCell className="min-w-[220px]">
-                        {entry.actionLogs?.length ? (
-                          <Accordion type="single" collapsible>
-                            <AccordionItem value={entry.id} className="border-0">
-                              <AccordionTrigger className="py-1 text-xs">
-                                {entry.actionLogs.length} {entry.actionLogs.length === 1 ? "action" : "actions"}
-                              </AccordionTrigger>
-                              <AccordionContent>
-                                <ul className="space-y-1.5">
-                                  {entry.actionLogs.map((log, index) => (
-                                    <li key={index} className="text-xs">
-                                      <span className="font-medium">{log.action}</span>
-                                      {log.stepName ? ` at ${log.stepName}` : ""} — {log.userName}
-                                      {toDateSafe(log.timestamp)
-                                        ? ` · ${toDateSafe(log.timestamp)!.toLocaleString()}`
-                                        : ""}
-                                      {log.comment ? (
-                                        <p className="text-muted-foreground">{log.comment}</p>
-                                      ) : null}
-                                    </li>
-                                  ))}
-                                </ul>
-                              </AccordionContent>
-                            </AccordionItem>
-                          </Accordion>
-                        ) : (
-                          <span className="text-xs text-muted-foreground">No actions yet</span>
-                        )}
-                      </TableCell>
-                    </TableRow>
-                  ))
-                ) : (
-                  <TableRow>
-                    <TableCell colSpan={8} className="h-32 text-center">
-                      <History className="mx-auto mb-2 h-8 w-8 text-muted-foreground" />
-                      <p className="font-medium">No survey entries</p>
-                      <p className="mt-1 text-sm text-muted-foreground">
-                        Surveys submitted from Record Survey will appear here.
-                      </p>
-                    </TableCell>
-                  </TableRow>
-                )}
-              </TableBody>
-            </Table>
-          </div>
-        </CardContent>
-      </Card>
+      <PmDataList
+        rows={filtered}
+        columns={columns}
+        empty={
+          <PmEmptyState
+            icon={History}
+            title="No survey entries"
+            description="Surveys submitted from Record Survey will appear here."
+          />
+        }
+      />
     </SurveyPageShell>
   );
 }

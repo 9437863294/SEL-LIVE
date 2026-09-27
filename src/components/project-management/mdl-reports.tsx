@@ -17,8 +17,8 @@ import {
 } from "recharts";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { chartChrome } from "@/components/ui/chart";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import StatCard from "@/components/project-management/stat-card";
+import { PmDataList, type PmListColumn } from "@/components/project-management/pm-shell";
 import { cn } from "@/lib/utils";
 import {
   MDL_OVERALL_STATUSES,
@@ -43,7 +43,8 @@ const STATUS_COLORS: Record<MdlOverallStatus, string> = {
 
 const UPCOMING_WINDOW_DAYS = 14;
 
-type ReportRow = MdlRow & { rollup: MdlRollup };
+// `id` is the BOQ item's, so the overdue and due-soon lists can render through PmDataList.
+type ReportRow = MdlRow & { id: string; rollup: MdlRollup };
 
 export default function MdlReports({
   rows,
@@ -58,7 +59,7 @@ export default function MdlReports({
   // sub-drawings are still outstanding never reports as approved here while the register
   // shows it as in progress.
   const reportRows = useMemo<ReportRow[]>(
-    () => rows.map((row) => ({ ...row, rollup: getMdlRollup(row.drawing) })),
+    () => rows.map((row) => ({ ...row, id: row.item.id, rollup: getMdlRollup(row.drawing) })),
     [rows],
   );
 
@@ -143,9 +144,40 @@ export default function MdlReports({
   const rejectedCount = statusCounts.get("Rejected") ?? 0;
   const inProgressCount = (statusCounts.get("Pending") ?? 0) + (statusCounts.get("In Progress") ?? 0);
 
+  // Shared by the Overdue and Due-soon lists: a card per item on a phone, the three-column table
+  // from `sm`. `overdue` only colours the date.
+  const dueColumns = (overdue: boolean): PmListColumn<ReportRow>[] => [
+    {
+      header: "Item",
+      mobile: "title",
+      className: "max-w-[200px] truncate",
+      cell: ({ item }) => String(item.Description ?? "—"),
+    },
+    {
+      header: "Planned End",
+      className: "whitespace-nowrap",
+      cell: ({ rollup }) => (
+        <span className={overdue ? "text-red-600" : undefined}>{formatMdlDate(rollup.plannedEndDate)}</span>
+      ),
+    },
+    {
+      header: "Status",
+      mobile: "aside",
+      cell: ({ rollup }) => (
+        <span className={cn("whitespace-nowrap rounded-full px-2 py-0.5 text-xs font-medium", mdlOverallStatusStyles[rollup.status])}>
+          {rollup.status}
+        </span>
+      ),
+    },
+  ];
+
+  // The list sits inside the section's own Card, so its desktop frame is dropped (the Card is the
+  // frame) and on a phone the cards get the padding the Card's `p-0` content does not give them.
+  const DUE_LIST_CLASS = "max-sm:px-3 max-sm:pb-3 sm:rounded-none sm:border-0 sm:shadow-none";
+
   return (
     <div className="space-y-5">
-      <div className={cn("grid grid-cols-2 gap-3", subDrawingTotals.total ? "sm:grid-cols-6" : "sm:grid-cols-5")}>
+      <div className={cn("grid grid-cols-2 gap-3 sm:grid-cols-3", subDrawingTotals.total ? "lg:grid-cols-6" : "lg:grid-cols-5")}>
         <StatCard label="Total Items" value={total} icon={FileStack} tone="bg-slate-100 text-slate-700" />
         {subDrawingTotals.total > 0 && (
           <StatCard
@@ -190,7 +222,7 @@ export default function MdlReports({
             <CardTitle className="text-base">Current submission stage</CardTitle>
             <CardDescription>How many drawings are currently sitting at each revision round</CardDescription>
           </CardHeader>
-          <CardContent className="h-64">
+          <CardContent className="h-56 sm:h-64">
             <ResponsiveContainer>
               <BarChart data={stageData}>
                 <CartesianGrid stroke={chartChrome.grid} strokeDasharray="3 3" />
@@ -212,9 +244,9 @@ export default function MdlReports({
           {scopeProgress.length ? (
             scopeProgress.map(({ scope, total: scopeTotal, approved, percent }) => (
               <div key={scope}>
-                <div className="mb-1 flex items-center justify-between text-sm">
-                  <span className="font-medium">{scope}</span>
-                  <span className="text-muted-foreground">
+                <div className="mb-1 flex items-center justify-between gap-3 text-sm">
+                  <span className="min-w-0 truncate font-medium" title={scope}>{scope}</span>
+                  <span className="shrink-0 whitespace-nowrap text-muted-foreground">
                     {approved}/{scopeTotal} approved · {percent}%
                   </span>
                 </div>
@@ -237,28 +269,12 @@ export default function MdlReports({
           </CardHeader>
           <CardContent className="p-0">
             {overdueRows.length ? (
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Item</TableHead>
-                    <TableHead>Planned End</TableHead>
-                    <TableHead>Status</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {overdueRows.map(({ item, rollup }) => (
-                    <TableRow key={item.id} className="cursor-pointer" onClick={() => onSelectItem(item.id)}>
-                      <TableCell className="max-w-[200px] truncate">{String(item.Description ?? "—")}</TableCell>
-                      <TableCell className="whitespace-nowrap text-red-600">{formatMdlDate(rollup.plannedEndDate)}</TableCell>
-                      <TableCell>
-                        <span className={cn("rounded-full px-2 py-0.5 text-xs font-medium", mdlOverallStatusStyles[rollup.status])}>
-                          {rollup.status}
-                        </span>
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
+              <PmDataList
+                rows={overdueRows}
+                columns={dueColumns(true)}
+                onRowClick={({ item }) => onSelectItem(item.id)}
+                className={DUE_LIST_CLASS}
+              />
             ) : (
               <p className="p-4 text-sm text-muted-foreground">Nothing overdue.</p>
             )}
@@ -271,28 +287,12 @@ export default function MdlReports({
           </CardHeader>
           <CardContent className="p-0">
             {upcomingRows.length ? (
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Item</TableHead>
-                    <TableHead>Planned End</TableHead>
-                    <TableHead>Status</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {upcomingRows.map(({ item, rollup }) => (
-                    <TableRow key={item.id} className="cursor-pointer" onClick={() => onSelectItem(item.id)}>
-                      <TableCell className="max-w-[200px] truncate">{String(item.Description ?? "—")}</TableCell>
-                      <TableCell className="whitespace-nowrap">{formatMdlDate(rollup.plannedEndDate)}</TableCell>
-                      <TableCell>
-                        <span className={cn("rounded-full px-2 py-0.5 text-xs font-medium", mdlOverallStatusStyles[rollup.status])}>
-                          {rollup.status}
-                        </span>
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
+              <PmDataList
+                rows={upcomingRows}
+                columns={dueColumns(false)}
+                onRowClick={({ item }) => onSelectItem(item.id)}
+                className={DUE_LIST_CLASS}
+              />
             ) : (
               <p className="p-4 text-sm text-muted-foreground">Nothing due soon.</p>
             )}

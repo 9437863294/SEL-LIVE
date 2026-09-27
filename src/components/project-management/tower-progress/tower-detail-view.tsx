@@ -44,15 +44,8 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Progress } from "@/components/ui/progress";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { PmDataList, type PmListColumn } from "@/components/project-management/pm-shell";
 import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
 import {
@@ -91,6 +84,15 @@ import {
 } from "./tower-progress-ui";
 
 export type TowerDetailTab = "progress" | "photos" | "timeline";
+
+/**
+ * On a phone the activity list is a stack of cards of its own, so the Card around it drops its frame
+ * and its heading sits on the page — a card inside a card is only a thicker border. From `sm` the Card
+ * is back and the list drops *its* frame instead, so the desktop keeps the one box it had.
+ */
+const PHONE_BARE_CARD = "max-sm:border-0 max-sm:bg-transparent max-sm:shadow-none";
+const PHONE_BARE_CARD_HEADER = "max-sm:px-0 max-sm:pt-0";
+const LIST_IN_CARD = "sm:rounded-none sm:border-0 sm:shadow-none";
 
 /** Entry point for all three tower routes. */
 export function TowerDetailView({ defaultTab = "progress" }: { defaultTab?: TowerDetailTab }) {
@@ -217,6 +219,152 @@ function TowerDetail({ defaultTab }: { defaultTab: TowerDetailTab }) {
   );
   const planDirty = Object.keys(planned).length > 0;
 
+  const activityRows = TOWER_ACTIVITY_LIST.map((definition) => ({
+    id: definition.key,
+    definition,
+    state: tower.activities[definition.key],
+  }));
+
+  const activityColumns: PmListColumn<(typeof activityRows)[number]>[] = [
+    {
+      header: "Activity",
+      mobile: "title",
+      cell: ({ definition, state }) => (
+        // The phone card's headline is already bold; the desktop cell carries its own weight.
+        <div className="sm:font-medium">
+          {definition.label}
+          {definition.measure === "span" && state.quantityM ? (
+            <p className="text-xs text-muted-foreground">{formatKm(state.quantityM)}</p>
+          ) : null}
+        </div>
+      ),
+    },
+    {
+      header: "Status",
+      mobile: "title",
+      cell: ({ state }) => {
+        const days = daysInCurrentStatus(state);
+        return (
+          <>
+            <ActivityStatusBadge status={state.status} />
+            {state.reason ? (
+              <p className="mt-1 text-[11px] text-red-700 sm:max-w-48">{state.reason}</p>
+            ) : null}
+            {!isActivityComplete(state.status) && days !== undefined ? (
+              <p className="mt-1 text-[11px] text-muted-foreground">
+                {days} day{days === 1 ? "" : "s"} in status
+              </p>
+            ) : null}
+          </>
+        );
+      },
+    },
+    {
+      header: "Started",
+      className: "text-xs",
+      cell: ({ state }) => formatTowerDate(state.startedDate),
+    },
+    {
+      header: "Completed",
+      className: "text-xs",
+      cell: ({ state }) => formatTowerDate(state.completedDate),
+    },
+    {
+      header: "Planned start",
+      cell: ({ definition }) => (
+        <Input
+          type="date"
+          className="h-9 w-full text-xs sm:h-8 sm:w-36"
+          disabled={!permissions.updateProgress}
+          value={plannedValue(definition.key, "plannedStartDate")}
+          onChange={(event) =>
+            setPlanned((current) => ({
+              ...current,
+              [`${definition.key}.plannedStartDate`]: event.target.value,
+            }))
+          }
+        />
+      ),
+    },
+    {
+      header: "Planned end",
+      cell: ({ definition }) => (
+        <Input
+          type="date"
+          className="h-9 w-full text-xs sm:h-8 sm:w-36"
+          disabled={!permissions.updateProgress}
+          value={plannedValue(definition.key, "plannedEndDate")}
+          onChange={(event) =>
+            setPlanned((current) => ({
+              ...current,
+              [`${definition.key}.plannedEndDate`]: event.target.value,
+            }))
+          }
+        />
+      ),
+    },
+    {
+      header: "Evidence",
+      mobile: "aside",
+      cell: ({ definition, state }) => {
+        const missing = missingRequiredPhotoKinds(definition.key, state.presentPhotoKinds);
+        return (
+          <>
+            <Badge
+              variant="outline"
+              className={cn(
+                "text-[11px]",
+                missing.length
+                  ? "border-red-200 bg-red-50 text-red-700"
+                  : "border-emerald-200 bg-emerald-50 text-emerald-700",
+              )}
+              title={
+                missing.length
+                  ? `Missing: ${missing.map((kind) => TOWER_PHOTO_KIND_LABELS[kind]).join(", ")}`
+                  : "Minimum set complete"
+              }
+            >
+              {state.presentPhotoKinds.length}/
+              {definition.requiredPhotoKinds.length} required
+            </Badge>
+            <p className="mt-1 text-right text-[11px] text-muted-foreground sm:text-left">
+              {state.photoCount} photo{state.photoCount === 1 ? "" : "s"}
+            </p>
+          </>
+        );
+      },
+    },
+    {
+      header: "Report photo",
+      cell: ({ definition, state }) =>
+        state.reportPhotoUrl ? (
+          <TowerReportPhoto
+            compact
+            url={state.reportPhotoUrl}
+            towerNo={tower.towerNo}
+            activity={definition.key}
+            progressDate={state.reportPhotoDate ?? ""}
+          />
+        ) : (
+          <span className="text-xs text-muted-foreground">—</span>
+        ),
+    },
+    ...(permissions.updateProgress
+      ? [
+          {
+            header: "",
+            align: "right" as const,
+            mobile: "footer" as const,
+            cell: ({ definition }: (typeof activityRows)[number]) => (
+              <Button variant="outline" size="sm" onClick={() => setUpdateActivity(definition.key)}>
+                Update
+              </Button>
+            ),
+          },
+        ]
+      : []),
+  ];
+
   return (
     <TowerProgressShell>
       <TowerProgressHeader
@@ -230,18 +378,30 @@ function TowerDetail({ defaultTab }: { defaultTab: TowerDetailTab }) {
         backHref={towerProgressHref(mappingId, "towers")}
         actions={
           <>
+            {/* Phones: the two secondary actions go icon-only so the primary one keeps its label. */}
             {permissions.viewReports ? (
-              <Button variant="outline" asChild>
-                <Link href={towerProgressHref(mappingId, `towers/${tower.id}/print`)} target="_blank">
-                  <Printer className="mr-2 h-4 w-4" />
-                  Generate tower report
+              <Button variant="outline" className="px-3 sm:px-4" asChild>
+                <Link
+                  href={towerProgressHref(mappingId, `towers/${tower.id}/print`)}
+                  target="_blank"
+                  aria-label="Generate tower report"
+                  title="Generate tower report"
+                >
+                  <Printer className="h-4 w-4 sm:mr-2" />
+                  <span className="hidden sm:inline">Generate tower report</span>
                 </Link>
               </Button>
             ) : null}
             {permissions.editTower ? (
-              <Button variant="outline" onClick={() => setIsEditOpen(true)}>
-                <Pencil className="mr-2 h-4 w-4" />
-                Edit tower
+              <Button
+                variant="outline"
+                className="px-3 sm:px-4"
+                onClick={() => setIsEditOpen(true)}
+                aria-label="Edit tower"
+                title="Edit tower"
+              >
+                <Pencil className="h-4 w-4 sm:mr-2" />
+                <span className="hidden sm:inline">Edit tower</span>
               </Button>
             ) : null}
             {permissions.updateProgress ? (
@@ -256,7 +416,7 @@ function TowerDetail({ defaultTab }: { defaultTab: TowerDetailTab }) {
 
       <TowerProgressNav />
 
-      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4 [&>*]:min-w-0">
         <MetricCard
           label="Overall progress"
           value={`${tower.overallProgressPct}%`}
@@ -314,8 +474,8 @@ function TowerDetail({ defaultTab }: { defaultTab: TowerDetailTab }) {
 
         {/* ── Progress ─────────────────────────────────────────────────────────────────────── */}
         <TabsContent value="progress" className="space-y-4">
-          <Card>
-            <CardHeader className="pb-3">
+          <Card className={PHONE_BARE_CARD}>
+            <CardHeader className={cn("pb-3", PHONE_BARE_CARD_HEADER)}>
               <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
                 <div>
                   <CardTitle className="text-base">Activity status</CardTitle>
@@ -332,134 +492,7 @@ function TowerDetail({ defaultTab }: { defaultTab: TowerDetailTab }) {
               </div>
             </CardHeader>
             <CardContent className="p-0">
-              <div className="overflow-x-auto">
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Activity</TableHead>
-                      <TableHead>Status</TableHead>
-                      <TableHead>Started</TableHead>
-                      <TableHead>Completed</TableHead>
-                      <TableHead>Planned start</TableHead>
-                      <TableHead>Planned end</TableHead>
-                      <TableHead>Evidence</TableHead>
-                      <TableHead>Report photo</TableHead>
-                      {permissions.updateProgress ? <TableHead /> : null}
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {TOWER_ACTIVITY_LIST.map((definition) => {
-                      const state = tower.activities[definition.key];
-                      const missing = missingRequiredPhotoKinds(
-                        definition.key,
-                        state.presentPhotoKinds,
-                      );
-                      const days = daysInCurrentStatus(state);
-                      return (
-                        <TableRow key={definition.key}>
-                          <TableCell className="font-medium">
-                            {definition.label}
-                            {definition.measure === "span" && state.quantityM ? (
-                              <p className="text-xs text-muted-foreground">
-                                {formatKm(state.quantityM)}
-                              </p>
-                            ) : null}
-                          </TableCell>
-                          <TableCell>
-                            <ActivityStatusBadge status={state.status} />
-                            {state.reason ? (
-                              <p className="mt-1 max-w-48 text-[11px] text-red-700">{state.reason}</p>
-                            ) : null}
-                            {!isActivityComplete(state.status) && days !== undefined ? (
-                              <p className="mt-1 text-[11px] text-muted-foreground">
-                                {days} day{days === 1 ? "" : "s"} in status
-                              </p>
-                            ) : null}
-                          </TableCell>
-                          <TableCell className="text-xs">{formatTowerDate(state.startedDate)}</TableCell>
-                          <TableCell className="text-xs">
-                            {formatTowerDate(state.completedDate)}
-                          </TableCell>
-                          <TableCell>
-                            <Input
-                              type="date"
-                              className="h-8 w-36 text-xs"
-                              disabled={!permissions.updateProgress}
-                              value={plannedValue(definition.key, "plannedStartDate")}
-                              onChange={(event) =>
-                                setPlanned((current) => ({
-                                  ...current,
-                                  [`${definition.key}.plannedStartDate`]: event.target.value,
-                                }))
-                              }
-                            />
-                          </TableCell>
-                          <TableCell>
-                            <Input
-                              type="date"
-                              className="h-8 w-36 text-xs"
-                              disabled={!permissions.updateProgress}
-                              value={plannedValue(definition.key, "plannedEndDate")}
-                              onChange={(event) =>
-                                setPlanned((current) => ({
-                                  ...current,
-                                  [`${definition.key}.plannedEndDate`]: event.target.value,
-                                }))
-                              }
-                            />
-                          </TableCell>
-                          <TableCell>
-                            <Badge
-                              variant="outline"
-                              className={cn(
-                                "text-[11px]",
-                                missing.length
-                                  ? "border-red-200 bg-red-50 text-red-700"
-                                  : "border-emerald-200 bg-emerald-50 text-emerald-700",
-                              )}
-                              title={
-                                missing.length
-                                  ? `Missing: ${missing.map((kind) => TOWER_PHOTO_KIND_LABELS[kind]).join(", ")}`
-                                  : "Minimum set complete"
-                              }
-                            >
-                              {state.presentPhotoKinds.length}/
-                              {definition.requiredPhotoKinds.length} required
-                            </Badge>
-                            <p className="mt-1 text-[11px] text-muted-foreground">
-                              {state.photoCount} photo{state.photoCount === 1 ? "" : "s"}
-                            </p>
-                          </TableCell>
-                          <TableCell>
-                            {state.reportPhotoUrl ? (
-                              <TowerReportPhoto
-                                compact
-                                url={state.reportPhotoUrl}
-                                towerNo={tower.towerNo}
-                                activity={definition.key}
-                                progressDate={state.reportPhotoDate ?? ""}
-                              />
-                            ) : (
-                              <span className="text-xs text-muted-foreground">—</span>
-                            )}
-                          </TableCell>
-                          {permissions.updateProgress ? (
-                            <TableCell className="text-right">
-                              <Button
-                                variant="outline"
-                                size="sm"
-                                onClick={() => setUpdateActivity(definition.key)}
-                              >
-                                Update
-                              </Button>
-                            </TableCell>
-                          ) : null}
-                        </TableRow>
-                      );
-                    })}
-                  </TableBody>
-                </Table>
-              </div>
+              <PmDataList rows={activityRows} columns={activityColumns} className={LIST_IN_CARD} />
             </CardContent>
           </Card>
         </TabsContent>
@@ -493,6 +526,8 @@ function TowerDetail({ defaultTab }: { defaultTab: TowerDetailTab }) {
                             {group.length}
                           </Badge>
                         </div>
+                        {/* One plate per row on a phone: each carries its evidence caption over the
+                            image, and at half a phone's width that caption covers the photograph. */}
                         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
                           {group.map((entry) => {
                             const update = updates.find((item) => item.id === entry.updateId);
@@ -519,7 +554,7 @@ function TowerDetail({ defaultTab }: { defaultTab: TowerDetailTab }) {
                                     <Button
                                       variant="ghost"
                                       size="sm"
-                                      className="h-6 px-1.5 text-[10px]"
+                                      className="h-8 px-2 text-xs sm:h-6 sm:px-1.5 sm:text-[10px]"
                                       onClick={() =>
                                         void handleSetReportPhoto(update, entry.photo.id)
                                       }
@@ -600,9 +635,13 @@ function TowerDetail({ defaultTab }: { defaultTab: TowerDetailTab }) {
                         ) : null}
                       </p>
                       {entry.reason ? (
-                        <p className="mt-1 text-xs font-medium text-red-700">{entry.reason}</p>
+                        <p className="mt-1 break-words text-xs font-medium text-red-700">
+                          {entry.reason}
+                        </p>
                       ) : null}
-                      {entry.remarks ? <p className="mt-1 text-xs">{entry.remarks}</p> : null}
+                      {entry.remarks ? (
+                        <p className="mt-1 break-words text-xs">{entry.remarks}</p>
+                      ) : null}
                       {entry.photos.length ? (
                         <div className="mt-2 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
                           {entry.photos.map((photo) => (
@@ -623,7 +662,7 @@ function TowerDetail({ defaultTab }: { defaultTab: TowerDetailTab }) {
                         <Button
                           variant="ghost"
                           size="sm"
-                          className="mt-2 h-7 px-2 text-xs text-destructive"
+                          className="mt-2 h-9 px-2 text-xs text-destructive sm:h-7"
                           onClick={() => {
                             const update = updates.find((item) => item.id === entry.updateId);
                             if (update) setDeleteTarget(update);

@@ -24,8 +24,9 @@
 
 import type { ReactNode } from "react";
 import Link from "next/link";
-import { ArrowRight, ChevronLeft, ChevronRight, type LucideIcon } from "lucide-react";
+import { ArrowRight, ChevronLeft, ChevronRight, Inbox, type LucideIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { DataList, type ListColumn } from "@/components/shared/data-list";
 import {
   SectionsSheet,
   type SectionsSheetEntry,
@@ -59,9 +60,13 @@ const SIDEBAR_HEIGHT =
  * Set here rather than in `components/ui/table.tsx`, which every table in the application shares.
  * `[&_td]` beats a cell's own `py-*`, so cells must not set vertical padding themselves — set a
  * `pl-*` on an inner element if a cell needs indenting.
+ *
+ * The case, tracking and colour are spelled out because `PmDataList` renders through the shared
+ * `DataList`, whose header cells are uppercase slate small-caps; these keep a PM register reading
+ * the same whether it is a plain `<Table>` or a responsive list.
  */
 export const PM_TABLE_CLASS =
-  "[&_th]:h-9 [&_th]:whitespace-nowrap [&_th]:bg-muted/40 [&_th]:px-4 [&_th]:text-xs [&_th]:font-semibold [&_td]:px-4 [&_td]:py-2.5";
+  "[&_th]:h-9 [&_th]:whitespace-nowrap [&_th]:bg-muted/40 [&_th]:px-4 [&_th]:text-xs [&_th]:font-semibold [&_th]:normal-case [&_th]:tracking-normal [&_th]:text-muted-foreground [&_td]:px-4 [&_td]:py-2.5";
 
 /**
  * Deterministic accents by position.
@@ -470,13 +475,15 @@ export function PmTopbar({
         BELOW_APP_HEADER,
       )}
     >
-      <Button variant="outline" size="icon" className="h-8 w-8 shrink-0" asChild>
+      <Button variant="outline" size="icon" className="h-9 w-9 shrink-0 sm:h-8 sm:w-8" asChild>
         <Link href={backHref} aria-label={backLabel}>
           <ChevronLeft className="h-4 w-4" />
         </Link>
       </Button>
 
-      <nav aria-label="Breadcrumb" className="flex min-w-0 items-baseline gap-2">
+      {/* `basis-40` rather than a zero basis: the title claims a real share of the first line, so
+          on a phone the actions wrap beneath it instead of squeezing it down to "Ind…". */}
+      <nav aria-label="Breadcrumb" className="flex min-w-0 flex-1 basis-40 items-baseline gap-2">
         {breadcrumbs.length > 0 && (
           <p className="hidden shrink-0 items-baseline gap-1.5 whitespace-nowrap text-[13px] text-muted-foreground md:flex">
             {breadcrumbs.map((crumb) => (
@@ -495,10 +502,12 @@ export function PmTopbar({
             ))}
           </p>
         )}
-        <h1 className="truncate text-[17px] font-semibold tracking-tight">{title}</h1>
+        <h1 className="truncate text-base font-semibold tracking-tight sm:text-[17px]">{title}</h1>
       </nav>
 
-      {actions ? <div className="ml-auto flex flex-wrap items-center gap-2">{actions}</div> : null}
+      {actions ? (
+        <div className="ml-auto flex flex-wrap items-center justify-end gap-2">{actions}</div>
+      ) : null}
     </header>
   );
 }
@@ -507,7 +516,7 @@ export function PmTopbar({
 
 /** The scrolling content area beneath the topbar. */
 export function PmContent({ children, className }: { children: ReactNode; className?: string }) {
-  return <main className={cn("flex-1 px-4 py-5 md:px-6", className)}>{children}</main>;
+  return <main className={cn("min-w-0 flex-1 px-4 py-4 sm:py-5 md:px-6", className)}>{children}</main>;
 }
 
 /**
@@ -608,7 +617,7 @@ export function PmSectionHead({
 }) {
   return (
     <div className="mb-3 flex flex-wrap items-end gap-x-6 gap-y-2">
-      <h2 className="text-xl font-semibold tracking-tight">{title}</h2>
+      <h2 className="text-lg font-semibold tracking-tight sm:text-xl">{title}</h2>
       {stats.length > 0 && (
         <dl className="flex flex-wrap items-baseline gap-x-5 gap-y-1 text-[13px] text-muted-foreground">
           {stats.map((stat) => (
@@ -626,7 +635,7 @@ export function PmSectionHead({
           ))}
         </dl>
       )}
-      {actions ? <div className="ml-auto flex items-center gap-2">{actions}</div> : null}
+      {actions ? <div className="ml-auto flex flex-wrap items-center gap-2">{actions}</div> : null}
     </div>
   );
 }
@@ -673,3 +682,174 @@ export function PmStatusPill({
     </span>
   );
 }
+
+/* ── Phone-ready building blocks ────────────────────────────────────────────────────────────── */
+
+/**
+ * One column of a register — the shared `ListColumn`, re-exported so the module's screens import
+ * their register furniture from one place.
+ *
+ * `mobile` decides where the value lands on the phone card: `'title'` (headline), `'aside'`
+ * (top-right, for a status pill), `'detail'` (the label/value grid, the default), `'footer'`
+ * (a full-width actions row) or `'omit'` (desktop only).
+ */
+export type PmListColumn<T> = ListColumn<T>;
+
+type PmDataListProps<T extends { id: string }> = Parameters<typeof DataList<T>>[0];
+
+/**
+ * A register that works on a phone: one card per record below `sm`, the module's dense table
+ * above it — declared once, as columns, so the two cannot drift apart.
+ *
+ * A thin frame around the shared `DataList`. The frame is what makes it a Project Management
+ * register rather than an HR one: on a desktop the table sits in the same bordered card with the
+ * same `PM_TABLE_CLASS` density and the same `PmTableFoot` totals bar every register here had
+ * before; on a phone the cards stand on the page by themselves, since a card inside a card is
+ * just a thicker border, and the totals bar follows them as a rounded strip of its own.
+ */
+export function PmDataList<T extends { id: string }>({
+  foot,
+  className,
+  tableClassName,
+  empty,
+  ...props
+}: PmDataListProps<T> & {
+  /** A totals bar under the table — usually a `PmTableFoot`. */
+  foot?: ReactNode;
+  /** Classes for the outer frame, e.g. a bottom margin. */
+  className?: string;
+}) {
+  if (props.rows.length === 0) {
+    return (
+      <div className={cn("overflow-hidden rounded-lg border border-border/60 bg-card", className)}>
+        {empty ?? <PmEmptyState title="Nothing to show" />}
+      </div>
+    );
+  }
+
+  return (
+    <div
+      className={cn(
+        // Cards only: nothing renders from `sm`, so a desktop frame would be an empty box.
+        !props.cardsOnly &&
+          "sm:overflow-hidden sm:rounded-lg sm:border sm:border-border/60 sm:bg-card sm:shadow-sm",
+        className,
+      )}
+    >
+      <DataList
+        {...props}
+        frameless
+        tableClassName={cn(
+          PM_TABLE_CLASS,
+          // A pinned header must be opaque, or the rows show through it as they scroll under.
+          props.maxHeightClassName && "[&_th]:bg-muted",
+          tableClassName,
+        )}
+      />
+      {foot ? (
+        <div className="mt-2.5 overflow-hidden rounded-lg border border-border/60 bg-card max-sm:[&>*]:border-t-0 sm:mt-0 sm:rounded-none sm:border-0">
+          {foot}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+/**
+ * What a register shows when it has nothing to list: an icon, one line saying so, and optionally
+ * the next step. Frame-less on purpose — `PmDataList` and a Card both supply the frame.
+ */
+export function PmEmptyState({
+  icon: Icon = Inbox,
+  title,
+  description,
+  action,
+  className,
+}: {
+  icon?: LucideIcon;
+  title: string;
+  description?: ReactNode;
+  action?: ReactNode;
+  className?: string;
+}) {
+  return (
+    <div
+      className={cn(
+        "flex flex-col items-center justify-center gap-1.5 px-6 py-10 text-center",
+        className,
+      )}
+    >
+      <span className="mb-1 flex h-11 w-11 items-center justify-center rounded-full bg-muted">
+        <Icon className="h-5 w-5 text-muted-foreground" />
+      </span>
+      <p className="text-sm font-medium">{title}</p>
+      {description ? (
+        <p className="max-w-sm text-[13px] text-muted-foreground">{description}</p>
+      ) : null}
+      {action ? <div className="mt-2">{action}</div> : null}
+    </div>
+  );
+}
+
+/**
+ * A search/filter row: stacked at full width on a phone, one wrapping row from `sm`.
+ *
+ * Children with no width of their own stretch across a phone; give a control `sm:w-56` (not a
+ * bare `w-56`) so it keeps its desktop width without overflowing a 360px screen.
+ */
+export function PmToolbar({ children, className }: { children: ReactNode; className?: string }) {
+  return (
+    <div
+      className={cn(
+        "mb-3 flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center",
+        className,
+      )}
+    >
+      {children}
+    </div>
+  );
+}
+
+/**
+ * A form's closing buttons: full-width and stacked on a phone — the primary on top, where the
+ * thumb is — and right-aligned in a row from `sm`. Put the primary action **last**.
+ */
+export function PmFormActions({ children, className }: { children: ReactNode; className?: string }) {
+  return (
+    <div
+      className={cn(
+        "flex flex-col-reverse gap-2 sm:flex-row sm:items-center sm:justify-end",
+        className,
+      )}
+    >
+      {children}
+    </div>
+  );
+}
+
+/**
+ * Class names that make a dialog a full-screen sheet on a phone and a centred modal above `sm`.
+ *
+ * The same pairing as HR's `hrDialog` — the behaviour lives in `globals.css` under
+ * `.hr-mobile-dialog` (≤640px) — defined here rather than imported, because `hr-ui.tsx` drags the
+ * HR rulebook along with it. Apply all four parts: on a phone the content becomes a flex column in
+ * which only `.hr-dialog-body` scrolls, so a dialog given `content` but no `body` clips whatever
+ * does not fit.
+ */
+export const PM_DIALOG = {
+  content: "hr-mobile-dialog sm:max-w-lg sm:gap-4",
+  contentWide: "hr-mobile-dialog sm:max-w-3xl sm:gap-4",
+  /**
+   * A long form: wide, capped to the viewport, scrolled in the body at every width. Pair with
+   * `bodyScroll`, or the capped dialog clips on a desktop.
+   */
+  contentTall: "hr-mobile-dialog sm:flex sm:max-h-[90dvh] sm:max-w-5xl sm:flex-col sm:gap-4",
+  header: "hr-dialog-header",
+  /** Stacked fields. */
+  body: "hr-dialog-body space-y-3",
+  /** Stacked fields in a `contentTall` dialog: the part that scrolls. */
+  bodyScroll: "hr-dialog-body space-y-3 sm:min-h-0 sm:flex-1 sm:-mx-1 sm:overflow-y-auto sm:px-1",
+  /** Paired fields — one column on a phone, two from `sm` up. */
+  bodyGrid: "hr-dialog-body grid grid-cols-1 gap-3 sm:grid-cols-2",
+  footer: "hr-dialog-footer sm:shrink-0",
+} as const;

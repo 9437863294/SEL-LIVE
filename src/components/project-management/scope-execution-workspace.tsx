@@ -106,16 +106,14 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
 import { Textarea } from "@/components/ui/textarea";
 import { Skeleton } from "@/components/ui/skeleton";
+import {
+  PM_DIALOG,
+  PmDataList,
+  PmEmptyState,
+  type PmListColumn,
+} from "@/components/project-management/pm-shell";
 import { cn } from "@/lib/utils";
 
 type ScopeExecutionWorkspaceProps = {
@@ -194,6 +192,15 @@ const escapeCsvCell = (value: unknown) => {
   if (/^[=+\-@]/.test(text)) text = `'${text}`;
   return `"${text.replace(/"/g, '""')}"`;
 };
+
+/**
+ * On a phone each register's rows are cards of their own, so the Card around the register drops its
+ * frame and its heading sits on the page — a card inside a card is only a thicker border. From `sm`
+ * the Card is back and the list drops *its* frame instead, so the desktop keeps the one box it had.
+ */
+const PHONE_BARE_CARD = "max-sm:border-0 max-sm:bg-transparent max-sm:shadow-none";
+const PHONE_BARE_CARD_HEADER = "max-sm:px-0 max-sm:pt-0";
+const LIST_IN_CARD = "sm:rounded-none sm:border-0 sm:shadow-none";
 
 const CONCURRENT_UPDATE_ERROR = "WORK_PACKAGE_CONCURRENT_UPDATE";
 
@@ -353,7 +360,7 @@ export default function ScopeExecutionWorkspace({ mappingId, scope }: ScopeExecu
             typeof item.variationApprovedQty === "number" ? item.variationApprovedQty : 0,
           tolerancePct,
         });
-        return { item, workOrder, measurement, bill, boqQty, surveyedQty, ledger };
+        return { id: item.id, item, workOrder, measurement, bill, boqQty, surveyedQty, ledger };
       });
   }, [scopeBoqItems, workOrders, measurementEntries, subcontractorBills, tolerancePct]);
 
@@ -610,8 +617,8 @@ export default function ScopeExecutionWorkspace({ mappingId, scope }: ScopeExecu
   if (isAuthLoading || (isLoading && canView)) {
     return (
       <main className="min-h-[calc(100dvh-4rem)] space-y-5 p-4 sm:p-6">
-        <Skeleton className="h-12 w-72" />
-        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        <Skeleton className="h-12 w-72 max-w-full" />
+        <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
           {[1, 2, 3, 4].map((item) => <Skeleton key={item} className="h-24 rounded-xl" />)}
         </div>
         <Skeleton className="h-80 rounded-xl" />
@@ -651,30 +658,209 @@ export default function ScopeExecutionWorkspace({ mappingId, scope }: ScopeExecu
 
   const theme = scopeTheme[scope];
 
+  const boqItemHref = (itemId: string) =>
+    `/project-management/boq/item/${encodeURIComponent(itemId)}?project=${encodeURIComponent(mappingId)}`;
+
+  const packageColumns: PmListColumn<ProjectWorkPackage>[] = [
+    {
+      header: "Work package",
+      mobile: "title",
+      cell: (workPackage) => (
+        <>
+          {/* The phone card's headline is already bold; the desktop cell carries its own weight. */}
+          <p className="sm:font-medium">{workPackage.title}</p>
+          <p className="max-w-72 truncate text-xs font-normal text-muted-foreground">
+            {[workPackage.location, workPackage.contractor].filter(Boolean).join(" · ") || workPackage.description || "No additional detail"}
+          </p>
+        </>
+      ),
+    },
+    { header: "Owner", cell: (workPackage) => workPackage.ownerName },
+    {
+      header: "Priority",
+      cell: (workPackage) => <Badge variant="outline" className={priorityStyles[workPackage.priority]}>{workPackage.priority}</Badge>,
+    },
+    {
+      header: "Status",
+      mobile: "aside",
+      cell: (workPackage) => <Badge className={statusStyles[workPackage.status]}>{workPackage.status}</Badge>,
+    },
+    {
+      header: "Progress",
+      className: "min-w-40",
+      cell: (workPackage) => (
+        <div className="flex items-center gap-2">
+          <Progress value={workPackage.progressPct} className="h-2" />
+          <span className="w-10 text-right text-xs font-medium">{workPackage.progressPct}%</span>
+        </div>
+      ),
+    },
+    {
+      header: "Planned finish",
+      cell: (workPackage) => {
+        const overdue = isWorkPackageOverdue(workPackage);
+        return (
+          <>
+            <div className={cn("flex items-center gap-1.5 text-sm", overdue && "font-medium text-red-700")}>
+              <CalendarClock className="h-3.5 w-3.5" />
+              {formatDate(workPackage.plannedEndDate)}
+            </div>
+            {overdue && <span className="text-xs text-red-600">Overdue</span>}
+          </>
+        );
+      },
+    },
+    {
+      // A sub-line under the package on a phone, where a blocker is worth seeing without a tap.
+      header: "Next action / blocker",
+      mobile: "title",
+      cell: (workPackage) => (
+        <p className={cn("max-w-64 truncate text-xs sm:text-sm", workPackage.blocker && "text-red-700")}>
+          {workPackage.blocker || workPackage.nextAction || "—"}
+        </p>
+      ),
+    },
+    ...(canEdit || canDelete
+      ? [
+          {
+            header: "Actions",
+            align: "right" as const,
+            mobile: "footer" as const,
+            // Icon-only on a desktop row; labelled, outlined halves of the card's footer on a phone.
+            cell: (workPackage: ProjectWorkPackage) => (
+              <div className="flex w-full justify-end gap-2 sm:w-auto sm:gap-1">
+                {canEdit && (
+                  <Button variant="ghost" size="icon" className="max-sm:border" onClick={() => openEdit(workPackage)} aria-label={`Edit ${workPackage.title}`}>
+                    <Pencil className="h-4 w-4" />
+                    <span className="ml-2 sm:hidden">Edit</span>
+                  </Button>
+                )}
+                {canDelete && (
+                  <Button variant="ghost" size="icon" className="max-sm:border" onClick={() => setDeleteTarget(workPackage)} aria-label={`Delete ${workPackage.title}`}>
+                    <Trash2 className="h-4 w-4 text-destructive" />
+                    <span className="ml-2 text-destructive sm:hidden">Delete</span>
+                  </Button>
+                )}
+              </div>
+            ),
+          },
+        ]
+      : []),
+  ];
+
+  const coverageColumns: PmListColumn<(typeof coverageRows)[number]>[] = [
+    {
+      // Top-right on a phone, so the description — what the line actually is — heads the card.
+      header: "SL No",
+      mobile: "aside",
+      className: "whitespace-nowrap text-xs",
+      cell: ({ item }) => (
+        <span className="max-sm:text-xs max-sm:text-muted-foreground">{readBoqSlNo(item) || "—"}</span>
+      ),
+    },
+    {
+      header: "Description",
+      mobile: "title",
+      className: "min-w-64 max-w-xs",
+      cell: ({ item }) => (
+        <p className="max-sm:line-clamp-2 sm:truncate sm:text-xs" title={String(item.Description ?? "")}>
+          {String(item.Description ?? "") || "—"}
+        </p>
+      ),
+    },
+    { header: "BOQ Qty", align: "right", className: "text-xs", cell: ({ boqQty }) => boqQty },
+    { header: "Surveyed", align: "right", className: "text-xs", cell: ({ surveyedQty }) => surveyedQty ?? "—" },
+    {
+      header: "WO Qty",
+      align: "right",
+      className: "text-xs",
+      cell: ({ workOrder }) => (workOrder ? workOrder.orderedQty : "—"),
+    },
+    {
+      header: "Subcontractor",
+      className: "max-w-40 truncate text-xs",
+      cell: ({ workOrder }) => (
+        <span title={workOrder?.subcontractorNames.join(", ")}>
+          {workOrder?.subcontractorNames.join(", ") || "—"}
+        </span>
+      ),
+    },
+    {
+      header: "Executed",
+      align: "right",
+      className: "text-xs",
+      cell: ({ measurement }) => (measurement ? measurement.executedQty : "—"),
+    },
+    {
+      header: "Certified",
+      align: "right",
+      className: "text-xs",
+      cell: ({ measurement }) => (measurement ? measurement.certifiedQty : "—"),
+    },
+    {
+      header: "Sub-billed",
+      align: "right",
+      className: "text-xs",
+      cell: ({ bill }) => (bill ? bill.billedQty : "—"),
+    },
+    {
+      header: "Ladder",
+      mobile: "aside",
+      cell: ({ ledger }) =>
+        ledger.worstSeverity ? (
+          <Badge
+            variant="outline"
+            className={quantityExceptionStyles[ledger.worstSeverity]}
+            title={ledger.exceptions.map((exception) => exception.message).join("\n")}
+          >
+            {ledger.worstSeverity}
+          </Badge>
+        ) : (
+          <Badge variant="outline" className="bg-emerald-100 text-emerald-700">clean</Badge>
+        ),
+    },
+    {
+      // The whole card is this link on a phone (`cardHref`), so the button is desktop-only.
+      header: "Open",
+      align: "right",
+      className: "w-20",
+      mobile: "omit",
+      cell: ({ item }) => (
+        <Button variant="ghost" size="sm" asChild aria-label="Open BOQ item lifecycle">
+          <Link href={boqItemHref(item.id)}>
+            360°
+          </Link>
+        </Button>
+      ),
+    },
+  ];
+
   return (
     <main className="min-h-[calc(100dvh-4rem)] space-y-5 p-4 sm:p-6">
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <div className="flex items-center gap-3">
-          <Button variant="ghost" size="icon" asChild>
+      <div className="flex flex-wrap items-center gap-3">
+        <div className="flex min-w-0 flex-1 basis-72 items-center gap-3">
+          <Button variant="ghost" size="icon" className="shrink-0" asChild>
             <Link href={`/project-management?project=${encodeURIComponent(mappingId)}`} aria-label="Back to Project Management">
               <ArrowLeft className="h-5 w-5" />
             </Link>
           </Button>
-          <div className={cn("flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br shadow-sm", theme.gradient)}>
+          <div className={cn("hidden h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br shadow-sm sm:flex", theme.gradient)}>
             <HardHat className="h-5 w-5 text-white" />
           </div>
-          <div>
-            <h1 className="text-2xl font-bold">{scope} Execution</h1>
+          <div className="min-w-0">
+            <h1 className="truncate text-xl font-bold sm:text-2xl">{scope} Execution</h1>
             <p className="text-sm text-muted-foreground">{theme.description} for {mapping.projectName}.</p>
           </div>
         </div>
-        <div className="flex flex-wrap gap-2">
+        {/* Phones: the two sub-registers share the first row, refresh and export go icon-only
+            beside them, and the primary action takes the full width beneath. */}
+        <div className="flex w-full flex-wrap gap-2 sm:ml-auto sm:w-auto">
           {/* Tower Progress is the erection lane's tower-wise execution register — the seven
               construction activities per tower with their photographic evidence, and the reporting
               engine over them (see src/lib/project-management-tower-progress.ts). Erection only:
               a civil scope has no tower schedule to run it against. */}
           {scope === "Erection" && canViewTowerProgress && (
-            <Button variant="outline" asChild>
+            <Button variant="outline" className="flex-1 px-3 sm:flex-none sm:px-4" asChild>
               <Link href={towerProgressHref(mappingId)}>
                 <RadioTower className="mr-2 h-4 w-4" />Tower Progress
               </Link>
@@ -683,22 +869,22 @@ export default function ScopeExecutionWorkspace({ mappingId, scope }: ScopeExecu
           {/* JMC is the civil lane's measurement register — the same screens Billing Recon hosts,
               rendered here against this project (see src/lib/jmc-module.ts). */}
           {canViewJmc && (
-            <Button variant="outline" asChild>
+            <Button variant="outline" className="flex-1 px-3 sm:flex-none sm:px-4" asChild>
               <Link href={`${PM_JMC_BASE_PATH}?project=${encodeURIComponent(mappingId)}`}>
                 <Ruler className="mr-2 h-4 w-4" />JMC
               </Link>
             </Button>
           )}
-          <Button variant="outline" onClick={() => void loadData()}>
-            <RefreshCw className="mr-2 h-4 w-4" />Refresh
+          <Button variant="outline" className="px-3 sm:px-4" onClick={() => void loadData()} aria-label="Refresh" title="Refresh">
+            <RefreshCw className="h-4 w-4 sm:mr-2" /><span className="hidden sm:inline">Refresh</span>
           </Button>
           {canExport && packages.length > 0 && (
-            <Button variant="outline" onClick={handleExport}>
-              <Download className="mr-2 h-4 w-4" />Export
+            <Button variant="outline" className="px-3 sm:px-4" onClick={handleExport} aria-label="Export" title="Export">
+              <Download className="h-4 w-4 sm:mr-2" /><span className="hidden sm:inline">Export</span>
             </Button>
           )}
           {canAdd && (
-            <Button onClick={openCreate}>
+            <Button className="w-full sm:w-auto" onClick={openCreate}>
               <Plus className="mr-2 h-4 w-4" />Add Work Package
             </Button>
           )}
@@ -713,7 +899,8 @@ export default function ScopeExecutionWorkspace({ mappingId, scope }: ScopeExecu
         </Alert>
       )}
 
-      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
+      {/* Two across below `lg`, the odd fifth (the BOQ value) taking a full row. */}
+      <div className="grid grid-cols-2 gap-3 lg:grid-cols-5 [&>*:last-child]:col-span-2 lg:[&>*:last-child]:col-span-1">
         {[
           { label: "Average progress", value: `${summary.averageProgressPct}%`, detail: `${summary.total} work packages` },
           { label: "Completed", value: summary.completed, detail: "Closed packages" },
@@ -722,9 +909,9 @@ export default function ScopeExecutionWorkspace({ mappingId, scope }: ScopeExecu
           { label: `${scope} BOQ`, value: formatCurrency(boqStats.value), detail: `${boqStats.itemCount} BOQ lines` },
         ].map((metric) => (
           <Card key={metric.label} className={cn(metric.danger && "border-red-200 bg-red-50/50")}>
-            <CardContent className="p-4">
+            <CardContent className="p-3 sm:p-4">
               <p className="text-xs font-medium text-muted-foreground">{metric.label}</p>
-              <p className="mt-1 text-xl font-bold">{metric.value}</p>
+              <p className="mt-1 text-lg font-bold sm:text-xl">{metric.value}</p>
               <p className="mt-1 text-xs text-muted-foreground">{metric.detail}</p>
             </CardContent>
           </Card>
@@ -733,15 +920,16 @@ export default function ScopeExecutionWorkspace({ mappingId, scope }: ScopeExecu
 
       {summary.total > 0 && <Progress value={summary.averageProgressPct} className="h-2" />}
 
-      <Card>
-        <CardHeader className="pb-3">
+      <Card className={PHONE_BARE_CARD}>
+        <CardHeader className={cn("pb-3", PHONE_BARE_CARD_HEADER)}>
           <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
             <div>
               <CardTitle className="text-base">Work-package register</CardTitle>
               <CardDescription>Progress is controlled against package owners and planned dates.</CardDescription>
             </div>
-            <div className="flex flex-col gap-2 sm:flex-row">
-              <div className="relative sm:w-64">
+            {/* Phones: search across the top, the two filters side by side beneath it. */}
+            <div className="grid grid-cols-2 gap-2 sm:flex sm:flex-row">
+              <div className="relative col-span-2 sm:w-64">
                 <Search className="absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
                 <Input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search packages..." className="pl-9" />
               </div>
@@ -763,84 +951,27 @@ export default function ScopeExecutionWorkspace({ mappingId, scope }: ScopeExecu
           </div>
         </CardHeader>
         <CardContent className="p-0">
-          {filteredPackages.length ? (
-            <div className="overflow-x-auto">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Work package</TableHead>
-                    <TableHead>Owner</TableHead>
-                    <TableHead>Priority</TableHead>
-                    <TableHead>Status</TableHead>
-                    <TableHead className="min-w-40">Progress</TableHead>
-                    <TableHead>Planned finish</TableHead>
-                    <TableHead>Next action / blocker</TableHead>
-                    {(canEdit || canDelete) && <TableHead className="text-right">Actions</TableHead>}
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {filteredPackages.map((workPackage) => {
-                    const overdue = isWorkPackageOverdue(workPackage);
-                    return (
-                      <TableRow key={workPackage.id} className={cn(overdue && "bg-red-50/40")}>
-                        <TableCell>
-                          <p className="font-medium">{workPackage.title}</p>
-                          <p className="max-w-72 truncate text-xs text-muted-foreground">
-                            {[workPackage.location, workPackage.contractor].filter(Boolean).join(" · ") || workPackage.description || "No additional detail"}
-                          </p>
-                        </TableCell>
-                        <TableCell>{workPackage.ownerName}</TableCell>
-                        <TableCell><Badge variant="outline" className={priorityStyles[workPackage.priority]}>{workPackage.priority}</Badge></TableCell>
-                        <TableCell><Badge className={statusStyles[workPackage.status]}>{workPackage.status}</Badge></TableCell>
-                        <TableCell>
-                          <div className="flex items-center gap-2">
-                            <Progress value={workPackage.progressPct} className="h-2" />
-                            <span className="w-10 text-right text-xs font-medium">{workPackage.progressPct}%</span>
-                          </div>
-                        </TableCell>
-                        <TableCell>
-                          <div className={cn("flex items-center gap-1.5 text-sm", overdue && "font-medium text-red-700")}>
-                            <CalendarClock className="h-3.5 w-3.5" />
-                            {formatDate(workPackage.plannedEndDate)}
-                          </div>
-                          {overdue && <span className="text-xs text-red-600">Overdue</span>}
-                        </TableCell>
-                        <TableCell>
-                          <p className={cn("max-w-64 truncate text-sm", workPackage.blocker && "text-red-700")}>
-                            {workPackage.blocker || workPackage.nextAction || "—"}
-                          </p>
-                        </TableCell>
-                        {(canEdit || canDelete) && (
-                          <TableCell>
-                            <div className="flex justify-end gap-1">
-                              {canEdit && <Button variant="ghost" size="icon" onClick={() => openEdit(workPackage)} aria-label={`Edit ${workPackage.title}`}><Pencil className="h-4 w-4" /></Button>}
-                              {canDelete && <Button variant="ghost" size="icon" onClick={() => setDeleteTarget(workPackage)} aria-label={`Delete ${workPackage.title}`}><Trash2 className="h-4 w-4 text-destructive" /></Button>}
-                            </div>
-                          </TableCell>
-                        )}
-                      </TableRow>
-                    );
-                  })}
-                </TableBody>
-              </Table>
-            </div>
-          ) : (
-            <div className="flex flex-col items-center gap-3 p-10 text-center">
-              <CheckCircle2 className="h-10 w-10 text-muted-foreground" />
-              <div>
-                <p className="font-medium">{packages.length ? "No work packages match the filters" : `No ${scope.toLowerCase()} work packages yet`}</p>
-                <p className="text-sm text-muted-foreground">Create packages to establish accountable owners, dates, progress, and blockers.</p>
-              </div>
-              {canAdd && !packages.length && <Button onClick={openCreate}><Plus className="mr-2 h-4 w-4" />Add first work package</Button>}
-            </div>
-          )}
+          <PmDataList
+            rows={filteredPackages}
+            columns={packageColumns}
+            className={LIST_IN_CARD}
+            rowClassName={(workPackage) => cn(isWorkPackageOverdue(workPackage) && "bg-red-50/40")}
+            empty={
+              <PmEmptyState
+                icon={CheckCircle2}
+                title={packages.length ? "No work packages match the filters" : `No ${scope.toLowerCase()} work packages yet`}
+                description="Create packages to establish accountable owners, dates, progress, and blockers."
+                action={canAdd && !packages.length ? <Button onClick={openCreate}><Plus className="mr-2 h-4 w-4" />Add first work package</Button> : undefined}
+              />
+            }
+          />
         </CardContent>
       </Card>
 
       {/* ── Subcontract & measurement coverage — the civil registers Billing Recon and
              Subcontractors Management own, joined per BOQ line ─────────────────────────── */}
-      <Card>
-        <CardHeader className="pb-3">
+      <Card className={PHONE_BARE_CARD}>
+        <CardHeader className={cn("pb-3", PHONE_BARE_CARD_HEADER)}>
           <CardTitle className="text-base">Subcontract &amp; measurement coverage</CardTitle>
           <CardDescription>
             Work orders, JMC/MVAC measurement, and subcontractor billing joined onto each {scope.toLowerCase()} BOQ
@@ -849,66 +980,12 @@ export default function ScopeExecutionWorkspace({ mappingId, scope }: ScopeExecu
         </CardHeader>
         <CardContent className="p-0">
           {coverageHasData ? (
-            <div className="overflow-x-auto">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>SL No</TableHead>
-                    <TableHead className="min-w-64">Description</TableHead>
-                    <TableHead className="text-right">BOQ Qty</TableHead>
-                    <TableHead className="text-right">Surveyed</TableHead>
-                    <TableHead className="text-right">WO Qty</TableHead>
-                    <TableHead>Subcontractor</TableHead>
-                    <TableHead className="text-right">Executed</TableHead>
-                    <TableHead className="text-right">Certified</TableHead>
-                    <TableHead className="text-right">Sub-billed</TableHead>
-                    <TableHead>Ladder</TableHead>
-                    <TableHead className="w-20 text-right">Open</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {coverageRows.map(({ item, workOrder, measurement, bill, boqQty, surveyedQty, ledger }) => (
-                    <TableRow key={item.id}>
-                      <TableCell className="whitespace-nowrap text-xs">{readBoqSlNo(item) || "—"}</TableCell>
-                      <TableCell className="max-w-xs">
-                        <p className="truncate text-xs" title={String(item.Description ?? "")}>
-                          {String(item.Description ?? "") || "—"}
-                        </p>
-                      </TableCell>
-                      <TableCell className="text-right text-xs">{boqQty}</TableCell>
-                      <TableCell className="text-right text-xs">{surveyedQty ?? "—"}</TableCell>
-                      <TableCell className="text-right text-xs">{workOrder ? workOrder.orderedQty : "—"}</TableCell>
-                      <TableCell className="max-w-40 truncate text-xs" title={workOrder?.subcontractorNames.join(", ")}>
-                        {workOrder?.subcontractorNames.join(", ") || "—"}
-                      </TableCell>
-                      <TableCell className="text-right text-xs">{measurement ? measurement.executedQty : "—"}</TableCell>
-                      <TableCell className="text-right text-xs">{measurement ? measurement.certifiedQty : "—"}</TableCell>
-                      <TableCell className="text-right text-xs">{bill ? bill.billedQty : "—"}</TableCell>
-                      <TableCell>
-                        {ledger.worstSeverity ? (
-                          <Badge
-                            variant="outline"
-                            className={quantityExceptionStyles[ledger.worstSeverity]}
-                            title={ledger.exceptions.map((exception) => exception.message).join("\n")}
-                          >
-                            {ledger.worstSeverity}
-                          </Badge>
-                        ) : (
-                          <Badge variant="outline" className="bg-emerald-100 text-emerald-700">clean</Badge>
-                        )}
-                      </TableCell>
-                      <TableCell className="text-right">
-                        <Button variant="ghost" size="sm" asChild aria-label="Open BOQ item lifecycle">
-                          <Link href={`/project-management/boq/item/${encodeURIComponent(item.id)}?project=${encodeURIComponent(mappingId)}`}>
-                            360°
-                          </Link>
-                        </Button>
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </div>
+            <PmDataList
+              rows={coverageRows}
+              columns={coverageColumns}
+              className={LIST_IN_CARD}
+              cardHref={(row) => boqItemHref(row.item.id)}
+            />
           ) : (
             <p className="p-6 text-center text-sm text-muted-foreground">
               No work orders, measurement entries, or subcontractor bills reference this scope&apos;s BOQ lines yet.
@@ -919,12 +996,12 @@ export default function ScopeExecutionWorkspace({ mappingId, scope }: ScopeExecu
       </Card>
 
       <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
-        <DialogContent className="max-h-[90dvh] overflow-y-auto sm:max-w-3xl">
-          <DialogHeader>
+        <DialogContent className={cn(PM_DIALOG.contentWide, "sm:max-h-[90dvh] sm:overflow-y-auto")}>
+          <DialogHeader className={PM_DIALOG.header}>
             <DialogTitle>{editingPackage ? "Edit" : "Add"} {scope} work package</DialogTitle>
             <DialogDescription>Define one accountable execution package with measurable progress and dates.</DialogDescription>
           </DialogHeader>
-          <div className="grid gap-4 py-2 sm:grid-cols-2">
+          <div className={cn(PM_DIALOG.bodyGrid, "gap-4 py-2")}>
             <div className="space-y-2 sm:col-span-2"><Label htmlFor="work-package-title">Title *</Label><Input id="work-package-title" value={draft.title} onChange={(event) => updateDraft("title", event.target.value)} maxLength={160} /></div>
             <div className="space-y-2"><Label htmlFor="work-package-owner">Owner *</Label><Input id="work-package-owner" value={draft.ownerName} onChange={(event) => updateDraft("ownerName", event.target.value)} maxLength={100} /></div>
             <div className="space-y-2"><Label htmlFor="work-package-contractor">Contractor</Label><Input id="work-package-contractor" value={draft.contractor} onChange={(event) => updateDraft("contractor", event.target.value)} maxLength={120} /></div>
@@ -940,7 +1017,7 @@ export default function ScopeExecutionWorkspace({ mappingId, scope }: ScopeExecu
             <div className="space-y-2 sm:col-span-2"><Label htmlFor="work-package-next-action">Next action</Label><Textarea id="work-package-next-action" value={draft.nextAction} onChange={(event) => updateDraft("nextAction", event.target.value)} maxLength={500} /></div>
             <div className="space-y-2 sm:col-span-2"><Label htmlFor="work-package-description">Description</Label><Textarea id="work-package-description" value={draft.description} onChange={(event) => updateDraft("description", event.target.value)} maxLength={1000} /></div>
           </div>
-          <DialogFooter>
+          <DialogFooter className={PM_DIALOG.footer}>
             <DialogClose asChild><Button variant="outline" disabled={isSaving}>Cancel</Button></DialogClose>
             <Button onClick={() => void handleSave()} disabled={isSaving}>
               {isSaving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}

@@ -27,6 +27,7 @@ import {
 } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
+import { cn } from "@/lib/utils";
 import {
   TOWER_ACTIVITY_DEFINITIONS,
   TOWER_ACTIVITY_LIST,
@@ -159,7 +160,9 @@ function VerifyQueue() {
         </Alert>
       ) : null}
 
-      <div className="grid gap-3 sm:grid-cols-3">
+      {/* On a phone the queue count takes the full first row and the two totals share the second —
+          three stacked cards would push the first claim below the fold. */}
+      <div className="grid grid-cols-2 gap-3 max-sm:[&>*:first-child]:col-span-2 sm:grid-cols-3">
         <MetricCard
           label="Awaiting decision"
           value={pending.length}
@@ -216,7 +219,7 @@ function VerifyQueue() {
             </div>
           </div>
         </CardHeader>
-        <CardContent className="space-y-4">
+        <CardContent className="space-y-4 max-sm:px-3">
           {!pending.length ? (
             <EmptyState
               title="Nothing waiting"
@@ -231,7 +234,7 @@ function VerifyQueue() {
               );
               const isBusy = busyId === update.id;
               return (
-                <div key={update.id} className="space-y-3 rounded-lg border p-4">
+                <div key={update.id} className="min-w-0 space-y-3 rounded-lg border p-3 sm:p-4">
                   <div className="flex flex-wrap items-center gap-2">
                     <Link
                       href={towerProgressHref(mappingId, `towers/${update.towerId}`)}
@@ -272,9 +275,9 @@ function VerifyQueue() {
                   </p>
 
                   {update.reason ? (
-                    <p className="text-sm font-medium text-red-700">{update.reason}</p>
+                    <p className="break-words text-sm font-medium text-red-700">{update.reason}</p>
                   ) : null}
-                  {update.remarks ? <p className="text-sm">{update.remarks}</p> : null}
+                  {update.remarks ? <p className="break-words text-sm">{update.remarks}</p> : null}
 
                   {missing.length ? (
                     <p className="text-xs text-amber-700">
@@ -285,9 +288,17 @@ function VerifyQueue() {
                   ) : null}
 
                   {update.photos.length ? (
-                    <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                    // A swipeable strip on a phone, bled to the claim's border, so every photograph
+                    // stays large enough to check and Approve / Reject stay a short scroll below.
+                    <div className="no-scrollbar -mx-3 flex snap-x snap-mandatory scroll-px-3 gap-3 overflow-x-auto px-3 sm:mx-0 sm:grid sm:snap-none sm:grid-cols-2 sm:overflow-visible sm:px-0 lg:grid-cols-4">
                       {update.photos.map((photo) => (
-                        <div key={photo.id} className="space-y-1">
+                        <div
+                          key={photo.id}
+                          className={cn(
+                            "shrink-0 snap-start space-y-1 sm:w-auto",
+                            update.photos.length > 1 ? "w-[85%]" : "w-full",
+                          )}
+                        >
                           <TowerReportPhoto
                             url={photo.url}
                             towerNo={update.towerNo}
@@ -322,9 +333,12 @@ function VerifyQueue() {
                     />
                   </div>
 
-                  <div className="flex flex-wrap gap-2">
+                  {/* Side by side at full width and 44px tall on a phone — the two buttons a
+                      verifier's thumb is here for. */}
+                  <div className="grid grid-cols-2 gap-2 sm:flex sm:flex-wrap">
                     <Button
                       size="sm"
+                      className="max-sm:h-11"
                       onClick={() => void decide(update, "Approved")}
                       disabled={isBusy}
                     >
@@ -338,7 +352,7 @@ function VerifyQueue() {
                     <Button
                       size="sm"
                       variant="outline"
-                      className="border-destructive text-destructive hover:bg-destructive/10"
+                      className="border-destructive text-destructive hover:bg-destructive/10 max-sm:h-11"
                       onClick={() => void decide(update, "Rejected")}
                       disabled={isBusy}
                     >
@@ -380,7 +394,7 @@ function VerifyQueue() {
                   by {update.verifiedByName || "—"}
                 </span>
                 {update.verificationRemarks ? (
-                  <span className="text-xs italic text-muted-foreground">
+                  <span className="min-w-0 break-words text-xs italic text-muted-foreground">
                     “{update.verificationRemarks}”
                   </span>
                 ) : null}

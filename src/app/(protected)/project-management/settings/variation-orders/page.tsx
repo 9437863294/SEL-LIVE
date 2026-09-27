@@ -62,17 +62,16 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
 import { Textarea } from "@/components/ui/textarea";
 import { Skeleton } from "@/components/ui/skeleton";
 import { BoqItemSelector } from "@/components/billing-recon/BoqItemSelector";
+import {
+  PM_DIALOG,
+  PmDataList,
+  PmEmptyState,
+  type PmListColumn,
+} from "@/components/project-management/pm-shell";
+import { cn } from "@/lib/utils";
 
 const PROJECTS_COLLECTION = "projectManagementProjects";
 
@@ -338,21 +337,115 @@ export default function VariationOrdersPage() {
     );
   }
 
+  const columns: PmListColumn<BoqVariation>[] = [
+    {
+      header: "Project",
+      mobile: "title",
+      className: "whitespace-nowrap font-medium",
+      cell: (variation) => variation.projectManagementProjectName,
+    },
+    {
+      header: "BOQ Item",
+      mobile: "title",
+      className: "max-w-xs truncate",
+      cell: (variation) => (
+        <span title={variation.description}>
+          {variation.boqSlNo} — {variation.description}
+        </span>
+      ),
+    },
+    { header: "BOQ Qty", align: "right", cell: (variation) => variation.boqQty },
+    {
+      header: "Requested",
+      align: "right",
+      className: "font-medium",
+      cell: (variation) => variation.requestedQty,
+    },
+    {
+      header: "Variance",
+      align: "right",
+      cell: (variation) => (
+        <span className={variation.variancePct > 0 ? "text-amber-600" : ""}>
+          {variation.variancePct > 0 ? "+" : ""}{variation.variancePct}%
+        </span>
+      ),
+    },
+    {
+      // Free text: a wrapping sub-line on the phone card rather than a truncated detail.
+      header: "Reason",
+      mobile: "title",
+      className: "max-w-xs truncate",
+      cell: (variation) => <span title={variation.reason}>{variation.reason}</span>,
+    },
+    {
+      header: "Requested By",
+      className: "whitespace-nowrap",
+      cell: (variation) => variation.requestedByName,
+    },
+    {
+      header: "Status",
+      mobile: "aside",
+      cell: (variation) => (
+        <Badge variant="outline" className={statusStyles[variation.status]}>
+          {variation.status}
+        </Badge>
+      ),
+    },
+    {
+      header: "Actions",
+      align: "right",
+      mobile: "footer",
+      className: "w-28",
+      cell: (variation) =>
+        variation.status === "Pending" && canDecide ? (
+          // Icon-only in the table; on a phone card each stretches into a labelled button.
+          <div className="flex w-full justify-end gap-1 sm:w-auto">
+            <Button
+              variant="ghost"
+              size="icon"
+              className="max-sm:border"
+              disabled={decidingId === variation.id}
+              onClick={() => void decide(variation, "Approved")}
+              title="Approve"
+            >
+              {decidingId === variation.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4 text-emerald-600" />}
+              <span className="ml-2 sm:hidden">Approve</span>
+            </Button>
+            <Button
+              variant="ghost"
+              size="icon"
+              className="max-sm:border"
+              disabled={decidingId === variation.id}
+              onClick={() => void decide(variation, "Rejected")}
+              title="Reject"
+            >
+              <X className="h-4 w-4 text-destructive" />
+              <span className="ml-2 sm:hidden">Reject</span>
+            </Button>
+          </div>
+        ) : (
+          <span className="text-xs text-muted-foreground">
+            {variation.decidedByName ? `by ${variation.decidedByName}` : "—"}
+          </span>
+        ),
+    },
+  ];
+
   return (
     <main className="min-h-[calc(100dvh-4rem)] p-4 sm:p-6">
-      <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-        <div className="flex items-center gap-3">
-          <Button variant="ghost" size="icon" asChild>
+      <div className="mb-4 flex flex-col gap-3 sm:mb-6 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
+        <div className="flex min-w-0 items-center gap-2 sm:gap-3">
+          <Button variant="ghost" size="icon" className="shrink-0" asChild>
             <Link href="/project-management/settings" aria-label="Back to Settings">
               <ArrowLeft className="h-5 w-5" />
             </Link>
           </Button>
-          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-amber-500 to-orange-600 shadow-sm">
+          <div className="hidden h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-amber-500 to-orange-600 shadow-sm sm:flex">
             <GitPullRequestArrow className="h-5 w-5 text-white" />
           </div>
-          <div>
-            <h1 className="text-2xl font-bold sm:text-3xl">Variation Orders</h1>
-            <p className="mt-1 text-sm text-muted-foreground">
+          <div className="min-w-0">
+            <h1 className="text-xl font-bold sm:text-3xl">Variation Orders</h1>
+            <p className="mt-0.5 text-[13px] text-muted-foreground sm:mt-1 sm:text-sm">
               {variations.length} total · {pendingCount} pending approval
             </p>
           </div>
@@ -365,15 +458,15 @@ export default function VariationOrdersPage() {
               Request Variation
             </Button>
           </DialogTrigger>
-          <DialogContent className="sm:max-w-xl">
-            <DialogHeader>
+          <DialogContent className={cn(PM_DIALOG.content, "sm:max-w-xl")}>
+            <DialogHeader className={PM_DIALOG.header}>
               <DialogTitle>Request a Variation Order</DialogTitle>
               <DialogDescription>
                 Quantities above the approved BOQ (beyond the configured tolerance) can&apos;t be indented, ordered, or
                 billed without an approved variation covering the excess.
               </DialogDescription>
             </DialogHeader>
-            <div className="grid gap-4 py-4">
+            <div className={cn(PM_DIALOG.body, "grid gap-4 space-y-0 py-4")}>
               <div className="space-y-2">
                 <Label>Project</Label>
                 <Select value={selectedMappingId} onValueChange={handleMappingChange}>
@@ -423,7 +516,7 @@ export default function VariationOrdersPage() {
                 />
               </div>
             </div>
-            <DialogFooter>
+            <DialogFooter className={PM_DIALOG.footer}>
               <DialogClose asChild>
                 <Button variant="outline">Cancel</Button>
               </DialogClose>
@@ -436,91 +529,17 @@ export default function VariationOrdersPage() {
         </Dialog>
       </div>
 
-      <Card>
-        <CardContent className="p-0">
-          <div className="overflow-x-auto">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Project</TableHead>
-                  <TableHead>BOQ Item</TableHead>
-                  <TableHead className="text-right">BOQ Qty</TableHead>
-                  <TableHead className="text-right">Requested</TableHead>
-                  <TableHead className="text-right">Variance</TableHead>
-                  <TableHead>Reason</TableHead>
-                  <TableHead>Requested By</TableHead>
-                  <TableHead>Status</TableHead>
-                  <TableHead className="w-28 text-right">Actions</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {variations.length ? (
-                  variations.map((variation) => (
-                    <TableRow key={variation.id}>
-                      <TableCell className="whitespace-nowrap font-medium">{variation.projectManagementProjectName}</TableCell>
-                      <TableCell className="max-w-xs truncate" title={variation.description}>
-                        {variation.boqSlNo} — {variation.description}
-                      </TableCell>
-                      <TableCell className="text-right">{variation.boqQty}</TableCell>
-                      <TableCell className="text-right font-medium">{variation.requestedQty}</TableCell>
-                      <TableCell className="text-right">
-                        <span className={variation.variancePct > 0 ? "text-amber-600" : ""}>
-                          {variation.variancePct > 0 ? "+" : ""}{variation.variancePct}%
-                        </span>
-                      </TableCell>
-                      <TableCell className="max-w-xs truncate" title={variation.reason}>{variation.reason}</TableCell>
-                      <TableCell className="whitespace-nowrap">{variation.requestedByName}</TableCell>
-                      <TableCell>
-                        <Badge variant="outline" className={statusStyles[variation.status]}>
-                          {variation.status}
-                        </Badge>
-                      </TableCell>
-                      <TableCell className="text-right">
-                        {variation.status === "Pending" && canDecide ? (
-                          <div className="flex justify-end gap-1">
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              disabled={decidingId === variation.id}
-                              onClick={() => void decide(variation, "Approved")}
-                              title="Approve"
-                            >
-                              {decidingId === variation.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4 text-emerald-600" />}
-                            </Button>
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              disabled={decidingId === variation.id}
-                              onClick={() => void decide(variation, "Rejected")}
-                              title="Reject"
-                            >
-                              <X className="h-4 w-4 text-destructive" />
-                            </Button>
-                          </div>
-                        ) : (
-                          <span className="text-xs text-muted-foreground">
-                            {variation.decidedByName ? `by ${variation.decidedByName}` : "—"}
-                          </span>
-                        )}
-                      </TableCell>
-                    </TableRow>
-                  ))
-                ) : (
-                  <TableRow>
-                    <TableCell colSpan={9} className="h-32 text-center">
-                      <GitPullRequestArrow className="mx-auto mb-2 h-8 w-8 text-muted-foreground" />
-                      <p className="font-medium">No variation orders</p>
-                      <p className="mt-1 text-sm text-muted-foreground">
-                        Requests appear here when surveyed or required quantities exceed the BOQ.
-                      </p>
-                    </TableCell>
-                  </TableRow>
-                )}
-              </TableBody>
-            </Table>
-          </div>
-        </CardContent>
-      </Card>
+      <PmDataList
+        rows={variations}
+        columns={columns}
+        empty={
+          <PmEmptyState
+            icon={GitPullRequestArrow}
+            title="No variation orders"
+            description="Requests appear here when surveyed or required quantities exceed the BOQ."
+          />
+        }
+      />
     </main>
   );
 }

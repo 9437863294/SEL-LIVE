@@ -23,7 +23,9 @@ type ZoomLevel = "day" | "week" | "month" | "year" | "all";
 
 type Band = { key: string; label: string; days: number };
 
-const LABEL_WIDTH = 240;
+// 144px on a phone rather than 240px, so the timeline keeps most of a 360px screen; every label
+// carries its full text as a tooltip.
+const LABEL_COLUMN_CLASS = "w-36 sm:w-60";
 const ROW_HEIGHT = 40;
 const TIER1_HEIGHT = 24;
 const TIER2_HEIGHT = 28;
@@ -160,7 +162,7 @@ export default function GanttChart({
             </span>
           ))}
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           {skippedCount > 0 && (
             <p className="text-xs text-muted-foreground">
               {skippedCount} item{skippedCount === 1 ? "" : "s"} without both dates not shown.
@@ -173,7 +175,7 @@ export default function GanttChart({
                 type="button"
                 onClick={() => setZoom(level.value)}
                 className={cn(
-                  "rounded-sm px-2.5 py-1 text-xs font-medium transition-colors",
+                  "rounded-sm px-3 py-1.5 text-xs font-medium transition-colors sm:px-2.5 sm:py-1",
                   zoom === level.value ? "bg-background shadow-sm" : "text-muted-foreground hover:text-foreground",
                 )}
               >
@@ -184,10 +186,13 @@ export default function GanttChart({
         </div>
       </div>
 
+      {!isFit && (
+        <p className="mb-2 text-xs text-muted-foreground sm:hidden">Swipe sideways to see the whole timeline</p>
+      )}
       <div className="max-h-[70vh] overflow-auto rounded-lg border">
         <div className="flex">
           {/* Sticky item-label column */}
-          <div className="sticky left-0 z-20 flex-none border-r bg-background" style={{ width: LABEL_WIDTH }}>
+          <div className={cn("sticky left-0 z-20 flex-none border-r bg-background", LABEL_COLUMN_CLASS)}>
             <div
               className="sticky top-0 z-20 flex items-center bg-muted px-3 text-xs font-medium text-muted-foreground"
               style={{ height: headerHeight }}

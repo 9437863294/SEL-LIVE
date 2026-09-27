@@ -28,22 +28,15 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import {
-  PM_TABLE_CLASS,
   PmContent,
+  PmDataList,
   PmShell,
   PmTableFoot,
   PmTopbar,
+  type PmListColumn,
 } from "@/components/project-management/pm-shell";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
 import { Skeleton } from "@/components/ui/skeleton";
 import { BoqItemSelector } from "@/components/billing-recon/BoqItemSelector";
 import { BoqMultiSelectDialog } from "@/components/billing-recon/BoqMultiSelectDialog";
@@ -69,6 +62,9 @@ type IndentRow = {
   budgetPrice: number;
   requestedQty: string;
 };
+
+/** A row as the line-item list keys it — `PmDataList` needs an `id`. */
+type IndentListRow = IndentRow & { id: string };
 
 const emptyRow = (): IndentRow => ({
   rowId: Math.random().toString(36).slice(2),
@@ -402,6 +398,92 @@ export default function NewIndentPage() {
     }
   };
 
+  const columns: PmListColumn<IndentListRow>[] = [
+    {
+      header: "BOQ Sl. No.",
+      className: "min-w-[220px]",
+      mobile: "title",
+      cell: (row) => (
+        // On a phone the card's title slot sizes to its content; `w-screen max-w-full` lets the
+        // picker claim the card's full width instead of shrinking to its placeholder text.
+        <div className="max-sm:w-screen max-sm:max-w-full">
+          <BoqItemSelector
+            boqItems={boqItems}
+            selectedSlNo={row.boqSlNo || null}
+            onSelect={(item) => handleBoqSelect(row.rowId, item)}
+            isLoading={isLoading}
+          />
+        </div>
+      ),
+    },
+    {
+      header: "Description",
+      className: "max-w-xs truncate",
+      mobile: "title",
+      cell: (row) => <span title={row.description}>{row.description || "—"}</span>,
+    },
+    { header: "Unit", cell: (row) => row.unit || "—" },
+    {
+      header: "BOQ Qty",
+      cell: (row) =>
+        row.boqItemId ? (
+          <>
+            {formatQuantity(row.boqQty)}
+            {(() => {
+              const surveyed = surveyedQtyByBoqItem.get(row.boqItemId);
+              return surveyed != null && surveyed !== row.boqQty ? (
+                <div className="text-xs text-muted-foreground">Surveyed: {formatQuantity(surveyed)}</div>
+              ) : null;
+            })()}
+          </>
+        ) : (
+          "—"
+        ),
+    },
+    { header: "Budget Price", cell: (row) => (row.boqItemId ? formatCurrency(row.budgetPrice) : "—") },
+    {
+      header: "Available",
+      cell: (row) => {
+        const available = row.boqItemId ? availableFor(row.boqItemId, row.boqQty) : 0;
+        return (
+          <span className={available <= 0 && row.boqItemId ? "text-destructive" : "text-emerald-700"}>
+            {row.boqItemId ? formatQuantity(available) : "—"}
+          </span>
+        );
+      },
+    },
+    {
+      header: "Requested Qty",
+      cell: (row) => (
+        <Input
+          type="number"
+          step="0.001"
+          min="0"
+          max={row.boqItemId ? availableFor(row.boqItemId, row.boqQty) : undefined}
+          value={row.requestedQty}
+          onChange={(e) => handleQtyChange(row.rowId, e.target.value)}
+          disabled={!row.boqItemId}
+          className="w-full sm:w-28"
+        />
+      ),
+    },
+    {
+      header: "Line Total",
+      className: "whitespace-nowrap",
+      cell: (row) => <span className="font-medium">{row.boqItemId ? formatCurrency(lineTotal(row)) : "—"}</span>,
+    },
+    {
+      header: "Action",
+      mobile: "footer",
+      cell: (row) => (
+        <Button variant="ghost" size="icon" onClick={() => removeRow(row.rowId)} aria-label="Remove row">
+          <Trash2 className="h-4 w-4 text-destructive" />
+          <span className="ml-2 text-destructive sm:hidden">Remove</span>
+        </Button>
+      ),
+    },
+  ];
+
   if (isAuthLoading || isLoading) {
     return (
       <main className="min-h-[calc(100dvh-4rem)] space-y-5 p-4 sm:p-6">
@@ -476,7 +558,7 @@ export default function NewIndentPage() {
             </p>
           </div>
           <CardContent className="p-4">
-            <div className="grid grid-cols-1 gap-4 md:grid-cols-4">
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 md:grid-cols-4">
               <div className="space-y-1.5">
                 <Label htmlFor="project" className="text-xs">Project</Label>
                 <Input id="project" value={mapping.projectName} readOnly className="h-9 bg-muted/50" />
@@ -494,115 +576,48 @@ export default function NewIndentPage() {
           </CardContent>
         </Card>
 
-      <Card className="overflow-hidden border-border/60">
+      {/* A card on a desktop, where the table sits under the bar. On a phone the line items are
+          cards themselves, so this one drops its frame and the bar becomes a plain heading row —
+          a card of cards is only a thicker border. */}
+      <Card className="overflow-hidden border-border/60 max-sm:overflow-visible max-sm:rounded-none max-sm:border-0 max-sm:bg-transparent max-sm:shadow-none">
         {/* Title, both add-actions and the running totals on one bar, so the totals are visible
             while you type quantities rather than only after scrolling past the last row. */}
-        <div className="flex flex-wrap items-center gap-x-3 gap-y-2 border-b border-border/60 px-4 py-2.5">
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-2 border-b border-border/60 px-4 py-2.5 max-sm:mb-2.5 max-sm:border-b-0 max-sm:p-0">
           <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
             <Library className="h-3.5 w-3.5 shrink-0 text-emerald-600" />
             <span className="font-medium text-foreground">Indent items</span>
             · {rows.length} row{rows.length === 1 ? "" : "s"}
           </p>
-          <div className="ml-auto flex flex-wrap items-center gap-2">
-            <Button variant="outline" size="sm" className="h-7 px-2 text-xs" onClick={addRow}>
+          <div className="ml-auto flex flex-wrap items-center gap-2 max-sm:w-full">
+            <Button variant="outline" size="sm" className="h-9 px-2 text-xs max-sm:flex-1 sm:h-7" onClick={addRow}>
               <Plus className="mr-1.5 h-3.5 w-3.5" /> Add row
             </Button>
-            <Button variant="outline" size="sm" className="h-7 px-2 text-xs" onClick={() => setIsMultiSelectOpen(true)}>
+            <Button variant="outline" size="sm" className="h-9 px-2 text-xs max-sm:flex-1 sm:h-7" onClick={() => setIsMultiSelectOpen(true)}>
               <Library className="mr-1.5 h-3.5 w-3.5" /> Add from BOQ
             </Button>
           </div>
         </div>
-        <CardContent className="p-0">
-          <div className="overflow-x-auto">
-            <Table className={PM_TABLE_CLASS}>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>BOQ Sl. No.</TableHead>
-                  <TableHead>Description</TableHead>
-                  <TableHead>Unit</TableHead>
-                  <TableHead>BOQ Qty</TableHead>
-                  <TableHead>Budget Price</TableHead>
-                  <TableHead>Available</TableHead>
-                  <TableHead>Requested Qty</TableHead>
-                  <TableHead>Line Total</TableHead>
-                  <TableHead>Action</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {rows.map((row) => {
-                  const available = row.boqItemId ? availableFor(row.boqItemId, row.boqQty) : 0;
-                  return (
-                    <TableRow key={row.rowId}>
-                      <TableCell className="min-w-[220px]">
-                        <BoqItemSelector
-                          boqItems={boqItems}
-                          selectedSlNo={row.boqSlNo || null}
-                          onSelect={(item) => handleBoqSelect(row.rowId, item)}
-                          isLoading={isLoading}
-                        />
-                      </TableCell>
-                      <TableCell className="max-w-xs truncate" title={row.description}>{row.description || "—"}</TableCell>
-                      <TableCell>{row.unit || "—"}</TableCell>
-                      <TableCell>
-                        {row.boqItemId ? (
-                          <>
-                            {formatQuantity(row.boqQty)}
-                            {(() => {
-                              const surveyed = surveyedQtyByBoqItem.get(row.boqItemId);
-                              return surveyed != null && surveyed !== row.boqQty ? (
-                                <div className="text-xs text-muted-foreground">Surveyed: {formatQuantity(surveyed)}</div>
-                              ) : null;
-                            })()}
-                          </>
-                        ) : (
-                          "—"
-                        )}
-                      </TableCell>
-                      <TableCell>{row.boqItemId ? formatCurrency(row.budgetPrice) : "—"}</TableCell>
-                      <TableCell className={available <= 0 && row.boqItemId ? "text-destructive" : "text-emerald-700"}>
-                        {row.boqItemId ? formatQuantity(available) : "—"}
-                      </TableCell>
-                      <TableCell>
-                        <Input
-                          type="number"
-                          step="0.001"
-                          min="0"
-                          max={row.boqItemId ? available : undefined}
-                          value={row.requestedQty}
-                          onChange={(e) => handleQtyChange(row.rowId, e.target.value)}
-                          disabled={!row.boqItemId}
-                          className="w-28"
-                        />
-                      </TableCell>
-                      <TableCell className="whitespace-nowrap font-medium">
-                        {row.boqItemId ? formatCurrency(lineTotal(row)) : "—"}
-                      </TableCell>
-                      <TableCell>
-                        <Button variant="ghost" size="icon" onClick={() => removeRow(row.rowId)} aria-label="Remove row">
-                          <Trash2 className="h-4 w-4 text-destructive" />
-                        </Button>
-                      </TableCell>
-                    </TableRow>
-                  );
-                })}
-              </TableBody>
-            </Table>
-          </div>
-          <PmTableFoot
-            left={
-              <>
-                Total qty{" "}
-                <b className="font-semibold tabular-nums text-foreground">{formatQuantity(totals.qty)}</b>
-              </>
-            }
-            right={
-              <>
-                Total amount{" "}
-                <b className="font-semibold tabular-nums text-foreground">{formatCurrency(totals.amount)}</b>
-              </>
-            }
-          />
-        </CardContent>
+        <PmDataList
+          rows={rows.map((row) => ({ ...row, id: row.rowId }))}
+          columns={columns}
+          className="sm:rounded-none sm:border-0 sm:shadow-none"
+          foot={
+            <PmTableFoot
+              left={
+                <>
+                  Total qty{" "}
+                  <b className="font-semibold tabular-nums text-foreground">{formatQuantity(totals.qty)}</b>
+                </>
+              }
+              right={
+                <>
+                  Total amount{" "}
+                  <b className="font-semibold tabular-nums text-foreground">{formatCurrency(totals.amount)}</b>
+                </>
+              }
+            />
+          }
+        />
       </Card>
       </PmContent>
 

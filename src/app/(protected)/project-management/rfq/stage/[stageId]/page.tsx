@@ -9,7 +9,7 @@
  * project-management-rfq-awards.ts) so an approved award produces exactly the same PO.
  */
 
-import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useParams, useSearchParams } from "next/navigation";
 import { ChevronDown, ChevronRight, Clock, GitMerge, Loader2, Settings, TrendingUp } from "lucide-react";
 import { collection, doc, getDoc, getDocs } from "firebase/firestore";
@@ -33,6 +33,7 @@ import {
   rfqAwardsForStep,
   type RfqAwardAction,
   type RfqAwardApproval,
+  type RfqAwardApprovalItem,
 } from "@/lib/project-management-rfq-workflow";
 import { useProjectManagementRfqContext } from "@/components/rfq/use-rfq-host-context";
 import {
@@ -42,18 +43,22 @@ import {
   RfqProjectNotFound,
 } from "@/components/rfq/rfq-page-shell";
 import {
-  PM_TABLE_CLASS,
+  PM_DIALOG,
   PmContent,
+  PmDataList,
+  PmEmptyState,
   PmSectionHead,
   PmShell,
   PmSidebar,
   PmTopbar,
   pmAccent,
+  type PmListColumn,
   type PmSidebarLink,
 } from "@/components/project-management/pm-shell";
+import { cn } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   Dialog,
   DialogClose,
@@ -64,14 +69,6 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
 import { Textarea } from "@/components/ui/textarea";
 
 const toDateSafe = (value: unknown): Date | null => {
@@ -343,6 +340,149 @@ export default function RfqAwardStagePage() {
 
   const isFinalStep = steps[steps.length - 1]?.id === step.id;
 
+  // Numeric columns right-align through `className` rather than `align`, which would also
+  // right-align them in the phone card's two-column grid.
+  const itemColumns: PmListColumn<RfqAwardApprovalItem & { id: string }>[] = [
+    { header: "BOQ SL No", cell: (item) => item.boqSlNo || "—" },
+    {
+      header: "Description",
+      className: "max-w-sm truncate",
+      mobile: "title",
+      cell: (item) => <span title={item.description}>{item.description || "—"}</span>,
+    },
+    { header: "Indent", className: "text-xs", cell: (item) => item.sourceIndentNumber || "—" },
+    {
+      header: "Qty",
+      className: "whitespace-nowrap text-right",
+      cell: (item) => <>{formatQuantity(item.qty)} {item.unit}</>,
+    },
+    { header: "Rate", className: "whitespace-nowrap text-right", cell: (item) => formatCurrency(item.rate) },
+    {
+      header: "Amount",
+      className: "whitespace-nowrap text-right",
+      cell: (item) => <span className="font-medium">{formatCurrency(item.amount)}</span>,
+    },
+  ];
+
+  const columns: PmListColumn<RfqAwardApproval>[] = [
+    {
+      header: "",
+      className: "w-10",
+      // Phones toggle from a button in the card's footer — a card with actions is not a tap target.
+      mobile: "omit",
+      cell: (approval) => {
+        const isExpanded = expandedIds.has(approval.id);
+        return (
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={(event) => {
+              event.stopPropagation();
+              toggleExpanded(approval.id);
+            }}
+            aria-label={isExpanded ? "Collapse" : "Expand"}
+          >
+            {isExpanded ? (
+              <ChevronDown className="h-4 w-4" />
+            ) : (
+              <ChevronRight className="h-4 w-4" />
+            )}
+          </Button>
+        );
+      },
+    },
+    { header: "RFQ No.", mobile: "title", cell: (approval) => <span className="font-medium">{approval.rfqNumber}</span> },
+    { header: "Recommended Vendor", mobile: "title", cell: (approval) => approval.vendorName },
+    { header: "Items", cell: (approval) => approval.items.length },
+    {
+      header: "Award Value",
+      align: "right",
+      className: "whitespace-nowrap",
+      cell: (approval) => <span className="font-medium">{formatCurrency(approval.totalAmount)}</span>,
+    },
+    {
+      header: "vs Lowest",
+      className: "text-xs",
+      cell: (approval) => {
+        const premium = awardPremium(approval.totalAmount, approval.lowestLandedCost);
+        return approval.lowestLandedCost == null ? (
+          <span className="text-muted-foreground">—</span>
+        ) : premium.isLowest ? (
+          <span className="font-medium text-emerald-700">Lowest</span>
+        ) : (
+          <span
+            className="flex items-center gap-1 font-medium text-amber-700"
+            title={`Lowest comparable quote: ${formatCurrency(approval.lowestLandedCost)}`}
+          >
+            <TrendingUp className="h-3 w-3 shrink-0" />+{formatCurrency(premium.premium)} (
+            {premium.premiumPct.toFixed(1)}%)
+          </span>
+        );
+      },
+    },
+    { header: "Requested By", className: "text-sm", cell: (approval) => approval.requestedByName || "—" },
+    {
+      header: "Status",
+      mobile: "aside",
+      cell: (approval) => (
+        <Badge variant="outline" className={rfqAwardStatusStyles[approval.status]}>
+          {approval.status}
+        </Badge>
+      ),
+    },
+    {
+      header: "Due",
+      className: "text-xs text-muted-foreground",
+      cell: (approval) => {
+        const due = toDateSafe(approval.deadline);
+        return due ? (
+          <span className="flex items-center gap-1">
+            <Clock className="h-3 w-3 shrink-0" />
+            {due.toLocaleDateString()}
+          </span>
+        ) : (
+          "—"
+        );
+      },
+    },
+    {
+      header: "Actions",
+      align: "right",
+      mobile: "footer",
+      cell: (approval) => {
+        const isExpanded = expandedIds.has(approval.id);
+        const mayAct = user ? canActOnRfqAward(approval, user.id) : false;
+        return (
+          <div
+            className="flex w-full flex-wrap items-center justify-end gap-2 sm:w-auto sm:gap-1"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <Button variant="outline" size="sm" className="sm:hidden" onClick={() => toggleExpanded(approval.id)}>
+              {isExpanded ? "Hide items" : "Show items"}
+            </Button>
+            {mayAct ? (
+              allowedActions.map((action) => (
+                <Button
+                  key={action}
+                  size="sm"
+                  variant={action === "Approve" ? "default" : "outline"}
+                  onClick={() => {
+                    setPending({ approval, action });
+                    setComment("");
+                  }}
+                >
+                  {action}
+                </Button>
+              ))
+            ) : (
+              <span className="text-xs text-muted-foreground">Not assigned to you</span>
+            )}
+          </div>
+        );
+      },
+    },
+  ];
+
   return (
     <PmShell sidebar={stageSidebar}>
       <PmTopbar
@@ -375,194 +515,52 @@ export default function RfqAwardStagePage() {
           </p>
         )}
 
-      <Card className="overflow-hidden border-border/60">
-        <CardContent className="p-0">
-          <div className="overflow-x-auto">
-            <Table className={PM_TABLE_CLASS}>
-              <TableHeader>
-                <TableRow>
-                  <TableHead className="w-10" />
-                  <TableHead>RFQ No.</TableHead>
-                  <TableHead>Recommended Vendor</TableHead>
-                  <TableHead>Items</TableHead>
-                  <TableHead className="text-right">Award Value</TableHead>
-                  <TableHead>vs Lowest</TableHead>
-                  <TableHead>Requested By</TableHead>
-                  <TableHead>Status</TableHead>
-                  <TableHead>Due</TableHead>
-                  <TableHead className="text-right">Actions</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {stageApprovals.length ? (
-                  stageApprovals.map((approval) => {
-                    const isExpanded = expandedIds.has(approval.id);
-                    const mayAct = user ? canActOnRfqAward(approval, user.id) : false;
-                    const due = toDateSafe(approval.deadline);
-                    const premium = awardPremium(approval.totalAmount, approval.lowestLandedCost);
-
-                    return (
-                      <Fragment key={approval.id}>
-                        <TableRow className="cursor-pointer" onClick={() => toggleExpanded(approval.id)}>
-                          <TableCell onClick={(event) => event.stopPropagation()}>
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              onClick={() => toggleExpanded(approval.id)}
-                              aria-label={isExpanded ? "Collapse" : "Expand"}
-                            >
-                              {isExpanded ? (
-                                <ChevronDown className="h-4 w-4" />
-                              ) : (
-                                <ChevronRight className="h-4 w-4" />
-                              )}
-                            </Button>
-                          </TableCell>
-                          <TableCell className="font-medium">{approval.rfqNumber}</TableCell>
-                          <TableCell>{approval.vendorName}</TableCell>
-                          <TableCell>{approval.items.length}</TableCell>
-                          <TableCell className="whitespace-nowrap text-right font-medium">
-                            {formatCurrency(approval.totalAmount)}
-                          </TableCell>
-                          <TableCell className="text-xs">
-                            {approval.lowestLandedCost == null ? (
-                              <span className="text-muted-foreground">—</span>
-                            ) : premium.isLowest ? (
-                              <span className="font-medium text-emerald-700">Lowest</span>
-                            ) : (
-                              <span
-                                className="flex items-center gap-1 font-medium text-amber-700"
-                                title={`Lowest comparable quote: ${formatCurrency(approval.lowestLandedCost)}`}
-                              >
-                                <TrendingUp className="h-3 w-3" />+{formatCurrency(premium.premium)} (
-                                {premium.premiumPct.toFixed(1)}%)
-                              </span>
-                            )}
-                          </TableCell>
-                          <TableCell className="text-sm">{approval.requestedByName || "—"}</TableCell>
-                          <TableCell>
-                            <Badge variant="outline" className={rfqAwardStatusStyles[approval.status]}>
-                              {approval.status}
-                            </Badge>
-                          </TableCell>
-                          <TableCell className="text-xs text-muted-foreground">
-                            {due ? (
-                              <span className="flex items-center gap-1">
-                                <Clock className="h-3 w-3" />
-                                {due.toLocaleDateString()}
-                              </span>
-                            ) : (
-                              "—"
-                            )}
-                          </TableCell>
-                          <TableCell className="text-right" onClick={(event) => event.stopPropagation()}>
-                            {mayAct ? (
-                              <div className="flex flex-wrap justify-end gap-1">
-                                {allowedActions.map((action) => (
-                                  <Button
-                                    key={action}
-                                    size="sm"
-                                    variant={action === "Approve" ? "default" : "outline"}
-                                    onClick={() => {
-                                      setPending({ approval, action });
-                                      setComment("");
-                                    }}
-                                  >
-                                    {action}
-                                  </Button>
-                                ))}
-                              </div>
-                            ) : (
-                              <span className="text-xs text-muted-foreground">Not assigned to you</span>
-                            )}
-                          </TableCell>
-                        </TableRow>
-                        {isExpanded && (
-                          <TableRow className="bg-muted/40 hover:bg-muted/40">
-                            <TableCell colSpan={10} className="p-0">
-                              <div className="p-3">
-                                <p className="mb-2 px-1 text-xs text-muted-foreground">
-                                  RFQ dated {formatDate(approval.rfqDate)}
-                                </p>
-                                <Table>
-                                  <TableHeader>
-                                    <TableRow>
-                                      <TableHead>BOQ SL No</TableHead>
-                                      <TableHead>Description</TableHead>
-                                      <TableHead>Indent</TableHead>
-                                      <TableHead className="text-right">Qty</TableHead>
-                                      <TableHead className="text-right">Rate</TableHead>
-                                      <TableHead className="text-right">Amount</TableHead>
-                                    </TableRow>
-                                  </TableHeader>
-                                  <TableBody>
-                                    {approval.items.map((item) => (
-                                      <TableRow key={item.rfqItemId}>
-                                        <TableCell>{item.boqSlNo || "—"}</TableCell>
-                                        <TableCell className="max-w-sm truncate" title={item.description}>
-                                          {item.description || "—"}
-                                        </TableCell>
-                                        <TableCell className="text-xs">
-                                          {item.sourceIndentNumber || "—"}
-                                        </TableCell>
-                                        <TableCell className="whitespace-nowrap text-right">
-                                          {formatQuantity(item.qty)} {item.unit}
-                                        </TableCell>
-                                        <TableCell className="whitespace-nowrap text-right">
-                                          {formatCurrency(item.rate)}
-                                        </TableCell>
-                                        <TableCell className="whitespace-nowrap text-right font-medium">
-                                          {formatCurrency(item.amount)}
-                                        </TableCell>
-                                      </TableRow>
-                                    ))}
-                                  </TableBody>
-                                </Table>
-                                {approval.actionLogs?.length ? (
-                                  <ul className="mt-3 space-y-1 px-1">
-                                    {approval.actionLogs.map((log, index) => (
-                                      <li key={index} className="text-xs text-muted-foreground">
-                                        <span className="font-medium text-foreground">{log.action}</span>
-                                        {log.stepName ? ` at ${log.stepName}` : ""} — {log.userName}
-                                        {log.comment ? `: ${log.comment}` : ""}
-                                      </li>
-                                    ))}
-                                  </ul>
-                                ) : null}
-                              </div>
-                            </TableCell>
-                          </TableRow>
-                        )}
-                      </Fragment>
-                    );
-                  })
-                ) : (
-                  <TableRow>
-                    <TableCell colSpan={10} className="h-32 text-center">
-                      <GitMerge className="mx-auto mb-2 h-8 w-8 text-muted-foreground" />
-                      <p className="font-medium">Nothing waiting at this stage</p>
-                      <p className="mt-1 text-sm text-muted-foreground">
-                        Awards confirmed on an RFQ will appear here for approval.
-                      </p>
-                    </TableCell>
-                  </TableRow>
-                )}
-              </TableBody>
-            </Table>
-          </div>
-        </CardContent>
-      </Card>
+        <PmDataList
+          rows={stageApprovals}
+          columns={columns}
+          onRowClick={(approval) => toggleExpanded(approval.id)}
+          expandedIds={expandedIds}
+          renderExpanded={(approval) => (
+            <div className="sm:p-3">
+              <p className="mb-2 px-1 text-xs text-muted-foreground">
+                RFQ dated {formatDate(approval.rfqDate)}
+              </p>
+              <PmDataList
+                rows={approval.items.map((item) => ({ ...item, id: item.rfqItemId }))}
+                columns={itemColumns}
+              />
+              {approval.actionLogs?.length ? (
+                <ul className="mt-3 space-y-1 px-1">
+                  {approval.actionLogs.map((log, index) => (
+                    <li key={index} className="text-xs text-muted-foreground">
+                      <span className="font-medium text-foreground">{log.action}</span>
+                      {log.stepName ? ` at ${log.stepName}` : ""} — {log.userName}
+                      {log.comment ? `: ${log.comment}` : ""}
+                    </li>
+                  ))}
+                </ul>
+              ) : null}
+            </div>
+          )}
+          empty={
+            <PmEmptyState
+              icon={GitMerge}
+              title="Nothing waiting at this stage"
+              description="Awards confirmed on an RFQ will appear here for approval."
+            />
+          }
+        />
       </PmContent>
 
       <Dialog open={Boolean(pending)} onOpenChange={(open) => !open && setPending(null)}>
-        <DialogContent>
-          <DialogHeader>
+        <DialogContent className={PM_DIALOG.content}>
+          <DialogHeader className={PM_DIALOG.header}>
             <DialogTitle>{pending?.action} award</DialogTitle>
             <DialogDescription>
               {pending ? `${pending.approval.rfqNumber} — ${pending.approval.vendorName}` : ""}
             </DialogDescription>
           </DialogHeader>
-          <div className="grid gap-3 py-2">
+          <div className={cn(PM_DIALOG.body, "py-2")}>
             <p className="text-sm">
               Award value:{" "}
               <span className="font-medium">
@@ -598,7 +596,7 @@ export default function RfqAwardStagePage() {
               />
             </div>
           </div>
-          <DialogFooter>
+          <DialogFooter className={PM_DIALOG.footer}>
             <DialogClose asChild>
               <Button variant="outline">Cancel</Button>
             </DialogClose>

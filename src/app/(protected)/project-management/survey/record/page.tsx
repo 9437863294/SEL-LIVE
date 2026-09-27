@@ -46,6 +46,7 @@ import {
   formatDeviationPct,
   surveyClassificationStyles,
   type SurveyClassification,
+  type SurveyDeviation,
 } from "@/lib/project-management-survey";
 import {
   DEFAULT_SURVEY_STEPS,
@@ -69,9 +70,15 @@ import {
   SurveyPageShell,
   SurveyProjectNotFound,
 } from "@/components/survey/survey-page-shell";
+import {
+  PM_DIALOG,
+  PmDataList,
+  PmEmptyState,
+  PmToolbar,
+  type PmListColumn,
+} from "@/components/project-management/pm-shell";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent } from "@/components/ui/card";
 import {
   Dialog,
   DialogClose,
@@ -90,15 +97,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
 import { Textarea } from "@/components/ui/textarea";
+import { cn } from "@/lib/utils";
 
 type SurveyRow = {
   boqItem: BoqItem;
@@ -116,6 +116,9 @@ type SurveyRow = {
   /** The entry still in review for this item, if any. */
   openEntry: SurveyEntry | null;
 };
+
+/** A row with its deviation, as the list renders it — `PmDataList` needs an `id`. */
+type SurveyListRow = SurveyDeviation & { id: string; row: SurveyRow };
 
 const toNumber = (value: unknown) => {
   const parsed = Number(String(value ?? "").replace(/,/g, "").trim());
@@ -394,6 +397,122 @@ export default function RecordSurveyPage() {
     router.push(`/project-management/settings/variation-orders?${params.toString()}`);
   };
 
+  const columns: PmListColumn<SurveyListRow>[] = [
+    { header: "BOQ SL No", className: "whitespace-nowrap", mobile: "title", cell: ({ row }) => row.boqSlNo || "—" },
+    {
+      header: "Description",
+      className: "max-w-xs truncate",
+      mobile: "title",
+      cell: ({ row }) => <span title={row.description}>{row.description}</span>,
+    },
+    { header: "Unit", cell: ({ row }) => row.unit || "—" },
+    { header: "BOQ Qty", align: "right", cell: ({ row }) => formatQuantity(row.boqQty) },
+    {
+      header: "Certified Qty",
+      align: "right",
+      cell: ({ row }) => (
+        <span className="font-medium">{row.surveyedQty != null ? formatQuantity(row.surveyedQty) : "—"}</span>
+      ),
+    },
+    {
+      header: "Deviation",
+      align: "right",
+      cell: ({ row, deviation, deviationPct }) =>
+        row.surveyedQty != null ? (
+          <span className={deviation > 0 ? "text-amber-600" : deviation < 0 ? "text-blue-600" : ""}>
+            {deviation > 0 ? "+" : ""}
+            {formatQuantity(deviation)} ({formatDeviationPct(deviationPct)})
+          </span>
+        ) : (
+          "—"
+        ),
+    },
+    {
+      header: "Classification",
+      mobile: "aside",
+      cell: ({ classification }) => (
+        <Badge variant="outline" className={surveyClassificationStyles[classification]}>
+          {classification}
+        </Badge>
+      ),
+    },
+    {
+      header: "In Review",
+      cell: ({ row }) =>
+        row.openEntry ? (
+          <div className="space-y-1">
+            <Badge
+              variant="outline"
+              className={surveyStatusStyles[row.openEntry.status as SurveyEntryStatus]}
+            >
+              {row.openEntry.status}
+            </Badge>
+            <p className="text-xs text-muted-foreground">
+              {formatQuantity(row.openEntry.surveyedQty)}
+              {row.openEntry.currentStepName ? ` · ${row.openEntry.currentStepName}` : ""}
+            </p>
+          </div>
+        ) : (
+          <span className="text-xs text-muted-foreground">—</span>
+        ),
+    },
+    {
+      header: "Ledger",
+      cell: ({ row, classification }) => {
+        const exposureQty = Math.max(row.indentedQty, row.orderedQty) - (row.surveyedQty ?? row.boqQty);
+        const hasSurplusExposure =
+          classification === "Scope Reduction" && row.surveyedQty != null && exposureQty > 0;
+        return (
+          <div className="text-xs">
+            <div className="text-muted-foreground">
+              {row.indentedQty > 0 && <div>Indented: {formatQuantity(row.indentedQty)}</div>}
+              {row.orderedQty > 0 && <div>Ordered: {formatQuantity(row.orderedQty)}</div>}
+            </div>
+            {hasSurplusExposure && (
+              <div
+                className="mt-1 flex items-center gap-1 font-medium text-red-600"
+                title={`Surplus exposure: ${formatCurrency(exposureQty * row.budgetPrice)}`}
+              >
+                <AlertTriangle className="h-3 w-3" />
+                Surplus {formatCurrency(exposureQty * row.budgetPrice)}
+              </div>
+            )}
+          </div>
+        );
+      },
+    },
+    {
+      header: "Actions",
+      align: "right",
+      className: "w-56",
+      mobile: "footer",
+      // Nothing to offer → null, so a phone card drops the empty actions row.
+      cell: ({ row, classification }) =>
+        canRecord || classification === "Variation Required" ? (
+          <div className="flex w-full justify-end gap-2 sm:w-auto sm:gap-1">
+            {canRecord && (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => openRecord(row)}
+                disabled={Boolean(row.openEntry)}
+                title={row.openEntry ? "A survey for this item is already in review" : undefined}
+              >
+                <Ruler className="mr-1.5 h-3.5 w-3.5" />
+                {row.surveyedQty != null ? "Re-survey" : "Record"}
+              </Button>
+            )}
+            {classification === "Variation Required" && (
+              <Button variant="outline" size="sm" onClick={() => goToRaiseVariation(row)}>
+                <GitPullRequestArrow className="mr-1.5 h-3.5 w-3.5" />
+                Raise Variation
+              </Button>
+            )}
+          </div>
+        ) : null,
+    },
+  ];
+
   if (isAuthLoading || isResolving || (isLoading && canView)) {
     return <SurveyLoadingState />;
   }
@@ -425,8 +544,14 @@ export default function RecordSurveyPage() {
         gradient={SURVEY_GRADIENT}
       />
 
+      {/* The header hides its subtitle below `md`, and here the subtitle is the screen's one
+          figure — so a phone gets it on a line of its own. */}
+      <p className="text-xs text-muted-foreground md:hidden">
+        {coverage.pct}% of BOQ value certified ({formatCurrency(coverage.surveyedValue)} of{" "}
+        {formatCurrency(coverage.totalValue)})
+      </p>
 
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+      <PmToolbar>
         <div className="relative w-full sm:max-w-xs">
           <Search className="absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
           <Input
@@ -452,136 +577,27 @@ export default function RecordSurveyPage() {
             ))}
           </SelectContent>
         </Select>
-      </div>
+      </PmToolbar>
 
-      <Card>
-        <CardContent className="p-0">
-          <div className="overflow-x-auto">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>BOQ SL No</TableHead>
-                  <TableHead>Description</TableHead>
-                  <TableHead>Unit</TableHead>
-                  <TableHead className="text-right">BOQ Qty</TableHead>
-                  <TableHead className="text-right">Certified Qty</TableHead>
-                  <TableHead className="text-right">Deviation</TableHead>
-                  <TableHead>Classification</TableHead>
-                  <TableHead>In Review</TableHead>
-                  <TableHead>Ledger</TableHead>
-                  <TableHead className="w-56 text-right">Actions</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {filteredRows.length ? (
-                  filteredRows.map(({ row, deviation, deviationPct, classification }) => {
-                    const exposureQty = Math.max(row.indentedQty, row.orderedQty) - (row.surveyedQty ?? row.boqQty);
-                    const hasSurplusExposure =
-                      classification === "Scope Reduction" && row.surveyedQty != null && exposureQty > 0;
-                    return (
-                      <TableRow key={row.boqItem.id}>
-                        <TableCell className="whitespace-nowrap">{row.boqSlNo || "—"}</TableCell>
-                        <TableCell className="max-w-xs truncate" title={row.description}>{row.description}</TableCell>
-                        <TableCell>{row.unit || "—"}</TableCell>
-                        <TableCell className="text-right">{formatQuantity(row.boqQty)}</TableCell>
-                        <TableCell className="text-right font-medium">
-                          {row.surveyedQty != null ? formatQuantity(row.surveyedQty) : "—"}
-                        </TableCell>
-                        <TableCell className="text-right">
-                          {row.surveyedQty != null ? (
-                            <span className={deviation > 0 ? "text-amber-600" : deviation < 0 ? "text-blue-600" : ""}>
-                              {deviation > 0 ? "+" : ""}
-                              {formatQuantity(deviation)} ({formatDeviationPct(deviationPct)})
-                            </span>
-                          ) : (
-                            "—"
-                          )}
-                        </TableCell>
-                        <TableCell>
-                          <Badge variant="outline" className={surveyClassificationStyles[classification]}>
-                            {classification}
-                          </Badge>
-                        </TableCell>
-                        <TableCell>
-                          {row.openEntry ? (
-                            <div className="space-y-1">
-                              <Badge
-                                variant="outline"
-                                className={surveyStatusStyles[row.openEntry.status as SurveyEntryStatus]}
-                              >
-                                {row.openEntry.status}
-                              </Badge>
-                              <p className="text-xs text-muted-foreground">
-                                {formatQuantity(row.openEntry.surveyedQty)}
-                                {row.openEntry.currentStepName ? ` · ${row.openEntry.currentStepName}` : ""}
-                              </p>
-                            </div>
-                          ) : (
-                            <span className="text-xs text-muted-foreground">—</span>
-                          )}
-                        </TableCell>
-                        <TableCell className="text-xs">
-                          <div className="text-muted-foreground">
-                            {row.indentedQty > 0 && <div>Indented: {formatQuantity(row.indentedQty)}</div>}
-                            {row.orderedQty > 0 && <div>Ordered: {formatQuantity(row.orderedQty)}</div>}
-                          </div>
-                          {hasSurplusExposure && (
-                            <div
-                              className="mt-1 flex items-center gap-1 font-medium text-red-600"
-                              title={`Surplus exposure: ${formatCurrency(exposureQty * row.budgetPrice)}`}
-                            >
-                              <AlertTriangle className="h-3 w-3" />
-                              Surplus {formatCurrency(exposureQty * row.budgetPrice)}
-                            </div>
-                          )}
-                        </TableCell>
-                        <TableCell className="text-right">
-                          <div className="flex justify-end gap-1">
-                            {canRecord && (
-                              <Button
-                                variant="outline"
-                                size="sm"
-                                onClick={() => openRecord(row)}
-                                disabled={Boolean(row.openEntry)}
-                                title={row.openEntry ? "A survey for this item is already in review" : undefined}
-                              >
-                                <Ruler className="mr-1.5 h-3.5 w-3.5" />
-                                {row.surveyedQty != null ? "Re-survey" : "Record"}
-                              </Button>
-                            )}
-                            {classification === "Variation Required" && (
-                              <Button variant="outline" size="sm" onClick={() => goToRaiseVariation(row)}>
-                                <GitPullRequestArrow className="mr-1.5 h-3.5 w-3.5" />
-                                Raise Variation
-                              </Button>
-                            )}
-                          </div>
-                        </TableCell>
-                      </TableRow>
-                    );
-                  })
-                ) : (
-                  <TableRow>
-                    <TableCell colSpan={10} className="h-32 text-center">
-                      <Compass className="mx-auto mb-2 h-8 w-8 text-muted-foreground" />
-                      <p className="font-medium">No BOQ items match</p>
-                      <p className="mt-1 text-sm text-muted-foreground">Try a different search or classification.</p>
-                    </TableCell>
-                  </TableRow>
-                )}
-              </TableBody>
-            </Table>
-          </div>
-        </CardContent>
-      </Card>
+      <PmDataList
+        rows={filteredRows.map((item) => ({ ...item, id: item.row.boqItem.id }))}
+        columns={columns}
+        empty={
+          <PmEmptyState
+            icon={Compass}
+            title="No BOQ items match"
+            description="Try a different search or classification."
+          />
+        }
+      />
 
       <Dialog open={Boolean(activeRow)} onOpenChange={(open) => !open && setActiveRow(null)}>
-        <DialogContent>
-          <DialogHeader>
+        <DialogContent className={PM_DIALOG.content}>
+          <DialogHeader className={PM_DIALOG.header}>
             <DialogTitle>Record Survey</DialogTitle>
             <DialogDescription>{activeRow ? `${activeRow.boqSlNo} — ${activeRow.description}` : ""}</DialogDescription>
           </DialogHeader>
-          <div className="grid gap-4 py-2">
+          <div className={cn(PM_DIALOG.body, "space-y-4 py-2")}>
             <p className="text-xs text-muted-foreground">
               BOQ Qty: {activeRow ? formatQuantity(activeRow.boqQty) : "—"} {activeRow?.unit}
             </p>
@@ -617,7 +633,7 @@ export default function RecordSurveyPage() {
                 : "No survey workflow is configured, so this will be applied to the BOQ item immediately."}
             </p>
           </div>
-          <DialogFooter>
+          <DialogFooter className={PM_DIALOG.footer}>
             <DialogClose asChild><Button variant="outline">Cancel</Button></DialogClose>
             <Button onClick={handleSubmitSurvey} disabled={isSaving}>
               {isSaving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}

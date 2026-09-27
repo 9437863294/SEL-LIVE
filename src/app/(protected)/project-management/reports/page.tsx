@@ -117,10 +117,10 @@ export default function ProjectManagementReportsPage() {
   }
 
   return (
-    <main className="min-h-[calc(100dvh-4rem)] space-y-5 p-4 sm:p-6">
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-        <div className="flex items-center gap-3">
-          <Button variant="ghost" size="icon" asChild>
+    <main className="min-h-[calc(100dvh-4rem)] space-y-4 p-4 sm:space-y-5 sm:p-6">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
+        <div className="flex min-w-0 items-center gap-2 sm:gap-3">
+          <Button variant="ghost" size="icon" className="shrink-0" asChild>
             <Link
               href={`/project-management${selectedProjectId ? `?project=${encodeURIComponent(selectedProjectId)}` : ""}`}
               aria-label="Back to Project Management"
@@ -128,12 +128,12 @@ export default function ProjectManagementReportsPage() {
               <ArrowLeft className="h-5 w-5" />
             </Link>
           </Button>
-          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-blue-500 to-indigo-600 shadow-sm">
+          <div className="hidden h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-blue-500 to-indigo-600 shadow-sm sm:flex">
             <FileBarChart2 className="h-5 w-5 text-white" />
           </div>
-          <div>
-            <h1 className="text-2xl font-bold">Reports</h1>
-            <p className="text-sm text-muted-foreground">
+          <div className="min-w-0">
+            <h1 className="text-xl font-bold sm:text-2xl">Reports</h1>
+            <p className="text-[13px] text-muted-foreground sm:text-sm">
               Commercial, engineering, procurement and site-control indicators across the project.
             </p>
           </div>
@@ -141,7 +141,7 @@ export default function ProjectManagementReportsPage() {
 
         {projects.length > 0 && (
           <Select value={selectedProject?.id ?? ""} onValueChange={handleProjectChange}>
-            <SelectTrigger className="w-full sm:w-64">
+            <SelectTrigger className="w-full sm:w-64 sm:shrink-0">
               <SelectValue placeholder="Select project..." />
             </SelectTrigger>
             <SelectContent>
@@ -159,7 +159,7 @@ export default function ProjectManagementReportsPage() {
         <ProjectControlTower mapping={selectedProject} />
       ) : (
         <Card className="border-dashed">
-          <CardContent className="flex flex-col items-center gap-3 p-10 text-center">
+          <CardContent className="flex flex-col items-center gap-3 p-6 text-center sm:p-10">
             <FileBarChart2 className="h-10 w-10 text-muted-foreground" />
             <div>
               <p className="font-medium">Select a project</p>

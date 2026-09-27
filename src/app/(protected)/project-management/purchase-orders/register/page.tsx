@@ -30,15 +30,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
-import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsContent } from "@/components/ui/tabs";
 import {
   PO_COLLECTION,
@@ -55,13 +46,15 @@ import PoReports, { type PoBoqItemLite } from "@/components/project-management/p
 import PoGanttChart from "@/components/project-management/po-gantt";
 import PoBoqItemsTable from "@/components/project-management/po-boq-items";
 import {
-  PM_TABLE_CLASS,
   PmContent,
+  PmDataList,
+  PmEmptyState,
   PmSectionHead,
   PmShell,
   PmSidebar,
   PmTableFoot,
   PmTopbar,
+  type PmListColumn,
 } from "@/components/project-management/pm-shell";
 import { indentReservesQuantity } from "@/lib/project-management-indent-workflow";
 import {
@@ -262,14 +255,80 @@ export default function PurchaseOrderRegisterPage() {
     );
   }
 
-  // Every cell holds one line. The issue-approval request and the legacy marker used to sit
-  // stacked under the status badge; both now have a column of their own.
-  const PO_COLUMN_COUNT = 9;
-
   const registerTotal = filteredOrders.reduce((sum, po) => sum + (po.totalAmount ?? 0), 0);
   const awaitingReview = filteredOrders.filter((po) =>
     Boolean(openIssueRequestForPo(issueApprovals, po.id)),
   ).length;
+
+  // Every cell holds one line. The issue-approval request and the legacy marker used to sit
+  // stacked under the status badge; both now have a column of their own.
+  const poColumns: PmListColumn<PurchaseOrder>[] = [
+    { header: "PO Number", className: "whitespace-nowrap font-medium", mobile: "title", cell: (po) => po.poNumber },
+    { header: "PO Date", className: "whitespace-nowrap", cell: (po) => formatDate(po.poDate) },
+    {
+      header: "Vendor",
+      className: "max-w-[180px] truncate",
+      mobile: "title",
+      cell: (po) => <span title={po.vendorName}>{po.vendorName}</span>,
+    },
+    {
+      header: "Source RFQ",
+      className: "max-w-[140px] truncate",
+      cell: (po) => (
+        <span title={po.sourceRfqNumbers?.join(", ")}>
+          {po.sourceRfqNumbers?.length ? po.sourceRfqNumbers.join(", ") : "—"}
+        </span>
+      ),
+    },
+    { header: "Items", align: "right", className: "tabular-nums", cell: (po) => po.items?.length ?? 0 },
+    {
+      header: "Total Amount",
+      align: "right",
+      className: "whitespace-nowrap font-medium tabular-nums",
+      cell: (po) => formatCurrency(po.totalAmount),
+    },
+    {
+      header: "Status",
+      className: "whitespace-nowrap",
+      mobile: "aside",
+      cell: (po) => (
+        <span className={`rounded-full px-2 py-0.5 text-[11px] font-medium ${poStatusStyles[po.status]}`}>
+          {po.status}
+        </span>
+      ),
+    },
+    {
+      // Was stacked under Status: the open issue-approval request, and the legacy marker for POs
+      // raised before that approval existed.
+      header: "Issue Approval",
+      className: "max-w-[200px] whitespace-nowrap",
+      cell: (po) => {
+        const openRequest = openIssueRequestForPo(issueApprovals, po.id);
+        const legacy = isLegacyPo(po as PoLike);
+        return openRequest ? (
+          <span className="flex items-center gap-1 truncate text-xs text-muted-foreground">
+            <span className={`shrink-0 rounded px-1.5 py-0.5 ${poIssueStatusStyles[openRequest.status]}`}>
+              {openRequest.status}
+            </span>
+            {openRequest.currentStepName && (
+              <span className="truncate">· {openRequest.currentStepName}</span>
+            )}
+          </span>
+        ) : legacy ? (
+          <span
+            className="text-xs text-muted-foreground"
+            title="Raised before issue approval existed — this PO can be issued directly."
+          >
+            Legacy
+          </span>
+        ) : (
+          <span className="text-muted-foreground">—</span>
+        );
+      },
+    },
+    // The whole phone card is the tap target, so the row arrow is desktop-only.
+    { header: "", className: "w-10", mobile: "omit", cell: () => <ArrowRight className="h-4 w-4 text-muted-foreground" /> },
+  ];
 
   return (
     <PmShell
@@ -313,7 +372,10 @@ export default function PurchaseOrderRegisterPage() {
           canAdd ? (
             <Button size="sm" asChild>
               <Link href={context.poHref("new")}>
-                <Plus className="mr-2 h-4 w-4" /> New purchase order
+                <Plus className="mr-2 h-4 w-4" />
+                {/* Short on a phone, so the action stays on the title's line. */}
+                <span className="sm:hidden">New PO</span>
+                <span className="hidden sm:inline">New purchase order</span>
               </Link>
             </Button>
           ) : undefined
@@ -336,7 +398,7 @@ export default function PurchaseOrderRegisterPage() {
             ]}
             actions={
               <Select value={statusFilter} onValueChange={(value: "all" | POStatus) => setStatusFilter(value)}>
-                <SelectTrigger className="h-8 w-[150px] text-[13px]"><SelectValue /></SelectTrigger>
+                <SelectTrigger className="h-9 w-[150px] text-[13px] sm:h-8"><SelectValue /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value="all">All statuses</SelectItem>
                   {PO_STATUSES.map((status) => (
@@ -346,102 +408,34 @@ export default function PurchaseOrderRegisterPage() {
               </Select>
             }
           />
-          <Card className="overflow-hidden border-border/60">
-            <CardContent className="p-0">
-              <div className="overflow-x-auto">
-                <Table className={PM_TABLE_CLASS}>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>PO Number</TableHead>
-                      <TableHead>PO Date</TableHead>
-                      <TableHead>Vendor</TableHead>
-                      <TableHead>Source RFQ</TableHead>
-                      <TableHead className="text-right">Items</TableHead>
-                      <TableHead className="text-right">Total Amount</TableHead>
-                      <TableHead>Status</TableHead>
-                      {/* Was stacked under Status: the open issue-approval request, and the
-                          legacy marker for POs raised before that approval existed. */}
-                      <TableHead>Issue Approval</TableHead>
-                      <TableHead className="w-10" />
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {filteredOrders.length ? filteredOrders.map((po) => {
-                      const openRequest = openIssueRequestForPo(issueApprovals, po.id);
-                      const legacy = isLegacyPo(po as PoLike);
-                      return (
-                      <TableRow key={po.id} className="cursor-pointer" onClick={() => goToPo(po.id)}>
-                        <TableCell className="whitespace-nowrap font-medium">{po.poNumber}</TableCell>
-                        <TableCell className="whitespace-nowrap">{formatDate(po.poDate)}</TableCell>
-                        <TableCell className="max-w-[180px] truncate" title={po.vendorName}>{po.vendorName}</TableCell>
-                        <TableCell
-                          className="max-w-[140px] truncate"
-                          title={po.sourceRfqNumbers?.join(", ")}
-                        >
-                          {po.sourceRfqNumbers?.length ? po.sourceRfqNumbers.join(", ") : "—"}
-                        </TableCell>
-                        <TableCell className="text-right tabular-nums">{po.items?.length ?? 0}</TableCell>
-                        <TableCell className="whitespace-nowrap text-right font-medium tabular-nums">{formatCurrency(po.totalAmount)}</TableCell>
-                        <TableCell className="whitespace-nowrap">
-                          <span className={`rounded-full px-2 py-0.5 text-[11px] font-medium ${poStatusStyles[po.status]}`}>
-                            {po.status}
-                          </span>
-                        </TableCell>
-                        <TableCell className="max-w-[200px] whitespace-nowrap">
-                          {openRequest ? (
-                            <span className="flex items-center gap-1 truncate text-xs text-muted-foreground">
-                              <span className={`shrink-0 rounded px-1.5 py-0.5 ${poIssueStatusStyles[openRequest.status]}`}>
-                                {openRequest.status}
-                              </span>
-                              {openRequest.currentStepName && (
-                                <span className="truncate">· {openRequest.currentStepName}</span>
-                              )}
-                            </span>
-                          ) : legacy ? (
-                            <span
-                              className="text-xs text-muted-foreground"
-                              title="Raised before issue approval existed — this PO can be issued directly."
-                            >
-                              Legacy
-                            </span>
-                          ) : (
-                            <span className="text-muted-foreground">—</span>
-                          )}
-                        </TableCell>
-                        <TableCell>
-                          <ArrowRight className="h-4 w-4 text-muted-foreground" />
-                        </TableCell>
-                      </TableRow>
-                      );
-                    }) : (
-                      <TableRow>
-                        <TableCell colSpan={PO_COLUMN_COUNT} className="h-32 text-center">
-                          <p className="font-medium">No purchase orders found</p>
-                          <p className="mt-1 text-sm text-muted-foreground">Create one directly, or award RFQ items to a vendor.</p>
-                        </TableCell>
-                      </TableRow>
-                    )}
-                  </TableBody>
-                </Table>
-              </div>
-              {filteredOrders.length > 0 && (
-                <PmTableFoot
-                  left={
-                    <>
-                      Showing <b className="font-semibold tabular-nums text-foreground">{filteredOrders.length}</b> of{" "}
-                      <b className="font-semibold tabular-nums text-foreground">{purchaseOrders.length}</b> purchase orders
-                    </>
-                  }
-                  right={
-                    <>
-                      Register total{" "}
-                      <b className="font-semibold tabular-nums text-foreground">{formatCurrency(registerTotal)}</b>
-                    </>
-                  }
-                />
-              )}
-            </CardContent>
-          </Card>
+          <PmDataList
+            rows={filteredOrders}
+            columns={poColumns}
+            onRowClick={(po) => goToPo(po.id)}
+            empty={
+              <PmEmptyState
+                icon={ShoppingCart}
+                title="No purchase orders found"
+                description="Create one directly, or award RFQ items to a vendor."
+              />
+            }
+            foot={
+              <PmTableFoot
+                left={
+                  <>
+                    Showing <b className="font-semibold tabular-nums text-foreground">{filteredOrders.length}</b> of{" "}
+                    <b className="font-semibold tabular-nums text-foreground">{purchaseOrders.length}</b> purchase orders
+                  </>
+                }
+                right={
+                  <>
+                    Register total{" "}
+                    <b className="font-semibold tabular-nums text-foreground">{formatCurrency(registerTotal)}</b>
+                  </>
+                }
+              />
+            }
+          />
         </TabsContent>
 
         <TabsContent value="boq-items" className="mt-0">
@@ -466,17 +460,20 @@ export default function PurchaseOrderRegisterPage() {
         </TabsContent>
 
         <TabsContent value="gantt" className="mt-0">
-          <Card className="overflow-hidden border-border/60">
+          {/* A tighter pad on a phone, where every pixel of width goes to the chart. */}
+          <Card className="overflow-hidden border-border/60 max-sm:[--card-pad:0.75rem]">
             {/* The sidebar already names this view, so the bar keeps only the part that explains
                 how to read the chart. */}
-            <div className="flex flex-wrap items-center gap-x-3 gap-y-2 border-b border-border/60 px-4 py-2.5">
-              <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
-                <GanttChart className="h-3.5 w-3.5 shrink-0 text-orange-600" />
-                <span className="font-medium text-foreground">Purchase order schedule</span>
-                · each row is a purchase order; the bar spans its start to end date
+            <div className="flex flex-wrap items-center gap-x-3 gap-y-2 border-b border-border/60 px-3 py-2.5 sm:px-4">
+              <p className="flex items-start gap-1.5 text-xs text-muted-foreground sm:items-center">
+                <GanttChart className="mt-px h-3.5 w-3.5 shrink-0 text-orange-600 sm:mt-0" />
+                <span>
+                  <span className="font-medium text-foreground">Purchase order schedule</span>
+                  {" "}· each row is a purchase order; the bar spans its start to end date
+                </span>
               </p>
             </div>
-            <CardContent className="pt-4">
+            <CardContent className="pt-3 sm:pt-4">
               <PoGanttChart purchaseOrders={purchaseOrders} onSelectPo={goToPo} />
             </CardContent>
           </Card>

@@ -109,6 +109,8 @@ export function DataList<T extends { id: string }>({
   expandedIds,
   renderExpanded,
   dense,
+  frameless,
+  cardsOnly,
 }: {
   rows: T[];
   columns: Array<ListColumn<T>>;
@@ -165,6 +167,19 @@ export function DataList<T extends { id: string }>({
    * directory ~60px a row; dense is ~40px. Phone cards are unaffected.
    */
   dense?: boolean;
+  /**
+   * Drops the desktop table's own rounded, bordered, translucent frame, for a caller that frames
+   * the list itself — Project Management puts its registers in a Card with a totals bar beneath,
+   * and a second border inside that card read as a box in a box. Phone cards are unaffected.
+   */
+  frameless?: boolean;
+  /**
+   * Renders the phone cards only, for a caller that draws its own desktop table — a register
+   * grouped under full-width heading rows (the MDL's PO and scope groups) cannot be expressed as
+   * columns, so it keeps its hand-built table from `sm` and borrows just the cards below it.
+   * Without this every open group also built a table that `sm:hidden` never let anyone see.
+   */
+  cardsOnly?: boolean;
 }) {
   if (rows.length === 0) return <>{empty}</>;
 
@@ -180,10 +195,17 @@ export function DataList<T extends { id: string }>({
         {rows.map(row => {
           const href = cardHref?.(row);
           const isExpanded = !!renderExpanded && (expandedIds ? expandedIds.has(row.id) : expandedId === row.id);
+          // Only the action cells that render something for this row. A register whose actions
+          // depend on status (Submit on a draft, nothing once submitted) otherwise drew an empty
+          // divider under every card with nothing to do — and, since a card with actions is not
+          // itself a tap target, left those cards unopenable on a phone.
+          const footerCells = footers
+            .map(column => ({ column, node: column.cell(row) }))
+            .filter(({ node }) => node !== null && node !== undefined && node !== false && node !== '');
           const body = (
             <>
               <div className="mb-2 flex items-start justify-between gap-2">
-                <div className="min-w-0 space-y-0.5">
+                <div className="min-w-0 flex-1 space-y-0.5">
                   {titles.map((column, index) => (
                     <div key={column.header} className={index === 0 ? 'text-sm font-semibold text-slate-800' : 'text-xs text-muted-foreground'}>
                       {column.cell(row)}
@@ -204,16 +226,21 @@ export function DataList<T extends { id: string }>({
                   {details.map(column => (
                     <div key={column.header} className={column.align === 'right' ? 'text-right' : undefined}>
                       <dt className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">{column.header}</dt>
-                      <dd className="truncate text-sm text-slate-800">{column.cell(row)}</dd>
+                      {/* Text truncates to one line; a control does not, or its focus ring is clipped. */}
+                      <dd className="truncate text-sm text-slate-800 has-[button]:overflow-visible has-[input]:overflow-visible has-[textarea]:overflow-visible">
+                        {column.cell(row)}
+                      </dd>
                     </div>
                   ))}
                 </dl>
               )}
 
-              {footers.length > 0 && (
-                <div className="mt-2.5 flex flex-wrap gap-2 border-t border-slate-100 pt-2.5 [&_button]:min-h-11 [&_button]:flex-1">
-                  {footers.map(column => (
-                    <div key={column.header} className="flex flex-1 gap-2">{column.cell(row)}</div>
+              {footerCells.length > 0 && (
+                // Radix checkboxes render as <button role="checkbox">; stretching one to a 44px
+                // flex column would turn a tick box into a slab.
+                <div className="mt-2.5 flex flex-wrap gap-2 border-t border-slate-100 pt-2.5 [&_button:not([role=checkbox])]:min-h-11 [&_button:not([role=checkbox])]:flex-1">
+                  {footerCells.map(({ column, node }) => (
+                    <div key={column.header} className="flex flex-1 gap-2">{node}</div>
                   ))}
                 </div>
               )}
@@ -235,7 +262,7 @@ export function DataList<T extends { id: string }>({
 
           // A card wrapped in a link still has to let its footer buttons receive the tap, so the
           // link only covers the informational part when there are actions.
-          if (href && footers.length === 0) {
+          if (href && footerCells.length === 0) {
             return (
               <Link key={row.id} href={href} className={cn(shell, 'block')}>
                 {/* Tells the cells inside they are in an anchor — see `InsideLinkContext`. */}
@@ -243,7 +270,7 @@ export function DataList<T extends { id: string }>({
               </Link>
             );
           }
-          if (onRowClick && !href && footers.length === 0) {
+          if (onRowClick && !href && footerCells.length === 0) {
             return (
               <div
                 key={row.id}
@@ -271,78 +298,81 @@ export function DataList<T extends { id: string }>({
       </div>
 
       {/* Desktop: the full table. */}
-      <div
-        className={cn(
-          'hidden overflow-x-auto rounded-lg border border-white/60 bg-white/80 backdrop-blur-sm',
-          fitContent ? 'sm:inline-block max-w-full' : 'sm:block',
-          maxHeightClassName && cn('overflow-y-auto', maxHeightClassName),
-        )}
-      >
-        {/*
-          The kit's Table wraps <table> in its own `overflow-auto` div — a scroll container sitting
-          between the pinned header cells and the wrapper above that actually scrolls, so the header
-          pinned to *it* and rode away with the rows. Made visible when this list scrolls itself; the
-          outer wrapper already handles sideways overflow.
-        */}
-        <Table className={tableClassName} containerClassName={maxHeightClassName ? 'overflow-visible' : undefined}>
+      {!cardsOnly && (
+        <div
+          className={cn(
+            'hidden overflow-x-auto',
+            !frameless && 'rounded-lg border border-white/60 bg-white/80 backdrop-blur-sm',
+            fitContent ? 'sm:inline-block max-w-full' : 'sm:block',
+            maxHeightClassName && cn('overflow-y-auto', maxHeightClassName),
+          )}
+        >
           {/*
-            The header row used to render with the same near-white background as the body and a
-            `text-muted-foreground` weight barely darker than the page behind it — on a
-            backdrop-blur card it all but disappeared. A tinted band, bolder small-caps labels and a
-            firmer bottom border give it the contrast a header needs to read as one at a glance.
+            The kit's Table wraps <table> in its own `overflow-auto` div — a scroll container sitting
+            between the pinned header cells and the wrapper above that actually scrolls, so the header
+            pinned to *it* and rode away with the rows. Made visible when this list scrolls itself; the
+            outer wrapper already handles sideways overflow.
           */}
-          <TableHeader className="bg-slate-100/80">
-            <TableRow className="hover:bg-transparent">
-              {columns.map(column => (
-                <TableHead
-                  key={column.header}
-                  className={cn(
-                    'h-10 text-[11px] font-semibold uppercase tracking-wide text-slate-600',
-                    dense && 'h-9 px-3',
-                    // Pinned per cell, not on <thead>: collapsed row borders do not travel with a
-                    // sticky cell, so the rule under the header is an inset shadow instead.
-                    maxHeightClassName && 'sticky top-0 z-10 bg-slate-100 shadow-[inset_0_-1px_0_#e2e8f0]',
-                    column.align === 'right' && 'text-right',
-                    column.className,
-                  )}
-                >
-                  {column.header}
-                </TableHead>
-              ))}
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {rows.map(row => {
-              const isExpanded = !!renderExpanded && (expandedIds ? expandedIds.has(row.id) : expandedId === row.id);
-              return (
-                <Fragment key={row.id}>
-                  <TableRow
-                    className={cn(rowClassName?.(row), onRowClick && 'cursor-pointer', isExpanded && 'bg-slate-50/70')}
-                    onClick={onRowClick ? () => onRowClick(row) : undefined}
+          <Table className={tableClassName} containerClassName={maxHeightClassName ? 'overflow-visible' : undefined}>
+            {/*
+              The header row used to render with the same near-white background as the body and a
+              `text-muted-foreground` weight barely darker than the page behind it — on a
+              backdrop-blur card it all but disappeared. A tinted band, bolder small-caps labels and a
+              firmer bottom border give it the contrast a header needs to read as one at a glance.
+            */}
+            <TableHeader className="bg-slate-100/80">
+              <TableRow className="hover:bg-transparent">
+                {columns.map(column => (
+                  <TableHead
+                    key={column.header}
+                    className={cn(
+                      'h-10 text-[11px] font-semibold uppercase tracking-wide text-slate-600',
+                      dense && 'h-9 px-3',
+                      // Pinned per cell, not on <thead>: collapsed row borders do not travel with a
+                      // sticky cell, so the rule under the header is an inset shadow instead.
+                      maxHeightClassName && 'sticky top-0 z-10 bg-slate-100 shadow-[inset_0_-1px_0_#e2e8f0]',
+                      column.align === 'right' && 'text-right',
+                      column.className,
+                    )}
                   >
-                    {columns.map(column => (
-                      <TableCell
-                        key={column.header}
-                        className={cn('text-sm', dense && 'px-3 py-1.5', column.align === 'right' && 'text-right', column.className)}
-                      >
-                        {column.cell(row)}
-                      </TableCell>
-                    ))}
-                  </TableRow>
-                  {isExpanded && renderExpanded && (
-                    <TableRow className="hover:bg-transparent">
-                      {/* Spans hidden columns too; browsers clamp a colSpan to what is rendered. */}
-                      <TableCell colSpan={columns.length} className="bg-slate-50/60 p-0">
-                        {renderExpanded(row)}
-                      </TableCell>
+                    {column.header}
+                  </TableHead>
+                ))}
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {rows.map(row => {
+                const isExpanded = !!renderExpanded && (expandedIds ? expandedIds.has(row.id) : expandedId === row.id);
+                return (
+                  <Fragment key={row.id}>
+                    <TableRow
+                      className={cn(rowClassName?.(row), onRowClick && 'cursor-pointer', isExpanded && 'bg-slate-50/70')}
+                      onClick={onRowClick ? () => onRowClick(row) : undefined}
+                    >
+                      {columns.map(column => (
+                        <TableCell
+                          key={column.header}
+                          className={cn('text-sm', dense && 'px-3 py-1.5', column.align === 'right' && 'text-right', column.className)}
+                        >
+                          {column.cell(row)}
+                        </TableCell>
+                      ))}
                     </TableRow>
-                  )}
-                </Fragment>
-              );
-            })}
-          </TableBody>
-        </Table>
-      </div>
+                    {isExpanded && renderExpanded && (
+                      <TableRow className="hover:bg-transparent">
+                        {/* Spans hidden columns too; browsers clamp a colSpan to what is rendered. */}
+                        <TableCell colSpan={columns.length} className="bg-slate-50/60 p-0">
+                          {renderExpanded(row)}
+                        </TableCell>
+                      </TableRow>
+                    )}
+                  </Fragment>
+                );
+              })}
+            </TableBody>
+          </Table>
+        </div>
+      )}
     </>
   );
 }

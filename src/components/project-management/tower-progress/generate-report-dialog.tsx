@@ -49,6 +49,7 @@ import {
   towerReportById,
   type TowerReportFilters,
 } from "@/lib/project-management-tower-reports";
+import { PM_DIALOG } from "@/components/project-management/pm-shell";
 import { useTowerProgress } from "./tower-progress-provider";
 import {
   DEFAULT_REPORT_INCLUDE,
@@ -179,15 +180,17 @@ export function GenerateReportDialog({
 
   return (
     <Dialog open={open} onOpenChange={(next) => (isWorking ? undefined : onOpenChange(next))}>
-      <DialogContent className="max-h-[92dvh] overflow-y-auto sm:max-w-2xl">
-        <DialogHeader>
+      <DialogContent
+        className={cn(PM_DIALOG.content, "sm:max-h-[92dvh] sm:max-w-2xl sm:overflow-y-auto")}
+      >
+        <DialogHeader className={PM_DIALOG.header}>
           <DialogTitle>Generate report</DialogTitle>
           <DialogDescription>
             {project ? `${project.projectName} · ${towers.length} towers` : "Choose what to produce."}
           </DialogDescription>
         </DialogHeader>
 
-        <div className="space-y-4">
+        <div className={cn(PM_DIALOG.body, "space-y-4")}>
           <div className="space-y-2">
             <Label>Report type</Label>
             <Select value={reportId} onValueChange={setReportId}>
@@ -221,7 +224,7 @@ export function GenerateReportDialog({
                   value={dateKey}
                   max={toDateKey(new Date())}
                   onChange={(event) => setDateKey(event.target.value)}
-                  className="w-44"
+                  className="w-full sm:w-44"
                 />
               ) : needsWeek ? (
                 <Input
@@ -230,14 +233,14 @@ export function GenerateReportDialog({
                   onChange={(event) =>
                     setWeekStart(weekStartKey(new Date(`${event.target.value}T00:00:00`)))
                   }
-                  className="w-44"
+                  className="w-full sm:w-44"
                 />
               ) : (
                 <Input
                   type="month"
                   value={monthKey.slice(0, 7)}
                   onChange={(event) => setMonthKey(`${event.target.value}-01`)}
-                  className="w-44"
+                  className="w-full sm:w-44"
                 />
               )}
             </div>
@@ -250,15 +253,16 @@ export function GenerateReportDialog({
               onValueChange={(value) => setScope(value as TowerScope)}
               className="gap-2"
             >
-              <label className="flex cursor-pointer items-center gap-2 text-sm">
+              {/* The label row is the tap target for a radio, so it gets a phone-sized height. */}
+              <label className="flex cursor-pointer items-center gap-2 text-sm max-sm:min-h-10">
                 <RadioGroupItem value="all" />
                 All towers
               </label>
-              <label className="flex cursor-pointer items-center gap-2 text-sm">
+              <label className="flex cursor-pointer items-center gap-2 text-sm max-sm:min-h-10">
                 <RadioGroupItem value="specific" />
                 Specific tower
               </label>
-              <label className="flex cursor-pointer items-center gap-2 text-sm">
+              <label className="flex cursor-pointer items-center gap-2 text-sm max-sm:min-h-10">
                 <RadioGroupItem value="range" />
                 Tower range
               </label>
@@ -269,7 +273,7 @@ export function GenerateReportDialog({
                 value={specificTowerNo}
                 onChange={(event) => setSpecificTowerNo(event.target.value)}
                 placeholder="T-037"
-                className="w-44"
+                className="w-full sm:w-44"
               />
             ) : null}
             {scope === "range" ? (
@@ -278,14 +282,14 @@ export function GenerateReportDialog({
                   value={fromTowerNo}
                   onChange={(event) => setFromTowerNo(event.target.value)}
                   placeholder="From: T-001"
-                  className="w-36"
+                  className="min-w-0 flex-1 sm:w-36 sm:flex-none"
                 />
                 <span className="text-muted-foreground">–</span>
                 <Input
                   value={toTowerNo}
                   onChange={(event) => setToTowerNo(event.target.value)}
                   placeholder="To: T-050"
-                  className="w-36"
+                  className="min-w-0 flex-1 sm:w-36 sm:flex-none"
                 />
               </div>
             ) : null}
@@ -304,7 +308,10 @@ export function GenerateReportDialog({
             <Label>Include</Label>
             <div className="grid grid-cols-2 gap-1.5 sm:grid-cols-4">
               {REPORT_SECTIONS.map((section) => (
-                <label key={section} className="flex cursor-pointer items-center gap-2 text-sm">
+                <label
+                  key={section}
+                  className="flex cursor-pointer items-center gap-2 text-sm max-sm:min-h-10"
+                >
                   <Checkbox
                     checked={include[section]}
                     onCheckedChange={(checked) =>
@@ -324,18 +331,18 @@ export function GenerateReportDialog({
               onValueChange={(value) => setFormat(value as OutputFormat)}
               className="flex flex-wrap gap-4"
             >
-              <label className="flex cursor-pointer items-center gap-2 text-sm">
+              <label className="flex cursor-pointer items-center gap-2 text-sm max-sm:min-h-10">
                 <RadioGroupItem value="screen" />
                 <FileText className="h-4 w-4" />
                 On screen
               </label>
-              <label className="flex cursor-pointer items-center gap-2 text-sm">
+              <label className="flex cursor-pointer items-center gap-2 text-sm max-sm:min-h-10">
                 <RadioGroupItem value="pdf" />
                 <Printer className="h-4 w-4" />
                 PDF / print
               </label>
               {permissions.export ? (
-                <label className="flex cursor-pointer items-center gap-2 text-sm">
+                <label className="flex cursor-pointer items-center gap-2 text-sm max-sm:min-h-10">
                   <RadioGroupItem value="excel" />
                   <FileSpreadsheet className="h-4 w-4" />
                   Excel
@@ -345,7 +352,7 @@ export function GenerateReportDialog({
           </div>
         </div>
 
-        <DialogFooter>
+        <DialogFooter className={PM_DIALOG.footer}>
           <Button variant="outline" onClick={() => onOpenChange(false)} disabled={isWorking}>
             Cancel
           </Button>

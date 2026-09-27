@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState, type KeyboardEvent, type ReactNode } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import {
@@ -122,6 +122,7 @@ import {
   type MdlDrawing,
   type MdlOverallStatus,
   type MdlRevision,
+  type MdlRollup,
   type MdlRevisionRound,
   type MdlRevisionStatus,
   type MdlRow,
@@ -133,6 +134,7 @@ import MdlReports from "@/components/project-management/mdl-reports";
 import MdlGanttChart from "@/components/project-management/mdl-gantt";
 import MdlPendingTasks from "@/components/project-management/mdl-pending-tasks";
 import SidebarTabsList from "@/components/project-management/sidebar-tabs-list";
+import { PM_DIALOG, PmDataList, type PmListColumn } from "@/components/project-management/pm-shell";
 import {
   JMC_MAIN_CLASS,
   JmcPageHeader as PmPageHeader,
@@ -207,6 +209,27 @@ type PoPlacement = { poNumbers: string[]; vendorNames: string[]; latestPoDate: s
 
 // Sentinel for "nobody assigned" — Radix Select cannot hold an empty string value.
 const UNASSIGNED = "none";
+
+// The register as a phone renders it: a card per BOQ item, its sub-drawings as cards nested inside.
+type RegisterCardRow = MdlItemRow & {
+  id: string;
+  outline: number[];
+  rollup: MdlRollup;
+  subDrawings: MdlSubDrawing[];
+};
+type RegisterSubCardRow = { id: string; item: BoqItem; sub: MdlSubDrawing; outline: number[] };
+
+// Lighter nested cards, so a sub-drawing reads as part of its item's card rather than a second one.
+const NESTED_CARD_CLASS = "border-border bg-muted/30 p-2.5 shadow-none";
+
+/** Enter/Space on a `role="button"` strip — but not when the key was meant for a link inside it. */
+const onStripKey = (event: KeyboardEvent, action: () => void) => {
+  if (event.target !== event.currentTarget) return;
+  if (event.key === "Enter" || event.key === " ") {
+    event.preventDefault();
+    action();
+  }
+};
 
 export default function MdlPage() {
   const router = useRouter();
@@ -1131,6 +1154,394 @@ export default function MdlPage() {
       ];
     });
 
+  /** A purchase order's group-row contents — the desktop table's full-width cell and the phone strip. */
+  const poGroupHeading = (group: (typeof poGroups)[number], groupIndex: number, isOpen: boolean) => {
+    const summary = summariseMdlRows(group.rows);
+    const approvedPct = summary.drawings
+      ? Math.round((summary.approved / summary.drawings) * 100)
+      : 0;
+    return (
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+        <ChevronRight
+          aria-hidden
+          className={cn(
+            "h-4 w-4 shrink-0 transition-transform",
+            isOpen && "rotate-90",
+          )}
+        />
+        <span className="text-xs font-medium tabular-nums text-muted-foreground">
+          {mdlOutlineNo(groupIndex)}.
+        </span>
+        <ShoppingCart className="h-4 w-4 shrink-0 text-emerald-600" />
+        {/* The PO number is a link, so it must not also toggle the row. */}
+        <Link
+          href={`/project-management/purchase-orders/${group.po.poId}?project=${encodeURIComponent(mappingId)}`}
+          className="font-semibold hover:underline"
+          onClick={(event) => event.stopPropagation()}
+        >
+          {group.po.poNumber}
+        </Link>
+        {group.po.vendorName && (
+          <span className="text-sm text-muted-foreground">
+            {group.po.vendorName}
+          </span>
+        )}
+        <span className="text-xs text-muted-foreground">
+          Ordered {formatMdlDate(group.po.poDate)}
+        </span>
+        <span className="text-xs text-muted-foreground">
+          {group.rows.length} item{group.rows.length === 1 ? "" : "s"}
+        </span>
+        <div className="ml-auto flex items-center gap-2">
+          <div
+            className="h-1.5 w-24 shrink-0 overflow-hidden rounded-full bg-muted"
+            role="img"
+            aria-label={`${summary.approved} of ${summary.drawings} drawings approved`}
+          >
+            <div
+              className="h-full bg-emerald-500"
+              style={{ width: `${approvedPct}%` }}
+            />
+          </div>
+          <span className="whitespace-nowrap text-[10px] font-medium text-muted-foreground">
+            {summary.approved}/{summary.drawings} approved
+          </span>
+        </div>
+      </div>
+    );
+  };
+
+  const scopeGroupHeading = (scope: string, rows: MdlRow[], isOpen: boolean) => (
+    <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+      <ChevronRight
+        aria-hidden
+        className={cn(
+          "h-4 w-4 shrink-0 transition-transform",
+          isOpen && "rotate-90",
+        )}
+      />
+      <Layers className="h-4 w-4 shrink-0 text-sky-600" />
+      <span className="font-semibold">{scope}</span>
+      <span className="text-xs text-muted-foreground">
+        Not on a purchase order yet · {rows.length} item
+        {rows.length === 1 ? "" : "s"}
+      </span>
+    </div>
+  );
+
+  /* ── Phone ──────────────────────────────────────────────────────────────────────────────────
+     The desktop register is one table across every group, with full-width group rows — which
+     PmDataList cannot draw — so below `sm` the same groups become tappable strips, and an open
+     group lists its items as PmDataList cards, each with its sub-drawings nested inside. */
+
+  const registerCardColumns: PmListColumn<RegisterCardRow>[] = [
+    {
+      header: "Item Description",
+      mobile: "title",
+      cell: ({ item, outline }) => (
+        <>
+          <span className="mr-1 tabular-nums text-muted-foreground">{mdlOutlineNo(...outline)}.</span>
+          {String(item.Description ?? "—")}
+        </>
+      ),
+    },
+    { header: "BOQ SL No", mobile: "title", cell: ({ item }) => `BOQ SL No ${String(item["BOQ SL No"] ?? "—")}` },
+    { header: "Remark", mobile: "title", cell: ({ drawing }) => drawing?.remark || null },
+    {
+      header: "Status",
+      mobile: "aside",
+      cell: ({ rollup }) => (
+        <span className={`whitespace-nowrap rounded-full px-2.5 py-1 text-xs font-medium ${mdlOverallStatusStyles[rollup.status]}`}>
+          {rollup.status}
+        </span>
+      ),
+    },
+    {
+      header: "Overdue",
+      mobile: "aside",
+      cell: ({ rollup }) =>
+        rollup.overdue ? (
+          <span className="rounded-full bg-red-100 px-1.5 py-0.5 text-[10px] font-semibold text-red-700">Overdue</span>
+        ) : null,
+    },
+    {
+      header: "Drawings",
+      cell: ({ rollup, subDrawings }) =>
+        subDrawings.length > 0 ? (
+          <span className="flex items-center gap-1 whitespace-nowrap text-xs font-medium text-muted-foreground">
+            <Layers className="h-3 w-3" />
+            {rollup.subApproved}/{rollup.subTotal} approved
+            {rollup.subCollected > rollup.subApproved && ` · ${rollup.subCollected}c`}
+          </span>
+        ) : (
+          <span className="text-muted-foreground">—</span>
+        ),
+    },
+    {
+      header: "Stage",
+      cell: ({ item, drawing, subDrawings }) => {
+        // As on the desktop: an item with sub-drawings has no single stage of its own.
+        if (subDrawings.length || !drawing) return <span className="text-muted-foreground">—</span>;
+        const stage = computeMdlDrawingStage(drawing, poInfoByBoqItemId.has(item.id));
+        return (
+          <span className={cn("rounded-full px-1.5 py-0.5 text-[10px] font-medium", mdlDrawingStageStyles[stage])}>
+            {stage}
+          </span>
+        );
+      },
+    },
+    { header: "Doc No.", cell: ({ drawing }) => drawing?.docNo || "—" },
+    { header: "Drawing No.", cell: ({ drawing }) => <span title={drawing?.drawingNo}>{drawing?.drawingNo || "—"}</span> },
+    { header: "Planned Start", cell: ({ rollup }) => formatMdlDate(rollup.plannedStartDate) },
+    {
+      header: "Planned End",
+      cell: ({ rollup }) => (
+        <span className={rollup.overdue ? "font-medium text-red-600" : ""}>{formatMdlDate(rollup.plannedEndDate)}</span>
+      ),
+    },
+    {
+      header: "Revision",
+      cell: ({ drawing }) => {
+        const latest = getLatestRevisionAcrossItem(drawing);
+        return latest ? (
+          <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${latest.status ? mdlRevisionStatusStyles[latest.status] : "bg-muted text-muted-foreground"}`}>
+            {latest.round}{latest.status ? ` · ${latest.status}` : ""}
+          </span>
+        ) : "—";
+      },
+    },
+    {
+      header: "Cycle Age",
+      cell: ({ rollup }) => {
+        const cycleAgeDays = computeMdlCycleAgeDays(rollup);
+        return cycleAgeDays != null ? (
+          <span className={cycleAgeDays > 30 ? "font-medium text-amber-600" : ""}>{cycleAgeDays}d</span>
+        ) : "—";
+      },
+    },
+    { header: "Approve Date", cell: ({ rollup }) => formatMdlDate(rollup.approveDate) },
+    {
+      header: "Actions",
+      mobile: "footer",
+      cell: ({ item, subDrawings }) => {
+        const isExpanded = expandedItems.has(item.id);
+        return (
+          <div className="flex w-full flex-col gap-2">
+            {/* A card with actions is not itself a tap target, so the sub-drawings open from here. */}
+            {subDrawings.length > 0 && (
+              <div className="flex">
+                <Button variant="outline" size="sm" onClick={() => toggleExpanded(item.id)} aria-expanded={isExpanded}>
+                  <ChevronRight className={cn("mr-1.5 h-4 w-4 transition-transform", isExpanded && "rotate-90")} />
+                  {isExpanded ? "Hide" : "Show"} {subDrawings.length} drawing{subDrawings.length === 1 ? "" : "s"}
+                </Button>
+              </div>
+            )}
+            <div className="flex gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => openDrawingDialog(item, null)}
+                disabled={!canEdit}
+                aria-label={`Edit ${item.Description}`}
+              >
+                <Pencil className="mr-1.5 h-3.5 w-3.5" /> Edit
+              </Button>
+              {canEdit && (
+                <>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => openNewSubDrawing(item)}
+                    aria-label={`Add a sub-drawing to ${item.Description}`}
+                  >
+                    <Plus className="mr-1.5 h-3.5 w-3.5" /> Sub-drawing
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setItemToRemove(item)}
+                    aria-label={`Remove ${item.Description} from the MDL register`}
+                  >
+                    <Trash2 className="h-3.5 w-3.5 text-destructive" />
+                  </Button>
+                </>
+              )}
+            </div>
+          </div>
+        );
+      },
+    },
+  ];
+
+  const registerSubCardColumns: PmListColumn<RegisterSubCardRow>[] = [
+    {
+      header: "Drawing",
+      mobile: "title",
+      cell: ({ sub, outline }) => (
+        <span className="flex items-start gap-1.5">
+          <span className="text-xs tabular-nums text-muted-foreground">{mdlOutlineNo(...outline)}.</span>
+          {isMdlApproved(sub.status) && <CheckCircle2 className="mt-0.5 h-3.5 w-3.5 shrink-0 text-emerald-600" />}
+          <span className="min-w-0 break-words">{sub.title || "Untitled drawing"}</span>
+        </span>
+      ),
+    },
+    {
+      // Stage and status sit on this wrapping line rather than as asides: two pills as long as
+      // "Re-collect from Vendor" beside the title would leave it a word wide.
+      header: "Stage",
+      mobile: "title",
+      cell: ({ item, sub }) => {
+        const subStage = computeMdlDrawingStage(sub, poInfoByBoqItemId.has(item.id));
+        return (
+          <span className="mt-0.5 flex flex-wrap items-center gap-1.5">
+            <span className={cn("whitespace-nowrap rounded-full px-1.5 py-0.5 text-[10px] font-medium", mdlDrawingStageStyles[subStage])}>
+              {subStage}
+            </span>
+            <span className={`whitespace-nowrap rounded-full px-2 py-0.5 text-[11px] font-medium ${mdlOverallStatusStyles[sub.status]}`}>
+              {sub.status}
+            </span>
+            <span className={cn(sub.assignedToName && "text-foreground")}>{sub.assignedToName || "Unassigned"}</span>
+            {sub.collection?.fileUrl && (
+              <a
+                href={sub.collection.fileUrl}
+                target="_blank"
+                rel="noreferrer"
+                onClick={(e) => e.stopPropagation()}
+                className="text-primary underline underline-offset-2"
+                title="Open the drawing collected from the vendor"
+              >
+                · Vendor
+              </a>
+            )}
+          </span>
+        );
+      },
+    },
+    { header: "Remark", mobile: "title", cell: ({ sub }) => sub.remark || null },
+    { header: "Doc No.", cell: ({ sub }) => sub.docNo || "—" },
+    { header: "Drawing No.", cell: ({ sub }) => <span title={sub.drawingNo}>{sub.drawingNo || "—"}</span> },
+    { header: "Planned Start", cell: ({ sub }) => formatMdlDate(sub.plannedStartDate) },
+    {
+      header: "Planned End",
+      cell: ({ sub }) => {
+        const subOverdue = isMdlOverdue(sub);
+        return (
+          <>
+            <span className={subOverdue ? "font-medium text-red-600" : ""}>{formatMdlDate(sub.plannedEndDate)}</span>
+            {subOverdue && (
+              <span className="ml-1.5 rounded-full bg-red-100 px-1.5 py-0.5 text-[10px] font-semibold text-red-700">
+                Overdue
+              </span>
+            )}
+          </>
+        );
+      },
+    },
+    {
+      header: "Revision",
+      cell: ({ sub }) => {
+        const subLatest = getLatestRevision(sub.revisions ?? []);
+        return subLatest ? (
+          <span className={`rounded-full px-2 py-0.5 text-[11px] font-medium ${subLatest.status ? mdlRevisionStatusStyles[subLatest.status] : "bg-muted text-muted-foreground"}`}>
+            {subLatest.round}{subLatest.status ? ` · ${subLatest.status}` : ""}
+          </span>
+        ) : "—";
+      },
+    },
+    {
+      header: "Cycle Age",
+      cell: ({ sub }) => {
+        const subCycleAgeDays = computeMdlCycleAgeDays(sub);
+        return subCycleAgeDays != null ? (
+          <span className={subCycleAgeDays > 30 ? "font-medium text-amber-600" : ""}>{subCycleAgeDays}d</span>
+        ) : "—";
+      },
+    },
+    { header: "Approve Date", cell: ({ sub }) => formatMdlDate(sub.approveDate) },
+    {
+      header: "Actions",
+      mobile: "footer",
+      cell: ({ item, sub }) => (
+        <>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => openDrawingDialog(item, sub)}
+            // Being the assignee is itself the authority to edit this drawing, whether or not the
+            // role carries Edit on the register.
+            disabled={!canEditMdlSubDrawing(sub, user?.id, canEdit)}
+            aria-label={`Edit sub-drawing ${sub.title || "untitled"}`}
+          >
+            <Pencil className="mr-1.5 h-3.5 w-3.5" /> Edit
+          </Button>
+          {canEdit && (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setSubToDelete({ item, sub })}
+              aria-label={`Remove sub-drawing ${sub.title || "untitled"}`}
+            >
+              <Trash2 className="mr-1.5 h-3.5 w-3.5 text-destructive" /> Remove
+            </Button>
+          )}
+        </>
+      ),
+    },
+  ];
+
+  const registerPhoneCards = (rows: MdlItemRow[], prefix: number[]) => {
+    const cardRows: RegisterCardRow[] = rows.map((row, index) => ({
+      ...row,
+      id: row.item.id,
+      outline: [...prefix, index],
+      rollup: getMdlRollup(row.drawing),
+      subDrawings: getMdlSubDrawings(row.drawing),
+    }));
+    return (
+      <PmDataList
+        cardsOnly
+        rows={cardRows}
+        columns={registerCardColumns}
+        // Only items that have sub-drawings to show: "Add sub-drawing" opens its item before the
+        // first one exists, and an empty nested list would draw an empty-state box.
+        expandedIds={new Set(cardRows.filter((row) => row.subDrawings.length && expandedItems.has(row.id)).map((row) => row.id))}
+        renderExpanded={(row) => (
+          <PmDataList
+            cardsOnly
+            rows={row.subDrawings.map((sub, subIndex) => ({
+              id: sub.id,
+              item: row.item,
+              sub,
+              outline: [...row.outline, subIndex],
+            }))}
+            columns={registerSubCardColumns}
+            rowClassName={() => NESTED_CARD_CLASS}
+          />
+        )}
+      />
+    );
+  };
+
+  /** A collapsible group strip, and its cards when open. */
+  const phoneGroup = (key: string, heading: ReactNode, cards: () => ReactNode) => {
+    const isOpen = expandedGroups.has(key);
+    return (
+      <div key={key}>
+        <div
+          role="button"
+          tabIndex={0}
+          aria-expanded={isOpen}
+          onClick={() => toggleGroup(key)}
+          onKeyDown={(event) => onStripKey(event, () => toggleGroup(key))}
+          className="cursor-pointer bg-muted/40 px-3 py-3"
+        >
+          {heading}
+        </div>
+        {isOpen && <div className="border-t bg-muted/30 p-2.5">{cards()}</div>}
+      </div>
+    );
+  };
+
   if (isAuthLoading || isLoading) {
     return (
       <main className="min-h-[calc(100dvh-4rem)] space-y-5 p-4 sm:p-6">
@@ -1173,7 +1584,7 @@ export default function MdlPage() {
   }
 
   return (
-    <main className={JMC_MAIN_CLASS}>
+    <main className={cn(JMC_MAIN_CLASS, "max-sm:[--card-pad:1rem]")}>
       {/* The shared Project Management header — the module's own furniture, which happens to live
           in jmc-page-shell.tsx because that is where it was first factored out. */}
       <PmPageHeader
@@ -1226,7 +1637,7 @@ export default function MdlPage() {
               <div className="h-1 w-full bg-gradient-to-r from-emerald-500 to-teal-600" />
               {/* With every group closed by default, there has to be a way back to the full view
                   in one action rather than N clicks. */}
-              <div className="flex items-center justify-between gap-3 border-b border-border/60 px-4 py-2.5">
+              <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 border-b border-border/60 px-4 py-2.5">
                 <p className="text-xs text-muted-foreground">
                   {poGroups.length} purchase order{poGroups.length === 1 ? "" : "s"}
                   {scopeGroups.length
@@ -1237,7 +1648,7 @@ export default function MdlPage() {
                   <Button
                     variant="ghost"
                     size="sm"
-                    className="h-7 px-2 text-xs"
+                    className="h-9 px-2 text-xs sm:h-7"
                     onClick={() => setExpandedGroups(new Set(allGroupKeys))}
                     // Checked per key, not by size: a reload that removes a PO would otherwise
                     // leave a stale key making the count match while a group is still closed.
@@ -1248,7 +1659,7 @@ export default function MdlPage() {
                   <Button
                     variant="ghost"
                     size="sm"
-                    className="h-7 px-2 text-xs"
+                    className="h-9 px-2 text-xs sm:h-7"
                     onClick={() => setExpandedGroups(new Set())}
                     disabled={expandedGroups.size === 0}
                   >
@@ -1257,17 +1668,13 @@ export default function MdlPage() {
                 </div>
               </div>
               <CardContent className="p-0">
-                <div className="overflow-x-auto">
+                <div className="hidden overflow-x-auto sm:block">
                   <Table className={REGISTER_TABLE_DENSITY}>
                     {registerHead}
                     <TableBody>
                       {poGroups.map((group, groupIndex) => {
-                        const summary = summariseMdlRows(group.rows);
                         const key = `po:${group.po.poId}`;
                         const isOpen = expandedGroups.has(key);
-                        const approvedPct = summary.drawings
-                          ? Math.round((summary.approved / summary.drawings) * 100)
-                          : 0;
                         return [
                           <TableRow
                             key={key}
@@ -1278,53 +1685,7 @@ export default function MdlPage() {
                             onClick={() => toggleGroup(key)}
                           >
                             <TableCell colSpan={REGISTER_COLUMN_COUNT}>
-                              <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
-                                <ChevronRight
-                                  aria-hidden
-                                  className={cn(
-                                    "h-4 w-4 shrink-0 transition-transform",
-                                    isOpen && "rotate-90",
-                                  )}
-                                />
-                                <span className="text-xs font-medium tabular-nums text-muted-foreground">
-                                  {mdlOutlineNo(groupIndex)}.
-                                </span>
-                                <ShoppingCart className="h-4 w-4 shrink-0 text-emerald-600" />
-                                {/* The PO number is a link, so it must not also toggle the row. */}
-                                <Link
-                                  href={`/project-management/purchase-orders/${group.po.poId}?project=${encodeURIComponent(mappingId)}`}
-                                  className="font-semibold hover:underline"
-                                  onClick={(event) => event.stopPropagation()}
-                                >
-                                  {group.po.poNumber}
-                                </Link>
-                                {group.po.vendorName && (
-                                  <span className="text-sm text-muted-foreground">
-                                    {group.po.vendorName}
-                                  </span>
-                                )}
-                                <span className="text-xs text-muted-foreground">
-                                  Ordered {formatMdlDate(group.po.poDate)}
-                                </span>
-                                <span className="text-xs text-muted-foreground">
-                                  {group.rows.length} item{group.rows.length === 1 ? "" : "s"}
-                                </span>
-                                <div className="ml-auto flex items-center gap-2">
-                                  <div
-                                    className="h-1.5 w-24 shrink-0 overflow-hidden rounded-full bg-muted"
-                                    role="img"
-                                    aria-label={`${summary.approved} of ${summary.drawings} drawings approved`}
-                                  >
-                                    <div
-                                      className="h-full bg-emerald-500"
-                                      style={{ width: `${approvedPct}%` }}
-                                    />
-                                  </div>
-                                  <span className="whitespace-nowrap text-[10px] font-medium text-muted-foreground">
-                                    {summary.approved}/{summary.drawings} approved
-                                  </span>
-                                </div>
-                              </div>
+                              {poGroupHeading(group, groupIndex, isOpen)}
                             </TableCell>
                           </TableRow>,
                           ...(isOpen ? itemRows(group.rows, [groupIndex]) : []),
@@ -1344,21 +1705,7 @@ export default function MdlPage() {
                             onClick={() => toggleGroup(key)}
                           >
                             <TableCell colSpan={REGISTER_COLUMN_COUNT}>
-                              <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
-                                <ChevronRight
-                                  aria-hidden
-                                  className={cn(
-                                    "h-4 w-4 shrink-0 transition-transform",
-                                    isOpen && "rotate-90",
-                                  )}
-                                />
-                                <Layers className="h-4 w-4 shrink-0 text-sky-600" />
-                                <span className="font-semibold">{scope}</span>
-                                <span className="text-xs text-muted-foreground">
-                                  Not on a purchase order yet · {rows.length} item
-                                  {rows.length === 1 ? "" : "s"}
-                                </span>
-                              </div>
+                              {scopeGroupHeading(scope, rows, isOpen)}
                             </TableCell>
                           </TableRow>,
                           ...(isOpen ? itemRows(rows, []) : []),
@@ -1366,6 +1713,21 @@ export default function MdlPage() {
                       })}
                     </TableBody>
                   </Table>
+                </div>
+
+                <div className="divide-y sm:hidden">
+                  {poGroups.map((group, groupIndex) => {
+                    const key = `po:${group.po.poId}`;
+                    return phoneGroup(key, poGroupHeading(group, groupIndex, expandedGroups.has(key)), () =>
+                      registerPhoneCards(group.rows, [groupIndex]),
+                    );
+                  })}
+                  {scopeGroups.map(([scope, rows]) => {
+                    const key = `scope:${scope}`;
+                    return phoneGroup(key, scopeGroupHeading(scope, rows, expandedGroups.has(key)), () =>
+                      registerPhoneCards(rows, []),
+                    );
+                  })}
                 </div>
               </CardContent>
             </Card>
@@ -1420,8 +1782,8 @@ export default function MdlPage() {
       </div>
 
       <Dialog open={!!editTarget} onOpenChange={(open) => !open && setEditTarget(null)}>
-        <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-3xl">
-          <DialogHeader>
+        <DialogContent className={cn(PM_DIALOG.content, "sm:max-h-[90dvh] sm:max-w-3xl sm:overflow-y-auto")}>
+          <DialogHeader className={PM_DIALOG.header}>
             <DialogTitle>
               {editTarget?.isNew ? "Add Sub-drawing" : editTarget?.sub ? "Sub-drawing Details" : "Drawing Details"}
             </DialogTitle>
@@ -1431,7 +1793,9 @@ export default function MdlPage() {
             </DialogDescription>
           </DialogHeader>
 
-          <div className="grid gap-4 py-2">
+          {/* `content-start`: on a phone the body fills the sheet, and a grid would otherwise stretch
+              its rows apart to fill it. */}
+          <div className={cn(PM_DIALOG.body, "grid content-start gap-4 space-y-0 py-2")}>
             {editTarget?.sub && (
               <div className="grid gap-4 rounded-lg border bg-muted/30 p-3 sm:grid-cols-2">
                 <div className="space-y-2">
@@ -1622,7 +1986,7 @@ export default function MdlPage() {
                     <div className="mb-2 flex items-center gap-2">
                       <span className="rounded-full bg-primary/10 px-2 py-0.5 text-xs font-semibold text-primary">{revision.round}</span>
                     </div>
-                    <div className="grid gap-3 sm:grid-cols-4">
+                    <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
                       <div className="space-y-1.5">
                         <Label className="text-xs">Submission Date</Label>
                         <Input
@@ -1675,7 +2039,7 @@ export default function MdlPage() {
                           </p>
                         )}
                       </div>
-                      <div className="space-y-1.5 sm:col-span-4">
+                      <div className="space-y-1.5 sm:col-span-2 lg:col-span-4">
                         <Label className="text-xs">Comments</Label>
                         <Input
                           value={revision.comments ?? ""}
@@ -1733,7 +2097,7 @@ export default function MdlPage() {
             )}
           </div>
 
-          <DialogFooter>
+          <DialogFooter className={PM_DIALOG.footer}>
             <DialogClose asChild><Button variant="outline">Cancel</Button></DialogClose>
             <Button onClick={() => void handleSave()} disabled={isSaving}>
               {isSaving ? (
@@ -1761,15 +2125,15 @@ export default function MdlPage() {
           }
         }}
       >
-        <DialogContent className="sm:max-w-4xl">
-          <DialogHeader>
+        <DialogContent className={cn(PM_DIALOG.contentWide, "sm:max-w-4xl")}>
+          <DialogHeader className={PM_DIALOG.header}>
             <DialogTitle>Add BOQ Item to MDL</DialogTitle>
             <DialogDescription>
               Select BOQ items to mark as MDL required. This only flips the MDL flag — no other item data is changed.
             </DialogDescription>
           </DialogHeader>
 
-          <div className="py-4">
+          <div className={cn(PM_DIALOG.body, "space-y-0 py-4")}>
             <div className="mb-4 flex flex-col items-center gap-2 sm:flex-row">
               <div className="relative w-full flex-grow">
                 <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
@@ -1803,21 +2167,25 @@ export default function MdlPage() {
               })}
             </div>
 
-            <ScrollArea className="h-96 rounded-md border">
+            <ScrollArea className="h-[50dvh] rounded-md border sm:h-96">
               <div className="p-1">
-                <div className="grid grid-cols-[auto_1fr_1fr_2fr] items-center bg-muted px-2 py-1.5 text-xs font-medium text-muted-foreground">
+                {/* On a phone the three values stack beside the checkbox, description first; from
+                    `sm` their wrapper dissolves (`contents`) and they are the grid's columns again. */}
+                <div className="grid grid-cols-[auto_1fr] items-center bg-muted px-2 py-1.5 text-xs font-medium text-muted-foreground sm:grid-cols-[auto_1fr_1fr_2fr]">
                   <div className="flex w-[50px] justify-center">
                     <Checkbox aria-label="Select all" checked={addSelectAllState} onCheckedChange={handleSelectAllToAdd} />
                   </div>
-                  <button type="button" className="flex cursor-pointer items-center text-left" onClick={() => toggleAddSort("erpSlNo")}>
-                    ERP Sl.No.{addSortKey === "erpSlNo" && <ArrowUpDown className="ml-1 h-3 w-3" />}
-                  </button>
-                  <button type="button" className="flex cursor-pointer items-center text-left" onClick={() => toggleAddSort("boqSlNo")}>
-                    BOQ Sl.No.{addSortKey === "boqSlNo" && <ArrowUpDown className="ml-1 h-3 w-3" />}
-                  </button>
-                  <button type="button" className="flex cursor-pointer items-center text-left" onClick={() => toggleAddSort("description")}>
-                    Description{addSortKey === "description" && <ArrowUpDown className="ml-1 h-3 w-3" />}
-                  </button>
+                  <div className="flex flex-wrap gap-x-3 sm:contents">
+                    <button type="button" className="flex cursor-pointer items-center text-left" onClick={() => toggleAddSort("erpSlNo")}>
+                      ERP Sl.No.{addSortKey === "erpSlNo" && <ArrowUpDown className="ml-1 h-3 w-3" />}
+                    </button>
+                    <button type="button" className="flex cursor-pointer items-center text-left" onClick={() => toggleAddSort("boqSlNo")}>
+                      BOQ Sl.No.{addSortKey === "boqSlNo" && <ArrowUpDown className="ml-1 h-3 w-3" />}
+                    </button>
+                    <button type="button" className="flex cursor-pointer items-center text-left max-sm:order-first" onClick={() => toggleAddSort("description")}>
+                      Description{addSortKey === "description" && <ArrowUpDown className="ml-1 h-3 w-3" />}
+                    </button>
+                  </div>
                 </div>
 
                 {filteredAvailableBoqItems.length ? (
@@ -1827,7 +2195,7 @@ export default function MdlPage() {
                       <div
                         key={item.id}
                         className={cn(
-                          "grid grid-cols-[auto_1fr_1fr_2fr] items-center border-b p-2 last:border-b-0",
+                          "grid grid-cols-[auto_1fr] items-center border-b p-2 last:border-b-0 sm:grid-cols-[auto_1fr_1fr_2fr]",
                           rowChecked ? "bg-muted" : "hover:bg-muted/50",
                         )}
                         role="button"
@@ -1848,9 +2216,19 @@ export default function MdlPage() {
                             onClick={(e) => e.stopPropagation()}
                           />
                         </div>
-                        <div className="truncate pr-2">{String(item["ERP SL NO"] ?? "—")}</div>
-                        <div className="truncate pr-2">{String(item["BOQ SL No"] ?? "—")}</div>
-                        <div className="truncate pr-2">{String(item.Description ?? "Untitled item")}</div>
+                        <div className="flex min-w-0 flex-wrap gap-x-3 sm:contents">
+                          <div className="truncate pr-2 max-sm:text-xs max-sm:text-muted-foreground">
+                            <span className="sm:hidden">ERP </span>
+                            {String(item["ERP SL NO"] ?? "—")}
+                          </div>
+                          <div className="truncate pr-2 max-sm:text-xs max-sm:text-muted-foreground">
+                            <span className="sm:hidden">BOQ </span>
+                            {String(item["BOQ SL No"] ?? "—")}
+                          </div>
+                          <div className="truncate pr-2 max-sm:order-first max-sm:line-clamp-2 max-sm:w-full max-sm:whitespace-normal">
+                            {String(item.Description ?? "Untitled item")}
+                          </div>
+                        </div>
                       </div>
                     );
                   })
@@ -1863,7 +2241,7 @@ export default function MdlPage() {
             </ScrollArea>
           </div>
 
-          <DialogFooter>
+          <DialogFooter className={PM_DIALOG.footer}>
             <DialogClose asChild><Button variant="outline">Cancel</Button></DialogClose>
             <Button onClick={() => void handleMarkSelectedAsMdl()} disabled={!selectedToAdd.size || isAddingToMdl}>
               {isAddingToMdl ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <ListPlus className="mr-2 h-4 w-4" />}

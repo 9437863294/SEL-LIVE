@@ -355,11 +355,11 @@ export default function JmcSummaryPage() {
         </CardContent>
       </Card>
 
-      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5">
+      <div className="grid grid-cols-2 gap-3 md:grid-cols-3 lg:grid-cols-5">
         {isLoading ? (
             Array.from({ length: 5 }).map((_, index) => (
                 <Card key={index} className="border-border/60">
-                    <CardContent className="p-4">
+                    <CardContent className="p-3 sm:p-4">
                         <Skeleton className="h-3 w-3/4" />
                         <Skeleton className="mt-2 h-7 w-1/2" />
                     </CardContent>
@@ -368,9 +368,9 @@ export default function JmcSummaryPage() {
         ) : (
             statsToDisplay.map((stat) => (
               <Card key={stat.title} className="border-border/60">
-                <CardContent className="p-4">
+                <CardContent className="p-3 sm:p-4">
                   <p className="text-xs text-muted-foreground">{stat.title}</p>
-                  <p className="mt-1 text-2xl font-bold">{stat.value}</p>
+                  <p className="mt-1 break-words text-lg font-bold sm:text-2xl">{stat.value}</p>
                 </CardContent>
               </Card>
             ))
@@ -390,12 +390,14 @@ export default function JmcSummaryPage() {
               }
               return (
               <Card key={step.id} className="border-border/60">
-                <CardHeader className="border-b bg-muted/50 p-4">
+                <CardHeader className="border-b bg-muted/50 p-3 sm:p-4">
                   <CardTitle className="text-base">{step.name}</CardTitle>
                 </CardHeader>
                 <CardContent className="p-0">
                   <div className="overflow-x-auto">
-                    <Table>
+                    {/* Five short columns: with tighter cells and a wrapping name they fit a phone
+                        without a sideways scroll. */}
+                    <Table className="max-sm:[--table-cell-px:0.625rem]">
                       <TableHeader>
                         <TableRow>
                           <TableHead>User</TableHead>
@@ -410,7 +412,7 @@ export default function JmcSummaryPage() {
                            if (data.total === 0 && data.completed === 0 && data.rejected === 0) return null;
                            return (
                                <TableRow key={userName}>
-                                   <TableCell className="whitespace-nowrap">{userName}</TableCell>
+                                   <TableCell className="break-words sm:whitespace-nowrap">{userName}</TableCell>
                                    <TableCell>{data.total}</TableCell>
                                    <TableCell>{data.completed}</TableCell>
                                    <TableCell>{data.onTime}</TableCell>

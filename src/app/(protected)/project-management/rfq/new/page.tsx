@@ -30,6 +30,7 @@ import { useFieldControl, validateFieldControlRequirements } from "@/components/
 import { Button } from "@/components/ui/button";
 import {
   PmContent,
+  PmFormActions,
   PmShell,
   PmTopbar,
 } from "@/components/project-management/pm-shell";
@@ -393,7 +394,7 @@ export default function NewRfqPage() {
           </p>
         </div>
         <CardContent className="p-4">
-          <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 md:grid-cols-3">
             <ControlledField setting={fieldControl("rfqDate")} className="space-y-2">
               <Input id="rfq-date" type="date" value={rfqDate} max={dueDate || undefined} onChange={(e) => setRfqDate(e.target.value)} />
             </ControlledField>
@@ -426,28 +427,39 @@ export default function NewRfqPage() {
             return (
               <div key={indent.id} className="rounded-lg border">
                 <div className="flex items-center gap-2 border-b bg-muted/30 px-3 py-2">
-                  <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => toggleIndentExpanded(indent.id)}>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-9 w-9 shrink-0 sm:h-6 sm:w-6"
+                    aria-label={isExpanded ? "Collapse indent" : "Expand indent"}
+                    onClick={() => toggleIndentExpanded(indent.id)}
+                  >
                     {isExpanded ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
                   </Button>
                   <Checkbox
                     checked={someSelected ? "indeterminate" : allSelected}
                     onCheckedChange={(checked) => toggleIndentAll(indent, checked === true)}
                   />
-                  <span className="text-sm font-semibold">{indent.indentNumber}</span>
-                  <span className="text-xs text-muted-foreground">({indent.items.length} item{indent.items.length === 1 ? "" : "s"})</span>
+                  <span className="min-w-0 truncate text-sm font-semibold">{indent.indentNumber}</span>
+                  <span className="shrink-0 text-xs text-muted-foreground">({indent.items.length} item{indent.items.length === 1 ? "" : "s"})</span>
                 </div>
                 {isExpanded && (
                   <div className="divide-y">
                     {indent.items.map((item) => {
                       const key = itemKey(indent.id, item.boqItemId);
                       return (
-                        <label key={key} className="flex items-center gap-3 px-4 py-2 hover:bg-muted/30 cursor-pointer">
+                        // On a phone the Sl. No. sits above a wrapping description — beside it, a
+                        // 360px row left the description a truncated sliver.
+                        <label key={key} className="flex cursor-pointer items-start gap-3 px-4 py-2.5 hover:bg-muted/30 sm:items-center sm:py-2">
                           <Checkbox
+                            className="mt-0.5 sm:mt-0"
                             checked={selectedItemKeys.has(key)}
                             onCheckedChange={(checked) => toggleItem(indent.id, item.boqItemId, checked === true)}
                           />
-                          <span className="w-20 shrink-0 text-xs text-muted-foreground">{item.boqSlNo || "—"}</span>
-                          <span className="flex-1 truncate text-sm">{item.description}</span>
+                          <span className="flex min-w-0 flex-1 flex-col gap-0.5 sm:flex-row sm:items-center sm:gap-3">
+                            <span className="text-xs text-muted-foreground sm:w-20 sm:shrink-0">{item.boqSlNo || "—"}</span>
+                            <span className="break-words text-sm sm:flex-1 sm:truncate">{item.description}</span>
+                          </span>
                           <span className="shrink-0 text-xs text-muted-foreground">{formatQuantity(toNumber(item.requestedQty))} {item.unit}</span>
                         </label>
                       );
@@ -467,9 +479,9 @@ export default function NewRfqPage() {
         </CardContent>
       </Card>
 
-      <Card>
+      <Card className="max-sm:[--card-pad:1rem]">
         <CardHeader>
-          <CardTitle>Select Vendors ({selectedVendorIds.size} selected)</CardTitle>
+          <CardTitle className="text-xl sm:text-2xl">Select Vendors ({selectedVendorIds.size} selected)</CardTitle>
           <CardDescription>The RFQ will be sent to every vendor selected here.</CardDescription>
         </CardHeader>
         <CardContent>
@@ -497,7 +509,7 @@ export default function NewRfqPage() {
         </CardContent>
       </Card>
 
-      <div className="flex flex-wrap justify-end gap-3">
+      <PmFormActions>
         <Button variant="outline" onClick={() => void persistRfq(false)} disabled={isSaving}>
           {isSaving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
           Save as Draft
@@ -508,7 +520,7 @@ export default function NewRfqPage() {
             Send RFQ to Vendors
           </Button>
         )}
-      </div>
+      </PmFormActions>
       </PmContent>
     </PmShell>
   );

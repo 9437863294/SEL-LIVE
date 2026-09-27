@@ -207,7 +207,7 @@ export default function BoqPage() {
       {/* ── Header ──────────────────────────────────────────────────────── */}
       <Card className="relative overflow-hidden border-0 bg-gradient-to-r from-emerald-600 via-teal-600 to-cyan-600 text-white shadow-lg">
         <div className="absolute inset-0 opacity-10 bg-[radial-gradient(ellipse_at_top_right,_white_0%,_transparent_60%)]" />
-        <CardContent className="relative flex items-center gap-4 p-5">
+        <CardContent className="relative flex items-center gap-3 p-4 sm:gap-4 sm:p-5">
           <Button variant="ghost" size="icon" asChild className="shrink-0 text-white hover:bg-white/20 hover:text-white">
             <Link
               href={`/project-management?project=${encodeURIComponent(selectedProject.id)}`}
@@ -216,12 +216,12 @@ export default function BoqPage() {
               <ArrowLeft className="h-5 w-5" />
             </Link>
           </Button>
-          <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-white/20 backdrop-blur-sm">
+          <div className="hidden h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-white/20 backdrop-blur-sm sm:flex">
             <ClipboardList className="h-6 w-6 text-white" />
           </div>
-          <div>
-            <h1 className="text-2xl font-bold tracking-tight">BOQ</h1>
-            <p className="mt-0.5 text-sm text-emerald-100">
+          <div className="min-w-0">
+            <h1 className="text-xl font-bold tracking-tight sm:text-2xl">BOQ</h1>
+            <p className="mt-0.5 break-words text-sm text-emerald-100">
               {selectedProject.projectName} · mapped to {selectedProject.globalProjectName}
             </p>
           </div>

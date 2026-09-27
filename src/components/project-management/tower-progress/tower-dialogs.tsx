@@ -50,6 +50,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { useToast } from "@/hooks/use-toast";
+import { cn } from "@/lib/utils";
 import { exportWorkbook } from "@/lib/report-excel";
 import {
   validateTowerDraft,
@@ -72,6 +73,7 @@ import {
   importTowers,
   saveTower,
 } from "@/lib/project-management-tower-service";
+import { PM_DIALOG } from "@/components/project-management/pm-shell";
 import { useTowerProgress } from "./tower-progress-provider";
 
 /* ── Add / edit ─────────────────────────────────────────────────────────────────────────────── */
@@ -171,8 +173,10 @@ export function TowerFormDialog({
 
   return (
     <Dialog open={open} onOpenChange={(next) => (isSaving ? undefined : onOpenChange(next))}>
-      <DialogContent className="max-h-[90dvh] overflow-y-auto sm:max-w-2xl">
-        <DialogHeader>
+      <DialogContent
+        className={cn(PM_DIALOG.content, "sm:max-h-[90dvh] sm:max-w-2xl sm:overflow-y-auto")}
+      >
+        <DialogHeader className={PM_DIALOG.header}>
           <DialogTitle>{tower ? `Edit ${tower.towerNo}` : "Add tower"}</DialogTitle>
           <DialogDescription>
             {tower
@@ -181,102 +185,104 @@ export function TowerFormDialog({
           </DialogDescription>
         </DialogHeader>
 
-        <div className="grid gap-4 sm:grid-cols-2">
-          <div className="space-y-2">
-            <Label htmlFor="tower-no">Tower number *</Label>
-            <Input
-              id="tower-no"
-              value={draft.towerNo}
-              onChange={(event) => set("towerNo", event.target.value)}
-              maxLength={40}
-              placeholder="T-037"
-            />
+        <div className={PM_DIALOG.body}>
+          <div className="grid gap-4 sm:grid-cols-2">
+            <div className="space-y-2">
+              <Label htmlFor="tower-no">Tower number *</Label>
+              <Input
+                id="tower-no"
+                value={draft.towerNo}
+                onChange={(event) => set("towerNo", event.target.value)}
+                maxLength={40}
+                placeholder="T-037"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="tower-type">Tower type</Label>
+              <Input
+                id="tower-type"
+                value={draft.towerType ?? ""}
+                onChange={(event) => set("towerType", event.target.value)}
+                maxLength={60}
+                placeholder="DA+3"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="tower-section">Section</Label>
+              <Input
+                id="tower-section"
+                value={draft.section ?? ""}
+                onChange={(event) => set("section", event.target.value)}
+                maxLength={80}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="tower-location">Location</Label>
+              <Input
+                id="tower-location"
+                value={draft.location ?? ""}
+                onChange={(event) => set("location", event.target.value)}
+                maxLength={160}
+                placeholder="Village ABC"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="tower-lat">Latitude</Label>
+              <Input
+                id="tower-lat"
+                type="number"
+                step="0.000001"
+                value={draft.latitude ?? ""}
+                onChange={(event) => set("latitude", numberOrUndefined(event.target.value))}
+                placeholder="20.345600"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="tower-lon">Longitude</Label>
+              <Input
+                id="tower-lon"
+                type="number"
+                step="0.000001"
+                value={draft.longitude ?? ""}
+                onChange={(event) => set("longitude", numberOrUndefined(event.target.value))}
+                placeholder="85.456700"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="tower-contractor">Contractor</Label>
+              <Input
+                id="tower-contractor"
+                value={draft.contractor ?? ""}
+                onChange={(event) => set("contractor", event.target.value)}
+                maxLength={120}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="tower-span">Span to next tower (m)</Label>
+              <Input
+                id="tower-span"
+                type="number"
+                min={0}
+                step={1}
+                value={draft.spanToNextM ?? ""}
+                onChange={(event) => set("spanToNextM", numberOrUndefined(event.target.value))}
+              />
+              <p className="text-xs text-muted-foreground">
+                Turns strung spans into kilometres on the progress reports.
+              </p>
+            </div>
           </div>
-          <div className="space-y-2">
-            <Label htmlFor="tower-type">Tower type</Label>
-            <Input
-              id="tower-type"
-              value={draft.towerType ?? ""}
-              onChange={(event) => set("towerType", event.target.value)}
-              maxLength={60}
-              placeholder="DA+3"
-            />
-          </div>
-          <div className="space-y-2">
-            <Label htmlFor="tower-section">Section</Label>
-            <Input
-              id="tower-section"
-              value={draft.section ?? ""}
-              onChange={(event) => set("section", event.target.value)}
-              maxLength={80}
-            />
-          </div>
-          <div className="space-y-2">
-            <Label htmlFor="tower-location">Location</Label>
-            <Input
-              id="tower-location"
-              value={draft.location ?? ""}
-              onChange={(event) => set("location", event.target.value)}
-              maxLength={160}
-              placeholder="Village ABC"
-            />
-          </div>
-          <div className="space-y-2">
-            <Label htmlFor="tower-lat">Latitude</Label>
-            <Input
-              id="tower-lat"
-              type="number"
-              step="0.000001"
-              value={draft.latitude ?? ""}
-              onChange={(event) => set("latitude", numberOrUndefined(event.target.value))}
-              placeholder="20.345600"
-            />
-          </div>
-          <div className="space-y-2">
-            <Label htmlFor="tower-lon">Longitude</Label>
-            <Input
-              id="tower-lon"
-              type="number"
-              step="0.000001"
-              value={draft.longitude ?? ""}
-              onChange={(event) => set("longitude", numberOrUndefined(event.target.value))}
-              placeholder="85.456700"
-            />
-          </div>
-          <div className="space-y-2">
-            <Label htmlFor="tower-contractor">Contractor</Label>
-            <Input
-              id="tower-contractor"
-              value={draft.contractor ?? ""}
-              onChange={(event) => set("contractor", event.target.value)}
-              maxLength={120}
-            />
-          </div>
-          <div className="space-y-2">
-            <Label htmlFor="tower-span">Span to next tower (m)</Label>
-            <Input
-              id="tower-span"
-              type="number"
-              min={0}
-              step={1}
-              value={draft.spanToNextM ?? ""}
-              onChange={(event) => set("spanToNextM", numberOrUndefined(event.target.value))}
-            />
-            <p className="text-xs text-muted-foreground">
-              Turns strung spans into kilometres on the progress reports.
-            </p>
-          </div>
+
+          {errors.length ? (
+            <Alert variant="destructive">
+              <AlertTriangle className="h-4 w-4" />
+              <AlertTitle>Fix before saving</AlertTitle>
+              <AlertDescription>{errors[0].message}</AlertDescription>
+            </Alert>
+          ) : null}
         </div>
 
-        {errors.length ? (
-          <Alert variant="destructive">
-            <AlertTriangle className="h-4 w-4" />
-            <AlertTitle>Fix before saving</AlertTitle>
-            <AlertDescription>{errors[0].message}</AlertDescription>
-          </Alert>
-        ) : null}
-
-        <DialogFooter>
+        <DialogFooter className={PM_DIALOG.footer}>
           <Button variant="outline" onClick={() => onOpenChange(false)} disabled={isSaving}>
             Cancel
           </Button>
@@ -496,8 +502,10 @@ export function TowerImportDialog({
         onOpenChange(next);
       }}
     >
-      <DialogContent className="max-h-[92dvh] overflow-y-auto sm:max-w-4xl">
-        <DialogHeader>
+      <DialogContent
+        className={cn(PM_DIALOG.content, "sm:max-h-[92dvh] sm:max-w-4xl sm:overflow-y-auto")}
+      >
+        <DialogHeader className={PM_DIALOG.header}>
           <DialogTitle>Import tower schedule</DialogTitle>
           <DialogDescription>
             Load the client&apos;s schedule as .xlsx or .csv. Column order does not matter — headings are
@@ -505,125 +513,138 @@ export function TowerImportDialog({
           </DialogDescription>
         </DialogHeader>
 
-        <div className="flex flex-wrap items-center gap-2">
-          <input
-            ref={fileInputRef}
-            type="file"
-            accept=".xlsx,.xls,.csv,text/csv"
-            className="hidden"
-            onChange={(event) => void handleFile(event.target.files?.[0])}
-          />
-          <Button variant="outline" onClick={() => fileInputRef.current?.click()} disabled={isParsing}>
-            {isParsing ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <FileUp className="mr-2 h-4 w-4" />}
-            Choose file
-          </Button>
-          <Button variant="ghost" onClick={() => void handleTemplate()}>
-            <FileSpreadsheet className="mr-2 h-4 w-4" />
-            Download template
-          </Button>
-          {fileName ? <span className="text-sm text-muted-foreground">{fileName}</span> : null}
-        </div>
-
-        <div className="rounded-md border bg-muted/30 p-3 text-xs text-muted-foreground">
-          <p className="font-medium text-foreground">Recognised columns</p>
-          <p className="mt-1">
-            {TOWER_IMPORT_COLUMNS.map((column) => `${column.label}${column.required ? " (required)" : ""}`).join(
-              " · ",
-            )}
-          </p>
-        </div>
-
-        {result ? (
-          <div className="space-y-3">
-            <div className="flex flex-wrap gap-2">
-              <Badge className="bg-emerald-100 text-emerald-700">
-                {result.towers.length} to create
-              </Badge>
-              {result.duplicates.length ? (
-                <Badge className="bg-amber-100 text-amber-800">
-                  {result.duplicates.length} already in project
-                </Badge>
-              ) : null}
-              {result.issues.length ? (
-                <Badge className="bg-red-100 text-red-700">{result.issues.length} rejected</Badge>
-              ) : null}
-              {result.unmappedHeadings.length ? (
-                <Badge variant="outline">
-                  Ignored columns: {result.unmappedHeadings.join(", ")}
-                </Badge>
-              ) : null}
-            </div>
-
-            {result.issues.length ? (
-              <Alert variant="destructive">
-                <AlertTriangle className="h-4 w-4" />
-                <AlertTitle>These rows will not be imported</AlertTitle>
-                <AlertDescription>
-                  <ul className="mt-1 max-h-40 space-y-1 overflow-y-auto text-xs">
-                    {result.issues.map((issue) => (
-                      <li key={`${issue.row}-${issue.message}`}>
-                        Row {issue.row}
-                        {issue.towerNo ? ` (${issue.towerNo})` : ""}: {issue.message}
-                      </li>
-                    ))}
-                  </ul>
-                </AlertDescription>
-              </Alert>
-            ) : null}
-
-            {result.duplicates.length ? (
-              <Alert>
-                <Copy className="h-4 w-4" />
-                <AlertTitle>{result.duplicates.length} already exist and will be skipped</AlertTitle>
-                <AlertDescription className="text-xs">
-                  {result.duplicates
-                    .slice(0, 25)
-                    .map((duplicate) => duplicate.towerNo)
-                    .join(", ")}
-                  {result.duplicates.length > 25 ? ` and ${result.duplicates.length - 25} more` : ""}
-                  . Their recorded progress and photographs are left untouched.
-                </AlertDescription>
-              </Alert>
-            ) : null}
-
-            {result.towers.length ? (
-              <div className="max-h-72 overflow-auto rounded-md border">
-                <Table>
-                  <TableHeader className="sticky top-0 bg-background">
-                    <TableRow>
-                      <TableHead>Tower</TableHead>
-                      <TableHead>Type</TableHead>
-                      <TableHead>Section</TableHead>
-                      <TableHead>Location</TableHead>
-                      <TableHead>GPS</TableHead>
-                      <TableHead>Contractor</TableHead>
-                      <TableHead className="text-right">Span (m)</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {result.towers.map((tower) => (
-                      <TableRow key={tower.towerNo}>
-                        <TableCell className="font-medium">{tower.towerNo}</TableCell>
-                        <TableCell className="text-xs">{tower.towerType || "—"}</TableCell>
-                        <TableCell className="text-xs">{tower.section || "—"}</TableCell>
-                        <TableCell className="text-xs">{tower.location || "—"}</TableCell>
-                        <TableCell className="text-xs">
-                          {tower.latitude !== undefined && tower.longitude !== undefined
-                            ? `${tower.latitude.toFixed(4)}, ${tower.longitude.toFixed(4)}`
-                            : "—"}
-                        </TableCell>
-                        <TableCell className="text-xs">{tower.contractor || "—"}</TableCell>
-                        <TableCell className="text-right text-xs">{tower.spanToNextM ?? "—"}</TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              </div>
+        <div className={PM_DIALOG.body}>
+          <div className="flex flex-wrap items-center gap-2">
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept=".xlsx,.xls,.csv,text/csv"
+              className="hidden"
+              onChange={(event) => void handleFile(event.target.files?.[0])}
+            />
+            <Button variant="outline" onClick={() => fileInputRef.current?.click()} disabled={isParsing}>
+              {isParsing ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <FileUp className="mr-2 h-4 w-4" />}
+              Choose file
+            </Button>
+            <Button variant="ghost" onClick={() => void handleTemplate()}>
+              <FileSpreadsheet className="mr-2 h-4 w-4" />
+              Download template
+            </Button>
+            {fileName ? (
+              <span className="max-w-full truncate text-sm text-muted-foreground">{fileName}</span>
             ) : null}
           </div>
-        ) : null}
 
-        <DialogFooter>
+          <div className="rounded-md border bg-muted/30 p-3 text-xs text-muted-foreground">
+            <p className="font-medium text-foreground">Recognised columns</p>
+            <p className="mt-1">
+              {TOWER_IMPORT_COLUMNS.map((column) => `${column.label}${column.required ? " (required)" : ""}`).join(
+                " · ",
+              )}
+            </p>
+          </div>
+
+          {result ? (
+            <div className="space-y-3">
+              <div className="flex flex-wrap gap-2">
+                <Badge className="bg-emerald-100 text-emerald-700">
+                  {result.towers.length} to create
+                </Badge>
+                {result.duplicates.length ? (
+                  <Badge className="bg-amber-100 text-amber-800">
+                    {result.duplicates.length} already in project
+                  </Badge>
+                ) : null}
+                {result.issues.length ? (
+                  <Badge className="bg-red-100 text-red-700">{result.issues.length} rejected</Badge>
+                ) : null}
+                {result.unmappedHeadings.length ? (
+                  <Badge variant="outline">
+                    Ignored columns: {result.unmappedHeadings.join(", ")}
+                  </Badge>
+                ) : null}
+              </div>
+
+              {result.issues.length ? (
+                <Alert variant="destructive">
+                  <AlertTriangle className="h-4 w-4" />
+                  <AlertTitle>These rows will not be imported</AlertTitle>
+                  <AlertDescription>
+                    <ul className="mt-1 max-h-40 space-y-1 overflow-y-auto text-xs">
+                      {result.issues.map((issue) => (
+                        <li key={`${issue.row}-${issue.message}`}>
+                          Row {issue.row}
+                          {issue.towerNo ? ` (${issue.towerNo})` : ""}: {issue.message}
+                        </li>
+                      ))}
+                    </ul>
+                  </AlertDescription>
+                </Alert>
+              ) : null}
+
+              {result.duplicates.length ? (
+                <Alert>
+                  <Copy className="h-4 w-4" />
+                  <AlertTitle>{result.duplicates.length} already exist and will be skipped</AlertTitle>
+                  <AlertDescription className="text-xs">
+                    {result.duplicates
+                      .slice(0, 25)
+                      .map((duplicate) => duplicate.towerNo)
+                      .join(", ")}
+                    {result.duplicates.length > 25 ? ` and ${result.duplicates.length - 25} more` : ""}
+                    . Their recorded progress and photographs are left untouched.
+                  </AlertDescription>
+                </Alert>
+              ) : null}
+
+              {result.towers.length ? (
+                <div className="space-y-2">
+                  <p className="text-xs text-muted-foreground sm:hidden">
+                    Swipe sideways to see all columns
+                  </p>
+                  {/* This box scrolls both ways; the kit Table's own wrapper is made visible so the
+                      header and the tower column pin to it rather than to a box that never scrolls. */}
+                  <div className="max-h-72 overflow-auto rounded-md border">
+                    <Table className="min-w-[640px]" containerClassName="overflow-visible">
+                      <TableHeader className="sticky top-0 z-20 bg-background">
+                        <TableRow>
+                          <TableHead className="sticky left-0 z-20 bg-background">Tower</TableHead>
+                          <TableHead>Type</TableHead>
+                          <TableHead>Section</TableHead>
+                          <TableHead>Location</TableHead>
+                          <TableHead>GPS</TableHead>
+                          <TableHead>Contractor</TableHead>
+                          <TableHead className="text-right">Span (m)</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {result.towers.map((tower) => (
+                          <TableRow key={tower.towerNo}>
+                            <TableCell className="sticky left-0 z-10 bg-background font-medium">
+                              {tower.towerNo}
+                            </TableCell>
+                            <TableCell className="text-xs">{tower.towerType || "—"}</TableCell>
+                            <TableCell className="text-xs">{tower.section || "—"}</TableCell>
+                            <TableCell className="text-xs">{tower.location || "—"}</TableCell>
+                            <TableCell className="text-xs">
+                              {tower.latitude !== undefined && tower.longitude !== undefined
+                                ? `${tower.latitude.toFixed(4)}, ${tower.longitude.toFixed(4)}`
+                                : "—"}
+                            </TableCell>
+                            <TableCell className="text-xs">{tower.contractor || "—"}</TableCell>
+                            <TableCell className="text-right text-xs">{tower.spanToNextM ?? "—"}</TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </div>
+                </div>
+              ) : null}
+            </div>
+          ) : null}
+        </div>
+
+        <DialogFooter className={PM_DIALOG.footer}>
           <Button variant="outline" onClick={() => onOpenChange(false)} disabled={isImporting}>
             Cancel
           </Button>

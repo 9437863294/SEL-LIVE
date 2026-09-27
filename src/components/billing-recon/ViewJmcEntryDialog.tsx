@@ -400,11 +400,13 @@ export default function ViewJmcEntryDialog({
 
   return (
     <Dialog open={isOpen} onOpenChange={onOpenChange}>
+      {/* `hr-mobile-dialog` & co. (globals.css, ≤640px): a full-screen sheet on a phone in which only
+          the body scrolls, the centred modal from `sm` up. */}
       <DialogContent
-        className={`${dialogWidthClass} max-h-[90vh] flex flex-col min-h-0`}
+        className={`hr-mobile-dialog ${dialogWidthClass} sm:max-h-[90vh] flex flex-col min-h-0`}
       >
         {/* HEADER */}
-        <div className="pb-2">
+        <div className="hr-dialog-header pb-2">
           <DialogHeader>
             <DialogTitle className="text-center">
               {isEditMode ? 'Verify & Edit' : 'JMC Details'}:{' '}
@@ -419,13 +421,73 @@ export default function ViewJmcEntryDialog({
         </div>
 
         {/* BODY */}
-        <div className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden overscroll-contain rounded-t-md border">
+        <div className="hr-dialog-body flex-1 min-h-0 overflow-y-auto overflow-x-hidden overscroll-contain sm:rounded-t-md sm:border">
           {!hasJmc ? (
             <div className="flex items-center justify-center h-48 text-sm text-muted-foreground">
               No JMC selected.
             </div>
           ) : (
-            <div ref={xScrollRef} className="w-full overflow-x-auto no-scrollbar">
+            <>
+            {/* Phone: one card per item. The 88rem table below would be a long sideways swipe
+                for every row, so it is kept for `sm` and up. */}
+            <div className="space-y-2.5 sm:hidden">
+              {enrichedItems.map((item, index) => {
+                const rate = Number((item as any).rate) || 0;
+                const execQty = Number((item as any).executedQty) || 0;
+                const certQty = Number((item as any).certifiedQty) || 0;
+                const prevCert = Number((item as any).previousCertifiedQty) || 0;
+                const figures: Array<[string, React.ReactNode]> = [
+                  ['Unit', item.unit ?? '-'],
+                  ['BOQ Qty', Number(item.boqQty) || 0],
+                  ['Rate', formatCurrency(rate)],
+                  ['Prev. Certified', prevCert],
+                  [
+                    'Executed in this JMC',
+                    isEditMode ? (
+                      <Input
+                        type="number"
+                        inputMode="decimal"
+                        step="any"
+                        value={(item as any).executedQty ?? ''}
+                        onChange={(e) =>
+                          handleItemChange(index, 'executedQty', e.target.value)
+                        }
+                        className="h-8 w-full"
+                        aria-label={`Executed in this JMC for ${item.boqSlNo ?? 'item'}`}
+                      />
+                    ) : (
+                      execQty || '-'
+                    ),
+                  ],
+                  ['Certified in this JMC', certQty || '-'],
+                  ['Up to Date Certified Qty', prevCert + certQty || 0],
+                  ['Amount Executed', formatCurrency(rate * execQty)],
+                  ['Amount Certified', formatCurrency(rate * certQty)],
+                ];
+                return (
+                  <div
+                    key={`${item.boqSlNo ?? 'NA'}-${index}`}
+                    className="rounded-xl border border-border/60 bg-card p-3.5 shadow-sm"
+                  >
+                    <p className="text-sm font-semibold">{item.boqSlNo ?? '-'}</p>
+                    <p className="mt-0.5 line-clamp-4 whitespace-pre-line break-words text-xs text-muted-foreground">
+                      {item.description ?? '-'}
+                    </p>
+                    <dl className="mt-2 grid grid-cols-2 gap-x-3 gap-y-1.5 border-t border-border/60 pt-2">
+                      {figures.map(([label, value]) => (
+                        <div key={label} className="min-w-0">
+                          <dt className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+                            {label}
+                          </dt>
+                          <dd className="break-words text-sm">{value}</dd>
+                        </div>
+                      ))}
+                    </dl>
+                  </div>
+                );
+              })}
+            </div>
+            <div ref={xScrollRef} className="hidden w-full overflow-x-auto no-scrollbar sm:block">
               <Table
                 className="w-full table-fixed"
                 style={{ minWidth: `${tableMinWidthRem}rem` }}
@@ -485,13 +547,14 @@ export default function ViewJmcEntryDialog({
                 <TableBody>{rows}</TableBody>
               </Table>
             </div>
+            </>
           )}
         </div>
 
         {/* BOTTOM H-SCROLLBAR */}
         <div
           ref={hBarRef}
-          className="h-4 overflow-x-auto overflow-y-hidden rounded-b-md border-t"
+          className="hidden h-4 overflow-x-auto overflow-y-hidden rounded-b-md border-t sm:block"
           style={{ scrollbarGutter: 'stable both-edges' }}
           aria-hidden
         >
@@ -499,46 +562,59 @@ export default function ViewJmcEntryDialog({
         </div>
 
         {/* FOOTER */}
-        <div className="pt-4">
+        <div className="hidden pt-4 sm:block">
           <Separator />
-          <DialogFooter className="pt-3 sm:justify-between">
-            <div className="flex gap-2">
-              <Button
-                variant="outline"
-                onClick={handlePrintClick}
-                disabled={!printUrl}
-              >
-                <Printer className="mr-2 h-4 w-4" />
-                Print
-              </Button>
-
-              <Button variant="outline" size="icon" onClick={toggleDialogSize}>
-                {dialogSize === 'full' ? (
-                  <Minimize className="h-4 w-4" />
-                ) : (
-                  <Maximize className="h-4 w-4" />
-                )}
-              </Button>
-            </div>
-
-            <div className="flex gap-2">
-              <DialogClose asChild>
-                <Button variant="outline">Close</Button>
-              </DialogClose>
-
-              {isEditMode && (
-                <Button onClick={handleSaveChanges} disabled={isLoading || !hasJmc}>
-                  {isLoading ? (
-                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  ) : (
-                    <Save className="mr-2 h-4 w-4" />
-                  )}
-                  Save &amp; Verify
-                </Button>
-              )}
-            </div>
-          </DialogFooter>
         </div>
+        {/* On a phone the groups dissolve into the footer's two-column grid: Save & Verify across
+            the top, Print | Close beneath. The size toggle has nothing to resize on a full-screen
+            sheet, so it is hidden there. */}
+        <DialogFooter className="hr-dialog-footer pt-3 sm:justify-between">
+          <div className="flex gap-2 max-sm:contents">
+            <Button
+              variant="outline"
+              onClick={handlePrintClick}
+              disabled={!printUrl}
+            >
+              <Printer className="mr-2 h-4 w-4" />
+              Print
+            </Button>
+
+            <Button
+              variant="outline"
+              size="icon"
+              onClick={toggleDialogSize}
+              className="hidden sm:inline-flex"
+              aria-label={dialogSize === 'full' ? 'Shrink dialog' : 'Enlarge dialog'}
+            >
+              {dialogSize === 'full' ? (
+                <Minimize className="h-4 w-4" />
+              ) : (
+                <Maximize className="h-4 w-4" />
+              )}
+            </Button>
+          </div>
+
+          <div className="flex gap-2 max-sm:contents">
+            <DialogClose asChild>
+              <Button variant="outline">Close</Button>
+            </DialogClose>
+
+            {isEditMode && (
+              <Button
+                onClick={handleSaveChanges}
+                disabled={isLoading || !hasJmc}
+                className="max-sm:order-first max-sm:col-span-2"
+              >
+                {isLoading ? (
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                ) : (
+                  <Save className="mr-2 h-4 w-4" />
+                )}
+                Save &amp; Verify
+              </Button>
+            )}
+          </div>
+        </DialogFooter>
       </DialogContent>
     </Dialog>
   );

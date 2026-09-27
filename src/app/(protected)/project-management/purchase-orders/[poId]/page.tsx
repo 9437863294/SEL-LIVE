@@ -85,15 +85,8 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
 import { Skeleton } from "@/components/ui/skeleton";
+import { PM_DIALOG, PmDataList, PmEmptyState, type PmListColumn } from "@/components/project-management/pm-shell";
 import {
   PO_COLLECTION,
   PO_PERMISSION_RESOURCE,
@@ -106,6 +99,7 @@ import {
   toNumber,
   type FlowDownObligation,
   type PurchaseOrder,
+  type PurchaseOrderItem,
 } from "@/lib/purchase-orders";
 import type { WorkflowStep } from "@/lib/types";
 import { getAssigneeForStep, calculateDeadline } from "@/lib/workflow-utils";
@@ -138,6 +132,39 @@ const formatDate = (value?: string) => {
   return Number.isNaN(date.getTime())
     ? value
     : date.toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" });
+};
+
+/**
+ * A section Card whose body is a list: framed on a desktop, only its heading on a phone — the list
+ * brings its own cards there, and a card inside a card is just a thicker border.
+ */
+const LIST_CARD_CLASS = "max-sm:border-0 max-sm:bg-transparent max-sm:shadow-none";
+const LIST_CARD_HEADER_CLASS = "max-sm:px-0";
+/** The Card frames the list on a desktop, so the list drops its own. */
+const LIST_IN_CARD_CLASS = "sm:rounded-none sm:border-0 sm:shadow-none";
+
+/** One supply gate's status on a line item, as a pill. */
+type GateStatus = { gate: string; status: string; style: string };
+
+type PoLineRow = {
+  id: string;
+  item: PurchaseOrderItem;
+  boqSlNo?: string;
+  budgetPrice: number;
+  mdlStatus?: MdlOverallStatus;
+  /** Manufacturing Clearance → MVAC, in chain order. */
+  gates: GateStatus[];
+};
+
+type FlowDownRow = FlowDownObligation & { id: string };
+
+type CommitmentExceptionRow = {
+  id: string;
+  boqItemId: string;
+  boqSlNo: string;
+  description: string;
+  boqValue: number;
+  committedValue: number;
 };
 
 export default function ProjectPurchaseOrderDetailPage() {
@@ -629,32 +656,173 @@ export default function ProjectPurchaseOrderDetailPage() {
     );
   }
 
+  const lineRows: PoLineRow[] = (po.items ?? []).map((item, index) => {
+    const mcStatus = item.boqItemId ? mcStatusByBoqItemId.get(item.boqItemId) : undefined;
+    const inspectionStatus = item.boqItemId ? inspectionStatusByBoqItemId.get(item.boqItemId) : undefined;
+    const mdccStatus = item.boqItemId ? mdccStatusByBoqItemId.get(item.boqItemId) : undefined;
+    const diStatus = item.boqItemId ? diStatusByBoqItemId.get(item.boqItemId) : undefined;
+    const grnStatus = item.boqItemId ? grnStatusByBoqItemId.get(item.boqItemId) : undefined;
+    const mvacStatus = item.boqItemId ? mvacStatusByBoqItemId.get(item.boqItemId) : undefined;
+    return {
+      id: String(index),
+      item,
+      boqSlNo: item.boqItemId ? boqSlNoByBoqItemId.get(item.boqItemId) : "",
+      budgetPrice: item.boqItemId ? budgetPriceByBoqItemId.get(item.boqItemId) ?? 0 : 0,
+      mdlStatus: item.boqItemId ? mdlStatusByBoqItemId.get(item.boqItemId) : undefined,
+      gates: [
+        { gate: "MC", status: mcStatus ?? "Pending", style: mcStatusStyles[mcStatus ?? "Pending"] },
+        {
+          gate: "Inspection",
+          status: inspectionStatus ?? "Not Requested",
+          style: inspectionStatusStyles[inspectionStatus ?? "Not Requested"],
+        },
+        { gate: "MDCC", status: mdccStatus ?? "Pending", style: mdccStatusStyles[mdccStatus ?? "Pending"] },
+        { gate: "DI", status: diStatus ?? "Pending", style: diStatusStyles[diStatus ?? "Pending"] },
+        { gate: "GRN", status: grnStatus ?? "Not Received", style: grnStatusStyles[grnStatus ?? "Not Received"] },
+        { gate: "MVAC", status: mvacStatus ?? "Pending", style: mvacStatusStyles[mvacStatus ?? "Pending"] },
+      ],
+    };
+  });
+
+  const gatePill = (gate: GateStatus) => (
+    <span className={cn("rounded-full px-2.5 py-1 text-xs font-medium", gate.style)}>{gate.status}</span>
+  );
+
+  const lineColumns: PmListColumn<PoLineRow>[] = [
+    { header: "BOQ SL No", className: "whitespace-nowrap text-muted-foreground", cell: (row) => row.boqSlNo || "—" },
+    { header: "Description", className: "max-w-md", mobile: "title", cell: (row) => row.item.description },
+    { header: "Unit", cell: (row) => row.item.unit || "—" },
+    {
+      header: "BOQ Qty",
+      className: "text-muted-foreground",
+      cell: (row) => (typeof row.item.boqQty === "number" ? formatQuantity(row.item.boqQty) : "—"),
+    },
+    {
+      header: "Indent Qty",
+      className: "text-muted-foreground",
+      cell: (row) => (typeof row.item.indentQty === "number" ? formatQuantity(row.item.indentQty) : "—"),
+    },
+    { header: "PO Qty", cell: (row) => formatQuantity(row.item.qty) },
+    { header: "Rate", cell: (row) => formatCurrency(row.item.rate) },
+    { header: "Budget Price", className: "text-muted-foreground", cell: (row) => formatCurrency(row.budgetPrice) },
+    {
+      header: "Total Budget Price",
+      className: "text-muted-foreground",
+      cell: (row) => formatCurrency(row.budgetPrice * row.item.qty),
+    },
+    {
+      header: "Amount",
+      mobile: "aside",
+      cell: (row) => <span className="font-medium">{formatCurrency(row.item.amount)}</span>,
+    },
+    { header: "Source RFQ", className: "text-xs text-muted-foreground", cell: (row) => row.item.sourceRfqNumber || "—" },
+    {
+      header: "MDL Status",
+      mobile: "omit",
+      cell: (row) =>
+        row.mdlStatus ? (
+          <span className={cn("rounded-full px-2.5 py-1 text-xs font-medium", mdlOverallStatusStyles[row.mdlStatus])}>
+            {row.mdlStatus}
+          </span>
+        ) : (
+          <span className="text-muted-foreground">—</span>
+        ),
+    },
+    { header: "MC Status", mobile: "omit", cell: (row) => gatePill(row.gates[0]) },
+    { header: "Inspection", mobile: "omit", cell: (row) => gatePill(row.gates[1]) },
+    { header: "MDCC", mobile: "omit", cell: (row) => gatePill(row.gates[2]) },
+    { header: "DI", mobile: "omit", cell: (row) => gatePill(row.gates[3]) },
+    { header: "GRN", mobile: "omit", cell: (row) => gatePill(row.gates[4]) },
+    { header: "MVAC", mobile: "omit", cell: (row) => gatePill(row.gates[5]) },
+    {
+      // Phone only — `hidden` on the desktop table, which has a column per gate. Seven more
+      // label/value pairs would double the card's height, so on a phone the chain wraps as one
+      // strip of pills along the card's foot instead.
+      header: "Supply chain",
+      className: "hidden",
+      mobile: "footer",
+      cell: (row) => (
+        <div className="flex flex-wrap gap-1.5">
+          {row.mdlStatus && (
+            <span className={cn("rounded-full px-2 py-0.5 text-[11px] font-medium", mdlOverallStatusStyles[row.mdlStatus])}>
+              MDL · {row.mdlStatus}
+            </span>
+          )}
+          {row.gates.map((gate) => (
+            <span key={gate.gate} className={cn("rounded-full px-2 py-0.5 text-[11px] font-medium", gate.style)}>
+              {gate.gate} · {gate.status}
+            </span>
+          ))}
+        </div>
+      ),
+    },
+  ];
+
+  const flowDownColumns: PmListColumn<FlowDownRow>[] = [
+    { header: "Obligation", className: "font-medium", mobile: "title", cell: (item) => item.label },
+    { header: "Client Requires", cell: (item) => item.clientValue },
+    { header: "This PO", cell: (item) => item.poValue },
+    {
+      header: "Status",
+      mobile: "aside",
+      cell: (item) =>
+        item.status === "gap" ? (
+          <span className="inline-flex items-center gap-1 rounded-full bg-red-100 px-2 py-0.5 text-xs font-medium text-red-700">
+            <AlertTriangle className="h-3 w-3" /> Gap
+          </span>
+        ) : item.status === "ok" ? (
+          <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-medium text-emerald-700">Covered</span>
+        ) : (
+          <span className="rounded-full bg-muted px-2 py-0.5 text-xs font-medium text-muted-foreground">Confirm manually</span>
+        ),
+    },
+  ];
+
+  const commitmentColumns: PmListColumn<CommitmentExceptionRow>[] = [
+    { header: "BOQ SL No", className: "whitespace-nowrap", mobile: "title", cell: (row) => row.boqSlNo },
+    {
+      header: "Description",
+      className: "max-w-sm truncate",
+      mobile: "title",
+      cell: (row) => <span title={row.description}>{row.description}</span>,
+    },
+    { header: "BOQ Value", align: "right", cell: (row) => formatCurrency(row.boqValue) },
+    {
+      header: "Committed (all POs)",
+      align: "right",
+      cell: (row) => <span className="font-semibold text-red-600">{formatCurrency(row.committedValue)}</span>,
+    },
+  ];
+
   return (
-    <main className="min-h-[calc(100dvh-4rem)] space-y-5 p-4 sm:p-6">
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-        <div className="flex items-center gap-3">
-          <Button variant="ghost" size="icon" asChild>
+    <main className="min-h-[calc(100dvh-4rem)] space-y-4 p-4 max-sm:[--card-pad:1rem] sm:space-y-5 sm:p-6">
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-3">
+        <div className="flex min-w-0 flex-1 basis-64 items-center gap-2 sm:gap-3">
+          <Button variant="ghost" size="icon" className="shrink-0" asChild>
             <Link href={`/project-management/purchase-orders?project=${encodeURIComponent(mappingId)}`} aria-label="Back to Purchase Orders">
               <ArrowLeft className="h-5 w-5" />
             </Link>
           </Button>
-          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-emerald-500 to-teal-600 shadow-sm">
+          <div className="hidden h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-emerald-500 to-teal-600 shadow-sm sm:flex">
             <ShoppingCart className="h-5 w-5 text-white" />
           </div>
-          <div>
-            <h1 className="text-2xl font-bold">{po.poNumber}</h1>
-            <p className="text-sm text-muted-foreground">
+          <div className="min-w-0">
+            <h1 className="truncate text-lg font-bold sm:text-2xl">{po.poNumber}</h1>
+            <p className="break-words text-sm text-muted-foreground">
               {po.vendorName}{po.sourceRfqNumbers?.length ? ` · from ${po.sourceRfqNumbers.join(", ")}` : ""}
             </p>
           </div>
-          <span className={`ml-2 rounded-full px-3 py-1 text-xs font-medium ${poStatusStyles[po.status]}`}>
+          <span className={`ml-auto shrink-0 rounded-full px-3 py-1 text-xs font-medium sm:ml-2 ${poStatusStyles[po.status]}`}>
             {po.status}
           </span>
         </div>
 
-        <div className="flex flex-wrap items-center gap-2">
-          <Button variant="outline" onClick={handlePrint}>
-            <Printer className="mr-2 h-4 w-4" /> Print for Approval
+        {/* On a phone the actions take a row of their own and share it; Print, the secondary
+            action, drops to its icon there. */}
+        <div className="flex w-full flex-wrap items-center gap-2 sm:ml-auto sm:w-auto sm:justify-end">
+          <Button variant="outline" onClick={handlePrint} aria-label="Print for Approval">
+            <Printer className="h-4 w-4 sm:mr-2" />
+            <span className="hidden sm:inline">Print for Approval</span>
           </Button>
           {po.status === "Draft" && openIssueRequest ? (
             <span
@@ -665,20 +833,20 @@ export default function ProjectPurchaseOrderDetailPage() {
               {openIssueRequest.currentStepName ? ` · ${openIssueRequest.currentStepName}` : ""}
             </span>
           ) : po.status === "Draft" && canIssue ? (
-            <Button onClick={handleRequestIssue} disabled={isUpdating}>
+            <Button onClick={handleRequestIssue} disabled={isUpdating} className="max-sm:flex-1">
               <Truck className="mr-2 h-4 w-4" />
               {requiresIssueApproval ? "Submit for Issue Approval" : "Mark as Issued"}
             </Button>
           ) : null}
           {po.status === "Issued" && canReceive && (
-            <Button onClick={() => void updateStatus("Received")} disabled={isUpdating}>
+            <Button onClick={() => void updateStatus("Received")} disabled={isUpdating} className="max-sm:flex-1">
               <PackageCheck className="mr-2 h-4 w-4" /> Mark as Received
             </Button>
           )}
           {(po.status === "Draft" || po.status === "Issued") && canCancel && (
             <AlertDialog>
               <AlertDialogTrigger asChild>
-                <Button variant="outline" disabled={isUpdating}>
+                <Button variant="outline" disabled={isUpdating} className="max-sm:flex-1">
                   <Ban className="mr-2 h-4 w-4" /> Cancel PO
                 </Button>
               </AlertDialogTrigger>
@@ -697,7 +865,7 @@ export default function ProjectPurchaseOrderDetailPage() {
           {po.status === "Draft" && canDelete && (
             <AlertDialog>
               <AlertDialogTrigger asChild>
-                <Button variant="destructive" disabled={isUpdating}>
+                <Button variant="destructive" disabled={isUpdating} className="max-sm:flex-1">
                   <Trash2 className="mr-2 h-4 w-4" /> Delete
                 </Button>
               </AlertDialogTrigger>
@@ -717,16 +885,26 @@ export default function ProjectPurchaseOrderDetailPage() {
       </div>
 
 
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
-        <Card><CardContent className="p-4"><p className="text-xs text-muted-foreground">PO Date</p><p className="font-semibold">{formatDate(po.poDate)}</p></CardContent></Card>
-        <Card><CardContent className="p-4"><p className="text-xs text-muted-foreground">Start Date</p><p className="font-semibold">{formatDate(po.startDate)}</p></CardContent></Card>
+      {/* Two a row on a phone, the total across the full width beneath; one row of five on a
+          desktop. */}
+      <div className="grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-5">
+        <Card><CardContent className="p-3 sm:p-4"><p className="text-xs text-muted-foreground">PO Date</p><p className="font-semibold">{formatDate(po.poDate)}</p></CardContent></Card>
+        <Card><CardContent className="p-3 sm:p-4"><p className="text-xs text-muted-foreground">Start Date</p><p className="font-semibold">{formatDate(po.startDate)}</p></CardContent></Card>
         <Card>
-          <CardContent className="p-4">
+          <CardContent className="p-3 sm:p-4">
             <div className="flex items-center justify-between">
               <p className="text-xs text-muted-foreground">End Date</p>
               {canEditDates && (
-                <Button variant="ghost" size="icon" className="h-5 w-5" onClick={openDatesDialog} aria-label="Edit dates">
-                  <Pencil className="h-3 w-3" />
+                // A thumb-sized target on a phone; the negative margins keep it from making the
+                // label row taller than its neighbours'.
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="-my-2 -mr-2 h-9 w-9 sm:my-0 sm:mr-0 sm:h-5 sm:w-5"
+                  onClick={openDatesDialog}
+                  aria-label="Edit dates"
+                >
+                  <Pencil className="h-3.5 w-3.5 sm:h-3 sm:w-3" />
                 </Button>
               )}
             </div>
@@ -736,186 +914,53 @@ export default function ProjectPurchaseOrderDetailPage() {
             </p>
           </CardContent>
         </Card>
-        <Card><CardContent className="p-4"><p className="text-xs text-muted-foreground">Items</p><p className="font-semibold">{po.items?.length ?? 0}</p></CardContent></Card>
-        <Card><CardContent className="p-4"><p className="text-xs text-muted-foreground">Total Amount</p><p className="font-semibold">{formatCurrency(po.totalAmount)}</p></CardContent></Card>
+        <Card><CardContent className="p-3 sm:p-4"><p className="text-xs text-muted-foreground">Items</p><p className="font-semibold">{po.items?.length ?? 0}</p></CardContent></Card>
+        <Card className="col-span-2 lg:col-span-1"><CardContent className="p-3 sm:p-4"><p className="text-xs text-muted-foreground">Total Amount</p><p className="font-semibold">{formatCurrency(po.totalAmount)}</p></CardContent></Card>
       </div>
 
       {po.terms && (
         <Card>
           <CardHeader className="pb-2"><CardTitle className="text-sm">Terms / Remarks</CardTitle></CardHeader>
-          <CardContent className="pt-0 text-sm text-muted-foreground">{po.terms}</CardContent>
+          <CardContent className="break-words pt-0 text-sm text-muted-foreground">{po.terms}</CardContent>
         </Card>
       )}
 
-      <Card>
-        <CardHeader>
+      <Card className={LIST_CARD_CLASS}>
+        <CardHeader className={LIST_CARD_HEADER_CLASS}>
           <CardTitle>Items</CardTitle>
           <CardDescription>Line items included in this purchase order.</CardDescription>
         </CardHeader>
         <CardContent className="p-0">
-          <div className="overflow-x-auto">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>BOQ SL No</TableHead>
-                  <TableHead>Description</TableHead>
-                  <TableHead>Unit</TableHead>
-                  <TableHead>BOQ Qty</TableHead>
-                  <TableHead>Indent Qty</TableHead>
-                  <TableHead>PO Qty</TableHead>
-                  <TableHead>Rate</TableHead>
-                  <TableHead>Budget Price</TableHead>
-                  <TableHead>Total Budget Price</TableHead>
-                  <TableHead>Amount</TableHead>
-                  <TableHead>Source RFQ</TableHead>
-                  <TableHead>MDL Status</TableHead>
-                  <TableHead>MC Status</TableHead>
-                  <TableHead>Inspection</TableHead>
-                  <TableHead>MDCC</TableHead>
-                  <TableHead>DI</TableHead>
-                  <TableHead>GRN</TableHead>
-                  <TableHead>MVAC</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {(po.items ?? []).map((item, index) => {
-                  const budgetPrice = item.boqItemId ? budgetPriceByBoqItemId.get(item.boqItemId) ?? 0 : 0;
-                  const boqSlNo = item.boqItemId ? boqSlNoByBoqItemId.get(item.boqItemId) : "";
-                  const mdlStatus = item.boqItemId ? mdlStatusByBoqItemId.get(item.boqItemId) : undefined;
-                  const mcStatus = item.boqItemId ? mcStatusByBoqItemId.get(item.boqItemId) : undefined;
-                  const inspectionStatus = item.boqItemId ? inspectionStatusByBoqItemId.get(item.boqItemId) : undefined;
-                  const mdccStatus = item.boqItemId ? mdccStatusByBoqItemId.get(item.boqItemId) : undefined;
-                  const diStatus = item.boqItemId ? diStatusByBoqItemId.get(item.boqItemId) : undefined;
-                  const grnStatus = item.boqItemId ? grnStatusByBoqItemId.get(item.boqItemId) : undefined;
-                  const mvacStatus = item.boqItemId ? mvacStatusByBoqItemId.get(item.boqItemId) : undefined;
-                  return (
-                    <TableRow key={index}>
-                      <TableCell className="whitespace-nowrap text-muted-foreground">{boqSlNo || "—"}</TableCell>
-                      <TableCell className="max-w-md">{item.description}</TableCell>
-                      <TableCell>{item.unit || "—"}</TableCell>
-                      <TableCell className="text-muted-foreground">{typeof item.boqQty === "number" ? formatQuantity(item.boqQty) : "—"}</TableCell>
-                      <TableCell className="text-muted-foreground">{typeof item.indentQty === "number" ? formatQuantity(item.indentQty) : "—"}</TableCell>
-                      <TableCell>{formatQuantity(item.qty)}</TableCell>
-                      <TableCell>{formatCurrency(item.rate)}</TableCell>
-                      <TableCell className="text-muted-foreground">{formatCurrency(budgetPrice)}</TableCell>
-                      <TableCell className="text-muted-foreground">{formatCurrency(budgetPrice * item.qty)}</TableCell>
-                      <TableCell className="font-medium">{formatCurrency(item.amount)}</TableCell>
-                      <TableCell className="text-xs text-muted-foreground">{item.sourceRfqNumber || "—"}</TableCell>
-                      <TableCell>
-                        {mdlStatus ? (
-                          <span className={cn("rounded-full px-2.5 py-1 text-xs font-medium", mdlOverallStatusStyles[mdlStatus])}>
-                            {mdlStatus}
-                          </span>
-                        ) : (
-                          <span className="text-muted-foreground">—</span>
-                        )}
-                      </TableCell>
-                      <TableCell>
-                        <span className={cn("rounded-full px-2.5 py-1 text-xs font-medium", mcStatusStyles[mcStatus ?? "Pending"])}>
-                          {mcStatus ?? "Pending"}
-                        </span>
-                      </TableCell>
-                      <TableCell>
-                        <span className={cn("rounded-full px-2.5 py-1 text-xs font-medium", inspectionStatusStyles[inspectionStatus ?? "Not Requested"])}>
-                          {inspectionStatus ?? "Not Requested"}
-                        </span>
-                      </TableCell>
-                      <TableCell>
-                        <span className={cn("rounded-full px-2.5 py-1 text-xs font-medium", mdccStatusStyles[mdccStatus ?? "Pending"])}>
-                          {mdccStatus ?? "Pending"}
-                        </span>
-                      </TableCell>
-                      <TableCell>
-                        <span className={cn("rounded-full px-2.5 py-1 text-xs font-medium", diStatusStyles[diStatus ?? "Pending"])}>
-                          {diStatus ?? "Pending"}
-                        </span>
-                      </TableCell>
-                      <TableCell>
-                        <span className={cn("rounded-full px-2.5 py-1 text-xs font-medium", grnStatusStyles[grnStatus ?? "Not Received"])}>
-                          {grnStatus ?? "Not Received"}
-                        </span>
-                      </TableCell>
-                      <TableCell>
-                        <span className={cn("rounded-full px-2.5 py-1 text-xs font-medium", mvacStatusStyles[mvacStatus ?? "Pending"])}>
-                          {mvacStatus ?? "Pending"}
-                        </span>
-                      </TableCell>
-                    </TableRow>
-                  );
-                })}
-              </TableBody>
-            </Table>
-          </div>
+          <PmDataList
+            rows={lineRows}
+            columns={lineColumns}
+            className={LIST_IN_CARD_CLASS}
+            empty={<PmEmptyState title="No line items on this purchase order." />}
+          />
         </CardContent>
       </Card>
 
       {(flowDownObligations.length > 0 || commitmentExceptions.length > 0) && (
-        <Card>
-          <CardHeader className="pb-2">
+        <Card className={LIST_CARD_CLASS}>
+          <CardHeader className={cn("pb-2", LIST_CARD_HEADER_CLASS)}>
             <CardTitle className="text-sm">Commitment & Flow-Down Check</CardTitle>
             <CardDescription>
               Whether this project&apos;s POs impose on the vendor what the client&apos;s contract imposes on SEL,
               and whether committed value has run ahead of BOQ value.
             </CardDescription>
           </CardHeader>
-          <CardContent className="space-y-4 pt-0">
+          <CardContent className="space-y-4 pt-0 max-sm:px-0">
             {flowDownObligations.length > 0 && (
-              <div className="overflow-x-auto rounded-lg border">
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Obligation</TableHead>
-                      <TableHead>Client Requires</TableHead>
-                      <TableHead>This PO</TableHead>
-                      <TableHead>Status</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {flowDownObligations.map((item) => (
-                      <TableRow key={item.key}>
-                        <TableCell className="font-medium">{item.label}</TableCell>
-                        <TableCell>{item.clientValue}</TableCell>
-                        <TableCell>{item.poValue}</TableCell>
-                        <TableCell>
-                          {item.status === "gap" ? (
-                            <span className="inline-flex items-center gap-1 rounded-full bg-red-100 px-2 py-0.5 text-xs font-medium text-red-700">
-                              <AlertTriangle className="h-3 w-3" /> Gap
-                            </span>
-                          ) : item.status === "ok" ? (
-                            <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-medium text-emerald-700">Covered</span>
-                          ) : (
-                            <span className="rounded-full bg-muted px-2 py-0.5 text-xs font-medium text-muted-foreground">Confirm manually</span>
-                          )}
-                        </TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              </div>
+              <PmDataList
+                rows={flowDownObligations.map((item): FlowDownRow => ({ ...item, id: item.key }))}
+                columns={flowDownColumns}
+              />
             )}
             {commitmentExceptions.length > 0 && (
-              <div className="overflow-x-auto rounded-lg border">
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>BOQ SL No</TableHead>
-                      <TableHead>Description</TableHead>
-                      <TableHead className="text-right">BOQ Value</TableHead>
-                      <TableHead className="text-right">Committed (all POs)</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {commitmentExceptions.map((row) => (
-                      <TableRow key={row.boqItemId}>
-                        <TableCell className="whitespace-nowrap">{row.boqSlNo}</TableCell>
-                        <TableCell className="max-w-sm truncate" title={row.description}>{row.description}</TableCell>
-                        <TableCell className="text-right">{formatCurrency(row.boqValue)}</TableCell>
-                        <TableCell className="text-right font-semibold text-red-600">{formatCurrency(row.committedValue)}</TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              </div>
+              <PmDataList
+                rows={commitmentExceptions.map((row): CommitmentExceptionRow => ({ ...row, id: row.boqItemId }))}
+                columns={commitmentColumns}
+              />
             )}
             {po.commitmentOverrideReason || po.flowDownOverrideReason ? (
               <p className="flex items-start gap-1.5 text-xs text-muted-foreground">
@@ -946,9 +991,10 @@ export default function ProjectPurchaseOrderDetailPage() {
               href={po.approvedDocumentUrl}
               target="_blank"
               rel="noreferrer"
-              className="flex items-center gap-1.5 rounded-md border bg-muted/40 px-3 py-1.5 text-sm font-medium text-primary underline-offset-2 hover:underline"
+              className="flex min-w-0 max-w-full items-center gap-1.5 rounded-md border bg-muted/40 px-3 py-1.5 text-sm font-medium text-primary underline-offset-2 hover:underline"
             >
-              <Paperclip className="h-4 w-4" /> {po.approvedDocumentName || "View uploaded document"}
+              <Paperclip className="h-4 w-4 shrink-0" />
+              <span className="truncate">{po.approvedDocumentName || "View uploaded document"}</span>
             </a>
           )}
           <Button variant="outline" size="sm" asChild disabled={isUploadingDocument}>
@@ -968,11 +1014,11 @@ export default function ProjectPurchaseOrderDetailPage() {
       </Card>
 
       <Dialog open={isDatesDialogOpen} onOpenChange={setIsDatesDialogOpen}>
-        <DialogContent>
-          <DialogHeader>
+        <DialogContent className={PM_DIALOG.content}>
+          <DialogHeader className={PM_DIALOG.header}>
             <DialogTitle>Delivery Window</DialogTitle>
           </DialogHeader>
-          <div className="grid gap-4 py-2 sm:grid-cols-2">
+          <div className={cn(PM_DIALOG.bodyGrid, "gap-4 py-2")}>
             <div className="space-y-2">
               <Label htmlFor="po-start-date">Start Date</Label>
               <Input
@@ -993,7 +1039,7 @@ export default function ProjectPurchaseOrderDetailPage() {
               />
             </div>
           </div>
-          <DialogFooter>
+          <DialogFooter className={PM_DIALOG.footer}>
             <DialogClose asChild><Button variant="outline">Cancel</Button></DialogClose>
             <Button onClick={() => void handleSaveDates()} disabled={isUpdating}>Save</Button>
           </DialogFooter>
@@ -1001,15 +1047,17 @@ export default function ProjectPurchaseOrderDetailPage() {
       </Dialog>
 
       <Dialog open={isIssueReviewOpen} onOpenChange={setIsIssueReviewOpen}>
-        <DialogContent className="sm:max-w-lg">
-          <DialogHeader>
+        <DialogContent className={PM_DIALOG.content}>
+          <DialogHeader className={PM_DIALOG.header}>
             <DialogTitle>Review Before Issue</DialogTitle>
           </DialogHeader>
-          <div className="space-y-3 py-2 text-sm">
+          {/* The exception lists can run long, so on a desktop the body scrolls inside the capped
+              dialog rather than pushing the footer off it. */}
+          <div className={cn(PM_DIALOG.body, "py-2 text-sm sm:min-h-0 sm:flex-1 sm:overflow-y-auto")}>
             {flowDownGaps.length > 0 && (
               <div className="rounded-md border border-red-200 bg-red-50 p-3">
                 <p className="font-medium text-red-800">Flow-down gaps</p>
-                <ul className="mt-1 list-disc pl-4 text-red-700">
+                <ul className="mt-1 list-disc break-words pl-4 text-red-700">
                   {flowDownGaps.map((gap) => (
                     <li key={gap.key}>
                       {gap.label}: client requires {gap.clientValue}, this PO offers {gap.poValue}
@@ -1021,7 +1069,7 @@ export default function ProjectPurchaseOrderDetailPage() {
             {commitmentExceptions.length > 0 && (
               <div className="rounded-md border border-red-200 bg-red-50 p-3">
                 <p className="font-medium text-red-800">Committed above BOQ value</p>
-                <ul className="mt-1 list-disc pl-4 text-red-700">
+                <ul className="mt-1 list-disc break-words pl-4 text-red-700">
                   {commitmentExceptions.map((row) => (
                     <li key={row.boqItemId}>
                       {row.boqSlNo}: committed {formatCurrency(row.committedValue)} vs BOQ value {formatCurrency(row.boqValue)}
@@ -1042,7 +1090,7 @@ export default function ProjectPurchaseOrderDetailPage() {
               />
             </div>
           </div>
-          <DialogFooter>
+          <DialogFooter className={PM_DIALOG.footer}>
             <DialogClose asChild><Button variant="outline">Back</Button></DialogClose>
             <Button onClick={() => void handleConfirmIssue()} disabled={isUpdating}>
               {isUpdating ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Truck className="mr-2 h-4 w-4" />}

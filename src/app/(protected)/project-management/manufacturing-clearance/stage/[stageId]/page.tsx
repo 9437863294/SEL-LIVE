@@ -42,9 +42,15 @@ import {
   McPageShell,
   McProjectNotFound,
 } from "@/components/mc/mc-page-shell";
+import {
+  PM_DIALOG,
+  PmDataList,
+  PmEmptyState,
+  type PmListColumn,
+} from "@/components/project-management/pm-shell";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   Dialog,
   DialogClose,
@@ -55,15 +61,8 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
 import { Textarea } from "@/components/ui/textarea";
+import { cn } from "@/lib/utils";
 
 const toDateSafe = (value: unknown): Date | null => {
   if (!value) return null;
@@ -275,6 +274,86 @@ export default function McClearanceStagePage() {
 
   const isFinalStep = steps[steps.length - 1]?.id === step.id;
 
+  const columns: PmListColumn<McClearanceApproval>[] = [
+    {
+      header: "BOQ SL No",
+      className: "whitespace-nowrap",
+      mobile: "title",
+      cell: (approval) => approval.boqSlNo || "—",
+    },
+    {
+      header: "Description",
+      mobile: "title",
+      cell: (approval) => (
+        <span className="block sm:max-w-xs sm:truncate" title={approval.description}>
+          {approval.description || "—"}
+        </span>
+      ),
+    },
+    {
+      header: "PO No.",
+      className: "whitespace-nowrap",
+      cell: (approval) => approval.poNumber || "—",
+    },
+    { header: "Vendor", cell: (approval) => approval.vendorName || "—" },
+    {
+      header: "Clearance Date",
+      className: "whitespace-nowrap",
+      cell: (approval) => formatGateDate(approval.clearedDate),
+    },
+    { header: "Requested By", cell: (approval) => approval.requestedByName || "—" },
+    {
+      header: "Status",
+      mobile: "aside",
+      cell: (approval) => (
+        <Badge variant="outline" className={mcApprovalStatusStyles[approval.status]}>
+          {approval.status}
+        </Badge>
+      ),
+    },
+    {
+      header: "Due",
+      cell: (approval) => {
+        const due = toDateSafe(approval.deadline);
+        return due ? (
+          <span className="flex items-center gap-1 text-xs text-muted-foreground">
+            <Clock className="h-3 w-3" />
+            {due.toLocaleDateString()}
+          </span>
+        ) : (
+          <span className="text-xs text-muted-foreground">—</span>
+        );
+      },
+    },
+    {
+      header: "Actions",
+      align: "right",
+      mobile: "footer",
+      cell: (approval) => {
+        const mayAct = user ? canActOnMcApproval(approval, user.id) : false;
+        return mayAct ? (
+          <div className="flex w-full flex-wrap justify-end gap-2 sm:w-auto sm:gap-1">
+            {allowedActions.map((action) => (
+              <Button
+                key={action}
+                size="sm"
+                variant={action === "Approve" ? "default" : "outline"}
+                onClick={() => {
+                  setPending({ approval, action });
+                  setComment("");
+                }}
+              >
+                {action}
+              </Button>
+            ))}
+          </div>
+        ) : (
+          <span className="text-xs text-muted-foreground">Not assigned to you</span>
+        );
+      },
+    },
+  ];
+
   return (
     <McPageShell>
       <McPageHeader
@@ -292,106 +371,27 @@ export default function McClearanceStagePage() {
       />
 
 
-      <Card>
-        <CardContent className="p-0">
-          <div className="overflow-x-auto">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>BOQ SL No</TableHead>
-                  <TableHead>Description</TableHead>
-                  <TableHead>PO No.</TableHead>
-                  <TableHead>Vendor</TableHead>
-                  <TableHead>Clearance Date</TableHead>
-                  <TableHead>Requested By</TableHead>
-                  <TableHead>Status</TableHead>
-                  <TableHead>Due</TableHead>
-                  <TableHead className="text-right">Actions</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {stageApprovals.length ? (
-                  stageApprovals.map((approval) => {
-                    const mayAct = user ? canActOnMcApproval(approval, user.id) : false;
-                    const due = toDateSafe(approval.deadline);
-
-                    return (
-                      <TableRow key={approval.id}>
-                        <TableCell className="whitespace-nowrap">{approval.boqSlNo || "—"}</TableCell>
-                        <TableCell className="max-w-xs truncate" title={approval.description}>
-                          {approval.description || "—"}
-                        </TableCell>
-                        <TableCell className="whitespace-nowrap">{approval.poNumber || "—"}</TableCell>
-                        <TableCell>{approval.vendorName || "—"}</TableCell>
-                        <TableCell className="whitespace-nowrap">
-                          {formatGateDate(approval.clearedDate)}
-                        </TableCell>
-                        <TableCell className="text-sm">{approval.requestedByName || "—"}</TableCell>
-                        <TableCell>
-                          <Badge variant="outline" className={mcApprovalStatusStyles[approval.status]}>
-                            {approval.status}
-                          </Badge>
-                        </TableCell>
-                        <TableCell className="text-xs text-muted-foreground">
-                          {due ? (
-                            <span className="flex items-center gap-1">
-                              <Clock className="h-3 w-3" />
-                              {due.toLocaleDateString()}
-                            </span>
-                          ) : (
-                            "—"
-                          )}
-                        </TableCell>
-                        <TableCell className="text-right">
-                          {mayAct ? (
-                            <div className="flex flex-wrap justify-end gap-1">
-                              {allowedActions.map((action) => (
-                                <Button
-                                  key={action}
-                                  size="sm"
-                                  variant={action === "Approve" ? "default" : "outline"}
-                                  onClick={() => {
-                                    setPending({ approval, action });
-                                    setComment("");
-                                  }}
-                                >
-                                  {action}
-                                </Button>
-                              ))}
-                            </div>
-                          ) : (
-                            <span className="text-xs text-muted-foreground">Not assigned to you</span>
-                          )}
-                        </TableCell>
-                      </TableRow>
-                    );
-                  })
-                ) : (
-                  <TableRow>
-                    <TableCell colSpan={9} className="h-32 text-center">
-                      <GitMerge className="mx-auto mb-2 h-8 w-8 text-muted-foreground" />
-                      <p className="font-medium">Nothing waiting at this stage</p>
-                      <p className="mt-1 text-sm text-muted-foreground">
-                        Clearances submitted from the register will appear here.
-                      </p>
-                    </TableCell>
-                  </TableRow>
-                )}
-              </TableBody>
-            </Table>
-          </div>
-        </CardContent>
-      </Card>
+      <PmDataList
+        rows={stageApprovals}
+        columns={columns}
+        empty={
+          <PmEmptyState
+            icon={GitMerge}
+            title="Nothing waiting at this stage"
+            description="Clearances submitted from the register will appear here."
+          />
+        }
+      />
 
       <Dialog open={Boolean(pending)} onOpenChange={(open) => !open && setPending(null)}>
-        <DialogContent>
-          <DialogHeader>
+        <DialogContent className={PM_DIALOG.content}>
+          <DialogHeader className={PM_DIALOG.header}>
             <DialogTitle>{pending?.action} clearance request</DialogTitle>
             <DialogDescription>
               {pending ? `${pending.approval.boqSlNo} — ${pending.approval.description}` : ""}
             </DialogDescription>
           </DialogHeader>
-          <div className="grid gap-3 py-2">
+          <div className={cn(PM_DIALOG.body, "py-2")}>
             <p className="text-sm">
               {pending?.approval.vendorName} on {pending?.approval.poNumber}, clearance dated{" "}
               {pending ? formatGateDate(pending.approval.clearedDate) : ""}.
@@ -423,7 +423,7 @@ export default function McClearanceStagePage() {
               />
             </div>
           </div>
-          <DialogFooter>
+          <DialogFooter className={PM_DIALOG.footer}>
             <DialogClose asChild>
               <Button variant="outline">Cancel</Button>
             </DialogClose>

@@ -306,13 +306,13 @@ export default function SupplyPage() {
             <ArrowLeft className="h-5 w-5" />
           </Link>
         </Button>
-        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-cyan-500 to-blue-600 shadow-sm">
+        <div className="hidden h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-cyan-500 to-blue-600 shadow-sm sm:flex">
           <Package className="h-5 w-5 text-white" />
         </div>
-        <div>
-          <h1 className="text-2xl font-bold">Supply</h1>
+        <div className="min-w-0">
+          <h1 className="text-xl font-bold sm:text-2xl">Supply</h1>
           {/* The project leads, since the screen name is already the heading above it. */}
-          <p className="text-sm text-muted-foreground">
+          <p className="break-words text-sm text-muted-foreground">
             {mapping.projectName}
             <span className="mx-1.5 text-muted-foreground/50">·</span>
             BOQ through to client acceptance

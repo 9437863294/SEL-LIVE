@@ -13,13 +13,12 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from '@/components/ui/table';
+  PM_DIALOG,
+  PmDataList,
+  PmEmptyState,
+  type PmListColumn,
+} from '@/components/project-management/pm-shell';
+import { cn } from '@/lib/utils';
 import { db } from '@/lib/firebase';
 import {
   collection,
@@ -501,143 +500,150 @@ export default function StagePage() {
     }
   }
 
-  const renderTable = (data: JmcEntry[], type: 'pending' | 'completed') => (
-    <Card className="border-border/60">
-      <CardContent className="p-0">
-        <div className="overflow-x-auto">
-          <Table className="min-w-[880px]">
-            <TableHeader>
-              <TableRow>
-                <TableHead className="whitespace-nowrap">JMC No.</TableHead>
-                <TableHead className="whitespace-nowrap">JMC Date</TableHead>
-                <TableHead className="text-right whitespace-nowrap">
-                  Total Amount
-                </TableHead>
-                <TableHead className="whitespace-nowrap">Status</TableHead>
-                <TableHead className="text-right whitespace-nowrap">
-                  Actions
-                </TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {isLoading ? (
-                Array.from({ length: 3 }).map((_, i) => (
-                  <TableRow key={i}>
-                    <TableCell colSpan={5}>
-                      <Skeleton className="h-8" />
-                    </TableCell>
-                  </TableRow>
-                ))
-              ) : data.length > 0 ? (
-                data.map((entry) => {
-                  const currentStep = workflow?.find(
-                    (s) => s.id === entry.currentStepId
-                  );
-                  const actions = Array.isArray(currentStep?.actions)
-                    ? (currentStep!.actions as (string | ActionConfig)[])
-                    : [];
-                  const total = computeTotalAmount(entry);
+  /* A card per task on a phone, the table from `sm`. */
+  const taskColumns = (type: 'pending' | 'completed'): PmListColumn<JmcEntry>[] => [
+    {
+      header: 'JMC No.',
+      mobile: 'title',
+      className: 'whitespace-nowrap',
+      cell: (entry) => entry.jmcNo ?? '-',
+    },
+    {
+      header: 'JMC Date',
+      className: 'whitespace-nowrap',
+      cell: (entry) => humanDate(entry.jmcDate),
+    },
+    {
+      header: 'Total Amount',
+      align: 'right',
+      className: 'whitespace-nowrap',
+      cell: (entry) => formatINR(computeTotalAmount(entry)),
+    },
+    {
+      header: 'Status',
+      mobile: 'aside',
+      className: 'whitespace-nowrap',
+      cell: (entry) => (
+        <Badge
+          variant={
+            entry.status === 'Completed'
+              ? 'default'
+              : 'secondary'
+          }
+        >
+          {entry.status}
+        </Badge>
+      ),
+    },
+    {
+      header: 'Actions',
+      align: 'right',
+      mobile: 'footer',
+      cell: (entry) => {
+        const currentStep = workflow?.find(
+          (s) => s.id === entry.currentStepId
+        );
+        const actions = Array.isArray(currentStep?.actions)
+          ? (currentStep!.actions as (string | ActionConfig)[])
+          : [];
 
-                  return (
-                    <TableRow
-                      key={entry.id}
-                      onClick={() => handleViewDetails(entry)}
-                      className="cursor-pointer"
-                    >
-                      <TableCell className="whitespace-nowrap">
-                        {entry.jmcNo ?? '-'}
-                      </TableCell>
-                      <TableCell className="whitespace-nowrap">
-                        {humanDate(entry.jmcDate)}
-                      </TableCell>
-                      <TableCell className="text-right whitespace-nowrap">
-                        {formatINR(total)}
-                      </TableCell>
-                      <TableCell className="whitespace-nowrap">
-                        <Badge
-                          variant={
-                            entry.status === 'Completed'
-                              ? 'default'
-                              : 'secondary'
-                          }
+        return (
+          <div className="flex w-full items-center justify-end gap-2 sm:w-auto">
+            {/* A card with actions is not itself a tap target, so the phone gets the row
+                click's destination as a button of its own. */}
+            <Button
+              variant="outline"
+              size="sm"
+              className="sm:hidden"
+              onClick={() => handleViewDetails(entry)}
+            >
+              Details
+            </Button>
+            {isActionLoading === entry.id ? (
+              <Loader2 className="ml-auto h-4 w-4 animate-spin" />
+            ) : (
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-8 w-8"
+                    onClick={(e) => e.stopPropagation()}
+                    aria-label="Actions"
+                  >
+                    <MoreHorizontal className="h-4 w-4" />
+                    <span className="ml-2 sm:hidden">Actions</span>
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent
+                  align="end"
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  {type === 'pending' &&
+                    actions.map((action) => {
+                      const actionName =
+                        typeof action === 'string'
+                          ? action
+                          : action.name;
+                      const isVerify = actionName
+                        .toLowerCase()
+                        .includes('verify');
+                      const isUpdateQty =
+                        actionName === 'Update Certified Qty';
+                      const isComplete = actionName === 'Complete';
+
+                      return (
+                        <DropdownMenuItem
+                          key={actionName}
+                          onSelect={(e) => {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            if (isVerify) {
+                              handleVerifyClick(entry);
+                            } else if (isUpdateQty) {
+                              handleUpdateQtyClick(entry);
+                            } else if (isComplete) {
+                              openCompleteDialog(entry);
+                            } else {
+                              handleAction(entry.id!, action);
+                            }
+                          }}
                         >
-                          {entry.status}
-                        </Badge>
-                      </TableCell>
-                      <TableCell className="text-right">
-                        {isActionLoading === entry.id ? (
-                          <Loader2 className="ml-auto h-4 w-4 animate-spin" />
-                        ) : (
-                          <DropdownMenu>
-                            <DropdownMenuTrigger asChild>
-                              <Button
-                                variant="ghost"
-                                size="icon"
-                                className="h-8 w-8"
-                                onClick={(e) => e.stopPropagation()}
-                                aria-label="Actions"
-                              >
-                                <MoreHorizontal className="h-4 w-4" />
-                              </Button>
-                            </DropdownMenuTrigger>
-                            <DropdownMenuContent
-                              align="end"
-                              onClick={(e) => e.stopPropagation()}
-                            >
-                              {type === 'pending' &&
-                                actions.map((action) => {
-                                  const actionName =
-                                    typeof action === 'string'
-                                      ? action
-                                      : action.name;
-                                  const isVerify = actionName
-                                    .toLowerCase()
-                                    .includes('verify');
-                                  const isUpdateQty =
-                                    actionName === 'Update Certified Qty';
-                                  const isComplete = actionName === 'Complete';
+                          {actionName}
+                        </DropdownMenuItem>
+                      );
+                    })}
+                </DropdownMenuContent>
+              </DropdownMenu>
+            )}
+          </div>
+        );
+      },
+    },
+  ];
 
-                                  return (
-                                    <DropdownMenuItem
-                                      key={actionName}
-                                      onSelect={(e) => {
-                                        e.preventDefault();
-                                        e.stopPropagation();
-                                        if (isVerify) {
-                                          handleVerifyClick(entry);
-                                        } else if (isUpdateQty) {
-                                          handleUpdateQtyClick(entry);
-                                        } else if (isComplete) {
-                                          openCompleteDialog(entry);
-                                        } else {
-                                          handleAction(entry.id!, action);
-                                        }
-                                      }}
-                                    >
-                                      {actionName}
-                                    </DropdownMenuItem>
-                                  );
-                                })}
-                            </DropdownMenuContent>
-                          </DropdownMenu>
-                        )}
-                      </TableCell>
-                    </TableRow>
-                  );
-                })
-              ) : (
-                <TableRow>
-                  <TableCell colSpan={5} className="h-24 text-center">
-                    No {type} tasks found.
-                  </TableCell>
-                </TableRow>
-              )}
-            </TableBody>
-          </Table>
-        </div>
-      </CardContent>
-    </Card>
-  );
+  const renderTable = (data: JmcEntry[], type: 'pending' | 'completed') =>
+    isLoading ? (
+      <Card className="border-border/60">
+        <CardContent className="space-y-2 p-3">
+          {Array.from({ length: 3 }).map((_, i) => (
+            <Skeleton key={i} className="h-8" />
+          ))}
+        </CardContent>
+      </Card>
+    ) : (
+      <PmDataList
+        rows={data}
+        columns={taskColumns(type)}
+        onRowClick={handleViewDetails}
+        empty={
+          <PmEmptyState
+            icon={type === 'pending' ? Clock : Check}
+            title={`No ${type} tasks found.`}
+          />
+        }
+      />
+    );
 
   if (isResolving || authIsLoading) {
     return <JmcLoadingState />;
@@ -693,14 +699,14 @@ export default function StagePage() {
 
       {/* Complete dialog with custom date */}
       <Dialog open={isCompleteDialogOpen} onOpenChange={setIsCompleteDialogOpen}>
-        <DialogContent className="sm:max-w-md w-full">
-          <DialogHeader>
+        <DialogContent className={cn(PM_DIALOG.content, 'sm:max-w-md w-full')}>
+          <DialogHeader className={PM_DIALOG.header}>
             <DialogTitle>Confirm Completion</DialogTitle>
             <DialogDescription>
               Please select the date this task was completed.
             </DialogDescription>
           </DialogHeader>
-          <div className="py-4">
+          <div className={cn(PM_DIALOG.body, 'py-4')}>
             <Popover>
               <PopoverTrigger asChild>
                 <Button variant="outline" className="w-full justify-start font-normal">
@@ -722,7 +728,7 @@ export default function StagePage() {
               </PopoverContent>
             </Popover>
           </div>
-          <DialogFooter>
+          <DialogFooter className={PM_DIALOG.footer}>
             <DialogClose asChild>
               <Button variant="outline">Cancel</Button>
             </DialogClose>

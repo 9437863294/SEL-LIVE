@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useState, type KeyboardEvent, type ReactNode } from "react";
 import Link from "next/link";
 import {
   AlertTriangle,
@@ -13,6 +13,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { PmDataList, type PmListColumn } from "@/components/project-management/pm-shell";
 import { cn } from "@/lib/utils";
 import {
   computeMdlCycleAgeDays,
@@ -28,8 +29,26 @@ import {
   mdlOutlineNo,
   mdlOverallStatusStyles,
   type MdlGroupablePo,
+  type MdlRollup,
   type MdlRow,
+  type MdlSubDrawing,
 } from "@/lib/mdl";
+
+// A queue line as the phone renders it: one card per item, its sub-drawings nested beneath.
+type PendingCardRow = MdlRow & { id: string; rollup: MdlRollup; outline: number[]; hasPo: boolean };
+type PendingSubCardRow = { id: string; itemId: string; sub: MdlSubDrawing; outline: number[]; hasPo: boolean };
+
+// Lighter nested cards, so a sub-drawing reads as part of its item's card rather than a second one.
+const NESTED_CARD_CLASS = "border-border bg-muted/30 p-2.5 shadow-none";
+
+/** Enter/Space on a `role="button"` strip — but not when the key was meant for a link inside it. */
+const onStripKey = (event: KeyboardEvent, action: () => void) => {
+  if (event.target !== event.currentTarget) return;
+  if (event.key === "Enter" || event.key === " ") {
+    event.preventDefault();
+    action();
+  }
+};
 
 // Organised the way the work actually arrives: purchase order → BOQ item → sub-drawing. A PO is
 // the commitment, the items are what it covers, and each item's drawings are what has to be
@@ -134,13 +153,8 @@ export default function MdlPendingTasks({
     </TableHeader>
   );
 
-  // `prefix` carries the enclosing purchase order's index, so its items read 1.1, 1.2 and their
-  // sub-drawings 1.1.1, 1.1.2. Rows with no PO get no prefix and simply read 1, 1.1.
-  //
-  // Item and sub-drawing rows stay click-to-update rather than click-to-expand: this is a
-  // worklist, so a row's own click has to be the action you came to perform. Only the purchase
-  // order above them collapses.
-  const pendingRows = (groupRows: MdlRow[], prefix: number[], hasPo: boolean) =>
+  // Shared by the desktop rows and the phone cards, so both number a line the same.
+  const sortPendingRows = (groupRows: MdlRow[]) =>
     groupRows
       .map((row) => ({ ...row, rollup: getMdlRollup(row.drawing) }))
       .sort((a, b) => {
@@ -149,7 +163,16 @@ export default function MdlPendingTasks({
         return (a.rollup.plannedEndDate || "9999-12-31").localeCompare(
           b.rollup.plannedEndDate || "9999-12-31",
         );
-      })
+      });
+
+  // `prefix` carries the enclosing purchase order's index, so its items read 1.1, 1.2 and their
+  // sub-drawings 1.1.1, 1.1.2. Rows with no PO get no prefix and simply read 1, 1.1.
+  //
+  // Item and sub-drawing rows stay click-to-update rather than click-to-expand: this is a
+  // worklist, so a row's own click has to be the action you came to perform. Only the purchase
+  // order above them collapses.
+  const pendingRows = (groupRows: MdlRow[], prefix: number[], hasPo: boolean) =>
+    sortPendingRows(groupRows)
       .map(({ item, drawing, rollup }, index) => {
         const cycleAgeDays = computeMdlCycleAgeDays(rollup);
         const subDrawings = getMdlSubDrawings(drawing);
@@ -291,6 +314,203 @@ export default function MdlPendingTasks({
         ];
       });
 
+  /* ── Phone ──────────────────────────────────────────────────────────────────────────────────
+     The desktop queue is one table across every purchase order, with full-width group rows —
+     something PmDataList cannot draw — so below `sm` the same groups become tappable strips, and
+     an open group lists its items as PmDataList cards with their sub-drawings nested inside. */
+
+  const pendingCardColumns: PmListColumn<PendingCardRow>[] = [
+    {
+      header: "Item / Drawing",
+      mobile: "title",
+      cell: ({ item, outline }) => (
+        <>
+          <span className="mr-1 tabular-nums text-muted-foreground">{mdlOutlineNo(...outline)}.</span>
+          {String(item.Description ?? "—")}
+        </>
+      ),
+    },
+    { header: "BOQ SL No", mobile: "title", cell: ({ item }) => `BOQ SL No ${String(item["BOQ SL No"] ?? "—")}` },
+    {
+      header: "Status",
+      mobile: "aside",
+      cell: ({ rollup }) => (
+        <span className={cn("whitespace-nowrap rounded-full px-2.5 py-1 text-xs font-medium", mdlOverallStatusStyles[rollup.status])}>
+          {rollup.status}
+        </span>
+      ),
+    },
+    {
+      header: "Overdue",
+      mobile: "aside",
+      cell: ({ rollup }) =>
+        rollup.overdue ? (
+          <span className="rounded-full bg-red-100 px-1.5 py-0.5 text-[10px] font-semibold text-red-700">Overdue</span>
+        ) : null,
+    },
+    {
+      header: "Planned End",
+      cell: ({ rollup }) => (
+        <span className={rollup.overdue ? "font-medium text-red-600" : ""}>{formatMdlDate(rollup.plannedEndDate)}</span>
+      ),
+    },
+    {
+      header: "Cycle Age",
+      cell: ({ rollup }) => {
+        const cycleAgeDays = computeMdlCycleAgeDays(rollup);
+        return cycleAgeDays != null ? (
+          <span className={cycleAgeDays > 30 ? "font-medium text-amber-600" : ""}>{cycleAgeDays}d</span>
+        ) : "—";
+      },
+    },
+    {
+      header: "Drawings",
+      cell: ({ drawing, rollup }) =>
+        getMdlSubDrawings(drawing).length > 0 ? (
+          <span className="whitespace-nowrap rounded-full bg-sky-100 px-1.5 py-0.5 text-[10px] font-semibold text-sky-700">
+            {rollup.subApproved}/{rollup.subTotal}
+            {rollup.subCollected > rollup.subApproved && ` · ${rollup.subCollected}c`}
+          </span>
+        ) : (
+          <span className="text-muted-foreground">—</span>
+        ),
+    },
+    {
+      header: "Update",
+      mobile: "footer",
+      cell: ({ item }) => (
+        <Button variant="outline" size="sm" onClick={() => onSelectItem(item.id)}>
+          Update
+        </Button>
+      ),
+    },
+  ];
+
+  const subCardColumns: PmListColumn<PendingSubCardRow>[] = [
+    {
+      header: "Drawing",
+      mobile: "title",
+      cell: ({ sub, outline }) => (
+        <span className="flex items-start gap-1.5">
+          <span className="text-xs tabular-nums text-muted-foreground">{mdlOutlineNo(...outline)}.</span>
+          {isMdlApproved(sub.status) && <CheckCircle2 className="mt-0.5 h-3.5 w-3.5 shrink-0 text-emerald-600" />}
+          <span className="min-w-0 break-words">{sub.title || "Untitled drawing"}</span>
+        </span>
+      ),
+    },
+    {
+      // Stage and status sit on this wrapping line rather than as asides: two pills as long as
+      // "Re-collect from Vendor" beside the title would leave it a word wide.
+      header: "Stage",
+      mobile: "title",
+      cell: ({ sub, hasPo }) => {
+        const stage = computeMdlDrawingStage(sub, hasPo);
+        return (
+          <span className="mt-0.5 flex flex-wrap items-center gap-1.5">
+            <span className={cn("whitespace-nowrap rounded-full px-2 py-0.5 text-[11px] font-medium", mdlDrawingStageStyles[stage])}>
+              {stage}
+            </span>
+            <span className={cn("whitespace-nowrap rounded-full px-2 py-0.5 text-[11px] font-medium", mdlOverallStatusStyles[sub.status])}>
+              {sub.status}
+            </span>
+            <span className={cn(sub.assignedToName && "text-foreground")}>{sub.assignedToName || "Unassigned"}</span>
+            {sub.collection?.fileUrl && (
+              <a
+                href={sub.collection.fileUrl}
+                target="_blank"
+                rel="noreferrer"
+                onClick={(e) => e.stopPropagation()}
+                className="text-primary underline underline-offset-2"
+                title="Open the drawing collected from the vendor"
+              >
+                · Vendor
+              </a>
+            )}
+          </span>
+        );
+      },
+    },
+    {
+      header: "Planned End",
+      cell: ({ sub }) => {
+        const subOverdue = isMdlOverdue(sub);
+        return (
+          <>
+            <span className={subOverdue ? "font-medium text-red-600" : ""}>{formatMdlDate(sub.plannedEndDate)}</span>
+            {subOverdue && (
+              <span className="ml-1.5 rounded-full bg-red-100 px-1.5 py-0.5 text-[10px] font-semibold text-red-700">
+                Overdue
+              </span>
+            )}
+          </>
+        );
+      },
+    },
+    {
+      header: "Cycle Age",
+      cell: ({ sub }) => {
+        const subCycleAgeDays = computeMdlCycleAgeDays(sub);
+        return subCycleAgeDays != null ? (
+          <span className={subCycleAgeDays > 30 ? "font-medium text-amber-600" : ""}>{subCycleAgeDays}d</span>
+        ) : "—";
+      },
+    },
+  ];
+
+  // Sub-drawing cards stay click-to-update, like their desktop rows.
+  const phoneCards = (groupRows: MdlRow[], prefix: number[], hasPo: boolean) => {
+    const cardRows: PendingCardRow[] = sortPendingRows(groupRows).map((row, index) => ({
+      ...row,
+      id: row.item.id,
+      outline: [...prefix, index],
+      hasPo,
+    }));
+    return (
+      <PmDataList
+        cardsOnly
+        rows={cardRows}
+        columns={pendingCardColumns}
+        // Always open, as on the desktop: the sub-drawings are the work.
+        expandedIds={new Set(cardRows.filter((row) => getMdlSubDrawings(row.drawing).length).map((row) => row.id))}
+        renderExpanded={(row) => (
+          <PmDataList
+            cardsOnly
+            rows={getMdlSubDrawings(row.drawing).map((sub, subIndex) => ({
+              id: sub.id,
+              itemId: row.item.id,
+              sub,
+              outline: [...row.outline, subIndex],
+              hasPo: row.hasPo,
+            }))}
+            columns={subCardColumns}
+            onRowClick={(subRow) => onSelectItem(subRow.itemId, subRow.sub.id)}
+            rowClassName={() => NESTED_CARD_CLASS}
+          />
+        )}
+      />
+    );
+  };
+
+  /** A collapsible purchase-order strip, and its cards when open. */
+  const phoneGroup = (key: string, heading: ReactNode, cards: () => ReactNode) => {
+    const isOpen = expandedGroups.has(key);
+    return (
+      <div key={key}>
+        <div
+          role="button"
+          tabIndex={0}
+          aria-expanded={isOpen}
+          onClick={() => toggleGroup(key)}
+          onKeyDown={(event) => onStripKey(event, () => toggleGroup(key))}
+          className="cursor-pointer bg-muted/40 px-3 py-3"
+        >
+          {heading}
+        </div>
+        {isOpen && <div className="border-t bg-muted/30 p-2.5">{cards()}</div>}
+      </div>
+    );
+  };
+
   if (!total) {
     return (
       <Card className="border-border/60">
@@ -312,14 +532,87 @@ export default function MdlPendingTasks({
     );
   }
 
+  const groupBadges = (outstanding: number, overdue: number) => (
+    <div className="ml-auto flex items-center gap-2">
+      {overdue > 0 && (
+        <span className="flex items-center gap-1 whitespace-nowrap rounded-full bg-red-100 px-2 py-0.5 text-[11px] font-semibold text-red-700">
+          <AlertTriangle className="h-3 w-3" />
+          {overdue} overdue
+        </span>
+      )}
+      <span className="whitespace-nowrap rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-medium text-amber-800">
+        {outstanding} outstanding
+      </span>
+    </div>
+  );
+
+  /** A purchase order's group-row contents — the desktop table's full-width cell and the phone strip. */
+  const poGroupHeading = (group: (typeof poGroups)[number], groupIndex: number, isOpen: boolean) => {
+    const { outstanding, overdue } = groupStats(group.rows);
+    return (
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+        <ChevronRight
+          aria-hidden
+          className={cn(
+            "h-4 w-4 shrink-0 transition-transform",
+            isOpen && "rotate-90",
+          )}
+        />
+        <span className="text-xs font-medium tabular-nums text-muted-foreground">
+          {mdlOutlineNo(groupIndex)}.
+        </span>
+        <ShoppingCart className="h-4 w-4 shrink-0 text-emerald-600" />
+        {/* The PO number is a link, so it must not also toggle the row. */}
+        <Link
+          href={`/project-management/purchase-orders/${group.po.poId}?project=${encodeURIComponent(mappingId)}`}
+          className="font-semibold hover:underline"
+          onClick={(event) => event.stopPropagation()}
+        >
+          {group.po.poNumber}
+        </Link>
+        {group.po.vendorName && (
+          <span className="text-sm text-muted-foreground">
+            {group.po.vendorName}
+          </span>
+        )}
+        <span className="text-xs text-muted-foreground">
+          Ordered {formatMdlDate(group.po.poDate)}
+        </span>
+        {groupBadges(outstanding, overdue)}
+      </div>
+    );
+  };
+
+  const plannedOnlyHeading = (isOpen: boolean) => {
+    const { outstanding, overdue } = groupStats(plannedOnlyRows);
+    return (
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+        <ChevronRight
+          aria-hidden
+          className={cn(
+            "h-4 w-4 shrink-0 transition-transform",
+            isOpen && "rotate-90",
+          )}
+        />
+        <ListTodo className="h-4 w-4 shrink-0 text-slate-500" />
+        <span className="font-semibold">Not on a purchase order yet</span>
+        <span className="text-xs text-muted-foreground">
+          Planned in the register, but nothing is owed by a vendor until the item
+          is ordered.
+        </span>
+        {groupBadges(outstanding, overdue)}
+      </div>
+    );
+  };
+
   return (
     <Card className="overflow-hidden border-border/60">
       <div className="h-1 w-full bg-gradient-to-r from-rose-500 to-orange-600" />
       {/* With every group closed by default there has to be a way to the full queue in one
           action rather than N clicks. */}
-      <div className="flex items-center justify-between gap-3 border-b border-border/60 px-4 py-2.5">
+      <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 border-b border-border/60 px-4 py-2.5">
         <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
-          <ListTodo className="h-3.5 w-3.5" />
+          <ListTodo className="h-3.5 w-3.5 shrink-0" />
           {total} pending item{total === 1 ? "" : "s"} across {poGroups.length} purchase order
           {poGroups.length === 1 ? "" : "s"}
           {plannedOnlyRows.length ? " · plus items not yet ordered" : ""}
@@ -328,7 +621,7 @@ export default function MdlPendingTasks({
           <Button
             variant="ghost"
             size="sm"
-            className="h-7 px-2 text-xs"
+            className="h-9 px-2 text-xs sm:h-7"
             onClick={() => setExpandedGroups(new Set(allGroupKeys))}
             // Checked per key, not by size: a reload that removes a PO would otherwise leave a
             // stale key making the count match while a group is still closed.
@@ -339,7 +632,7 @@ export default function MdlPendingTasks({
           <Button
             variant="ghost"
             size="sm"
-            className="h-7 px-2 text-xs"
+            className="h-9 px-2 text-xs sm:h-7"
             onClick={() => setExpandedGroups(new Set())}
             disabled={expandedGroups.size === 0}
           >
@@ -348,12 +641,11 @@ export default function MdlPendingTasks({
         </div>
       </div>
       <CardContent className="p-0">
-        <div className="overflow-x-auto">
+        <div className="hidden overflow-x-auto sm:block">
           <Table className={PENDING_TABLE_DENSITY}>
             {pendingHead}
             <TableBody>
               {poGroups.map((group, groupIndex) => {
-                const { outstanding, overdue } = groupStats(group.rows);
                 const key = `po:${group.po.poId}`;
                 const isOpen = expandedGroups.has(key);
                 return [
@@ -366,46 +658,7 @@ export default function MdlPendingTasks({
                     onClick={() => toggleGroup(key)}
                   >
                     <TableCell colSpan={PENDING_COLUMN_COUNT}>
-                      <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
-                        <ChevronRight
-                          aria-hidden
-                          className={cn(
-                            "h-4 w-4 shrink-0 transition-transform",
-                            isOpen && "rotate-90",
-                          )}
-                        />
-                        <span className="text-xs font-medium tabular-nums text-muted-foreground">
-                          {mdlOutlineNo(groupIndex)}.
-                        </span>
-                        <ShoppingCart className="h-4 w-4 shrink-0 text-emerald-600" />
-                        {/* The PO number is a link, so it must not also toggle the row. */}
-                        <Link
-                          href={`/project-management/purchase-orders/${group.po.poId}?project=${encodeURIComponent(mappingId)}`}
-                          className="font-semibold hover:underline"
-                          onClick={(event) => event.stopPropagation()}
-                        >
-                          {group.po.poNumber}
-                        </Link>
-                        {group.po.vendorName && (
-                          <span className="text-sm text-muted-foreground">
-                            {group.po.vendorName}
-                          </span>
-                        )}
-                        <span className="text-xs text-muted-foreground">
-                          Ordered {formatMdlDate(group.po.poDate)}
-                        </span>
-                        <div className="ml-auto flex items-center gap-2">
-                          {overdue > 0 && (
-                            <span className="flex items-center gap-1 whitespace-nowrap rounded-full bg-red-100 px-2 py-0.5 text-[11px] font-semibold text-red-700">
-                              <AlertTriangle className="h-3 w-3" />
-                              {overdue} overdue
-                            </span>
-                          )}
-                          <span className="whitespace-nowrap rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-medium text-amber-800">
-                            {outstanding} outstanding
-                          </span>
-                        </div>
-                      </div>
+                      {poGroupHeading(group, groupIndex, isOpen)}
                     </TableCell>
                   </TableRow>,
                   ...(isOpen ? pendingRows(group.rows, [groupIndex], true) : []),
@@ -414,7 +667,6 @@ export default function MdlPendingTasks({
 
               {plannedOnlyRows.length > 0 &&
                 (() => {
-                  const { outstanding, overdue } = groupStats(plannedOnlyRows);
                   const isOpen = expandedGroups.has(PLANNED_ONLY_KEY);
                   return [
                     <TableRow
@@ -426,32 +678,7 @@ export default function MdlPendingTasks({
                       onClick={() => toggleGroup(PLANNED_ONLY_KEY)}
                     >
                       <TableCell colSpan={PENDING_COLUMN_COUNT}>
-                        <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
-                          <ChevronRight
-                            aria-hidden
-                            className={cn(
-                              "h-4 w-4 shrink-0 transition-transform",
-                              isOpen && "rotate-90",
-                            )}
-                          />
-                          <ListTodo className="h-4 w-4 shrink-0 text-slate-500" />
-                          <span className="font-semibold">Not on a purchase order yet</span>
-                          <span className="text-xs text-muted-foreground">
-                            Planned in the register, but nothing is owed by a vendor until the item
-                            is ordered.
-                          </span>
-                          <div className="ml-auto flex items-center gap-2">
-                            {overdue > 0 && (
-                              <span className="flex items-center gap-1 whitespace-nowrap rounded-full bg-red-100 px-2 py-0.5 text-[11px] font-semibold text-red-700">
-                                <AlertTriangle className="h-3 w-3" />
-                                {overdue} overdue
-                              </span>
-                            )}
-                            <span className="whitespace-nowrap rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-medium text-amber-800">
-                              {outstanding} outstanding
-                            </span>
-                          </div>
-                        </div>
+                        {plannedOnlyHeading(isOpen)}
                       </TableCell>
                     </TableRow>,
                     ...(isOpen ? pendingRows(plannedOnlyRows, [], false) : []),
@@ -459,6 +686,19 @@ export default function MdlPendingTasks({
                 })()}
             </TableBody>
           </Table>
+        </div>
+
+        <div className="divide-y sm:hidden">
+          {poGroups.map((group, groupIndex) => {
+            const key = `po:${group.po.poId}`;
+            return phoneGroup(key, poGroupHeading(group, groupIndex, expandedGroups.has(key)), () =>
+              phoneCards(group.rows, [groupIndex], true),
+            );
+          })}
+          {plannedOnlyRows.length > 0 &&
+            phoneGroup(PLANNED_ONLY_KEY, plannedOnlyHeading(expandedGroups.has(PLANNED_ONLY_KEY)), () =>
+              phoneCards(plannedOnlyRows, [], false),
+            )}
         </div>
       </CardContent>
     </Card>

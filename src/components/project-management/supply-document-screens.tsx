@@ -13,7 +13,7 @@
  * decision dialog, lands on all four stages at once instead of three of them.
  */
 
-import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import {
@@ -70,8 +70,9 @@ import {
   type SupplyDraftLine,
 } from "@/lib/project-management-supply-service";
 import {
-  PM_TABLE_CLASS,
+  PM_DIALOG,
   PmContent,
+  PmDataList,
   PmSectionHead,
   PmShell,
   PmSidebar,
@@ -79,6 +80,7 @@ import {
   PmTableFoot,
   PmTopbar,
   pmAccent,
+  type PmListColumn,
 } from "@/components/project-management/pm-shell";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -101,14 +103,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
 import { Textarea } from "@/components/ui/textarea";
 
 /** Per-stage screen chrome the ledger definition does not carry. */
@@ -345,6 +339,9 @@ export function SupplyDocumentNew({ stage }: { stage: SupplyLedgerStage }) {
     [allCandidates, vendorId],
   );
 
+  /** The same rows with the `id` the responsive list keys its cards and table rows by. */
+  const listRows = useMemo(() => rows.map((row) => ({ ...row, id: row.key })), [rows]);
+
   const draftLines = useMemo(
     () =>
       rows
@@ -481,6 +478,142 @@ export function SupplyDocumentNew({ stage }: { stage: SupplyLedgerStage }) {
     );
   }
 
+  // Each PO line: a table row from `sm`, a card on a phone — the quantity input sits in the card's
+  // footer, full width, since typing it is the one thing this screen asks for.
+  const lineColumns: PmListColumn<(typeof listRows)[number]>[] = [
+    {
+      header: "",
+      className: "w-10",
+      mobile: "aside",
+      cell: (row) => (
+        <Checkbox
+          checked={qtyByKey[row.key] !== undefined}
+          disabled={!(row.ledger.availableQty > 0) || !canRaise}
+          onCheckedChange={(checked) => toggleLine(row, checked === true)}
+          aria-label={`Add ${row.ledger.itemDescription}`}
+          className="h-5 w-5 sm:h-4 sm:w-4"
+        />
+      ),
+    },
+    { header: "PO", className: "font-medium", mobile: "title", cell: (row) => row.ledger.poNumber },
+    {
+      header: "Item",
+      mobile: "title",
+      cell: (row) => (
+        <>
+          <span className="block sm:max-w-[18rem] sm:truncate">{row.ledger.itemDescription}</span>
+          {row.directPath && <span className="text-xs text-muted-foreground">direct path</span>}
+        </>
+      ),
+    },
+    { header: "Unit", className: "text-muted-foreground", cell: (row) => row.ledger.unit },
+    {
+      header: "Ordered",
+      align: "right",
+      cell: (row) => (
+        <span className="tabular-nums text-muted-foreground">
+          {formatQuantity(row.ledger.orderedQty)}
+        </span>
+      ),
+    },
+    {
+      header: "Upstream",
+      align: "right",
+      cell: (row) => (
+        <span className="font-medium tabular-nums">{formatQuantity(row.ledger.upstreamQty)}</span>
+      ),
+    },
+    {
+      header: definition.acceptedLabel,
+      align: "right",
+      cell: (row) => (
+        <span className="tabular-nums text-emerald-700">
+          {row.ledger.acceptedQty ? formatQuantity(row.ledger.acceptedQty) : "—"}
+        </span>
+      ),
+    },
+    {
+      header: "In flight",
+      align: "right",
+      cell: (row) => (
+        <span className="tabular-nums text-amber-700">
+          {row.ledger.inFlightQty ? formatQuantity(row.ledger.inFlightQty) : "—"}
+        </span>
+      ),
+    },
+    {
+      header: "Available",
+      align: "right",
+      cell: (row) => (
+        <span className="font-semibold tabular-nums">{formatQuantity(row.ledger.availableQty)}</span>
+      ),
+    },
+    {
+      header: "Line",
+      mobile: "aside",
+      cell: ({ ledger }) =>
+        ledger.awaitingUpstream ? (
+          <PmStatusPill label="Awaiting upstream" tone="neutral" />
+        ) : (
+          <PmStatusPill
+            label={ledger.status}
+            tone={
+              ledger.status === "Complete"
+                ? "ok"
+                : ledger.status === "Partial"
+                  ? "wait"
+                  : "neutral"
+            }
+          />
+        ),
+    },
+    {
+      header: definition.presentedLabel,
+      align: "right",
+      className: "w-32",
+      mobile: "footer",
+      cell: (row) => {
+        const selected = qtyByKey[row.key] !== undefined;
+        const draft = draftLines.find((line) => line.row.key === row.key);
+        const offerable = row.ledger.availableQty > 0;
+        return (
+          <div className="w-full sm:w-auto">
+            {/* The card footer carries no column label of its own. */}
+            <p className="mb-1 text-[10px] font-medium uppercase tracking-wide text-muted-foreground sm:hidden">
+              {definition.presentedLabel}
+            </p>
+            {!offerable ? (
+              <span className="text-xs text-muted-foreground">No balance</span>
+            ) : (
+              <Input
+                type="number"
+                min={0}
+                step="any"
+                inputMode="decimal"
+                className="h-10 w-full text-right tabular-nums sm:h-8 sm:w-28"
+                placeholder="0"
+                disabled={!selected || !canRaise}
+                value={qtyByKey[row.key] ?? ""}
+                onChange={(event) =>
+                  setQtyByKey((current) => ({
+                    ...current,
+                    [row.key]: event.target.value,
+                  }))
+                }
+                aria-invalid={Boolean(draft?.error)}
+              />
+            )}
+            {draft?.error && (
+              <p className="mt-1 text-xs text-red-700 sm:max-w-[16rem] sm:text-right">
+                {draft.error}
+              </p>
+            )}
+          </div>
+        );
+      },
+    },
+  ];
+
   return (
     <PmShell>
       <PmTopbar
@@ -498,9 +631,10 @@ export function SupplyDocumentNew({ stage }: { stage: SupplyLedgerStage }) {
               size="sm"
               disabled={!canRaise || !draftLines.length || isSaving}
               onClick={() => void handleSave(false)}
+              aria-label="Save draft"
             >
-              <Save className="mr-1.5 h-4 w-4" />
-              Save draft
+              <Save className="h-4 w-4 sm:mr-1.5" />
+              <span className="hidden sm:inline">Save draft</span>
             </Button>
             <Button size="sm" disabled={!canRaise || !canSubmit} onClick={() => void handleSave(true)}>
               {isSaving ? (
@@ -528,7 +662,7 @@ export function SupplyDocumentNew({ stage }: { stage: SupplyLedgerStage }) {
         )}
 
         <Card className="mb-4 border-border/60">
-          <CardContent className="grid gap-4 py-4 md:grid-cols-4">
+          <CardContent className="grid grid-cols-1 gap-4 py-4 sm:grid-cols-2 lg:grid-cols-4">
             <div className="space-y-1.5">
               <Label htmlFor="supply-vendor">Vendor</Label>
               <Select
@@ -590,7 +724,7 @@ export function SupplyDocumentNew({ stage }: { stage: SupplyLedgerStage }) {
               </div>
             ))}
 
-            <div className="space-y-1.5 md:col-span-4">
+            <div className="space-y-1.5 sm:col-span-2 lg:col-span-4">
               <Label htmlFor="supply-remarks">Remarks</Label>
               <Textarea
                 id="supply-remarks"
@@ -616,135 +750,37 @@ export function SupplyDocumentNew({ stage }: { stage: SupplyLedgerStage }) {
           ]}
         />
 
-        <Card className="overflow-hidden border-border/60">
-          {isLoading ? (
+        {isLoading ? (
+          <Card className="overflow-hidden border-border/60">
             <CardContent className="flex items-center gap-2 py-10 text-sm text-muted-foreground">
               <Loader2 className="h-4 w-4 animate-spin" /> Loading balances…
             </CardContent>
-          ) : !vendorId ? (
+          </Card>
+        ) : !vendorId ? (
+          <Card className="overflow-hidden border-border/60">
             <CardContent className="py-10 text-center text-sm text-muted-foreground">
               <FileStack className="mx-auto mb-2 h-8 w-8 opacity-40" />
               Choose a vendor to see what is available.
             </CardContent>
-          ) : rows.length === 0 ? (
-            <CardContent className="py-10 text-center text-sm text-muted-foreground">
-              This vendor has no purchase order lines on an issued order.
-            </CardContent>
-          ) : (
-            <>
-              <div className="overflow-x-auto">
-                <Table className={PM_TABLE_CLASS}>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead className="w-10" />
-                      <TableHead>PO</TableHead>
-                      <TableHead>Item</TableHead>
-                      <TableHead>Unit</TableHead>
-                      <TableHead className="text-right">Ordered</TableHead>
-                      <TableHead className="text-right">Upstream</TableHead>
-                      <TableHead className="text-right">{definition.acceptedLabel}</TableHead>
-                      <TableHead className="text-right">In flight</TableHead>
-                      <TableHead className="text-right">Available</TableHead>
-                      <TableHead>Line</TableHead>
-                      <TableHead className="w-32 text-right">{definition.presentedLabel}</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {rows.map((row) => {
-                      const { ledger } = row;
-                      const selected = qtyByKey[row.key] !== undefined;
-                      const draft = draftLines.find((line) => line.row.key === row.key);
-                      const offerable = ledger.availableQty > 0;
-                      return (
-                        <TableRow
-                          key={row.key}
-                          className={
-                            draft?.error ? "bg-red-50/60" : !offerable ? "opacity-60" : undefined
-                          }
-                        >
-                          <TableCell>
-                            <Checkbox
-                              checked={selected}
-                              disabled={!offerable || !canRaise}
-                              onCheckedChange={(checked) => toggleLine(row, checked === true)}
-                              aria-label={`Add ${ledger.itemDescription}`}
-                            />
-                          </TableCell>
-                          <TableCell className="font-medium">{ledger.poNumber}</TableCell>
-                          <TableCell>
-                            <span className="block max-w-[18rem] truncate">
-                              {ledger.itemDescription}
-                            </span>
-                            {row.directPath && (
-                              <span className="text-xs text-muted-foreground">direct path</span>
-                            )}
-                          </TableCell>
-                          <TableCell className="text-muted-foreground">{ledger.unit}</TableCell>
-                          <TableCell className="text-right tabular-nums text-muted-foreground">
-                            {formatQuantity(ledger.orderedQty)}
-                          </TableCell>
-                          <TableCell className="text-right font-medium tabular-nums">
-                            {formatQuantity(ledger.upstreamQty)}
-                          </TableCell>
-                          <TableCell className="text-right tabular-nums text-emerald-700">
-                            {ledger.acceptedQty ? formatQuantity(ledger.acceptedQty) : "—"}
-                          </TableCell>
-                          <TableCell className="text-right tabular-nums text-amber-700">
-                            {ledger.inFlightQty ? formatQuantity(ledger.inFlightQty) : "—"}
-                          </TableCell>
-                          <TableCell className="text-right font-semibold tabular-nums">
-                            {formatQuantity(ledger.availableQty)}
-                          </TableCell>
-                          <TableCell>
-                            {ledger.awaitingUpstream ? (
-                              <PmStatusPill label="Awaiting upstream" tone="neutral" />
-                            ) : (
-                              <PmStatusPill
-                                label={ledger.status}
-                                tone={
-                                  ledger.status === "Complete"
-                                    ? "ok"
-                                    : ledger.status === "Partial"
-                                      ? "wait"
-                                      : "neutral"
-                                }
-                              />
-                            )}
-                          </TableCell>
-                          <TableCell className="text-right">
-                            {!offerable ? (
-                              <span className="text-xs text-muted-foreground">No balance</span>
-                            ) : (
-                              <Input
-                                type="number"
-                                min={0}
-                                step="any"
-                                inputMode="decimal"
-                                className="h-8 w-28 text-right tabular-nums"
-                                placeholder="0"
-                                disabled={!selected || !canRaise}
-                                value={qtyByKey[row.key] ?? ""}
-                                onChange={(event) =>
-                                  setQtyByKey((current) => ({
-                                    ...current,
-                                    [row.key]: event.target.value,
-                                  }))
-                                }
-                                aria-invalid={Boolean(draft?.error)}
-                              />
-                            )}
-                            {draft?.error && (
-                              <p className="mt-1 max-w-[16rem] text-right text-xs text-red-700">
-                                {draft.error}
-                              </p>
-                            )}
-                          </TableCell>
-                        </TableRow>
-                      );
-                    })}
-                  </TableBody>
-                </Table>
-              </div>
+          </Card>
+        ) : (
+          <PmDataList
+            rows={listRows}
+            columns={lineColumns}
+            rowClassName={(row) => {
+              const draft = draftLines.find((line) => line.row.key === row.key);
+              return draft?.error
+                ? "bg-red-50/60"
+                : !(row.ledger.availableQty > 0)
+                  ? "opacity-60"
+                  : undefined;
+            }}
+            empty={
+              <p className="px-6 py-10 text-center text-sm text-muted-foreground">
+                This vendor has no purchase order lines on an issued order.
+              </p>
+            }
+            foot={
               <PmTableFoot
                 left={
                   <>
@@ -763,9 +799,9 @@ export function SupplyDocumentNew({ stage }: { stage: SupplyLedgerStage }) {
                   )
                 }
               />
-            </>
-          )}
-        </Card>
+            }
+          />
+        )}
       </PmContent>
     </PmShell>
   );
@@ -870,6 +906,8 @@ export function SupplyDocumentRegister({ stage }: { stage: SupplyLedgerStage }) 
   }, []);
 
   const rows = useMemo(() => allRows.filter((row) => matchesView(row, view)), [allRows, matchesView, view]);
+  /** The same rows with the `id` the responsive list keys its cards and table rows by. */
+  const listRows = useMemo(() => rows.map((row) => ({ ...row, id: row.docId })), [rows]);
   const countFor = useCallback(
     (key: ViewKey) => allRows.filter((row) => matchesView(row, key)).length,
     [allRows, matchesView],
@@ -1133,6 +1171,208 @@ export function SupplyDocumentRegister({ stage }: { stage: SupplyLedgerStage }) 
   const rejectedTotal = rows.reduce((sum, row) => sum + row.rejectedQty, 0);
   const blockingTotal = rows.reduce((sum, row) => sum + row.blockingObservationCount, 0);
 
+  const toggleRow = (docId: string) =>
+    setExpanded((current) => {
+      const next = new Set(current);
+      if (next.has(docId)) next.delete(docId);
+      else next.add(docId);
+      return next;
+    });
+
+  const columns: PmListColumn<(typeof listRows)[number]>[] = [
+    {
+      header: "",
+      className: "w-8",
+      mobile: "omit",
+      cell: (row) =>
+        expanded.has(row.docId) ? (
+          <ChevronDown className="h-4 w-4 text-muted-foreground" />
+        ) : (
+          <ChevronRight className="h-4 w-4 text-muted-foreground" />
+        ),
+    },
+    { header: "Number", className: "font-medium", mobile: "title", cell: (row) => row.docNumber },
+    { header: "Date", className: "text-muted-foreground", cell: (row) => formatDate(row.docDate) },
+    {
+      header: "Decided",
+      className: "text-muted-foreground",
+      cell: (row) => formatDate(row.decidedDate),
+    },
+    { header: "Vendor", mobile: "title", cell: (row) => row.vendorName || "—" },
+    {
+      header: "Lines",
+      align: "right",
+      cell: (row) => <span className="tabular-nums">{row.itemCount}</span>,
+    },
+    {
+      header: definition.presentedLabel,
+      align: "right",
+      cell: (row) => <span className="tabular-nums">{formatQuantity(row.presentedQty)}</span>,
+    },
+    {
+      header: definition.acceptedLabel,
+      align: "right",
+      cell: (row) => (
+        <span className="font-semibold tabular-nums text-emerald-700">
+          {row.acceptedQty ? formatQuantity(row.acceptedQty) : "—"}
+        </span>
+      ),
+    },
+    {
+      header: "Not accepted",
+      align: "right",
+      cell: (row) => (
+        <span className="tabular-nums text-red-700">
+          {row.rejectedQty ? formatQuantity(row.rejectedQty) : "—"}
+        </span>
+      ),
+    },
+    {
+      header: "Status",
+      mobile: "aside",
+      cell: (row) => (
+        <>
+          <Badge
+            variant="outline"
+            className={`border-transparent ${supplyDocStatusStyles[row.status]}`}
+          >
+            {row.status}
+          </Badge>
+          {row.blockingObservationCount > 0 && (
+            <span
+              className="ml-1 inline-flex items-center gap-0.5 text-xs text-amber-700"
+              title="Open Critical or Major observations block downstream release"
+            >
+              <AlertTriangle className="h-3 w-3" />
+              {row.blockingObservationCount}
+            </span>
+          )}
+        </>
+      ),
+    },
+    {
+      header: "Action",
+      align: "right",
+      className: "w-40",
+      mobile: "footer",
+      cell: (row) => {
+        const isOpen = expanded.has(row.docId);
+        const isBusy = busyId === row.docId;
+        const isLive = row.status === "Open" || row.status === "Partially Completed";
+        return (
+          <div
+            className="flex w-full flex-wrap items-center justify-end gap-2 sm:w-auto sm:gap-1"
+            onClick={(event) => event.stopPropagation()}
+          >
+            {isBusy ? (
+              <Loader2 className="ml-auto h-4 w-4 animate-spin text-muted-foreground" />
+            ) : isLive ? (
+              <>
+                {canComplete && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="h-7 px-2 text-blue-700"
+                    onClick={() => openDecision(row.docId)}
+                  >
+                    <ClipboardCheck className="mr-1 h-3.5 w-3.5" />
+                    Record
+                  </Button>
+                )}
+                {canRaise && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="h-7 px-2 text-muted-foreground"
+                    onClick={() => void handleCancel(row.docId, row.docNumber)}
+                  >
+                    <Ban className="mr-1 h-3.5 w-3.5" />
+                    Cancel
+                  </Button>
+                )}
+              </>
+            ) : row.status === "Draft" && canRaise ? (
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-7 px-2 text-muted-foreground"
+                onClick={() => void handleDelete(row.docId, row.docNumber)}
+              >
+                <Trash2 className="mr-1 h-3.5 w-3.5" />
+                Delete
+              </Button>
+            ) : (
+              <span className="hidden text-xs text-muted-foreground sm:inline">—</span>
+            )}
+            {/* A phone card carries actions, so it cannot toggle on tap as the table row does. */}
+            <Button
+              variant="outline"
+              size="sm"
+              className="sm:hidden"
+              onClick={() => toggleRow(row.docId)}
+            >
+              {isOpen ? "Hide lines" : "Show lines"}
+            </Button>
+          </div>
+        );
+      },
+    },
+  ];
+
+  /**
+   * The lines under an expanded document: one row on a desktop, stacked on a phone. Each figure
+   * carries its own label, since it no longer sits under the register's column headings.
+   */
+  const renderLines = (row: (typeof listRows)[number]) => (
+    <ul className="divide-y divide-border/60 sm:pl-12">
+      {(itemsByDocId.get(row.docId) ?? []).map((line) => {
+        const ledger = state?.ledgers.get(supplyPoLineKey(line.poId, line.poLineId));
+        const rejected = supplyRejectedQtyOf(line);
+        return (
+          <li
+            key={line.id}
+            className="flex flex-wrap items-center gap-x-3 gap-y-1 py-2 sm:flex-nowrap sm:gap-4"
+          >
+            <span className="w-full text-xs text-muted-foreground sm:w-36 sm:shrink-0">
+              {line.poNumber}
+            </span>
+            <span className="w-full break-words text-sm sm:w-auto sm:min-w-0 sm:flex-1 sm:truncate">
+              {line.itemDescription}
+            </span>
+            <span className="whitespace-nowrap text-sm sm:w-40 sm:shrink-0 sm:text-right">
+              <span className="mr-1 text-xs text-muted-foreground">{definition.presentedLabel}</span>
+              <span className="tabular-nums">{formatQuantity(line.presentedQty)}</span>
+              <span className="ml-1 text-xs text-muted-foreground">{line.unit}</span>
+            </span>
+            <span className="whitespace-nowrap text-sm sm:w-36 sm:shrink-0 sm:text-right">
+              <span className="mr-1 text-xs text-muted-foreground">{definition.acceptedLabel}</span>
+              <span className="tabular-nums text-emerald-700">
+                {line.acceptedQty ? formatQuantity(line.acceptedQty) : "—"}
+              </span>
+            </span>
+            <span className="whitespace-nowrap text-sm sm:w-36 sm:shrink-0 sm:text-right">
+              <span className="mr-1 text-xs text-muted-foreground">Not accepted</span>
+              <span className="tabular-nums text-red-700">
+                {rejected ? formatQuantity(rejected) : "—"}
+              </span>
+            </span>
+            {ledger ? (
+              <span className="text-xs text-muted-foreground sm:w-28 sm:shrink-0 sm:text-right">
+                {ledger.acceptedPct}% of upstream
+              </span>
+            ) : null}
+            <Badge
+              variant="outline"
+              className={`ml-auto shrink-0 border-transparent text-[11px] ${supplyItemStatusStyles[line.status]}`}
+            >
+              {line.status}
+            </Badge>
+          </li>
+        );
+      })}
+    </ul>
+  );
+
   return (
     <PmShell
       sidebar={
@@ -1177,13 +1417,14 @@ export function SupplyDocumentRegister({ stage }: { stage: SupplyLedgerStage }) 
               disabled={busyId === "rebuild" || !canComplete}
               onClick={() => void handleRebuild()}
               title="Recompute line balances and item gates from the documents."
+              aria-label="Rebuild balances"
             >
               {busyId === "rebuild" ? (
-                <Loader2 className="mr-1.5 h-4 w-4 animate-spin" />
+                <Loader2 className="h-4 w-4 animate-spin sm:mr-1.5" />
               ) : (
-                <RotateCcw className="mr-1.5 h-4 w-4" />
+                <RotateCcw className="h-4 w-4 sm:mr-1.5" />
               )}
-              Rebuild balances
+              <span className="hidden sm:inline">Rebuild balances</span>
             </Button>
             <Button size="sm" disabled={!canRaise} asChild={canRaise}>
               {canRaise ? (
@@ -1218,210 +1459,41 @@ export function SupplyDocumentRegister({ stage }: { stage: SupplyLedgerStage }) 
           ]}
         />
 
-        <Card className="overflow-hidden border-border/60">
-          {isLoading ? (
+        {isLoading ? (
+          <Card className="overflow-hidden border-border/60">
             <CardContent className="flex items-center gap-2 py-10 text-sm text-muted-foreground">
               <Loader2 className="h-4 w-4 animate-spin" /> Loading documents…
             </CardContent>
-          ) : rows.length === 0 ? (
-            <CardContent className="py-12 text-center">
-              <FileStack className="mx-auto mb-3 h-9 w-9 text-muted-foreground/40" />
-              <p className="text-sm font-medium">
-                {allRows.length === 0
-                  ? `No ${definition.docNoun} has been raised yet`
-                  : `No ${(VIEWS.find((entry) => entry.key === view)?.label ?? "").toLowerCase()}`}
-              </p>
-              <p className="mx-auto mt-1 max-w-md text-sm text-muted-foreground">
-                A {definition.docNoun} may only cover quantity the stage above it has passed down.
-              </p>
-              {canRaise && allRows.length === 0 && (
-                <Button size="sm" className="mt-4" asChild>
-                  <Link href={hrefWith(`${chrome.basePath}/new`, mappingId)}>
-                    <Plus className="mr-1.5 h-4 w-4" />
-                    Raise the first one
-                  </Link>
-                </Button>
-              )}
-            </CardContent>
-          ) : (
-            <>
-              <div className="overflow-x-auto">
-                <Table className={PM_TABLE_CLASS}>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead className="w-8" />
-                      <TableHead>Number</TableHead>
-                      <TableHead>Date</TableHead>
-                      <TableHead>Decided</TableHead>
-                      <TableHead>Vendor</TableHead>
-                      <TableHead className="text-right">Lines</TableHead>
-                      <TableHead className="text-right">{definition.presentedLabel}</TableHead>
-                      <TableHead className="text-right">{definition.acceptedLabel}</TableHead>
-                      <TableHead className="text-right">Not accepted</TableHead>
-                      <TableHead>Status</TableHead>
-                      <TableHead className="w-40 text-right">Action</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {rows.map((row) => {
-                      const isOpen = expanded.has(row.docId);
-                      const lines = itemsByDocId.get(row.docId) ?? [];
-                      const isBusy = busyId === row.docId;
-                      const isLive =
-                        row.status === "Open" || row.status === "Partially Completed";
-                      return (
-                        <Fragment key={row.docId}>
-                          <TableRow
-                            className="cursor-pointer hover:bg-muted/40"
-                            onClick={() =>
-                              setExpanded((current) => {
-                                const next = new Set(current);
-                                if (next.has(row.docId)) next.delete(row.docId);
-                                else next.add(row.docId);
-                                return next;
-                              })
-                            }
-                          >
-                            <TableCell>
-                              {isOpen ? (
-                                <ChevronDown className="h-4 w-4 text-muted-foreground" />
-                              ) : (
-                                <ChevronRight className="h-4 w-4 text-muted-foreground" />
-                              )}
-                            </TableCell>
-                            <TableCell className="font-medium">{row.docNumber}</TableCell>
-                            <TableCell className="text-muted-foreground">
-                              {formatDate(row.docDate)}
-                            </TableCell>
-                            <TableCell className="text-muted-foreground">
-                              {formatDate(row.decidedDate)}
-                            </TableCell>
-                            <TableCell>{row.vendorName || "—"}</TableCell>
-                            <TableCell className="text-right tabular-nums">
-                              {row.itemCount}
-                            </TableCell>
-                            <TableCell className="text-right tabular-nums">
-                              {formatQuantity(row.presentedQty)}
-                            </TableCell>
-                            <TableCell className="text-right font-semibold tabular-nums text-emerald-700">
-                              {row.acceptedQty ? formatQuantity(row.acceptedQty) : "—"}
-                            </TableCell>
-                            <TableCell className="text-right tabular-nums text-red-700">
-                              {row.rejectedQty ? formatQuantity(row.rejectedQty) : "—"}
-                            </TableCell>
-                            <TableCell>
-                              <Badge
-                                variant="outline"
-                                className={`border-transparent ${supplyDocStatusStyles[row.status]}`}
-                              >
-                                {row.status}
-                              </Badge>
-                              {row.blockingObservationCount > 0 && (
-                                <span
-                                  className="ml-1 inline-flex items-center gap-0.5 text-xs text-amber-700"
-                                  title="Open Critical or Major observations block downstream release"
-                                >
-                                  <AlertTriangle className="h-3 w-3" />
-                                  {row.blockingObservationCount}
-                                </span>
-                              )}
-                            </TableCell>
-                            <TableCell
-                              className="text-right"
-                              onClick={(event) => event.stopPropagation()}
-                            >
-                              {isBusy ? (
-                                <Loader2 className="ml-auto h-4 w-4 animate-spin text-muted-foreground" />
-                              ) : isLive ? (
-                                <div className="flex justify-end gap-1">
-                                  {canComplete && (
-                                    <Button
-                                      variant="outline"
-                                      size="sm"
-                                      className="h-7 px-2 text-blue-700"
-                                      onClick={() => openDecision(row.docId)}
-                                    >
-                                      <ClipboardCheck className="mr-1 h-3.5 w-3.5" />
-                                      Record
-                                    </Button>
-                                  )}
-                                  {canRaise && (
-                                    <Button
-                                      variant="ghost"
-                                      size="sm"
-                                      className="h-7 px-2 text-muted-foreground"
-                                      onClick={() => void handleCancel(row.docId, row.docNumber)}
-                                    >
-                                      <Ban className="mr-1 h-3.5 w-3.5" />
-                                      Cancel
-                                    </Button>
-                                  )}
-                                </div>
-                              ) : row.status === "Draft" && canRaise ? (
-                                <Button
-                                  variant="ghost"
-                                  size="sm"
-                                  className="h-7 px-2 text-muted-foreground"
-                                  onClick={() => void handleDelete(row.docId, row.docNumber)}
-                                >
-                                  <Trash2 className="mr-1 h-3.5 w-3.5" />
-                                  Delete
-                                </Button>
-                              ) : (
-                                <span className="text-xs text-muted-foreground">—</span>
-                              )}
-                            </TableCell>
-                          </TableRow>
-
-                          {isOpen &&
-                            lines.map((line) => {
-                              const ledger = state?.ledgers.get(
-                                supplyPoLineKey(line.poId, line.poLineId),
-                              );
-                              const rejected = supplyRejectedQtyOf(line);
-                              return (
-                                <TableRow key={line.id} className="bg-muted/20">
-                                  <TableCell />
-                                  <TableCell className="text-xs text-muted-foreground">
-                                    {line.poNumber}
-                                  </TableCell>
-                                  <TableCell colSpan={3} className="text-sm">
-                                    <span className="block max-w-[24rem] truncate">
-                                      {line.itemDescription}
-                                    </span>
-                                  </TableCell>
-                                  <TableCell className="text-right text-xs text-muted-foreground">
-                                    {line.unit}
-                                  </TableCell>
-                                  <TableCell className="text-right tabular-nums">
-                                    {formatQuantity(line.presentedQty)}
-                                  </TableCell>
-                                  <TableCell className="text-right tabular-nums text-emerald-700">
-                                    {line.acceptedQty ? formatQuantity(line.acceptedQty) : "—"}
-                                  </TableCell>
-                                  <TableCell className="text-right tabular-nums text-red-700">
-                                    {rejected ? formatQuantity(rejected) : "—"}
-                                  </TableCell>
-                                  <TableCell>
-                                    <Badge
-                                      variant="outline"
-                                      className={`border-transparent text-[11px] ${supplyItemStatusStyles[line.status]}`}
-                                    >
-                                      {line.status}
-                                    </Badge>
-                                  </TableCell>
-                                  <TableCell className="text-right text-xs text-muted-foreground">
-                                    {ledger ? `${ledger.acceptedPct}% of upstream` : ""}
-                                  </TableCell>
-                                </TableRow>
-                              );
-                            })}
-                        </Fragment>
-                      );
-                    })}
-                  </TableBody>
-                </Table>
+          </Card>
+        ) : (
+          <PmDataList
+            rows={listRows}
+            columns={columns}
+            onRowClick={(row) => toggleRow(row.docId)}
+            expandedIds={expanded}
+            renderExpanded={renderLines}
+            empty={
+              <div className="px-6 py-12 text-center">
+                <FileStack className="mx-auto mb-3 h-9 w-9 text-muted-foreground/40" />
+                <p className="text-sm font-medium">
+                  {allRows.length === 0
+                    ? `No ${definition.docNoun} has been raised yet`
+                    : `No ${(VIEWS.find((entry) => entry.key === view)?.label ?? "").toLowerCase()}`}
+                </p>
+                <p className="mx-auto mt-1 max-w-md text-sm text-muted-foreground">
+                  A {definition.docNoun} may only cover quantity the stage above it has passed down.
+                </p>
+                {canRaise && allRows.length === 0 && (
+                  <Button size="sm" className="mt-4" asChild>
+                    <Link href={hrefWith(`${chrome.basePath}/new`, mappingId)}>
+                      <Plus className="mr-1.5 h-4 w-4" />
+                      Raise the first one
+                    </Link>
+                  </Button>
+                )}
               </div>
+            }
+            foot={
               <PmTableFoot
                 left={
                   <>
@@ -1436,9 +1508,9 @@ export function SupplyDocumentRegister({ stage }: { stage: SupplyLedgerStage }) 
                   </span>
                 }
               />
-            </>
-          )}
-        </Card>
+            }
+          />
+        )}
       </PmContent>
 
       <Dialog
@@ -1448,9 +1520,11 @@ export function SupplyDocumentRegister({ stage }: { stage: SupplyLedgerStage }) 
         {/* `size="xl"` rather than a `max-w-*` class: DialogContent defaults to size="full", whose
             `sm:max-w-[1800px]` an unprefixed `max-w-*` cannot override — tailwind-merge only
             resolves conflicts within the same variant. The preset also brings `max-h-[90vh]`, so
-            the shell's `flex flex-col` lets the line list own the scroll and the footer stay put. */}
-        <DialogContent size="xl" className="gap-4">
-          <DialogHeader className="space-y-1.5 pr-8">
+            the shell's `flex flex-col` lets the line list own the scroll and the footer stay put.
+            On a phone it is a full-screen sheet, where the date panel scrolls with the lines
+            rather than pinning a third of the screen above them. */}
+        <DialogContent size="xl" className={cn(PM_DIALOG.contentTall, "gap-4")}>
+          <DialogHeader className={cn(PM_DIALOG.header, "space-y-1.5 pr-8")}>
             <DialogTitle className="flex flex-wrap items-center gap-2">
               <span>Record {definition.label} outcome</span>
               {decisionDoc?.docNumber && (
@@ -1465,252 +1539,266 @@ export function SupplyDocumentRegister({ stage }: { stage: SupplyLedgerStage }) 
             </DialogDescription>
           </DialogHeader>
 
-          {/* Who decided and when — one panel, visually separate from the per-line work below. */}
-          <div className="grid shrink-0 gap-3 rounded-lg border border-border/60 bg-muted/30 p-3 sm:grid-cols-[minmax(0,14rem)_minmax(0,1fr)]">
-            <div className="space-y-1.5">
-              <Label htmlFor="decision-date" className="text-xs">
-                Date
-              </Label>
-              <Input
-                id="decision-date"
-                type="date"
-                className="h-9 bg-background"
-                value={decidedDate}
-                onChange={(event) => setDecidedDate(event.target.value)}
-              />
-            </div>
-            <div className="space-y-1.5">
-              <Label htmlFor="decision-party" className="text-xs">
-                {chrome.counterpartyLabel}
-              </Label>
-              <Input
-                id="decision-party"
-                className="h-9 bg-background"
-                placeholder={chrome.counterpartyLabel}
-                value={counterparty}
-                onChange={(event) => setCounterparty(event.target.value)}
-              />
-            </div>
-          </div>
-
-          {/* The lines own the remaining height rather than a fixed 45vh, so a two-line document is
-              not padded out and a ten-line one uses the whole dialog. */}
-          <div className="-mx-1 min-h-0 flex-1 space-y-3 overflow-y-auto px-1">
-            {decisionLines.map((item) => {
-              const draft = decisionByItemId[item.id];
-              const presented = toNumber(item.presentedQty);
-              const accepted = toNumber(draft?.acceptedQty);
-              const notAccepted = Math.max(0, Math.round((presented - accepted) * 1000) / 1000);
-              const error = decisionErrors.find((entry) => entry.itemId === item.id);
-              const update = (patch: Partial<DecisionDraft>) =>
-                setDecisionByItemId((current) => ({
-                  ...current,
-                  [item.id]: { ...current[item.id], ...patch },
-                }));
-              // Preview of the outcome this input produces, so the verdict is visible while the
-              // quantity is being typed rather than only after the document is committed.
-              const outcome =
-                accepted <= 0
-                  ? "Rejected"
-                  : notAccepted > 0
-                    ? "Partially accepted"
-                    : "Accepted";
-              const outcomeStyle =
-                outcome === "Partially accepted"
-                  ? "bg-amber-100 text-amber-800"
-                  : supplyItemStatusStyles[outcome];
-              return (
-                <Card
-                  key={item.id}
-                  className={cn(
-                    "overflow-hidden",
-                    error ? "border-red-300 bg-red-50/40" : "border-border/60",
-                  )}
-                >
-                  <CardContent className="space-y-3 p-4">
-                    {/* What is being judged, and the verdict this input currently produces. */}
-                    <div className="flex flex-wrap items-start justify-between gap-x-3 gap-y-1.5">
-                      <div className="min-w-0 flex-1">
-                        <p className="text-sm font-medium leading-snug">{item.itemDescription}</p>
-                        <p className="mt-0.5 font-mono text-xs text-muted-foreground">
-                          {item.poNumber}
-                        </p>
-                      </div>
-                      <Badge variant="outline" className={cn("shrink-0", outcomeStyle)}>
-                        {outcome}
-                      </Badge>
-                    </div>
-
-                    {/* The quantity decision, as the arithmetic it actually is: presented is fixed,
-                        accepted is the only input, the shortfall falls out of the two. Showing all
-                        three together is what stops a mis-keyed figure going unnoticed. */}
-                    <div className="grid grid-cols-3 items-end gap-3 rounded-lg border border-border/60 bg-muted/30 p-3">
-                      <div className="min-w-0">
-                        <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
-                          {definition.presentedLabel}
-                        </p>
-                        <p className="mt-1 truncate text-base font-semibold tabular-nums">
-                          {formatQuantity(presented)}
-                          <span className="ml-1 text-xs font-normal text-muted-foreground">
-                            {item.unit}
-                          </span>
-                        </p>
-                      </div>
-
-                      <div className="min-w-0 space-y-1">
-                        <Label
-                          htmlFor={`acc-${item.id}`}
-                          className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground"
-                        >
-                          {definition.acceptedLabel}
-                        </Label>
-                        <Input
-                          id={`acc-${item.id}`}
-                          type="number"
-                          min={0}
-                          step="any"
-                          inputMode="decimal"
-                          className="h-9 bg-background text-right text-base font-semibold tabular-nums"
-                          value={draft?.acceptedQty ?? ""}
-                          onChange={(event) => update({ acceptedQty: event.target.value })}
-                          aria-invalid={Boolean(error)}
-                        />
-                      </div>
-
-                      <div className="min-w-0">
-                        <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
-                          Not accepted
-                        </p>
-                        <p
-                          className={cn(
-                            "mt-1 truncate text-base font-semibold tabular-nums",
-                            notAccepted > 0 ? "text-red-700" : "text-muted-foreground",
-                          )}
-                        >
-                          {formatQuantity(notAccepted)}
-                          <span className="ml-1 text-xs font-normal text-muted-foreground">
-                            {item.unit}
-                          </span>
-                        </p>
-                      </div>
-                    </div>
-
-                    {/* GRN alone splits the shortfall into its causes — the two are a breakdown of
-                        "not accepted" above, not extra quantities on top of it. */}
-                    {stage === "grn" && (
-                      <div className="grid grid-cols-2 gap-3 sm:max-w-sm">
-                        <div className="space-y-1">
-                          <Label htmlFor={`short-${item.id}`} className="text-xs">
-                            Short
-                          </Label>
-                          <Input
-                            id={`short-${item.id}`}
-                            type="number"
-                            min={0}
-                            step="any"
-                            inputMode="decimal"
-                            className="h-9 text-right tabular-nums"
-                            value={draft?.shortQty ?? ""}
-                            onChange={(event) => update({ shortQty: event.target.value })}
-                          />
-                        </div>
-                        <div className="space-y-1">
-                          <Label htmlFor={`dmg-${item.id}`} className="text-xs">
-                            Damaged
-                          </Label>
-                          <Input
-                            id={`dmg-${item.id}`}
-                            type="number"
-                            min={0}
-                            step="any"
-                            inputMode="decimal"
-                            className="h-9 text-right tabular-nums"
-                            value={draft?.damagedQty ?? ""}
-                            onChange={(event) => update({ damagedQty: event.target.value })}
-                          />
-                        </div>
-                      </div>
-                    )}
-
-                    {/* Secondary to the quantity: an observation only matters once something passed. */}
-                    <div
-                      className={cn(
-                        "grid gap-3",
-                        stage !== "grn" && "sm:grid-cols-[minmax(0,1fr)_10rem]",
-                      )}
-                    >
-                      <div className="space-y-1">
-                        <Label htmlFor={`obs-${item.id}`} className="text-xs">
-                          Observation <span className="text-muted-foreground">(optional)</span>
-                        </Label>
-                        <Input
-                          id={`obs-${item.id}`}
-                          className="h-9"
-                          placeholder="To be closed out"
-                          value={draft?.observation ?? ""}
-                          onChange={(event) => update({ observation: event.target.value })}
-                        />
-                      </div>
-
-                      {stage !== "grn" && (
-                        <div className="space-y-1">
-                          <Label className="text-xs">Severity</Label>
-                          <Select
-                            value={draft?.severity ?? "Minor"}
-                            onValueChange={(value) => update({ severity: value as PunchSeverity })}
-                            // A severity with nothing to describe is noise; the field only becomes
-                            // meaningful once an observation has been written.
-                            disabled={!draft?.observation?.trim()}
-                          >
-                            <SelectTrigger className="h-9">
-                              <SelectValue />
-                            </SelectTrigger>
-                            <SelectContent>
-                              {PUNCH_SEVERITIES.map((severity) => (
-                                <SelectItem key={severity} value={severity}>
-                                  {severity}
-                                </SelectItem>
-                              ))}
-                            </SelectContent>
-                          </Select>
-                        </div>
-                      )}
-                    </div>
-
-                    {(notAccepted > 0 || error) && (
-                      <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs">
-                        {notAccepted > 0 && !error && (
-                          <span className="flex items-center gap-1.5 text-red-700">
-                            <RotateCcw className="h-3.5 w-3.5 shrink-0" />
-                            {formatQuantity(notAccepted)} {item.unit} returns to the balance
-                          </span>
-                        )}
-                        {error && (
-                          <span className="flex items-center gap-1.5 font-medium text-red-700">
-                            <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
-                            {error.message}
-                          </span>
-                        )}
-                      </div>
-                    )}
-                  </CardContent>
-                </Card>
-              );
-            })}
-            {decisionLines.length === 0 && (
-              <div className="flex flex-col items-center gap-2 py-10 text-center">
-                <ClipboardCheck className="h-8 w-8 text-muted-foreground/50" />
-                <p className="text-sm text-muted-foreground">
-                  Every line on this document already has an outcome.
-                </p>
-              </div>
+          <div
+            className={cn(
+              PM_DIALOG.body,
+              "sm:flex sm:min-h-0 sm:flex-1 sm:flex-col sm:gap-4 sm:space-y-0",
             )}
+          >
+            {/* Who decided and when — one panel, visually separate from the per-line work below. */}
+            <div className="grid shrink-0 gap-3 rounded-lg border border-border/60 bg-muted/30 p-3 sm:grid-cols-[minmax(0,14rem)_minmax(0,1fr)]">
+              <div className="space-y-1.5">
+                <Label htmlFor="decision-date" className="text-xs">
+                  Date
+                </Label>
+                <Input
+                  id="decision-date"
+                  type="date"
+                  className="h-9 bg-background"
+                  value={decidedDate}
+                  onChange={(event) => setDecidedDate(event.target.value)}
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="decision-party" className="text-xs">
+                  {chrome.counterpartyLabel}
+                </Label>
+                <Input
+                  id="decision-party"
+                  className="h-9 bg-background"
+                  placeholder={chrome.counterpartyLabel}
+                  value={counterparty}
+                  onChange={(event) => setCounterparty(event.target.value)}
+                />
+              </div>
+            </div>
+
+            {/* The lines own the remaining height rather than a fixed 45vh, so a two-line document is
+                not padded out and a ten-line one uses the whole dialog. */}
+            <div className="-mx-1 space-y-3 px-1 sm:min-h-0 sm:flex-1 sm:overflow-y-auto">
+              {decisionLines.map((item) => {
+                const draft = decisionByItemId[item.id];
+                const presented = toNumber(item.presentedQty);
+                const accepted = toNumber(draft?.acceptedQty);
+                const notAccepted = Math.max(0, Math.round((presented - accepted) * 1000) / 1000);
+                const error = decisionErrors.find((entry) => entry.itemId === item.id);
+                const update = (patch: Partial<DecisionDraft>) =>
+                  setDecisionByItemId((current) => ({
+                    ...current,
+                    [item.id]: { ...current[item.id], ...patch },
+                  }));
+                // Preview of the outcome this input produces, so the verdict is visible while the
+                // quantity is being typed rather than only after the document is committed.
+                const outcome =
+                  accepted <= 0
+                    ? "Rejected"
+                    : notAccepted > 0
+                      ? "Partially accepted"
+                      : "Accepted";
+                const outcomeStyle =
+                  outcome === "Partially accepted"
+                    ? "bg-amber-100 text-amber-800"
+                    : supplyItemStatusStyles[outcome];
+                return (
+                  <Card
+                    key={item.id}
+                    className={cn(
+                      "overflow-hidden",
+                      error ? "border-red-300 bg-red-50/40" : "border-border/60",
+                    )}
+                  >
+                    <CardContent className="space-y-3 p-3 sm:p-4">
+                      {/* What is being judged, and the verdict this input currently produces. */}
+                      <div className="flex flex-wrap items-start justify-between gap-x-3 gap-y-1.5">
+                        <div className="min-w-0 flex-1">
+                          <p className="text-sm font-medium leading-snug">{item.itemDescription}</p>
+                          <p className="mt-0.5 font-mono text-xs text-muted-foreground">
+                            {item.poNumber}
+                          </p>
+                        </div>
+                        <Badge variant="outline" className={cn("shrink-0", outcomeStyle)}>
+                          {outcome}
+                        </Badge>
+                      </div>
+
+                      {/* The quantity decision, as the arithmetic it actually is: presented is fixed,
+                          accepted is the only input, the shortfall falls out of the two. Showing all
+                          three together is what stops a mis-keyed figure going unnoticed. */}
+                      <div className="grid grid-cols-3 items-end gap-2 rounded-lg border border-border/60 bg-muted/30 p-2.5 sm:gap-3 sm:p-3">
+                        <div className="min-w-0">
+                          <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+                            {definition.presentedLabel}
+                          </p>
+                          <p className="mt-1 truncate text-base font-semibold tabular-nums">
+                            {formatQuantity(presented)}
+                            <span className="ml-1 text-xs font-normal text-muted-foreground">
+                              {item.unit}
+                            </span>
+                          </p>
+                        </div>
+
+                        <div className="min-w-0 space-y-1">
+                          <Label
+                            htmlFor={`acc-${item.id}`}
+                            className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground"
+                          >
+                            {definition.acceptedLabel}
+                          </Label>
+                          <Input
+                            id={`acc-${item.id}`}
+                            type="number"
+                            min={0}
+                            step="any"
+                            inputMode="decimal"
+                            className="h-9 bg-background text-right text-base font-semibold tabular-nums"
+                            value={draft?.acceptedQty ?? ""}
+                            onChange={(event) => update({ acceptedQty: event.target.value })}
+                            aria-invalid={Boolean(error)}
+                          />
+                        </div>
+
+                        <div className="min-w-0">
+                          <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+                            Not accepted
+                          </p>
+                          <p
+                            className={cn(
+                              "mt-1 truncate text-base font-semibold tabular-nums",
+                              notAccepted > 0 ? "text-red-700" : "text-muted-foreground",
+                            )}
+                          >
+                            {formatQuantity(notAccepted)}
+                            <span className="ml-1 text-xs font-normal text-muted-foreground">
+                              {item.unit}
+                            </span>
+                          </p>
+                        </div>
+                      </div>
+
+                      {/* GRN alone splits the shortfall into its causes — the two are a breakdown of
+                          "not accepted" above, not extra quantities on top of it. */}
+                      {stage === "grn" && (
+                        <div className="grid grid-cols-2 gap-3 sm:max-w-sm">
+                          <div className="space-y-1">
+                            <Label htmlFor={`short-${item.id}`} className="text-xs">
+                              Short
+                            </Label>
+                            <Input
+                              id={`short-${item.id}`}
+                              type="number"
+                              min={0}
+                              step="any"
+                              inputMode="decimal"
+                              className="h-9 text-right tabular-nums"
+                              value={draft?.shortQty ?? ""}
+                              onChange={(event) => update({ shortQty: event.target.value })}
+                            />
+                          </div>
+                          <div className="space-y-1">
+                            <Label htmlFor={`dmg-${item.id}`} className="text-xs">
+                              Damaged
+                            </Label>
+                            <Input
+                              id={`dmg-${item.id}`}
+                              type="number"
+                              min={0}
+                              step="any"
+                              inputMode="decimal"
+                              className="h-9 text-right tabular-nums"
+                              value={draft?.damagedQty ?? ""}
+                              onChange={(event) => update({ damagedQty: event.target.value })}
+                            />
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Secondary to the quantity: an observation only matters once something passed. */}
+                      <div
+                        className={cn(
+                          "grid gap-3",
+                          stage !== "grn" && "sm:grid-cols-[minmax(0,1fr)_10rem]",
+                        )}
+                      >
+                        <div className="space-y-1">
+                          <Label htmlFor={`obs-${item.id}`} className="text-xs">
+                            Observation <span className="text-muted-foreground">(optional)</span>
+                          </Label>
+                          <Input
+                            id={`obs-${item.id}`}
+                            className="h-9"
+                            placeholder="To be closed out"
+                            value={draft?.observation ?? ""}
+                            onChange={(event) => update({ observation: event.target.value })}
+                          />
+                        </div>
+
+                        {stage !== "grn" && (
+                          <div className="space-y-1">
+                            <Label className="text-xs">Severity</Label>
+                            <Select
+                              value={draft?.severity ?? "Minor"}
+                              onValueChange={(value) => update({ severity: value as PunchSeverity })}
+                              // A severity with nothing to describe is noise; the field only becomes
+                              // meaningful once an observation has been written.
+                              disabled={!draft?.observation?.trim()}
+                            >
+                              <SelectTrigger className="h-9">
+                                <SelectValue />
+                              </SelectTrigger>
+                              <SelectContent>
+                                {PUNCH_SEVERITIES.map((severity) => (
+                                  <SelectItem key={severity} value={severity}>
+                                    {severity}
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                          </div>
+                        )}
+                      </div>
+
+                      {(notAccepted > 0 || error) && (
+                        <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs">
+                          {notAccepted > 0 && !error && (
+                            <span className="flex items-center gap-1.5 text-red-700">
+                              <RotateCcw className="h-3.5 w-3.5 shrink-0" />
+                              {formatQuantity(notAccepted)} {item.unit} returns to the balance
+                            </span>
+                          )}
+                          {error && (
+                            <span className="flex items-center gap-1.5 font-medium text-red-700">
+                              <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
+                              {error.message}
+                            </span>
+                          )}
+                        </div>
+                      )}
+                    </CardContent>
+                  </Card>
+                );
+              })}
+              {decisionLines.length === 0 && (
+                <div className="flex flex-col items-center gap-2 py-10 text-center">
+                  <ClipboardCheck className="h-8 w-8 text-muted-foreground/50" />
+                  <p className="text-sm text-muted-foreground">
+                    Every line on this document already has an outcome.
+                  </p>
+                </div>
+              )}
+            </div>
           </div>
 
-          {/* What the whole document commits, beside the button that commits it. */}
-          <DialogFooter className="shrink-0 flex-col-reverse gap-3 border-t border-border/60 pt-4 sm:flex-row sm:items-center sm:justify-between">
+          {/* What the whole document commits, beside the button that commits it. On a phone the
+              footer is a two-column grid: the totals take a row of their own and the two buttons
+              share the one beneath. */}
+          <DialogFooter
+            className={cn(
+              PM_DIALOG.footer,
+              "shrink-0 flex-col-reverse gap-3 border-t border-border/60 pt-4 sm:flex-row sm:items-center sm:justify-between",
+            )}
+          >
             {decisionLines.length > 0 && (
-              <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-muted-foreground sm:mr-auto">
+              <div className="col-span-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-muted-foreground sm:mr-auto">
                 <span>
                   {decisionLines.length} line{decisionLines.length === 1 ? "" : "s"}
                 </span>
@@ -1731,7 +1819,7 @@ export function SupplyDocumentRegister({ stage }: { stage: SupplyLedgerStage }) 
                 )}
               </div>
             )}
-            <div className="flex justify-end gap-2">
+            <div className="flex justify-end gap-2 max-sm:contents">
             <Button variant="outline" onClick={() => setDecisionDocId("")}>
               Cancel
             </Button>

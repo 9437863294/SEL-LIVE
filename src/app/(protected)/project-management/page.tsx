@@ -312,9 +312,9 @@ export default function ProjectManagementPage() {
       {/* ── Header ──────────────────────────────────────────────────────── */}
       <Card className="relative overflow-hidden border-0 bg-gradient-to-r from-indigo-600 via-blue-600 to-cyan-600 text-white shadow-lg">
         <div className="absolute inset-0 opacity-10 bg-[radial-gradient(ellipse_at_top_right,_white_0%,_transparent_60%)]" />
-        <CardContent className="relative flex flex-col gap-4 p-5 sm:flex-row sm:items-center sm:justify-between">
+        <CardContent className="relative flex flex-col gap-3 p-4 sm:flex-row sm:items-center sm:justify-between sm:gap-4 sm:p-5">
           <div className="flex min-w-0 items-center gap-4">
-            <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl bg-white/20 backdrop-blur-sm">
+            <div className="hidden h-14 w-14 shrink-0 items-center justify-center rounded-2xl bg-white/20 backdrop-blur-sm sm:flex">
               <FolderKanban className="h-7 w-7 text-white" />
             </div>
             {/* With a project chosen the header identifies it, rather than repeating an
@@ -322,7 +322,9 @@ export default function ProjectManagementPage() {
             {selectedProject ? (
               <div className="min-w-0">
                 <div className="flex flex-wrap items-center gap-2">
-                  <h1 className="truncate text-2xl font-bold tracking-tight">
+                  {/* Wraps on a phone rather than truncating — the name is the whole point of
+                      the header once a project is chosen. */}
+                  <h1 className="min-w-0 break-words text-xl font-bold leading-tight tracking-tight sm:truncate sm:text-2xl">
                     {selectedProject.projectName}
                   </h1>
                   <Badge
@@ -376,20 +378,22 @@ export default function ProjectManagementPage() {
                 </div>
               </div>
             ) : (
-              <div>
-                <h1 className="text-2xl font-bold tracking-tight">{MODULE_NAME}</h1>
-                <p className="mt-0.5 text-sm text-blue-100">
+              <div className="min-w-0">
+                <h1 className="text-xl font-bold tracking-tight sm:text-2xl">{MODULE_NAME}</h1>
+                <p className="mt-0.5 text-[13px] text-blue-100 sm:text-sm">
                   Select a project to open its mapped BOQ, costing, and configuration data
                 </p>
               </div>
             )}
           </div>
-          <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:items-center sm:justify-end">
+          {/* One row where it fits (a 430px phone), the count pill wrapping under the picker on a
+              narrower one instead of claiming a line to itself on every phone. */}
+          <div className="flex w-full flex-wrap items-center gap-2 sm:w-auto sm:flex-nowrap sm:justify-end">
             {isLoadingProjects ? (
-              <Skeleton className="h-9 w-full bg-white/20 sm:w-56" />
+              <Skeleton className="h-10 min-w-[12rem] flex-1 bg-white/20 sm:h-9 sm:w-56 sm:flex-none" />
             ) : projects.length ? (
               <Select value={selectedProject?.id ?? ""} onValueChange={handleProjectChange}>
-                <SelectTrigger className="h-9 w-full border-white/30 bg-white/15 text-sm text-white shadow-none backdrop-blur-sm hover:bg-white/20 focus:ring-white/40 data-[placeholder]:text-blue-100 sm:w-56">
+                <SelectTrigger className="h-10 min-w-[12rem] flex-1 border-white/30 bg-white/15 text-sm text-white shadow-none backdrop-blur-sm hover:bg-white/20 focus:ring-white/40 data-[placeholder]:text-blue-100 sm:h-9 sm:w-56 sm:flex-none">
                   <SelectValue placeholder="Select project..." />
                 </SelectTrigger>
                 <SelectContent>
@@ -415,7 +419,7 @@ export default function ProjectManagementPage() {
             )}
 
             {!isLoadingProjects && (
-              <div className="flex shrink-0 items-center gap-1.5 self-end rounded-full bg-white/15 px-3 py-1.5 text-xs font-medium backdrop-blur-sm sm:self-auto">
+              <div className="ml-auto flex shrink-0 items-center gap-1.5 rounded-full bg-white/15 px-3 py-1.5 text-xs font-medium backdrop-blur-sm sm:ml-0">
                 <Building2 className="h-3.5 w-3.5" />
                 {projects.length} Active Project{projects.length !== 1 ? "s" : ""}
               </div>

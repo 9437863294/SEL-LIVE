@@ -65,15 +65,13 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
 import { Skeleton } from "@/components/ui/skeleton";
+import {
+  PM_DIALOG,
+  PmDataList,
+  PmEmptyState,
+  type PmListColumn,
+} from "@/components/project-management/pm-shell";
 import { useAuthorization } from "@/hooks/useAuthorization";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/components/auth/AuthProvider";
@@ -549,21 +547,139 @@ export default function ProjectMappingsPage() {
     );
   }
 
+  const columns: PmListColumn<ProjectMapping>[] = [
+    {
+      header: "Project Management project",
+      mobile: "title",
+      cell: (mapping) => (
+        <>
+          <p className="font-medium">{mapping.projectName}</p>
+          {mapping.description && (
+            <p className="text-xs text-muted-foreground">
+              {mapping.description}
+            </p>
+          )}
+        </>
+      ),
+    },
+    {
+      header: "Mapped global project",
+      mobile: "title",
+      cell: (mapping) => (
+        <div className="flex items-center gap-2">
+          <Link2 className="h-4 w-4 shrink-0 text-muted-foreground" />
+          {globalProjectsById.get(mapping.globalProjectId)?.projectName ?? mapping.globalProjectName}
+        </div>
+      ),
+    },
+    {
+      header: "Site",
+      cell: (mapping) =>
+        globalProjectsById.get(mapping.globalProjectId)?.projectSite ?? mapping.globalProjectSite ?? "—",
+    },
+    {
+      // A sub-line on the phone card: a date range does not fit a half-width detail cell.
+      header: "Project timeline",
+      mobile: "title",
+      cell: (mapping) => (
+        <div className="flex items-center gap-2 whitespace-nowrap">
+          <CalendarRange className="h-4 w-4 shrink-0 text-muted-foreground" />
+          <span>
+            {mapping.startDate && mapping.endDate
+              ? `${formatProjectDate(mapping.startDate)} – ${formatProjectDate(mapping.endDate)}`
+              : "Not set"}
+          </span>
+        </div>
+      ),
+    },
+    {
+      header: "Status",
+      mobile: "aside",
+      cell: (mapping) => (
+        <>
+          <span
+            className={cn(
+              "rounded-full px-2.5 py-1 text-xs font-medium",
+              projectLifecycleStyles[resolveLifecycle(mapping)],
+            )}
+          >
+            {resolveLifecycle(mapping)}
+          </span>
+          {mapping.projectCode ? (
+            <div className="mt-1 text-[10px] text-muted-foreground">
+              {mapping.projectCode}
+            </div>
+          ) : null}
+        </>
+      ),
+    },
+    {
+      header: "Actions",
+      align: "right",
+      mobile: "footer",
+      cell: (mapping) => (
+        // Icon-only in the table; on a phone card each stretches into a labelled button.
+        <div className="flex w-full justify-end gap-2 sm:w-auto">
+          <Button
+            variant="outline"
+            size="icon"
+            onClick={() => openEditDialog(mapping)}
+            disabled={!canEdit}
+            aria-label={`Edit ${mapping.projectName}`}
+          >
+            <Pencil className="h-4 w-4" />
+            <span className="ml-2 sm:hidden">Edit</span>
+          </Button>
+          <AlertDialog>
+            <AlertDialogTrigger asChild>
+              <Button
+                variant="destructive"
+                size="icon"
+                disabled={!canDelete}
+                aria-label={`Delete ${mapping.projectName}`}
+              >
+                <Trash2 className="h-4 w-4" />
+                <span className="ml-2 sm:hidden">Delete</span>
+              </Button>
+            </AlertDialogTrigger>
+            <AlertDialogContent>
+              <AlertDialogHeader>
+                <AlertDialogTitle>Delete project mapping?</AlertDialogTitle>
+                <AlertDialogDescription>
+                  This removes “{mapping.projectName}” from Project
+                  Management. The mapped global project will not be deleted.
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter>
+                <AlertDialogCancel>Cancel</AlertDialogCancel>
+                <AlertDialogAction
+                  onClick={() => handleDelete(mapping)}
+                >
+                  Delete Mapping
+                </AlertDialogAction>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
+        </div>
+      ),
+    },
+  ];
+
   return (
-    <main className="min-h-[calc(100dvh-4rem)] p-4 sm:p-6">
-      <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-        <div className="flex items-center gap-3">
-          <Button variant="ghost" size="icon" asChild>
+    <main className="min-h-[calc(100dvh-4rem)] p-4 max-sm:[--card-pad:1rem] sm:p-6">
+      <div className="mb-4 flex flex-col gap-3 sm:mb-6 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
+        <div className="flex min-w-0 items-center gap-2 sm:gap-3">
+          <Button variant="ghost" size="icon" className="shrink-0" asChild>
             <Link href="/project-management/settings" aria-label="Back to Settings">
               <ArrowLeft className="h-5 w-5" />
             </Link>
           </Button>
-          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-indigo-500 to-blue-600 shadow-sm">
+          <div className="hidden h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-indigo-500 to-blue-600 shadow-sm sm:flex">
             <Link2 className="h-5 w-5 text-white" />
           </div>
-          <div>
-            <h1 className="text-2xl font-bold sm:text-3xl">Manage Projects</h1>
-            <p className="mt-1 text-sm text-muted-foreground">
+          <div className="min-w-0">
+            <h1 className="text-xl font-bold sm:text-3xl">Manage Projects</h1>
+            <p className="mt-0.5 text-[13px] text-muted-foreground sm:mt-1 sm:text-sm">
               Create Project Management projects and map each one to a global project.
             </p>
           </div>
@@ -576,8 +692,10 @@ export default function ProjectMappingsPage() {
               New Project Mapping
             </Button>
           </DialogTrigger>
-          <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-2xl">
-            <DialogHeader>
+          <DialogContent
+            className={cn(PM_DIALOG.content, "sm:max-h-[90dvh] sm:max-w-2xl sm:overflow-y-auto")}
+          >
+            <DialogHeader className={PM_DIALOG.header}>
               <DialogTitle>
                 {editingMapping ? "Edit Project" : "New Project"}
               </DialogTitle>
@@ -605,7 +723,9 @@ export default function ProjectMappingsPage() {
               ))}
             </div>
 
-            <div className={cn("grid gap-4 py-4", wizardStep !== 0 && "hidden")}>
+            {/* Each step panel is the part of the phone sheet that scrolls (`hr-dialog-body`); only
+                one is ever shown, so the class sits on all three rather than on a wrapper. */}
+            <div className={cn("hr-dialog-body grid gap-4 py-4", wizardStep !== 0 && "hidden")}>
               <ControlledField setting={field("projectName")}>
                 <Input
                   id="project-name"
@@ -720,7 +840,7 @@ export default function ProjectMappingsPage() {
             </div>
 
             {/* Step 2 — scope and team */}
-            <div className={cn("grid gap-5 py-4", wizardStep !== 1 && "hidden")}>
+            <div className={cn("hr-dialog-body grid gap-5 py-4", wizardStep !== 1 && "hidden")}>
               <div className="space-y-2">
                 <Label>Scope</Label>
                 <p className="text-xs text-muted-foreground">
@@ -801,7 +921,9 @@ export default function ProjectMappingsPage() {
                               type="button"
                               onClick={() => toggleTeamMember(role.key, member.id)}
                               className={cn(
-                                "rounded-full border px-2 py-0.5 text-xs transition-colors",
+                                // hr-inline-action: a 32px chip on the phone sheet, not the 44px
+                                // every other dialog button is stretched to.
+                                "hr-inline-action rounded-full border px-2 py-0.5 text-xs transition-colors",
                                 selected
                                   ? "border-primary bg-primary/10 text-primary"
                                   : "border-border text-muted-foreground hover:bg-muted",
@@ -819,7 +941,7 @@ export default function ProjectMappingsPage() {
             </div>
 
             {/* Step 3 — review and activate */}
-            <div className={cn("space-y-4 py-4", wizardStep !== 2 && "hidden")}>
+            <div className={cn("hr-dialog-body space-y-4 py-4", wizardStep !== 2 && "hidden")}>
               <div className="space-y-2">
                 <Label htmlFor="project-lifecycle">Status</Label>
                 <Select
@@ -870,7 +992,8 @@ export default function ProjectMappingsPage() {
 
               <div className="rounded-lg border p-3 text-xs">
                 <p className="mb-2 text-sm font-medium">Summary</p>
-                <div className="grid gap-1.5 sm:grid-cols-2">
+                {/* Label beside value on a phone too, rather than each stacked over the other. */}
+                <div className="grid gap-1.5 max-sm:grid-cols-[auto_1fr] max-sm:gap-x-3 sm:grid-cols-2">
                   <span className="text-muted-foreground">Name</span>
                   <span>{form.projectName || "—"}</span>
                   <span className="text-muted-foreground">Code</span>
@@ -901,8 +1024,10 @@ export default function ProjectMappingsPage() {
               </div>
             </div>
 
-            <DialogFooter className="gap-2 sm:justify-between">
-              <div className="flex gap-2">
+            {/* On a phone both button groups dissolve (`contents`) into the sheet footer's
+                two-column grid: Back | Next above, Cancel | Save beneath. */}
+            <DialogFooter className={cn(PM_DIALOG.footer, "gap-2 sm:justify-between")}>
+              <div className="flex gap-2 max-sm:contents">
                 <Button
                   variant="outline"
                   onClick={() => setWizardStep((step) => Math.max(0, step - 1))}
@@ -920,7 +1045,7 @@ export default function ProjectMappingsPage() {
                   Next
                 </Button>
               </div>
-              <div className="flex gap-2">
+              <div className="flex gap-2 max-sm:contents">
                 <DialogClose asChild>
                   <Button variant="outline">Cancel</Button>
                 </DialogClose>
@@ -934,9 +1059,11 @@ export default function ProjectMappingsPage() {
         </Dialog>
       </div>
 
-      <Card className="overflow-hidden border-border/60">
-        <div className="h-1 w-full bg-gradient-to-r from-indigo-500 to-blue-600" />
-        <CardHeader>
+      {/* On a phone the card drops its frame and accent strip: the header reads as a section
+          heading and the mapping cards stand on the page, rather than sitting inside a card. */}
+      <Card className="overflow-hidden border-border/60 max-sm:border-0 max-sm:bg-transparent max-sm:shadow-none">
+        <div className="h-1 w-full bg-gradient-to-r from-indigo-500 to-blue-600 max-sm:hidden" />
+        <CardHeader className="max-sm:px-0 max-sm:pt-0">
           <CardTitle className="flex items-center gap-2 text-lg">
             <Link2 className="h-5 w-5 text-primary" />
             Project mappings
@@ -947,127 +1074,18 @@ export default function ProjectMappingsPage() {
           </CardDescription>
         </CardHeader>
         <CardContent className="p-0">
-          <div className="overflow-x-auto">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Project Management project</TableHead>
-                  <TableHead>Mapped global project</TableHead>
-                  <TableHead>Site</TableHead>
-                  <TableHead>Project timeline</TableHead>
-                  <TableHead>Status</TableHead>
-                  <TableHead className="text-right">Actions</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {mappings.length ? (
-                  mappings.map((mapping) => {
-                    const liveGlobalProject = globalProjectsById.get(
-                      mapping.globalProjectId,
-                    );
-
-                    return (
-                      <TableRow key={mapping.id}>
-                        <TableCell>
-                          <p className="font-medium">{mapping.projectName}</p>
-                          {mapping.description && (
-                            <p className="text-xs text-muted-foreground">
-                              {mapping.description}
-                            </p>
-                          )}
-                        </TableCell>
-                        <TableCell>
-                          <div className="flex items-center gap-2">
-                            <Link2 className="h-4 w-4 text-muted-foreground" />
-                            {liveGlobalProject?.projectName ?? mapping.globalProjectName}
-                          </div>
-                        </TableCell>
-                        <TableCell>
-                          {liveGlobalProject?.projectSite ?? mapping.globalProjectSite ?? "—"}
-                        </TableCell>
-                        <TableCell>
-                          <div className="flex items-center gap-2 whitespace-nowrap">
-                            <CalendarRange className="h-4 w-4 text-muted-foreground" />
-                            <span>
-                              {mapping.startDate && mapping.endDate
-                                ? `${formatProjectDate(mapping.startDate)} – ${formatProjectDate(mapping.endDate)}`
-                                : "Not set"}
-                            </span>
-                          </div>
-                        </TableCell>
-                        <TableCell>
-                          <span
-                            className={cn(
-                              "rounded-full px-2.5 py-1 text-xs font-medium",
-                              projectLifecycleStyles[resolveLifecycle(mapping)],
-                            )}
-                          >
-                            {resolveLifecycle(mapping)}
-                          </span>
-                          {mapping.projectCode ? (
-                            <div className="mt-1 text-[10px] text-muted-foreground">
-                              {mapping.projectCode}
-                            </div>
-                          ) : null}
-                        </TableCell>
-                        <TableCell className="text-right">
-                          <div className="flex justify-end gap-2">
-                            <Button
-                              variant="outline"
-                              size="icon"
-                              onClick={() => openEditDialog(mapping)}
-                              disabled={!canEdit}
-                              aria-label={`Edit ${mapping.projectName}`}
-                            >
-                              <Pencil className="h-4 w-4" />
-                            </Button>
-                            <AlertDialog>
-                              <AlertDialogTrigger asChild>
-                                <Button
-                                  variant="destructive"
-                                  size="icon"
-                                  disabled={!canDelete}
-                                  aria-label={`Delete ${mapping.projectName}`}
-                                >
-                                  <Trash2 className="h-4 w-4" />
-                                </Button>
-                              </AlertDialogTrigger>
-                              <AlertDialogContent>
-                                <AlertDialogHeader>
-                                  <AlertDialogTitle>Delete project mapping?</AlertDialogTitle>
-                                  <AlertDialogDescription>
-                                    This removes “{mapping.projectName}” from Project
-                                    Management. The mapped global project will not be deleted.
-                                  </AlertDialogDescription>
-                                </AlertDialogHeader>
-                                <AlertDialogFooter>
-                                  <AlertDialogCancel>Cancel</AlertDialogCancel>
-                                  <AlertDialogAction
-                                    onClick={() => handleDelete(mapping)}
-                                  >
-                                    Delete Mapping
-                                  </AlertDialogAction>
-                                </AlertDialogFooter>
-                              </AlertDialogContent>
-                            </AlertDialog>
-                          </div>
-                        </TableCell>
-                      </TableRow>
-                    );
-                  })
-                ) : (
-                  <TableRow>
-                    <TableCell colSpan={6} className="h-32 text-center">
-                      <p className="font-medium">No Project Management projects yet</p>
-                      <p className="mt-1 text-sm text-muted-foreground">
-                        Create project Y and map it to an existing global project X.
-                      </p>
-                    </TableCell>
-                  </TableRow>
-                )}
-              </TableBody>
-            </Table>
-          </div>
+          <PmDataList
+            rows={mappings}
+            columns={columns}
+            className="sm:rounded-none sm:border-0 sm:shadow-none"
+            empty={
+              <PmEmptyState
+                icon={Link2}
+                title="No Project Management projects yet"
+                description="Create project Y and map it to an existing global project X."
+              />
+            }
+          />
         </CardContent>
       </Card>
     </main>
