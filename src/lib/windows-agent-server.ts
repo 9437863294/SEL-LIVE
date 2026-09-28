@@ -51,6 +51,7 @@ import {
   sanitizeSecurityPosture,
   securityPostureAllowsLogin,
 } from './windows-agent-security';
+import { emptyWebBlockingPlan, resolveWebBlockingPlan } from './website-blocking';
 import type {
   ActivityBatchResult,
   AgentDirective,
@@ -68,6 +69,7 @@ import type {
   WindowsDevice,
   WindowsDeviceSecurityPosture,
   DeviceSecuritySyncResult,
+  WebBlockingPlan,
 } from './windows-agent-model';
 
 /**
@@ -1774,7 +1776,33 @@ export async function recordDeviceSecurityPosture(options: {
     serverTime: nowIso,
     policy,
     maintenance: activeGrant,
+    webBlocking: await resolveDeviceWebBlocking(options.device),
   };
+}
+
+/**
+ * The website-blocking list for one machine, resolved without reference to who is signed in.
+ *
+ * Deliberately no `userId`: the hosts file is one file per PC, so honouring a user-scoped policy
+ * here would block a shared shop-floor machine according to whoever happened to be at it last,
+ * and leave it blocked for the next person. Company and department policies carry this setting,
+ * and a device policy overrides them — which is the granularity the mechanism can actually keep.
+ *
+ * A failure to read the policies returns "blocking off" rather than throwing. The service is
+ * reporting its security posture on this call, and losing that report because a policy read
+ * failed would trade a working audit trail for a blocking list.
+ */
+async function resolveDeviceWebBlocking(device: WindowsDevice): Promise<WebBlockingPlan> {
+  try {
+    const resolved = await resolveEffectivePolicy({
+      userId: null,
+      deviceId: device.id,
+      departmentIds: device.departmentId ? [device.departmentId] : [],
+    });
+    return resolveWebBlockingPlan(resolved.settings);
+  } catch {
+    return emptyWebBlockingPlan();
+  }
 }
 
 /** The newest published version whose rings include this device's. */

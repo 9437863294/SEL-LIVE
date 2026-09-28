@@ -128,6 +128,11 @@ namespace Sel.Agent.Service
                 // with neither a working agent nor a way to remove it.
                 if (log != null) log("Could not re-enable Task Manager: " + error.Message);
             }
+
+            // Website blocking outlives the service in exactly the same way, and is harder to
+            // diagnose: the symptom is "this one site is broken on this one computer", with
+            // nothing installed that could explain it.
+            WebsiteBlocker.Revert(log);
         }
 
         internal static void ApplyTaskManagerPolicy(bool locked)

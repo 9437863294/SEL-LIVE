@@ -32,6 +32,9 @@ import {
   DEFAULT_AGENT_POLICY,
   WINDOWS_AGENT_RESOURCES,
   describePolicySource,
+  isProtectedDomain,
+  normalizeBlockedDomain,
+  normalizeBlockedDomains,
   resolveAgentPolicy,
   type AgentPolicySettings,
   type AppCategory,
@@ -118,6 +121,22 @@ const SETTING_LABELS: Record<keyof AgentPolicySettings, { label: string; help: s
     help: 'The window only explains time nothing else accounts for: somebody working through lunch still gets credited with the work, and the break shrinks to whatever is left.',
   },
   allowUserPauseTracking: { label: 'Let employees pause tracking', help: 'Adds "Pause tracking" to the tray menu.' },
+  websiteBlockingEnabled: {
+    label: 'Block websites on the computer',
+    help: 'Off by default. The Windows service blocks the names below in the hosts file, so it covers every browser on the PC rather than one. It is machine-wide: set it company-wide, by department or on a device — a per-person policy would apply to everybody who uses that computer. It does not stop a VPN or a raw IP address.',
+  },
+  blockSocialMediaSites: {
+    label: 'Block the built-in social-media list',
+    help: 'Facebook, Instagram, X, TikTok, Reddit, YouTube and about twenty more, maintained with the software so a new site reaches the fleet with the next update. Release any one of them with the allow list below.',
+  },
+  blockedDomains: {
+    label: 'Also block these domains',
+    help: 'One per line. Paste a full address if it is easier — https://www.example.com/page becomes example.com. Subdomains of what you list are covered. Names Windows or SEL LIVE needs are refused, and the device page says which.',
+  },
+  allowedDomains: {
+    label: 'Never block these domains',
+    help: 'One per line. Wins over both lists above, so this is how you keep youtube.com for a team whose training material is there.',
+  },
   rawActivityRetentionDays: {
     label: 'Keep raw activity for (days)',
     help: 'Daily totals and attendance are kept regardless; this is the detailed timeline only.',
@@ -159,6 +178,55 @@ const SETTING_LABELS: Record<keyof AgentPolicySettings, { label: string; help: s
     help: '1800 is half an hour: a walk to the printer resumes silently, a lunch break asks again. Zero asks on every unlock; a very large number never does.',
   },
 };
+
+/**
+ * What will and will not happen to the domains somebody just typed.
+ *
+ * ── Why this is here and not on a results page ────────────────────────────────────────────────
+ *
+ * Two of these rules are silent by nature. A line that cannot be a domain — a search phrase, an
+ * IP address, `localhost` — is dropped when the policy is saved, and a name Windows or SEL LIVE
+ * needs is refused outright. Both leave the administrator looking at a saved policy that does
+ * not do what it says, with no error anywhere. Showing it under the box they typed it into is
+ * the only place the feedback arrives while it is still cheap to act on.
+ *
+ * The refusal in particular is worth spelling out rather than logging: it exists because a hosts
+ * entry for the SEL LIVE server, written by a service nobody can stop, would leave a fleet that
+ * can never be sent a correction — so "why did my entry not apply?" has to have a visible answer.
+ */
+function DomainListNote({ lines }: { lines: readonly string[] }) {
+  const typed = lines.map((line) => line.trim()).filter((line) => line.length > 0);
+  if (typed.length === 0) return null;
+
+  const unusable = typed.filter((line) => normalizeBlockedDomain(line) === null);
+  const refused = typed.filter((line) => {
+    const domain = normalizeBlockedDomain(line);
+    return domain !== null && isProtectedDomain(domain);
+  });
+  const accepted = normalizeBlockedDomains(typed).filter((domain) => !isProtectedDomain(domain));
+
+  return (
+    <div className="space-y-1 text-xs">
+      <p className="text-muted-foreground">
+        {accepted.length} {accepted.length === 1 ? 'domain' : 'domains'} will be used
+        {accepted.length > 0 ? <>: <span className="font-mono">{accepted.join(', ')}</span></> : null}
+      </p>
+      {unusable.length > 0 ? (
+        <p className="text-amber-700">
+          Not a domain, so {unusable.length === 1 ? 'it' : 'they'} will be dropped:{' '}
+          <span className="font-mono">{unusable.join(', ')}</span>
+        </p>
+      ) : null}
+      {refused.length > 0 ? (
+        <p className="text-rose-700">
+          Cannot be blocked — Windows or SEL LIVE needs {refused.length === 1 ? 'it' : 'them'}, and
+          blocking {refused.length === 1 ? 'it' : 'them'} would cut this computer off from the
+          server that manages it: <span className="font-mono">{refused.join(', ')}</span>
+        </p>
+      ) : null}
+    </div>
+  );
+}
 
 /**
  * Who can approve closing, removing or stopping the agent.
@@ -452,8 +520,17 @@ function ResolvedPreview({ policies }: { policies: WindowsAgentPolicy[] }) {
                   {SETTING_LABELS[key]?.label ?? key}
                 </span>
                 <span className="flex shrink-0 items-center gap-2">
-                  <span className="font-medium tabular-nums">
-                    {typeof value === 'boolean' ? (value ? 'On' : 'Off') : String(value)}
+                  <span
+                    className="font-medium tabular-nums"
+                    // A domain list is summarised by its length, with the names themselves on
+                    // hover: thirty of them inline would push every other row off the card.
+                    title={Array.isArray(value) ? value.join('\n') : undefined}
+                  >
+                    {typeof value === 'boolean'
+                      ? (value ? 'On' : 'Off')
+                      : Array.isArray(value)
+                        ? `${value.length} ${value.length === 1 ? 'domain' : 'domains'}`
+                        : String(value)}
                   </span>
                   <Badge
                     variant={source === 'DEFAULT' ? 'outline' : 'neutral'}
@@ -611,6 +688,24 @@ function PolicyEditor({
                           />
                           {(settings[key] as boolean) ? 'On' : 'Off'}
                         </label>
+                      ) : Array.isArray(fallback) ? (
+                        // One per line rather than comma-separated: an administrator pastes these
+                        // from a browser, and a list of thirty domains on one line cannot be read.
+                        // Normalising happens on save — `sanitizePolicySettings` reduces a pasted
+                        // URL to its host and drops what cannot be a domain at all.
+                        <div className="space-y-2">
+                          <Textarea
+                            className="max-w-xl font-mono text-xs"
+                            rows={4}
+                            value={(settings[key] as string[]).join('\n')}
+                            onChange={(event) =>
+                              setSetting(key, event.target.value.split(/\r?\n/) as never)
+                            }
+                            placeholder={'example.com\nanother-site.in'}
+                            spellCheck={false}
+                          />
+                          <DomainListNote lines={settings[key] as string[]} />
+                        </div>
                       ) : key === 'notificationMode' ? (
                         <Select
                           value={String(settings[key])}

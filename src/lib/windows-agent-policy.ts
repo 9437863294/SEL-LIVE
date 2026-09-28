@@ -40,6 +40,17 @@ import type {
   ResolvedAgentPolicy,
   WindowsAgentPolicy,
 } from './windows-agent-model.ts';
+import { normalizeBlockedDomains } from './website-blocking.ts';
+
+/**
+ * How many domains one policy may list.
+ *
+ * Each one becomes eight lines of hosts file (four host prefixes, IPv4 and IPv6), so five hundred
+ * is already a four-thousand-line system file that the Windows resolver reads on every lookup. A
+ * cap keeps a paste of somebody's entire browser history from making name resolution slow for the
+ * whole machine.
+ */
+const MAX_BLOCKED_DOMAINS = 500;
 
 /**
  * What every setting is when nothing overrides it.
@@ -79,6 +90,13 @@ export const DEFAULT_AGENT_POLICY: Required<AgentPolicySettings> = {
   lunchBreakEnd: '13:45',
   lateLoginGraceMinutes: 15,
   allowUserPauseTracking: false,
+  // Off, like every other enforcing behaviour. `blockSocialMediaSites` is on so that switching
+  // the master toggle on blocks something without thirty domains being typed first — it does
+  // nothing at all while `websiteBlockingEnabled` is false.
+  websiteBlockingEnabled: false,
+  blockSocialMediaSites: true,
+  blockedDomains: [],
+  allowedDomains: [],
   // Off, with the timings already sensible for whoever switches it on. Ten minutes is long
   // enough to survive a phone call or a long read; a minute's warning is long enough to notice
   // and short enough that an empty desk is not left open for another five.
@@ -156,6 +174,15 @@ export function sanitizePolicySettings(raw: unknown): AgentPolicySettings {
 
     if (typeof fallback === 'boolean') {
       if (typeof value === 'boolean') (out as Record<string, unknown>)[key] = value;
+      continue;
+    }
+
+    // Domain lists. An empty array is a *set* value, not an absent one: "this department blocks
+    // nothing extra" has to be able to override a company list, which is exactly what an
+    // administrator means when they clear the field.
+    if (Array.isArray(fallback)) {
+      if (!Array.isArray(value)) continue;
+      (out as Record<string, unknown>)[key] = normalizeBlockedDomains(value).slice(0, MAX_BLOCKED_DOMAINS);
       continue;
     }
 
@@ -290,8 +317,9 @@ function enforceInvariants(settings: Required<AgentPolicySettings>): Required<Ag
   if (out.activityBatchIntervalSeconds < out.heartbeatIntervalSeconds) {
     out.activityBatchIntervalSeconds = out.heartbeatIntervalSeconds;
   }
-  // Browser domains require the managed extension, which reports through the agent; capturing them
-  // with application tracking off is not a configuration that can produce anything.
+  // Both of these are read from the foreground window — the domain through the accessibility API,
+  // the document name from the title — so with application tracking off there is no foreground
+  // sample to read them from. Not a configuration that can produce anything.
   if (!out.applicationTrackingEnabled) {
     out.windowTitleTrackingEnabled = false;
     out.browserDomainTrackingEnabled = false;

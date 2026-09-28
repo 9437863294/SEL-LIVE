@@ -482,11 +482,30 @@ namespace Sel.Agent.Core.Contracts
         [JsonProperty("posture")] public DeviceSecurityPosture Posture { get; set; }
     }
 
+    /// <summary>
+    /// The finished website-blocking list for this machine, resolved by the server.
+    /// </summary>
+    /// <remarks>
+    /// The service receives an answer, not a question: whether blocking is on, whether the
+    /// built-in social list applies and which names the allow list released are all decided
+    /// server-side, so the policy screen and the hosts file cannot disagree about what a policy
+    /// means. <see cref="Sel.Agent.Core.Security.WebsiteBlockRules"/> only renders it.
+    /// </remarks>
+    public sealed class WebBlockingPlan
+    {
+        [JsonProperty("enabled")] public bool Enabled { get; set; }
+        [JsonProperty("domains")] public List<string> Domains { get; set; }
+        [JsonProperty("socialMediaBlocked")] public bool SocialMediaBlocked { get; set; }
+        [JsonProperty("customDomainCount")] public int CustomDomainCount { get; set; }
+        [JsonProperty("allowedDomains")] public List<string> AllowedDomains { get; set; }
+    }
+
     public sealed class DeviceSecuritySyncResponse
     {
         [JsonProperty("serverTime")] public string ServerTime { get; set; }
         [JsonProperty("policy")] public DeviceSecurityPolicy Policy { get; set; }
         [JsonProperty("maintenance")] public DeviceMaintenanceAccess Maintenance { get; set; }
+        [JsonProperty("webBlocking")] public WebBlockingPlan WebBlocking { get; set; }
     }
 
     public sealed class DeviceSecurityActionResponse

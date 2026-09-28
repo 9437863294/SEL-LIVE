@@ -62,6 +62,44 @@ namespace Sel.Agent.Service
             File.WriteAllText(FilePath, JsonConvert.SerializeObject(policy));
         }
 
+        private static string BlockingFilePath
+        {
+            get { return Path.Combine(DirectoryPath, "web-blocking.json"); }
+        }
+
+        /// <summary>
+        /// The last website-blocking plan the server issued, so blocking survives a reboot with
+        /// no network.
+        /// </summary>
+        /// <remarks>
+        /// <b>A missing file means "block nothing", and that asymmetry is deliberate.</b> Every
+        /// other setting in this store falls back to <see cref="StrictDefault"/>, because failing
+        /// closed on the *machine's own* lockdown is the safe direction. Blocking is the opposite:
+        /// a PC that has never been told what to block must not invent a list, and a corrupt file
+        /// must not be guessed at. An enforced block nobody configured is indistinguishable from
+        /// a broken network, and there would be no policy anywhere that explained it.
+        /// </remarks>
+        internal static WebBlockingPlan ReadBlockingPlan()
+        {
+            try
+            {
+                if (!File.Exists(BlockingFilePath)) return null;
+                return JsonConvert.DeserializeObject<WebBlockingPlan>(File.ReadAllText(BlockingFilePath));
+            }
+            catch
+            {
+                return null;
+            }
+        }
+
+        internal static void WriteBlockingPlan(WebBlockingPlan plan)
+        {
+            if (plan == null) return;
+            Directory.CreateDirectory(DirectoryPath);
+            HardenDirectory(DirectoryPath);
+            File.WriteAllText(BlockingFilePath, JsonConvert.SerializeObject(plan));
+        }
+
         private static DeviceSecurityPolicy Normalize(DeviceSecurityPolicy policy)
         {
             if (policy == null) return StrictDefault();

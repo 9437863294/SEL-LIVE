@@ -424,6 +424,19 @@ namespace Sel.Agent.Service
                     currentPolicy, maintenanceActive, message => Log(message, EventLogEntryType.Warning));
 
                 AgentConfigurationProbe config = AgentConfigurationProbe.Load();
+                string serverHost = ServerHostOf(config);
+
+                // The cached blocking plan is re-applied on every pass, not only when the server
+                // answers. That is what keeps the list in force on a PC with no network, and what
+                // puts the hosts file back within one interval if somebody with local
+                // administrator rights edits our region out of it.
+                if (WebsiteBlocker.Apply(DeviceSecurityPolicyStore.ReadBlockingPlan(), serverHost,
+                    message => Log(message)))
+                {
+                    Log("The hosts file did not match the assigned website-blocking list and was rewritten.",
+                        EventLogEntryType.Warning);
+                }
+
                 if (!config.Found || string.IsNullOrEmpty(config.ApiBaseUrl)) return;
 
                 var identityStore = new DeviceIdentityStore();
@@ -445,6 +458,15 @@ namespace Sel.Agent.Service
                         ? response.Policy
                         : currentPolicy;
                     DeviceSecurityPolicyStore.Write(nextPolicy);
+
+                    // A null plan means an older server that does not send one. The cached plan is
+                    // left alone in that case rather than being cleared, so a deployment that
+                    // lags the fleet does not quietly unblock every PC.
+                    if (response != null && response.WebBlocking != null)
+                    {
+                        DeviceSecurityPolicyStore.WriteBlockingPlan(response.WebBlocking);
+                        WebsiteBlocker.Apply(response.WebBlocking, serverHost, message => Log(message));
+                    }
 
                     bool nextAllowed = false;
                     DateTime nextExpiry = DateTime.MinValue;
@@ -501,6 +523,29 @@ namespace Sel.Agent.Service
             finally
             {
                 Interlocked.Exchange(ref _securitySyncRunning, 0);
+            }
+        }
+
+        /// <summary>
+        /// The SEL LIVE server's host name, which website blocking must never blackhole.
+        /// </summary>
+        /// <remarks>
+        /// Read from the same configuration the API client uses, because a customer's ERP name
+        /// cannot be a constant in the code. Returns null when the agent is not configured yet —
+        /// harmless, because an unconfigured PC has no cached plan to enforce either.
+        /// </remarks>
+        private static string ServerHostOf(AgentConfigurationProbe config)
+        {
+            try
+            {
+                if (config == null || string.IsNullOrEmpty(config.ApiBaseUrl)) return null;
+                Uri uri;
+                if (!Uri.TryCreate(config.ApiBaseUrl, UriKind.Absolute, out uri)) return null;
+                return uri.Host;
+            }
+            catch
+            {
+                return null;
             }
         }
 

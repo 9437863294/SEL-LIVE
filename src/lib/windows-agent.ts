@@ -16,6 +16,7 @@ export * from './windows-agent-rules.ts';
 export * from './windows-agent-policy.ts';
 export * from './windows-agent-permissions.ts';
 export * from './windows-agent-security.ts';
+export * from './website-blocking.ts';
 
 /**
  * Every collection this module owns.
@@ -168,6 +169,11 @@ export const DEFAULT_MONITORING_DISCLOSURE: MonitoringDisclosure = {
   ],
   optional: [
     'Window titles, sanitised — off unless an administrator enables them for your department.',
-    'Website domains, without paths or search terms — off unless the managed browser extension is deployed.',
+    'Website domains, without paths or search terms — off unless an administrator enables them for your department.',
+    // Not collection, but employees experience it, and a site that silently fails to load is
+    // both a support ticket and the kind of unexplained interference this disclosure exists to
+    // prevent. The second sentence matters as much as the first: blocking here is a list of
+    // names that resolve nowhere, so nothing about anybody's browsing is read in order to do it.
+    'Some websites may be blocked on this computer — off unless an administrator enables it for your department. Blocking works from a list of site names; nothing about your browsing is read or recorded in order to apply it.',
   ],
 };

@@ -399,6 +399,22 @@ namespace Sel.Agent.Service
         }
 
         /// <summary>
+        /// Undo the machine changes the security enforcer made, on the way out.
+        /// </summary>
+        /// <remarks>
+        /// Run by the installer during an uninstall. Without it, removing the agent left every
+        /// profile on the PC with Task Manager disabled, and the blocked websites still
+        /// unreachable, with nothing left behind that knew how to put either back. Always exits 0:
+        /// a failure here must not turn an uninstall into a machine with neither a working agent
+        /// nor a way to remove one.
+        /// </remarks>
+        private static int RevertSecurity()
+        {
+            DeviceSecurityEnforcer.RevertMachineChanges(Console.WriteLine);
+            return 0;
+        }
+
+        /// <summary>
         /// Forget this machine's device credential.
         /// </summary>
         /// <remarks>
@@ -407,21 +423,6 @@ namespace Sel.Agent.Service
         /// lets a machine re-enrol without removing and reinstalling the agent, which on a
         /// remote site office is the difference between a two-minute fix and a site visit.
         /// </remarks>
-        /// <summary>
-        /// Undo the machine changes the security enforcer made, on the way out.
-        /// </summary>
-        /// <remarks>
-        /// Run by the installer during an uninstall. Without it, removing the agent left every
-        /// profile on the PC with Task Manager disabled and nothing left behind that knew how to
-        /// put it back. Always exits 0: a failure here must not turn an uninstall into a machine
-        /// with neither a working agent nor a way to remove one.
-        /// </remarks>
-        private static int RevertSecurity()
-        {
-            DeviceSecurityEnforcer.RevertMachineChanges(Console.WriteLine);
-            return 0;
-        }
-
         private static int ResetIdentity()
         {
             try

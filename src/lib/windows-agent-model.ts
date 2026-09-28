@@ -790,6 +790,40 @@ export interface AgentPolicySettings {
    */
   allowUserPauseTracking?: boolean;
 
+  /* ── Website and social-media blocking ────────────────────────────────────────────────────
+   *
+   * Enforced machine-wide by the LocalSystem service through the Windows hosts file, so it
+   * covers every browser on the PC rather than the one an extension was deployed to. The
+   * mechanism, its deliberate limits and the built-in list are all documented in
+   * `website-blocking.ts`; these four settings are the whole configuration surface.
+   *
+   * One consequence to keep in mind while reading them: the hosts file is per machine, not per
+   * account. A `USER`-scoped policy that sets these would appear to work and would in fact apply
+   * to everybody who uses that PC, so the plan is resolved for the device — company, the
+   * device's department, the device — and a user scope is ignored for these four keys.
+   */
+
+  /** Master switch. Off by default: no installation gets blocking it did not ask for. */
+  websiteBlockingEnabled?: boolean;
+  /**
+   * Whether the built-in social-media list applies on top of {@link blockedDomains}.
+   *
+   * On, so that switching blocking on does something useful immediately — an administrator who
+   * wanted this feature wanted Facebook blocked, and making them retype thirty domains first is
+   * a worse default than one they can turn off.
+   */
+  blockSocialMediaSites?: boolean;
+  /** Extra domains to block, as bare hosts. URLs are accepted and reduced to the host. */
+  blockedDomains?: string[];
+  /**
+   * Domains released from blocking, whatever else asks for them.
+   *
+   * The escape hatch that makes the built-in list safe to ship: `youtube.com` is on it, and a
+   * team whose training material lives there releases the one name instead of abandoning the
+   * feature or waiting for a new build.
+   */
+  allowedDomains?: string[];
+
   /* ── Session lifecycle ────────────────────────────────────────────────────────────────────
    *
    * Turning an unattended desk into a locked one, and making the SEL LIVE sign-in the way back
@@ -1252,6 +1286,32 @@ export interface HeartbeatResult {
   availableVersion: { version: string; packageUrl: string; packageSha256: string } | null;
 }
 
+/**
+ * What one PC should have blocked, resolved and ready to write.
+ *
+ * The agent receives this rather than the raw settings, so every decision — is blocking on, does
+ * the built-in list apply, which names survive the allow list — is made in one place on the
+ * server. A service that only ever writes a finished list cannot disagree with the policy screen
+ * about what the policy means. Built by `resolveWebBlockingPlan` in `website-blocking.ts`.
+ */
+export interface WebBlockingPlan {
+  enabled: boolean;
+  /** The effective names, normalised, allow-list applied, sorted. Empty when `enabled` is false. */
+  domains: string[];
+  /** Whether the built-in list contributed, for the device page to show without re-deriving it. */
+  socialMediaBlocked: boolean;
+  /** How many names an administrator added by hand, as opposed to inherited from the list. */
+  customDomainCount: number;
+  /** Names released from the built-in list, kept so the device page can explain an absence. */
+  allowedDomains: string[];
+  /**
+   * Names a policy asked to block that this feature refuses to, because the PC or the agent
+   * needs them. Surfaced rather than silently dropped: an administrator who typed one is owed an
+   * explanation, and the alternative is a rule that appears configured and never applies.
+   */
+  refusedDomains: string[];
+}
+
 /** LocalSystem -> server report sent independently of an employee work session. */
 export interface DeviceSecuritySyncInput {
   posture: WindowsDeviceSecurityPosture;
@@ -1262,6 +1322,15 @@ export interface DeviceSecuritySyncResult {
   serverTime: IsoInstant;
   policy: WindowsDeviceSecurityPolicy;
   maintenance: WindowsDeviceMaintenanceAccess | null;
+  /**
+   * The finished website-blocking list for this machine.
+   *
+   * Sent on this channel and not with the tray's resolved policy because the hosts file is a
+   * machine-wide, administrator-owned file: only the LocalSystem service can write it, and it
+   * must stay enforced on a PC where nobody has signed into SEL LIVE at all. Resolved for the
+   * device rather than the signed-in user — see the note on the settings themselves.
+   */
+  webBlocking: WebBlockingPlan;
 }
 
 /** A server→agent instruction, delivered on the heartbeat because the agent may be behind a NAT. */
