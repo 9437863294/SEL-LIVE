@@ -17,7 +17,14 @@ import {
   normalizeBlockedDomains,
   resolveWebBlockingPlan,
 } from '../src/lib/website-blocking.ts';
-import { DEFAULT_AGENT_POLICY, resolveAgentPolicy, sanitizePolicySettings } from '../src/lib/windows-agent-policy.ts';
+import {
+  AGENT_POLICY_GROUPS,
+  AGENT_POLICY_KEYS,
+  DEFAULT_AGENT_POLICY,
+  policyGroupOf,
+  resolveAgentPolicy,
+  sanitizePolicySettings,
+} from '../src/lib/windows-agent-policy.ts';
 
 /* ── Normalising what somebody typed ───────────────────────────────────────────────────────── */
 
@@ -306,6 +313,22 @@ test('a huge paste is capped rather than turned into a four-thousand-line system
   const many = Array.from({ length: 900 }, (_, index) => `site-${index}.example.com`);
   const clean = sanitizePolicySettings({ blockedDomains: many });
   assert.equal(clean.blockedDomains.length, 500);
+});
+
+test('every setting appears in exactly one group on the policy screen', () => {
+  // A group list that has quietly stopped covering every setting hides a new setting from the
+  // only screen that can configure it — which is how website blocking could have shipped
+  // unreachable.
+  const grouped = AGENT_POLICY_GROUPS.flatMap((group) => group.keys);
+  assert.deepEqual(
+    [...grouped].sort(),
+    [...AGENT_POLICY_KEYS].sort(),
+    'AGENT_POLICY_GROUPS and AGENT_POLICY_KEYS have drifted apart',
+  );
+  assert.equal(new Set(grouped).size, grouped.length, 'a setting is listed in two groups');
+  for (const key of ['websiteBlockingEnabled', 'blockedDomains', 'allowedDomains']) {
+    assert.equal(policyGroupOf(key), 'Website blocking');
+  }
 });
 
 test('a department policy overrides the company list rather than merging with it', () => {

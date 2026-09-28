@@ -146,6 +146,41 @@ export function securityFindings(
 }
 
 /**
+ * What one finding code means, in a sentence, and what to do about it.
+ *
+ * The codes exist so findings can be counted and filtered across a fleet; they are not what
+ * somebody should be shown. The device page was printing them raw —
+ * `AGENT_BINARY_UNSIGNED · SECURE_BOOT_OFF` — under a heading saying attention was required,
+ * which tells the person who has to act neither what is wrong nor whether they caused it. Two of
+ * these in particular are *expected* states rather than faults (unsigned binaries until a
+ * certificate is bought, an unreadable Secure Boot flag on a legacy-boot PC), and saying so is
+ * the difference between a page that prompts a fix and one that is ignored as noisy.
+ */
+export function describeSecurityFinding(code: string): string {
+  switch (code) {
+    case 'TASK_MANAGER_UNLOCKED':
+      return 'Task Manager is open on this PC although the policy locks it.';
+    case 'AGENT_STOP_ALLOWED':
+      return 'A local administrator can stop the SEL LIVE service.';
+    case 'SERVICE_MODIFIABLE':
+      return 'The service can be reconfigured or deleted on this PC.';
+    case 'SECURE_BOOT_OFF':
+      return 'Secure Boot is switched off in this PC’s firmware.';
+    case 'SECURE_BOOT_UNKNOWN':
+      return 'Secure Boot cannot be read — normal on an older PC that boots in legacy/BIOS mode.';
+    case 'AGENT_BINARY_UNSIGNED':
+      return 'The installed agent files carry no code signature. Expected until the installer is signed with the company certificate.';
+    case 'SIGNED_APP_CONTROL_POLICY_MISSING':
+      return 'No enforced signed App Control (WDAC) policy is active on this PC.';
+    case 'POSTURE_CHECK_FAILED':
+      return 'The security check itself could not finish on this PC — see the agent’s event log.';
+    default:
+      // A code from a newer agent than this server. Better shown than swallowed.
+      return code;
+  }
+}
+
+/**
  * Decide whether the server may open a work session on this device.
  *
  * This deliberately re-derives the baseline instead of trusting the device-supplied `compliant`

@@ -124,6 +124,114 @@ export const DEFAULT_AGENT_POLICY: Required<AgentPolicySettings> = {
 /** Every setting key, so the resolver and the settings form iterate the same list. */
 export const AGENT_POLICY_KEYS = Object.keys(DEFAULT_AGENT_POLICY) as (keyof AgentPolicySettings)[];
 
+/**
+ * The settings, grouped the way somebody configuring them thinks about them.
+ *
+ * ── Why the grouping is part of the model and not the form ────────────────────────────────────
+ *
+ * There are forty settings. Presented as one alphabetical-ish list — which is what
+ * {@link AGENT_POLICY_KEYS} is, because it comes from the defaults object — the policy editor and
+ * the resolved preview are both a wall of switches where "is the access gate on?" sits between a
+ * heartbeat interval and a retention period. Nobody reads that; they scroll it, miss the setting
+ * they came for, and change the wrong one.
+ *
+ * It lives here rather than in the component for two reasons. The preview screen and the editor
+ * dialog have to agree about the order, or the same policy reads differently in two places on the
+ * same page. And a group list that has quietly stopped covering every setting is exactly the sort
+ * of thing that hides a new setting from the only screen that can configure it — so
+ * `tests/website-blocking.test.mjs` asserts the cover is exact, which it can only do if this is
+ * plain data in a module `node --test` can import.
+ *
+ * The order is deliberate: what the agent *does to somebody* first (sign-in, locking), then what
+ * it records, then the day, and the mechanical settings last. `enforcementIntervalSeconds` is
+ * absent from every group on purpose — it belongs to the per-device security policy, not here.
+ */
+export const AGENT_POLICY_GROUPS: readonly {
+  title: string;
+  description: string;
+  keys: readonly (keyof AgentPolicySettings)[];
+}[] = [
+  {
+    title: 'Signing in',
+    description: 'Whether the agent asks who is at the PC, and how long it will take a cached answer.',
+    keys: [
+      'requireMorningLogin',
+      'requireLoginAfterRestart',
+      'offlineGraceMinutes',
+      'reauthAfterLockSeconds',
+    ],
+  },
+  {
+    title: 'Locking an unattended PC',
+    description: 'The settings that can stop somebody working. All off or generous by default.',
+    keys: [
+      'lockOnIdleEnabled',
+      'idleLockSeconds',
+      'idleLockWarningSeconds',
+      'lockOnErpWindowClose',
+      'lockOnSignOut',
+      'requireAdminToExit',
+      'allowUserPauseTracking',
+    ],
+  },
+  {
+    title: 'What is recorded',
+    description: 'Each of the three optional disclosures is off until somebody turns it on deliberately.',
+    keys: [
+      'applicationTrackingEnabled',
+      'windowTitleTrackingEnabled',
+      'browserDomainTrackingEnabled',
+      'documentNameTrackingEnabled',
+      'idleThresholdSeconds',
+      'extendedIdleThresholdSeconds',
+      'maxSpanMinutes',
+    ],
+  },
+  {
+    title: 'Website blocking',
+    description: 'Enforced machine-wide through the hosts file, so it covers every browser on the PC.',
+    keys: [
+      'websiteBlockingEnabled',
+      'blockSocialMediaSites',
+      'blockedDomains',
+      'allowedDomains',
+    ],
+  },
+  {
+    title: 'The working day',
+    description: 'Used to flag a late sign-in and to explain the hour nobody is at their desk. Never to block anything.',
+    keys: [
+      'workdayStart',
+      'workdayEnd',
+      'lateLoginGraceMinutes',
+      'lunchBreakEnabled',
+      'lunchBreakStart',
+      'lunchBreakEnd',
+    ],
+  },
+  {
+    title: 'Notifications and updates',
+    description: 'How the agent speaks to the person using the PC, and when it updates itself.',
+    keys: ['notificationMode', 'autoUpdateEnabled'],
+  },
+  {
+    title: 'Network and storage',
+    description: 'Raise the timeout for a site office on a slow link; the rest trade Firestore cost against detail.',
+    keys: [
+      'heartbeatIntervalSeconds',
+      'activityBatchIntervalSeconds',
+      'requestTimeoutSeconds',
+      'rawActivityRetentionDays',
+    ],
+  },
+];
+
+/** Which group a setting belongs to, or null when it is not grouped. */
+export function policyGroupOf(key: keyof AgentPolicySettings): string | null {
+  const group = AGENT_POLICY_GROUPS.find((candidate) => candidate.keys.includes(key));
+  return group ? group.title : null;
+}
+
 /** Bounds each numeric setting is clamped to. A policy cannot configure the agent into the ground. */
 const NUMERIC_BOUNDS: Partial<Record<keyof AgentPolicySettings, { min: number; max: number }>> = {
   // Below a minute, "idle" catches somebody reading their own screen.

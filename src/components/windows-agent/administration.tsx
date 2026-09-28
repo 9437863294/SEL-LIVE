@@ -26,8 +26,10 @@ import {
   HrLoader,
   hrDialog,
 } from '@/components/hr/hr-ui';
+import { cn } from '@/lib/utils';
 import { hasPermission } from '@/lib/access-control';
 import {
+  AGENT_POLICY_GROUPS,
   AGENT_POLICY_KEYS,
   DEFAULT_AGENT_POLICY,
   WINDOWS_AGENT_RESOURCES,
@@ -178,6 +180,32 @@ const SETTING_LABELS: Record<keyof AgentPolicySettings, { label: string; help: s
     help: '1800 is half an hour: a walk to the printer resumes silently, a lunch break asks again. Zero asks on every unlock; a very large number never does.',
   },
 };
+
+/**
+ * One setting's value, written the way the label reads.
+ *
+ * `String(value)` was doing this, and for two thirds of the settings it was fine — but it renders
+ * a boolean as "false", a domain list as "a.com,b.com" and a notification mode as the enum
+ * constant. Those are the three the policy screen most needs to be readable, because they are the
+ * ones an administrator is checking when they ask "is this on for Accounts?".
+ */
+function formatSettingValue(key: keyof AgentPolicySettings, value: unknown): string {
+  if (typeof value === 'boolean') return value ? 'On' : 'Off';
+  if (Array.isArray(value)) {
+    if (value.length === 0) return 'none';
+    return `${value.length} ${value.length === 1 ? 'domain' : 'domains'}`;
+  }
+  if (key === 'notificationMode') {
+    const modes: Record<string, string> = {
+      TOAST_AND_TRAY: 'Popup and tray',
+      TRAY_ONLY: 'Tray only',
+      CRITICAL_ONLY: 'High and critical only',
+      OFF: 'Off',
+    };
+    return modes[String(value)] ?? String(value);
+  }
+  return String(value);
+}
 
 /**
  * What will and will not happen to the domains somebody just typed.
@@ -380,8 +408,6 @@ export function PoliciesPage() {
         }
       />
 
-      <ApproversCard />
-
       <TableCard title="Policy register" count={rows.length} noun="policy">
           {policies.loading ? (
             <HrLoader />
@@ -449,6 +475,13 @@ export function PoliciesPage() {
 
       <ResolvedPreview policies={policies.data ?? []} />
 
+      {/*
+        Last, not first. It is the right question to ask on this page — "closing the agent needs
+        an administrator" is a setting above — but it is about people rather than policies, and a
+        full table for what is usually two names was the first thing on the screen.
+      */}
+      <ApproversCard />
+
       {editing ? (
         <PolicyEditor
           policy={editing === 'new' ? null : editing}
@@ -486,17 +519,21 @@ function ResolvedPreview({ policies }: { policies: WindowsAgentPolicy[] }) {
     [policies, departmentId],
   );
 
+  const fromPolicy = AGENT_POLICY_KEYS.filter((key) => resolved.sources[key] !== 'DEFAULT');
+
   return (
     <Card>
-      <CardHeader className="flex flex-row items-start justify-between gap-3 space-y-0">
-        <div>
+      <CardHeader className="gap-3 space-y-0 sm:flex-row sm:items-start sm:justify-between">
+        <div className="min-w-0">
           <CardTitle className="text-base">What an agent would run</CardTitle>
           <CardDescription>
-            The resolved policy, with where each value came from.
+            {fromPolicy.length === 0
+              ? `No policy applies here, so all ${AGENT_POLICY_KEYS.length} settings are the built-in defaults.`
+              : `${fromPolicy.length} of ${AGENT_POLICY_KEYS.length} settings come from a policy; the rest are built-in defaults.`}
           </CardDescription>
         </div>
         <Select value={departmentId} onValueChange={setDepartmentId}>
-          <SelectTrigger className="w-56">
+          <SelectTrigger className="w-full sm:w-56">
             <SelectValue placeholder="Company-wide" />
           </SelectTrigger>
           <SelectContent>
@@ -509,40 +546,52 @@ function ResolvedPreview({ policies }: { policies: WindowsAgentPolicy[] }) {
           </SelectContent>
         </Select>
       </CardHeader>
-      <CardContent>
-        <div className="grid gap-x-8 gap-y-2 sm:grid-cols-2">
-          {AGENT_POLICY_KEYS.map((key) => {
-            const value = resolved.settings[key];
-            const source = resolved.sources[key];
-            return (
-              <div key={key} className="flex items-baseline justify-between gap-3 border-b py-1.5 text-sm last:border-b-0">
-                <span className="min-w-0 truncate" title={SETTING_LABELS[key]?.help}>
-                  {SETTING_LABELS[key]?.label ?? key}
-                </span>
-                <span className="flex shrink-0 items-center gap-2">
-                  <span
-                    className="font-medium tabular-nums"
-                    // A domain list is summarised by its length, with the names themselves on
-                    // hover: thirty of them inline would push every other row off the card.
-                    title={Array.isArray(value) ? value.join('\n') : undefined}
+      {/*
+        Grouped, and quiet where nothing has been decided.
+
+        Forty rows each carrying a "default" badge is forty badges saying nothing happened, which
+        is how the one row that *is* overridden becomes impossible to spot. A badge now means
+        "somebody chose this", so the page can be read by looking only at the badges.
+      */}
+      <CardContent className="space-y-5">
+        {AGENT_POLICY_GROUPS.map((group) => (
+          <section key={group.title}>
+            <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+              {group.title}
+            </h3>
+            <div className="mt-1 grid grid-cols-1 gap-x-8 sm:grid-cols-2">
+              {group.keys.map((key) => {
+                const value = resolved.settings[key];
+                const source = resolved.sources[key];
+                return (
+                  <div
+                    key={key}
+                    className="flex items-baseline justify-between gap-3 border-b py-1.5 text-sm last:border-b-0 sm:[&:nth-last-child(2)]:border-b-0"
                   >
-                    {typeof value === 'boolean'
-                      ? (value ? 'On' : 'Off')
-                      : Array.isArray(value)
-                        ? `${value.length} ${value.length === 1 ? 'domain' : 'domains'}`
-                        : String(value)}
-                  </span>
-                  <Badge
-                    variant={source === 'DEFAULT' ? 'outline' : 'neutral'}
-                    title={describePolicySource(source)}
-                  >
-                    {source.toLowerCase()}
-                  </Badge>
-                </span>
-              </div>
-            );
-          })}
-        </div>
+                    <span className="min-w-0 truncate" title={SETTING_LABELS[key]?.help}>
+                      {SETTING_LABELS[key]?.label ?? key}
+                    </span>
+                    <span className="flex shrink-0 items-center gap-2">
+                      <span
+                        className={cn('tabular-nums', source === 'DEFAULT' ? 'text-muted-foreground' : 'font-medium')}
+                        // A domain list is summarised by its length, with the names themselves on
+                        // hover: thirty of them inline would push every other row off the card.
+                        title={Array.isArray(value) ? value.join('\n') : undefined}
+                      >
+                        {formatSettingValue(key, value)}
+                      </span>
+                      {source === 'DEFAULT' ? null : (
+                        <Badge variant="neutral" title={describePolicySource(source)}>
+                          {source.toLowerCase()}
+                        </Badge>
+                      )}
+                    </span>
+                  </div>
+                );
+              })}
+            </div>
+          </section>
+        ))}
       </CardContent>
     </Card>
   );
@@ -568,6 +617,37 @@ function PolicyEditor({
   const [scopeId, setScopeId] = useState<string>(policy?.scopeId ?? '');
   const [enabled, setEnabled] = useState(policy?.enabled !== false);
   const [settings, setSettings] = useState<AgentPolicySettings>(policy?.settings ?? {});
+  const [settingFilter, setSettingFilter] = useState('');
+
+  const overriddenKeys = AGENT_POLICY_KEYS.filter((key) => settings[key] !== undefined);
+
+  /**
+   * The groups to draw, with the filter applied.
+   *
+   * Matching on the label and the help text rather than the key: somebody looking for the lunch
+   * break types "lunch", not `lunchBreakStart`, and somebody who half-remembers a setting finds
+   * it by the sentence that describes it.
+   */
+  const visibleGroups = useMemo(() => {
+    const needle = settingFilter.trim().toLowerCase();
+    return AGENT_POLICY_GROUPS.map((group) => {
+      const keys = group.keys.filter((key) => {
+        if (!needle) return true;
+        const meta = SETTING_LABELS[key];
+        return (
+          key.toLowerCase().includes(needle)
+          || (meta?.label ?? '').toLowerCase().includes(needle)
+          || (meta?.help ?? '').toLowerCase().includes(needle)
+          || group.title.toLowerCase().includes(needle)
+        );
+      });
+      return {
+        ...group,
+        keys,
+        overriddenCount: group.keys.filter((key) => settings[key] !== undefined).length,
+      };
+    }).filter((group) => group.keys.length > 0);
+  }, [settingFilter, settings]);
 
   const scopeLabel = useMemo(() => {
     if (scopeKind === 'COMPANY') return 'Company';
@@ -654,95 +734,155 @@ function PolicyEditor({
           </div>
 
           <label className="flex items-center justify-between rounded-md border p-3">
-            <span className="text-sm font-medium">Policy enabled</span>
+            <span className="min-w-0">
+              <span className="block text-sm font-medium">Policy enabled</span>
+              <span className="block text-xs text-muted-foreground">
+                Switch this off to suspend the whole policy without deleting what it says.
+              </span>
+            </span>
             <Switch checked={enabled} onCheckedChange={setEnabled} />
           </label>
 
-          <div className="space-y-2">
-            {AGENT_POLICY_KEYS.map((key) => {
-              const overridden = settings[key] !== undefined;
-              const fallback = DEFAULT_AGENT_POLICY[key];
-              const meta = SETTING_LABELS[key];
-
-              return (
-                <div key={key} className="rounded-md border p-3">
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="min-w-0">
-                      <p className="text-sm font-medium">{meta?.label ?? key}</p>
-                      <p className="mt-0.5 text-xs text-muted-foreground">{meta?.help}</p>
-                    </div>
-                    <Switch
-                      checked={overridden}
-                      onCheckedChange={(checked) => setSetting(key, checked ? (fallback as never) : undefined)}
-                      aria-label={`Override ${meta?.label ?? key}`}
-                    />
-                  </div>
-
-                  {overridden ? (
-                    <div className="mt-3">
-                      {typeof fallback === 'boolean' ? (
-                        <label className="flex items-center gap-2 text-sm">
-                          <Switch
-                            checked={settings[key] as boolean}
-                            onCheckedChange={(checked) => setSetting(key, checked as never)}
-                          />
-                          {(settings[key] as boolean) ? 'On' : 'Off'}
-                        </label>
-                      ) : Array.isArray(fallback) ? (
-                        // One per line rather than comma-separated: an administrator pastes these
-                        // from a browser, and a list of thirty domains on one line cannot be read.
-                        // Normalising happens on save — `sanitizePolicySettings` reduces a pasted
-                        // URL to its host and drops what cannot be a domain at all.
-                        <div className="space-y-2">
-                          <Textarea
-                            className="max-w-xl font-mono text-xs"
-                            rows={4}
-                            value={(settings[key] as string[]).join('\n')}
-                            onChange={(event) =>
-                              setSetting(key, event.target.value.split(/\r?\n/) as never)
-                            }
-                            placeholder={'example.com\nanother-site.in'}
-                            spellCheck={false}
-                          />
-                          <DomainListNote lines={settings[key] as string[]} />
-                        </div>
-                      ) : key === 'notificationMode' ? (
-                        <Select
-                          value={String(settings[key])}
-                          onValueChange={(value) => setSetting(key, value as never)}
-                        >
-                          <SelectTrigger className="max-w-xs">
-                            <SelectValue />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="TOAST_AND_TRAY">Popup and tray</SelectItem>
-                            <SelectItem value="TRAY_ONLY">Tray only — no popup</SelectItem>
-                            <SelectItem value="CRITICAL_ONLY">Only high and critical</SelectItem>
-                            <SelectItem value="OFF">Off</SelectItem>
-                          </SelectContent>
-                        </Select>
-                      ) : (
-                        <Input
-                          className="max-w-xs"
-                          value={String(settings[key] ?? '')}
-                          onChange={(event) =>
-                            setSetting(
-                              key,
-                              (typeof fallback === 'number'
-                                ? Number(event.target.value.replace(/\D/g, '')) || 0
-                                : event.target.value) as never,
-                            )
-                          }
-                          placeholder={String(fallback)}
-                          inputMode={typeof fallback === 'number' ? 'numeric' : undefined}
-                        />
-                      )}
-                    </div>
-                  ) : null}
-                </div>
-              );
-            })}
+          {/*
+            A find box and a count, because forty settings in one dialog is a scroll nobody reads.
+            The count is the answer to the question this screen is actually for — "what does this
+            policy change?" — which used to require scrolling the whole list and remembering.
+          */}
+          <div className="flex flex-wrap items-center justify-between gap-2 rounded-md border bg-muted/20 px-3 py-2">
+            <SearchInput
+              value={settingFilter}
+              onChange={setSettingFilter}
+              placeholder="Find a setting"
+              className="w-full sm:max-w-xs"
+            />
+            <div className="flex items-center gap-2">
+              <span className="text-xs text-muted-foreground">
+                {overriddenKeys.length === 0
+                  ? 'Overrides nothing yet'
+                  : `Overrides ${overriddenKeys.length} of ${AGENT_POLICY_KEYS.length} settings`}
+              </span>
+              {overriddenKeys.length > 0 ? (
+                <Button variant="ghost" size="sm" onClick={() => setSettings({})}>
+                  Clear all
+                </Button>
+              ) : null}
+            </div>
           </div>
+
+          {visibleGroups.length === 0 ? (
+            <HrEmptyState
+              title="No setting matches"
+              description={`Nothing here is called “${settingFilter}”. Clear the box to see all ${AGENT_POLICY_KEYS.length}.`}
+            />
+          ) : null}
+
+          {visibleGroups.map((group) => (
+            <section key={group.title} className="space-y-2">
+              <div className="flex flex-wrap items-baseline justify-between gap-2">
+                <div className="min-w-0">
+                  <h3 className="text-sm font-semibold">{group.title}</h3>
+                  <p className="text-xs text-muted-foreground">{group.description}</p>
+                </div>
+                {group.overriddenCount > 0 ? (
+                  <Badge variant="neutral">{group.overriddenCount} set here</Badge>
+                ) : null}
+              </div>
+
+              <div className="divide-y rounded-lg border">
+                {group.keys.map((key) => {
+                  const overridden = settings[key] !== undefined;
+                  const fallback = DEFAULT_AGENT_POLICY[key];
+                  const meta = SETTING_LABELS[key];
+
+                  return (
+                    <div key={key} className={cn('p-3', overridden && 'bg-primary/5')}>
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="min-w-0">
+                          <p className="text-sm font-medium">{meta?.label ?? key}</p>
+                          <p className="mt-0.5 text-xs leading-snug text-muted-foreground">{meta?.help}</p>
+                          {overridden ? null : (
+                            // What it would be if left alone. Without this the only way to find out
+                            // was to switch the override on, which changes the policy to read it.
+                            <p className="mt-1 text-xs text-muted-foreground">
+                              Not set here — built-in default is{' '}
+                              <span className="font-medium">{formatSettingValue(key, fallback)}</span>
+                            </p>
+                          )}
+                        </div>
+                        <Switch
+                          checked={overridden}
+                          onCheckedChange={(checked) => setSetting(key, checked ? (fallback as never) : undefined)}
+                          aria-label={`Override ${meta?.label ?? key}`}
+                        />
+                      </div>
+
+                      {overridden ? (
+                        <div className="mt-3">
+                          {typeof fallback === 'boolean' ? (
+                            <label className="flex items-center gap-2 text-sm">
+                              <Switch
+                                checked={settings[key] as boolean}
+                                onCheckedChange={(checked) => setSetting(key, checked as never)}
+                              />
+                              {(settings[key] as boolean) ? 'On' : 'Off'}
+                            </label>
+                          ) : Array.isArray(fallback) ? (
+                            // One per line rather than comma-separated: an administrator pastes these
+                            // from a browser, and a list of thirty domains on one line cannot be read.
+                            // Normalising happens on save — `sanitizePolicySettings` reduces a pasted
+                            // URL to its host and drops what cannot be a domain at all.
+                            <div className="space-y-2">
+                              <Textarea
+                                className="max-w-xl font-mono text-xs"
+                                rows={4}
+                                value={(settings[key] as string[]).join('\n')}
+                                onChange={(event) =>
+                                  setSetting(key, event.target.value.split(/\r?\n/) as never)
+                                }
+                                placeholder={'example.com\nanother-site.in'}
+                                spellCheck={false}
+                              />
+                              <DomainListNote lines={settings[key] as string[]} />
+                            </div>
+                          ) : key === 'notificationMode' ? (
+                            <Select
+                              value={String(settings[key])}
+                              onValueChange={(value) => setSetting(key, value as never)}
+                            >
+                              <SelectTrigger className="max-w-xs">
+                                <SelectValue />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="TOAST_AND_TRAY">Popup and tray</SelectItem>
+                                <SelectItem value="TRAY_ONLY">Tray only — no popup</SelectItem>
+                                <SelectItem value="CRITICAL_ONLY">Only high and critical</SelectItem>
+                                <SelectItem value="OFF">Off</SelectItem>
+                              </SelectContent>
+                            </Select>
+                          ) : (
+                            <Input
+                              className="max-w-xs"
+                              value={String(settings[key] ?? '')}
+                              onChange={(event) =>
+                                setSetting(
+                                  key,
+                                  (typeof fallback === 'number'
+                                    ? Number(event.target.value.replace(/\D/g, '')) || 0
+                                    : event.target.value) as never,
+                                )
+                              }
+                              placeholder={String(fallback)}
+                              inputMode={typeof fallback === 'number' ? 'numeric' : undefined}
+                            />
+                          )}
+                        </div>
+                      ) : null}
+                    </div>
+                  );
+                })}
+              </div>
+            </section>
+          ))}
         </div>
 
         <DialogFooter className={hrDialog.footer}>

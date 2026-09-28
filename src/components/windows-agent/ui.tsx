@@ -234,6 +234,25 @@ export function ClockTime({ value, className }: { value: string | Date | null | 
   );
 }
 
+/**
+ * "40 seconds ago" as a plain string, for the places that need the words rather than the element.
+ *
+ * Exported so a KPI card's hint and the table cell beside it cannot describe the same instant
+ * differently — which is what happens the moment somebody writes a second version of this
+ * ladder inline.
+ */
+export function relativeLabel(value: string | Date | null | undefined, now: Date): string {
+  if (!value) return 'Never';
+  const date = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(date.getTime())) return '—';
+  const seconds = Math.max(0, Math.round((now.getTime() - date.getTime()) / 1000));
+  return seconds < 45 ? 'Now'
+    : seconds < 90 ? 'a minute ago'
+    : seconds < 3600 ? `${Math.round(seconds / 60)} min ago`
+    : seconds < 86_400 ? `${Math.round(seconds / 3600)} h ago`
+    : `${Math.round(seconds / 86_400)} d ago`;
+}
+
 /** "40 seconds ago" / "Now", against a shared ticking clock. */
 export function RelativeTime({
   value,
@@ -249,12 +268,7 @@ export function RelativeTime({
   if (Number.isNaN(date.getTime())) return <span className={cn('text-muted-foreground', className)}>—</span>;
 
   const seconds = Math.max(0, Math.round((now.getTime() - date.getTime()) / 1000));
-  const text =
-    seconds < 45 ? 'Now'
-    : seconds < 90 ? 'a minute ago'
-    : seconds < 3600 ? `${Math.round(seconds / 60)} min ago`
-    : seconds < 86_400 ? `${Math.round(seconds / 3600)} h ago`
-    : `${Math.round(seconds / 86_400)} d ago`;
+  const text = relativeLabel(date, now);
 
   return (
     <span className={cn('tabular-nums', seconds > 600 && 'text-muted-foreground', className)} title={date.toISOString()}>

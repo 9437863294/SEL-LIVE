@@ -35,10 +35,12 @@ import {
 import {
   WINDOWS_AGENT_ROUTES,
   WINDOWS_DEVICE_SECURITY_POLICY,
+  describeSecurityFinding,
   evaluateAgentHealth,
   resolveDeviceSecurityPolicy,
   type WindowsDevice,
   type WindowsDeviceSecurityPolicy,
+  type WindowsDeviceSecurityPosture,
 } from '@/lib/windows-agent';
 import {
   canAssignDeviceUsers,
@@ -63,7 +65,7 @@ import {
   setEnrollmentCodeEnabled,
 } from '@/lib/windows-agent-service';
 import { useTickingNow, useWindowsAgent, useWindowsAgentAction, useWindowsAgentQuery } from './hooks';
-import { ClockTime, DeviceStatusBadge, RelativeTime } from './ui';
+import { ClockTime, DeviceStatusBadge, RelativeTime, relativeLabel } from './ui';
 import { PageHeader } from '@/components/shared/page-header';
 
 /* ════════════════════════════════════════════════════════════════════════════════════════════
@@ -472,6 +474,12 @@ export function DeviceDetail({ deviceId }: { deviceId: string }) {
   const maintenanceActive = record.maintenanceAccess?.status === 'ACTIVE'
     && Date.parse(record.maintenanceAccess.expiresAt) > now.getTime();
   const securityPolicy = resolveDeviceSecurityPolicy(record.securityPolicy);
+  // Null when the PC has never reported, which is a different thing from a long silence: one is
+  // a machine nobody has installed the agent on, the other is a machine that has stopped talking.
+  const heartbeatAge = record.lastHeartbeatAt
+    ? Math.max(0, now.getTime() - Date.parse(record.lastHeartbeatAt))
+    : null;
+  const findingCount = record.securityPosture?.findings?.length ?? 0;
 
   const ask = (
     title: string,
@@ -495,31 +503,109 @@ export function DeviceDetail({ deviceId }: { deviceId: string }) {
         }
       />
 
+      {/*
+        The four things somebody opening this page came to find out.
+
+        They were all present before — as four of seventeen identically-weighted label/value pairs,
+        between the machine GUID and the credential version. "Is this PC online and is anybody
+        locked out of it" should not require reading a table.
+      */}
+      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+        <HrKpiCard
+          label="Connection"
+          value={heartbeatAge === null ? 'Never' : heartbeatAge < 300_000 ? 'Online' : 'Quiet'}
+          hint={
+            record.lastHeartbeatAt
+              ? `Last heartbeat ${relativeLabel(record.lastHeartbeatAt, now)}`
+              : 'This PC has never reported in'
+          }
+          tone={heartbeatAge === null ? 'slate' : heartbeatAge < 300_000 ? 'emerald' : 'amber'}
+        />
+        <HrKpiCard
+          label="Register status"
+          value={STATUS_WORDS[record.status] ?? record.status}
+          hint={record.statusReason ?? 'Set by an administrator'}
+          tone={record.status === 'ACTIVE' ? 'emerald' : record.status === 'PENDING' ? 'amber' : 'rose'}
+        />
+        <HrKpiCard
+          label="Last signed in"
+          value={record.lastSeenUserName ?? 'Nobody yet'}
+          hint={record.lastLoginAt ? relativeLabel(record.lastLoginAt, now) : 'No work session on record'}
+          tone="slate"
+        />
+        <HrKpiCard
+          label="Security"
+          value={
+            !record.securityPosture
+              ? 'No report'
+              : findingCount === 0
+                ? 'Compliant'
+                : `${findingCount} failing`
+          }
+          hint={
+            !record.securityPosture
+              ? 'Needs agent 1.4 or newer'
+              : findingCount === 0
+                ? 'Matches the assigned policy'
+                : securityPolicy.loginBlockedOnFindings
+                  ? 'Sign-in is refused on this PC'
+                  : 'Reported only — nobody is locked out'
+          }
+          tone={!record.securityPosture ? 'slate' : findingCount === 0 ? 'emerald' : 'amber'}
+        />
+      </div>
+
       <div className="grid gap-4 lg:grid-cols-3">
         <Card className="lg:col-span-2">
           <CardHeader>
             <CardTitle className="text-base">Machine</CardTitle>
+            <CardDescription>
+              Reported by the agent at every start-up, and never editable from the PC itself.
+            </CardDescription>
           </CardHeader>
-          <CardContent className="grid gap-x-6 gap-y-3 sm:grid-cols-2">
-            <Fact label="Status" value={<DeviceStatusBadge status={record.status} />} />
-            <Fact label="Department" value={record.departmentName ?? '—'} />
-            <Fact label="Location" value={record.assignedLocation ?? '—'} />
-            <Fact label="Agent version" value={record.agentVersion ?? '—'} />
-            <Fact label="Update ring" value={record.updateRing} />
-            <Fact label="Architecture" value={record.facts?.architecture ?? '—'} />
-            <Fact label="Manufacturer" value={record.facts?.manufacturer ?? '—'} />
-            <Fact label="Model" value={record.facts?.model ?? '—'} />
-            <Fact label="Serial" value={record.facts?.serialNumber ?? '—'} />
-            <Fact label="Machine GUID" value={<span className="font-mono text-xs">{record.facts?.machineGuid ?? '—'}</span>} />
-            <Fact label="Enrolled" value={<ClockTime value={record.firstRegisteredAt} />} />
-            <Fact label="Credential version" value={String(record.secretVersion ?? 1)} />
-            <Fact label="Last heartbeat" value={<RelativeTime value={record.lastHeartbeatAt} now={now} />} />
-            <Fact label="Last sign-in" value={<ClockTime value={record.lastLoginAt} />} />
-            <Fact label="Last user" value={record.lastSeenUserName ?? '—'} />
-            <Fact label="IP address" value={record.ipAddress ?? '—'} />
-            {record.statusReason ? (
-              <Fact label="Status note" value={record.statusReason} className="sm:col-span-2" />
-            ) : null}
+          {/*
+            Grouped, because seventeen facts in one flat grid gave a serial number the same weight
+            as the status. Assignment is what an administrator changes, hardware is what they
+            check against an asset register, and identity is what support quotes on a call.
+          */}
+          <CardContent className="space-y-4">
+            <FactGroup title="Assignment">
+              <Fact label="Status" value={<DeviceStatusBadge status={record.status} />} />
+              <Fact label="Department" value={record.departmentName ?? '—'} />
+              <Fact label="Location" value={record.assignedLocation ?? '—'} />
+              <Fact label="Update ring" value={RING_WORDS[record.updateRing] ?? record.updateRing} />
+              {record.statusReason ? (
+                <Fact label="Status note" value={record.statusReason} className="sm:col-span-2" />
+              ) : null}
+            </FactGroup>
+
+            <FactGroup title="Windows and hardware">
+              <Fact label="Windows" value={record.facts?.windowsVersion ?? '—'} />
+              <Fact label="Architecture" value={record.facts?.architecture ?? '—'} />
+              <Fact label="Manufacturer" value={record.facts?.manufacturer ?? '—'} />
+              <Fact label="Model" value={record.facts?.model ?? '—'} />
+              <Fact label="Agent version" value={record.agentVersion ?? '—'} />
+              <Fact label="Time zone" value={record.facts?.timeZoneId ?? '—'} />
+            </FactGroup>
+
+            <FactGroup title="Connection">
+              <Fact label="Last heartbeat" value={<RelativeTime value={record.lastHeartbeatAt} now={now} />} />
+              <Fact label="Last sign-in" value={<ClockTime value={record.lastLoginAt} />} />
+              <Fact label="Last user" value={record.lastSeenUserName ?? '—'} />
+              <Fact label="IP address" value={record.ipAddress ?? '—'} />
+            </FactGroup>
+
+            <FactGroup title="Identity">
+              <Fact label="Hostname" value={<span className="font-mono text-xs">{record.facts?.hostname ?? '—'}</span>} />
+              <Fact label="Serial" value={<span className="font-mono text-xs">{record.facts?.serialNumber ?? '—'}</span>} />
+              <Fact
+                label="Machine GUID"
+                value={<span className="break-all font-mono text-xs">{record.facts?.machineGuid ?? '—'}</span>}
+              />
+              <Fact label="Enrolled" value={<ClockTime value={record.firstRegisteredAt} />} />
+              <Fact label="Enrolment code" value={record.enrollmentCode ?? '—'} />
+              <Fact label="Credential version" value={String(record.secretVersion ?? 1)} />
+            </FactGroup>
           </CardContent>
         </Card>
 
@@ -605,9 +691,17 @@ export function DeviceDetail({ deviceId }: { deviceId: string }) {
               )
             ) : null}
 
+            {/*
+              A divider, because the two halves of this card are different kinds of thing. Above,
+              buttons that do something once and are written to the audit log. Below, settings
+              that stay as you leave them. They were one undifferentiated stack, so the update
+              ring looked like something you press.
+            */}
             {canEdit ? (
-              <div className="space-y-1.5 pt-2">
-                <Label className="text-xs">Update ring</Label>
+              <div className="space-y-1.5 border-t pt-3">
+                <Label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                  Update ring
+                </Label>
                 <Select
                   value={record.updateRing}
                   onValueChange={(value) =>
@@ -627,6 +721,12 @@ export function DeviceDetail({ deviceId }: { deviceId: string }) {
                   </SelectContent>
                 </Select>
               </div>
+            ) : null}
+
+            {canEdit ? (
+              <p className="border-t pt-3 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                Maintenance
+              </p>
             ) : null}
 
             {canEdit ? (
@@ -698,70 +798,66 @@ export function DeviceDetail({ deviceId }: { deviceId: string }) {
             Device security
           </CardTitle>
           <CardDescription>
-            Enforced by the LocalSystem service from this computerâ€™s SEL LIVE-owned policy. Local
-            support cannot alter it; a Devices / Edit administrator can choose the controls below.
+            Enforced by the LocalSystem service from this computer’s SEL LIVE-owned policy. Local
+            support cannot alter it. The tick is what SEL LIVE asks for; the badge is what the PC
+            reported at its last check.
           </CardDescription>
         </CardHeader>
-        <CardContent className="space-y-4">
-          {canEdit ? (
-            <DeviceSecurityPolicyEditor
-              key={JSON.stringify(securityPolicy)}
-              device={record}
-              initialPolicy={securityPolicy}
-              onChanged={device.refresh}
-            />
-          ) : null}
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
-            <SecurityCheck
-              label="Task Manager"
-              status={!securityPolicy.taskManagerLocked ? 'ALLOWED BY POLICY' : maintenanceActive ? 'TEMPORARY ACCESS' : record.securityPosture?.taskManagerLocked ? 'LOCKED' : 'CHECK REQUIRED'}
-              warning={securityPolicy.taskManagerLocked && (maintenanceActive || record.securityPosture?.taskManagerLocked !== true)}
-            />
-            <SecurityCheck
-              label="SEL Agent stop"
-              status={!securityPolicy.agentStopBlocked ? 'ALLOWED BY POLICY' : record.securityPosture?.agentStopBlocked ? 'BLOCKED' : 'CHECK REQUIRED'}
-              warning={securityPolicy.agentStopBlocked && record.securityPosture?.agentStopBlocked !== true}
-            />
-            <SecurityCheck
-              label="Service modification"
-              status={!securityPolicy.serviceModificationBlocked ? 'ALLOWED BY POLICY' : record.securityPosture?.serviceModificationBlocked ? 'BLOCKED' : 'CHECK REQUIRED'}
-              warning={securityPolicy.serviceModificationBlocked && record.securityPosture?.serviceModificationBlocked !== true}
-            />
-            <SecurityCheck label="Agent uninstall" status={securityPolicy.uninstallBlocked ? 'BLOCKED' : 'ALLOWED BY POLICY'} />
-            <SecurityCheck label="Monitoring policy change" status={securityPolicy.monitoringPolicyLocallyMutable ? 'LOCAL CHANGES ALLOWED' : 'SERVER ONLY'} />
-            <SecurityCheck
-              label="App-control policy"
-              status={!securityPolicy.signedAppControlPolicyRequired ? 'NOT REQUIRED' : record.securityPosture?.signedAppControlPolicyActive ? 'SIGNED' : 'CHECK REQUIRED'}
-              warning={securityPolicy.signedAppControlPolicyRequired && record.securityPosture?.signedAppControlPolicyActive !== true}
-            />
-            <SecurityCheck
-              label="Agent binaries"
-              status={!securityPolicy.signedAgentBinariesRequired ? 'NOT REQUIRED' : record.securityPosture?.agentBinariesSigned ? 'SIGNED' : 'CHECK REQUIRED'}
-              warning={securityPolicy.signedAgentBinariesRequired && record.securityPosture?.agentBinariesSigned !== true}
-            />
-            <SecurityCheck
-              label="Secure Boot"
-              status={!securityPolicy.secureBootRequired ? 'NOT REQUIRED' : record.securityPosture?.secureBootEnabled === true ? 'ENABLED' : record.securityPosture?.secureBootEnabled === false ? 'REQUIRED' : 'CHECK REQUIRED'}
-              warning={securityPolicy.secureBootRequired && record.securityPosture?.secureBootEnabled !== true}
-            />
-            <SecurityCheck label="Tamper event" status={securityPolicy.tamperMonitoringEnabled ? 'MONITORED' : 'NOT MONITORED'} />
-            <SecurityCheck label="Audit log" status="MANDATORY" />
-          </div>
+        <CardContent className="space-y-3">
+          <DeviceSecurityControls
+            key={JSON.stringify(securityPolicy)}
+            device={record}
+            initialPolicy={securityPolicy}
+            posture={record.securityPosture}
+            maintenanceActive={maintenanceActive}
+            canEdit={canEdit}
+            onChanged={device.refresh}
+          />
 
           {record.securityPosture?.findings?.length ? (
-            <div className="rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
-              <p className="font-medium">Security attention required</p>
-              <p className="mt-1 text-xs">{record.securityPosture.findings.join(' · ')}</p>
+            <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-amber-900">
+              <p className="text-sm font-medium">
+                {securityPolicy.loginBlockedOnFindings
+                  ? 'Nobody can sign in on this computer until these are fixed'
+                  : 'Reported, and nobody is locked out'}
+              </p>
+              {/*
+                Sentences, not codes. This printed `AGENT_BINARY_UNSIGNED · SECURE_BOOT_OFF`
+                under a heading saying attention was required, which tells whoever has to act
+                neither what is wrong nor whether it is their doing — and two of these are
+                expected states rather than faults.
+              */}
+              <ul className="mt-1.5 space-y-1 text-xs">
+                {record.securityPosture.findings.map((finding) => (
+                  <li key={finding} className="flex gap-1.5">
+                    <span aria-hidden>•</span>
+                    <span>{describeSecurityFinding(finding)}</span>
+                  </li>
+                ))}
+              </ul>
+              {securityPolicy.loginBlockedOnFindings ? (
+                <p className="mt-2 text-xs">
+                  Switch off <strong>Refuse sign-in when checks fail</strong> above to let people
+                  work while these are dealt with.
+                </p>
+              ) : null}
             </div>
           ) : record.lastSecurityCheckAt ? (
             <p className="text-xs text-muted-foreground">
-              Last checked <RelativeTime value={record.lastSecurityCheckAt} now={now} />. No baseline drift reported.
+              Last checked <RelativeTime value={record.lastSecurityCheckAt} now={now} />. Nothing
+              has drifted from the policy above.
             </p>
           ) : (
             <p className="text-xs text-muted-foreground">
-              Awaiting the first security report from the LocalSystem service. Existing agents need the updated build before these checks populate.
+              Awaiting the first security report from the LocalSystem service. Agents older than
+              1.4 cannot produce one, so the badges stay at “no report yet” until this PC is
+              updated — and nobody is locked out in the meantime.
             </p>
           )}
+
+          <p className="text-xs text-muted-foreground">
+            The append-only audit log is always mandatory and cannot be switched off from here.
+          </p>
 
           {maintenanceActive && record.maintenanceAccess ? (
             <div className="rounded-md border border-blue-200 bg-blue-50 p-3 text-sm text-blue-900">
@@ -900,12 +996,49 @@ function AssignedUsersCard({
   );
 }
 
-const SECURITY_CONTROL_ROWS: Array<{
+/**
+ * What the PC reports about one control, phrased for the person reading it.
+ *
+ * `ok` drives the badge tone, and `neutral` separates "nothing to worry about" from "this is
+ * good": a control switched off on purpose must not look like a passing check, or a page full of
+ * green says the machine is locked down when nothing is enforced at all.
+ */
+type ControlState = { text: string; ok?: boolean; neutral?: boolean };
+
+type SecurityControl = {
   key: Exclude<keyof WindowsDeviceSecurityPolicy, 'enforcementIntervalSeconds' | 'auditRequired'>;
   label: string;
   description: string;
   inverted?: boolean;
-}> = [
+  /**
+   * How this control stands on this PC right now.
+   *
+   * Every control has one, including the few Windows cannot measure — "enforced by the installer"
+   * is a truthful answer and an empty cell is not. Before this, the page showed the assigned
+   * policy in one grid and the measured posture in another, in two visual languages, so the two
+   * questions an administrator actually has — what did we ask for, and did it happen — had to be
+   * answered by reading two lists and matching the labels up by eye.
+   */
+  state: (input: {
+    policy: WindowsDeviceSecurityPolicy;
+    posture: WindowsDeviceSecurityPosture | null | undefined;
+    maintenanceActive: boolean;
+  }) => ControlState;
+};
+
+/** "On, and the PC agrees" / "On, and it has not happened" / "No report yet". */
+function reportedFlag(
+  enforced: boolean,
+  measured: boolean | null | undefined,
+  labels: { yes: string; no: string },
+): ControlState {
+  if (!enforced) return { text: 'Not enforced', neutral: true };
+  if (measured === true) return { text: labels.yes, ok: true };
+  if (measured === false) return { text: labels.no, ok: false };
+  return { text: 'No report yet', neutral: true };
+}
+
+const SECURITY_CONTROL_ROWS: SecurityControl[] = [
   {
     key: 'loginBlockedOnFindings',
     label: 'Refuse sign-in when checks fail',
@@ -914,25 +1047,129 @@ const SECURITY_CONTROL_ROWS: Array<{
     // is not code-signed yet, so switching this on before a device reports clean locks the
     // people who use it out of their own computer.
     description: 'Off by default. Until this is on, failed checks are reported here and nobody is locked out.',
+    state: ({ policy, posture }) => {
+      if (!policy.loginBlockedOnFindings) return { text: 'Reporting only', neutral: true };
+      const failing = posture?.findings?.length ?? 0;
+      return failing > 0
+        ? { text: 'Sign-in refused now', ok: false }
+        : { text: 'Refused if a check fails', ok: true };
+    },
   },
-  { key: 'taskManagerLocked', label: 'Lock Task Manager', description: 'Prevents local users opening Task Manager.' },
-  { key: 'agentStopBlocked', label: 'Block SEL Agent service stop', description: 'Removes the administrator SERVICE_STOP right.' },
-  { key: 'serviceModificationBlocked', label: 'Block service modification', description: 'Prevents reconfiguration, deletion and service ACL changes.' },
-  { key: 'uninstallBlocked', label: 'Block agent uninstall', description: 'Requires SEL LIVE approval before removal.' },
-  { key: 'monitoringPolicyLocallyMutable', label: 'Block local monitoring-policy changes', description: 'Keeps monitoring configuration server-only.', inverted: true },
-  { key: 'signedAgentBinariesRequired', label: 'Require signed agent binaries', description: 'Unsigned installed agent files make the device non-compliant.' },
-  { key: 'signedAppControlPolicyRequired', label: 'Require signed app-control policy', description: 'Requires an enforced signed WDAC policy.' },
-  { key: 'secureBootRequired', label: 'Require Secure Boot', description: 'Reports the device non-compliant when Secure Boot is off or unreadable.' },
-  { key: 'tamperMonitoringEnabled', label: 'Monitor tamper events', description: 'Writes drift and restoration events to the audit trail.' },
+  {
+    key: 'taskManagerLocked',
+    label: 'Lock Task Manager',
+    description: 'Prevents local users opening Task Manager.',
+    state: ({ policy, posture, maintenanceActive }) => {
+      if (!policy.taskManagerLocked) return { text: 'Not enforced', neutral: true };
+      if (maintenanceActive) return { text: 'Temporarily open', ok: false };
+      return reportedFlag(true, posture?.taskManagerLocked, { yes: 'Locked', no: 'Not locked' });
+    },
+  },
+  {
+    key: 'agentStopBlocked',
+    label: 'Block SEL Agent service stop',
+    description: 'Removes the administrator SERVICE_STOP right.',
+    state: ({ policy, posture }) =>
+      reportedFlag(policy.agentStopBlocked, posture?.agentStopBlocked, { yes: 'Blocked', no: 'Can be stopped' }),
+  },
+  {
+    key: 'serviceModificationBlocked',
+    label: 'Block service modification',
+    description: 'Prevents reconfiguration, deletion and service ACL changes.',
+    state: ({ policy, posture }) =>
+      reportedFlag(policy.serviceModificationBlocked, posture?.serviceModificationBlocked, {
+        yes: 'Blocked',
+        no: 'Can be changed',
+      }),
+  },
+  {
+    key: 'uninstallBlocked',
+    label: 'Block agent uninstall',
+    description: 'Requires SEL LIVE approval before removal.',
+    // Enforced by the installer at the moment somebody tries it, so there is nothing for the
+    // service to measure between attempts. Saying where it is enforced beats an empty cell.
+    state: ({ policy }) => policy.uninstallBlocked
+      ? { text: 'Approval needed', ok: true }
+      : { text: 'Not enforced', neutral: true },
+  },
+  {
+    key: 'monitoringPolicyLocallyMutable',
+    label: 'Block local monitoring-policy changes',
+    description: 'Keeps monitoring configuration server-only.',
+    inverted: true,
+    state: ({ policy }) => policy.monitoringPolicyLocallyMutable
+      ? { text: 'Local changes allowed', neutral: true }
+      : { text: 'Server only', ok: true },
+  },
+  {
+    key: 'signedAgentBinariesRequired',
+    label: 'Require signed agent binaries',
+    description: 'Unsigned installed agent files make the device non-compliant.',
+    state: ({ policy, posture }) =>
+      reportedFlag(policy.signedAgentBinariesRequired, posture?.agentBinariesSigned, {
+        yes: 'Signed',
+        no: 'Unsigned',
+      }),
+  },
+  {
+    key: 'signedAppControlPolicyRequired',
+    label: 'Require signed app-control policy',
+    description: 'Requires an enforced signed WDAC policy.',
+    state: ({ policy, posture }) =>
+      reportedFlag(policy.signedAppControlPolicyRequired, posture?.signedAppControlPolicyActive, {
+        yes: 'Active',
+        no: 'Not active',
+      }),
+  },
+  {
+    key: 'secureBootRequired',
+    label: 'Require Secure Boot',
+    description: 'Reports the device non-compliant when Secure Boot is off or unreadable.',
+    state: ({ policy, posture }) => {
+      if (!policy.secureBootRequired) return { text: 'Not enforced', neutral: true };
+      if (posture?.secureBootEnabled === true) return { text: 'On', ok: true };
+      if (posture?.secureBootEnabled === false) return { text: 'Off in firmware', ok: false };
+      // Null is genuinely different from false: a legacy-boot PC cannot report the flag at all.
+      return posture ? { text: 'Unreadable', ok: false } : { text: 'No report yet', neutral: true };
+    },
+  },
+  {
+    key: 'tamperMonitoringEnabled',
+    label: 'Monitor tamper events',
+    description: 'Writes drift and restoration events to the audit trail.',
+    state: ({ policy }) => policy.tamperMonitoringEnabled
+      ? { text: 'Audited', ok: true }
+      : { text: 'Not monitored', neutral: true },
+  },
 ];
 
-function DeviceSecurityPolicyEditor({
+/**
+ * The security controls: what was asked for, and what the PC says came of it.
+ *
+ * ── One list, because they are one question ───────────────────────────────────────────────────
+ *
+ * This used to be two blocks stacked on top of each other — a grid of ten checkboxes for the
+ * policy, then a grid of ten badges for the posture — with the same ten controls in a different
+ * order and different words in each. Reading it meant matching label to label by eye to find out
+ * whether "Require Secure Boot" had actually taken effect, and the two grids disagreed about how
+ * to say the same thing ("SIGNED" against "Require signed agent binaries").
+ *
+ * Merged, each row carries the switch and the answer, so the page is scannable down one column:
+ * anything not green is either deliberately off or not happening.
+ */
+function DeviceSecurityControls({
   device,
   initialPolicy,
+  posture,
+  maintenanceActive,
+  canEdit,
   onChanged,
 }: {
   device: WindowsDevice;
   initialPolicy: WindowsDeviceSecurityPolicy;
+  posture: WindowsDeviceSecurityPosture | null | undefined;
+  maintenanceActive: boolean;
+  canEdit: boolean;
   onChanged: () => Promise<void> | void;
 }) {
   const { run, pending } = useWindowsAgentAction();
@@ -941,20 +1178,20 @@ function DeviceSecurityPolicyEditor({
   const dirty = JSON.stringify(policy) !== JSON.stringify(initialPolicy);
 
   return (
-    <div className="space-y-3 rounded-lg border bg-muted/20 p-4">
-      <div>
-        <p className="text-sm font-medium">Persistent controls for this computer</p>
-        <p className="text-xs text-muted-foreground">
-          Changes remain active until you change them again. The SYSTEM service applies them on its next security sync.
-        </p>
-      </div>
-      <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3">
+    <div className="space-y-3">
+      <div className="divide-y overflow-hidden rounded-lg border">
         {SECURITY_CONTROL_ROWS.map((control) => {
           const stored = policy[control.key];
           const enabled = control.inverted ? !stored : stored;
+          // Reported against the *saved* policy, not the unsaved switches: a switch flipped a
+          // second ago has not reached the PC, and showing it as though it had would be the one
+          // lie this page cannot afford.
+          const state = control.state({ policy: initialPolicy, posture, maintenanceActive });
+
           return (
-            <label key={control.key} className="flex cursor-pointer gap-3 rounded-md border bg-background p-3">
+            <div key={control.key} className="flex items-start gap-3 p-3">
               <Checkbox
+                className="mt-0.5 shrink-0"
                 checked={enabled}
                 onCheckedChange={(checked) => {
                   const next = checked === true;
@@ -963,52 +1200,79 @@ function DeviceSecurityPolicyEditor({
                     [control.key]: control.inverted ? !next : next,
                   }));
                 }}
-                disabled={pending}
+                disabled={pending || !canEdit}
                 aria-label={control.label}
               />
-              <span>
-                <span className="block text-sm font-medium leading-none">{control.label}</span>
-                <span className="mt-1 block text-xs leading-snug text-muted-foreground">{control.description}</span>
-              </span>
-            </label>
+              <div className="min-w-0 flex-1">
+                <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1">
+                  <p className="text-sm font-medium leading-none">{control.label}</p>
+                  <StatusBadge
+                    status={state.text}
+                    tone={state.neutral ? 'neutral' : state.ok ? 'success' : 'warning'}
+                  >
+                    {state.text}
+                  </StatusBadge>
+                </div>
+                <p className="mt-1 text-xs leading-snug text-muted-foreground">{control.description}</p>
+              </div>
+            </div>
           );
         })}
       </div>
-      <div className="grid gap-2 md:grid-cols-[1fr_auto_auto] md:items-end">
-        <div className="space-y-1.5">
-          <Label htmlFor={`security-policy-reason-${device.id}`}>Reason for this policy change</Label>
-          <Input
-            id={`security-policy-reason-${device.id}`}
-            value={reason}
-            onChange={(event) => setReason(event.target.value)}
-            placeholder="Required for the audit log"
+
+      {canEdit ? (
+        <div className="grid gap-2 rounded-lg border bg-muted/20 p-3 md:grid-cols-[1fr_auto_auto] md:items-end">
+          <div className="space-y-1.5">
+            <Label htmlFor={`security-policy-reason-${device.id}`} className="text-xs">
+              Reason for this change
+            </Label>
+            <Input
+              id={`security-policy-reason-${device.id}`}
+              value={reason}
+              onChange={(event) => setReason(event.target.value)}
+              placeholder="Required for the audit log"
+              disabled={pending}
+            />
+          </div>
+          <Button
+            variant="outline"
             disabled={pending}
-          />
+            onClick={() => setPolicy({ ...WINDOWS_DEVICE_SECURITY_POLICY })}
+          >
+            Strict baseline
+          </Button>
+          <Button
+            disabled={pending || !dirty || !reason.trim()}
+            onClick={() => run('Device security policy updated', async () => {
+              await changeDeviceSecurityPolicy({ deviceId: device.id, policy, reason: reason.trim() });
+              setReason('');
+              await onChanged();
+            })}
+          >
+            {dirty ? 'Save controls' : 'Saved'}
+          </Button>
         </div>
-        <Button
-          variant="outline"
-          disabled={pending}
-          onClick={() => setPolicy({ ...WINDOWS_DEVICE_SECURITY_POLICY })}
-        >
-          Strict baseline
-        </Button>
-        <Button
-          disabled={pending || !dirty || !reason.trim()}
-          onClick={() => run('Device security policy updated', async () => {
-            await changeDeviceSecurityPolicy({ deviceId: device.id, policy, reason: reason.trim() });
-            setReason('');
-            await onChanged();
-          })}
-        >
-          Save controls
-        </Button>
-      </div>
-      <p className="text-xs text-muted-foreground">
-        The append-only audit log is always mandatory and cannot be disabled from a device policy.
-      </p>
+      ) : null}
     </div>
   );
 }
+
+/** Register statuses as words, rather than the stored constant. */
+const STATUS_WORDS: Record<string, string> = {
+  PENDING: 'Awaiting approval',
+  ACTIVE: 'Active',
+  BLOCKED: 'Blocked',
+  DISABLED: 'Disabled',
+  MAINTENANCE: 'Maintenance',
+  RETIRED: 'Retired',
+};
+
+const RING_WORDS: Record<string, string> = {
+  PILOT: 'Pilot — first to update',
+  EARLY: 'Early',
+  BROAD: 'Broad — the default',
+  HELD: 'Held — no auto-updates',
+};
 
 function Fact({
   label,
@@ -1027,17 +1291,19 @@ function Fact({
   );
 }
 
-function SecurityCheck({ label, status, warning = false }: { label: string; status: string; warning?: boolean }) {
-  const intentionallyRelaxed = status.includes('ALLOWED')
-    || status === 'NOT REQUIRED'
-    || status === 'NOT MONITORED';
+/**
+ * A titled block of facts.
+ *
+ * `grid-cols-1` before the `sm:` breakpoint on purpose: a two-column grid with no base count
+ * stretches to whatever its widest cell needs, and a machine GUID is wide enough to push a phone
+ * into a horizontal scroll.
+ */
+function FactGroup({ title, children }: { title: string; children: React.ReactNode }) {
   return (
-    <div className="flex items-center justify-between gap-3 rounded-md border px-3 py-2.5">
-      <span className="text-sm">{label}</span>
-      <StatusBadge status={status} tone={warning ? 'warning' : intentionallyRelaxed ? 'neutral' : 'success'}>
-        {status.toLowerCase()}
-      </StatusBadge>
-    </div>
+    <section className="border-t pt-3 first:border-t-0 first:pt-0">
+      <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground/80">{title}</p>
+      <div className="mt-2 grid grid-cols-1 gap-x-6 gap-y-3 sm:grid-cols-2">{children}</div>
+    </section>
   );
 }
 
