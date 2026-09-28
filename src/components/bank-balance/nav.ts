@@ -5,6 +5,7 @@ import {
   ArrowRightLeft,
   ArrowUp,
   Banknote,
+  CalendarDays,
   FileText,
   Gauge,
   LayoutDashboard,
@@ -37,7 +38,6 @@ export interface BankBalanceNavItem {
 const SETTINGS_PAGES = [
   '/bank-balance/accounts',
   '/bank-balance/dp-management',
-  '/bank-balance/daily-log',
   '/bank-balance/interest-rate',
   '/bank-balance/monthly-interest',
 ];
@@ -62,6 +62,7 @@ export function useBankBalanceNav(): { items: BankBalanceNavItem[]; isLoading: b
     { href: '/bank-balance/receipts', label: 'Receipts', icon: ArrowUp, group: 'Entries', color: 'text-green-700', bg: 'bg-green-50', allowed: can('View', 'Bank Balance.Receipts') },
     { href: '/bank-balance/internal-transaction', label: 'Transfers', icon: ArrowRightLeft, group: 'Entries', color: 'text-blue-700', bg: 'bg-blue-50', allowed: can('View', 'Bank Balance.Internal Transaction') || canViewReports },
 
+    { href: '/bank-balance/daily-log', label: 'Daily Log', icon: CalendarDays, group: 'Reports', color: 'text-blue-700', bg: 'bg-blue-50', allowed: can('View', 'Bank Balance.Daily Log') },
     { href: '/bank-balance/reports/bank-position', label: 'Bank Position', icon: Banknote, group: 'Reports', color: 'text-blue-700', bg: 'bg-blue-50', allowed: canViewReports },
     { href: '/bank-balance/reports/account-statement', label: 'Account Statement', icon: FileText, group: 'Reports', color: 'text-amber-700', bg: 'bg-amber-50', allowed: canViewReports },
     { href: '/bank-balance/reports/dp-utilization', label: 'DP Utilization', icon: Gauge, group: 'Reports', color: 'text-rose-700', bg: 'bg-rose-50', allowed: canViewReports },

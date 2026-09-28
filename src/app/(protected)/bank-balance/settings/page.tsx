@@ -2,7 +2,7 @@
 export const dynamic = 'force-dynamic';
 
 import Link from 'next/link';
-import { CalendarDays, ChevronRight, FilePen, Landmark, List, Lock, Percent, Settings2, TrendingUp, type LucideIcon } from 'lucide-react';
+import { CalendarDays, ChevronRight, FilePen, Landmark, Lock, Percent, Settings2, TrendingUp, type LucideIcon } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
 import { PageHeader, SectionHeader } from '@/components/shared/page-header';
 import { BANK_PAGE, BankAccessDenied, BankBalanceBackground, BankPageSkeleton } from '@/components/bank-balance/page-kit';
@@ -59,8 +59,8 @@ function SettingsCard({ item }: { item: SettingsItem }) {
 /**
  * The Bank Balance settings hub.
  *
- * Setup — the configuration the rest of the module reads — comes first; the two recurring tasks
- * that also live here (the daily log and the monthly interest entry) follow under their own
+ * Setup — the configuration the rest of the module reads — comes first; the one recurring task
+ * that also lives here (the monthly interest entry) follows under its own
  * heading, so the page no longer reads as seven unrelated tiles. Opening utilisation is no longer a
  * tile: Bank Accounts is the one place the opening figures are set.
  */
@@ -108,14 +108,6 @@ export default function BankBalanceSettingsPage() {
 
   const recurring: SettingsItem[] = [
     {
-      icon: List,
-      title: 'Daily Log',
-      href: '/bank-balance/daily-log',
-      description: 'Day-by-day opening, receipts, payments, transfers and closing for every account.',
-      chip: 'bg-blue-50 text-blue-600 ring-blue-100',
-      allowed: can('View', 'Bank Balance.Daily Log'),
-    },
-    {
       icon: CalendarDays,
       title: 'Monthly Interest',
       href: '/bank-balance/monthly-interest',
@@ -149,7 +141,7 @@ export default function BankBalanceSettingsPage() {
           {grid(setup)}
         </section>
         <section>
-          <SectionHeader title="Daily & monthly" description="Recurring checks and entries." />
+          <SectionHeader title="Monthly" description="Recurring entries." />
           {grid(recurring)}
         </section>
       </div>

@@ -413,11 +413,11 @@ export default function MonthlyInterestPage() {
                           <Landmark className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" />
                           <div className="min-w-0">
                             <p className="break-words font-medium">{acc.bankName}</p>
-                            <p className="mt-0.5 flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground">
+                            <div className="mt-0.5 flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground">
                               {acc.shortName && <Badge variant="progress">{acc.shortName.trim()}</Badge>}
                               {acc.status === 'Inactive' && <Badge variant="neutral">Inactive</Badge>}
                               <span className="break-all">{acc.accountNumber}</span>
-                            </p>
+                            </div>
                           </div>
                         </div>
                         <div className="flex items-baseline justify-between gap-3 sm:block sm:text-right">

@@ -412,14 +412,6 @@ export default function BankBalanceDashboard() {
           />
         </div>
 
-        <div className="mb-6 grid grid-cols-1 gap-4 xl:grid-cols-2">
-          <LimitUtilisationChart rows={ccPosition.rows} />
-          <UtilisationTrendChart points={utilisationTrend} />
-          <div className="min-w-0 xl:col-span-2">
-            <MonthlyFlowChart points={monthlyFlows} />
-          </div>
-        </div>
-
         {/* ── Account Cards ── */}
         <SectionHeader title="Accounts" badge={<Badge variant="neutral">{displayAccounts.length}</Badge>} />
         <div>
@@ -566,6 +558,16 @@ export default function BankBalanceDashboard() {
                 <p className="text-xs opacity-70 mt-1">Account access required</p>
               </Card>
             )}
+          </div>
+
+          {/* ── Charts ── (after the account cards: the cards are the day-to-day view, the charts the trend) */}
+          <SectionHeader title="Trends & analysis" description="Limit against utilisation, its last 30 days, and money in and out by month." />
+          <div className="mb-6 grid grid-cols-1 gap-4 xl:grid-cols-2">
+            <LimitUtilisationChart rows={ccPosition.rows} />
+            <UtilisationTrendChart points={utilisationTrend} />
+            <div className="min-w-0 xl:col-span-2">
+              <MonthlyFlowChart points={monthlyFlows} />
+            </div>
           </div>
 
           {/* ── Quick Navigation Row ── (below lg only: from lg the module sidebar lists every page) */}

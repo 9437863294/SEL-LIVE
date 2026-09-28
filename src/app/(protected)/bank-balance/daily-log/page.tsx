@@ -270,7 +270,7 @@ export default function DailyLogPage() {
   }, [singleAccount]);
 
   if (authLoading || (isLoading && canView)) return <BankPageSkeleton kpis={4} />;
-  if (!canView) return <BankAccessDenied title="Daily Log" backHref="/bank-balance/settings" backLabel="Back to settings" />;
+  if (!canView) return <BankAccessDenied title="Daily Log" />;
 
   // ── Date-wise pivot sections ────────────────────────────────────────────────────────────────
   const ccSeries = series.filter((s) => s.cc);
@@ -495,8 +495,8 @@ export default function DailyLogPage() {
           title="Daily Log"
           icon={CalendarDays}
           description="Day-by-day opening, movement and closing for every account — Cash Credit as utilisation, current accounts as balance."
-          backHref="/bank-balance/settings"
-          backLabel="Back to settings"
+          backHref="/bank-balance"
+          backLabel="Back to dashboard"
           actions={
             <Button variant="outline" size="sm" onClick={() => void refresh()} disabled={isRefreshing}>
               <RefreshCw className={cn('mr-2 h-4 w-4', isRefreshing && 'animate-spin')} />

@@ -1,237 +1,180 @@
 'use client';
 export const dynamic = 'force-dynamic';
 
-import { useState, useEffect } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
-import {
-  Calendar as CalendarIcon,
-  Plus,
-  Trash2,
-  Save,
-  Loader2,
-  History,
-} from 'lucide-react';
-import { Button } from '@/components/ui/button';
-import { PageHeader } from '@/components/shared/page-header';
-import { Card, CardContent } from '@/components/ui/card';
-import {
-  Collapsible,
-  CollapsibleContent,
-  CollapsibleTrigger,
-} from '@/components/ui/collapsible';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
-import { Textarea } from '@/components/ui/textarea';
-import {
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-} from '@/components/ui/popover';
-import { Calendar } from '@/components/ui/calendar';
-import { cn } from '@/lib/utils';
-import { format } from 'date-fns';
-import { useToast } from '@/hooks/use-toast';
-import { db } from '@/lib/firebase';
-import {
-  collection,
-  getDocs,
-  doc,
-  runTransaction,
-  Timestamp,
-} from 'firebase/firestore';
-import type { BankAccount, BankExpense } from '@/lib/types';
-import { useAuthorization } from '@/hooks/useAuthorization';
-import { formatInr } from '@/lib/bank-balance-ledger';
-import {
-  BANK_PAGE,
-  BankAccessDenied,
-  BankBalanceBackground,
-  BankPageSkeleton,
-} from '@/components/bank-balance/page-kit';
+import { History, Trash2 } from 'lucide-react';
+import { collection, doc, getDocs, runTransaction, Timestamp } from 'firebase/firestore';
 
-type ReceiptItem = {
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { PageHeader } from '@/components/shared/page-header';
+import { BANK_PAGE, BankAccessDenied, BankBalanceBackground, BankPageSkeleton, accountLabel } from '@/components/bank-balance/page-kit';
+import { DateBankBar, EntryCard, EntryFooter, EntryTable, TD, TH, cellInput, type FooterNote } from '@/components/bank-balance/entry-grid';
+import { useToast } from '@/hooks/use-toast';
+import { useAuthorization } from '@/hooks/useAuthorization';
+import { db } from '@/lib/firebase';
+import { formatDay, formatInr, parseDay } from '@/lib/bank-balance-ledger';
+import type { BankAccount, BankExpense } from '@/lib/types';
+
+type ReceiptLine = {
   id: string;
   description: string;
-  amount: number;
+  /** Kept as typed so the field can be empty; parsed on use. */
+  amount: string;
 };
 
-const makeId = () =>
-  globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+const makeId = () => globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random().toString(16).slice(2)}`;
 
-const createInitialReceiptItem = (): ReceiptItem => ({
-  id: makeId(),
-  description: '',
-  amount: 0,
-});
+const newLine = (): ReceiptLine => ({ id: makeId(), description: '', amount: '' });
 
+const amountOf = (line: ReceiptLine) => {
+  const value = Number(line.amount);
+  return Number.isFinite(value) ? value : 0;
+};
+
+/**
+ * New Receipt entry: several receipts into one bank account on one date, entered as rows of a
+ * table — the same frame as New Payment. The saved documents are unchanged: one `bankExpenses`
+ * Credit per row, all written in one transaction.
+ */
 export default function NewReceiptPage() {
   const { toast } = useToast();
   const { can, isLoading: authLoading } = useAuthorization();
-
-  const [date, setDate] = useState<Date | undefined>(new Date());
-  const [isDatePickerOpen, setIsDatePickerOpen] = useState(false);
-  const [selectedBank, setSelectedBank] = useState<string>('');
-  const [bankAccounts, setBankAccounts] = useState<BankAccount[]>([]);
-  const [receipts, setReceipts] = useState<ReceiptItem[]>(() => [
-    createInitialReceiptItem(),
-  ]);
-  const [isSaving, setIsSaving] = useState(false);
-  const [isLoadingAccounts, setIsLoadingAccounts] = useState(true);
-
   // A form that writes receipts is gated on Add, not View.
   const canAdd = !authLoading && can('Add', 'Bank Balance.Receipts');
-  const activeBankAccounts = bankAccounts.filter(
-    (account) => account.status === 'Active'
-  );
+
+  const [date, setDate] = useState<Date | undefined>(new Date());
+  const [selectedBank, setSelectedBank] = useState('');
+  const [bankAccounts, setBankAccounts] = useState<BankAccount[]>([]);
+  const [lines, setLines] = useState<ReceiptLine[]>(() => [newLine()]);
+  const [showErrors, setShowErrors] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
-    const fetchBankAccounts = async () => {
-      setIsLoadingAccounts(true);
+    const load = async () => {
+      setIsLoading(true);
       try {
-        const accountsSnap = await getDocs(collection(db, 'bankAccounts'));
-        const accounts = accountsSnap.docs.map(
-          (d) => ({ id: d.id, ...d.data() } as BankAccount)
-        );
-        setBankAccounts(accounts);
+        const snap = await getDocs(collection(db, 'bankAccounts'));
+        setBankAccounts(snap.docs.map((d) => ({ id: d.id, ...d.data() } as BankAccount)).sort((a, b) => accountLabel(a).localeCompare(accountLabel(b))));
       } catch (error) {
         console.error('Error fetching bank accounts:', error);
-        toast({
-          title: 'Error',
-          description: 'Failed to load bank accounts.',
-          variant: 'destructive',
-        });
+        toast({ title: 'Error', description: 'Failed to load bank accounts.', variant: 'destructive' });
       } finally {
-        setIsLoadingAccounts(false);
+        setIsLoading(false);
       }
     };
-
     if (authLoading) return;
-    if (canAdd) {
-      void fetchBankAccounts();
-    } else {
-      setIsLoadingAccounts(false);
-    }
+    if (canAdd) void load();
+    else setIsLoading(false);
   }, [authLoading, canAdd, toast]);
 
-  const totalAmount = receipts.reduce((sum, rec) => sum + (rec.amount || 0), 0);
+  // Leaving with typed-in receipts loses them; ask first.
+  const isDirty = lines.some((line) => line.description || line.amount);
+  useEffect(() => {
+    if (!isDirty) return;
+    const warn = (event: BeforeUnloadEvent) => {
+      event.preventDefault();
+      event.returnValue = '';
+    };
+    window.addEventListener('beforeunload', warn);
+    return () => window.removeEventListener('beforeunload', warn);
+  }, [isDirty]);
 
-  const handleReceiptChange = (
-    id: string,
-    field: keyof ReceiptItem,
-    value: ReceiptItem[keyof ReceiptItem]
-  ) => {
-    setReceipts((prev) =>
-      prev.map((rec) => (rec.id === id ? { ...rec, [field]: value } : rec))
-    );
-  };
+  const activeAccounts = useMemo(() => bankAccounts.filter((account) => account.status === 'Active'), [bankAccounts]);
+  const selectedAccount = bankAccounts.find((account) => account.id === selectedBank);
+  const total = lines.reduce((sum, line) => sum + amountOf(line), 0);
+  const missing = (line: ReceiptLine) => ({ description: !line.description.trim(), amount: !(amountOf(line) > 0) });
+  const incomplete = lines.filter((line) => {
+    const m = missing(line);
+    return m.description || m.amount;
+  });
+  const openingDay = selectedAccount ? parseDay(selectedAccount.openingDate) : null;
+  const beforeOpening = Boolean(openingDay && date && date < openingDay);
 
-  const addReceipt = () => {
-    setReceipts((prev) => [...prev, createInitialReceiptItem()]);
-  };
-
-  const removeReceipt = (id: string) => {
-    setReceipts((prev) => {
-      if (prev.length <= 1) {
-        return [createInitialReceiptItem()];
-      }
-      return prev.filter((rec) => rec.id !== id);
+  const update = (id: string, field: 'description' | 'amount', value: string) =>
+    setLines((prev) => prev.map((line) => (line.id === id ? { ...line, [field]: value } : line)));
+  const addLine = () => setLines((prev) => [...prev, newLine()]);
+  const removeLine = (id: string) =>
+    setLines((prev) => {
+      const rest = prev.filter((line) => line.id !== id);
+      return rest.length ? rest : [newLine()];
     });
-  };
 
   const handleSave = async () => {
     if (!canAdd) {
-      toast({
-        title: 'Not allowed',
-        description: 'You do not have permission to add receipts.',
-        variant: 'destructive',
-      });
+      toast({ title: 'Not allowed', description: 'You do not have permission to add receipts.', variant: 'destructive' });
       return;
     }
-
-    if (
-      !date ||
-      !selectedBank ||
-      receipts.length === 0 ||
-      receipts.some((r) => !r.description || r.amount <= 0)
-    ) {
+    setShowErrors(true);
+    if (!date || !selectedBank) {
+      toast({ title: 'Check the receipt', description: 'Pick the date and the bank account first.', variant: 'destructive' });
+      return;
+    }
+    if (incomplete.length) {
       toast({
-        title: 'Validation Error',
-        description:
-          'Please fill all required fields (description & amount) for each receipt and select date & bank.',
+        title: incomplete.length > 1 ? `${incomplete.length} rows are incomplete` : `Row ${lines.indexOf(incomplete[0]) + 1} is incomplete`,
+        description: 'Every row needs a description and an amount above zero.',
         variant: 'destructive',
       });
       return;
     }
 
     setIsSaving(true);
-
     try {
       await runTransaction(db, async (transaction) => {
-        for (const receipt of receipts) {
+        for (const line of lines) {
           const receiptData: Omit<BankExpense, 'id'> = {
             date: Timestamp.fromDate(date),
             accountId: selectedBank,
-            description: receipt.description,
-            amount: receipt.amount,
+            description: line.description.trim(),
+            amount: amountOf(line),
             type: 'Credit',
             isContra: false,
             createdAt: Timestamp.now(),
           };
-
-          const receiptRef = doc(collection(db, 'bankExpenses'));
-          transaction.set(receiptRef, receiptData);
+          transaction.set(doc(collection(db, 'bankExpenses')), receiptData);
         }
       });
-
       toast({
-        title: 'Success',
-        description: `${receipts.length} receipt(s) totalling ${formatInr(totalAmount)} saved successfully.`,
+        title: 'Saved',
+        description: `${lines.length} receipt${lines.length === 1 ? '' : 's'} of ${formatInr(total)} into ${accountLabel(selectedAccount)} saved.`,
       });
-
-      setReceipts([createInitialReceiptItem()]);
-      setDate(new Date());
-      setSelectedBank('');
+      // Keep the date and account: the next batch is usually for the same day and bank.
+      setLines([newLine()]);
+      setShowErrors(false);
     } catch (error) {
       console.error('Error saving receipts:', error);
-      toast({
-        title: 'Save Failed',
-        description: 'An error occurred while saving.',
-        variant: 'destructive',
-      });
+      toast({ title: 'Save failed', description: 'Nothing was saved. Please try again.', variant: 'destructive' });
     } finally {
       setIsSaving(false);
     }
   };
 
-  if (authLoading || (isLoadingAccounts && canAdd)) {
-    return <BankPageSkeleton kpis={0} />;
+  if (authLoading || (isLoading && canAdd)) return <BankPageSkeleton kpis={0} blocks={1} />;
+  if (!canAdd) {
+    return <BankAccessDenied title="New Receipt" backHref="/bank-balance/receipts" backLabel="Back to receipts" what="the receipt entry form" />;
   }
 
-  if (!canAdd) {
-    return (
-      <BankAccessDenied
-        title="New Receipt Entry"
-        backHref="/bank-balance/receipts"
-        backLabel="Back to receipts"
-        what="the receipt entry form"
-      />
-    );
-  }
+  const notes: FooterNote[] = [];
+  if (showErrors && incomplete.length)
+    notes.push({
+      tone: 'error',
+      text: `${incomplete.length} row${incomplete.length === 1 ? ' is' : 's are'} missing a description or amount (marked in red): ${incomplete
+        .map((line) => `row ${lines.indexOf(line) + 1}`)
+        .join(', ')}.`,
+    });
+  if (beforeOpening && openingDay)
+    notes.push({ tone: 'warning', text: `This date is before the account's opening date (${formatDay(openingDay)}); the receipts will not count toward its balance.` });
 
   return (
     <>
       <BankBalanceBackground tone="green" />
       <div className={BANK_PAGE}>
         <PageHeader
-          title="New Receipt Entry"
-          description="Record a new receipt transaction"
+          title="New Receipt"
+          description="Record one or more receipts into a bank account on the same date — one row per receipt."
           backHref="/bank-balance/receipts"
           backLabel="Back to receipts"
           actions={
@@ -244,147 +187,95 @@ export default function NewReceiptPage() {
           }
         />
 
-        <Card>
-          <CardContent className="space-y-6 pt-6">
-            <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
-              <div className="flex flex-col gap-4 sm:flex-row sm:flex-wrap sm:items-end">
-                <div className="space-y-2">
-                  <Label htmlFor="receipt-date">Date</Label>
-                  <Popover
-                    open={isDatePickerOpen}
-                    onOpenChange={setIsDatePickerOpen}
-                  >
-                    <PopoverTrigger asChild>
-                      <Button
-                        id="receipt-date"
-                        variant="outline"
-                        className={cn(
-                          'w-full justify-start text-left font-normal sm:w-60',
-                          !date && 'text-muted-foreground'
-                        )}
-                      >
-                        <CalendarIcon className="mr-2 h-4 w-4" />
-                        {date ? format(date, 'PPP') : 'Pick a date'}
-                      </Button>
-                    </PopoverTrigger>
-                    <PopoverContent className="w-auto p-0">
-                      <Calendar
-                        mode="single"
-                        selected={date}
-                        onSelect={(selectedDate) => {
-                          setDate(selectedDate);
-                          setIsDatePickerOpen(false);
-                        }}
-                        initialFocus
-                      />
-                    </PopoverContent>
-                  </Popover>
-                </div>
+        <EntryCard>
+          <DateBankBar
+            kind="receipt"
+            date={date}
+            onDateChange={setDate}
+            accounts={activeAccounts}
+            accountId={selectedBank}
+            onAccountChange={setSelectedBank}
+            showErrors={showErrors}
+          />
 
-                <div className="space-y-2">
-                  <Label htmlFor="receipt-bank">Select Bank</Label>
-                  <Select value={selectedBank} onValueChange={setSelectedBank}>
-                    <SelectTrigger id="receipt-bank" className="w-full sm:w-[280px]">
-                      <SelectValue placeholder="Select a bank account" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {activeBankAccounts.map((acc) => (
-                        <SelectItem key={acc.id} value={acc.id}>
-                          {acc.shortName} - {acc.bankName}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-              </div>
+          <EntryTable
+            minWidth={640}
+            head={
+              <tr>
+                <TH className="w-10">#</TH>
+                <TH required>Description</TH>
+                <TH className="w-48 text-right" required>
+                  Amount (₹)
+                </TH>
+                <TH className="w-10">
+                  <span className="sr-only">Remove</span>
+                </TH>
+              </tr>
+            }
+            foot={
+              <tr>
+                <TD />
+                <TD className="py-2.5 text-right text-xs font-semibold uppercase tracking-wide text-muted-foreground">Total</TD>
+                <TD className="py-2.5 text-right font-bold tabular-nums">{formatInr(total)}</TD>
+                <TD />
+              </tr>
+            }
+          >
+            {lines.map((line, index) => {
+              const m = missing(line);
+              return (
+                <tr key={line.id} className="bg-background/60">
+                  <TD className="pt-4 text-xs font-semibold text-muted-foreground">{index + 1}</TD>
+                  <TD>
+                    <Input
+                      aria-label={`Row ${index + 1} description`}
+                      placeholder="e.g. Received from Client X — RA bill 12"
+                      value={line.description}
+                      className={cellInput(showErrors && m.description)}
+                      onChange={(e) => update(line.id, 'description', e.target.value)}
+                    />
+                  </TD>
+                  <TD>
+                    <Input
+                      aria-label={`Row ${index + 1} amount`}
+                      type="number"
+                      inputMode="decimal"
+                      min={0}
+                      step="any"
+                      placeholder="0.00"
+                      value={line.amount}
+                      className={`${cellInput(showErrors && m.amount)} text-right tabular-nums`}
+                      onChange={(e) => update(line.id, 'amount', e.target.value)}
+                    />
+                  </TD>
+                  <TD>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon"
+                      className="h-9 w-9 text-destructive hover:text-destructive"
+                      aria-label={`Remove row ${index + 1}`}
+                      onClick={() => removeLine(line.id)}
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </Button>
+                  </TD>
+                </tr>
+              );
+            })}
+          </EntryTable>
 
-              <div className="w-full flex-shrink-0 text-left sm:w-auto sm:text-right">
-                <p className="text-muted-foreground">Total</p>
-                <p className="text-2xl font-bold tabular-nums">{formatInr(totalAmount)}</p>
-              </div>
-            </div>
-
-            <div className="space-y-4">
-              {receipts.map((receipt, index) => (
-                <Collapsible
-                  key={receipt.id}
-                  defaultOpen
-                  className="rounded-lg border p-4"
-                >
-                  <div className="flex items-center justify-between gap-3">
-                    <CollapsibleTrigger asChild>
-                      <h4 className="min-w-0 cursor-pointer text-lg font-semibold">
-                        Receipt #{index + 1}
-                      </h4>
-                    </CollapsibleTrigger>
-                    <div className="flex shrink-0 items-center gap-2 sm:gap-4">
-                      <span className="text-lg font-semibold tabular-nums">
-                        {formatInr(receipt.amount)}
-                      </span>
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className="h-8 w-8 shrink-0"
-                        aria-label={`Remove receipt #${index + 1}`}
-                        onClick={() => removeReceipt(receipt.id)}
-                      >
-                        <Trash2 className="h-4 w-4 text-destructive" />
-                      </Button>
-                    </div>
-                  </div>
-                  <CollapsibleContent className="mt-4 grid grid-cols-1 gap-4 md:grid-cols-5">
-                    <div className="space-y-2 md:col-span-3">
-                      <Label htmlFor={`receipt-description-${receipt.id}`}>
-                        Description <span className="text-destructive">*</span>
-                      </Label>
-                      <Textarea
-                        id={`receipt-description-${receipt.id}`}
-                        placeholder="e.g. Received from Client X"
-                        value={receipt.description}
-                        onChange={(e) =>
-                          handleReceiptChange(receipt.id, 'description', e.target.value)
-                        }
-                      />
-                    </div>
-                    <div className="space-y-2 md:col-span-2">
-                      <Label htmlFor={`receipt-amount-${receipt.id}`}>
-                        Amount <span className="text-destructive">*</span>
-                      </Label>
-                      <Input
-                        id={`receipt-amount-${receipt.id}`}
-                        type="number"
-                        inputMode="decimal"
-                        placeholder="0.00"
-                        value={receipt.amount || ''}
-                        onChange={(e) =>
-                          handleReceiptChange(receipt.id, 'amount', e.target.valueAsNumber || 0)
-                        }
-                      />
-                    </div>
-                  </CollapsibleContent>
-                </Collapsible>
-              ))}
-            </div>
-
-            <div className="flex flex-col-reverse gap-2 sm:flex-row sm:items-center sm:justify-between">
-              <Button variant="outline" onClick={addReceipt}>
-                <Plus className="mr-2 h-4 w-4" />
-                Add Another Receipt
-              </Button>
-              <Button
-                onClick={handleSave}
-                disabled={isSaving || !canAdd || activeBankAccounts.length === 0}
-              >
-                {isSaving ? (
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                ) : (
-                  <Save className="mr-2 h-4 w-4" />
-                )}
-                Save Receipts
-              </Button>
-            </div>
-          </CardContent>
-        </Card>
+          <EntryFooter
+            addLabel="Add row"
+            onAdd={addLine}
+            figures={[{ label: `Total (${lines.length} receipt${lines.length === 1 ? '' : 's'})`, value: formatInr(total) }]}
+            notes={notes}
+            saveLabel={`Save ${lines.length > 1 ? `${lines.length} Receipts` : 'Receipt'}`}
+            saving={isSaving}
+            saveDisabled={activeAccounts.length === 0}
+            onSave={() => void handleSave()}
+          />
+        </EntryCard>
       </div>
     </>
   );

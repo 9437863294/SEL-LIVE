@@ -110,10 +110,10 @@ export default function DpUtilizationPage() {
         <div className="flex min-w-0 items-center gap-2">
           <CreditCard className="h-4 w-4 shrink-0 text-rose-400" />
           <div className="min-w-0">
-            <p className="truncate font-medium">
+            <div className="truncate font-medium">
               {accountLabel(row.account)}
               {row.account.status !== 'Active' && <span className="ml-1.5 inline-block align-middle"><StatusBadge status={row.account.status} /></span>}
-            </p>
+            </div>
             <p className="truncate text-xs font-normal text-muted-foreground">
               {row.account.bankName} · {row.account.accountNumber}
             </p>

@@ -1,399 +1,300 @@
 'use client';
 export const dynamic = 'force-dynamic';
 
-import { useState, useEffect, useMemo, useCallback } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
-import {
-  Calendar as CalendarIcon,
-  Plus,
-  Trash2,
-  Upload,
-  Save,
-  Loader2,
-  ChevronUp,
-  History,
-} from 'lucide-react';
+import { AlertTriangle, History, Trash2 } from 'lucide-react';
+import { collection, doc, getDoc, getDocs, runTransaction, Timestamp } from 'firebase/firestore';
+import { getDownloadURL, ref, uploadBytes } from 'firebase/storage';
 
 import { Button } from '@/components/ui/button';
-import { PageHeader } from '@/components/shared/page-header';
-import { Card, CardContent } from '@/components/ui/card';
-import {
-  Collapsible,
-  CollapsibleContent,
-  CollapsibleTrigger,
-} from '@/components/ui/collapsible';
 import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { PageHeader } from '@/components/shared/page-header';
+import { BANK_PAGE, BankAccessDenied, BankBalanceBackground, BankPageSkeleton, accountLabel } from '@/components/bank-balance/page-kit';
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
-import { Textarea } from '@/components/ui/textarea';
-import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
-import { Calendar } from '@/components/ui/calendar';
-import { cn } from '@/lib/utils';
-import { format } from 'date-fns';
+  DateBankBar,
+  EntryCard,
+  EntryFooter,
+  EntryTable,
+  FileCell,
+  TD,
+  TH,
+  cellInput,
+  fileSize,
+  type FooterFigure,
+  type FooterNote,
+} from '@/components/bank-balance/entry-grid';
 import { useToast } from '@/hooks/use-toast';
+import { useAuthorization } from '@/hooks/useAuthorization';
 import { db } from '@/lib/firebase';
 import { storage } from '@/lib/firebase-storage';
-import {
-  collection,
-  getDocs,
-  doc,
-  runTransaction,
-  Timestamp,
-  getDoc,
-} from 'firebase/firestore';
-import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
-import type { BankAccount, BankExpense } from '@/lib/types';
-import { Skeleton } from '@/components/ui/skeleton';
-import { useAuthorization } from '@/hooks/useAuthorization';
 import { getApplicableCcLimit } from '@/lib/bank-balance-limit';
-import { balanceAt, buildLedger, formatInr, isCashCredit } from '@/lib/bank-balance-ledger';
-import {
-  BANK_PAGE,
-  BankAccessDenied,
-  BankBalanceBackground,
-  BankPageSkeleton,
-} from '@/components/bank-balance/page-kit';
+import { balanceAt, buildLedger, formatDay, formatInr, isCashCredit, parseDay, txnDate } from '@/lib/bank-balance-ledger';
+import type { BankAccount, BankExpense } from '@/lib/types';
 
-type ExpenseItem = {
+type MandatoryField = 'paymentRequestRefNo' | 'utrNumber' | 'paymentMethod' | 'paymentRefNo' | 'approvalCopy' | 'bankTransferCopy';
+type MandatoryFields = Record<MandatoryField, boolean>;
+
+type PaymentLine = {
   id: string;
   description: string;
+  /** Kept as typed so the field can be empty; parsed on use. */
+  amount: string;
   paymentRequestRefNo: string;
   utrNumber: string;
-  amount: number;
   paymentMethod: string;
   paymentRefNo: string;
   approvalCopy: File | null;
   bankTransferCopy: File | null;
 };
 
-interface PaymentSettings {
-  mandatoryFields: {
-    paymentRequestRefNo: boolean;
-    utrNumber: boolean;
-    paymentMethod: boolean;
-    paymentRefNo: boolean;
-    approvalCopy: boolean;
-    bankTransferCopy: boolean;
-  };
-  paymentMethods: { id: string; name: string }[];
-}
+type LineField = keyof Omit<PaymentLine, 'id'>;
 
-const makeId = () =>
-  globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+const NO_MANDATORY: MandatoryFields = {
+  paymentRequestRefNo: false,
+  utrNumber: false,
+  paymentMethod: false,
+  paymentRefNo: false,
+  approvalCopy: false,
+  bankTransferCopy: false,
+};
 
-const createExpenseItem = (): ExpenseItem => ({
+const FIELD_LABEL: Record<LineField, string> = {
+  description: 'Description',
+  amount: 'Amount',
+  paymentRequestRefNo: 'Payment Request Ref No.',
+  utrNumber: 'UTR Number',
+  paymentMethod: 'Payment Method',
+  paymentRefNo: 'Payment Ref No.',
+  approvalCopy: 'Approval Copy',
+  bankTransferCopy: 'Bank Transfer Copy',
+};
+
+const makeId = () => globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+
+const newLine = (): PaymentLine => ({
   id: makeId(),
   description: '',
+  amount: '',
   paymentRequestRefNo: '',
   utrNumber: '',
-  amount: 0,
   paymentMethod: '',
   paymentRefNo: '',
   approvalCopy: null,
   bankTransferCopy: null,
 });
 
+const amountOf = (line: PaymentLine) => {
+  const value = Number(line.amount);
+  return Number.isFinite(value) ? value : 0;
+};
+
+const hasContent = (line: PaymentLine) =>
+  Boolean(line.description || line.amount || line.paymentRequestRefNo || line.utrNumber || line.paymentMethod || line.paymentRefNo || line.approvalCopy || line.bankTransferCopy);
+
+/** The fields a line is still missing, in column order. */
+function missingFields(line: PaymentLine, mandatory: MandatoryFields): LineField[] {
+  const missing: LineField[] = [];
+  if (!line.description.trim()) missing.push('description');
+  if (!(amountOf(line) > 0)) missing.push('amount');
+  (Object.keys(mandatory) as MandatoryField[]).forEach((field) => {
+    if (!mandatory[field]) return;
+    const value = line[field];
+    if (value === null || (typeof value === 'string' && !value.trim())) missing.push(field);
+  });
+  return missing;
+}
+
+/**
+ * New Payment entry: several payments from one bank account on one date, entered as rows of a
+ * table and saved together.
+ *
+ * The saved documents are unchanged (one `bankExpenses` Debit per row, attachments uploaded to
+ * Storage first, every document written in one transaction). Available funds, the batch total and
+ * what is left sit in the footer beside Save; problems are marked on the cell they belong to.
+ */
 export default function NewPaymentPage() {
   const { toast } = useToast();
   const { can, isLoading: authLoading } = useAuthorization();
+  const canAdd = !authLoading && can('Add', 'Bank Balance.Expenses');
 
   const [date, setDate] = useState<Date | undefined>(new Date());
-  const [isDatePickerOpen, setIsDatePickerOpen] = useState(false);
-
   const [selectedBank, setSelectedBank] = useState('');
+
   const [bankAccounts, setBankAccounts] = useState<BankAccount[]>([]);
   const [allTransactions, setAllTransactions] = useState<BankExpense[]>([]);
+  const [mandatory, setMandatory] = useState<MandatoryFields>(NO_MANDATORY);
+  const [paymentMethods, setPaymentMethods] = useState<Array<{ id: string; name: string }>>([]);
 
-  const [expenses, setExpenses] = useState<ExpenseItem[]>([createExpenseItem()]);
-  const [openCollapsibleId, setOpenCollapsibleId] = useState<string | null>(
-    expenses[0]?.id ?? null
-  );
-
-  const [paymentSettings, setPaymentSettings] = useState<PaymentSettings | null>(
-    null
-  );
-  const [isSettingsLoading, setIsSettingsLoading] = useState(true);
+  const [lines, setLines] = useState<PaymentLine[]>(() => [newLine()]);
+  /** Set by the first save attempt; until then empty cells are not marked. */
+  const [showErrors, setShowErrors] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
 
-  const canAdd = !authLoading && can('Add', 'Bank Balance.Expenses');
-  const activeBankAccounts = useMemo(
-    () => bankAccounts.filter((account) => account.status === 'Active'),
-    [bankAccounts]
-  );
-
-  const fetchBankAccountsAndSettings = useCallback(async () => {
-    setIsSettingsLoading(true);
+  const load = useCallback(async () => {
+    setIsLoading(true);
     try {
-      const [accountsSnap, settingsDocSnap, methodsSnap, transactionsSnap] =
-        await Promise.all([
-          getDocs(collection(db, 'bankAccounts')),
-          getDoc(doc(db, 'bankBalanceSettings', 'paymentEntry')),
-          getDocs(collection(db, 'paymentMethods')),
-          getDocs(collection(db, 'bankExpenses')),
-        ]);
-
-      const accounts = accountsSnap.docs.map(
-        (d) => ({ id: d.id, ...d.data() } as BankAccount)
+      const [accountsSnap, settingsSnap, methodsSnap, txnSnap] = await Promise.all([
+        getDocs(collection(db, 'bankAccounts')),
+        getDoc(doc(db, 'bankBalanceSettings', 'paymentEntry')),
+        getDocs(collection(db, 'paymentMethods')),
+        getDocs(collection(db, 'bankExpenses')),
+      ]);
+      setBankAccounts(
+        accountsSnap.docs.map((d) => ({ id: d.id, ...d.data() } as BankAccount)).sort((a, b) => accountLabel(a).localeCompare(accountLabel(b))),
       );
-      setBankAccounts(accounts);
-
-      const mandatoryFields =
-        settingsDocSnap.exists() && settingsDocSnap.data().mandatoryFields
-          ? settingsDocSnap.data().mandatoryFields
-          : {
-              paymentRequestRefNo: false,
-              utrNumber: false,
-              paymentMethod: false,
-              paymentRefNo: false,
-              approvalCopy: false,
-              bankTransferCopy: false,
-            };
-
-      const paymentMethods = methodsSnap.docs.map((d) => ({
-        id: d.id,
-        name: d.data().name as string,
-      }));
-
-      setPaymentSettings({ mandatoryFields, paymentMethods });
-
-      const allTx = transactionsSnap.docs.map(
-        (d) => ({ id: d.id, ...d.data() } as BankExpense)
-      );
-      setAllTransactions(allTx);
+      setMandatory({ ...NO_MANDATORY, ...(settingsSnap.exists() ? settingsSnap.data().mandatoryFields || {} : {}) });
+      setPaymentMethods(methodsSnap.docs.map((d) => ({ id: d.id, name: String(d.data().name ?? '') })).sort((a, b) => a.name.localeCompare(b.name)));
+      setAllTransactions(txnSnap.docs.map((d) => ({ id: d.id, ...d.data() } as BankExpense)));
     } catch (error) {
       console.error('Error fetching data:', error);
-      toast({
-        title: 'Error',
-        description: 'Failed to load bank/payment settings.',
-        variant: 'destructive',
-      });
+      toast({ title: 'Error', description: 'Failed to load bank accounts and payment settings.', variant: 'destructive' });
     } finally {
-      setIsSettingsLoading(false);
+      setIsLoading(false);
     }
   }, [toast]);
 
   useEffect(() => {
     if (authLoading) return;
     if (!canAdd) {
-      setIsSettingsLoading(false);
+      setIsLoading(false);
       return;
     }
-    void fetchBankAccountsAndSettings();
-  }, [authLoading, canAdd, fetchBankAccountsAndSettings]);
+    void load();
+  }, [authLoading, canAdd, load]);
 
-  const totalAmount = useMemo(
-    () => expenses.reduce((sum, exp) => sum + (exp.amount || 0), 0),
-    [expenses]
-  );
+  // Leaving with typed-in payments loses them; ask first.
+  const isDirty = lines.some(hasContent);
+  useEffect(() => {
+    if (!isDirty) return;
+    const warn = (event: BeforeUnloadEvent) => {
+      event.preventDefault();
+      event.returnValue = '';
+    };
+    window.addEventListener('beforeunload', warn);
+    return () => window.removeEventListener('beforeunload', warn);
+  }, [isDirty]);
 
-  // From the engine, so the opening date is honoured and every entry on the day counts: a
+  const activeAccounts = useMemo(() => bankAccounts.filter((account) => account.status === 'Active'), [bankAccounts]);
+  const selectedAccount = bankAccounts.find((account) => account.id === selectedBank);
+
+  // From the engine, so the opening date is honoured and every entry already on the day counts: a
   // Current Account's balance, or a Cash Credit account's limit in force less its utilisation.
-  const selectedAccount = bankAccounts.find((acc) => acc.id === selectedBank);
-  const availableBalance = useMemo(() => {
-    if (!selectedAccount || !date) return 0;
+  const available = useMemo(() => {
+    if (!selectedAccount || !date) return null;
     const figure = balanceAt(buildLedger(selectedAccount, allTransactions), date);
-    return isCashCredit(selectedAccount)
-      ? getApplicableCcLimit(selectedAccount, date) - figure
-      : figure;
+    return isCashCredit(selectedAccount) ? getApplicableCcLimit(selectedAccount, date) - figure : figure;
   }, [selectedAccount, allTransactions, date]);
 
-  const handleExpenseChange = (
-    id: string,
-    field: keyof ExpenseItem,
-    value: ExpenseItem[keyof ExpenseItem]
-  ) => {
-    setExpenses((prev) =>
-      prev.map((exp) =>
-        exp.id === id ? { ...exp, [field]: value } : exp
-      )
-    );
-  };
+  const total = lines.reduce((sum, line) => sum + amountOf(line), 0);
+  const remaining = available === null ? null : available - total;
+  const overBy = remaining !== null && remaining < 0 ? -remaining : 0;
+  const openingDay = selectedAccount ? parseDay(selectedAccount.openingDate) : null;
+  const beforeOpening = Boolean(openingDay && date && date < openingDay);
 
-  const addExpense = () => {
-    const newItem = createExpenseItem();
-    setExpenses((prev) => [...prev, newItem]);
-    setOpenCollapsibleId(newItem.id);
-  };
+  const missingByLine = useMemo(() => new Map(lines.map((line) => [line.id, missingFields(line, mandatory)])), [lines, mandatory]);
+  const incomplete = lines.filter((line) => (missingByLine.get(line.id)?.length ?? 0) > 0);
 
-  const removeExpense = (id: string) => {
-    setExpenses((prev) => {
-      const updated = prev.filter((exp) => exp.id !== id);
-      if (updated.length === 0) {
-        const fresh = createExpenseItem();
-        setOpenCollapsibleId(fresh.id);
-        return [fresh];
-      }
-      if (openCollapsibleId === id) {
-        setOpenCollapsibleId(updated[0]?.id ?? null);
-      }
-      return updated;
+  // A UTR identifies one bank transfer: the same one twice is almost always a double entry.
+  const recordedUtr = useMemo(() => {
+    const map = new Map<string, BankExpense>();
+    allTransactions.forEach((txn) => {
+      const utr = txn.utrNumber?.trim().toLowerCase();
+      if (utr && txn.type === 'Debit') map.set(utr, txn);
     });
+    return map;
+  }, [allTransactions]);
+  const utrWarning = (line: PaymentLine): string | null => {
+    const utr = line.utrNumber.trim().toLowerCase();
+    if (!utr) return null;
+    if (lines.some((other) => other.id !== line.id && other.utrNumber.trim().toLowerCase() === utr)) return 'This UTR is on another row of this batch.';
+    const existing = recordedUtr.get(utr);
+    if (existing) {
+      const account = bankAccounts.find((a) => a.id === existing.accountId);
+      return `UTR already recorded: ${formatInr(existing.amount)} from ${accountLabel(account)} on ${formatDay(txnDate(existing))}.`;
+    }
+    return null;
   };
 
-  const handleFileChange = (
-    id: string,
-    field: 'approvalCopy' | 'bankTransferCopy',
-    file: File | null
-  ) => {
-    setExpenses((prev) =>
-      prev.map((exp) =>
-        exp.id === id ? { ...exp, [field]: file } : exp
-      )
-    );
-  };
+  const update = (id: string, field: LineField, value: PaymentLine[LineField]) =>
+    setLines((prev) => prev.map((line) => (line.id === id ? { ...line, [field]: value } : line)));
+
+  const addLine = () => setLines((prev) => [...prev, newLine()]);
+  const removeLine = (id: string) =>
+    setLines((prev) => {
+      const rest = prev.filter((line) => line.id !== id);
+      return rest.length ? rest : [newLine()];
+    });
+
+  const tooLarge = (file: File) =>
+    toast({ title: 'File too large', description: `${file.name} is ${fileSize(file.size)}; the limit is 10 MB.`, variant: 'destructive' });
 
   const handleSave = async () => {
     if (!canAdd) {
-      toast({
-        title: 'Not allowed',
-        description: 'You do not have permission to add payments.',
-        variant: 'destructive',
-      });
+      toast({ title: 'Not allowed', description: 'You do not have permission to add payments.', variant: 'destructive' });
       return;
     }
-
+    setShowErrors(true);
     if (!date || !selectedBank) {
+      toast({ title: 'Check the payment', description: 'Pick the date and the bank account first.', variant: 'destructive' });
+      return;
+    }
+    if (incomplete.length) {
+      const first = incomplete[0];
       toast({
-        title: 'Validation Error',
-        description: 'Please select a date and a bank account.',
+        title: incomplete.length > 1 ? `${incomplete.length} rows are incomplete` : `Row ${lines.indexOf(first) + 1} is incomplete`,
+        description: `Row ${lines.indexOf(first) + 1}: ${(missingByLine.get(first.id) ?? []).map((field) => FIELD_LABEL[field]).join(', ')}.`,
         variant: 'destructive',
       });
       return;
     }
-
-    const mandatory = paymentSettings?.mandatoryFields;
-
-    for (const [idx, expense] of expenses.entries()) {
-      const line = idx + 1;
-      if (!expense.description || expense.amount <= 0) {
-        toast({
-          title: 'Validation Error',
-          description: `Please fill Description and a positive Amount for Payment #${line}.`,
-          variant: 'destructive',
-        });
-        return;
-      }
-      if (mandatory) {
-        if (mandatory.paymentRequestRefNo && !expense.paymentRequestRefNo) {
-          toast({
-            title: 'Validation Error',
-            description: `Payment Request Ref No. is required for Payment #${line}.`,
-            variant: 'destructive',
-          });
-          return;
-        }
-        if (mandatory.utrNumber && !expense.utrNumber) {
-          toast({
-            title: 'Validation Error',
-            description: `UTR Number is required for Payment #${line}.`,
-            variant: 'destructive',
-          });
-          return;
-        }
-        if (mandatory.paymentMethod && !expense.paymentMethod) {
-          toast({
-            title: 'Validation Error',
-            description: `Payment Method is required for Payment #${line}.`,
-            variant: 'destructive',
-          });
-          return;
-        }
-        if (mandatory.paymentRefNo && !expense.paymentRefNo) {
-          toast({
-            title: 'Validation Error',
-            description: `Payment Ref No. is required for Payment #${line}.`,
-            variant: 'destructive',
-          });
-          return;
-        }
-        if (mandatory.approvalCopy && !expense.approvalCopy) {
-          toast({
-            title: 'Validation Error',
-            description: `Approval Copy is required for Payment #${line}.`,
-            variant: 'destructive',
-          });
-          return;
-        }
-        if (mandatory.bankTransferCopy && !expense.bankTransferCopy) {
-          toast({
-            title: 'Validation Error',
-            description: `Bank Transfer Copy is required for Payment #${line}.`,
-            variant: 'destructive',
-          });
-          return;
-        }
-      }
-    }
-
-    if (totalAmount > availableBalance) {
+    if (available !== null && total > available) {
       toast({
-        title: 'Insufficient Funds',
-        description: `Total payment amount (${formatCurrency(
-          totalAmount
-        )}) exceeds the available balance / limit (${formatCurrency(
-          availableBalance
-        )}).`,
+        title: 'Insufficient funds',
+        description: `The batch totals ${formatInr(total)}, but ${accountLabel(selectedAccount)} has ${formatInr(available)} available.`,
         variant: 'destructive',
       });
       return;
     }
 
     setIsSaving(true);
-
     try {
-      // 1) Upload files first (outside transaction)
+      // 1) Upload files first (outside the transaction).
       const prepared = await Promise.all(
-        expenses.map(async (expense) => {
+        lines.map(async (line) => {
           let approvalCopyUrl = '';
           let bankTransferCopyUrl = '';
-
-          if (expense.approvalCopy) {
-            const approvalRef = ref(
-              storage,
-              `expenses/${date.toISOString()}/${expense.id}-approval-${expense.approvalCopy.name}`
-            );
-            await uploadBytes(approvalRef, expense.approvalCopy);
+          if (line.approvalCopy) {
+            const approvalRef = ref(storage, `expenses/${date.toISOString()}/${line.id}-approval-${line.approvalCopy.name}`);
+            await uploadBytes(approvalRef, line.approvalCopy);
             approvalCopyUrl = await getDownloadURL(approvalRef);
           }
-
-          if (expense.bankTransferCopy) {
-            const transferRef = ref(
-              storage,
-              `expenses/${date.toISOString()}/${expense.id}-transfer-${expense.bankTransferCopy.name}`
-            );
-            await uploadBytes(transferRef, expense.bankTransferCopy);
+          if (line.bankTransferCopy) {
+            const transferRef = ref(storage, `expenses/${date.toISOString()}/${line.id}-transfer-${line.bankTransferCopy.name}`);
+            await uploadBytes(transferRef, line.bankTransferCopy);
             bankTransferCopyUrl = await getDownloadURL(transferRef);
           }
-
-          return {
-            expense,
-            approvalCopyUrl,
-            bankTransferCopyUrl,
-          };
-        })
+          return { line, approvalCopyUrl, bankTransferCopyUrl };
+        }),
       );
 
-      // 2) Write all docs in a single transaction
+      // 2) Write every document in one transaction.
       await runTransaction(db, async (transaction) => {
-        prepared.forEach(({ expense, approvalCopyUrl, bankTransferCopyUrl }) => {
+        prepared.forEach(({ line, approvalCopyUrl, bankTransferCopyUrl }) => {
           const expenseRef = doc(collection(db, 'bankExpenses'));
           const expenseData: Omit<BankExpense, 'id'> = {
             date: Timestamp.fromDate(date),
             accountId: selectedBank,
-            description: expense.description,
-            amount: expense.amount,
+            description: line.description.trim(),
+            amount: amountOf(line),
             type: 'Debit',
             isContra: false,
-            paymentRequestRefNo: expense.paymentRequestRefNo || '',
-            utrNumber: expense.utrNumber || '',
-            paymentMethod: expense.paymentMethod || '',
-            paymentRefNo: expense.paymentRefNo || '',
+            paymentRequestRefNo: line.paymentRequestRefNo.trim(),
+            utrNumber: line.utrNumber.trim(),
+            paymentMethod: line.paymentMethod,
+            paymentRefNo: line.paymentRefNo.trim(),
             approvalCopyUrl,
             bankTransferCopyUrl,
             createdAt: Timestamp.now(),
@@ -403,518 +304,251 @@ export default function NewPaymentPage() {
       });
 
       toast({
-        title: 'Success',
-        description: `${expenses.length} payment${
-          expenses.length > 1 ? 's' : ''
-        } saved successfully.`,
+        title: 'Saved',
+        description: `${lines.length} payment${lines.length === 1 ? '' : 's'} of ${formatInr(total)} from ${accountLabel(selectedAccount)} saved.`,
       });
-
-      const fresh = createExpenseItem();
-      setExpenses([fresh]);
-      setOpenCollapsibleId(fresh.id);
-      setDate(new Date());
-      setSelectedBank('');
-      void fetchBankAccountsAndSettings();
+      // Keep the date and account: the next batch is usually for the same day and bank.
+      setLines([newLine()]);
+      setShowErrors(false);
+      void load();
     } catch (error) {
-      console.error('Error saving expenses:', error);
-      toast({
-        title: 'Save Failed',
-        description: 'An error occurred while saving payments.',
-        variant: 'destructive',
-      });
+      console.error('Error saving payments:', error);
+      toast({ title: 'Save failed', description: 'Nothing was saved. Please try again.', variant: 'destructive' });
     } finally {
       setIsSaving(false);
     }
   };
 
-  const formatCurrency = (amount: number) => formatInr(amount);
-
-  // Loading / permission states
-  if (authLoading || (isSettingsLoading && canAdd)) {
-    return <BankPageSkeleton kpis={0} />;
-  }
-
+  if (authLoading || (isLoading && canAdd)) return <BankPageSkeleton kpis={0} blocks={1} />;
   if (!canAdd) {
-    return (
-      <BankAccessDenied
-        title="New Payment Entry"
-        backHref="/bank-balance/expenses"
-        backLabel="Back to payments"
-        what="the payment entry form"
-      />
-    );
+    return <BankAccessDenied title="New Payment" backHref="/bank-balance/expenses" backLabel="Back to payments" what="the payment entry form" />;
   }
 
-  // Main UI
+  const err = (line: PaymentLine, field: LineField) => showErrors && (missingByLine.get(line.id) ?? []).includes(field);
+
+  const figures: FooterFigure[] = [
+    ...(available !== null
+      ? [{ label: selectedAccount && isCashCredit(selectedAccount) ? 'Available limit' : 'Available balance', value: formatInr(available) }]
+      : []),
+    { label: `Total (${lines.length} payment${lines.length === 1 ? '' : 's'})`, value: formatInr(total) },
+    ...(remaining !== null ? [{ label: 'Left after saving', value: formatInr(remaining), tone: overBy > 0 ? ('bad' as const) : ('good' as const) }] : []),
+  ];
+
+  const notes: FooterNote[] = [];
+  if (overBy > 0) notes.push({ tone: 'error', text: `Over the available funds by ${formatInr(overBy)} — reduce an amount or pick another account.` });
+  if (showErrors && incomplete.length)
+    notes.push({
+      tone: 'error',
+      text: `${incomplete.length} row${incomplete.length === 1 ? ' is' : 's are'} missing required fields (marked in red): ${incomplete
+        .map((line) => `row ${lines.indexOf(line) + 1}`)
+        .join(', ')}.`,
+    });
+  if (beforeOpening && openingDay)
+    notes.push({ tone: 'warning', text: `This date is before the account's opening date (${formatDay(openingDay)}); the payments will not count toward its balance.` });
+  lines.forEach((line, index) => {
+    const warning = utrWarning(line);
+    if (warning) notes.push({ tone: 'warning', text: `Row ${index + 1}: ${warning}` });
+  });
+  if (!selectedAccount) notes.push({ tone: 'warning', text: 'Pick a bank account to see the funds available for this batch.' });
+
   return (
     <>
       <BankBalanceBackground tone="red" />
-    <div className={BANK_PAGE}>
-      <PageHeader
-        title="New Payment Entry"
-        description="Record a new payment transaction"
-        backHref="/bank-balance/expenses"
-        backLabel="Back to payments"
-        actions={
-          <Button asChild variant="outline">
-            <Link href="/bank-balance/expenses">
-              <History className="mr-2 h-4 w-4" />
-              Payments
-            </Link>
-          </Button>
-        }
-      />
+      <div className={BANK_PAGE}>
+        <PageHeader
+          title="New Payment"
+          description="Record one or more payments from a bank account on the same date — one row per payment."
+          backHref="/bank-balance/expenses"
+          backLabel="Back to payments"
+          actions={
+            <Button asChild variant="outline">
+              <Link href="/bank-balance/expenses">
+                <History className="mr-2 h-4 w-4" />
+                Payments
+              </Link>
+            </Button>
+          }
+        />
 
-      <Card>
-        <CardContent className="space-y-6 pt-6">
-          {/* Top controls */}
-          <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
-            <div className="flex flex-col gap-4 sm:flex-row sm:flex-wrap sm:items-end">
-              {/* Date */}
-              <div className="space-y-2">
-                <Label htmlFor="payment-date">Date</Label>
-                <Popover
-                  open={isDatePickerOpen}
-                  onOpenChange={setIsDatePickerOpen}
-                >
-                  <PopoverTrigger asChild>
-                    <Button
-                      id="payment-date"
-                      variant="outline"
-                      className={cn(
-                        'w-full justify-start text-left font-normal sm:w-60',
-                        !date && 'text-muted-foreground'
-                      )}
-                    >
-                      <CalendarIcon className="mr-2 h-4 w-4" />
-                      {date ? format(date, 'PPP') : 'Pick a date'}
-                    </Button>
-                  </PopoverTrigger>
-                  <PopoverContent className="w-auto p-0">
-                    <Calendar
-                      mode="single"
-                      selected={date}
-                      onSelect={(selectedDate) => {
-                        setDate(selectedDate || undefined);
-                        setIsDatePickerOpen(false);
-                      }}
-                      initialFocus
+        <EntryCard>
+          <DateBankBar
+            kind="payment"
+            date={date}
+            onDateChange={setDate}
+            accounts={activeAccounts}
+            accountId={selectedBank}
+            onAccountChange={setSelectedBank}
+            showErrors={showErrors}
+          />
+
+          <EntryTable
+            minWidth={1380}
+            head={
+              <tr>
+                <TH className="w-10">#</TH>
+                <TH required>Description</TH>
+                <TH className="w-40 text-right" required>
+                  Amount (₹)
+                </TH>
+                <TH className="w-40" required={mandatory.paymentRequestRefNo}>
+                  P.R. Ref No.
+                </TH>
+                <TH className="w-40" required={mandatory.paymentMethod}>
+                  Method
+                </TH>
+                <TH className="w-40" required={mandatory.paymentRefNo}>
+                  Payment Ref No.
+                </TH>
+                <TH className="w-44" required={mandatory.utrNumber}>
+                  UTR No.
+                </TH>
+                <TH className="w-36" required={mandatory.approvalCopy}>
+                  Approval
+                </TH>
+                <TH className="w-36" required={mandatory.bankTransferCopy}>
+                  Transfer copy
+                </TH>
+                <TH className="w-10">
+                  <span className="sr-only">Remove</span>
+                </TH>
+              </tr>
+            }
+            foot={
+              <tr>
+                <TD />
+                <TD className="py-2.5 text-right text-xs font-semibold uppercase tracking-wide text-muted-foreground">Total</TD>
+                <TD className="py-2.5 text-right font-bold tabular-nums">{formatInr(total)}</TD>
+                <TD className="py-2.5" />
+                <TD />
+                <TD />
+                <TD />
+                <TD />
+                <TD />
+                <TD />
+              </tr>
+            }
+          >
+            {lines.map((line, index) => {
+              const utrNote = utrWarning(line);
+              return (
+                <tr key={line.id} className="bg-background/60">
+                  <TD className="pt-4 text-xs font-semibold text-muted-foreground">{index + 1}</TD>
+                  <TD>
+                    <Input
+                      aria-label={`Row ${index + 1} description`}
+                      placeholder="What the payment is for"
+                      value={line.description}
+                      className={cellInput(err(line, 'description'))}
+                      onChange={(e) => update(line.id, 'description', e.target.value)}
                     />
-                  </PopoverContent>
-                </Popover>
-              </div>
-
-              {/* Bank select */}
-              <div className="space-y-2">
-                <Label htmlFor="bank-select">Select Bank</Label>
-                <Select
-                  value={selectedBank}
-                  onValueChange={setSelectedBank}
-                >
-                  <SelectTrigger
-                    id="bank-select"
-                    className="w-full sm:w-[280px]"
-                  >
-                    <SelectValue placeholder="Select a bank account" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {activeBankAccounts.map((acc) => (
-                      <SelectItem
-                        key={acc.id}
-                        value={acc.id}
-                      >
-                        {acc.shortName} - {acc.bankName}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-
-              {/* Available balance */}
-              {selectedAccount && (
-                <div className="space-y-2">
-                  <Label>
-                    {isCashCredit(selectedAccount) ? 'Available Limit' : 'Available Balance'}
-                  </Label>
-                  <p
-                    className={cn(
-                      'font-bold text-lg tabular-nums',
-                      totalAmount > availableBalance && 'text-destructive'
-                    )}
-                  >
-                    {formatCurrency(availableBalance)}
-                  </p>
-                </div>
-              )}
-            </div>
-
-            {/* Total */}
-            <div className="flex-shrink-0 w-full text-left sm:w-auto sm:text-right">
-              <p className="text-muted-foreground">Total</p>
-              <p className="text-2xl font-bold">
-                {formatCurrency(totalAmount)}
-              </p>
-            </div>
-          </div>
-
-          {/* Payment Items */}
-          <div className="space-y-4">
-            {isSettingsLoading ? (
-              <Skeleton className="h-64" />
-            ) : (
-              expenses.map((expense, index) => (
-                <Collapsible
-                  key={expense.id}
-                  open={openCollapsibleId === expense.id}
-                  onOpenChange={(isOpen) =>
-                    setOpenCollapsibleId(isOpen ? expense.id : null)
-                  }
-                  className="border p-4 rounded-lg"
-                >
-                  <div className="flex justify-between items-center">
-                    <CollapsibleTrigger
-                      asChild
-                      className="flex-grow cursor-pointer"
-                    >
-                      <div className="flex flex-col w-full">
-                        <div className="flex justify-between items-center w-full">
-                          <h4 className="text-lg font-semibold">
-                            Payment #{index + 1}
-                          </h4>
-                          <div className="flex items-center gap-4">
-                            <span className="font-semibold text-lg">
-                              {formatCurrency(expense.amount)}
-                            </span>
-                            <ChevronUp
-                              className={cn(
-                                'h-5 w-5 transition-transform',
-                                openCollapsibleId === expense.id &&
-                                  'rotate-180'
-                              )}
-                            />
-                          </div>
-                        </div>
-                        {openCollapsibleId !== expense.id && (
-                          <div className="mt-2 text-sm text-muted-foreground grid grid-cols-2 md:grid-cols-4 gap-x-4 gap-y-1">
-                            <span>
-                              <span className="font-medium">
-                                P.R. Ref:
-                              </span>{' '}
-                              {expense.paymentRequestRefNo || 'N/A'}
-                            </span>
-                            <span>
-                              <span className="font-medium">
-                                UTR No:
-                              </span>{' '}
-                              {expense.utrNumber || 'N/A'}
-                            </span>
-                            <span>
-                              <span className="font-medium">
-                                Method:
-                              </span>{' '}
-                              {expense.paymentMethod || 'N/A'}
-                            </span>
-                            <span>
-                              <span className="font-medium">
-                                Pmt. Ref:
-                              </span>{' '}
-                              {expense.paymentRefNo || 'N/A'}
-                            </span>
-                          </div>
-                        )}
-                      </div>
-                    </CollapsibleTrigger>
-
+                  </TD>
+                  <TD>
+                    <Input
+                      aria-label={`Row ${index + 1} amount`}
+                      type="number"
+                      inputMode="decimal"
+                      min={0}
+                      step="any"
+                      placeholder="0.00"
+                      value={line.amount}
+                      className={`${cellInput(err(line, 'amount'))} text-right tabular-nums`}
+                      onChange={(e) => update(line.id, 'amount', e.target.value)}
+                    />
+                  </TD>
+                  <TD>
+                    <Input
+                      aria-label={`Row ${index + 1} payment request ref no.`}
+                      placeholder="Request no."
+                      value={line.paymentRequestRefNo}
+                      className={cellInput(err(line, 'paymentRequestRefNo'))}
+                      onChange={(e) => update(line.id, 'paymentRequestRefNo', e.target.value)}
+                    />
+                  </TD>
+                  <TD>
+                    <Select value={line.paymentMethod} onValueChange={(value) => update(line.id, 'paymentMethod', value)}>
+                      <SelectTrigger aria-label={`Row ${index + 1} payment method`} className={cellInput(err(line, 'paymentMethod'))}>
+                        <SelectValue placeholder={paymentMethods.length ? 'Select' : 'None set up'} />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {paymentMethods.map((method) => (
+                          <SelectItem key={method.id} value={method.name}>
+                            {method.name}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </TD>
+                  <TD>
+                    <Input
+                      aria-label={`Row ${index + 1} payment ref no.`}
+                      placeholder="Cheque / instrument"
+                      value={line.paymentRefNo}
+                      className={cellInput(err(line, 'paymentRefNo'))}
+                      onChange={(e) => update(line.id, 'paymentRefNo', e.target.value)}
+                    />
+                  </TD>
+                  <TD>
+                    <div className="relative">
+                      <Input
+                        aria-label={`Row ${index + 1} UTR number`}
+                        placeholder="Bank reference"
+                        value={line.utrNumber}
+                        title={utrNote ?? undefined}
+                        className={`${cellInput(err(line, 'utrNumber'))} font-mono ${utrNote ? 'border-amber-400 pr-8' : ''}`}
+                        onChange={(e) => update(line.id, 'utrNumber', e.target.value)}
+                      />
+                      {utrNote && <AlertTriangle className="pointer-events-none absolute right-2.5 top-2.5 h-4 w-4 text-amber-600" aria-label={utrNote} />}
+                    </div>
+                  </TD>
+                  <TD>
+                    <FileCell
+                      id={`approval-${line.id}`}
+                      label={`Row ${index + 1} approval copy`}
+                      file={line.approvalCopy}
+                      onChange={(file) => update(line.id, 'approvalCopy', file)}
+                      onTooLarge={tooLarge}
+                      invalid={err(line, 'approvalCopy')}
+                    />
+                  </TD>
+                  <TD>
+                    <FileCell
+                      id={`transfer-${line.id}`}
+                      label={`Row ${index + 1} bank transfer copy`}
+                      file={line.bankTransferCopy}
+                      onChange={(file) => update(line.id, 'bankTransferCopy', file)}
+                      onTooLarge={tooLarge}
+                      invalid={err(line, 'bankTransferCopy')}
+                    />
+                  </TD>
+                  <TD>
                     <Button
+                      type="button"
                       variant="ghost"
                       size="icon"
-                      className="h-8 w-8 ml-2 flex-shrink-0"
-                      aria-label={`Remove payment #${index + 1}`}
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        removeExpense(expense.id);
-                      }}
+                      className="h-9 w-9 text-destructive hover:text-destructive"
+                      aria-label={`Remove row ${index + 1}`}
+                      onClick={() => removeLine(line.id)}
                     >
-                      <Trash2 className="h-4 w-4 text-destructive" />
+                      <Trash2 className="h-4 w-4" />
                     </Button>
-                  </div>
+                  </TD>
+                </tr>
+              );
+            })}
+          </EntryTable>
 
-                  <CollapsibleContent className="mt-4 space-y-4">
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                      <div className="space-y-2">
-                        <Label>
-                          Payment Request Ref No.
-                          {paymentSettings?.mandatoryFields
-                            .paymentRequestRefNo && (
-                            <span className="text-destructive">
-                              *
-                            </span>
-                          )}
-                        </Label>
-                        <Input
-                          placeholder="Enter Ref No."
-                          value={expense.paymentRequestRefNo}
-                          onChange={(e) =>
-                            handleExpenseChange(
-                              expense.id,
-                              'paymentRequestRefNo',
-                              e.target.value
-                            )
-                          }
-                        />
-                      </div>
-                      <div className="space-y-2">
-                        <Label>
-                          UTR Number
-                          {paymentSettings?.mandatoryFields
-                            .utrNumber && (
-                            <span className="text-destructive">
-                              *
-                            </span>
-                          )}
-                        </Label>
-                        <Input
-                          placeholder="Enter UTR No."
-                          value={expense.utrNumber}
-                          onChange={(e) =>
-                            handleExpenseChange(
-                              expense.id,
-                              'utrNumber',
-                              e.target.value
-                            )
-                          }
-                        />
-                      </div>
-                      <div className="space-y-2">
-                        <Label>
-                          Amount{' '}
-                          <span className="text-destructive">*</span>
-                        </Label>
-                        <Input
-                          type="number"
-                          placeholder="0.00"
-                          value={
-                            Number.isNaN(expense.amount)
-                              ? ''
-                              : expense.amount
-                          }
-                          onChange={(e) =>
-                            handleExpenseChange(
-                              expense.id,
-                              'amount',
-                              e.target.valueAsNumber || 0
-                            )
-                          }
-                        />
-                      </div>
-                    </div>
-
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4 items-end">
-                      <div className="space-y-2">
-                        <Label>
-                          Payment Method
-                          {paymentSettings?.mandatoryFields
-                            .paymentMethod && (
-                            <span className="text-destructive">
-                              *
-                            </span>
-                          )}
-                        </Label>
-                        <Select
-                          value={expense.paymentMethod}
-                          onValueChange={(val) =>
-                            handleExpenseChange(
-                              expense.id,
-                              'paymentMethod',
-                              val
-                            )
-                          }
-                        >
-                          <SelectTrigger>
-                            <SelectValue placeholder="Select method" />
-                          </SelectTrigger>
-                          <SelectContent>
-                            {paymentSettings?.paymentMethods.map(
-                              (method) => (
-                                <SelectItem
-                                  key={method.id}
-                                  value={method.name}
-                                >
-                                  {method.name}
-                                </SelectItem>
-                              )
-                            )}
-                          </SelectContent>
-                        </Select>
-                      </div>
-                      <div className="space-y-2">
-                        <Label>
-                          Payment Ref No.
-                          {paymentSettings?.mandatoryFields
-                            .paymentRefNo && (
-                            <span className="text-destructive">
-                              *
-                            </span>
-                          )}
-                        </Label>
-                        <Input
-                          placeholder="Enter Payment Ref"
-                          value={expense.paymentRefNo}
-                          onChange={(e) =>
-                            handleExpenseChange(
-                              expense.id,
-                              'paymentRefNo',
-                              e.target.value
-                            )
-                          }
-                        />
-                      </div>
-                    </div>
-
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                      {/* Approval Copy */}
-                      <div className="space-y-2">
-                        <Label>
-                          Approval Copy
-                          {paymentSettings?.mandatoryFields
-                            .approvalCopy && (
-                            <span className="text-destructive">
-                              *
-                            </span>
-                          )}
-                        </Label>
-                        <div className="flex items-center gap-2">
-                          <Input
-                            type="file"
-                            id={`approval-copy-${expense.id}`}
-                            className="hidden"
-                            onChange={(e) =>
-                              handleFileChange(
-                                expense.id,
-                                'approvalCopy',
-                                e.target.files
-                                  ? e.target.files[0]
-                                  : null
-                              )
-                            }
-                          />
-                          <Label
-                            htmlFor={`approval-copy-${expense.id}`}
-                            className="flex-grow border rounded-md p-2 text-sm text-muted-foreground truncate cursor-pointer hover:bg-muted/50"
-                          >
-                            {expense.approvalCopy
-                              ? expense.approvalCopy.name
-                              : 'No file selected'}
-                          </Label>
-                          <Button asChild variant="outline">
-                            <Label
-                              htmlFor={`approval-copy-${expense.id}`}
-                              className="cursor-pointer"
-                            >
-                              <Upload className="mr-2 h-4 w-4" />
-                              Upload
-                            </Label>
-                          </Button>
-                        </div>
-                      </div>
-
-                      {/* Bank Transfer Copy */}
-                      <div className="space-y-2">
-                        <Label>
-                          Bank Transfer Copy
-                          {paymentSettings?.mandatoryFields
-                            .bankTransferCopy && (
-                            <span className="text-destructive">
-                              *
-                            </span>
-                          )}
-                        </Label>
-                        <div className="flex items-center gap-2">
-                          <Input
-                            type="file"
-                            id={`transfer-copy-${expense.id}`}
-                            className="hidden"
-                            onChange={(e) =>
-                              handleFileChange(
-                                expense.id,
-                                'bankTransferCopy',
-                                e.target.files
-                                  ? e.target.files[0]
-                                  : null
-                              )
-                            }
-                          />
-                          <Label
-                            htmlFor={`transfer-copy-${expense.id}`}
-                            className="flex-grow border rounded-md p-2 text-sm text-muted-foreground truncate cursor-pointer hover:bg-muted/50"
-                          >
-                            {expense.bankTransferCopy
-                              ? expense.bankTransferCopy.name
-                              : 'No file selected'}
-                          </Label>
-                          <Button asChild variant="outline">
-                            <Label
-                              htmlFor={`transfer-copy-${expense.id}`}
-                              className="cursor-pointer"
-                            >
-                              <Upload className="mr-2 h-4 w-4" />
-                              Upload
-                            </Label>
-                          </Button>
-                        </div>
-                      </div>
-                    </div>
-
-                    <div className="space-y-2">
-                      <Label>
-                        Description{' '}
-                        <span className="text-destructive">*</span>
-                      </Label>
-                      <Textarea
-                        placeholder="e.g. Office supplies..."
-                        value={expense.description}
-                        onChange={(e) =>
-                          handleExpenseChange(
-                            expense.id,
-                            'description',
-                            e.target.value
-                          )
-                        }
-                      />
-                    </div>
-                  </CollapsibleContent>
-                </Collapsible>
-              ))
-            )}
-          </div>
-
-          {/* Actions */}
-          <div className="flex flex-col-reverse gap-2 sm:flex-row sm:items-center sm:justify-between">
-            <Button
-              variant="outline"
-              onClick={addExpense}
-            >
-              <Plus className="mr-2 h-4 w-4" />
-              Add Another Payment
-            </Button>
-            <Button
-              onClick={handleSave}
-              disabled={
-                isSaving ||
-                activeBankAccounts.length === 0
-              }
-            >
-              {isSaving ? (
-                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-              ) : (
-                <Save className="mr-2 h-4 w-4" />
-              )}
-              Save Payments
-            </Button>
-          </div>
-        </CardContent>
-      </Card>
-    </div>
+          <EntryFooter
+            addLabel="Add row"
+            onAdd={addLine}
+            figures={figures}
+            notes={notes}
+            saveLabel={`Save ${lines.length > 1 ? `${lines.length} Payments` : 'Payment'}`}
+            saving={isSaving}
+            saveDisabled={activeAccounts.length === 0 || overBy > 0}
+            onSave={() => void handleSave()}
+          />
+        </EntryCard>
+      </div>
     </>
   );
 }
