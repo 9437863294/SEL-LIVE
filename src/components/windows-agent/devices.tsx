@@ -1017,68 +1017,33 @@ function AssignedUsersCard({
     selected.length !== (device.assignedUserIds ?? []).length ||
     selected.some((id) => !(device.assignedUserIds ?? []).includes(id));
 
+  const toggle = (id: string) =>
+    setSelected((current) => (current.includes(id) ? current.filter((entry) => entry !== id) : [...current, id]));
+
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle className="text-base">Who may sign in here</CardTitle>
-        <CardDescription>
+    <TableCard
+      title="Who may sign in here"
+      icon={KeyRound}
+      description={
+        <>
           Leave this empty for a shared computer — anybody with an active SEL LIVE account can then
           use it. Naming people makes the machine personal: everybody else is refused at sign-in.
-        </CardDescription>
-      </CardHeader>
-      <CardContent className="space-y-3">
+          Designation, department and location come from the HR records, so they follow a transfer
+          or a promotion on their own.
+        </>
+      }
+      count={selected.length}
+      noun="person"
+      toolbar={
         <SearchInput
           value={filter}
           onChange={setFilter}
           placeholder="Search by name, employee code, designation or location"
-          className="max-w-md"
+          className="sm:max-w-md"
         />
-        <div className="max-h-80 divide-y overflow-y-auto rounded-md border">
-          {visible.map((person) => {
-            const chosen = selected.includes(person.id);
-            // Designation, then the two places a person sits. Joined with a middle dot rather
-            // than laid out in columns: a title can be forty characters and a column grid for it
-            // either truncates it or leaves half the row empty.
-            const detail = [person.designation, person.department ?? person.departmentName, person.location]
-              .filter((part) => Boolean(part))
-              .join(' · ');
-
-            return (
-              <label
-                key={person.id}
-                className={cn('flex cursor-pointer items-start gap-3 px-3 py-2 hover:bg-muted/60', chosen && 'bg-primary/5')}
-              >
-                <Checkbox
-                  className="mt-0.5 shrink-0"
-                  checked={chosen}
-                  onCheckedChange={(value) =>
-                    setSelected((current) =>
-                      value === true ? [...current, person.id] : current.filter((id) => id !== person.id),
-                    )
-                  }
-                  aria-label={person.name}
-                />
-                <span className="min-w-0 flex-1">
-                  <span className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
-                    <span className="text-sm font-medium">{person.name}</span>
-                    {person.employeeNo ? (
-                      <span className="font-mono text-xs text-muted-foreground">{person.employeeNo}</span>
-                    ) : null}
-                  </span>
-                  <span className="mt-0.5 block text-xs text-muted-foreground">
-                    {detail || person.email || 'No HR record joined'}
-                  </span>
-                </span>
-              </label>
-            );
-          })}
-          {visible.length === 0 ? (
-            <p className="p-3 text-sm text-muted-foreground">
-              Nobody matches “{filter}”. Search by name, employee code, designation or location.
-            </p>
-          ) : null}
-        </div>
-        <div className="flex items-center gap-2">
+      }
+      footer={
+        <div className="flex flex-wrap items-center gap-2">
           <Button
             size="sm"
             disabled={!dirty || pending}
@@ -1090,15 +1055,87 @@ function AssignedUsersCard({
             Save assignment
           </Button>
           {selected.length === 0 ? (
-            <span className="text-xs text-muted-foreground">Shared computer — nobody is refused.</span>
+            <span>Shared computer — nobody is refused.</span>
           ) : (
-            <span className="text-xs text-muted-foreground">
-              {selected.length} {selected.length === 1 ? 'person' : 'people'} may sign in.
+            <span>
+              {selected.length} {selected.length === 1 ? 'person' : 'people'} may sign in
+              {dirty ? ' once this is saved' : ''}.
             </span>
           )}
         </div>
-      </CardContent>
-    </Card>
+      }
+    >
+      <HrDataList
+        rows={visible}
+        dense
+        frameless
+        // The row is the control, so the whole of it toggles. The checkbox stops the click from
+        // reaching the row, or tapping the box itself would toggle twice and do nothing.
+        onRowClick={(person) => toggle(person.id)}
+        maxHeightClassName="sm:max-h-[28rem]"
+        rowClassName={(person) => (selected.includes(person.id) ? 'bg-primary/5' : undefined)}
+        columns={[
+          {
+            header: '',
+            className: 'w-10',
+            mobile: 'aside',
+            cell: (person) => (
+              <span onClick={(event) => event.stopPropagation()}>
+                <Checkbox
+                  checked={selected.includes(person.id)}
+                  onCheckedChange={() => toggle(person.id)}
+                  aria-label={`Allow ${person.name} to sign in on this computer`}
+                  className="h-5 w-5 sm:h-4 sm:w-4"
+                />
+              </span>
+            ),
+          },
+          {
+            header: 'Employee',
+            className: 'w-24',
+            mobile: 'detail',
+            cell: (person) =>
+              person.employeeNo
+                ? <span className="font-mono text-xs">{person.employeeNo}</span>
+                : <span className="text-muted-foreground">—</span>,
+          },
+          {
+            header: 'Name',
+            mobile: 'title',
+            // The email in the tooltip rather than a column of its own: it is how somebody with
+            // no HR record is told apart, and it is nobody's first way of recognising a colleague.
+            cell: (person) => (
+              <span className="font-medium" title={person.email || undefined}>
+                {person.name}
+              </span>
+            ),
+          },
+          {
+            header: 'Designation',
+            mobile: 'detail',
+            cell: (person) => person.designation || <span className="text-muted-foreground">—</span>,
+          },
+          {
+            header: 'Department',
+            className: 'hidden lg:table-cell',
+            mobile: 'detail',
+            cell: (person) =>
+              person.department || person.departmentName || <span className="text-muted-foreground">—</span>,
+          },
+          {
+            header: 'Location',
+            mobile: 'detail',
+            cell: (person) => person.location || <span className="text-muted-foreground">—</span>,
+          },
+        ]}
+        empty={
+          <HrEmptyState
+            title="Nobody matches that"
+            description="Search by name, employee code, designation or location. Anybody already allowed to sign in stays listed whatever you type."
+          />
+        }
+      />
+    </TableCard>
   );
 }
 
