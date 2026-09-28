@@ -364,6 +364,30 @@ export async function resolveAgentUser(idToken: string): Promise<AgentUserIdenti
  * ---------------------------------------------------------------------------------------------- */
 
 /**
+ * The policy documents, cached for a few seconds across requests.
+ *
+ * ── Why a cache at all ────────────────────────────────────────────────────────────────────────
+ *
+ * Every device resolves a policy on every heartbeat, and now again on every security sync for the
+ * website-blocking list. At 200 PCs that is a read of this collection roughly every 200ms, all
+ * day, for documents that change a few times a year — and Firestore charges per document, so a
+ * handful of policies multiplies into millions of reads a month for no new information.
+ *
+ * ── Why ten seconds, and what it costs ───────────────────────────────────────────────────────
+ *
+ * Long enough that the beats and syncs arriving together share one read; short enough that an
+ * administrator who saves a policy sees it take effect in the time it takes to look at the device
+ * page. The staleness is invisible in practice because it is an order of magnitude below the
+ * intervals that consume it — a heartbeat is 90 seconds, an enforcement pass 60.
+ *
+ * Policies are saved from the browser straight to Firestore, so there is no server-side write
+ * path that could invalidate this on change. That is the honest trade: up to ten seconds between
+ * saving a policy and the next agent seeing it.
+ */
+const POLICY_CACHE_TTL_MS = 10_000;
+let policyCache: { at: number; policies: WindowsAgentPolicy[] } | null = null;
+
+/**
  * Resolve the effective policy for a device and the user on it.
  *
  * Reads every policy document — there are at most a few dozen, one per department plus exceptions,
@@ -375,12 +399,24 @@ export async function resolveEffectivePolicy(subject: {
   deviceId: string | null;
   departmentIds: string[];
 }): Promise<ResolvedAgentPolicy> {
+  const now = Date.now();
+  if (policyCache && now - policyCache.at < POLICY_CACHE_TTL_MS) {
+    return resolveAgentPolicy(policyCache.policies, subject);
+  }
+
   const firestore = getFirebaseAdminFirestore();
   const snapshot = await firestore
     .collection(WINDOWS_AGENT_COLLECTIONS.policies)
     .get()
     .catch(() => null);
-  if (!snapshot) return defaultResolvedPolicy();
+  // A failed read falls through to the cache if there is one. A momentary Firestore error should
+  // not hand a PC the built-in defaults — which would switch off whatever the company configured
+  // for as long as the outage lasts.
+  if (!snapshot) {
+    return policyCache
+      ? resolveAgentPolicy(policyCache.policies, subject)
+      : defaultResolvedPolicy();
+  }
 
   const policies = snapshot.docs.map((doc) => {
     const data = doc.data();
@@ -394,6 +430,7 @@ export async function resolveEffectivePolicy(subject: {
     } as WindowsAgentPolicy;
   });
 
+  policyCache = { at: now, policies };
   return resolveAgentPolicy(policies, subject);
 }
 
