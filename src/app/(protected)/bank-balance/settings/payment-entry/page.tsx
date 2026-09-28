@@ -1,20 +1,29 @@
 'use client';
 export const dynamic = 'force-dynamic';
 
-import { useState, useEffect, useCallback } from 'react';
-import { Save, Plus, Trash2, Loader2, ShieldAlert } from 'lucide-react';
+import { useCallback, useEffect, useState } from 'react';
+import { FilePen, Loader2, Plus, Save, Trash2 } from 'lucide-react';
+import { addDoc, collection, deleteDoc, doc, getDoc, getDocs, setDoc } from 'firebase/firestore';
 import { Button } from '@/components/ui/button';
-import { PageHeader } from '@/components/shared/page-header';
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
-import { useToast } from '@/hooks/use-toast';
-import { db } from '@/lib/firebase';
-import { doc, getDoc, setDoc, collection, addDoc, getDocs, deleteDoc } from 'firebase/firestore';
-import { Skeleton } from '@/components/ui/skeleton';
-import { Switch } from '@/components/ui/switch';
-import { Label } from '@/components/ui/label';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { Label } from '@/components/ui/label';
+import { Switch } from '@/components/ui/switch';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
+import { PageHeader } from '@/components/shared/page-header';
+import { BANK_PAGE, BankAccessDenied, BankBalanceBackground, BankPageSkeleton } from '@/components/bank-balance/page-kit';
+import { useToast } from '@/hooks/use-toast';
 import { useAuthorization } from '@/hooks/useAuthorization';
+import { db } from '@/lib/firebase';
 
 interface MandatoryFields {
   paymentRequestRefNo: boolean;
@@ -39,70 +48,58 @@ const DEFAULT_MANDATORY_FIELDS: MandatoryFields = {
   bankTransferCopy: true,
 };
 
-const fieldLabels: Record<keyof MandatoryFields, string> = {
-  paymentRequestRefNo: 'Payment Request Ref No.',
-  utrNumber: 'UTR Number',
-  paymentMethod: 'Payment Method',
-  paymentRefNo: 'Payment Ref No.',
-  approvalCopy: 'Approval Copy',
-  bankTransferCopy: 'Bank Transfer Copy',
+const FIELD_LABELS: Record<keyof MandatoryFields, { label: string; hint: string }> = {
+  paymentRequestRefNo: { label: 'Payment Request Ref No.', hint: 'The internal request the payment settles.' },
+  utrNumber: { label: 'UTR Number', hint: "The bank's transaction reference." },
+  paymentMethod: { label: 'Payment Method', hint: 'Chosen from the list on the right.' },
+  paymentRefNo: { label: 'Payment Ref No.', hint: 'Cheque / instrument number.' },
+  approvalCopy: { label: 'Approval Copy', hint: 'Upload of the signed approval.' },
+  bankTransferCopy: { label: 'Bank Transfer Copy', hint: "Upload of the bank's transfer advice." },
 };
 
+/**
+ * Payment entry settings: which fields the New Payment form insists on, and the payment methods
+ * it offers. Access is unchanged — the settings permission, or permission to record payments.
+ */
 export default function PaymentEntrySettingsPage() {
   const { toast } = useToast();
   const { can, isLoading: authLoading } = useAuthorization();
 
-  const [mandatoryFields, setMandatoryFields] =
-    useState<MandatoryFields>(DEFAULT_MANDATORY_FIELDS);
+  const [mandatoryFields, setMandatoryFields] = useState<MandatoryFields>(DEFAULT_MANDATORY_FIELDS);
+  const [savedFields, setSavedFields] = useState<MandatoryFields>(DEFAULT_MANDATORY_FIELDS);
   const [paymentMethods, setPaymentMethods] = useState<PaymentMethod[]>([]);
   const [newMethodName, setNewMethodName] = useState('');
+  const [deleteTarget, setDeleteTarget] = useState<PaymentMethod | null>(null);
 
   const [isLoading, setIsLoading] = useState(true);
   const [isSavingFields, setIsSavingFields] = useState(false);
-  const [isAddingMethod, setIsAddingMethod] = useState(false);
+  const [isBusy, setIsBusy] = useState(false);
 
-  const canView =
-    can('View', 'Bank Balance.Payment Entry Settings') ||
-    can('Add', 'Bank Balance.Expenses');
-  const canEdit =
-    can('Edit', 'Bank Balance.Payment Entry Settings') ||
-    can('Add', 'Bank Balance.Expenses');
+  const canView = can('View', 'Bank Balance.Payment Entry Settings') || can('Add', 'Bank Balance.Expenses');
+  const canEdit = can('Edit', 'Bank Balance.Payment Entry Settings') || can('Add', 'Bank Balance.Expenses');
 
   const fetchSettings = useCallback(async () => {
     if (!canView) {
       setIsLoading(false);
       return;
     }
-
     setIsLoading(true);
     try {
-      const settingsDoc = await getDoc(doc(db, 'bankBalanceSettings', 'paymentEntry'));
-
-      if (settingsDoc.exists()) {
-        const settingsData = settingsDoc.data();
-        const loaded = settingsData.mandatoryFields || {};
-        setMandatoryFields({
-          ...DEFAULT_MANDATORY_FIELDS,
-          ...loaded,
-        });
-      } else {
-        setMandatoryFields(DEFAULT_MANDATORY_FIELDS);
-      }
-
-      const methodsSnap = await getDocs(collection(db, 'paymentMethods'));
+      const [settingsDoc, methodsSnap] = await Promise.all([
+        getDoc(doc(db, 'bankBalanceSettings', 'paymentEntry')),
+        getDocs(collection(db, 'paymentMethods')),
+      ]);
+      const loaded = { ...DEFAULT_MANDATORY_FIELDS, ...(settingsDoc.exists() ? settingsDoc.data().mandatoryFields || {} : {}) };
+      setMandatoryFields(loaded);
+      setSavedFields(loaded);
       setPaymentMethods(
-        methodsSnap.docs.map((d) => ({
-          id: d.id,
-          name: d.data().name as string,
-        }))
+        methodsSnap.docs
+          .map((d) => ({ id: d.id, name: String(d.data().name ?? '') }))
+          .sort((a, b) => a.name.localeCompare(b.name)),
       );
     } catch (e) {
       console.error('Error fetching settings:', e);
-      toast({
-        title: 'Error',
-        description: 'Could not load settings.',
-        variant: 'destructive',
-      });
+      toast({ title: 'Error', description: 'Could not load settings.', variant: 'destructive' });
     } finally {
       setIsLoading(false);
     }
@@ -110,260 +107,186 @@ export default function PaymentEntrySettingsPage() {
 
   useEffect(() => {
     if (authLoading) return;
-    fetchSettings();
+    void fetchSettings();
   }, [authLoading, fetchSettings]);
 
-  const handleFieldToggle = (field: keyof MandatoryFields, checked: boolean) => {
-    if (!canEdit) return;
-    setMandatoryFields((prev) => ({ ...prev, [field]: checked }));
-  };
+  if (authLoading || (isLoading && canView)) return <BankPageSkeleton kpis={0} blocks={1} />;
+  if (!canView) return <BankAccessDenied title="Payment Entry Settings" backHref="/bank-balance/settings" backLabel="Back to settings" />;
+
+  const isDirty = (Object.keys(mandatoryFields) as Array<keyof MandatoryFields>).some((key) => mandatoryFields[key] !== savedFields[key]);
 
   const handleSaveMandatoryFields = async () => {
     if (!canEdit) return;
-
     setIsSavingFields(true);
     try {
-      await setDoc(
-        doc(db, 'bankBalanceSettings', 'paymentEntry'),
-        { mandatoryFields },
-        { merge: true }
-      );
-      toast({
-        title: 'Success',
-        description: 'Mandatory fields configuration saved.',
-      });
+      await setDoc(doc(db, 'bankBalanceSettings', 'paymentEntry'), { mandatoryFields }, { merge: true });
+      setSavedFields(mandatoryFields);
+      toast({ title: 'Saved', description: 'Mandatory fields updated.' });
     } catch (e) {
       console.error(e);
-      toast({
-        title: 'Error',
-        description: 'Failed to save settings.',
-        variant: 'destructive',
-      });
+      toast({ title: 'Error', description: 'Failed to save settings.', variant: 'destructive' });
     } finally {
       setIsSavingFields(false);
     }
   };
 
-  const handleAddMethod = async () => {
+  const handleAddMethod = async (event: React.FormEvent) => {
+    event.preventDefault();
     if (!canEdit) return;
-
-    if (!newMethodName.trim()) {
-      toast({
-        title: 'Validation Error',
-        description: 'Method name cannot be empty.',
-        variant: 'destructive',
-      });
+    const name = newMethodName.trim();
+    if (!name) {
+      toast({ title: 'Check the name', description: 'Method name cannot be empty.', variant: 'destructive' });
       return;
     }
-
-    setIsAddingMethod(true);
+    if (paymentMethods.some((method) => method.name.trim().toLowerCase() === name.toLowerCase())) {
+      toast({ title: 'Already listed', description: `"${name}" is already a payment method.`, variant: 'destructive' });
+      return;
+    }
+    setIsBusy(true);
     try {
-      await addDoc(collection(db, 'paymentMethods'), { name: newMethodName.trim() });
-      toast({ title: 'Success', description: 'New payment method added.' });
+      await addDoc(collection(db, 'paymentMethods'), { name });
+      toast({ title: 'Added', description: `"${name}" added.` });
       setNewMethodName('');
-      fetchSettings();
+      void fetchSettings();
     } catch (e) {
       console.error(e);
-      toast({
-        title: 'Error',
-        description: 'Failed to add payment method.',
-        variant: 'destructive',
-      });
+      toast({ title: 'Error', description: 'Failed to add payment method.', variant: 'destructive' });
     } finally {
-      setIsAddingMethod(false);
+      setIsBusy(false);
     }
   };
 
-  const handleDeleteMethod = async (id: string) => {
-    if (!canEdit) return;
-
+  const handleDeleteMethod = async () => {
+    if (!canEdit || !deleteTarget) return;
+    setIsBusy(true);
     try {
-      await deleteDoc(doc(db, 'paymentMethods', id));
-      toast({ title: 'Success', description: 'Payment method deleted.' });
-      fetchSettings();
+      await deleteDoc(doc(db, 'paymentMethods', deleteTarget.id));
+      toast({ title: 'Deleted', description: `"${deleteTarget.name}" removed.` });
+      setDeleteTarget(null);
+      void fetchSettings();
     } catch (e) {
       console.error(e);
-      toast({
-        title: 'Error',
-        description: 'Failed to delete payment method.',
-        variant: 'destructive',
-      });
+      toast({ title: 'Error', description: 'Failed to delete payment method.', variant: 'destructive' });
+    } finally {
+      setIsBusy(false);
     }
   };
-
-  if (authLoading || (isLoading && canView)) {
-    return (
-      <div className="w-full px-4 sm:px-6 lg:px-8 space-y-6">
-        <Skeleton className="h-10 w-64" />
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-          <Skeleton className="h-64" />
-          <Skeleton className="h-64" />
-        </div>
-      </div>
-    );
-  }
-
-  if (!canView) {
-    return (
-      <div className="w-full px-4 sm:px-6 lg:px-8">
-        <PageHeader title="Payment Entry Settings" backHref="/bank-balance/settings" backLabel="Back to settings" />
-        <Card>
-          <CardHeader>
-            <CardTitle>Access Denied</CardTitle>
-            <CardDescription>
-              You do not have permission to view this page.
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="flex justify-center p-8">
-            <ShieldAlert className="h-16 w-16 text-destructive" />
-          </CardContent>
-        </Card>
-      </div>
-    );
-  }
 
   return (
     <>
-      <div className="fixed inset-0 -z-10 overflow-hidden pointer-events-none">
-        <div className="absolute inset-0 bg-gradient-to-br from-slate-50/60 via-background to-violet-50/40 dark:from-slate-950/20 dark:via-background dark:to-violet-950/15" />
-        <div className="animate-bb-orb-1 absolute top-[-10%] left-[-5%] w-[40vw] h-[40vw] rounded-full bg-violet-300/12 blur-3xl" />
-        <div className="animate-bb-orb-2 absolute bottom-[-8%] right-[-6%] w-[45vw] h-[45vw] rounded-full bg-slate-300/10 blur-3xl" />
-        <div className="absolute inset-0 opacity-15 dark:opacity-10"
-          style={{ backgroundImage: 'radial-gradient(circle, rgba(139,92,246,0.10) 1px, transparent 1px)', backgroundSize: '28px 28px' }}
+      <BankBalanceBackground tone="slate" />
+      <div className={BANK_PAGE}>
+        <PageHeader
+          title="Payment Entry Settings"
+          description="What the New Payment form requires, and the payment methods it offers."
+          icon={FilePen}
+          backHref="/bank-balance/settings"
+          backLabel="Back to settings"
         />
-      </div>
-    <div className="relative w-full px-4 sm:px-6 lg:px-8 py-4">
-      <PageHeader
-        title="Payment Entry Settings"
-        description="Customize your payment entry form."
-        backHref="/bank-balance/settings"
-        backLabel="Back to settings"
-      />
 
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-        {/* Mandatory Fields */}
-        <Card>
-          <CardHeader>
-            <CardTitle>Mandatory Fields</CardTitle>
-            <CardDescription>
-              Select which fields are required when making a payment entry.
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            {isLoading ? (
-              <Skeleton className="h-48" />
-            ) : (
-              (Object.keys(mandatoryFields) as (keyof MandatoryFields)[]).map(
-                (key) => (
-                  <div
-                    key={key}
-                    className="flex items-center justify-between p-3 border rounded-lg"
-                  >
-                    <Label htmlFor={key} className="font-medium">
-                      {fieldLabels[key]}
-                    </Label>
-                    <Switch
-                      id={key}
-                      checked={mandatoryFields[key]}
-                      onCheckedChange={(checked) =>
-                        handleFieldToggle(key, checked)
-                      }
-                      disabled={!canEdit}
-                    />
-                  </div>
-                )
-              )
-            )}
-            <div className="pt-2">
-              <Button
-                onClick={handleSaveMandatoryFields}
-                disabled={isSavingFields || !canEdit}
-              >
-                {isSavingFields ? (
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                ) : (
-                  <Save className="mr-2 h-4 w-4" />
-                )}
-                Save Field Settings
-              </Button>
-            </div>
-          </CardContent>
-        </Card>
+        <div className="grid grid-cols-1 gap-5 lg:grid-cols-2">
+          <Card className="min-w-0">
+            <CardHeader>
+              <CardTitle>Mandatory fields</CardTitle>
+              <CardDescription>Fields a payment cannot be saved without.</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-2.5">
+              {(Object.keys(FIELD_LABELS) as Array<keyof MandatoryFields>).map((key) => (
+                <div key={key} className="flex items-center justify-between gap-3 rounded-lg border p-3">
+                  <Label htmlFor={`field-${key}`} className="min-w-0 cursor-pointer">
+                    <span className="block font-medium">{FIELD_LABELS[key].label}</span>
+                    <span className="block text-xs font-normal text-muted-foreground">{FIELD_LABELS[key].hint}</span>
+                  </Label>
+                  <Switch
+                    id={`field-${key}`}
+                    checked={mandatoryFields[key]}
+                    onCheckedChange={(checked) => canEdit && setMandatoryFields((prev) => ({ ...prev, [key]: checked }))}
+                    disabled={!canEdit}
+                  />
+                </div>
+              ))}
+              {canEdit && (
+                <div className="flex flex-wrap items-center gap-3 pt-2">
+                  <Button onClick={() => void handleSaveMandatoryFields()} disabled={isSavingFields || !isDirty}>
+                    {isSavingFields ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
+                    Save Fields
+                  </Button>
+                  {isDirty && <span className="text-xs text-amber-700">Unsaved changes</span>}
+                </div>
+              )}
+            </CardContent>
+          </Card>
 
-        {/* Payment Methods */}
-        <Card>
-          <CardHeader>
-            <CardTitle>Payment Methods</CardTitle>
-            <CardDescription>
-              Manage the list of available payment methods.
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="flex gap-2 mb-4">
-              <Input
-                placeholder="New method name..."
-                value={newMethodName}
-                onChange={(e) => setNewMethodName(e.target.value)}
-                disabled={!canEdit}
-              />
-              <Button
-                onClick={handleAddMethod}
-                disabled={isAddingMethod || !canEdit}
-              >
-                {isAddingMethod ? (
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                ) : (
-                  <Plus className="mr-2 h-4 w-4" />
-                )}
-                Add
-              </Button>
-            </div>
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Method Name</TableHead>
-                  <TableHead className="text-right">Action</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {isLoading ? (
-                  <TableRow>
-                    <TableCell colSpan={2}>
-                      <Skeleton className="h-20" />
-                    </TableCell>
-                  </TableRow>
-                ) : paymentMethods.length > 0 ? (
-                  paymentMethods.map((method) => (
-                    <TableRow key={method.id}>
-                      <TableCell>{method.name}</TableCell>
-                      <TableCell className="text-right">
+          <Card className="min-w-0">
+            <CardHeader>
+              <CardTitle>Payment methods</CardTitle>
+              <CardDescription>Offered in the payment method list on the payment form.</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              {canEdit && (
+                <form onSubmit={handleAddMethod} className="flex gap-2">
+                  <Input
+                    aria-label="New payment method"
+                    placeholder="e.g. NEFT, RTGS, Cheque"
+                    value={newMethodName}
+                    onChange={(e) => setNewMethodName(e.target.value)}
+                  />
+                  <Button type="submit" disabled={isBusy} className="shrink-0">
+                    {isBusy ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Plus className="mr-2 h-4 w-4" />}
+                    Add
+                  </Button>
+                </form>
+              )}
+              {paymentMethods.length === 0 ? (
+                <p className="rounded-lg border border-dashed p-6 text-center text-sm text-muted-foreground">No payment methods yet.</p>
+              ) : (
+                <ul className="divide-y rounded-lg border">
+                  {paymentMethods.map((method) => (
+                    <li key={method.id} className="flex items-center justify-between gap-3 px-3 py-2">
+                      <span className="min-w-0 truncate text-sm font-medium">{method.name}</span>
+                      {canEdit && (
                         <Button
                           variant="ghost"
                           size="icon"
-                          onClick={() => handleDeleteMethod(method.id)}
-                          disabled={!canEdit}
+                          className="h-8 w-8 text-destructive hover:text-destructive"
+                          onClick={() => setDeleteTarget(method)}
+                          aria-label={`Delete ${method.name}`}
                         >
-                          <Trash2 className="h-4 w-4 text-destructive" />
+                          <Trash2 className="h-4 w-4" />
                         </Button>
-                      </TableCell>
-                    </TableRow>
-                  ))
-                ) : (
-                  <TableRow>
-                    <TableCell
-                      colSpan={2}
-                      className="text-center text-muted-foreground h-16"
-                    >
-                      No payment methods configured.
-                    </TableCell>
-                  </TableRow>
-                )}
-              </TableBody>
-            </Table>
-          </CardContent>
-        </Card>
+                      )}
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </CardContent>
+          </Card>
+        </div>
       </div>
-    </div>
+
+      <AlertDialog open={!!deleteTarget} onOpenChange={(open) => { if (!open && !isBusy) setDeleteTarget(null); }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Remove &ldquo;{deleteTarget?.name}&rdquo;?</AlertDialogTitle>
+            <AlertDialogDescription>
+              It will no longer be offered on the payment form. Payments already recorded with it keep their method.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={isBusy}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              disabled={isBusy}
+              onClick={(event) => {
+                event.preventDefault();
+                void handleDeleteMethod();
+              }}
+            >
+              Remove
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </>
   );
 }

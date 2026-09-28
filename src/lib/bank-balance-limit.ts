@@ -1,6 +1,5 @@
-import { startOfDay } from 'date-fns';
-
 import type { BankAccount, DpLogEntry } from '@/lib/types';
+import { entryAppliesOn } from '@/lib/bank-balance-ledger';
 
 export const getEffectiveCcLimitFromEntry = (
   entry?: DpLogEntry | null
@@ -21,25 +20,10 @@ export const getApplicableCcLimitEntry = (
     return null;
   }
 
-  const targetDate = startOfDay(onDate);
-
+  // Same day rules as every other dated log in the module (see bank-balance-ledger).
   return [...account.drawingPower]
-    .sort(
-      (a, b) =>
-        new Date(b.fromDate).getTime() -
-        new Date(a.fromDate).getTime()
-    )
-    .find((entry) => {
-      const from = startOfDay(new Date(entry.fromDate));
-      const to = entry.toDate
-        ? startOfDay(new Date(entry.toDate))
-        : null;
-
-      return (
-        from <= targetDate &&
-        (to === null || to >= targetDate)
-      );
-    });
+    .sort((a, b) => b.fromDate.localeCompare(a.fromDate))
+    .find((entry) => entryAppliesOn(entry, onDate));
 };
 
 export const getApplicableCcLimit = (

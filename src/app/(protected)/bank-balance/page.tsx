@@ -5,9 +5,10 @@ export const dynamic = 'force-dynamic';
 import { useState, useEffect, useMemo } from 'react';
 import Link from 'next/link';
 import {
-  Plus, Settings, Scale, ArrowDown, ArrowUp,
-  ArrowRightLeft, BarChart3, ShieldAlert, Activity, TrendingUp,
+  Plus, Scale, ArrowDown, ArrowUp,
+  ArrowRightLeft, ShieldAlert, Activity, TrendingUp,
   RefreshCw, CreditCard, Building2, Percent, Calendar,
+  Gauge, Landmark, Wallet,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { PageHeader, SectionHeader } from '@/components/shared/page-header';
@@ -18,14 +19,19 @@ import { db } from '@/lib/firebase';
 import { collection, getDocs } from 'firebase/firestore';
 import type { BankAccount, BankExpense } from '@/lib/types';
 import { useAuthorization } from '@/hooks/useAuthorization';
-import { format, startOfDay, endOfDay, isToday } from 'date-fns';
-import {
-  Dialog, DialogContent, DialogHeader, DialogTitle,
-  DialogClose, DialogDescription, DialogFooter,
-} from '@/components/ui/dialog';
-import { ScrollArea } from '@/components/ui/scroll-area';
+import { format, isToday, subDays, startOfMonth, subMonths } from 'date-fns';
+import { balancesAt, buildLedgers, dailyRows, formatInr } from '@/lib/bank-balance-ledger';
 import { Badge } from '@/components/ui/badge';
 import { StatusBadge } from '@/components/shared/status-badge';
+import { KpiCard } from '@/components/shared/kpi-card';
+import {
+  LimitUtilisationChart,
+  MonthlyFlowChart,
+  UtilisationTrendChart,
+  compactInr,
+  type MonthlyFlowPoint,
+  type UtilisationTrendPoint,
+} from '@/components/bank-balance/dashboard-charts';
 import { cn } from '@/lib/utils';
 import { getApplicableCcLimit } from '@/lib/bank-balance-limit';
 
@@ -35,17 +41,12 @@ export default function BankBalanceDashboard() {
   const [accounts, setAccounts] = useState<BankAccount[]>([]);
   const [allTransactions, setAllTransactions] = useState<BankExpense[]>([]);
   const [isLoading, setIsLoading] = useState(true);
-  const [isDailyEntryOpen, setIsDailyEntryOpen] = useState(false);
   const [lastRefreshed, setLastRefreshed] = useState<Date>(new Date());
   const [refreshing, setRefreshing] = useState(false);
 
   const canView = can('View Module', 'Bank Balance');
   const canViewReports = can('View', 'Bank Balance.Reports');
-  const canViewSettings = can('View Module', 'Bank Balance');
   const canViewAccounts = can('View', 'Bank Balance.Accounts');
-  const canAddExpense = can('Add', 'Bank Balance.Expenses');
-  const canAddReceipt = can('Add', 'Bank Balance.Receipts');
-  const canAddTransfer = can('Add', 'Bank Balance.Internal Transaction');
 
   const fetchData = async (silent = false) => {
     if (!silent) setIsLoading(true);
@@ -74,45 +75,24 @@ export default function BankBalanceDashboard() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [canView, authLoading]);
 
-  const formatCurrency = (amount: number) =>
-    new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', minimumFractionDigits: 2 }).format(amount || 0);
+  const formatCurrency = (amount: number) => formatInr(amount);
 
   const getLatestDp = (account: BankAccount) => {
     return getApplicableCcLimit(account, new Date());
   };
 
-  const calculatedBalances = useMemo(() => {
-    const balances: Record<string, number> = {};
-    accounts.forEach(account => {
-      const isCC = account.accountType === 'Cash Credit';
-      let current = isCC ? (account.openingUtilization || 0) : (account.openingBalance || 0);
-      const start = account.openingDate
-        ? startOfDay(new Date(account.openingDate))
-        : new Date(0);
-      const end = endOfDay(new Date());
+  // Every figure on this page comes from the shared ledger (opening date honoured, transfers
+  // counted), so the dashboard and every report agree.
+  const ledgers = useMemo(() => buildLedgers(accounts, allTransactions), [accounts, allTransactions]);
+  const calculatedBalances = useMemo(() => balancesAt(ledgers, new Date()), [ledgers]);
 
-      allTransactions
-        .filter(t => t.accountId === account.id && t.date.toDate() >= start && t.date.toDate() <= end)
-        .sort((a, b) => a.date.toMillis() - b.date.toMillis())
-        .forEach(t => {
-          current += isCC
-            ? (t.type === 'Debit' ? t.amount : -t.amount)
-            : (t.type === 'Credit' ? t.amount : -t.amount);
-        });
-
-      balances[account.id] = current;
-    });
-    return balances;
-  }, [accounts, allTransactions]);
-
-  const activeAccounts = accounts.filter(a => a.status === 'Active');
-  const ccAccounts = activeAccounts.filter(a => a.accountType === 'Cash Credit');
-  const currentAccounts = activeAccounts.filter(a => a.accountType === 'Current Account');
+  const activeAccounts = useMemo(() => accounts.filter(a => a.status === 'Active'), [accounts]);
+  const ccAccounts = useMemo(() => activeAccounts.filter(a => a.accountType === 'Cash Credit'), [activeAccounts]);
+  const currentAccounts = useMemo(() => activeAccounts.filter(a => a.accountType === 'Current Account'), [activeAccounts]);
   const displayAccounts = useMemo(
     () => [...activeAccounts, ...accounts.filter(a => a.status !== 'Active')],
     [accounts, activeAccounts]
   );
-  const canOpenDailyEntry = activeAccounts.length > 0 && (canAddExpense || canAddReceipt || canAddTransfer);
   const quickLinks = [
     {
       href: '/bank-balance/daily-log',
@@ -147,12 +127,12 @@ export default function BankBalanceDashboard() {
       enabled: can('View', 'Bank Balance.Internal Transaction'),
     },
     {
-      href: '/bank-balance/interest-rate',
+      href: '/bank-balance/reports/interest-accrual',
       icon: Percent,
       label: 'Interest',
       color: 'text-amber-600',
       bg: 'bg-amber-50 dark:bg-amber-950/20 border-amber-200/60 dark:border-amber-800/30 hover:bg-amber-100/70',
-      enabled: can('View', 'Bank Balance.Interest Rate'),
+      enabled: canViewReports,
     },
     {
       href: '/bank-balance/monthly-interest',
@@ -173,7 +153,6 @@ export default function BankBalanceDashboard() {
         : balance;
     });
     return total;
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeAccounts, calculatedBalances]);
 
   // Today's totals
@@ -186,6 +165,65 @@ export default function BankBalanceDashboard() {
       credits: today.filter(t => t.type === 'Credit' && !t.isContra).reduce((s, t) => s + t.amount, 0),
       count: today.filter(t => !t.isContra).length,
     };
+  }, [allTransactions]);
+
+  // Cash Credit position today: limit (DP + TOD) against utilisation, per account and in total.
+  const ccPosition = useMemo(() => {
+    const rows = ccAccounts.map(account => ({
+      id: account.id,
+      name: (account.shortName || account.bankName || '').trim(),
+      limit: getLatestDp(account),
+      utilised: calculatedBalances[account.id] || 0,
+    }));
+    const limit = rows.reduce((sum, row) => sum + row.limit, 0);
+    const utilised = rows.reduce((sum, row) => sum + Math.max(0, row.utilised), 0);
+    const currentBalance = currentAccounts.reduce((sum, account) => sum + (calculatedBalances[account.id] || 0), 0);
+    return {
+      rows,
+      limit,
+      utilised,
+      available: Math.max(0, limit - utilised),
+      pct: limit > 0 ? (utilised / limit) * 100 : 0,
+      withoutLimit: rows.filter(row => row.limit <= 0).length,
+      currentBalance,
+    };
+  }, [ccAccounts, currentAccounts, calculatedBalances]);
+
+  // Each of the last 30 days' closing utilisation across CC accounts, against the limit in force
+  // that day. An account contributes nothing before its opening date.
+  const utilisationTrend = useMemo<UtilisationTrendPoint[]>(() => {
+    const today = new Date();
+    const first = subDays(today, 29);
+    const totals = Array.from({ length: 30 }, () => ({ utilised: 0, limit: 0 }));
+
+    ccAccounts.forEach(account => {
+      const ledger = ledgers.get(account.id);
+      if (!ledger) return;
+      dailyRows(ledger, first, today).forEach((row, index) => {
+        if (!row.open) return;
+        totals[index].utilised += Math.max(0, row.closing);
+        totals[index].limit += getApplicableCcLimit(account, row.day);
+      });
+    });
+
+    return totals.map((total, index) => {
+      const day = subDays(today, 29 - index);
+      return { date: format(day, 'dd MMM yyyy'), label: format(day, 'dd MMM'), ...total };
+    });
+  }, [ccAccounts, ledgers]);
+
+  const monthlyFlows = useMemo<MonthlyFlowPoint[]>(() => {
+    const months = Array.from({ length: 6 }, (_, i) => startOfMonth(subMonths(new Date(), 5 - i)));
+    const points = months.map(month => ({ key: format(month, 'yyyy-MM'), month: format(month, 'MMM yy'), receipts: 0, payments: 0 }));
+    const byKey = new Map(points.map(point => [point.key, point]));
+    allTransactions.forEach(t => {
+      if (t.isContra) return;
+      const point = byKey.get(format(t.date.toDate(), 'yyyy-MM'));
+      if (!point) return;
+      if (t.type === 'Credit') point.receipts += t.amount;
+      else point.payments += t.amount;
+    });
+    return points.map(({ key: _key, ...point }) => point);
   }, [allTransactions]);
 
   if (authLoading || (isLoading && canView)) {
@@ -256,52 +294,18 @@ export default function BankBalanceDashboard() {
           backHref="/"
           backLabel="Home"
           actions={
-            <>
-              <Button
-                variant="ghost"
-                size="icon"
-                className={cn('h-8 w-8 rounded-full', refreshing && 'animate-spin')}
-                onClick={() => void fetchData(true)}
-                disabled={refreshing}
-                title={`Last refreshed: ${format(lastRefreshed, 'HH:mm:ss')}`}
-              >
-                <RefreshCw className="h-4 w-4" />
-              </Button>
-              {canViewReports ? (
-                <Link href="/bank-balance/reports">
-                  <Button variant="outline" size="sm" className="rounded-full border-border/60">
-                    <BarChart3 className="mr-2 h-4 w-4" />
-                    Reports
-                  </Button>
-                </Link>
-              ) : (
-                <Button variant="outline" size="sm" className="rounded-full border-border/60" disabled>
-                  <BarChart3 className="mr-2 h-4 w-4" />
-                  Reports
-                </Button>
-              )}
-              <Button
-                size="sm"
-                className="rounded-full shadow-md shadow-primary/20"
-                onClick={() => setIsDailyEntryOpen(true)}
-                disabled={!canOpenDailyEntry}
-                title={!activeAccounts.length ? 'Add and activate a bank account first.' : undefined}
-              >
-                <Plus className="mr-2 h-4 w-4" />
-                Daily Entry
-              </Button>
-              {canViewSettings ? (
-                <Link href="/bank-balance/settings">
-                  <Button variant="ghost" size="icon" className="h-8 w-8 rounded-full">
-                    <Settings className="h-4 w-4" />
-                  </Button>
-                </Link>
-              ) : (
-                <Button variant="ghost" size="icon" className="h-8 w-8 rounded-full" disabled>
-                  <Settings className="h-4 w-4" />
-                </Button>
-              )}
-            </>
+            // Reports, Daily Entry and Settings used to sit here too; the module sidebar (and the
+            // phone's bottom bar, whose middle tab is the new entry) now carries all three.
+            <Button
+              variant="ghost"
+              size="icon"
+              className={cn('h-8 w-8 rounded-full', refreshing && 'animate-spin')}
+              onClick={() => void fetchData(true)}
+              disabled={refreshing}
+              title={`Last refreshed: ${format(lastRefreshed, 'HH:mm:ss')}`}
+            >
+              <RefreshCw className="h-4 w-4" />
+            </Button>
           }
         />
 
@@ -335,13 +339,13 @@ export default function BankBalanceDashboard() {
         </div>
 
         {/* ── Today's Stats Row ── */}
-        <div className="mb-4 grid grid-cols-3 gap-3">
+        <div className="mb-4 grid grid-cols-1 gap-3 sm:grid-cols-3">
           <div className="rounded-xl border border-green-200/60 bg-green-50/70 dark:bg-green-950/20 dark:border-green-800/30 p-3 flex items-center gap-3 shadow-sm">
             <div className="rounded-full bg-green-100 dark:bg-green-900/40 p-2">
               <ArrowUp className="h-4 w-4 text-green-600 dark:text-green-400" />
             </div>
             <div>
-              <p className="text-xs text-green-700/70 dark:text-green-400/70 font-medium">Today's Receipts</p>
+              <p className="text-xs text-green-700/70 dark:text-green-400/70 font-medium">Today&apos;s Receipts</p>
               <p className="text-sm font-bold text-green-700 dark:text-green-400">{formatCurrency(todayStats.credits)}</p>
             </div>
           </div>
@@ -350,7 +354,7 @@ export default function BankBalanceDashboard() {
               <ArrowDown className="h-4 w-4 text-red-600 dark:text-red-400" />
             </div>
             <div>
-              <p className="text-xs text-red-700/70 dark:text-red-400/70 font-medium">Today's Payments</p>
+              <p className="text-xs text-red-700/70 dark:text-red-400/70 font-medium">Today&apos;s Payments</p>
               <p className="text-sm font-bold text-red-700 dark:text-red-400">{formatCurrency(todayStats.debits)}</p>
             </div>
           </div>
@@ -359,15 +363,69 @@ export default function BankBalanceDashboard() {
               <Activity className="h-4 w-4 text-blue-600 dark:text-blue-400" />
             </div>
             <div>
-              <p className="text-xs text-blue-700/70 dark:text-blue-400/70 font-medium">Today's Transactions</p>
+              <p className="text-xs text-blue-700/70 dark:text-blue-400/70 font-medium">Today&apos;s Transactions</p>
               <p className="text-sm font-bold text-blue-700 dark:text-blue-400">{todayStats.count} entries</p>
             </div>
           </div>
         </div>
 
+        {/* ── Cash Credit: DP & utilisation ── */}
+        <SectionHeader title="DP & utilisation" description="Cash Credit limits (DP + TOD) in force today, against what is drawn." />
+        <div className="mb-4 grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
+          <KpiCard
+            label="Total limit (DP + TOD)"
+            value={formatCurrency(ccPosition.limit)}
+            hint={
+              ccPosition.withoutLimit
+                ? `${ccPosition.withoutLimit} of ${ccAccounts.length} CC account${ccAccounts.length !== 1 ? 's' : ''} without a limit`
+                : `${ccAccounts.length} Cash Credit account${ccAccounts.length !== 1 ? 's' : ''}`
+            }
+            icon={Landmark}
+            tone="violet"
+            accent
+            href={can('View', 'Bank Balance.DP Management') ? '/bank-balance/dp-management' : undefined}
+          />
+          <KpiCard
+            label="Utilised"
+            value={formatCurrency(ccPosition.utilised)}
+            hint={ccPosition.limit > 0 ? `${ccPosition.pct.toFixed(1)}% of limit` : 'No limit set'}
+            icon={Gauge}
+            tone={ccPosition.pct >= 90 ? 'rose' : ccPosition.pct >= 70 ? 'amber' : 'blue'}
+            accent
+            href={canViewReports ? '/bank-balance/reports/dp-utilization' : undefined}
+          />
+          <KpiCard
+            label="Available headroom"
+            value={formatCurrency(ccPosition.available)}
+            hint={ccPosition.limit > 0 ? `${compactInr(ccPosition.available)} left to draw` : '—'}
+            icon={TrendingUp}
+            tone="emerald"
+            accent
+          />
+          <KpiCard
+            label="Current account balance"
+            value={formatCurrency(ccPosition.currentBalance)}
+            hint={`${currentAccounts.length} current account${currentAccounts.length !== 1 ? 's' : ''}`}
+            icon={Wallet}
+            tone="cyan"
+            accent
+          />
+        </div>
+
+        <div className="mb-6 grid grid-cols-1 gap-4 xl:grid-cols-2">
+          <LimitUtilisationChart rows={ccPosition.rows} />
+          <UtilisationTrendChart points={utilisationTrend} />
+          <div className="min-w-0 xl:col-span-2">
+            <MonthlyFlowChart points={monthlyFlows} />
+          </div>
+        </div>
+
         {/* ── Account Cards ── */}
-        <ScrollArea className="flex-grow">
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 pb-4">
+        <SectionHeader title="Accounts" badge={<Badge variant="neutral">{displayAccounts.length}</Badge>} />
+        <div>
+          {/* auto-fill, not auto-fit: a short list keeps card-sized cards instead of stretching two
+              of them across the whole screen. */}
+          <div className="grid grid-cols-[repeat(auto-fill,minmax(min(100%,16rem),1fr))] gap-4 pb-4">
             {displayAccounts.map((account, idx) => {
               const isCC = account.accountType === 'Cash Credit';
               const currentBalance = calculatedBalances[account.id] || 0;
@@ -510,8 +568,8 @@ export default function BankBalanceDashboard() {
             )}
           </div>
 
-          {/* ── Quick Navigation Row ── */}
-          <div className="mt-2 mb-4">
+          {/* ── Quick Navigation Row ── (below lg only: from lg the module sidebar lists every page) */}
+          <div className="mt-2 mb-4 lg:hidden">
             <SectionHeader title="Quick Navigation" />
             <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2">
               {quickLinks.map(item => {
@@ -534,80 +592,8 @@ export default function BankBalanceDashboard() {
               })}
             </div>
           </div>
-        </ScrollArea>
+        </div>
       </div>
-
-      {/* ── Daily Entry Dialog ── */}
-      <Dialog open={isDailyEntryOpen} onOpenChange={setIsDailyEntryOpen}>
-        <DialogContent className="sm:max-w-xl">
-          <DialogHeader className="text-center">
-            <DialogTitle className="text-xl">Daily Entry</DialogTitle>
-            <DialogDescription>Select the type of transaction to record.</DialogDescription>
-          </DialogHeader>
-          <div className="grid grid-cols-3 gap-4 pt-2">
-            {[
-              {
-                href: '/bank-balance/expenses/new',
-                enabled: canAddExpense,
-                icon: ArrowDown,
-                title: 'Payment',
-                subtitle: 'Record a debit',
-                className: 'border-red-200 bg-gradient-to-b from-red-50 to-red-100/50 dark:from-red-950/30 dark:to-red-900/20 dark:border-red-800/40',
-                iconClassName: 'bg-red-100 dark:bg-red-900/50 text-red-600 dark:text-red-400',
-                textClassName: 'text-red-800 dark:text-red-300',
-                subtextClassName: 'text-red-600/70 dark:text-red-400/70',
-              },
-              {
-                href: '/bank-balance/receipts/new',
-                enabled: canAddReceipt,
-                icon: ArrowUp,
-                title: 'Receipt',
-                subtitle: 'Record a credit',
-                className: 'border-green-200 bg-gradient-to-b from-green-50 to-green-100/50 dark:from-green-950/30 dark:to-green-900/20 dark:border-green-800/40',
-                iconClassName: 'bg-green-100 dark:bg-green-900/50 text-green-600 dark:text-green-400',
-                textClassName: 'text-green-800 dark:text-green-300',
-                subtextClassName: 'text-green-600/70 dark:text-green-400/70',
-              },
-              {
-                href: '/bank-balance/internal-transaction/new',
-                enabled: canAddTransfer,
-                icon: ArrowRightLeft,
-                title: 'Transfer',
-                subtitle: 'Move between accounts',
-                className: 'border-blue-200 bg-gradient-to-b from-blue-50 to-blue-100/50 dark:from-blue-950/30 dark:to-blue-900/20 dark:border-blue-800/40',
-                iconClassName: 'bg-blue-100 dark:bg-blue-900/50 text-blue-600 dark:text-blue-400',
-                textClassName: 'text-blue-800 dark:text-blue-300',
-                subtextClassName: 'text-blue-600/70 dark:text-blue-400/70',
-              },
-            ].map(item => {
-              const card = (
-                <div
-                  className={cn(
-                    'group relative overflow-hidden rounded-2xl border p-6 transition-all duration-300 flex flex-col items-center text-center',
-                    item.className,
-                    item.enabled ? 'cursor-pointer hover:-translate-y-1 hover:shadow-lg' : 'cursor-not-allowed opacity-45 saturate-50'
-                  )}
-                >
-                  <div className={cn('rounded-full p-3 mb-3 transition-transform', item.iconClassName, item.enabled && 'group-hover:scale-110')}>
-                    <item.icon className="h-7 w-7" />
-                  </div>
-                  <p className={cn('font-semibold', item.textClassName)}>{item.title}</p>
-                  <p className={cn('text-xs mt-0.5', item.subtextClassName)}>{item.subtitle}</p>
-                </div>
-              );
-
-              return item.enabled
-                ? <Link key={item.href} href={item.href} onClick={() => setIsDailyEntryOpen(false)}>{card}</Link>
-                : <div key={item.href}>{card}</div>;
-            })}
-          </div>
-          <DialogFooter className="mt-2">
-            <DialogClose asChild>
-              <Button variant="outline" className="w-full rounded-xl">Close</Button>
-            </DialogClose>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
     </>
   );
 }

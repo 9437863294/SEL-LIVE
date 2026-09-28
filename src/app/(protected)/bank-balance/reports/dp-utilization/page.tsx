@@ -1,308 +1,276 @@
 'use client';
 export const dynamic = 'force-dynamic';
 
-import { useState, useEffect, useMemo } from 'react';
-import { ShieldAlert, Gauge, CreditCard, RefreshCw, TrendingUp } from 'lucide-react';
-import { Button } from '@/components/ui/button';
-import { PageHeader } from '@/components/shared/page-header';
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow, TableFooter } from '@/components/ui/table';
-import { TableCard } from '@/components/shared/table-card';
-import { StatusBadge } from '@/components/shared/status-badge';
-import { Progress } from '@/components/ui/progress';
-import { db } from '@/lib/firebase';
-import { collection, getDocs, query, orderBy } from 'firebase/firestore';
-import type { BankAccount, BankExpense } from '@/lib/types';
-import { format } from 'date-fns';
-import { Skeleton } from '@/components/ui/skeleton';
-import { useToast } from '@/hooks/use-toast';
-import { useAuthorization } from '@/hooks/useAuthorization';
-import { cn } from '@/lib/utils';
-import { getApplicableCcLimit, getApplicableCcLimitEntry, getEffectiveCcLimitFromEntry } from '@/lib/bank-balance-limit';
+/**
+ * DP Utilisation — each Cash Credit account's limit in force today (DP + OD + TOD) against its
+ * utilisation from the ledger engine (from the opening date, internal transfers included, a credit
+ * balance read as nothing drawn).
+ */
 
-interface DpUtilizationRow {
+import { useMemo, useState } from 'react';
+import { format } from 'date-fns';
+import { AlertTriangle, CreditCard, Gauge, Landmark, RefreshCw, TrendingUp } from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import { Label } from '@/components/ui/label';
+import { Switch } from '@/components/ui/switch';
+import { PageHeader } from '@/components/shared/page-header';
+import { KpiCard } from '@/components/shared/kpi-card';
+import { TableCard } from '@/components/shared/table-card';
+import { FilterBar } from '@/components/shared/filter-bar';
+import { DataList, type ListColumn } from '@/components/shared/data-list';
+import { StatusBadge } from '@/components/shared/status-badge';
+import {
+  BANK_PAGE,
+  BankAccessDenied,
+  BankBalanceBackground,
+  BankPageSkeleton,
+  UTILISATION_BAR,
+  UTILISATION_TEXT,
+  UtilisationBadge,
+  accountLabel,
+  useBankData,
+} from '@/components/bank-balance/page-kit';
+import { useAuthorization } from '@/hooks/useAuthorization';
+import { getApplicableCcLimitEntry, getEffectiveCcLimitFromEntry } from '@/lib/bank-balance-limit';
+import { balanceAt, buildLedgers, formatDay, formatInr, isCashCredit, utilisationLevel } from '@/lib/bank-balance-ledger';
+import type { BankAccount, BankExpense } from '@/lib/types';
+import { cn } from '@/lib/utils';
+
+interface DpRow {
   id: string;
-  bankName: string;
-  shortName: string;
-  accountNumber: string;
-  status: string;
-  dpAmount: number;
-  odAmount: number;
-  todAmount: number;
-  totalLimit: number;
-  currentUtilization: number;
-  availableHeadroom: number;
-  utilizationPct: number;
-  dpFromDate: string;
+  account: BankAccount;
+  dp: number;
+  od: number;
+  tod: number;
+  limit: number;
+  utilised: number;
+  available: number;
+  percent: number;
+  fromDate: string | null;
 }
 
 export default function DpUtilizationPage() {
-  const { toast } = useToast();
   const { can, isLoading: authLoading } = useAuthorization();
+  const canView = !authLoading && can('View', 'Bank Balance.Reports');
+  const { accounts, transactions, isLoading, isRefreshing, refresh, loadedAt } = useBankData({ enabled: canView, transactions: true });
+  const [includeInactive, setIncludeInactive] = useState(false);
 
-  const [rows, setRows] = useState<DpUtilizationRow[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
-  const [lastUpdated, setLastUpdated] = useState<Date>(new Date());
+  const ccAccounts = useMemo(
+    () => accounts.filter((account) => isCashCredit(account) && (includeInactive || account.status === 'Active')),
+    [accounts, includeInactive],
+  );
+  const ledgers = useMemo(() => buildLedgers<BankAccount, BankExpense>(ccAccounts, transactions), [ccAccounts, transactions]);
 
-  const canView = can('View', 'Bank Balance.Reports');
-
-  const fetchData = async () => {
-    setIsLoading(true);
-    try {
-      const [accountsSnap, expensesSnap] = await Promise.all([
-        getDocs(query(collection(db, 'bankAccounts'), orderBy('bankName'))),
-        getDocs(collection(db, 'bankExpenses')),
-      ]);
-      const accounts = accountsSnap.docs.map(d => ({ id: d.id, ...d.data() } as BankAccount));
-      const expenses = expensesSnap.docs.map(d => ({ id: d.id, ...d.data() } as BankExpense));
-
-      const today = new Date();
-      const ccAccounts = accounts.filter(a => a.accountType === 'Cash Credit');
-
-      const result: DpUtilizationRow[] = ccAccounts.map(account => {
-        // Calculate current utilization
-        let utilization = account.openingUtilization || 0;
-        expenses
-          .filter(t => t.accountId === account.id)
-          .sort((a, b) => a.date.toMillis() - b.date.toMillis())
-          .forEach(t => {
-            utilization += t.type === 'Debit' ? t.amount : -t.amount;
-          });
-        utilization = Math.max(0, utilization);
-
-        // Get applicable DP entry for today
-        const dpEntry = getApplicableCcLimitEntry(account, today);
-        const totalLimit = getEffectiveCcLimitFromEntry(dpEntry);
-        const availableHeadroom = Math.max(0, totalLimit - utilization);
-        const utilizationPct = totalLimit > 0 ? (utilization / totalLimit) * 100 : 0;
-
-        return {
+  const rows = useMemo<DpRow[]>(() => {
+    const today = new Date();
+    return ccAccounts.flatMap((account) => {
+      const ledger = ledgers.get(account.id);
+      if (!ledger) return [];
+      const utilised = Math.max(0, balanceAt(ledger, today));
+      const entry = getApplicableCcLimitEntry(account, today);
+      const limit = getEffectiveCcLimitFromEntry(entry);
+      return [
+        {
           id: account.id,
-          bankName: account.bankName,
-          shortName: account.shortName,
-          accountNumber: account.accountNumber,
-          status: account.status || 'Active',
-          dpAmount: dpEntry?.amount || 0,
-          odAmount: dpEntry?.odAmount || 0,
-          todAmount: dpEntry?.todAmount || 0,
-          totalLimit,
-          currentUtilization: utilization,
-          availableHeadroom,
-          utilizationPct,
-          dpFromDate: dpEntry?.fromDate || '',
-        };
-      });
+          account,
+          dp: entry?.amount || 0,
+          od: entry?.odAmount || 0,
+          tod: entry?.todAmount || 0,
+          limit,
+          utilised,
+          available: Math.max(0, limit - utilised),
+          percent: limit > 0 ? (utilised / limit) * 100 : 0,
+          fromDate: entry?.fromDate ?? null,
+        },
+      ];
+    });
+  }, [ccAccounts, ledgers]);
 
-      setRows(result);
-      setLastUpdated(new Date());
-    } catch (error) {
-      console.error(error);
-      toast({ title: 'Error', description: 'Failed to calculate DP utilization.', variant: 'destructive' });
-    } finally {
-      setIsLoading(false);
-    }
-  };
+  const totals = useMemo(() => {
+    const limit = rows.reduce((s, r) => s + r.limit, 0);
+    const utilised = rows.reduce((s, r) => s + r.utilised, 0);
+    return {
+      limit,
+      utilised,
+      available: rows.reduce((s, r) => s + r.available, 0),
+      percent: limit > 0 ? (utilised / limit) * 100 : 0,
+      critical: rows.filter((r) => r.limit > 0 && utilisationLevel(r.percent) === 'critical').length,
+      withoutLimit: rows.filter((r) => r.limit <= 0).length,
+    };
+  }, [rows]);
 
-  useEffect(() => {
-    if (!authLoading && canView) void fetchData();
-    else if (!authLoading && !canView) setIsLoading(false);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [authLoading, canView]);
+  if (authLoading || (isLoading && canView)) return <BankPageSkeleton kpis={4} />;
+  if (!canView) return <BankAccessDenied title="DP Utilisation" what="this report" />;
 
-  const totalLimit = useMemo(() => rows.reduce((s, r) => s + r.totalLimit, 0), [rows]);
-  const totalUtilization = useMemo(() => rows.reduce((s, r) => s + r.currentUtilization, 0), [rows]);
-  const totalHeadroom = useMemo(() => rows.reduce((s, r) => s + r.availableHeadroom, 0), [rows]);
-  const overallPct = totalLimit > 0 ? (totalUtilization / totalLimit) * 100 : 0;
-
-  const formatCurrency = (v: number) =>
-    new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(v || 0);
-
-  function utilizationColor(pct: number) {
-    if (pct >= 90) return 'text-red-600 dark:text-red-400';
-    if (pct >= 75) return 'text-orange-600 dark:text-orange-400';
-    if (pct >= 50) return 'text-amber-600 dark:text-amber-400';
-    return 'text-emerald-600 dark:text-emerald-400';
-  }
-
-  function progressColor(pct: number) {
-    if (pct >= 90) return '[&>div]:bg-red-500';
-    if (pct >= 75) return '[&>div]:bg-orange-500';
-    if (pct >= 50) return '[&>div]:bg-amber-500';
-    return '[&>div]:bg-emerald-500';
-  }
-
-  function utilizationBadge(pct: number) {
-    if (pct >= 90) return { label: 'Critical', tone: 'danger' as const };
-    if (pct >= 75) return { label: 'High', tone: 'warning' as const };
-    if (pct >= 50) return { label: 'Moderate', tone: 'info' as const };
-    return { label: 'Healthy', tone: 'success' as const };
-  }
-
-  if (authLoading || (isLoading && canView)) {
-    return (
-      <div className="w-full px-4 sm:px-6 lg:px-8 space-y-4 py-4">
-        <Skeleton className="h-10 w-64" />
-        <div className="grid grid-cols-3 gap-4"><Skeleton className="h-20 rounded-xl" /><Skeleton className="h-20 rounded-xl" /><Skeleton className="h-20 rounded-xl" /></div>
-        <Skeleton className="h-80 w-full rounded-xl" />
-      </div>
-    );
-  }
-
-  if (!canView) {
-    return (
-      <div className="w-full px-4 sm:px-6 lg:px-8">
-        <PageHeader title="DP Utilization" backHref="/bank-balance/reports" backLabel="Back to reports" />
-        <Card>
-          <CardHeader><CardTitle>Access Denied</CardTitle><CardDescription>You do not have permission.</CardDescription></CardHeader>
-          <CardContent className="flex justify-center p-8"><ShieldAlert className="h-16 w-16 text-destructive" /></CardContent>
-        </Card>
-      </div>
-    );
-  }
+  const columns: Array<ListColumn<DpRow>> = [
+    {
+      header: 'Account',
+      mobile: 'title',
+      cell: (row) => (
+        <div className="flex min-w-0 items-center gap-2">
+          <CreditCard className="h-4 w-4 shrink-0 text-rose-400" />
+          <div className="min-w-0">
+            <p className="truncate font-medium">
+              {accountLabel(row.account)}
+              {row.account.status !== 'Active' && <span className="ml-1.5 inline-block align-middle"><StatusBadge status={row.account.status} /></span>}
+            </p>
+            <p className="truncate text-xs font-normal text-muted-foreground">
+              {row.account.bankName} · {row.account.accountNumber}
+            </p>
+          </div>
+        </div>
+      ),
+    },
+    {
+      header: 'Level',
+      mobile: 'aside',
+      cell: (row) => <UtilisationBadge percent={row.percent} hasLimit={row.limit > 0} />,
+    },
+    { header: 'DP', align: 'right', cell: (row) => <span className="whitespace-nowrap tabular-nums">{row.dp ? formatInr(row.dp) : '—'}</span> },
+    { header: 'OD', align: 'right', cell: (row) => <span className="whitespace-nowrap tabular-nums">{row.od ? formatInr(row.od) : '—'}</span> },
+    { header: 'TOD', align: 'right', cell: (row) => <span className="whitespace-nowrap tabular-nums">{row.tod ? formatInr(row.tod) : '—'}</span> },
+    {
+      header: 'Total limit',
+      align: 'right',
+      cell: (row) => <span className="whitespace-nowrap font-medium tabular-nums">{row.limit ? formatInr(row.limit) : 'No limit'}</span>,
+    },
+    {
+      header: 'Utilised',
+      align: 'right',
+      cell: (row) => (
+        <span className={cn('whitespace-nowrap font-medium tabular-nums', row.limit > 0 && UTILISATION_TEXT[utilisationLevel(row.percent)])}>
+          {formatInr(row.utilised)}
+        </span>
+      ),
+    },
+    {
+      header: 'Available',
+      align: 'right',
+      cell: (row) => <span className="whitespace-nowrap tabular-nums text-emerald-700">{formatInr(row.available)}</span>,
+    },
+    {
+      header: 'Usage',
+      cell: (row) =>
+        row.limit > 0 ? (
+          <div className="flex min-w-[8rem] items-center gap-2">
+            <div className="h-2 flex-1 overflow-hidden rounded-full bg-muted">
+              <div
+                className={cn('h-full rounded-full', UTILISATION_BAR[utilisationLevel(row.percent)])}
+                style={{ width: `${Math.min(100, row.percent)}%` }}
+              />
+            </div>
+            <span className={cn('w-12 text-right text-xs font-semibold tabular-nums', UTILISATION_TEXT[utilisationLevel(row.percent)])}>
+              {row.percent.toFixed(1)}%
+            </span>
+          </div>
+        ) : (
+          <span className="text-muted-foreground">—</span>
+        ),
+    },
+    {
+      header: 'Effective from',
+      cell: (row) => <span className="whitespace-nowrap text-muted-foreground">{formatDay(row.fromDate)}</span>,
+    },
+  ];
 
   return (
     <>
-      <div className="fixed inset-0 -z-10 overflow-hidden pointer-events-none">
-        <div className="absolute inset-0 bg-gradient-to-br from-rose-50/60 via-background to-pink-50/40 dark:from-rose-950/20 dark:via-background dark:to-pink-950/15" />
-        <div className="animate-bb-orb-1 absolute top-[-10%] left-[-5%] w-[40vw] h-[40vw] rounded-full bg-rose-300/15 blur-3xl" />
-        <div className="animate-bb-orb-2 absolute bottom-[-8%] right-[-6%] w-[45vw] h-[45vw] rounded-full bg-pink-300/12 blur-3xl" />
-        <div className="absolute inset-0 opacity-20 dark:opacity-12"
-          style={{ backgroundImage: 'radial-gradient(circle, rgba(244,63,94,0.12) 1px, transparent 1px)', backgroundSize: '28px 28px' }}
-        />
-      </div>
-
-      <div className="relative w-full px-4 sm:px-6 lg:px-8 py-4">
-        {/* Header */}
+      <BankBalanceBackground tone="rose" />
+      <div className={BANK_PAGE}>
         <PageHeader
-          title="DP Utilization Report"
-          description={<>Drawing power limits and current utilization for Cash Credit accounts &nbsp;·&nbsp; As of {format(new Date(), 'dd MMM yyyy HH:mm')}</>}
+          title="DP Utilisation"
           icon={Gauge}
-          backHref="/bank-balance/reports"
-          backLabel="Back to reports"
+          description={`Cash Credit limits in force today against utilisation · as of ${formatDay(new Date())}${loadedAt ? `, ${format(loadedAt, 'HH:mm')}` : ''}.`}
+          backHref="/bank-balance"
+          backLabel="Back to dashboard"
           actions={
-            <Button variant="outline" size="sm" className="rounded-full" onClick={() => void fetchData()} disabled={isLoading}>
-              <RefreshCw className={cn('mr-2 h-4 w-4', isLoading && 'animate-spin')} />
+            <Button variant="outline" size="sm" onClick={() => void refresh()} disabled={isRefreshing}>
+              <RefreshCw className={cn('mr-2 h-4 w-4', isRefreshing && 'animate-spin')} />
               Refresh
             </Button>
           }
         />
 
-        {/* Summary Cards */}
-        <div className="mb-5 grid grid-cols-1 sm:grid-cols-3 gap-4">
-          <Card className="rounded-xl border-rose-200/60 bg-gradient-to-br from-rose-500/5 to-background shadow-sm overflow-hidden relative">
-            <div className="absolute top-0 left-0 right-0 h-0.5 bg-gradient-to-r from-rose-500 to-pink-400" />
-            <CardContent className="p-4">
-              <p className="text-xs text-muted-foreground mb-1">Total DP Limit</p>
-              <p className="text-xl font-bold text-rose-700 dark:text-rose-400">{formatCurrency(totalLimit)}</p>
-              <p className="text-[10px] text-muted-foreground mt-1">{rows.length} CC account{rows.length !== 1 ? 's' : ''}</p>
-            </CardContent>
-          </Card>
-          <Card className="rounded-xl border-orange-200/60 bg-gradient-to-br from-orange-500/5 to-background shadow-sm overflow-hidden relative">
-            <div className="absolute top-0 left-0 right-0 h-0.5 bg-gradient-to-r from-orange-500 to-amber-400" />
-            <CardContent className="p-4">
-              <p className="text-xs text-muted-foreground mb-1">Total Utilization</p>
-              <p className={cn('text-xl font-bold', utilizationColor(overallPct))}>{formatCurrency(totalUtilization)}</p>
-              <p className="text-[10px] text-muted-foreground mt-1">{overallPct.toFixed(1)}% of total limit used</p>
-            </CardContent>
-          </Card>
-          <Card className="rounded-xl border-emerald-200/60 bg-gradient-to-br from-emerald-500/5 to-background shadow-sm overflow-hidden relative">
-            <div className="absolute top-0 left-0 right-0 h-0.5 bg-gradient-to-r from-emerald-500 to-teal-400" />
-            <CardContent className="p-4">
-              <p className="text-xs text-muted-foreground mb-1">Total Available Headroom</p>
-              <p className="text-xl font-bold text-emerald-700 dark:text-emerald-400">{formatCurrency(totalHeadroom)}</p>
-              <p className="text-[10px] text-muted-foreground mt-1">{(100 - overallPct).toFixed(1)}% headroom remaining</p>
-            </CardContent>
-          </Card>
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
+          <KpiCard
+            label="Total limit (DP + OD + TOD)"
+            value={formatInr(totals.limit)}
+            hint={
+              totals.withoutLimit
+                ? `${totals.withoutLimit} of ${rows.length} account${rows.length === 1 ? '' : 's'} without a limit`
+                : `${rows.length} Cash Credit account${rows.length === 1 ? '' : 's'}`
+            }
+            icon={Landmark}
+            tone="violet"
+            accent
+          />
+          <KpiCard
+            label="Utilised"
+            value={formatInr(totals.utilised)}
+            hint={totals.limit > 0 ? `${totals.percent.toFixed(1)}% of total limit` : 'No limit set'}
+            icon={Gauge}
+            tone={totals.percent >= 90 ? 'rose' : totals.percent >= 70 ? 'amber' : 'blue'}
+            accent
+          />
+          <KpiCard
+            label="Available headroom"
+            value={formatInr(totals.available)}
+            hint="Limit − utilisation, per account"
+            icon={TrendingUp}
+            tone="emerald"
+            accent
+          />
+          <KpiCard
+            label="Accounts over 90%"
+            value={totals.critical}
+            hint={totals.critical ? 'Critical utilisation' : 'None critical'}
+            icon={AlertTriangle}
+            tone={totals.critical ? 'rose' : 'emerald'}
+            accent
+          />
         </div>
 
-        {/* Table */}
         <TableCard
-          icon={TrendingUp}
-          title="Account-wise DP Utilization"
-          description="Based on drawing power logs and current calculated utilization."
+          title="Account-wise DP utilisation"
+          description="Limits from the DP log in force today; utilisation from the opening date, internal transfers included."
           count={rows.length}
           noun="account"
+          scroll="natural"
+          toolbar={
+            <FilterBar activeCount={includeInactive ? 1 : 0} onClear={() => setIncludeInactive(false)}>
+              <div className="flex h-10 items-center gap-2 rounded-md border px-3">
+                <Switch id="dp-inactive" checked={includeInactive} onCheckedChange={setIncludeInactive} />
+                <Label htmlFor="dp-inactive" className="text-sm font-normal">
+                  Include inactive
+                </Label>
+              </div>
+            </FilterBar>
+          }
+          footer={
+            rows.length > 0 ? (
+              <div className="flex flex-wrap gap-x-5 gap-y-1 tabular-nums">
+                <span>Limit {formatInr(totals.limit)}</span>
+                <span>Utilised {formatInr(totals.utilised)}</span>
+                <span>Available {formatInr(totals.available)}</span>
+                <span className="font-semibold text-foreground">{totals.percent.toFixed(1)}% overall</span>
+              </div>
+            ) : undefined
+          }
         >
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Bank / Account</TableHead>
-                    <TableHead className="text-right">DP</TableHead>
-                    <TableHead className="text-right">OD</TableHead>
-                    <TableHead className="text-right">TOD</TableHead>
-                    <TableHead className="text-right">Total Limit</TableHead>
-                    <TableHead className="text-right">Utilization</TableHead>
-                    <TableHead className="text-right">Headroom</TableHead>
-                    <TableHead className="w-40">Usage</TableHead>
-                    <TableHead className="w-24">Status</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {rows.length === 0 ? (
-                    <TableRow>
-                      <TableCell colSpan={9} className="text-center h-32 text-muted-foreground">
-                        <div className="flex flex-col items-center gap-2">
-                          <CreditCard className="h-8 w-8 opacity-30" />
-                          <p className="text-sm">No Cash Credit accounts found.</p>
-                        </div>
-                      </TableCell>
-                    </TableRow>
-                  ) : rows.map(row => {
-                    const badge = utilizationBadge(row.utilizationPct);
-                    return (
-                      <TableRow key={row.id}>
-                        <TableCell>
-                          <div className="flex items-center gap-2">
-                            <CreditCard className="h-4 w-4 text-rose-400 shrink-0" />
-                            <div>
-                              <p className="font-medium">{row.bankName}</p>
-                              <p className="text-[10px] text-muted-foreground font-mono">{row.accountNumber}</p>
-                              {row.dpFromDate && (
-                                <p className="text-[10px] text-muted-foreground">DP since {format(new Date(row.dpFromDate), 'dd MMM yyyy')}</p>
-                              )}
-                            </div>
-                          </div>
-                        </TableCell>
-                        <TableCell className="whitespace-nowrap text-right font-mono">{formatCurrency(row.dpAmount)}</TableCell>
-                        <TableCell className="whitespace-nowrap text-right font-mono">{row.odAmount > 0 ? formatCurrency(row.odAmount) : '—'}</TableCell>
-                        <TableCell className="whitespace-nowrap text-right font-mono">{row.todAmount > 0 ? formatCurrency(row.todAmount) : '—'}</TableCell>
-                        <TableCell className="whitespace-nowrap text-right font-medium font-mono">{formatCurrency(row.totalLimit)}</TableCell>
-                        <TableCell className={cn('whitespace-nowrap text-right font-medium font-mono', utilizationColor(row.utilizationPct))}>
-                          {formatCurrency(row.currentUtilization)}
-                        </TableCell>
-                        <TableCell className="whitespace-nowrap text-right font-mono text-emerald-600 dark:text-emerald-400">
-                          {formatCurrency(row.availableHeadroom)}
-                        </TableCell>
-                        <TableCell>
-                          <div className="flex flex-col gap-1 min-w-[120px]">
-                            <Progress
-                              value={Math.min(100, row.utilizationPct)}
-                              className={cn('h-2', progressColor(row.utilizationPct))}
-                            />
-                            <span className={cn('text-[10px] font-semibold', utilizationColor(row.utilizationPct))}>
-                              {row.utilizationPct.toFixed(1)}%
-                            </span>
-                          </div>
-                        </TableCell>
-                        <TableCell>
-                          <StatusBadge status={badge.label} tone={badge.tone} />
-                        </TableCell>
-                      </TableRow>
-                    );
-                  })}
-                </TableBody>
-                {rows.length > 0 && (
-                  <TableFooter>
-                    <TableRow>
-                      <TableCell colSpan={4}>TOTAL</TableCell>
-                      <TableCell className="whitespace-nowrap text-right font-mono">{formatCurrency(totalLimit)}</TableCell>
-                      <TableCell className={cn('whitespace-nowrap text-right font-mono', utilizationColor(overallPct))}>{formatCurrency(totalUtilization)}</TableCell>
-                      <TableCell className="whitespace-nowrap text-right font-mono text-emerald-700">{formatCurrency(totalHeadroom)}</TableCell>
-                      <TableCell colSpan={2} className="whitespace-nowrap font-mono">{overallPct.toFixed(1)}% overall</TableCell>
-                    </TableRow>
-                  </TableFooter>
-                )}
-              </Table>
+          <div className="p-3 sm:p-0">
+            <DataList
+              rows={rows}
+              columns={columns}
+              dense
+              frameless
+              empty={
+                <div className="flex flex-col items-center gap-2 p-10 text-center text-sm text-muted-foreground">
+                  <CreditCard className="h-8 w-8 opacity-30" />
+                  No Cash Credit accounts found.
+                </div>
+              }
+            />
+          </div>
         </TableCard>
       </div>
     </>

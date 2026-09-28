@@ -1,26 +1,20 @@
 'use client';
 export const dynamic = 'force-dynamic';
 
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useCallback } from 'react';
 import Link from 'next/link';
 import {
+  Calendar as CalendarIcon,
   Plus,
   Trash2,
   Save,
   Loader2,
   History,
-  ShieldAlert,
 } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
 import { PageHeader } from '@/components/shared/page-header';
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from '@/components/ui/card';
+import { Card, CardContent } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import {
@@ -37,7 +31,7 @@ import {
 } from '@/components/ui/popover';
 import { Calendar } from '@/components/ui/calendar';
 import { cn } from '@/lib/utils';
-import { format, startOfDay } from 'date-fns';
+import { format } from 'date-fns';
 import { useToast } from '@/hooks/use-toast';
 import { db } from '@/lib/firebase';
 import {
@@ -48,87 +42,106 @@ import {
   Timestamp,
 } from 'firebase/firestore';
 import type { BankAccount, BankExpense } from '@/lib/types';
-import { Skeleton } from '@/components/ui/skeleton';
 import { useAuthorization } from '@/hooks/useAuthorization';
 import { getApplicableCcLimit } from '@/lib/bank-balance-limit';
+import { balanceAt, buildLedger, formatInr, isCashCredit } from '@/lib/bank-balance-ledger';
+import {
+  BANK_PAGE,
+  BankAccessDenied,
+  BankBalanceBackground,
+  BankPageSkeleton,
+  accountLabel,
+} from '@/components/bank-balance/page-kit';
 
 type TransactionItem = {
-  id: number;
+  id: string;
   fromAccountId: string;
   toAccountId: string;
   amount: number;
 };
 
+const makeId = () =>
+  globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+
 const createTransactionItem = (): TransactionItem => ({
-  id: Date.now() + Math.floor(Math.random() * 1000),
+  id: makeId(),
   fromAccountId: '',
   toAccountId: '',
   amount: 0,
 });
+
+/**
+ * What the account can pay out at the end of `day`, from the engine (so the opening date is
+ * honoured): a Current Account's balance, or a Cash Credit account's limit in force less its
+ * utilisation.
+ */
+const availableOn = (account: BankAccount, txns: BankExpense[], day: Date) => {
+  const figure = balanceAt(buildLedger(account, txns), day);
+  return isCashCredit(account) ? getApplicableCcLimit(account, day) - figure : figure;
+};
 
 export default function NewInternalTransactionPage() {
   const { toast } = useToast();
   const { can, isLoading: authLoading } = useAuthorization();
 
   const [date, setDate] = useState<Date | undefined>(new Date());
+  const [isDatePickerOpen, setIsDatePickerOpen] = useState(false);
   const [bankAccounts, setBankAccounts] = useState<BankAccount[]>([]);
   const [allTransactions, setAllTransactions] = useState<BankExpense[]>([]);
-  const [transactions, setTransactions] = useState<TransactionItem[]>([
+  const [transactions, setTransactions] = useState<TransactionItem[]>(() => [
     createTransactionItem(),
   ]);
   const [isSaving, setIsSaving] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
 
-  const canAdd = can('Add', 'Bank Balance.Internal Transaction');
+  const canAdd = !authLoading && can('Add', 'Bank Balance.Internal Transaction');
   const activeBankAccounts = useMemo(
     () => bankAccounts.filter((account) => account.status === 'Active'),
     [bankAccounts]
   );
 
-  useEffect(() => {
-    const fetchData = async () => {
-      if (!canAdd) {
-        setIsLoading(false);
-        return;
-      }
+  const fetchData = useCallback(async (silent = false) => {
+    if (!silent) setIsLoading(true);
+    try {
+      const [accountsSnap, transactionsSnap] = await Promise.all([
+        getDocs(collection(db, 'bankAccounts')),
+        getDocs(collection(db, 'bankExpenses')),
+      ]);
 
-      setIsLoading(true);
-      try {
-        const [accountsSnap, transactionsSnap] = await Promise.all([
-          getDocs(collection(db, 'bankAccounts')),
-          getDocs(collection(db, 'bankExpenses')),
-        ]);
+      const accounts = accountsSnap.docs.map(
+        (d) => ({ id: d.id, ...d.data() } as BankAccount)
+      );
+      setBankAccounts(accounts);
 
-        const accounts = accountsSnap.docs.map(
-          (d) => ({ id: d.id, ...d.data() } as BankAccount)
-        );
-        setBankAccounts(accounts);
-
-        const expenses = transactionsSnap.docs.map(
-          (d) => ({ id: d.id, ...d.data() } as BankExpense)
-        );
-        setAllTransactions(expenses);
-      } catch (error) {
-        console.error('Error loading initial data:', error);
-        toast({
-          title: 'Error',
-          description: 'Failed to load initial data.',
-          variant: 'destructive',
-        });
-      } finally {
-        setIsLoading(false);
-      }
-    };
-
-    if (!authLoading) {
-      void fetchData();
+      const expenses = transactionsSnap.docs.map(
+        (d) => ({ id: d.id, ...d.data() } as BankExpense)
+      );
+      setAllTransactions(expenses);
+    } catch (error) {
+      console.error('Error loading initial data:', error);
+      toast({
+        title: 'Error',
+        description: 'Failed to load initial data.',
+        variant: 'destructive',
+      });
+    } finally {
+      setIsLoading(false);
     }
-  }, [authLoading, canAdd, toast]);
+  }, [toast]);
+
+  useEffect(() => {
+    if (authLoading) return;
+    if (!canAdd) {
+      setIsLoading(false);
+      return;
+    }
+    void fetchData();
+  }, [authLoading, canAdd, fetchData]);
 
   const handleTransactionChange = (
-    id: number,
+    id: string,
     field: keyof TransactionItem,
-    value: any
+    value: TransactionItem[keyof TransactionItem]
   ) => {
     setTransactions((prev) =>
       prev.map((t) => (t.id === id ? { ...t, [field]: value } : t))
@@ -139,15 +152,30 @@ export default function NewInternalTransactionPage() {
     setTransactions((prev) => [...prev, createTransactionItem()]);
   };
 
-  const removeTransaction = (id: number) => {
+  const removeTransaction = (id: string) => {
     setTransactions((prev) =>
       prev.length > 1 ? prev.filter((t) => t.id !== id) : prev
     );
   };
 
-  const getLatestDp = (account: BankAccount, onDate: Date): number => {
-    return getApplicableCcLimit(account, onDate);
-  };
+  // Each source account's available funds on the chosen date, and what this batch draws on it —
+  // every row from the same account together, so two rows cannot each spend the whole balance.
+  const sources = useMemo(() => {
+    const map = new Map<string, { account: BankAccount; available: number; requested: number }>();
+    if (!date) return map;
+    for (const item of transactions) {
+      if (!item.fromAccountId) continue;
+      const account = bankAccounts.find((acc) => acc.id === item.fromAccountId);
+      if (!account) continue;
+      const source =
+        map.get(account.id) ?? { account, available: availableOn(account, allTransactions, date), requested: 0 };
+      source.requested += item.amount || 0;
+      map.set(account.id, source);
+    }
+    return map;
+  }, [transactions, bankAccounts, allTransactions, date]);
+
+  const totalAmount = transactions.reduce((sum, t) => sum + (t.amount || 0), 0);
 
   const handleSave = async () => {
     if (!canAdd) {
@@ -180,72 +208,26 @@ export default function NewInternalTransactionPage() {
       return;
     }
 
-    // Balance / DP validation
-    for (const item of transactions) {
-      const fromAccount = bankAccounts.find(
-        (acc) => acc.id === item.fromAccountId
-      );
-      if (!fromAccount) {
+    // Balance / DP validation, per source account across every row.
+    if (transactions.some((item) => !bankAccounts.some((acc) => acc.id === item.fromAccountId))) {
+      toast({
+        title: 'Validation Error',
+        description:
+          'One of the selected source accounts could not be found.',
+        variant: 'destructive',
+      });
+      return;
+    }
+    for (const { account, available, requested } of sources.values()) {
+      if (requested > available) {
         toast({
-          title: 'Validation Error',
-          description:
-            'One of the selected source accounts could not be found.',
+          title: 'Insufficient Funds',
+          description: `Transfers from ${accountLabel(account)} total ${formatInr(requested)}, more than the available ${
+            isCashCredit(account) ? 'limit' : 'balance'
+          } of ${formatInr(available)}.`,
           variant: 'destructive',
         });
         return;
-      }
-
-      let balance =
-        fromAccount.accountType === 'Cash Credit'
-          ? fromAccount.openingUtilization || 0
-          : fromAccount.openingBalance || 0;
-
-      if (fromAccount.openingDate) {
-        const historical = allTransactions
-          .filter(
-            (t) =>
-              t.accountId === fromAccount.id &&
-              t.date.toDate() < startOfDay(date)
-          )
-          .sort(
-            (a, b) => a.date.toMillis() - b.date.toMillis()
-          );
-
-        historical.forEach((t) => {
-          const amt = t.amount;
-          if (fromAccount.accountType === 'Cash Credit') {
-            // Utilization: Debit increases, Credit decreases
-            balance += t.type === 'Debit' ? amt : -amt;
-          } else {
-            // Current: Debit decreases, Credit increases
-            balance += t.type === 'Debit' ? -amt : amt;
-          }
-        });
-      }
-
-      if (fromAccount.accountType === 'Cash Credit') {
-        const availableDp = getLatestDp(fromAccount, date) - balance;
-        if (item.amount > availableDp) {
-          toast({
-            title: 'Insufficient Funds',
-            description: `Transfer from ${fromAccount.shortName} exceeds available limit of ${availableDp.toLocaleString(
-              'en-IN'
-            )}.`,
-            variant: 'destructive',
-          });
-          return;
-        }
-      } else {
-        if (item.amount > balance) {
-          toast({
-            title: 'Insufficient Funds',
-            description: `Transfer from ${fromAccount.shortName} exceeds available balance of ${balance.toLocaleString(
-              'en-IN'
-            )}.`,
-            variant: 'destructive',
-          });
-          return;
-        }
       }
     }
 
@@ -301,11 +283,13 @@ export default function NewInternalTransactionPage() {
 
       toast({
         title: 'Success',
-        description: `${transactions.length} transaction(s) saved successfully.`,
+        description: `${transactions.length} transaction(s) totalling ${formatInr(totalAmount)} saved successfully.`,
       });
 
       setTransactions([createTransactionItem()]);
       setDate(new Date());
+      // The next batch is checked against balances that include this one.
+      void fetchData(true);
     } catch (error) {
       console.error('Error saving transactions:', error);
       toast({
@@ -319,215 +303,184 @@ export default function NewInternalTransactionPage() {
   };
 
   if (authLoading || (isLoading && canAdd)) {
-    return (
-      <div className="w-full px-4 sm:px-6 lg:px-8">
-        <Skeleton className="h-10 w-80 mb-6" />
-        <Skeleton className="h-96 w-full" />
-      </div>
-    );
+    return <BankPageSkeleton kpis={0} />;
   }
 
   if (!canAdd) {
     return (
-      <div className="w-full px-4 sm:px-6 lg:px-8">
-        <PageHeader title="New Contra Entry" backHref="/bank-balance/internal-transaction" backLabel="Back to transaction log" />
-        <Card>
-          <CardHeader>
-            <CardTitle>Access Denied</CardTitle>
-            <CardDescription>
-              You do not have permission to create internal transactions.
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="flex justify-center p-8">
-            <ShieldAlert className="h-16 w-16 text-destructive" />
-          </CardContent>
-        </Card>
-      </div>
+      <BankAccessDenied
+        title="New Internal Transfer"
+        backHref="/bank-balance/internal-transaction"
+        backLabel="Back to transfers"
+        what="the transfer entry form"
+      />
     );
   }
 
   return (
     <>
-      <div className="fixed inset-0 -z-10 overflow-hidden pointer-events-none">
-        <div className="absolute inset-0 bg-gradient-to-br from-violet-50/60 via-background to-blue-50/40 dark:from-violet-950/20 dark:via-background dark:to-blue-950/15" />
-        <div className="animate-bb-orb-1 absolute top-[-10%] left-[-5%] w-[40vw] h-[40vw] rounded-full bg-violet-300/15 blur-3xl" />
-        <div className="animate-bb-orb-2 absolute bottom-[-8%] right-[-6%] w-[45vw] h-[45vw] rounded-full bg-blue-300/12 blur-3xl" />
-        <div className="absolute inset-0 opacity-20 dark:opacity-12"
-          style={{ backgroundImage: 'radial-gradient(circle, rgba(139,92,246,0.12) 1px, transparent 1px)', backgroundSize: '28px 28px' }}
+      <BankBalanceBackground tone="blue" />
+      <div className={BANK_PAGE}>
+        <PageHeader
+          title="New Internal Transfer"
+          description="Record a transfer between bank accounts"
+          backHref="/bank-balance/internal-transaction"
+          backLabel="Back to transfers"
+          actions={
+            <Button asChild variant="outline">
+              <Link href="/bank-balance/internal-transaction">
+                <History className="mr-2 h-4 w-4" />
+                Transfers
+              </Link>
+            </Button>
+          }
         />
-      </div>
-    <div className="relative w-full px-4 sm:px-6 lg:px-8 py-4">
-      <PageHeader
-        title="New Internal Transfer"
-        description="Record a transfer between bank accounts"
-        backHref="/bank-balance/internal-transaction"
-        backLabel="Back to transaction log"
-        actions={
-          <Link href="/bank-balance/internal-transaction">
-            <Button variant="outline" className="rounded-full border-border/60">
-              <History className="mr-2 h-4 w-4" />
-              Transaction Log
-            </Button>
-          </Link>
-        }
-      />
 
-      <Card>
-        <CardContent className="space-y-6 pt-6">
-          <div className="w-full max-w-xs">
-            <Label className="mb-2 block">Transaction Date</Label>
-            <Popover>
-              <PopoverTrigger asChild>
-                <Button
-                  variant="outline"
-                  className={cn(
-                    'w-full justify-start text-left font-normal',
-                    !date && 'text-muted-foreground'
-                  )}
-                >
-                  {date ? (
-                    format(date, 'PPP')
-                  ) : (
-                    <span>Pick a date</span>
-                  )}
-                </Button>
-              </PopoverTrigger>
-              <PopoverContent className="w-auto p-0">
-                <Calendar
-                  mode="single"
-                  selected={date}
-                  onSelect={setDate}
-                  initialFocus
-                />
-              </PopoverContent>
-            </Popover>
-          </div>
-
-          <div className="space-y-4">
-            {transactions.map((item) => (
-              <div
-                key={item.id}
-                className="border p-4 rounded-lg flex items-end gap-4"
-              >
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4 flex-grow">
-                  <div className="space-y-2">
-                    <Label>From Bank</Label>
-                    <Select
-                      value={item.fromAccountId}
-                      onValueChange={(val) =>
-                        handleTransactionChange(
-                          item.id,
-                          'fromAccountId',
-                          val
-                        )
-                      }
+        <Card>
+          <CardContent className="space-y-6 pt-6">
+            <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+              <div className="space-y-2">
+                <Label htmlFor="transfer-date">Transaction Date</Label>
+                <Popover open={isDatePickerOpen} onOpenChange={setIsDatePickerOpen}>
+                  <PopoverTrigger asChild>
+                    <Button
+                      id="transfer-date"
+                      variant="outline"
+                      className={cn(
+                        'w-full justify-start text-left font-normal sm:w-60',
+                        !date && 'text-muted-foreground'
+                      )}
                     >
-                      <SelectTrigger>
-                        <SelectValue placeholder="Select Account" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {activeBankAccounts.map((acc) => (
-                          <SelectItem
-                            key={acc.id}
-                            value={acc.id}
-                            disabled={
-                              acc.id === item.toAccountId
-                            }
-                          >
-                            {acc.shortName} - {acc.bankName}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-
-                  <div className="space-y-2">
-                    <Label>To Bank</Label>
-                    <Select
-                      value={item.toAccountId}
-                      onValueChange={(val) =>
-                        handleTransactionChange(
-                          item.id,
-                          'toAccountId',
-                          val
-                        )
-                      }
-                    >
-                      <SelectTrigger>
-                        <SelectValue placeholder="Select Account" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {activeBankAccounts.map((acc) => (
-                          <SelectItem
-                            key={acc.id}
-                            value={acc.id}
-                            disabled={
-                              acc.id === item.fromAccountId
-                            }
-                          >
-                            {acc.shortName} - {acc.bankName}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-
-                  <div className="space-y-2">
-                    <Label>Amount</Label>
-                    <Input
-                      type="number"
-                      placeholder="0.00"
-                      value={item.amount || ''}
-                      onChange={(e) =>
-                        handleTransactionChange(
-                          item.id,
-                          'amount',
-                          e.target.valueAsNumber || 0
-                        )
-                      }
+                      <CalendarIcon className="mr-2 h-4 w-4" />
+                      {date ? format(date, 'PPP') : <span>Pick a date</span>}
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent className="w-auto p-0">
+                    <Calendar
+                      mode="single"
+                      selected={date}
+                      onSelect={(selectedDate) => {
+                        setDate(selectedDate);
+                        setIsDatePickerOpen(false);
+                      }}
+                      initialFocus
                     />
-                  </div>
-                </div>
-
-                <Button
-                  variant="destructive"
-                  size="icon"
-                  onClick={() =>
-                    removeTransaction(item.id)
-                  }
-                >
-                  <Trash2 className="h-4 w-4" />
-                </Button>
+                  </PopoverContent>
+                </Popover>
               </div>
-            ))}
-          </div>
 
-          <div className="flex justify-between items-center">
-            <Button
-              variant="outline"
-              onClick={addTransaction}
-            >
-              <Plus className="mr-2 h-4 w-4" /> Add Another
-              Transaction
-            </Button>
-            <Button
-              onClick={handleSave}
-              disabled={
-                isSaving ||
-                activeBankAccounts.length < 2
-              }
-            >
-              {isSaving ? (
-                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-              ) : (
-                <Save className="mr-2 h-4 w-4" />
-              )}
-              Save Transactions
-            </Button>
-          </div>
-        </CardContent>
-      </Card>
-    </div>
+              <div className="w-full flex-shrink-0 text-left sm:w-auto sm:text-right">
+                <p className="text-muted-foreground">Total</p>
+                <p className="text-2xl font-bold tabular-nums">{formatInr(totalAmount)}</p>
+              </div>
+            </div>
+
+            <div className="space-y-4">
+              {transactions.map((item, index) => {
+                const source = item.fromAccountId ? sources.get(item.fromAccountId) : undefined;
+                const sharedRows = transactions.filter((t) => t.fromAccountId && t.fromAccountId === item.fromAccountId).length;
+                const overdrawn = !!source && source.requested > source.available;
+                return (
+                  <div key={item.id} className="space-y-4 rounded-lg border p-4">
+                    <div className="flex items-center justify-between gap-3">
+                      <h4 className="text-base font-semibold">Transfer #{index + 1}</h4>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="h-8 shrink-0 text-destructive hover:text-destructive"
+                        onClick={() => removeTransaction(item.id)}
+                        disabled={transactions.length <= 1}
+                        aria-label={`Remove transfer #${index + 1}`}
+                      >
+                        <Trash2 className="h-4 w-4" />
+                        <span className="ml-1.5 sm:hidden">Remove</span>
+                      </Button>
+                    </div>
+
+                    <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+                      <div className="space-y-2">
+                        <Label htmlFor={`transfer-from-${item.id}`}>From Bank</Label>
+                        <Select
+                          value={item.fromAccountId}
+                          onValueChange={(val) => handleTransactionChange(item.id, 'fromAccountId', val)}
+                        >
+                          <SelectTrigger id={`transfer-from-${item.id}`}>
+                            <SelectValue placeholder="Select Account" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {activeBankAccounts.map((acc) => (
+                              <SelectItem key={acc.id} value={acc.id} disabled={acc.id === item.toAccountId}>
+                                {acc.shortName} - {acc.bankName}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                        {source && (
+                          <p className={cn('text-xs', overdrawn ? 'text-destructive' : 'text-muted-foreground')}>
+                            {isCashCredit(source.account) ? 'Available limit' : 'Available balance'}{' '}
+                            <span className="font-medium tabular-nums">{formatInr(source.available)}</span>
+                            {sharedRows > 1 && (
+                              <>
+                                {' '}· {sharedRows} rows draw <span className="tabular-nums">{formatInr(source.requested)}</span>
+                              </>
+                            )}
+                            {overdrawn && ' — more than is available'}
+                          </p>
+                        )}
+                      </div>
+
+                      <div className="space-y-2">
+                        <Label htmlFor={`transfer-to-${item.id}`}>To Bank</Label>
+                        <Select
+                          value={item.toAccountId}
+                          onValueChange={(val) => handleTransactionChange(item.id, 'toAccountId', val)}
+                        >
+                          <SelectTrigger id={`transfer-to-${item.id}`}>
+                            <SelectValue placeholder="Select Account" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {activeBankAccounts.map((acc) => (
+                              <SelectItem key={acc.id} value={acc.id} disabled={acc.id === item.fromAccountId}>
+                                {acc.shortName} - {acc.bankName}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+
+                      <div className="space-y-2">
+                        <Label htmlFor={`transfer-amount-${item.id}`}>Amount</Label>
+                        <Input
+                          id={`transfer-amount-${item.id}`}
+                          type="number"
+                          inputMode="decimal"
+                          placeholder="0.00"
+                          value={item.amount || ''}
+                          onChange={(e) => handleTransactionChange(item.id, 'amount', e.target.valueAsNumber || 0)}
+                        />
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+
+            <div className="flex flex-col-reverse gap-2 sm:flex-row sm:items-center sm:justify-between">
+              <Button variant="outline" onClick={addTransaction}>
+                <Plus className="mr-2 h-4 w-4" /> Add Another Transaction
+              </Button>
+              <Button onClick={handleSave} disabled={isSaving || activeBankAccounts.length < 2}>
+                {isSaving ? (
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                ) : (
+                  <Save className="mr-2 h-4 w-4" />
+                )}
+                Save Transactions
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
     </>
   );
 }

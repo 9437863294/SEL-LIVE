@@ -1,437 +1,434 @@
 'use client';
 export const dynamic = 'force-dynamic';
 
-import { useState, useEffect, useMemo } from 'react';
-import { ArrowLeftRight, ArrowUpDown, Calendar as CalendarIcon, Settings2, ShieldAlert, TrendingUp, TrendingDown } from 'lucide-react';
+/**
+ * Daily Log — the one day-by-day view of every account, and the old Daily Balance report
+ * (`reports/daily-balance` now redirects here): pick a single account in the "By account" view to
+ * get exactly that report, with its period totals.
+ *
+ * Every figure comes from the ledger engine, built once: an account starts at its opening date
+ * (an account without one counts every entry), internal transfers move the balance and are shown
+ * as their own in / out figures, and Cash Credit reads as utilisation while a current account reads
+ * as balance — the two are never added together.
+ */
+
+import { Fragment, useEffect, useMemo, useState, type ReactNode } from 'react';
+import type { DateRange } from 'react-day-picker';
+import { startOfDay } from 'date-fns';
+import {
+  Activity,
+  ArrowDownLeft,
+  ArrowLeftRight,
+  ArrowUpDown,
+  ArrowUpRight,
+  CalendarDays,
+  RefreshCw,
+  Settings2,
+} from 'lucide-react';
+import { doc, getDoc, setDoc } from 'firebase/firestore';
 import { Button } from '@/components/ui/button';
+import { Badge } from '@/components/ui/badge';
+import { Label } from '@/components/ui/label';
+import { Switch } from '@/components/ui/switch';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Table, TableBody, TableCell, TableFooter, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { PageHeader } from '@/components/shared/page-header';
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
+import { KpiCard } from '@/components/shared/kpi-card';
 import { TableCard } from '@/components/shared/table-card';
 import { FilterBar } from '@/components/shared/filter-bar';
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
-import { Calendar } from '@/components/ui/calendar';
+import {
+  BANK_PAGE,
+  BankAccessDenied,
+  BankBalanceBackground,
+  BankDateRangeFilter,
+  BankPageSkeleton,
+  accountLabel,
+  useBankData,
+} from '@/components/bank-balance/page-kit';
+import { useAuth } from '@/components/auth/AuthProvider';
+import { useAuthorization } from '@/hooks/useAuthorization';
 import { useToast } from '@/hooks/use-toast';
 import { db } from '@/lib/firebase';
-import { collection, getDocs, doc, getDoc, setDoc } from 'firebase/firestore';
-import type { BankAccount, BankExpense, BankDailyLog, UserSettings } from '@/lib/types';
-import { Skeleton } from '@/components/ui/skeleton';
-import { format, startOfDay, endOfDay, eachDayOfInterval, compareDesc } from 'date-fns';
-import { DateRange } from 'react-day-picker';
-import { cn } from '@/lib/utils';
+import { getDateRangeFromPreset, type DateRangePreset } from '@/lib/date-range-presets';
 import { getApplicableCcLimit } from '@/lib/bank-balance-limit';
-import { useAuthorization } from '@/hooks/useAuthorization';
-import { Switch } from '@/components/ui/switch';
 import {
-  DATE_RANGE_PRESET_OPTIONS,
-  type DateRangePreset,
-  getDateRangeFromPreset,
-} from '@/lib/date-range-presets';
-import { useAuth } from '@/components/auth/AuthProvider';
+  buildLedgers,
+  dailyInterest,
+  dailyRows,
+  formatDay,
+  formatInr,
+  getApplicableRate,
+  isCashCredit,
+  type DailyRow,
+} from '@/lib/bank-balance-ledger';
+import type { BankAccount, BankExpense, UserSettings } from '@/lib/types';
+import { cn } from '@/lib/utils';
 
-interface EnrichedBankDailyLog extends BankDailyLog {
-  availableBalance: number;
+type SectionKey = 'utilised' | 'caBalance' | 'interTransfer' | 'expenses' | 'receipts' | 'dp' | 'balanceToDraw' | 'interest';
+type SectionVisibility = Record<SectionKey, boolean>;
+
+/** Stored at `userSettings/{uid}.columnPreferences.<key>.visibility` — the path this page has always used. */
+const SECTION_SETTINGS_KEY = 'bank_balance_daily_log_section_visibility';
+
+const SECTION_DEFAULTS: SectionVisibility = {
+  utilised: true,
+  caBalance: true,
+  interTransfer: true,
+  expenses: true,
+  receipts: true,
+  dp: true,
+  balanceToDraw: true,
+  interest: true,
+};
+
+const SECTION_OPTIONS: Array<{ key: SectionKey; label: string }> = [
+  { key: 'utilised', label: 'Cash Credit utilisation' },
+  { key: 'caBalance', label: 'Current account balance' },
+  { key: 'interTransfer', label: 'Internal transfers (in / out)' },
+  { key: 'expenses', label: 'Payments of the day' },
+  { key: 'receipts', label: 'Receipts of the day' },
+  { key: 'dp', label: 'DP / TOD limit' },
+  { key: 'balanceToDraw', label: 'Balance to draw' },
+  { key: 'interest', label: 'Interest (projected)' },
+];
+
+interface AccountDay {
+  row: DailyRow;
+  /** Limit (DP + OD + TOD) in force that day; 0 for a current account. */
+  limit: number;
+  /** Cash Credit: limit − utilisation. Current account: the balance. */
+  available: number;
+  rate: number;
+  interest: number;
 }
+
+interface AccountSeries {
+  account: BankAccount;
+  cc: boolean;
+  days: AccountDay[];
+}
+
+/** A flow (receipts, payments, transfers, a limit): a dash when there is none. */
+const flow = (value: number) => (value ? formatInr(value) : '—');
+
+const typeBadge = (account: BankAccount) => (
+  <Badge variant="outline" className="shrink-0 px-1.5 py-0 text-[10px]">
+    {isCashCredit(account) ? 'CC' : 'CA'}
+  </Badge>
+);
 
 export default function DailyLogPage() {
   const { toast } = useToast();
-  const { can, isLoading: authLoading } = useAuthorization();
   const { user } = useAuth();
-
-  const [bankAccounts, setBankAccounts] = useState<BankAccount[]>([]);
-  const [allTransactions, setAllTransactions] = useState<BankExpense[]>([]);
-  const [dailyLogs, setDailyLogs] = useState<EnrichedBankDailyLog[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
-
-  const [dateRange, setDateRange] = useState<DateRange | undefined>({ from: new Date(), to: new Date() });
-  const [datePreset, setDatePreset] = useState<DateRangePreset>('today');
-  const [bankFilter, setBankFilter] = useState<string>('all');
-  const [viewMode, setViewMode] = useState<'current' | 'dateWise'>('dateWise');
-  const [dateSortOrder, setDateSortOrder] = useState<'newest' | 'oldest'>('newest');
-  const [sectionsPopoverOpen, setSectionsPopoverOpen] = useState(false);
-  const [sectionVisibility, setSectionVisibility] = useState({
-    utilised: true,
-    interTransfer: true,
-    expenses: true,
-    receipts: true,
-    dp: true,
-    balanceToDraw: true,
-    interest: true,
-  });
-
-  const sectionSettingsKey = 'bank_balance_daily_log_section_visibility';
-
+  const { can, isLoading: authLoading } = useAuthorization();
   const canView = !authLoading && can('View', 'Bank Balance.Daily Log');
+  const { accounts, transactions, isLoading, isRefreshing, refresh } = useBankData({ enabled: canView, transactions: true });
+
+  const [dateRange, setDateRange] = useState<DateRange | undefined>(() => getDateRangeFromPreset('today'));
+  const [datePreset, setDatePreset] = useState<DateRangePreset>('today');
+  const [bankFilter, setBankFilter] = useState('all');
+  const [includeInactive, setIncludeInactive] = useState(false);
+  const [viewMode, setViewMode] = useState<'dateWise' | 'current'>('dateWise');
+  const [dateSortOrder, setDateSortOrder] = useState<'newest' | 'oldest'>('newest');
+  const [sectionVisibility, setSectionVisibility] = useState<SectionVisibility>(SECTION_DEFAULTS);
 
   useEffect(() => {
-    if (authLoading) return;
-    if (!canView) { setIsLoading(false); return; }
-    void fetchData();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [authLoading, canView]);
-
-  const fetchData = async () => {
-    setIsLoading(true);
-    try {
-      const [accountsSnap, expensesSnap] = await Promise.all([
-        getDocs(collection(db, 'bankAccounts')),
-        getDocs(collection(db, 'bankExpenses')),
-      ]);
-      setBankAccounts(accountsSnap.docs.map(d => ({ id: d.id, ...d.data() } as BankAccount)));
-      setAllTransactions(expensesSnap.docs.map(d => ({ id: d.id, ...d.data() } as BankExpense)));
-    } catch {
-      toast({ title: 'Error', description: 'Failed to fetch data.', variant: 'destructive' });
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  const getDpForDate = (account: BankAccount, date: Date): number => {
-    return getApplicableCcLimit(account, date);
-  };
-
-  const getRateForDate = (account: BankAccount, date: Date): number => {
-    if (account.accountType !== 'Cash Credit' || !account.interestRateLog?.length) return 0;
-    const sorted = [...account.interestRateLog].sort((a, b) => new Date(b.fromDate).getTime() - new Date(a.fromDate).getTime());
-    const applicable = sorted.find(rate => new Date(rate.fromDate) <= startOfDay(date));
-    return applicable ? applicable.rate : 0;
-  };
-
-
-  useEffect(() => {
-    if (isLoading || !canView) return;
-    const logs: EnrichedBankDailyLog[] = [];
-    bankAccounts.forEach(account => {
-      const isCC = account.accountType === 'Cash Credit';
-      const opening = isCC ? (account.openingUtilization || 0) : (account.openingBalance || 0);
-      if (!account.openingDate) return;
-      let runningBalance = opening;
-      const days = eachDayOfInterval({ start: startOfDay(new Date(account.openingDate)), end: endOfDay(new Date()) });
-      days.forEach(day => {
-        const dayStr = format(day, 'yyyy-MM-dd');
-        const todaysTx = allTransactions.filter(t => t.accountId === account.id && format(t.date.toDate(), 'yyyy-MM-dd') === dayStr);
-        const expenses = todaysTx.filter(t => t.type === 'Debit' && !t.isContra).reduce((s, t) => s + t.amount, 0);
-        const receipts = todaysTx.filter(t => t.type === 'Credit' && !t.isContra).reduce((s, t) => s + t.amount, 0);
-        let contra = 0;
-        if (isCC) {
-          contra = todaysTx.filter(t => t.isContra).reduce((s, t) => s + (t.type === 'Debit' ? t.amount : -t.amount), 0);
-        } else {
-          contra = todaysTx.filter(t => t.isContra).reduce((s, t) => s + (t.type === 'Credit' ? t.amount : -t.amount), 0);
-        }
-        const openingBalance = runningBalance;
-        const closingBalance = isCC ? openingBalance + expenses - receipts + contra : openingBalance - expenses + receipts + contra;
-        const dp = isCC ? getDpForDate(account, day) : 0;
-        const availableBalance = isCC ? dp - closingBalance : closingBalance;
-        logs.push({ id: `${dayStr}-${account.id}`, date: dayStr, accountId: account.id, accountName: account.shortName, openingBalance, totalExpenses: expenses, totalReceipts: receipts, totalContra: contra, closingBalance, availableBalance });
-        runningBalance = closingBalance;
-      });
-    });
-    logs.sort((a, b) => compareDesc(new Date(a.date), new Date(b.date)));
-    setDailyLogs(logs);
-  }, [bankAccounts, allTransactions, isLoading, canView]);
-
-  const filteredLogs = useMemo(() => {
-    return dailyLogs.filter(log => {
-      const logDate = new Date(log.date);
-      const inRange = dateRange?.from && dateRange.to
-        ? logDate >= startOfDay(dateRange.from) && logDate <= endOfDay(dateRange.to)
-        : true;
-      return inRange && (bankFilter === 'all' || log.accountId === bankFilter);
-    });
-  }, [dailyLogs, dateRange, bankFilter]);
-
-  const selectedAccounts = useMemo(() => {
-    const activeAccounts = bankAccounts.filter((acc) => acc.status === 'Active');
-    const filtered = bankFilter === 'all'
-      ? activeAccounts
-      : activeAccounts.filter((acc) => acc.id === bankFilter);
-    return [...filtered].sort((a, b) =>
-      `${a.shortName} ${a.accountType}`.localeCompare(`${b.shortName} ${b.accountType}`)
-    );
-  }, [bankAccounts, bankFilter]);
-
-  const dateWiseRows = useMemo(() => {
-    const accountById = new Map(bankAccounts.map((acc) => [acc.id, acc]));
-    const selectedIds = new Set(selectedAccounts.map((acc) => acc.id));
-    const makeMap = () => Object.fromEntries(selectedAccounts.map((acc) => [acc.id, 0])) as Record<string, number>;
-
-    const grouped = new Map<
-      string,
-      {
-        date: string;
-        utilisedByAccount: Record<string, number>;
-        interTransferByAccount: Record<string, number>;
-        expensesByAccount: Record<string, number>;
-        receiptsByAccount: Record<string, number>;
-        dpByAccount: Record<string, number>;
-        balanceToDrawByAccount: Record<string, number>;
-        interestRateByAccount: Record<string, number>;
-        interestProjectedByAccount: Record<string, number>;
-      }
-    >();
-
-    filteredLogs.forEach((log) => {
-      if (!selectedIds.has(log.accountId)) return;
-      const account = accountById.get(log.accountId);
-      if (!account) return;
-
-      const row = grouped.get(log.date) ?? {
-        date: log.date,
-        utilisedByAccount: makeMap(),
-        interTransferByAccount: makeMap(),
-        expensesByAccount: makeMap(),
-        receiptsByAccount: makeMap(),
-        dpByAccount: makeMap(),
-        balanceToDrawByAccount: makeMap(),
-        interestRateByAccount: makeMap(),
-        interestProjectedByAccount: makeMap(),
-      };
-
-      const rowDate = new Date(log.date);
-      row.utilisedByAccount[log.accountId] = log.closingBalance;
-      row.expensesByAccount[log.accountId] = log.totalExpenses;
-      row.receiptsByAccount[log.accountId] = log.totalReceipts;
-      row.dpByAccount[log.accountId] = getDpForDate(account, rowDate);
-      row.balanceToDrawByAccount[log.accountId] = log.availableBalance;
-
-      const rate = getRateForDate(account, rowDate);
-      row.interestRateByAccount[log.accountId] = rate;
-      row.interestProjectedByAccount[log.accountId] =
-        rate > 0 ? (log.closingBalance * (rate / 100)) / 365 : 0;
-
-      grouped.set(log.date, row);
-    });
-
-    allTransactions.forEach((tx) => {
-      if (!tx.isContra || tx.type !== 'Credit') return;
-      if (!selectedIds.has(tx.accountId)) return;
-      const txDate = format(tx.date.toDate(), 'yyyy-MM-dd');
-      const row = grouped.get(txDate) ?? {
-        date: txDate,
-        utilisedByAccount: makeMap(),
-        interTransferByAccount: makeMap(),
-        expensesByAccount: makeMap(),
-        receiptsByAccount: makeMap(),
-        dpByAccount: makeMap(),
-        balanceToDrawByAccount: makeMap(),
-        interestRateByAccount: makeMap(),
-        interestProjectedByAccount: makeMap(),
-      };
-      row.interTransferByAccount[tx.accountId] += tx.amount;
-      grouped.set(txDate, row);
-    });
-
-    return Array.from(grouped.values()).sort((a, b) =>
-      dateSortOrder === 'newest'
-        ? compareDesc(new Date(a.date), new Date(b.date))
-        : a.date.localeCompare(b.date)
-    );
-  }, [filteredLogs, bankAccounts, selectedAccounts, allTransactions, dateSortOrder]);
-
-  useEffect(() => {
+    if (!user) return;
     const loadSectionPrefs = async () => {
-      if (!user) return;
       try {
-        const settingsRef = doc(db, 'userSettings', user.id);
-        const settingsSnap = await getDoc(settingsRef);
-        if (!settingsSnap.exists()) return;
-        const settings = settingsSnap.data() as UserSettings;
-        const saved = settings.columnPreferences?.[sectionSettingsKey]?.visibility as
-          | Partial<typeof sectionVisibility>
+        const snap = await getDoc(doc(db, 'userSettings', user.id));
+        if (!snap.exists()) return;
+        const saved = (snap.data() as UserSettings).columnPreferences?.[SECTION_SETTINGS_KEY]?.visibility as
+          | Partial<SectionVisibility>
           | undefined;
-        if (!saved) return;
-        setSectionVisibility((prev) => ({ ...prev, ...saved }));
+        if (saved) setSectionVisibility((prev) => ({ ...prev, ...saved }));
       } catch (error) {
         console.error('Failed to load section visibility preferences', error);
       }
     };
     void loadSectionPrefs();
-  }, [user, sectionSettingsKey]);
+  }, [user]);
 
-  // Summary stats for filtered period
-  const summary = useMemo(() => ({
-    totalExpenses: filteredLogs.reduce((s, l) => s + l.totalExpenses, 0),
-    totalReceipts: filteredLogs.reduce((s, l) => s + l.totalReceipts, 0),
-    entries: filteredLogs.length,
-  }), [filteredLogs]);
-
-  const formatCurrency = (amount: number) =>
-    new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR' }).format(amount);
-
-  const saveSectionVisibility = async (nextVisibility: typeof sectionVisibility) => {
-    if (!user) return;
-    try {
-      const settingsRef = doc(db, 'userSettings', user.id);
-      await setDoc(
-        settingsRef,
-        { columnPreferences: { [sectionSettingsKey]: { visibility: nextVisibility } } },
-        { mergeFields: [`columnPreferences.${sectionSettingsKey}`] }
-      );
-    } catch (error) {
-      console.error('Failed to save section visibility preferences', error);
-      toast({
-        title: 'Error',
-        description: 'Could not save section visibility preferences.',
-        variant: 'destructive',
-      });
-    }
-  };
-
-  const toggleSectionVisibility = (key: keyof typeof sectionVisibility, checked: boolean) => {
+  const toggleSection = (key: SectionKey, checked: boolean) => {
     const next = { ...sectionVisibility, [key]: checked };
     setSectionVisibility(next);
-    void saveSectionVisibility(next);
+    if (!user) return;
+    setDoc(
+      doc(db, 'userSettings', user.id),
+      { columnPreferences: { [SECTION_SETTINGS_KEY]: { visibility: next } } },
+      { mergeFields: [`columnPreferences.${SECTION_SETTINGS_KEY}`] },
+    ).catch((error) => {
+      console.error('Failed to save section visibility preferences', error);
+      toast({ title: 'Error', description: 'Could not save section visibility preferences.', variant: 'destructive' });
+    });
   };
 
-  const dateWiseColSpan =
-    1 +
-    (sectionVisibility.utilised ? selectedAccounts.length + 1 : 0) +
-    (sectionVisibility.interTransfer ? selectedAccounts.length + 1 : 0) +
-    (sectionVisibility.expenses ? selectedAccounts.length + 1 : 0) +
-    (sectionVisibility.receipts ? selectedAccounts.length + 1 : 0) +
-    (sectionVisibility.dp ? selectedAccounts.length + 1 : 0) +
-    (sectionVisibility.balanceToDraw ? selectedAccounts.length + 1 : 0) +
-    (sectionVisibility.interest ? (selectedAccounts.length * 2) + 1 : 0);
+  // One account scope for both views: active accounts unless "Include inactive" is on.
+  const scopeAccounts = useMemo(
+    () => accounts.filter((account) => includeInactive || account.status === 'Active'),
+    [accounts, includeInactive],
+  );
+  const effectiveBank = scopeAccounts.some((account) => account.id === bankFilter) ? bankFilter : 'all';
+  const selectedAccounts = useMemo(
+    () => (effectiveBank === 'all' ? scopeAccounts : scopeAccounts.filter((account) => account.id === effectiveBank)),
+    [scopeAccounts, effectiveBank],
+  );
 
-  const handleDatePresetChange = (value: string) => {
-    const preset = value as DateRangePreset;
-    setDatePreset(preset);
-    if (preset === 'custom') return;
-    setDateRange(getDateRangeFromPreset(preset));
-  };
+  const ledgers = useMemo(() => buildLedgers<BankAccount, BankExpense>(accounts, transactions), [accounts, transactions]);
 
-  if (authLoading || (isLoading && canView)) {
-    return (
-      <div className="relative w-full px-4 sm:px-6 lg:px-8 py-6 space-y-4">
-        <Skeleton className="h-10 w-64 rounded-xl" />
-        <div className="grid grid-cols-3 gap-4">
-          <Skeleton className="h-20 rounded-xl" />
-          <Skeleton className="h-20 rounded-xl" />
-          <Skeleton className="h-20 rounded-xl" />
-        </div>
-        <Skeleton className="h-96 w-full rounded-xl" />
-      </div>
+  // The days shown: the picked range, never past today. With no range, the whole history from the
+  // earliest opening date (or first entry) of the selected accounts.
+  const span = useMemo(() => {
+    const today = startOfDay(new Date());
+    let from = dateRange?.from ? startOfDay(dateRange.from) : null;
+    if (!from) {
+      const starts = selectedAccounts.map((account) => {
+        const ledger = ledgers.get(account.id);
+        return ledger?.start ?? ledger?.entries[0]?.at ?? today;
+      });
+      from = starts.length ? startOfDay(new Date(Math.min(...starts.map((d) => d.getTime())))) : today;
+    }
+    let to = dateRange?.to ? startOfDay(dateRange.to) : dateRange?.from ? from : today;
+    if (to > today) to = today;
+    return from > to ? null : { from, to };
+  }, [dateRange, selectedAccounts, ledgers]);
+
+  const series = useMemo<AccountSeries[]>(() => {
+    if (!span) return [];
+    return selectedAccounts.flatMap((account) => {
+      const ledger = ledgers.get(account.id);
+      if (!ledger) return [];
+      const cc = isCashCredit(account);
+      const days = dailyRows(ledger, span.from, span.to).map((row): AccountDay => {
+        const limit = cc && row.open ? getApplicableCcLimit(account, row.day) : 0;
+        const rate = cc && row.open ? getApplicableRate(account, row.day) : 0;
+        return {
+          row,
+          limit,
+          available: cc ? limit - row.closing : row.closing,
+          rate,
+          interest: cc ? dailyInterest(row.closing, rate) : 0,
+        };
+      });
+      return [{ account, cc, days }];
+    });
+  }, [selectedAccounts, ledgers, span]);
+
+  const dayCount = series[0]?.days.length ?? 0;
+
+  const summary = useMemo(() => {
+    const totals = { receipts: 0, payments: 0, transfersIn: 0, transfersOut: 0, count: 0 };
+    for (const { days } of series) {
+      for (const { row } of days) {
+        totals.receipts += row.receipts;
+        totals.payments += row.payments;
+        totals.transfersIn += row.transfersIn;
+        totals.transfersOut += row.transfersOut;
+        totals.count += row.count;
+      }
+    }
+    return totals;
+  }, [series]);
+
+  // "By account" rows: one per account per open day.
+  const accountRows = useMemo(() => {
+    const rows = series.flatMap(({ account, days }) =>
+      days.filter((d) => d.row.open).map((d) => ({ id: `${d.row.key}-${account.id}`, account, ...d })),
     );
-  }
+    return rows.sort((a, b) => {
+      const byDate = a.row.day.getTime() - b.row.day.getTime();
+      if (byDate !== 0) return dateSortOrder === 'newest' ? -byDate : byDate;
+      return accountLabel(a.account).localeCompare(accountLabel(b.account));
+    });
+  }, [series, dateSortOrder]);
 
-  if (!canView) {
-    return (
-      <div className="relative w-full px-4 sm:px-6 lg:px-8 py-6">
-        <PageHeader title="Daily Utilization Log" backHref="/bank-balance" backLabel="Back to dashboard" />
-        <Card><CardHeader><CardTitle>Access Denied</CardTitle><CardDescription>You do not have permission.</CardDescription></CardHeader>
-          <CardContent className="flex justify-center p-8"><ShieldAlert className="h-14 w-14 text-destructive" /></CardContent>
-        </Card>
-      </div>
+  // Date-wise rows: day indices on which at least one selected account is open.
+  const pivotDays = useMemo(() => {
+    const indices = Array.from({ length: dayCount }, (_, i) => i).filter((i) => series.some((s) => s.days[i].row.open));
+    return dateSortOrder === 'newest' ? indices.reverse() : indices;
+  }, [series, dayCount, dateSortOrder]);
+
+  const singleAccount = effectiveBank !== 'all' ? series[0] : undefined;
+  const singleTotals = useMemo(() => {
+    if (!singleAccount) return null;
+    const open = singleAccount.days.filter((d) => d.row.open);
+    if (!open.length) return null;
+    const sum = (pick: (d: AccountDay) => number) => open.reduce((s, d) => s + pick(d), 0);
+    return {
+      opening: open[0].row.opening,
+      receipts: sum((d) => d.row.receipts),
+      payments: sum((d) => d.row.payments),
+      transfersIn: sum((d) => d.row.transfersIn),
+      transfersOut: sum((d) => d.row.transfersOut),
+      closing: open[open.length - 1].row.closing,
+      available: open[open.length - 1].available,
+      count: sum((d) => d.row.count),
+      activeDays: open.filter((d) => d.row.count > 0).length,
+      days: open.length,
+    };
+  }, [singleAccount]);
+
+  if (authLoading || (isLoading && canView)) return <BankPageSkeleton kpis={4} />;
+  if (!canView) return <BankAccessDenied title="Daily Log" backHref="/bank-balance/settings" backLabel="Back to settings" />;
+
+  // ── Date-wise pivot sections ────────────────────────────────────────────────────────────────
+  const ccSeries = series.filter((s) => s.cc);
+  const caSeries = series.filter((s) => !s.cc);
+
+  type PivotColumn = { id: string; header: ReactNode; render: (i: number) => ReactNode; total?: boolean };
+  type PivotSection = { key: SectionKey; title: string; columns: PivotColumn[] };
+
+  const perAccount = (
+    list: AccountSeries[],
+    prefix: string,
+    value: (d: AccountDay) => ReactNode,
+    total?: (days: AccountDay[]) => ReactNode,
+  ): PivotColumn[] => [
+    ...list.map((s) => ({
+      id: `${prefix}-${s.account.id}`,
+      header: accountLabel(s.account),
+      render: (i: number) => (s.days[i].row.open ? value(s.days[i]) : '—'),
+    })),
+    ...(total
+      ? [{ id: `${prefix}-total`, header: 'Total', total: true, render: (i: number) => total(list.map((s) => s.days[i]).filter((d) => d.row.open)) }]
+      : []),
+  ];
+  const sumOf = (pick: (d: AccountDay) => number, show: (v: number) => string = formatInr) => (days: AccountDay[]) =>
+    show(days.reduce((s, d) => s + pick(d), 0));
+  const inOut = (tIn: number, tOut: number) =>
+    tIn || tOut ? (
+      <span className="inline-flex flex-col items-end leading-tight">
+        {tIn > 0 && <span className="text-emerald-600">+{formatInr(tIn)}</span>}
+        {tOut > 0 && <span className="text-rose-600">−{formatInr(tOut)}</span>}
+      </span>
+    ) : (
+      '—'
     );
-  }
 
-  return (
-    <>
-      {/* ── Animated Background (Blue theme for Daily Log) ── */}
-      <div className="fixed inset-0 -z-10 overflow-hidden pointer-events-none">
-        <div className="absolute inset-0 bg-gradient-to-br from-blue-50/60 via-background to-indigo-50/40 dark:from-blue-950/20 dark:via-background dark:to-indigo-950/15" />
-        <div className="animate-bb-orb-1 absolute top-[-10%] left-[-5%] w-[40vw] h-[40vw] rounded-full bg-blue-300/15 blur-3xl" />
-        <div className="animate-bb-orb-2 absolute bottom-[-8%] right-[-6%] w-[45vw] h-[45vw] rounded-full bg-indigo-300/12 blur-3xl" />
-        <div className="animate-bb-orb-3 absolute top-[40%] left-[30%] w-[25vw] h-[25vw] rounded-full bg-sky-200/10 blur-2xl" />
-        <div className="absolute inset-0 opacity-20 dark:opacity-12"
-          style={{ backgroundImage: 'radial-gradient(circle, rgba(59,130,246,0.12) 1px, transparent 1px)', backgroundSize: '28px 28px' }}
-        />
-      </div>
-    <div className="relative w-full px-4 sm:px-6 lg:px-8">
-      {/* Header */}
-      <PageHeader
-        title="Daily Balance Log"
-        description="History of daily balances and utilization across all accounts."
-        backHref="/bank-balance"
-        backLabel="Back to dashboard"
-      />
+  const sections: PivotSection[] = [
+    {
+      key: 'utilised' as const,
+      title: 'Cash Credit utilisation',
+      columns: ccSeries.length ? perAccount(ccSeries, 'util', (d) => formatInr(d.row.closing), sumOf((d) => d.row.closing)) : [],
+    },
+    {
+      key: 'caBalance' as const,
+      title: 'Current account balance',
+      columns: caSeries.length ? perAccount(caSeries, 'bal', (d) => formatInr(d.row.closing), sumOf((d) => d.row.closing)) : [],
+    },
+    {
+      key: 'interTransfer' as const,
+      title: 'Internal transfers (in / out)',
+      columns: perAccount(
+        series,
+        'contra',
+        (d) => inOut(d.row.transfersIn, d.row.transfersOut),
+        (days) => inOut(days.reduce((s, d) => s + d.row.transfersIn, 0), days.reduce((s, d) => s + d.row.transfersOut, 0)),
+      ),
+    },
+    {
+      key: 'expenses' as const,
+      title: 'Payments of the day',
+      columns: perAccount(series, 'exp', (d) => flow(d.row.payments), sumOf((d) => d.row.payments, flow)),
+    },
+    {
+      key: 'receipts' as const,
+      title: 'Receipts of the day',
+      columns: perAccount(series, 'rec', (d) => flow(d.row.receipts), sumOf((d) => d.row.receipts, flow)),
+    },
+    {
+      key: 'dp' as const,
+      title: 'DP / TOD limit',
+      columns: ccSeries.length ? perAccount(ccSeries, 'dp', (d) => flow(d.limit), sumOf((d) => d.limit, flow)) : [],
+    },
+    {
+      key: 'balanceToDraw' as const,
+      title: 'Balance to draw',
+      columns: perAccount(series, 'btd', (d) => formatInr(d.available), sumOf((d) => d.available)),
+    },
+    {
+      key: 'interest' as const,
+      title: 'Interest (projected, per day)',
+      columns: ccSeries.length
+        ? [
+            ...ccSeries.map((s) => ({
+              id: `rate-${s.account.id}`,
+              header: `Rate ${accountLabel(s.account)}`,
+              render: (i: number) => (s.days[i].row.open && s.days[i].rate > 0 ? `${s.days[i].rate.toFixed(2)}%` : '—'),
+            })),
+            ...perAccount(ccSeries, 'int', (d) => flow(d.interest), sumOf((d) => d.interest, flow)),
+          ]
+        : [],
+    },
+  ].filter((section) => sectionVisibility[section.key] && section.columns.length > 0);
 
-      {/* Summary stats */}
-      <div className="mb-4 grid grid-cols-3 gap-3">
-        <div className="rounded-xl border border-red-200/60 bg-red-50/60 dark:bg-red-950/20 dark:border-red-800/30 p-3 flex items-center gap-3">
-          <div className="rounded-full bg-red-100 dark:bg-red-900/40 p-2">
-            <TrendingDown className="h-4 w-4 text-red-600 dark:text-red-400" />
-          </div>
-          <div>
-            <p className="text-xs text-muted-foreground">Period Payments</p>
-            <p className="text-sm font-bold text-red-700 dark:text-red-400">{formatCurrency(summary.totalExpenses)}</p>
-          </div>
-        </div>
-        <div className="rounded-xl border border-green-200/60 bg-green-50/60 dark:bg-green-950/20 dark:border-green-800/30 p-3 flex items-center gap-3">
-          <div className="rounded-full bg-green-100 dark:bg-green-900/40 p-2">
-            <TrendingUp className="h-4 w-4 text-green-600 dark:text-green-400" />
-          </div>
-          <div>
-            <p className="text-xs text-muted-foreground">Period Receipts</p>
-            <p className="text-sm font-bold text-green-700 dark:text-green-400">{formatCurrency(summary.totalReceipts)}</p>
-          </div>
-        </div>
-        <div className="rounded-xl border border-border/60 bg-muted/30 p-3 flex items-center gap-3">
-          <div className="rounded-full bg-muted p-2">
-            <CalendarIcon className="h-4 w-4 text-muted-foreground" />
-          </div>
-          <div>
-            <p className="text-xs text-muted-foreground">Log Entries</p>
-            <p className="text-sm font-bold">{summary.entries}</p>
-          </div>
-        </div>
-      </div>
+  const pivotColumnCount = 1 + sections.reduce((n, s) => n + s.columns.length, 0);
 
-      <TableCard
-        title="Balance log"
-        count={filteredLogs.length}
-        noun="record"
-        toolbar={
-          <FilterBar
-            activeCount={(dateRange ? 1 : 0) + (bankFilter !== 'all' ? 1 : 0)}
-            onClear={() => {
-              setDateRange(undefined);
-              setDatePreset('custom');
-              setBankFilter('all');
-            }}
-            actions={
-              <>
+  const sortButton = (
+    <Button
+      variant="ghost"
+      size="icon"
+      className="h-6 w-6"
+      onClick={() => setDateSortOrder((prev) => (prev === 'newest' ? 'oldest' : 'newest'))}
+      title={dateSortOrder === 'newest' ? 'Newest first. Click for oldest first.' : 'Oldest first. Click for newest first.'}
+      aria-label={dateSortOrder === 'newest' ? 'Sort oldest first' : 'Sort newest first'}
+    >
+      <ArrowUpDown className="h-3.5 w-3.5" />
+    </Button>
+  );
+
+  const activeFilters = (dateRange ? 1 : 0) + (effectiveBank !== 'all' ? 1 : 0) + (includeInactive ? 1 : 0);
+
+  const toolbar = (
+    <FilterBar
+      activeCount={activeFilters}
+      onClear={() => {
+        setDateRange(undefined);
+        setDatePreset('custom');
+        setBankFilter('all');
+        setIncludeInactive(false);
+      }}
+      actions={
+        <>
+          <div className="inline-flex rounded-md border p-0.5">
             <Button
-              variant="outline"
-              size="icon"
-              onClick={() => setViewMode((prev) => (prev === 'dateWise' ? 'current' : 'dateWise'))}
-              title={viewMode === 'dateWise' ? 'Switch to Current View' : 'Switch to Date-wise View'}
-              aria-label={viewMode === 'dateWise' ? 'Switch to Current View' : 'Switch to Date-wise View'}
+              size="sm"
+              variant={viewMode === 'dateWise' ? 'secondary' : 'ghost'}
+              className="h-8"
+              onClick={() => setViewMode('dateWise')}
             >
-              <ArrowLeftRight className="h-4 w-4" />
+              Date-wise
             </Button>
-
+            <Button
+              size="sm"
+              variant={viewMode === 'current' ? 'secondary' : 'ghost'}
+              className="h-8"
+              onClick={() => setViewMode('current')}
+            >
+              By account
+            </Button>
+          </div>
           {viewMode === 'dateWise' && (
-            <Popover open={sectionsPopoverOpen} onOpenChange={setSectionsPopoverOpen}>
+            <Popover>
               <PopoverTrigger asChild>
-                <Button variant="outline">
+                <Button variant="outline" size="sm" className="h-9">
                   <Settings2 className="mr-2 h-4 w-4" />
                   Sections
                 </Button>
               </PopoverTrigger>
-              <PopoverContent align="start" className="w-[320px]">
+              <PopoverContent align="end" className="w-[min(20rem,calc(100vw-1.5rem))]">
                 <div className="space-y-3">
-                  <p className="text-sm font-medium">Show/Hide Sections</p>
-                  {[
-                    { key: 'utilised', label: 'Utilised Balance in Bank' },
-                    { key: 'interTransfer', label: 'Inter Bank Transfer' },
-                    { key: 'expenses', label: 'Expenses of the Day' },
-                    { key: 'receipts', label: 'Receipt of the Day' },
-                    { key: 'dp', label: 'DP / TOD Limit' },
-                    { key: 'balanceToDraw', label: 'Balance to Draw' },
-                    { key: 'interest', label: 'Interest Calculation' },
-                  ].map((section) => (
+                  <p className="text-sm font-medium">Show / hide sections</p>
+                  {SECTION_OPTIONS.map((section) => (
                     <div key={section.key} className="flex items-center justify-between gap-3">
-                      <span className="text-sm">{section.label}</span>
+                      <Label htmlFor={`daily-log-section-${section.key}`} className="text-sm font-normal">
+                        {section.label}
+                      </Label>
                       <Switch
-                        checked={sectionVisibility[section.key as keyof typeof sectionVisibility]}
-                        onCheckedChange={(checked) =>
-                          toggleSectionVisibility(
-                            section.key as keyof typeof sectionVisibility,
-                            checked
-                          )
-                        }
+                        id={`daily-log-section-${section.key}`}
+                        checked={sectionVisibility[section.key]}
+                        onCheckedChange={(checked) => toggleSection(section.key, checked)}
                       />
                     </div>
                   ))}
@@ -439,375 +436,247 @@ export default function DailyLogPage() {
               </PopoverContent>
             </Popover>
           )}
+        </>
+      }
+    >
+      <BankDateRangeFilter
+        range={dateRange}
+        preset={datePreset}
+        onChange={(range, preset) => {
+          setDateRange(range);
+          setDatePreset(preset);
+        }}
+      />
+      <Select value={effectiveBank} onValueChange={setBankFilter}>
+        <SelectTrigger className="sm:w-56">
+          <SelectValue placeholder="All accounts" />
+        </SelectTrigger>
+        <SelectContent>
+          <SelectItem value="all">All accounts</SelectItem>
+          {scopeAccounts.map((account) => (
+            <SelectItem key={account.id} value={account.id}>
+              {accountLabel(account)} – {account.bankName}
+              {account.status !== 'Active' ? ' (inactive)' : ''}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+      <div className="flex h-10 items-center gap-2 rounded-md border px-3">
+        <Switch id="daily-log-inactive" checked={includeInactive} onCheckedChange={setIncludeInactive} />
+        <Label htmlFor="daily-log-inactive" className="text-sm font-normal">
+          Include inactive
+        </Label>
+      </div>
+    </FilterBar>
+  );
+
+  const empty = (colSpan: number, message: string) => (
+    <TableRow>
+      <TableCell colSpan={colSpan} className="h-32 text-center text-muted-foreground">
+        <div className="flex flex-col items-center gap-2">
+          <CalendarDays className="h-8 w-8 opacity-30" />
+          <p>{message}</p>
+        </div>
+      </TableCell>
+    </TableRow>
+  );
+
+  const rangeLabel = span
+    ? span.from.getTime() === span.to.getTime()
+      ? formatDay(span.from)
+      : `${formatDay(span.from)} – ${formatDay(span.to)}`
+    : 'No days in range';
+
+  return (
+    <>
+      <BankBalanceBackground tone="blue" />
+      <div className={BANK_PAGE}>
+        <PageHeader
+          title="Daily Log"
+          icon={CalendarDays}
+          description="Day-by-day opening, movement and closing for every account — Cash Credit as utilisation, current accounts as balance."
+          backHref="/bank-balance/settings"
+          backLabel="Back to settings"
+          actions={
+            <Button variant="outline" size="sm" onClick={() => void refresh()} disabled={isRefreshing}>
+              <RefreshCw className={cn('mr-2 h-4 w-4', isRefreshing && 'animate-spin')} />
+              Refresh
+            </Button>
+          }
+        />
+
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
+          <KpiCard label="Receipts" value={formatInr(summary.receipts)} hint={rangeLabel} icon={ArrowDownLeft} tone="emerald" accent />
+          <KpiCard label="Payments" value={formatInr(summary.payments)} hint={rangeLabel} icon={ArrowUpRight} tone="rose" accent />
+          <KpiCard
+            label="Internal transfers in"
+            value={formatInr(summary.transfersIn)}
+            hint={`${formatInr(summary.transfersOut)} out · not in receipts or payments`}
+            icon={ArrowLeftRight}
+            tone="violet"
+            accent
+          />
+          <KpiCard
+            label="Entries"
+            value={summary.count}
+            hint={`${selectedAccounts.length} account${selectedAccounts.length === 1 ? '' : 's'} · ${dayCount} day${dayCount === 1 ? '' : 's'}`}
+            icon={Activity}
+            tone="blue"
+            accent
+          />
+        </div>
+
+        {viewMode === 'current' ? (
+          <TableCard
+            title={singleAccount ? `${accountLabel(singleAccount.account)} — daily balance` : 'Daily balances by account'}
+            description={
+              <>
+                {rangeLabel}
+                {singleAccount
+                  ? ` · ${singleAccount.cc ? 'Figures are utilisation' : 'Figures are balance'}`
+                  : ' · Cash Credit opening / closing are utilisation; current accounts are balance'}
+                {singleTotals ? ` · ${singleTotals.activeDays} of ${singleTotals.days} days with entries` : ''}
               </>
             }
+            count={accountRows.length}
+            noun="record"
+            toolbar={toolbar}
           >
-            <Select value={datePreset} onValueChange={handleDatePresetChange}>
-              <SelectTrigger>
-                <SelectValue placeholder="Quick filter" />
-              </SelectTrigger>
-              <SelectContent>
-                {DATE_RANGE_PRESET_OPTIONS.map((option) => (
-                  <SelectItem key={option.value} value={option.value}>
-                    {option.label}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-
-            <Popover>
-              <PopoverTrigger asChild>
-                <Button id="date" variant="outline" className={cn('justify-start text-left font-normal', !dateRange && 'text-muted-foreground')}>
-                  <CalendarIcon className="mr-2 h-4 w-4" />
-                  {dateRange?.from ? (
-                    dateRange.to
-                      ? <>{format(dateRange.from, 'LLL dd, y')} – {format(dateRange.to, 'LLL dd, y')}</>
-                      : format(dateRange.from, 'LLL dd, y')
-                  ) : <span>Pick a date range</span>}
-                </Button>
-              </PopoverTrigger>
-              <PopoverContent className="w-auto p-0" align="start">
-                <Calendar
-                  initialFocus
-                  mode="range"
-                  defaultMonth={dateRange?.from}
-                  selected={dateRange}
-                  onSelect={(range) => {
-                    setDateRange(range);
-                    setDatePreset('custom');
-                  }}
-                  numberOfMonths={2}
-                />
-              </PopoverContent>
-            </Popover>
-
-            <Select value={bankFilter} onValueChange={setBankFilter}>
-              <SelectTrigger>
-                <SelectValue placeholder="All Banks" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All Banks</SelectItem>
-                {bankAccounts.filter((acc) => acc.status === 'Active').map(acc => (
-                  <SelectItem key={acc.id} value={acc.id}>{acc.shortName} – {acc.bankName}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </FilterBar>
-        }
-      >
-            {viewMode === 'current' ? (
-              <Table className="w-full min-w-[900px]">
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Date</TableHead>
-                    <TableHead>Bank</TableHead>
-                    <TableHead className="text-right">Opening</TableHead>
-                    <TableHead className="text-right">Payments</TableHead>
-                    <TableHead className="text-right">Receipts</TableHead>
-                    <TableHead className="text-right">Contra</TableHead>
-                    <TableHead className="text-right">Closing</TableHead>
-                    <TableHead className="text-right">Available</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {isLoading
-                    ? Array.from({ length: 5 }).map((_, i) => (
-                      <TableRow key={i}>
-                        <TableCell colSpan={8}><Skeleton className="h-6 rounded-lg" /></TableCell>
-                      </TableRow>
-                    ))
-                    : filteredLogs.length > 0
-                      ? filteredLogs.map(log => (
-                        <TableRow key={log.id}>
-                          <TableCell className="whitespace-nowrap font-medium">
-                            {format(new Date(log.date), 'dd MMM, yyyy')}
-                          </TableCell>
-                          <TableCell>
-                            {log.accountName}
-                          </TableCell>
-                          <TableCell className="whitespace-nowrap text-right tabular-nums">{formatCurrency(log.openingBalance)}</TableCell>
-                          <TableCell className="whitespace-nowrap text-right tabular-nums">
-                            <span className={cn(log.totalExpenses > 0 ? 'text-red-600 dark:text-red-400' : 'text-muted-foreground')}>
-                              {log.totalExpenses > 0 ? `−${formatCurrency(log.totalExpenses)}` : '—'}
-                            </span>
-                          </TableCell>
-                          <TableCell className="whitespace-nowrap text-right tabular-nums">
-                            <span className={cn(log.totalReceipts > 0 ? 'text-green-600 dark:text-green-400' : 'text-muted-foreground')}>
-                              {log.totalReceipts > 0 ? `+${formatCurrency(log.totalReceipts)}` : '—'}
-                            </span>
-                          </TableCell>
-                          <TableCell className="whitespace-nowrap text-right tabular-nums">
-                            {log.totalContra !== 0 ? formatCurrency(log.totalContra) : '—'}
-                          </TableCell>
-                          <TableCell className="whitespace-nowrap text-right tabular-nums">{formatCurrency(log.closingBalance)}</TableCell>
-                          <TableCell className="whitespace-nowrap text-right tabular-nums">
-                            <span className={cn('font-medium', log.availableBalance < 0 ? 'text-red-600 dark:text-red-400' : 'text-primary')}>
-                              {formatCurrency(log.availableBalance)}
-                            </span>
-                          </TableCell>
-                        </TableRow>
-                      ))
-                      : (
-                        <TableRow>
-                          <TableCell colSpan={8} className="text-center h-32 text-muted-foreground">
-                            <div className="flex flex-col items-center gap-2">
-                              <CalendarIcon className="h-8 w-8 opacity-30" />
-                              <p>No logs found for the selected criteria.</p>
-                            </div>
-                          </TableCell>
-                        </TableRow>
-                      )
-                  }
-                </TableBody>
-              </Table>
-            ) : (
-              <Table className="w-max min-w-[1200px]">
-                <TableHeader>
-                  <TableRow>
-                    <TableHead rowSpan={2} className="sticky left-0 !z-30 min-w-[140px] border-r">
-                      <div className="flex items-center gap-2">
-                        <span>Date</span>
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          className="h-6 w-6"
-                          onClick={() => setDateSortOrder((prev) => (prev === 'newest' ? 'oldest' : 'newest'))}
-                          title={dateSortOrder === 'newest' ? 'Sorted by newest first. Click for oldest first.' : 'Sorted by oldest first. Click for newest first.'}
-                          aria-label={dateSortOrder === 'newest' ? 'Sort by oldest first' : 'Sort by newest first'}
-                        >
-                          <ArrowUpDown className="h-3.5 w-3.5" />
-                        </Button>
-                      </div>
-                    </TableHead>
-                    {sectionVisibility.utilised && (
-                      <TableHead colSpan={selectedAccounts.length + 1} className="border-r text-center">Utilised Balance in Bank</TableHead>
-                    )}
-                    {sectionVisibility.interTransfer && (
-                      <TableHead colSpan={selectedAccounts.length + 1} className="border-r text-center">Inter Bank Transfer</TableHead>
-                    )}
-                    {sectionVisibility.expenses && (
-                      <TableHead colSpan={selectedAccounts.length + 1} className="border-r text-center">Expenses of the Day</TableHead>
-                    )}
-                    {sectionVisibility.receipts && (
-                      <TableHead colSpan={selectedAccounts.length + 1} className="border-r text-center">Receipt of the Day</TableHead>
-                    )}
-                    {sectionVisibility.dp && (
-                      <TableHead colSpan={selectedAccounts.length + 1} className="border-r text-center">DP / TOD Limit</TableHead>
-                    )}
-                    {sectionVisibility.balanceToDraw && (
-                      <TableHead colSpan={selectedAccounts.length + 1} className="border-r text-center">Balance to Draw</TableHead>
-                    )}
-                    {sectionVisibility.interest && (
-                      <TableHead colSpan={(selectedAccounts.length * 2) + 1} className="text-center">Interest Calculation</TableHead>
-                    )}
-                  </TableRow>
-                  <TableRow className="[&>th]:!top-[var(--table-head-h,2.5rem)]">
-                    {sectionVisibility.utilised && (
-                      <>
-                        {selectedAccounts.map((acc) => (
-                          <TableHead key={`util-head-${acc.id}`} className="text-right">
-                            {acc.shortName}
-                          </TableHead>
-                        ))}
-                        <TableHead className="border-r text-right">Total</TableHead>
-                      </>
-                    )}
-
-                    {sectionVisibility.interTransfer && (
-                      <>
-                        {selectedAccounts.map((acc) => (
-                          <TableHead key={`contra-head-${acc.id}`} className="text-right">
-                            {acc.shortName}
-                          </TableHead>
-                        ))}
-                        <TableHead className="border-r text-right">Total</TableHead>
-                      </>
-                    )}
-
-                    {sectionVisibility.expenses && (
-                      <>
-                        {selectedAccounts.map((acc) => (
-                          <TableHead key={`exp-head-${acc.id}`} className="text-right">
-                            {acc.shortName}
-                          </TableHead>
-                        ))}
-                        <TableHead className="border-r text-right">Total</TableHead>
-                      </>
-                    )}
-
-                    {sectionVisibility.receipts && (
-                      <>
-                        {selectedAccounts.map((acc) => (
-                          <TableHead key={`rec-head-${acc.id}`} className="text-right">
-                            {acc.shortName}
-                          </TableHead>
-                        ))}
-                        <TableHead className="border-r text-right">Total</TableHead>
-                      </>
-                    )}
-
-                    {sectionVisibility.dp && (
-                      <>
-                        {selectedAccounts.map((acc) => (
-                          <TableHead key={`dp-head-${acc.id}`} className="text-right">
-                            {acc.shortName}
-                          </TableHead>
-                        ))}
-                        <TableHead className="border-r text-right">Total</TableHead>
-                      </>
-                    )}
-
-                    {sectionVisibility.balanceToDraw && (
-                      <>
-                        {selectedAccounts.map((acc) => (
-                          <TableHead key={`btd-head-${acc.id}`} className="text-right">
-                            {acc.shortName}
-                          </TableHead>
-                        ))}
-                        <TableHead className="border-r text-right">Total</TableHead>
-                      </>
-                    )}
-
-                    {sectionVisibility.interest && (
-                      <>
-                        {selectedAccounts.map((acc) => (
-                          <TableHead key={`rate-head-${acc.id}`} className="text-right">
-                            Rate {acc.shortName}
-                          </TableHead>
-                        ))}
-                        {selectedAccounts.map((acc) => (
-                          <TableHead key={`int-head-${acc.id}`} className="text-right">
-                            Projected {acc.shortName}
-                          </TableHead>
-                        ))}
-                        <TableHead className="text-right">Total (Projected)</TableHead>
-                      </>
-                    )}
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {dateWiseRows.length > 0 ? (
-                    dateWiseRows.map((row) => (
-                      <TableRow key={row.date}>
-                        <TableCell className="sticky left-0 z-[1] whitespace-nowrap border-r bg-background font-medium">
-                          {format(new Date(row.date), 'dd MMM, yyyy')}
+            <Table className="w-full min-w-[1100px]">
+              <TableHeader>
+                <TableRow>
+                  <TableHead>
+                    <div className="flex items-center gap-2">
+                      <span>Date</span>
+                      {sortButton}
+                    </div>
+                  </TableHead>
+                  <TableHead>Account</TableHead>
+                  <TableHead className="text-right">Opening</TableHead>
+                  <TableHead className="text-right">Receipts</TableHead>
+                  <TableHead className="text-right">Payments</TableHead>
+                  <TableHead className="text-right">Transfers in</TableHead>
+                  <TableHead className="text-right">Transfers out</TableHead>
+                  <TableHead className="text-right">Closing</TableHead>
+                  <TableHead className="text-right">Available</TableHead>
+                  <TableHead className="text-right">Entries</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {accountRows.length === 0
+                  ? empty(10, 'No days found for the selected accounts and dates.')
+                  : accountRows.map((r) => (
+                      <TableRow key={r.id} className={cn(r.row.count === 0 && 'text-muted-foreground')}>
+                        <TableCell className="whitespace-nowrap font-medium">{formatDay(r.row.day)}</TableCell>
+                        <TableCell>
+                          <div className="flex items-center gap-1.5 whitespace-nowrap">
+                            {accountLabel(r.account)}
+                            {typeBadge(r.account)}
+                          </div>
                         </TableCell>
-
-                        {sectionVisibility.utilised && (
-                          <>
-                            {selectedAccounts.map((acc) => (
-                              <TableCell key={`${row.date}-util-${acc.id}`} className="whitespace-nowrap text-right tabular-nums">
-                                {row.utilisedByAccount[acc.id] ? formatCurrency(row.utilisedByAccount[acc.id]) : '—'}
-                              </TableCell>
-                            ))}
-                            <TableCell className="whitespace-nowrap border-r text-right font-medium tabular-nums">
-                              {formatCurrency(selectedAccounts.reduce((s, acc) => s + row.utilisedByAccount[acc.id], 0))}
-                            </TableCell>
-                          </>
-                        )}
-
-                        {sectionVisibility.interTransfer && (
-                          <>
-                            {selectedAccounts.map((acc) => (
-                              <TableCell key={`${row.date}-contra-${acc.id}`} className="whitespace-nowrap text-right tabular-nums">
-                                {row.interTransferByAccount[acc.id] ? formatCurrency(row.interTransferByAccount[acc.id]) : '—'}
-                              </TableCell>
-                            ))}
-                            <TableCell className="whitespace-nowrap border-r text-right font-medium tabular-nums">
-                              {formatCurrency(selectedAccounts.reduce((s, acc) => s + row.interTransferByAccount[acc.id], 0))}
-                            </TableCell>
-                          </>
-                        )}
-
-                        {sectionVisibility.expenses && (
-                          <>
-                            {selectedAccounts.map((acc) => (
-                              <TableCell key={`${row.date}-exp-${acc.id}`} className="whitespace-nowrap text-right tabular-nums">
-                                {row.expensesByAccount[acc.id] ? formatCurrency(row.expensesByAccount[acc.id]) : '—'}
-                              </TableCell>
-                            ))}
-                            <TableCell className="whitespace-nowrap border-r text-right font-medium tabular-nums">
-                              {formatCurrency(selectedAccounts.reduce((s, acc) => s + row.expensesByAccount[acc.id], 0))}
-                            </TableCell>
-                          </>
-                        )}
-
-                        {sectionVisibility.receipts && (
-                          <>
-                            {selectedAccounts.map((acc) => (
-                              <TableCell key={`${row.date}-rec-${acc.id}`} className="whitespace-nowrap text-right tabular-nums">
-                                {row.receiptsByAccount[acc.id] ? formatCurrency(row.receiptsByAccount[acc.id]) : '—'}
-                              </TableCell>
-                            ))}
-                            <TableCell className="whitespace-nowrap border-r text-right font-medium tabular-nums">
-                              {formatCurrency(selectedAccounts.reduce((s, acc) => s + row.receiptsByAccount[acc.id], 0))}
-                            </TableCell>
-                          </>
-                        )}
-
-                        {sectionVisibility.dp && (
-                          <>
-                            {selectedAccounts.map((acc) => (
-                              <TableCell key={`${row.date}-dp-${acc.id}`} className="whitespace-nowrap text-right tabular-nums">
-                                {row.dpByAccount[acc.id] ? formatCurrency(row.dpByAccount[acc.id]) : '—'}
-                              </TableCell>
-                            ))}
-                            <TableCell className="whitespace-nowrap border-r text-right font-medium tabular-nums">
-                              {formatCurrency(selectedAccounts.reduce((s, acc) => s + row.dpByAccount[acc.id], 0))}
-                            </TableCell>
-                          </>
-                        )}
-
-                        {sectionVisibility.balanceToDraw && (
-                          <>
-                            {selectedAccounts.map((acc) => (
-                              <TableCell key={`${row.date}-btd-${acc.id}`} className="whitespace-nowrap text-right tabular-nums">
-                                {row.balanceToDrawByAccount[acc.id] ? formatCurrency(row.balanceToDrawByAccount[acc.id]) : '—'}
-                              </TableCell>
-                            ))}
-                            <TableCell className="whitespace-nowrap border-r text-right font-medium tabular-nums">
-                              {formatCurrency(selectedAccounts.reduce((s, acc) => s + row.balanceToDrawByAccount[acc.id], 0))}
-                            </TableCell>
-                          </>
-                        )}
-
-                        {sectionVisibility.interest && (
-                          <>
-                            {selectedAccounts.map((acc) => (
-                              <TableCell key={`${row.date}-rate-${acc.id}`} className="whitespace-nowrap text-right tabular-nums">
-                                {row.interestRateByAccount[acc.id] > 0 ? `${row.interestRateByAccount[acc.id].toFixed(2)}%` : '—'}
-                              </TableCell>
-                            ))}
-                            {selectedAccounts.map((acc) => (
-                              <TableCell key={`${row.date}-int-${acc.id}`} className="whitespace-nowrap text-right tabular-nums">
-                                {row.interestProjectedByAccount[acc.id] ? formatCurrency(row.interestProjectedByAccount[acc.id]) : '—'}
-                              </TableCell>
-                            ))}
-                            <TableCell className="whitespace-nowrap text-right font-medium tabular-nums">
-                              {formatCurrency(selectedAccounts.reduce((s, acc) => s + row.interestProjectedByAccount[acc.id], 0))}
-                            </TableCell>
-                          </>
-                        )}
+                        <TableCell className="whitespace-nowrap text-right tabular-nums">{formatInr(r.row.opening)}</TableCell>
+                        <TableCell className={cn('whitespace-nowrap text-right tabular-nums', r.row.receipts > 0 && 'text-emerald-600')}>
+                          {flow(r.row.receipts)}
+                        </TableCell>
+                        <TableCell className={cn('whitespace-nowrap text-right tabular-nums', r.row.payments > 0 && 'text-rose-600')}>
+                          {flow(r.row.payments)}
+                        </TableCell>
+                        <TableCell className="whitespace-nowrap text-right tabular-nums">{flow(r.row.transfersIn)}</TableCell>
+                        <TableCell className="whitespace-nowrap text-right tabular-nums">{flow(r.row.transfersOut)}</TableCell>
+                        <TableCell className="whitespace-nowrap text-right font-medium tabular-nums">{formatInr(r.row.closing)}</TableCell>
+                        <TableCell className={cn('whitespace-nowrap text-right font-medium tabular-nums', r.available < 0 && 'text-rose-600')}>
+                          {formatInr(r.available)}
+                        </TableCell>
+                        <TableCell className="text-right tabular-nums">{r.row.count || '—'}</TableCell>
                       </TableRow>
-                    ))
-                  ) : (
-                    <TableRow>
-                      <TableCell
-                        colSpan={Math.max(2, dateWiseColSpan)}
-                        className="text-center h-32 text-muted-foreground"
-                      >
-                        <div className="flex flex-col items-center gap-2">
-                          <CalendarIcon className="h-8 w-8 opacity-30" />
-                          <p>No date-wise logs found for the selected criteria.</p>
-                        </div>
-                      </TableCell>
-                    </TableRow>
-                  )}
-                </TableBody>
-              </Table>
-            )}
-      </TableCard>
-    </div>
+                    ))}
+              </TableBody>
+              {singleTotals && (
+                <TableFooter>
+                  <TableRow>
+                    <TableCell colSpan={2}>Period total</TableCell>
+                    <TableCell className="whitespace-nowrap text-right tabular-nums">{formatInr(singleTotals.opening)}</TableCell>
+                    <TableCell className="whitespace-nowrap text-right tabular-nums text-emerald-700">{formatInr(singleTotals.receipts)}</TableCell>
+                    <TableCell className="whitespace-nowrap text-right tabular-nums text-rose-700">{formatInr(singleTotals.payments)}</TableCell>
+                    <TableCell className="whitespace-nowrap text-right tabular-nums">{formatInr(singleTotals.transfersIn)}</TableCell>
+                    <TableCell className="whitespace-nowrap text-right tabular-nums">{formatInr(singleTotals.transfersOut)}</TableCell>
+                    <TableCell className="whitespace-nowrap text-right tabular-nums">{formatInr(singleTotals.closing)}</TableCell>
+                    <TableCell className="whitespace-nowrap text-right tabular-nums">{formatInr(singleTotals.available)}</TableCell>
+                    <TableCell className="text-right tabular-nums">{singleTotals.count}</TableCell>
+                  </TableRow>
+                </TableFooter>
+              )}
+            </Table>
+          </TableCard>
+        ) : (
+          <TableCard
+            title="Date-wise position"
+            description={`${rangeLabel} · Cash Credit utilisation and current account balance are shown apart, never added together`}
+            count={pivotDays.length}
+            noun="day"
+            toolbar={toolbar}
+          >
+            <Table className="w-max min-w-full">
+              <TableHeader>
+                <TableRow>
+                  <TableHead rowSpan={2} className="sticky left-0 !z-30 min-w-[140px] border-r">
+                    <div className="flex items-center gap-2">
+                      <span>Date</span>
+                      {sortButton}
+                    </div>
+                  </TableHead>
+                  {sections.map((section) => (
+                    <TableHead key={section.key} colSpan={section.columns.length} className="border-r text-center">
+                      {section.title}
+                    </TableHead>
+                  ))}
+                </TableRow>
+                <TableRow className="[&>th]:!top-[var(--table-head-h,2.5rem)]">
+                  {sections.map((section) => (
+                    <Fragment key={section.key}>
+                      {section.columns.map((column, index) => (
+                        <TableHead
+                          key={column.id}
+                          className={cn('whitespace-nowrap text-right', index === section.columns.length - 1 && 'border-r')}
+                        >
+                          {column.header}
+                        </TableHead>
+                      ))}
+                    </Fragment>
+                  ))}
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {pivotDays.length === 0
+                  ? empty(Math.max(2, pivotColumnCount), 'No days found for the selected accounts and dates.')
+                  : pivotDays.map((i) => (
+                      <TableRow key={series[0].days[i].row.key}>
+                        <TableCell className="sticky left-0 z-[1] whitespace-nowrap border-r bg-background font-medium">
+                          {formatDay(series[0].days[i].row.day)}
+                        </TableCell>
+                        {sections.map((section) => (
+                          <Fragment key={section.key}>
+                            {section.columns.map((column, index) => (
+                              <TableCell
+                                key={column.id}
+                                className={cn(
+                                  'whitespace-nowrap text-right tabular-nums',
+                                  column.total && 'font-medium',
+                                  index === section.columns.length - 1 && 'border-r',
+                                )}
+                              >
+                                {column.render(i)}
+                              </TableCell>
+                            ))}
+                          </Fragment>
+                        ))}
+                      </TableRow>
+                    ))}
+              </TableBody>
+            </Table>
+          </TableCard>
+        )}
+      </div>
     </>
   );
 }

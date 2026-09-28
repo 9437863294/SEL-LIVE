@@ -10,17 +10,10 @@ import {
   Save,
   Loader2,
   History,
-  ShieldAlert,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { PageHeader } from '@/components/shared/page-header';
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from '@/components/ui/card';
+import { Card, CardContent } from '@/components/ui/card';
 import {
   Collapsible,
   CollapsibleContent,
@@ -54,17 +47,26 @@ import {
   Timestamp,
 } from 'firebase/firestore';
 import type { BankAccount, BankExpense } from '@/lib/types';
-import { Skeleton } from '@/components/ui/skeleton';
 import { useAuthorization } from '@/hooks/useAuthorization';
+import { formatInr } from '@/lib/bank-balance-ledger';
+import {
+  BANK_PAGE,
+  BankAccessDenied,
+  BankBalanceBackground,
+  BankPageSkeleton,
+} from '@/components/bank-balance/page-kit';
 
 type ReceiptItem = {
-  id: number;
+  id: string;
   description: string;
   amount: number;
 };
 
+const makeId = () =>
+  globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+
 const createInitialReceiptItem = (): ReceiptItem => ({
-  id: Date.now(),
+  id: makeId(),
   description: '',
   amount: 0,
 });
@@ -77,14 +79,14 @@ export default function NewReceiptPage() {
   const [isDatePickerOpen, setIsDatePickerOpen] = useState(false);
   const [selectedBank, setSelectedBank] = useState<string>('');
   const [bankAccounts, setBankAccounts] = useState<BankAccount[]>([]);
-  const [receipts, setReceipts] = useState<ReceiptItem[]>([
+  const [receipts, setReceipts] = useState<ReceiptItem[]>(() => [
     createInitialReceiptItem(),
   ]);
   const [isSaving, setIsSaving] = useState(false);
   const [isLoadingAccounts, setIsLoadingAccounts] = useState(true);
 
-  const canView = can('View', 'Bank Balance.Receipts');
-  const canAdd = can('Add', 'Bank Balance.Receipts');
+  // A form that writes receipts is gated on Add, not View.
+  const canAdd = !authLoading && can('Add', 'Bank Balance.Receipts');
   const activeBankAccounts = bankAccounts.filter(
     (account) => account.status === 'Active'
   );
@@ -110,19 +112,20 @@ export default function NewReceiptPage() {
       }
     };
 
-    if (!authLoading && canView) {
+    if (authLoading) return;
+    if (canAdd) {
       void fetchBankAccounts();
-    } else if (!authLoading && !canView) {
+    } else {
       setIsLoadingAccounts(false);
     }
-  }, [authLoading, canView, toast]);
+  }, [authLoading, canAdd, toast]);
 
   const totalAmount = receipts.reduce((sum, rec) => sum + (rec.amount || 0), 0);
 
   const handleReceiptChange = (
-    id: number,
+    id: string,
     field: keyof ReceiptItem,
-    value: any
+    value: ReceiptItem[keyof ReceiptItem]
   ) => {
     setReceipts((prev) =>
       prev.map((rec) => (rec.id === id ? { ...rec, [field]: value } : rec))
@@ -133,7 +136,7 @@ export default function NewReceiptPage() {
     setReceipts((prev) => [...prev, createInitialReceiptItem()]);
   };
 
-  const removeReceipt = (id: number) => {
+  const removeReceipt = (id: string) => {
     setReceipts((prev) => {
       if (prev.length <= 1) {
         return [createInitialReceiptItem()];
@@ -189,7 +192,7 @@ export default function NewReceiptPage() {
 
       toast({
         title: 'Success',
-        description: `${receipts.length} receipt(s) saved successfully.`,
+        description: `${receipts.length} receipt(s) totalling ${formatInr(totalAmount)} saved successfully.`,
       });
 
       setReceipts([createInitialReceiptItem()]);
@@ -207,224 +210,182 @@ export default function NewReceiptPage() {
     }
   };
 
-  const formatCurrency = (amount: number) =>
-    new Intl.NumberFormat('en-IN', {
-      style: 'currency',
-      currency: 'INR',
-    }).format(amount || 0);
-
-  if (authLoading || (isLoadingAccounts && canView)) {
-    return (
-      <div className="w-full px-4 sm:px-6 lg:px-8 space-y-6">
-        <Skeleton className="h-10 w-80" />
-        <Skeleton className="h-96 w-full" />
-      </div>
-    );
+  if (authLoading || (isLoadingAccounts && canAdd)) {
+    return <BankPageSkeleton kpis={0} />;
   }
 
-  if (!canView) {
+  if (!canAdd) {
     return (
-      <div className="w-full px-4 sm:px-6 lg:px-8">
-        <PageHeader title="New Receipt Entry" backHref="/bank-balance/receipts" backLabel="Back to receipts log" />
-        <Card>
-          <CardHeader>
-            <CardTitle>Access Denied</CardTitle>
-            <CardDescription>
-              You do not have permission to view this page.
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="flex justify-center p-8">
-            <ShieldAlert className="h-16 w-16 text-destructive" />
-          </CardContent>
-        </Card>
-      </div>
+      <BankAccessDenied
+        title="New Receipt Entry"
+        backHref="/bank-balance/receipts"
+        backLabel="Back to receipts"
+        what="the receipt entry form"
+      />
     );
   }
 
   return (
     <>
-      <div className="fixed inset-0 -z-10 overflow-hidden pointer-events-none">
-        <div className="absolute inset-0 bg-gradient-to-br from-green-50/60 via-background to-emerald-50/40 dark:from-green-950/20 dark:via-background dark:to-emerald-950/15" />
-        <div className="animate-bb-orb-1 absolute top-[-10%] left-[-5%] w-[40vw] h-[40vw] rounded-full bg-green-300/15 blur-3xl" />
-        <div className="animate-bb-orb-2 absolute bottom-[-8%] right-[-6%] w-[45vw] h-[45vw] rounded-full bg-emerald-300/12 blur-3xl" />
-        <div className="absolute inset-0 opacity-20 dark:opacity-12"
-          style={{ backgroundImage: 'radial-gradient(circle, rgba(34,197,94,0.12) 1px, transparent 1px)', backgroundSize: '28px 28px' }}
+      <BankBalanceBackground tone="green" />
+      <div className={BANK_PAGE}>
+        <PageHeader
+          title="New Receipt Entry"
+          description="Record a new receipt transaction"
+          backHref="/bank-balance/receipts"
+          backLabel="Back to receipts"
+          actions={
+            <Button asChild variant="outline">
+              <Link href="/bank-balance/receipts">
+                <History className="mr-2 h-4 w-4" />
+                Receipts
+              </Link>
+            </Button>
+          }
         />
-      </div>
-    <div className="relative w-full px-4 sm:px-6 lg:px-8 py-4">
-      <PageHeader
-        title="New Receipt Entry"
-        description="Record a new receipt transaction"
-        backHref="/bank-balance/receipts"
-        backLabel="Back to receipts log"
-        actions={
-          <Link href="/bank-balance/receipts">
-            <Button variant="outline" className="rounded-full border-border/60">
-              <History className="mr-2 h-4 w-4" />
-              Receipts Log
-            </Button>
-          </Link>
-        }
-      />
 
-      <Card>
-        <CardContent className="space-y-6 pt-6">
-          <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
-            <div className="flex flex-wrap items-center gap-4">
-              <div className="space-y-2">
-                <Label>Date</Label>
-                <Popover
-                  open={isDatePickerOpen}
-                  onOpenChange={setIsDatePickerOpen}
-                >
-                  <PopoverTrigger asChild>
-                    <Button
-                      variant="outline"
-                      className={cn(
-                        'w-[240px] justify-start text-left font-normal',
-                        !date && 'text-muted-foreground'
-                      )}
-                    >
-                      <CalendarIcon className="mr-2 h-4 w-4" />
-                      {date
-                        ? format(date, 'PPP')
-                        : 'Pick a date'}
-                    </Button>
-                  </PopoverTrigger>
-                  <PopoverContent className="w-auto p-0">
-                    <Calendar
-                      mode="single"
-                      selected={date}
-                      onSelect={(selectedDate) => {
-                        setDate(selectedDate);
-                        setIsDatePickerOpen(false);
-                      }}
-                      initialFocus
-                    />
-                  </PopoverContent>
-                </Popover>
-              </div>
-
-              <div className="space-y-2">
-                <Label>Select Bank</Label>
-                <Select
-                  value={selectedBank}
-                  onValueChange={setSelectedBank}
-                >
-                  <SelectTrigger className="w-full sm:w-[280px]">
-                    <SelectValue placeholder="Select a bank account" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {activeBankAccounts.map((acc) => (
-                      <SelectItem
-                        key={acc.id}
-                        value={acc.id}
+        <Card>
+          <CardContent className="space-y-6 pt-6">
+            <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+              <div className="flex flex-col gap-4 sm:flex-row sm:flex-wrap sm:items-end">
+                <div className="space-y-2">
+                  <Label htmlFor="receipt-date">Date</Label>
+                  <Popover
+                    open={isDatePickerOpen}
+                    onOpenChange={setIsDatePickerOpen}
+                  >
+                    <PopoverTrigger asChild>
+                      <Button
+                        id="receipt-date"
+                        variant="outline"
+                        className={cn(
+                          'w-full justify-start text-left font-normal sm:w-60',
+                          !date && 'text-muted-foreground'
+                        )}
                       >
-                        {acc.shortName} - {acc.bankName}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                        <CalendarIcon className="mr-2 h-4 w-4" />
+                        {date ? format(date, 'PPP') : 'Pick a date'}
+                      </Button>
+                    </PopoverTrigger>
+                    <PopoverContent className="w-auto p-0">
+                      <Calendar
+                        mode="single"
+                        selected={date}
+                        onSelect={(selectedDate) => {
+                          setDate(selectedDate);
+                          setIsDatePickerOpen(false);
+                        }}
+                        initialFocus
+                      />
+                    </PopoverContent>
+                  </Popover>
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="receipt-bank">Select Bank</Label>
+                  <Select value={selectedBank} onValueChange={setSelectedBank}>
+                    <SelectTrigger id="receipt-bank" className="w-full sm:w-[280px]">
+                      <SelectValue placeholder="Select a bank account" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {activeBankAccounts.map((acc) => (
+                        <SelectItem key={acc.id} value={acc.id}>
+                          {acc.shortName} - {acc.bankName}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+
+              <div className="w-full flex-shrink-0 text-left sm:w-auto sm:text-right">
+                <p className="text-muted-foreground">Total</p>
+                <p className="text-2xl font-bold tabular-nums">{formatInr(totalAmount)}</p>
               </div>
             </div>
 
-            <div className="text-right flex-shrink-0 w-full sm:w-auto mt-4 sm:mt-0">
-              <p className="text-muted-foreground">
-                Total
-              </p>
-              <p className="text-2xl font-bold">
-                {formatCurrency(totalAmount)}
-              </p>
+            <div className="space-y-4">
+              {receipts.map((receipt, index) => (
+                <Collapsible
+                  key={receipt.id}
+                  defaultOpen
+                  className="rounded-lg border p-4"
+                >
+                  <div className="flex items-center justify-between gap-3">
+                    <CollapsibleTrigger asChild>
+                      <h4 className="min-w-0 cursor-pointer text-lg font-semibold">
+                        Receipt #{index + 1}
+                      </h4>
+                    </CollapsibleTrigger>
+                    <div className="flex shrink-0 items-center gap-2 sm:gap-4">
+                      <span className="text-lg font-semibold tabular-nums">
+                        {formatInr(receipt.amount)}
+                      </span>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-8 w-8 shrink-0"
+                        aria-label={`Remove receipt #${index + 1}`}
+                        onClick={() => removeReceipt(receipt.id)}
+                      >
+                        <Trash2 className="h-4 w-4 text-destructive" />
+                      </Button>
+                    </div>
+                  </div>
+                  <CollapsibleContent className="mt-4 grid grid-cols-1 gap-4 md:grid-cols-5">
+                    <div className="space-y-2 md:col-span-3">
+                      <Label htmlFor={`receipt-description-${receipt.id}`}>
+                        Description <span className="text-destructive">*</span>
+                      </Label>
+                      <Textarea
+                        id={`receipt-description-${receipt.id}`}
+                        placeholder="e.g. Received from Client X"
+                        value={receipt.description}
+                        onChange={(e) =>
+                          handleReceiptChange(receipt.id, 'description', e.target.value)
+                        }
+                      />
+                    </div>
+                    <div className="space-y-2 md:col-span-2">
+                      <Label htmlFor={`receipt-amount-${receipt.id}`}>
+                        Amount <span className="text-destructive">*</span>
+                      </Label>
+                      <Input
+                        id={`receipt-amount-${receipt.id}`}
+                        type="number"
+                        inputMode="decimal"
+                        placeholder="0.00"
+                        value={receipt.amount || ''}
+                        onChange={(e) =>
+                          handleReceiptChange(receipt.id, 'amount', e.target.valueAsNumber || 0)
+                        }
+                      />
+                    </div>
+                  </CollapsibleContent>
+                </Collapsible>
+              ))}
             </div>
-          </div>
 
-          <div className="space-y-4">
-            {receipts.map((receipt, index) => (
-              <Collapsible
-                key={receipt.id}
-                defaultOpen
-                className="border p-4 rounded-lg"
+            <div className="flex flex-col-reverse gap-2 sm:flex-row sm:items-center sm:justify-between">
+              <Button variant="outline" onClick={addReceipt}>
+                <Plus className="mr-2 h-4 w-4" />
+                Add Another Receipt
+              </Button>
+              <Button
+                onClick={handleSave}
+                disabled={isSaving || !canAdd || activeBankAccounts.length === 0}
               >
-                <div className="flex justify-between items-center">
-                  <CollapsibleTrigger asChild>
-                    <h4 className="text-lg font-semibold cursor-pointer">
-                      Receipt #{index + 1}
-                    </h4>
-                  </CollapsibleTrigger>
-                  <div className="flex items-center gap-4">
-                    <span className="font-semibold text-lg">
-                      {formatCurrency(receipt.amount)}
-                    </span>
-                    <Button
-                      variant="destructive"
-                      size="icon"
-                      onClick={() =>
-                        removeReceipt(receipt.id)
-                      }
-                    >
-                      <Trash2 className="h-4 w-4" />
-                    </Button>
-                  </div>
-                </div>
-                <CollapsibleContent className="mt-4 grid grid-cols-1 md:grid-cols-5 gap-4">
-                  <Textarea
-                    placeholder="e.g. Received from Client X"
-                    value={receipt.description}
-                    onChange={(e) =>
-                      handleReceiptChange(
-                        receipt.id,
-                        'description',
-                        e.target.value
-                      )
-                    }
-                    className="md:col-span-3"
-                  />
-                  <div className="md:col-span-2">
-                    <Input
-                      type="number"
-                      placeholder="Amount"
-                      value={receipt.amount || ''}
-                      onChange={(e) =>
-                        handleReceiptChange(
-                          receipt.id,
-                          'amount',
-                          e.target.valueAsNumber || 0
-                        )
-                      }
-                    />
-                  </div>
-                </CollapsibleContent>
-              </Collapsible>
-            ))}
-          </div>
-
-          <div className="flex justify-between items-center">
-            <Button
-              variant="outline"
-              onClick={addReceipt}
-            >
-              <Plus className="mr-2 h-4 w-4" />
-              Add Another Receipt
-            </Button>
-            <Button
-              onClick={handleSave}
-              disabled={
-                isSaving ||
-                !canAdd ||
-                activeBankAccounts.length === 0
-              }
-            >
-              {isSaving ? (
-                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-              ) : (
-                <Save className="mr-2 h-4 w-4" />
-              )}
-              Save Receipts
-            </Button>
-          </div>
-        </CardContent>
-      </Card>
-    </div>
+                {isSaving ? (
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                ) : (
+                  <Save className="mr-2 h-4 w-4" />
+                )}
+                Save Receipts
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
     </>
   );
 }

@@ -1,1242 +1,505 @@
 'use client';
 export const dynamic = 'force-dynamic';
 
-import { Fragment, useState, useEffect, useMemo, useCallback } from 'react';
-import { Save, Loader2, ShieldAlert } from 'lucide-react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import Link from 'next/link';
+import { CalendarDays, Coins, FileBarChart, History, Landmark, Loader2, ReceiptText, Save } from 'lucide-react';
+import { collection, doc, getDocs, setDoc } from 'firebase/firestore';
+import { endOfMonth, format, parse, startOfDay, startOfMonth, subMonths } from 'date-fns';
 
 import { Button } from '@/components/ui/button';
-import { PageHeader } from '@/components/shared/page-header';
-import {
-  Card,
-  CardContent,
-  CardHeader,
-  CardTitle,
-  CardDescription,
-} from '@/components/ui/card';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
+import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { PageHeader, SectionHeader } from '@/components/shared/page-header';
+import { KpiCard } from '@/components/shared/kpi-card';
+import { DataList, type ListColumn } from '@/components/shared/data-list';
+import {
+  BANK_PAGE,
+  BankAccessDenied,
+  BankBalanceBackground,
+  BankPageSkeleton,
+  useBankData,
+} from '@/components/bank-balance/page-kit';
 import { useToast } from '@/hooks/use-toast';
-import { db } from '@/lib/firebase';
-import {
-  collection,
-  getDocs,
-  doc,
-  setDoc,
-  getDoc,
-} from 'firebase/firestore';
-import type {
-  BankAccount,
-  BankExpense,
-  MonthlyInterestData,
-} from '@/lib/types';
-import { Skeleton } from '@/components/ui/skeleton';
-import {
-  format,
-  startOfMonth,
-  endOfMonth,
-  subMonths,
-  eachDayOfInterval,
-  compareDesc,
-  parse,
-  subMonths as dfSubMonths,
-  min,
-  endOfDay,
-} from 'date-fns';
-import {
-  Tabs,
-  TabsContent,
-  TabsList,
-  TabsTrigger,
-} from '@/components/ui/tabs';
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from '@/components/ui/table';
 import { useAuthorization } from '@/hooks/useAuthorization';
-import { TableCard } from '@/components/shared/table-card';
-import { FilterBar } from '@/components/shared/filter-bar';
+import { db } from '@/lib/firebase';
+import { cn } from '@/lib/utils';
+import {
+  buildLedgers,
+  compactInr,
+  dailyInterest,
+  dailyRows,
+  formatInr,
+  getApplicableRate,
+  isCashCredit,
+  parseDay,
+} from '@/lib/bank-balance-ledger';
+import type { MonthlyInterestData } from '@/lib/types';
 
-interface MonthlyLogEntry {
-  month: string; // "yyyy-MM"
-  accountId: string;
-  accountName: string;
-  projected: number;
-  actual: number;
-  difference: number;
-}
+/**
+ * Storage (unchanged from the original page, so existing months keep working): one document per
+ * month in `monthlyInterest`, id `yyyy-MM`, with a field per Cash Credit account id holding
+ * `{ projected, actual }`. Saving writes every Cash Credit account with `setDoc(..., { merge: true })`,
+ * so fields for accounts not on the page are left alone.
+ */
+
+type SavedMonth = { id: string; month: Date; projected: number; actual: number; diff: number | null; accounts: number };
+
+const monthKeyOf = (day: Date) => format(day, 'yyyy-MM');
+const monthFromKey = (key: string) => parse(key, 'yyyy-MM', new Date());
+const round2 = (value: number) => Math.round((Number(value) || 0) * 100) / 100;
+
+/** Over the projection costs more than planned (rose); under it is a saving (emerald). */
+const diffClass = (diff: number | null) =>
+  diff === null || Math.abs(diff) < 0.005 ? 'text-muted-foreground' : diff > 0 ? 'text-rose-600' : 'text-emerald-600';
+
+const signedInr = (value: number | null) =>
+  value === null ? '—' : `${value > 0.005 ? '+' : value < -0.005 ? '−' : ''}${formatInr(Math.abs(value))}`;
+
+/** An actual counts once it is a real, non-zero figure: blank entries have always been saved as 0. */
+const parseActual = (value: string): number | null => {
+  if (value.trim() === '') return null;
+  const n = Number(value);
+  return Number.isFinite(n) && n !== 0 ? n : null;
+};
 
 export default function MonthlyInterestPage() {
   const { toast } = useToast();
   const { can, isLoading: authLoading } = useAuthorization();
 
-  const [accounts, setAccounts] = useState<BankAccount[]>([]);
-  const [interestData, setInterestData] = useState<MonthlyInterestData>({});
-  const [initialInterestData, setInitialInterestData] =
-    useState<MonthlyInterestData>({});
-  const [selectedMonth, setSelectedMonth] = useState(
-    format(new Date(), 'yyyy-MM')
-  );
-
-  const [isLoading, setIsLoading] = useState(true);
-  const [isLogLoading, setIsLogLoading] = useState(true);
-  const [isSaving, setIsSaving] = useState(false);
-
-  const [allTransactions, setAllTransactions] = useState<BankExpense[]>([]);
-  const [logData, setLogData] = useState<MonthlyLogEntry[]>([]);
-
-  const [logFilters, setLogFilters] = useState({
-    year: 'all',
-    month: 'all',
-    bank: 'all',
-  });
-  const [activeTab, setActiveTab] = useState<'entry' | 'log'>('log');
-
   const canView = can('View', 'Bank Balance.Monthly Interest');
   const canEdit = can('Edit', 'Bank Balance.Monthly Interest');
+  const canViewReports = can('View', 'Bank Balance.Reports');
 
-  const ccAccounts = useMemo(
-    () => accounts.filter((acc) => acc.accountType === 'Cash Credit'),
-    [accounts]
-  );
+  const { accounts, transactions, isLoading, loadedAt } = useBankData({
+    enabled: !authLoading && canView,
+    transactions: true,
+  });
 
-  const hasUnsavedChanges = useMemo(
-    () =>
-      JSON.stringify(interestData) !==
-      JSON.stringify(initialInterestData),
-    [interestData, initialInterestData]
-  );
+  const [interestDocs, setInterestDocs] = useState<Record<string, MonthlyInterestData>>({});
+  const [docsLoaded, setDocsLoaded] = useState(false);
+  const [selectedMonth, setSelectedMonth] = useState(() => monthKeyOf(new Date()));
+  // Typed-in actuals for one month; anything not typed shows the stored figure.
+  const [draft, setDraft] = useState<{ month: string; values: Record<string, string> } | null>(null);
+  const [isSaving, setIsSaving] = useState(false);
 
-  const fetchBaseData = useCallback(async () => {
-    if (!canView) {
-      setIsLoading(false);
-      setIsLogLoading(false);
-      return;
-    }
-
-    setIsLoading(true);
-    setIsLogLoading(true);
-
+  const loadInterestDocs = useCallback(async () => {
     try {
-      const [accountsSnap, expensesSnap, monthlyInterestSnap] =
-        await Promise.all([
-          getDocs(collection(db, 'bankAccounts')),
-          getDocs(collection(db, 'bankExpenses')),
-          getDocs(collection(db, 'monthlyInterest')),
-        ]);
-
-      const fetchedAccounts = accountsSnap.docs
-        .map(
-          (d) => ({ id: d.id, ...d.data() } as BankAccount)
-        )
-        .sort((a, b) =>
-          (a.shortName || '').localeCompare(b.shortName || '')
-        );
-
-      setAccounts(fetchedAccounts);
-
-      const expenses = expensesSnap.docs.map(
-        (d) => ({ id: d.id, ...d.data() } as BankExpense)
-      );
-      setAllTransactions(expenses);
-
-      // Build log data from monthlyInterest docs
-      const accountsMap = new Map(
-        fetchedAccounts.map((acc) => [acc.id, acc.shortName])
-      );
-
-      const rawLogData: MonthlyLogEntry[] = [];
-      monthlyInterestSnap.forEach((docSnap) => {
-        const monthKey = docSnap.id; // "yyyy-MM"
-        const data = docSnap.data() as MonthlyInterestData;
-
-        Object.entries(data).forEach(([accountId, values]) => {
-          const projected = values.projected || 0;
-          const actual = values.actual || 0;
-          rawLogData.push({
-            month: monthKey,
-            accountId,
-            accountName:
-              accountsMap.get(accountId) || 'Unknown',
-            projected,
-            actual,
-            difference: actual - projected,
-          });
-        });
+      const snap = await getDocs(collection(db, 'monthlyInterest'));
+      const next: Record<string, MonthlyInterestData> = {};
+      snap.forEach((d) => {
+        next[d.id] = d.data() as MonthlyInterestData;
       });
-
-      rawLogData.sort((a, b) =>
-        compareDesc(
-          parse(a.month, 'yyyy-MM', new Date()),
-          parse(b.month, 'yyyy-MM', new Date())
-        )
-      );
-
-      setLogData(rawLogData);
+      setInterestDocs(next);
     } catch (error) {
-      console.error('Error fetching base data:', error);
-      toast({
-        title: 'Error',
-        description: 'Failed to load accounts and interest data.',
-        variant: 'destructive',
-      });
+      console.error('Error loading monthly interest:', error);
+      toast({ title: 'Error', description: 'Failed to load monthly interest data.', variant: 'destructive' });
     } finally {
-      setIsLoading(false);
-      setIsLogLoading(false);
+      setDocsLoaded(true);
     }
-  }, [canView, toast]);
+  }, [toast]);
 
   useEffect(() => {
-    if (!authLoading) {
-      void fetchBaseData();
+    if (!authLoading && canView) void loadInterestDocs();
+  }, [authLoading, canView, loadInterestDocs]);
+
+  const today = useMemo(() => startOfDay(loadedAt ?? new Date()), [loadedAt]);
+
+  const ccAccounts = useMemo(() => accounts.filter(isCashCredit), [accounts]);
+  const ledgers = useMemo(() => buildLedgers(ccAccounts, transactions), [ccAccounts, transactions]);
+
+  // Every month from the earliest Cash Credit opening date (24 months back when none has one) to
+  // this month, plus any older month that already has saved figures. Newest first.
+  const monthOptions = useMemo(() => {
+    const openings = ccAccounts.map((acc) => parseDay(acc.openingDate)).filter((d): d is Date => !!d);
+    const earliest = openings.length
+      ? startOfMonth(new Date(Math.min(...openings.map((d) => d.getTime()))))
+      : startOfMonth(subMonths(today, 23));
+    const keys = new Set<string>();
+    for (let m = startOfMonth(today); m >= earliest; m = subMonths(m, 1)) keys.add(monthKeyOf(m));
+    for (const key of Object.keys(interestDocs)) if (/^\d{4}-\d{2}$/.test(key) && key <= monthKeyOf(today)) keys.add(key);
+    return [...keys].sort((a, b) => b.localeCompare(a));
+  }, [ccAccounts, interestDocs, today]);
+
+  // Live projection for the selected month (to date for the current month), the same rule as the
+  // Interest Report: each open day's closing utilisation × the rate in force that day ÷ 365.
+  const projected = useMemo(() => {
+    const out: Record<string, number> = {};
+    const monthStart = monthFromKey(selectedMonth);
+    const monthEnd = endOfMonth(monthStart);
+    const last = monthEnd > today ? today : startOfDay(monthEnd);
+    for (const acc of ccAccounts) {
+      const ledger = ledgers.get(acc.id);
+      let sum = 0;
+      if (ledger && monthStart <= last) {
+        for (const row of dailyRows(ledger, monthStart, last)) {
+          if (row.open) sum += dailyInterest(row.closing, getApplicableRate(acc, row.day));
+        }
+      }
+      out[acc.id] = sum;
     }
-  }, [authLoading, fetchBaseData]);
+    return out;
+  }, [ccAccounts, ledgers, selectedMonth, today]);
 
-  // Compute projected interest for selected month
-  const calculatedProjectedInterest = useMemo(() => {
-    const monthData: Record<string, number> = {};
-
-    if (!canView || isLoading || ccAccounts.length === 0) {
-      return monthData;
-    }
-
-    const [year, month] = selectedMonth
-      .split('-')
-      .map((n) => Number(n));
-    const monthStart = startOfMonth(new Date(year, month - 1));
-    const naturalMonthEnd = endOfMonth(new Date(year, month - 1));
-    const monthEnd = min([
-      naturalMonthEnd,
-      endOfDay(new Date()),
-    ]);
-
-    ccAccounts.forEach((account) => {
-      if (!account.openingDate) {
-        monthData[account.id] = 0;
-        return;
-      }
-
-      const openingDate = new Date(account.openingDate);
-      if (monthEnd < openingDate) {
-        monthData[account.id] = 0;
-        return;
-      }
-
-      let runningBalance =
-        account.openingUtilization || 0;
-
-      const getDayMovementForAccount = (day: Date) => {
-        const key = format(day, 'yyyy-MM-dd');
-        const txToday = allTransactions.filter(
-          (t) =>
-            t.accountId === account.id &&
-            format(t.date.toDate(), 'yyyy-MM-dd') === key
-        );
-
-        const expenses = txToday
-          .filter(
-            (t) => t.type === 'Debit' && !t.isContra
-          )
-          .reduce(
-            (sum, t) => sum + t.amount,
-            0
-          );
-
-        const receipts = txToday
-          .filter(
-            (t) => t.type === 'Credit' && !t.isContra
-          )
-          .reduce(
-            (sum, t) => sum + t.amount,
-            0
-          );
-
-        // Keep the same CC contra behavior as daily-log page
-        const contra = txToday
-          .filter((t) => t.isContra)
-          .reduce(
-            (sum, t) =>
-              sum +
-              (t.type === 'Debit'
-                ? t.amount
-                : -t.amount),
-            0
-          );
-
-        return { expenses, receipts, contra };
-      };
-
-      const getRateForDate = (date: Date): number => {
-        const sortedLog = [...(account.interestRateLog || [])].sort(
-          (a, b) =>
-            compareDesc(
-              new Date(a.fromDate),
-              new Date(b.fromDate)
-            )
-        );
-        // Use latest entry with fromDate <= date (ignoring toDate for simplicity)
-        const rateEntry = sortedLog.find(
-          (entry) =>
-            new Date(entry.fromDate) <= date
-        );
-        return rateEntry ? rateEntry.rate : 0;
-      };
-
-      // Apply all days from openingDate until the day before selected month
-      const preEnd = new Date(monthStart);
-      preEnd.setDate(preEnd.getDate() - 1);
-
-      if (preEnd >= openingDate) {
-        const preDays = eachDayOfInterval({
-          start: openingDate,
-          end: preEnd,
-        });
-
-        preDays.forEach((day) => {
-          const {
-            expenses,
-            receipts,
-            contra,
-          } = getDayMovementForAccount(day);
-
-          const closing =
-            runningBalance +
-            expenses -
-            receipts +
-            contra;
-          runningBalance = closing;
-        });
-      }
-
-      // Now calculate interest within selected month
-      let monthInterest = 0;
-      const days = eachDayOfInterval({
-        start: monthStart,
-        end: monthEnd,
-      });
-
-      days.forEach((day) => {
-        if (day < openingDate) return;
-
-        const {
-          expenses,
-          receipts,
-          contra,
-        } = getDayMovementForAccount(day);
-
-        const closing =
-          runningBalance +
-          expenses -
-          receipts +
-          contra;
-        const rate = getRateForDate(day);
-        const dailyInterest =
-          (closing * (rate / 100)) / 365;
-
-        monthInterest += dailyInterest;
-        runningBalance = closing;
-      });
-
-      monthData[account.id] = monthInterest;
-    });
-
-    return monthData;
-  }, [
-    canView,
-    isLoading,
-    ccAccounts,
-    allTransactions,
-    selectedMonth,
-  ]);
-
-  // Load / hydrate interestData for current month + accounts
-  useEffect(() => {
-    if (!canView || isLoading) return;
-
-    const load = async () => {
-      try {
-        const ref = doc(
-          db,
-          'monthlyInterest',
-          selectedMonth
-        );
-        const snap = await getDoc(ref);
-        const existing = snap.exists()
-          ? (snap.data() as MonthlyInterestData)
-          : {};
-
-        const merged: MonthlyInterestData =
-          ccAccounts.reduce(
-            (acc, account) => {
-              acc[account.id] = {
-                projected:
-                  calculatedProjectedInterest[
-                    account.id
-                  ] ?? 0,
-                actual:
-                  existing[account.id]?.actual ?? 0,
-              };
-              return acc;
-            },
-            {} as MonthlyInterestData
-          );
-
-        setInterestData(merged);
-        setInitialInterestData(
-          JSON.parse(JSON.stringify(merged))
-        );
-      } catch (error) {
-        console.error(
-          'Error loading month interest data:',
-          error
-        );
-        toast({
-          title: 'Error',
-          description:
-            'Failed to load monthly interest data.',
-          variant: 'destructive',
-        });
-      }
-    };
-
-    void load();
-  }, [
-    canView,
-    isLoading,
-    selectedMonth,
-    ccAccounts,
-    calculatedProjectedInterest,
-    toast,
-  ]);
-
-  const handleInterestChange = (
-    accountId: string,
-    value: string
-  ) => {
-    const num = parseFloat(value);
-    setInterestData((prev) => ({
-      ...prev,
-      [accountId]: {
-        ...(prev[accountId] || {
-          projected: 0,
-          actual: 0,
-        }),
-        actual: Number.isNaN(num) ? 0 : num,
-      },
-    }));
+  const stored = interestDocs[selectedMonth];
+  const actualText = (accountId: string) => {
+    if (draft?.month === selectedMonth && accountId in draft.values) return draft.values[accountId];
+    const value = Number(stored?.[accountId]?.actual);
+    return Number.isFinite(value) && value !== 0 ? String(value) : '';
   };
+  const isDirty =
+    draft?.month === selectedMonth &&
+    Object.entries(draft.values).some(([id, value]) => (parseActual(value) ?? 0) !== (Number(stored?.[id]?.actual) || 0));
+
+  const entryTotals = ccAccounts.reduce(
+    (acc, account) => {
+      const actual = parseActual(actualText(account.id));
+      acc.projected += projected[account.id] || 0;
+      if (actual !== null) {
+        acc.actual += actual;
+        acc.diff += actual - (projected[account.id] || 0);
+        acc.withActual += 1;
+      }
+      return acc;
+    },
+    { projected: 0, actual: 0, diff: 0, withActual: 0 },
+  );
+
+  const savedMonths = useMemo<SavedMonth[]>(() => {
+    const existing = new Set(ccAccounts.map((acc) => acc.id));
+    return Object.entries(interestDocs)
+      .filter(([key]) => /^\d{4}-\d{2}$/.test(key))
+      .map(([key, data]) => {
+        let projectedSum = 0;
+        let actualSum = 0;
+        let diff: number | null = null;
+        let count = 0;
+        for (const [accountId, values] of Object.entries(data || {})) {
+          if (!existing.has(accountId)) continue;
+          count += 1;
+          const p = Number(values?.projected) || 0;
+          const a = Number(values?.actual) || 0;
+          projectedSum += p;
+          actualSum += a;
+          if (a !== 0) diff = (diff ?? 0) + (a - p);
+        }
+        return { id: key, month: monthFromKey(key), projected: projectedSum, actual: actualSum, diff, accounts: count };
+      })
+      .filter((row) => row.accounts > 0)
+      .sort((a, b) => b.id.localeCompare(a.id));
+  }, [ccAccounts, interestDocs]);
+
+  const setActual = (accountId: string, value: string) =>
+    setDraft((prev) => ({
+      month: selectedMonth,
+      values: { ...(prev?.month === selectedMonth ? prev.values : {}), [accountId]: value },
+    }));
 
   const handleSave = async () => {
     if (!canEdit) {
-      toast({
-        title: 'Not allowed',
-        description:
-          'You do not have permission to edit monthly interest.',
-        variant: 'destructive',
-      });
+      toast({ title: 'Not allowed', description: 'You do not have permission to edit monthly interest.', variant: 'destructive' });
       return;
+    }
+    const invalid = ccAccounts.find((acc) => {
+      const text = actualText(acc.id).trim();
+      return text !== '' && (!Number.isFinite(Number(text)) || Number(text) < 0);
+    });
+    if (invalid) {
+      toast({ title: 'Check the figures', description: 'Actual interest must be zero or a positive amount.', variant: 'destructive' });
+      return;
+    }
+
+    // Every Cash Credit account, edited or not, so the month's projection is stored alongside.
+    const data: MonthlyInterestData = {};
+    for (const acc of ccAccounts) {
+      data[acc.id] = { projected: round2(projected[acc.id] || 0), actual: parseActual(actualText(acc.id)) ?? 0 };
     }
 
     setIsSaving(true);
     try {
-      const ref = doc(
-        db,
-        'monthlyInterest',
-        selectedMonth
-      );
-      await setDoc(ref, interestData, {
-        merge: true,
-      });
-
-      toast({
-        title: 'Success',
-        description: 'Monthly interest data saved.',
-      });
-
-      setInitialInterestData(
-        JSON.parse(
-          JSON.stringify(interestData)
-        )
-      );
-
-      void fetchBaseData(); // refresh log
+      await setDoc(doc(db, 'monthlyInterest', selectedMonth), data, { merge: true });
+      setInterestDocs((prev) => ({ ...prev, [selectedMonth]: { ...(prev[selectedMonth] || {}), ...data } }));
+      setDraft(null);
+      toast({ title: 'Saved', description: `Interest for ${format(monthFromKey(selectedMonth), 'MMMM yyyy')} saved.` });
     } catch (error) {
-      console.error('Error saving data:', error);
-      toast({
-        title: 'Error',
-        description:
-          'Could not save monthly interest data.',
-        variant: 'destructive',
-      });
+      console.error('Error saving monthly interest:', error);
+      toast({ title: 'Error', description: 'Could not save monthly interest data.', variant: 'destructive' });
     } finally {
       setIsSaving(false);
     }
   };
 
-  const handleEditFromLog = (monthKey: string) => {
-    setSelectedMonth(monthKey);
-    setActiveTab('entry');
+  const selectMonth = (key: string) => {
+    setSelectedMonth(key);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
-  const monthOptions = Array.from(
-    { length: 24 },
-    (_, i) => {
-      const date = subMonths(new Date(), i);
-      return {
-        value: format(date, 'yyyy-MM'),
-        label: format(date, 'MMMM yyyy'),
-      };
-    }
-  );
-
-  const formatCurrency = (amount: number) => {
-    if (Number.isNaN(amount))
-      return '₹ 0.00';
-    return new Intl.NumberFormat(
-      'en-IN',
-      {
-        style: 'currency',
-        currency: 'INR',
-      }
-    ).format(amount);
-  };
-
-  const logYearOptions = useMemo(
-    () =>
-      [
-        ...new Set(
-          logData.map(
-            (log) => log.month.split('-')[0]
-          )
-        ),
-      ].sort((a, b) =>
-        b.localeCompare(a)
+  const savedColumns: Array<ListColumn<SavedMonth>> = [
+    {
+      header: 'Month',
+      mobile: 'title',
+      cell: (row) => (
+        <span className="whitespace-nowrap font-medium">
+          {format(row.month, 'MMMM yyyy')}
+          {row.id === selectedMonth && (
+            <Badge variant="progress" className="ml-2">
+              Selected
+            </Badge>
+          )}
+        </span>
       ),
-    [logData]
-  );
-
-  const logMonthOptions = useMemo(
-    () =>
-      Array.from(
-        { length: 12 },
-        (_, i) => ({
-          value: String(i + 1).padStart(
-            2,
-            '0'
-          ),
-          label: format(
-            new Date(0, i),
-            'MMMM'
-          ),
-        })
+    },
+    {
+      header: 'Projected',
+      align: 'right',
+      cell: (row) => <span className="whitespace-nowrap tabular-nums">{formatInr(row.projected)}</span>,
+    },
+    {
+      header: 'Actual',
+      align: 'right',
+      cell: (row) => <span className="whitespace-nowrap font-semibold tabular-nums">{formatInr(row.actual)}</span>,
+    },
+    {
+      header: 'Diff',
+      align: 'right',
+      mobile: 'aside',
+      cell: (row) => <span className={cn('whitespace-nowrap tabular-nums', diffClass(row.diff))}>{signedInr(row.diff)}</span>,
+    },
+    {
+      header: '',
+      align: 'right',
+      mobile: 'footer',
+      cell: (row) => (
+        <Button variant="outline" size="sm" className="h-8" onClick={() => selectMonth(row.id)}>
+          {canEdit ? 'Edit' : 'View'}
+        </Button>
       ),
-    []
-  );
+    },
+  ];
 
-  const filteredLogData = useMemo(
-    () =>
-      logData.filter((log) => {
-        const yearMatch =
-          logFilters.year === 'all' ||
-          log.month.startsWith(
-            logFilters.year
-          );
-        const monthMatch =
-          logFilters.month === 'all' ||
-          log.month.split('-')[1] ===
-            logFilters.month;
-        const bankMatch =
-          logFilters.bank === 'all' ||
-          log.accountId ===
-            logFilters.bank;
-        return (
-          yearMatch &&
-          monthMatch &&
-          bankMatch
-        );
-      }),
-    [logData, logFilters]
-  );
-
-  const visibleLogAccounts = useMemo(() => {
-    if (logFilters.bank !== 'all') {
-      return ccAccounts.filter((acc) => acc.id === logFilters.bank);
-    }
-    return [...ccAccounts].sort((a, b) => (a.shortName || '').localeCompare(b.shortName || ''));
-  }, [ccAccounts, logFilters.bank]);
-
-  const monthlyLogMatrix = useMemo(() => {
-    const grouped = new Map<
-      string,
-      {
-        month: string;
-        byBank: Record<string, { projected: number; actual: number; diff: number }>;
-        totalProjected: number;
-        totalActual: number;
-        totalDiff: number;
-      }
-    >();
-
-    filteredLogData.forEach((log) => {
-      const existing = grouped.get(log.month) ?? {
-        month: log.month,
-        byBank: {},
-        totalProjected: 0,
-        totalActual: 0,
-        totalDiff: 0,
-      };
-
-      existing.byBank[log.accountId] = {
-        projected: log.projected,
-        actual: log.actual,
-        diff: log.difference,
-      };
-      existing.totalProjected += log.projected;
-      existing.totalActual += log.actual;
-      existing.totalDiff += log.difference;
-      grouped.set(log.month, existing);
-    });
-
-    return Array.from(grouped.values()).sort((a, b) =>
-      compareDesc(parse(a.month, 'yyyy-MM', new Date()), parse(b.month, 'yyyy-MM', new Date()))
-    );
-  }, [filteredLogData]);
-
-  if (authLoading || (isLoading && canView)) {
-    return (
-      <div className="relative w-full px-4 sm:px-6 lg:px-8 py-6 space-y-4">
-        <Skeleton className="h-10 w-80 rounded-xl" />
-        <Skeleton className="h-96 w-full rounded-xl" />
-      </div>
-    );
-  }
+  if (authLoading || ((isLoading || !docsLoaded) && canView)) return <BankPageSkeleton kpis={3} blocks={2} />;
 
   if (!canView) {
-    return (
-      <div className="relative w-full px-4 sm:px-6 lg:px-8 py-6">
-        <PageHeader title="Monthly Interest" backHref="/bank-balance" backLabel="Back to dashboard" />
-        <Card>
-          <CardHeader>
-            <CardTitle>
-              Access Denied
-            </CardTitle>
-            <CardDescription>
-              You do not have
-              permission to view this
-              page.
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="flex justify-center p-8">
-            <ShieldAlert className="h-16 w-16 text-destructive" />
-          </CardContent>
-        </Card>
-      </div>
-    );
+    return <BankAccessDenied title="Monthly Interest" backHref="/bank-balance/settings" backLabel="Back to settings" />;
   }
+
+  const selectedLabel = format(monthFromKey(selectedMonth), 'MMMM yyyy');
+  const isCurrentMonth = selectedMonth === monthKeyOf(today);
 
   return (
     <>
-      {/* ── Animated Background (Amber theme for Monthly Interest) ── */}
-      <div className="fixed inset-0 -z-10 overflow-hidden pointer-events-none">
-        <div className="absolute inset-0 bg-gradient-to-br from-amber-50/60 via-background to-yellow-50/40 dark:from-amber-950/20 dark:via-background dark:to-yellow-950/15" />
-        <div className="animate-bb-orb-1 absolute top-[-10%] left-[-5%] w-[40vw] h-[40vw] rounded-full bg-amber-300/15 blur-3xl" />
-        <div className="animate-bb-orb-2 absolute bottom-[-8%] right-[-6%] w-[45vw] h-[45vw] rounded-full bg-yellow-300/12 blur-3xl" />
-        <div className="absolute inset-0 opacity-20 dark:opacity-12"
-          style={{ backgroundImage: 'radial-gradient(circle, rgba(245,158,11,0.12) 1px, transparent 1px)', backgroundSize: '28px 28px' }}
+      <BankBalanceBackground tone="amber" />
+      <div className={BANK_PAGE}>
+        <PageHeader
+          title="Monthly Interest"
+          description="Record the interest the bank actually charged each month"
+          icon={ReceiptText}
+          backHref="/bank-balance/settings"
+          backLabel="Back to settings"
+          actions={
+            canViewReports ? (
+              <Button asChild variant="outline">
+                <Link href="/bank-balance/reports/interest-accrual">
+                  <FileBarChart className="mr-2 h-4 w-4" />
+                  Interest report
+                </Link>
+              </Button>
+            ) : undefined
+          }
         />
-      </div>
-    <div className="relative w-full px-4 sm:px-6 lg:px-8 py-4">
-      <PageHeader
-        title="Monthly Interest"
-        description="Enter projected vs. actual interest for each Cash Credit account."
-        backHref="/bank-balance"
-        backLabel="Back to dashboard"
-      />
 
-      <Tabs
-        value={activeTab}
-        onValueChange={(v) =>
-          setActiveTab(
-            v as 'entry' | 'log'
-          )
-        }
-      >
-        <TabsList className="mb-4">
-          <TabsTrigger value="entry">
-            Entry
-          </TabsTrigger>
-          <TabsTrigger value="log">
-            Log
-          </TabsTrigger>
-        </TabsList>
-
-        {/* ENTRY TAB */}
-        <TabsContent value="entry">
-          <Card>
-            <CardHeader>
-              <div className="flex justify-between items-center gap-4">
-                <div className="w-full max-w-xs">
-                  <Select
-                    value={selectedMonth}
-                    onValueChange={
-                      setSelectedMonth
-                    }
-                  >
-                    <SelectTrigger>
-                      <SelectValue placeholder="Select Month" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {monthOptions.map(
-                        (opt) => (
-                          <SelectItem
-                            key={
-                              opt.value
-                            }
-                            value={
-                              opt.value
-                            }
-                          >
-                            {
-                              opt.label
-                            }
-                          </SelectItem>
-                        )
-                      )}
-                    </SelectContent>
-                  </Select>
-                </div>
-                {hasUnsavedChanges &&
-                  canEdit && (
-                    <Button
-                      onClick={
-                        handleSave
-                      }
-                      disabled={
-                        isSaving
-                      }
-                    >
-                      {isSaving ? (
-                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                      ) : (
-                        <Save className="mr-2 h-4 w-4" />
-                      )}
-                      Save Monthly
-                      Interest
-                    </Button>
-                  )}
-              </div>
-            </CardHeader>
-            <CardContent>
-              {isLoading ? (
-                <Skeleton className="h-48" />
-              ) : (
-                <div className="space-y-6">
-                  <div className="grid grid-cols-4 gap-4 font-semibold text-muted-foreground px-4">
-                    <div className="col-span-2">
-                      Bank Name
-                    </div>
-                    <div className="col-span-1">
-                      Projected
-                      Interest
-                    </div>
-                    <div className="col-span-1">
-                      Actual
-                      Interest
-                    </div>
-                  </div>
-
-                  <div className="divide-y">
-                    {ccAccounts.length >
-                    0 ? (
-                      ccAccounts.map(
-                        (
-                          account
-                        ) => (
-                          <div
-                            key={
-                              account.id
-                            }
-                            className="grid grid-cols-4 gap-4 items-center py-3 px-4"
-                          >
-                            <span className="font-medium col-span-2">
-                              {
-                                account.bankName
-                              }{' '}
-                              (
-                              {
-                                account.shortName
-                              }
-                              )
-                            </span>
-                            <div className="col-span-1">
-                              <Input
-                                type="text"
-                                value={formatCurrency(
-                                  interestData[
-                                    account
-                                      .id
-                                  ]
-                                    ?.projected ||
-                                    0
-                                )}
-                                readOnly
-                                className="font-medium bg-muted"
-                              />
-                            </div>
-                            <div className="col-span-1">
-                              <Input
-                                type="number"
-                                value={
-                                  interestData[
-                                    account
-                                      .id
-                                  ]
-                                    ?.actual ??
-                                  ''
-                                }
-                                onChange={(
-                                  e
-                                ) =>
-                                  handleInterestChange(
-                                    account.id,
-                                    e
-                                      .target
-                                      .value
-                                  )
-                                }
-                                placeholder="0.00"
-                                disabled={
-                                  !canEdit
-                                }
-                              />
-                            </div>
-                          </div>
-                        )
-                      )
-                    ) : (
-                      <p className="text-center text-muted-foreground py-10">
-                        No Cash
-                        Credit
-                        accounts
-                        configured.
-                      </p>
-                    )}
-                  </div>
-
-                  {ccAccounts.length >
-                    0 && (
-                    <div className="grid grid-cols-4 gap-4 font-bold text-lg border-t pt-4 px-4">
-                      <span className="col-span-2 text-right">
-                        Total
-                      </span>
-                      <span className="col-span-1">
-                        {formatCurrency(
-                          Object.values(
-                            interestData
-                          ).reduce(
-                            (
-                              sum,
-                              d
-                            ) =>
-                              sum +
-                              (d.projected ||
-                                0),
-                            0
-                          )
-                        )}
-                      </span>
-                      <span className="col-span-1">
-                        {formatCurrency(
-                          Object.values(
-                            interestData
-                          ).reduce(
-                            (
-                              sum,
-                              d
-                            ) =>
-                              sum +
-                              (d.actual ||
-                                0),
-                            0
-                          )
-                        )}
-                      </span>
-                    </div>
-                  )}
-                </div>
-              )}
-            </CardContent>
-          </Card>
-        </TabsContent>
-
-        {/* LOG TAB */}
-        <TabsContent value="log">
-          <TableCard
-            title="Monthly Interest Log"
-            count={monthlyLogMatrix.length}
-            noun="month"
-            toolbar={
-              <FilterBar
-                activeCount={[logFilters.year, logFilters.month, logFilters.bank].filter((value) => value !== 'all').length}
-                onClear={() => setLogFilters({ year: 'all', month: 'all', bank: 'all' })}
-              >
-                <Select
-                  value={logFilters.year}
-                  onValueChange={(
-                    val
-                  ) =>
-                    setLogFilters(
-                      (prev) => ({
-                        ...prev,
-                        year: val,
-                      })
-                    )
-                  }
-                >
-                  <SelectTrigger>
-                    <SelectValue placeholder="All Years" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">
-                      All
-                      Years
-                    </SelectItem>
-                    {logYearOptions.map(
-                      (year) => (
-                        <SelectItem
-                          key={
-                            year
-                          }
-                          value={
-                            year
-                          }
-                        >
-                          {
-                            year
-                          }
-                        </SelectItem>
-                      )
-                    )}
-                  </SelectContent>
-                </Select>
-
-                <Select
-                  value={logFilters.month}
-                  onValueChange={(
-                    val
-                  ) =>
-                    setLogFilters(
-                      (prev) => ({
-                        ...prev,
-                        month: val,
-                      })
-                    )
-                  }
-                >
-                  <SelectTrigger>
-                    <SelectValue placeholder="All Months" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">
-                      All
-                      Months
-                    </SelectItem>
-                    {logMonthOptions.map(
-                      (
-                        m
-                      ) => (
-                        <SelectItem
-                          key={
-                            m.value
-                          }
-                          value={
-                            m.value
-                          }
-                        >
-                          {
-                            m.label
-                          }
-                        </SelectItem>
-                      )
-                    )}
-                  </SelectContent>
-                </Select>
-
-                <Select
-                  value={logFilters.bank}
-                  onValueChange={(
-                    val
-                  ) =>
-                    setLogFilters(
-                      (prev) => ({
-                        ...prev,
-                        bank: val,
-                      })
-                    )
-                  }
-                >
-                  <SelectTrigger>
-                    <SelectValue placeholder="All Banks" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">
-                      All
-                      Banks
-                    </SelectItem>
-                    {ccAccounts.map(
-                      (acc) => (
-                        <SelectItem
-                          key={
-                            acc.id
-                          }
-                          value={
-                            acc.id
-                          }
-                        >
-                          {
-                            acc.shortName
-                          }
-                        </SelectItem>
-                      )
-                    )}
-                  </SelectContent>
-                </Select>
-              </FilterBar>
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+          <KpiCard
+            label={`Projected · ${selectedLabel}`}
+            value={formatInr(entryTotals.projected)}
+            hint={isCurrentMonth ? 'Live, month to date' : 'Live from the ledger and rates'}
+            icon={Coins}
+            tone="amber"
+            accent
+          />
+          <KpiCard
+            label={`Actual · ${selectedLabel}`}
+            value={entryTotals.withActual ? formatInr(entryTotals.actual) : '—'}
+            hint={
+              entryTotals.withActual
+                ? `${entryTotals.withActual} of ${ccAccounts.length} account${ccAccounts.length === 1 ? '' : 's'} entered`
+                : 'Not entered yet'
             }
-          >
-                    <Table className="min-w-[1200px]">
-                      <TableHeader>
-                        <TableRow>
-                          <TableHead
-                            rowSpan={2}
-                            className="min-w-[140px] border-r"
-                          >
-                            Month
-                          </TableHead>
-                          {visibleLogAccounts.map(
-                            (acc) => (
-                              <TableHead
-                                key={`${acc.id}-group`}
-                                colSpan={3}
-                                className="text-center border-r"
-                              >
-                                {acc.shortName}
-                              </TableHead>
-                            )
-                          )}
-                          <TableHead
-                            colSpan={3}
-                            className="text-center border-r"
-                          >
-                            Total
-                          </TableHead>
-                          <TableHead
-                            rowSpan={2}
-                            className="text-right min-w-[120px]"
-                          >
-                            Action
-                          </TableHead>
-                        </TableRow>
-                        <TableRow className="[&>th]:!top-[var(--table-head-h,2.5rem)]">
-                          {visibleLogAccounts.map(
-                            (acc) => (
-                              <Fragment
-                                key={`${acc.id}-cols`}
-                              >
-                                <TableHead className="text-right whitespace-nowrap">
-                                  Projected
-                                </TableHead>
-                                <TableHead className="text-right whitespace-nowrap">
-                                  Actual
-                                </TableHead>
-                                <TableHead className="text-right whitespace-nowrap border-r">
-                                  Diff
-                                </TableHead>
-                              </Fragment>
-                            )
-                          )}
-                          <TableHead className="text-right whitespace-nowrap">
-                            Projected
-                          </TableHead>
-                          <TableHead className="text-right whitespace-nowrap">
-                            Actual
-                          </TableHead>
-                          <TableHead className="text-right whitespace-nowrap border-r">
-                            Diff
-                          </TableHead>
-                        </TableRow>
-                      </TableHeader>
+            icon={ReceiptText}
+            tone="orange"
+            accent
+          />
+          <KpiCard
+            label="Difference"
+            value={entryTotals.withActual ? signedInr(entryTotals.diff) : '—'}
+            hint={
+              entryTotals.withActual
+                ? `${entryTotals.diff > 0 ? 'Over' : 'Under'} projection by ${compactInr(Math.abs(entryTotals.diff))} (entered accounts)`
+                : 'Actual minus projected'
+            }
+            icon={History}
+            tone={entryTotals.withActual && entryTotals.diff > 0.005 ? 'rose' : 'emerald'}
+            accent
+          />
+        </div>
 
-                      <TableBody>
-                        {isLogLoading ? (
-                          Array.from(
-                            {
-                              length: 5,
-                            }
-                          ).map(
-                            (
-                              _,
-                              i
-                            ) => (
-                              <TableRow
-                                key={
-                                  i
-                                }
-                              >
-                                <TableCell
-                                  colSpan={
-                                    visibleLogAccounts.length *
-                                      3 +
-                                    5
-                                  }
-                                >
-                                  <Skeleton className="h-6" />
-                                </TableCell>
-                              </TableRow>
-                            )
-                          )
-                        ) : monthlyLogMatrix.length >
-                          0 ? (
-                          monthlyLogMatrix.map(
-                            (row) => (
-                              <TableRow
-                                key={
-                                  row.month
-                                }
-                              >
-                                <TableCell className="whitespace-nowrap font-medium border-r">
-                                  {format(
-                                    parse(
-                                      row.month,
-                                      'yyyy-MM',
-                                      new Date()
-                                    ),
-                                    'MMMM yyyy'
-                                  )}
-                                </TableCell>
-                                {visibleLogAccounts.map(
-                                  (acc) => {
-                                    const item =
-                                      row.byBank[
-                                        acc.id
-                                      ] ||
-                                      {
-                                        projected: 0,
-                                        actual: 0,
-                                        diff: 0,
-                                      };
-                                    return (
-                                      <Fragment
-                                        key={`${row.month}-${acc.id}`}
-                                      >
-                                        <TableCell className="text-right whitespace-nowrap">
-                                          {formatCurrency(
-                                            item.projected
-                                          )}
-                                        </TableCell>
-                                        <TableCell className="text-right whitespace-nowrap">
-                                          {formatCurrency(
-                                            item.actual
-                                          )}
-                                        </TableCell>
-                                        <TableCell
-                                          className={`text-right whitespace-nowrap border-r ${
-                                            item.diff >
-                                            0
-                                              ? 'text-red-600'
-                                              : item.diff <
-                                                  0
-                                                ? 'text-green-600'
-                                                : 'text-muted-foreground'
-                                          }`}
-                                        >
-                                          {formatCurrency(
-                                            item.diff
-                                          )}
-                                        </TableCell>
-                                      </Fragment>
-                                    );
-                                  }
-                                )}
-                                <TableCell className="text-right whitespace-nowrap font-medium">
-                                  {formatCurrency(
-                                    row.totalProjected
-                                  )}
-                                </TableCell>
-                                <TableCell className="text-right whitespace-nowrap font-medium">
-                                  {formatCurrency(
-                                    row.totalActual
-                                  )}
-                                </TableCell>
-                                <TableCell
-                                  className={`text-right whitespace-nowrap border-r font-medium ${
-                                    row.totalDiff >
-                                    0
-                                      ? 'text-red-600'
-                                      : row.totalDiff <
-                                          0
-                                        ? 'text-green-600'
-                                        : 'text-muted-foreground'
-                                  }`}
-                                >
-                                  {formatCurrency(
-                                    row.totalDiff
-                                  )}
-                                </TableCell>
-                                <TableCell className="text-right">
-                                  <Button
-                                    variant="outline"
-                                    size="sm"
-                                    onClick={() =>
-                                      handleEditFromLog(
-                                        row.month
-                                      )
-                                    }
-                                    disabled={
-                                      !canEdit
-                                    }
-                                  >
-                                    Edit
-                                  </Button>
-                                </TableCell>
-                              </TableRow>
-                            )
-                          )
-                        ) : (
-                          <TableRow>
-                            <TableCell
-                              colSpan={
-                                visibleLogAccounts.length *
-                                  3 +
-                                5
-                              }
-                              className="text-center h-24"
-                            >
-                              No log
-                              data
-                              found
-                              for
-                              the
-                              selected
-                              filters.
-                            </TableCell>
-                          </TableRow>
-                        )}
-                      </TableBody>
-                    </Table>
-          </TableCard>
-        </TabsContent>
-      </Tabs>
-    </div>
+        <Card className="min-w-0 overflow-hidden">
+          <CardHeader className="pb-4">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+              <div className="flex min-w-0 items-start gap-3">
+                <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-amber-50 text-amber-600 ring-4 ring-amber-100">
+                  <CalendarDays className="h-5 w-5" />
+                </span>
+                <div className="min-w-0">
+                  <CardTitle className="break-words">Interest for {selectedLabel}</CardTitle>
+                  <CardDescription className="mt-1">
+                    Enter the interest each bank debited. Saving also stores the projected figure shown here
+                    {isCurrentMonth ? ' (month to date)' : ''}.
+                  </CardDescription>
+                </div>
+              </div>
+              <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+                <Select value={selectedMonth} onValueChange={setSelectedMonth}>
+                  <SelectTrigger className="sm:w-48" aria-label="Month">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {monthOptions.map((key) => (
+                      <SelectItem key={key} value={key}>
+                        {format(monthFromKey(key), 'MMMM yyyy')}
+                        {interestDocs[key] ? ' · saved' : ''}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                {canEdit && (
+                  <Button className="shrink-0" onClick={() => void handleSave()} disabled={isSaving || ccAccounts.length === 0}>
+                    {isSaving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
+                    Save Month
+                  </Button>
+                )}
+              </div>
+            </div>
+            {isDirty && (
+              <p className="text-xs text-amber-700">You have unsaved changes for {selectedLabel}.</p>
+            )}
+          </CardHeader>
+
+          <CardContent>
+            {ccAccounts.length === 0 ? (
+              <p className="p-8 text-center text-sm text-muted-foreground">No Cash Credit accounts configured.</p>
+            ) : (
+              <div className="rounded-lg border">
+                <div className="hidden gap-4 border-b bg-muted/40 px-4 py-2 text-[11px] font-medium uppercase tracking-wide text-muted-foreground sm:grid sm:grid-cols-5">
+                  <span className="sm:col-span-2">Account</span>
+                  <span className="text-right">Projected</span>
+                  <span className="text-right">Actual</span>
+                  <span className="text-right">Diff</span>
+                </div>
+                <div className="divide-y">
+                  {ccAccounts.map((acc) => {
+                    const live = projected[acc.id] || 0;
+                    const text = actualText(acc.id);
+                    const actual = parseActual(text);
+                    const diff = actual === null ? null : actual - live;
+                    const storedProjected = stored?.[acc.id]?.projected;
+                    const storedDiffers = typeof storedProjected === 'number' && Math.abs(storedProjected - live) >= 0.01;
+                    return (
+                      <div key={acc.id} className="grid grid-cols-1 gap-3 px-4 py-3 sm:grid-cols-5 sm:items-center sm:gap-4">
+                        <div className="flex min-w-0 items-start gap-3 sm:col-span-2">
+                          <Landmark className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" />
+                          <div className="min-w-0">
+                            <p className="break-words font-medium">{acc.bankName}</p>
+                            <p className="mt-0.5 flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground">
+                              {acc.shortName && <Badge variant="progress">{acc.shortName.trim()}</Badge>}
+                              {acc.status === 'Inactive' && <Badge variant="neutral">Inactive</Badge>}
+                              <span className="break-all">{acc.accountNumber}</span>
+                            </p>
+                          </div>
+                        </div>
+                        <div className="flex items-baseline justify-between gap-3 sm:block sm:text-right">
+                          <span className="text-xs text-muted-foreground sm:hidden">Projected</span>
+                          <span className="text-right">
+                            <span className="block font-medium tabular-nums">{formatInr(live)}</span>
+                            {storedDiffers && (
+                              <span className="block text-xs text-muted-foreground">saved {formatInr(storedProjected)}</span>
+                            )}
+                          </span>
+                        </div>
+                        <div className="flex items-center justify-between gap-3 sm:block">
+                          <Label htmlFor={`actual-${acc.id}`} className="text-xs font-normal text-muted-foreground sm:sr-only">
+                            Actual
+                          </Label>
+                          <Input
+                            id={`actual-${acc.id}`}
+                            type="number"
+                            inputMode="decimal"
+                            min={0}
+                            step="0.01"
+                            placeholder="0.00"
+                            className="max-w-[12rem] text-right tabular-nums sm:max-w-none"
+                            value={text}
+                            onChange={(e) => setActual(acc.id, e.target.value)}
+                            disabled={!canEdit || isSaving}
+                          />
+                        </div>
+                        <div className="flex items-baseline justify-between gap-3 sm:block sm:text-right">
+                          <span className="text-xs text-muted-foreground sm:hidden">Diff</span>
+                          <span className={cn('font-medium tabular-nums', diffClass(diff))}>{signedInr(diff)}</span>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+                <div className="grid grid-cols-1 gap-2 border-t bg-muted/40 px-4 py-3 text-sm font-semibold sm:grid-cols-5 sm:gap-4">
+                  <span className="sm:col-span-2">Total</span>
+                  <span className="flex justify-between gap-3 tabular-nums sm:block sm:text-right">
+                    <span className="font-normal text-muted-foreground sm:hidden">Projected</span>
+                    {formatInr(entryTotals.projected)}
+                  </span>
+                  <span className="flex justify-between gap-3 tabular-nums sm:block sm:text-right">
+                    <span className="font-normal text-muted-foreground sm:hidden">Actual</span>
+                    {entryTotals.withActual ? formatInr(entryTotals.actual) : '—'}
+                  </span>
+                  <span
+                    className={cn(
+                      'flex justify-between gap-3 tabular-nums sm:block sm:text-right',
+                      diffClass(entryTotals.withActual ? entryTotals.diff : null),
+                    )}
+                  >
+                    <span className="font-normal text-muted-foreground sm:hidden">Diff</span>
+                    {entryTotals.withActual ? signedInr(entryTotals.diff) : '—'}
+                  </span>
+                </div>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+
+        <div>
+          <SectionHeader
+            title="Saved months"
+            description="Figures as stored when each month was saved. Diff counts only accounts with an actual entered."
+            as="h2"
+            className="mb-2"
+            badge={savedMonths.length ? <Badge variant="neutral">{savedMonths.length}</Badge> : undefined}
+          />
+          <DataList
+            rows={savedMonths}
+            columns={savedColumns}
+            dense
+            maxHeightClassName="sm:max-h-[30rem]"
+            empty={
+              <div className="rounded-lg border border-dashed p-6 text-center text-sm text-muted-foreground">
+                No months saved yet.
+              </div>
+            }
+          />
+        </div>
+      </div>
     </>
   );
 }

@@ -1,6 +1,7 @@
 import type { Metadata } from 'next';
 import type { ReactNode } from 'react';
 import BankBalanceBottomNav from '@/components/bank-balance/bottom-nav';
+import BankBalanceLayoutShell from '@/components/bank-balance/module-layout-shell';
 
 export const metadata: Metadata = {
   title: 'Bank Balance | SEL Live',
@@ -10,7 +11,7 @@ export const metadata: Metadata = {
 export default function BankBalanceLayout({ children }: { children: ReactNode }) {
   return (
     <>
-      {children}
+      <BankBalanceLayoutShell>{children}</BankBalanceLayoutShell>
       <BankBalanceBottomNav />
     </>
   );

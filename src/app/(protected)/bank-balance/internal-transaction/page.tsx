@@ -1,76 +1,25 @@
 'use client';
 export const dynamic = 'force-dynamic';
 
-import { useState, useEffect, useMemo, useCallback } from 'react';
+/**
+ * Transfers: every internal transfer (a Debit and a Credit contra leg sharing a `contraId`), with
+ * edit and delete. The Internal Transfers report was a second copy of this list; its account
+ * filter, description column and totals were folded in here and its address now redirects.
+ */
+
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
-import {
-  Calendar as CalendarIcon,
-  Plus,
-  Trash2,
-  Edit,
-  ShieldAlert,
-} from 'lucide-react';
+import type { DateRange } from 'react-day-picker';
+import { compareDesc, endOfDay, startOfDay } from 'date-fns';
+import { collection, doc, getDocs, query, Timestamp, where, writeBatch } from 'firebase/firestore';
+import { ArrowRight, ArrowRightLeft, Loader2, Pencil, Plus, Route, Save, Trash2, Wallet } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
-import { PageHeader } from '@/components/shared/page-header';
-import {
-  Card,
-  CardContent,
-  CardHeader,
-  CardTitle,
-  CardDescription,
-} from '@/components/ui/card';
-import {
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-} from '@/components/ui/popover';
-import { Calendar } from '@/components/ui/calendar';
-import { TableCard } from '@/components/shared/table-card';
-import { FilterBar } from '@/components/shared/filter-bar';
-import { cn } from '@/lib/utils';
-import { format, compareDesc, startOfDay, endOfDay } from 'date-fns';
-import { useToast } from '@/hooks/use-toast';
-import { db } from '@/lib/firebase';
-import {
-  collection,
-  getDocs,
-  query,
-  where,
-  writeBatch,
-  doc,
-  Timestamp,
-} from 'firebase/firestore';
-import type { BankAccount, BankExpense } from '@/lib/types';
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from '@/components/ui/table';
-import { Skeleton } from '@/components/ui/skeleton';
-import type { DateRange } from 'react-day-picker';
-import { useAuthorization } from '@/hooks/useAuthorization';
-import { getApplicableCcLimit } from '@/lib/bank-balance-limit';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Table, TableBody, TableCell, TableFooter, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -80,24 +29,78 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
-  AlertDialogTrigger,
 } from '@/components/ui/alert-dialog';
+import { PageHeader } from '@/components/shared/page-header';
+import { KpiCard } from '@/components/shared/kpi-card';
+import { DataList, type ListColumn } from '@/components/shared/data-list';
+import { TableCard } from '@/components/shared/table-card';
+import { FilterBar } from '@/components/shared/filter-bar';
 import {
-  DATE_RANGE_PRESET_OPTIONS,
-  type DateRangePreset,
-  getDateRangeFromPreset,
-} from '@/lib/date-range-presets';
+  BANK_PAGE,
+  BankAccessDenied,
+  BankBalanceBackground,
+  BankDateRangeFilter,
+  BankPageSkeleton,
+  accountLabel,
+} from '@/components/bank-balance/page-kit';
+import { useToast } from '@/hooks/use-toast';
+import { useAuthorization } from '@/hooks/useAuthorization';
+import { db } from '@/lib/firebase';
+import { getApplicableCcLimit } from '@/lib/bank-balance-limit';
+import { balanceAt, buildLedger, dayKey, formatDay, formatInr, isCashCredit, parseDay, txnDate } from '@/lib/bank-balance-ledger';
+import type { DateRangePreset } from '@/lib/date-range-presets';
+import type { BankAccount, BankExpense } from '@/lib/types';
 
-type UnifiedTransaction = {
+type Transfer = {
   id: string; // contraId
   contraId: string;
-  date: string;
+  at: Date;
   fromAccountId: string;
   toAccountId: string;
-  fromBankName: string;
-  toBankName: string;
   amount: number;
+  description: string;
 };
+
+type EditForm = { day: string; fromAccountId: string; toAccountId: string; amount: string };
+
+const EMPTY_FORM: EditForm = { day: '', fromAccountId: '', toAccountId: '', amount: '' };
+
+const plural = (count: number, noun: string) => `${count} ${noun}${count === 1 ? '' : 's'}`;
+
+/**
+ * What the account can pay out at the end of `day`, from the engine (so the opening date is
+ * honoured): a Current Account's balance, or a Cash Credit account's limit in force less its
+ * utilisation.
+ */
+const availableOn = (account: BankAccount, txns: BankExpense[], day: Date) => {
+  const figure = balanceAt(buildLedger(account, txns), day);
+  return isCashCredit(account) ? getApplicableCcLimit(account, day) - figure : figure;
+};
+
+/** Pairs the contra legs into transfers, newest first; a transfer missing a leg is left out. */
+function groupTransfers(expenses: BankExpense[]): Transfer[] {
+  const legs = expenses.filter((entry) => entry.isContra).sort((a, b) => compareDesc(txnDate(a), txnDate(b)));
+  const grouped = new Map<string, Partial<Transfer>>();
+  for (const leg of legs) {
+    const contraId = leg.contraId;
+    if (!contraId) continue;
+    let transfer = grouped.get(contraId);
+    if (!transfer) {
+      transfer = { id: contraId, contraId, amount: leg.amount, at: txnDate(leg), description: '' };
+      grouped.set(contraId, transfer);
+    }
+    if (leg.type === 'Debit') {
+      transfer.fromAccountId = leg.accountId;
+      transfer.description = leg.description || transfer.description;
+    } else if (leg.type === 'Credit') {
+      transfer.toAccountId = leg.accountId;
+      transfer.description = transfer.description || leg.description || '';
+    }
+  }
+  return Array.from(grouped.values()).filter(
+    (transfer): transfer is Transfer => Boolean(transfer.fromAccountId && transfer.toAccountId),
+  );
+}
 
 export default function InternalTransactionPage() {
   const { toast } = useToast();
@@ -105,333 +108,219 @@ export default function InternalTransactionPage() {
 
   const [bankAccounts, setBankAccounts] = useState<BankAccount[]>([]);
   const [allTransactions, setAllTransactions] = useState<BankExpense[]>([]);
-  const [logEntries, setLogEntries] = useState<UnifiedTransaction[]>([]);
-  const [isLogLoading, setIsLogLoading] = useState(true);
+  const [isLoading, setIsLoading] = useState(true);
+
   const [dateRange, setDateRange] = useState<DateRange | undefined>();
   const [datePreset, setDatePreset] = useState<DateRangePreset>('custom');
+  const [accountFilter, setAccountFilter] = useState('all');
+  const [search, setSearch] = useState('');
   const [viewMode, setViewMode] = useState<'current' | 'dateWise'>('current');
-  const [editingEntry, setEditingEntry] = useState<UnifiedTransaction | null>(null);
-  const [editDate, setEditDate] = useState<Date | undefined>(undefined);
-  const [editFromAccountId, setEditFromAccountId] = useState('');
-  const [editToAccountId, setEditToAccountId] = useState('');
-  const [editAmount, setEditAmount] = useState<number>(0);
+
+  const [editingEntry, setEditingEntry] = useState<Transfer | null>(null);
+  const [form, setForm] = useState<EditForm>(EMPTY_FORM);
   const [isEditSaving, setIsEditSaving] = useState(false);
+  const [deleteTarget, setDeleteTarget] = useState<Transfer | null>(null);
+  const [isDeleting, setIsDeleting] = useState(false);
 
-  const canView = can('View', 'Bank Balance.Internal Transaction');
-  const canAdd = can('Add', 'Bank Balance.Internal Transaction');
-  const canEdit =
-    can('Edit', 'Bank Balance.Internal Transaction') ||
-    canAdd;
-  const canDelete = can('Delete', 'Bank Balance.Internal Transaction');
-  const activeBankAccounts = useMemo(
-    () => bankAccounts.filter((account) => account.status === 'Active'),
-    [bankAccounts]
+  // Reports access also opens this list read-only: it absorbed the Inter-bank Transfers report,
+  // which only needed Reports View, so nobody who could read that report loses it.
+  const canView =
+    !authLoading && (can('View', 'Bank Balance.Internal Transaction') || can('View', 'Bank Balance.Reports'));
+  const canAdd = !authLoading && can('Add', 'Bank Balance.Internal Transaction');
+  const canEdit = !authLoading && (can('Edit', 'Bank Balance.Internal Transaction') || canAdd);
+  const canDelete = !authLoading && can('Delete', 'Bank Balance.Internal Transaction');
+
+  const load = useCallback(
+    async (silent = false) => {
+      if (!silent) setIsLoading(true);
+      try {
+        const [accountsSnap, expensesSnap] = await Promise.all([
+          getDocs(collection(db, 'bankAccounts')),
+          getDocs(collection(db, 'bankExpenses')),
+        ]);
+        setBankAccounts(
+          accountsSnap.docs
+            .map((d) => ({ id: d.id, ...d.data() } as BankAccount))
+            .sort((a, b) => accountLabel(a).localeCompare(accountLabel(b))),
+        );
+        setAllTransactions(expensesSnap.docs.map((d) => ({ id: d.id, ...d.data() } as BankExpense)));
+      } catch (error) {
+        console.error('Error fetching data:', error);
+        toast({ title: 'Error', description: 'Failed to load transfers.', variant: 'destructive' });
+      } finally {
+        setIsLoading(false);
+      }
+    },
+    [toast],
   );
-
-  const fetchBankAccountsAndLog = useCallback(async () => {
-    setIsLogLoading(true);
-    try {
-      const [accountsSnap, expensesSnap] = await Promise.all([
-        getDocs(collection(db, 'bankAccounts')),
-        getDocs(collection(db, 'bankExpenses')),
-      ]);
-
-      const accounts = accountsSnap.docs.map(
-        (d) => ({ id: d.id, ...d.data() } as BankAccount)
-      );
-      setBankAccounts(accounts);
-
-      const expenses = expensesSnap.docs.map(
-        (d) => ({ id: d.id, ...d.data() } as BankExpense)
-      );
-      setAllTransactions(expenses);
-
-      const contraEntries = expenses.filter((entry) => entry.isContra);
-
-      // Sort without mutating original array
-      const sortedContra = [...contraEntries].sort((a, b) =>
-        compareDesc(a.date.toDate(), b.date.toDate())
-      );
-
-      const grouped: Record<string, Partial<UnifiedTransaction>> = {};
-
-      sortedContra.forEach((entry) => {
-        const contraId = entry.contraId;
-        if (!contraId) return;
-
-        if (!grouped[contraId]) {
-          grouped[contraId] = {
-            contraId,
-            amount: entry.amount,
-            date: format(entry.date.toDate(), 'yyyy-MM-dd'),
-          };
-        }
-
-        if (entry.type === 'Debit') {
-          grouped[contraId].fromAccountId = entry.accountId;
-        } else if (entry.type === 'Credit') {
-          grouped[contraId].toAccountId = entry.accountId;
-        }
-      });
-
-      const unifiedLog: UnifiedTransaction[] = Object.values(grouped)
-        .filter((t) => t.fromAccountId && t.toAccountId)
-        .map((t) => {
-          const fromBank =
-            accounts.find((acc) => acc.id === t.fromAccountId)
-              ?.shortName || 'N/A';
-          const toBank =
-            accounts.find((acc) => acc.id === t.toAccountId)
-              ?.shortName || 'N/A';
-
-          return {
-            id: t.contraId as string,
-            contraId: t.contraId as string,
-            date: t.date as string,
-            fromAccountId: t.fromAccountId as string,
-            toAccountId: t.toAccountId as string,
-            amount: t.amount as number,
-            fromBankName: fromBank,
-            toBankName: toBank,
-          };
-        });
-
-      setLogEntries(unifiedLog);
-    } catch (error) {
-      console.error('Error fetching data:', error);
-      toast({
-        title: 'Error',
-        description: 'Failed to load log data.',
-        variant: 'destructive',
-      });
-    } finally {
-      setIsLogLoading(false);
-    }
-  }, [toast]);
 
   useEffect(() => {
     if (authLoading) return;
-    if (canView) {
-      void fetchBankAccountsAndLog();
-    } else {
-      setIsLogLoading(false);
-    }
-  }, [authLoading, canView, fetchBankAccountsAndLog]);
+    if (canView) void load();
+    else setIsLoading(false);
+  }, [authLoading, canView, load]);
 
-  const filteredLogEntries = useMemo(() => {
-    return logEntries.filter((entry) => {
-      const entryDate = new Date(entry.date);
-      const inDateRange =
-        !dateRange ||
-        ((!dateRange.from || entryDate >= startOfDay(dateRange.from)) &&
-          (!dateRange.to || entryDate <= endOfDay(dateRange.to)));
-      return inDateRange;
+  const accountById = useMemo(() => new Map(bankAccounts.map((account) => [account.id, account])), [bankAccounts]);
+  const nameOf = useCallback(
+    (accountId: string) => (accountById.has(accountId) ? accountLabel(accountById.get(accountId)) : 'N/A'),
+    [accountById],
+  );
+
+  const transfers = useMemo(() => groupTransfers(allTransactions), [allTransactions]);
+
+  const filtered = useMemo(() => {
+    const term = search.trim().toLowerCase();
+    const from = dateRange?.from ? startOfDay(dateRange.from) : null;
+    const to = dateRange?.to ? endOfDay(dateRange.to) : null;
+    return transfers.filter((transfer) => {
+      if (from && transfer.at < from) return false;
+      if (to && transfer.at > to) return false;
+      if (accountFilter !== 'all' && transfer.fromAccountId !== accountFilter && transfer.toAccountId !== accountFilter) return false;
+      if (!term) return true;
+      return [transfer.description, nameOf(transfer.fromAccountId), nameOf(transfer.toAccountId)].some((value) =>
+        value.toLowerCase().includes(term),
+      );
     });
-  }, [logEntries, dateRange]);
+  }, [transfers, dateRange, accountFilter, search, nameOf]);
 
-  const transferColumns = useMemo(() => {
-    const keys = new Set(filteredLogEntries.map((entry) => `${entry.fromBankName} -> ${entry.toBankName}`));
-    return Array.from(keys).sort((a, b) => a.localeCompare(b));
-  }, [filteredLogEntries]);
+  const summary = useMemo(() => {
+    const total = filtered.reduce((sum, transfer) => sum + (Number(transfer.amount) || 0), 0);
+    const routes = new Map<string, { fromAccountId: string; toAccountId: string; count: number; amount: number }>();
+    for (const transfer of filtered) {
+      const key = `${transfer.fromAccountId}>${transfer.toAccountId}`;
+      const route = routes.get(key) ?? { fromAccountId: transfer.fromAccountId, toAccountId: transfer.toAccountId, count: 0, amount: 0 };
+      route.count += 1;
+      route.amount += Number(transfer.amount) || 0;
+      routes.set(key, route);
+    }
+    const topRoute = Array.from(routes.values()).sort((a, b) => b.count - a.count || b.amount - a.amount)[0];
+    return { total, topRoute };
+  }, [filtered]);
+
+  // Date-wise pivot: one column per route, keyed by account ids so two accounts sharing a short
+  // name do not merge.
+  const routeColumns = useMemo(() => {
+    const keys = new Map<string, string>();
+    for (const transfer of filtered) {
+      keys.set(`${transfer.fromAccountId}>${transfer.toAccountId}`, `${nameOf(transfer.fromAccountId)} → ${nameOf(transfer.toAccountId)}`);
+    }
+    return Array.from(keys, ([key, label]) => ({ key, label })).sort((a, b) => a.label.localeCompare(b.label));
+  }, [filtered, nameOf]);
 
   const dateWiseRows = useMemo(() => {
-    const grouped = new Map<
-      string,
-      {
-        date: string;
-        transferTotals: Record<string, number>;
-        total: number;
-      }
-    >();
-
-    filteredLogEntries.forEach((entry) => {
-      const dateKey = entry.date;
-      const transferKey = `${entry.fromBankName} -> ${entry.toBankName}`;
-      const existing = grouped.get(dateKey) ?? {
-        date: dateKey,
-        transferTotals: {},
-        total: 0,
-      };
-
-      existing.transferTotals[transferKey] =
-        (existing.transferTotals[transferKey] || 0) + entry.amount;
-      existing.total += entry.amount;
-      grouped.set(dateKey, existing);
-    });
-
-    return Array.from(grouped.values()).sort((a, b) => a.date.localeCompare(b.date));
-  }, [filteredLogEntries]);
-
-  const getLatestDp = (account: BankAccount, onDate: Date) => {
-    return getApplicableCcLimit(account, onDate);
-  };
-
-  const getAvailableFunds = (
-    account: BankAccount,
-    onDate: Date,
-    excludedContraId?: string
-  ) => {
-    let balance =
-      account.accountType === 'Cash Credit'
-        ? account.openingUtilization || 0
-        : account.openingBalance || 0;
-
-    const openingDate = account.openingDate
-      ? new Date(account.openingDate)
-      : new Date(0);
-
-    const historical = allTransactions
-      .filter(
-        (transaction) =>
-          transaction.accountId === account.id &&
-          transaction.date.toDate() >= openingDate &&
-          transaction.date.toDate() < onDate &&
-          transaction.contraId !== excludedContraId
-      )
-      .sort(
-        (a, b) => a.date.toMillis() - b.date.toMillis()
-      );
-
-    historical.forEach((transaction) => {
-      if (account.accountType === 'Cash Credit') {
-        balance +=
-          transaction.type === 'Debit'
-            ? transaction.amount
-            : -transaction.amount;
-      } else {
-        balance +=
-          transaction.type === 'Credit'
-            ? transaction.amount
-            : -transaction.amount;
-      }
-    });
-
-    if (account.accountType === 'Cash Credit') {
-      return getLatestDp(account, onDate) - balance;
+    const grouped = new Map<string, { key: string; totals: Record<string, number>; total: number }>();
+    for (const transfer of filtered) {
+      const key = dayKey(transfer.at);
+      const row = grouped.get(key) ?? { key, totals: {}, total: 0 };
+      const route = `${transfer.fromAccountId}>${transfer.toAccountId}`;
+      const amount = Number(transfer.amount) || 0;
+      row.totals[route] = (row.totals[route] || 0) + amount;
+      row.total += amount;
+      grouped.set(key, row);
     }
+    return Array.from(grouped.values()).sort((a, b) => a.key.localeCompare(b.key));
+  }, [filtered]);
 
-    return balance;
-  };
-
-  const editAvailableFunds = useMemo(() => {
-    if (!editingEntry || !editDate || !editFromAccountId) {
-      return 0;
-    }
-
-    const account = bankAccounts.find(
-      (item) => item.id === editFromAccountId
-    );
-
-    if (!account) {
-      return 0;
-    }
-
-    return getAvailableFunds(
-      account,
+  // The edit dialog's figures, with the transfer being edited left out of the history.
+  // An unchanged day keeps the saved timestamp; a new day is that day's local midnight.
+  const editDate = useMemo(
+    () => (editingEntry ? (form.day === dayKey(editingEntry.at) ? editingEntry.at : parseDay(form.day)) : null),
+    [editingEntry, form.day],
+  );
+  const editFromAccount = form.fromAccountId ? accountById.get(form.fromAccountId) : undefined;
+  const editAvailable = useMemo(() => {
+    if (!editingEntry || !editDate || !editFromAccount) return null;
+    return availableOn(
+      editFromAccount,
+      allTransactions.filter((txn) => txn.contraId !== editingEntry.contraId),
       editDate,
-      editingEntry.contraId
     );
-  }, [
-    bankAccounts,
-    editDate,
-    editFromAccountId,
-    editingEntry,
-    allTransactions,
-  ]);
+  }, [allTransactions, editDate, editFromAccount, editingEntry]);
 
-  const openEditDialog = (entry: UnifiedTransaction) => {
-    setEditingEntry(entry);
-    setEditDate(new Date(entry.date));
-    setEditFromAccountId(entry.fromAccountId);
-    setEditToAccountId(entry.toAccountId);
-    setEditAmount(entry.amount);
+  const editOptions = useMemo(
+    () =>
+      bankAccounts.filter(
+        (account) =>
+          account.status === 'Active' ||
+          account.id === editingEntry?.fromAccountId ||
+          account.id === editingEntry?.toAccountId,
+      ),
+    [bankAccounts, editingEntry],
+  );
+
+  const openEditDialog = (transfer: Transfer) => {
+    setEditingEntry(transfer);
+    setForm({
+      day: dayKey(transfer.at),
+      fromAccountId: transfer.fromAccountId,
+      toAccountId: transfer.toAccountId,
+      amount: String(transfer.amount || ''),
+    });
   };
 
   const resetEditDialog = () => {
     setEditingEntry(null);
-    setEditDate(undefined);
-    setEditFromAccountId('');
-    setEditToAccountId('');
-    setEditAmount(0);
+    setForm(EMPTY_FORM);
     setIsEditSaving(false);
   };
 
-  const handleEditTransaction = async () => {
-    if (!editingEntry || !editDate) {
-      return;
-    }
+  const handleEditTransaction = async (event: React.FormEvent) => {
+    event.preventDefault();
+    if (!editingEntry) return;
 
     if (!canEdit) {
-      toast({
-        title: 'Not allowed',
-        description:
-          'You do not have permission to edit internal transactions.',
-        variant: 'destructive',
-      });
+      toast({ title: 'Not allowed', description: 'You do not have permission to edit internal transactions.', variant: 'destructive' });
       return;
     }
 
+    const amount = Number(form.amount);
+    if (!editDate) {
+      toast({ title: 'Validation Error', description: 'Enter the transfer date.', variant: 'destructive' });
+      return;
+    }
     if (
-      !editFromAccountId ||
-      !editToAccountId ||
-      editFromAccountId === editToAccountId ||
-      editAmount <= 0
+      !form.fromAccountId ||
+      !form.toAccountId ||
+      form.fromAccountId === form.toAccountId ||
+      !Number.isFinite(amount) ||
+      amount <= 0
     ) {
       toast({
         title: 'Validation Error',
-        description:
-          'Please select different source and destination accounts and enter a positive amount.',
+        description: 'Please select different source and destination accounts and enter a positive amount.',
         variant: 'destructive',
       });
       return;
     }
 
-    const fromAccount = bankAccounts.find(
-      (account) => account.id === editFromAccountId
-    );
-    const toAccount = bankAccounts.find(
-      (account) => account.id === editToAccountId
-    );
-
+    const fromAccount = accountById.get(form.fromAccountId);
+    const toAccount = accountById.get(form.toAccountId);
     if (!fromAccount || !toAccount) {
-      toast({
-        title: 'Validation Error',
-        description:
-          'One or both selected accounts could not be found.',
-        variant: 'destructive',
-      });
+      toast({ title: 'Validation Error', description: 'One or both selected accounts could not be found.', variant: 'destructive' });
       return;
     }
 
-    const availableFunds = getAvailableFunds(
+    const availableFunds = availableOn(
       fromAccount,
+      allTransactions.filter((txn) => txn.contraId !== editingEntry.contraId),
       editDate,
-      editingEntry.contraId
     );
-
-    if (editAmount > availableFunds) {
+    if (amount > availableFunds) {
       toast({
         title: 'Insufficient Funds',
-        description: `Transfer from ${fromAccount.shortName} exceeds the available amount of ${formatCurrency(
-          availableFunds
-        )}.`,
+        description: `Transfer from ${accountLabel(fromAccount)} exceeds the available amount of ${formatInr(availableFunds)}.`,
         variant: 'destructive',
       });
       return;
     }
 
     setIsEditSaving(true);
-
     try {
       const existingContraSnap = await getDocs(
-        query(
-          collection(db, 'bankExpenses'),
-          where('contraId', '==', editingEntry.contraId)
-        )
+        query(collection(db, 'bankExpenses'), where('contraId', '==', editingEntry.contraId)),
       );
 
       const batch = writeBatch(db);
-
       existingContraSnap.forEach((docSnap) => {
         batch.delete(docSnap.ref);
       });
@@ -445,63 +334,47 @@ export default function InternalTransactionPage() {
 
       batch.set(doc(collection(db, 'bankExpenses')), {
         ...baseData,
-        accountId: editFromAccountId,
+        accountId: form.fromAccountId,
         description: `Transfer to ${toAccount.shortName} - ${toAccount.bankName}`,
-        amount: editAmount,
+        amount,
         type: 'Debit',
       } as Omit<BankExpense, 'id'>);
 
       batch.set(doc(collection(db, 'bankExpenses')), {
         ...baseData,
-        accountId: editToAccountId,
+        accountId: form.toAccountId,
         description: `Transfer from ${fromAccount.shortName} - ${fromAccount.bankName}`,
-        amount: editAmount,
+        amount,
         type: 'Credit',
       } as Omit<BankExpense, 'id'>);
 
       await batch.commit();
 
-      toast({
-        title: 'Success',
-        description: 'Internal transaction updated.',
-      });
-
+      toast({ title: 'Success', description: 'Internal transaction updated.' });
       resetEditDialog();
-      void fetchBankAccountsAndLog();
+      void load(true);
     } catch (error) {
       console.error('Error editing internal transaction:', error);
-      toast({
-        title: 'Update Failed',
-        description:
-          'An error occurred while updating the internal transaction.',
-        variant: 'destructive',
-      });
+      toast({ title: 'Update Failed', description: 'An error occurred while updating the internal transaction.', variant: 'destructive' });
       setIsEditSaving(false);
     }
   };
 
-  const handleDeleteTransaction = async (entry: UnifiedTransaction) => {
+  const handleConfirmDelete = async () => {
+    if (!deleteTarget) return;
     if (!canDelete) {
-      toast({
-        title: 'Not allowed',
-        description:
-          'You do not have permission to delete internal transactions.',
-        variant: 'destructive',
-      });
+      toast({ title: 'Not allowed', description: 'You do not have permission to delete internal transactions.', variant: 'destructive' });
+      setDeleteTarget(null);
       return;
     }
 
+    setIsDeleting(true);
     try {
-      const expensesRef = collection(db, 'bankExpenses');
-      const q = query(expensesRef, where('contraId', '==', entry.contraId));
-      const snapshot = await getDocs(q);
+      const snapshot = await getDocs(query(collection(db, 'bankExpenses'), where('contraId', '==', deleteTarget.contraId)));
 
       if (snapshot.empty) {
-        toast({
-          title: 'Not found',
-          description: 'No matching contra entries found to delete.',
-          variant: 'destructive',
-        });
+        toast({ title: 'Not found', description: 'No matching contra entries found to delete.', variant: 'destructive' });
+        setDeleteTarget(null);
         return;
       }
 
@@ -511,458 +384,391 @@ export default function InternalTransactionPage() {
       });
       await batch.commit();
 
-      toast({
-        title: 'Success',
-        description: 'Internal transaction deleted.',
-      });
-
-      void fetchBankAccountsAndLog();
+      toast({ title: 'Success', description: 'Internal transaction deleted.' });
+      setDeleteTarget(null);
+      void load(true);
     } catch (error) {
       console.error('Error deleting internal transaction:', error);
-      toast({
-        title: 'Delete Failed',
-        description:
-          'An error occurred while deleting the internal transaction.',
-        variant: 'destructive',
-      });
+      toast({ title: 'Delete Failed', description: 'An error occurred while deleting the internal transaction.', variant: 'destructive' });
+    } finally {
+      setIsDeleting(false);
     }
   };
-
-  const formatCurrency = (amount: number) =>
-    new Intl.NumberFormat('en-IN', {
-      style: 'currency',
-      currency: 'INR',
-    }).format(amount || 0);
 
   const clearFilters = () => {
     setDateRange(undefined);
     setDatePreset('custom');
+    setAccountFilter('all');
+    setSearch('');
   };
 
-  const handleDatePresetChange = (value: string) => {
-    const preset = value as DateRangePreset;
-    setDatePreset(preset);
-    if (preset === 'custom') return;
-    setDateRange(getDateRangeFromPreset(preset));
-  };
+  if (authLoading || (isLoading && canView)) return <BankPageSkeleton kpis={3} />;
+  if (!canView) return <BankAccessDenied title="Transfers" />;
 
-  const totalFiltered = filteredLogEntries.reduce((s, e) => s + e.amount, 0);
+  const renderRoute = (transfer: Pick<Transfer, 'fromAccountId' | 'toAccountId'>) => (
+    <span className="inline-flex flex-wrap items-center gap-x-1.5 gap-y-0.5">
+      <span className="font-medium text-rose-700">{nameOf(transfer.fromAccountId)}</span>
+      <ArrowRight className="h-3.5 w-3.5 shrink-0 text-muted-foreground" aria-label="to" />
+      <span className="font-medium text-emerald-700">{nameOf(transfer.toAccountId)}</span>
+    </span>
+  );
 
-  if (authLoading || (isLogLoading && canView)) {
-    return (
-      <div className="relative w-full px-4 sm:px-6 lg:px-8 py-6 space-y-4">
-        <Skeleton className="h-10 w-64 rounded-xl" />
-        <Skeleton className="h-16 w-full rounded-xl" />
-        <Skeleton className="h-80 w-full rounded-xl" />
-      </div>
-    );
-  }
+  const columns: Array<ListColumn<Transfer>> = [
+    {
+      header: 'Date',
+      mobile: 'title',
+      cell: (transfer) => <span className="whitespace-nowrap font-medium">{formatDay(transfer.at)}</span>,
+    },
+    {
+      header: 'From → To',
+      mobile: 'title',
+      cell: (transfer) => renderRoute(transfer),
+    },
+    {
+      header: 'Description',
+      cell: (transfer) => <span className="line-clamp-2 break-words">{transfer.description || '—'}</span>,
+    },
+    {
+      header: 'Amount',
+      align: 'right',
+      mobile: 'aside',
+      cell: (transfer) => <span className="whitespace-nowrap font-semibold tabular-nums text-indigo-700">{formatInr(transfer.amount)}</span>,
+    },
+    {
+      header: '',
+      align: 'right',
+      mobile: 'footer',
+      cell: (transfer) =>
+        canEdit || canDelete ? (
+          <div className="flex justify-end gap-1">
+            {canEdit && (
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-8"
+                onClick={() => openEditDialog(transfer)}
+                disabled={isEditSaving || isDeleting}
+                aria-label={`Edit transfer of ${formatInr(transfer.amount)} on ${formatDay(transfer.at)}`}
+              >
+                <Pencil className="h-4 w-4" />
+                <span className="ml-1.5 sm:hidden">Edit</span>
+              </Button>
+            )}
+            {canDelete && (
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-8 text-destructive hover:text-destructive"
+                onClick={() => setDeleteTarget(transfer)}
+                disabled={isEditSaving || isDeleting}
+                aria-label={`Delete transfer of ${formatInr(transfer.amount)} on ${formatDay(transfer.at)}`}
+              >
+                <Trash2 className="h-4 w-4" />
+                <span className="ml-1.5 sm:hidden">Delete</span>
+              </Button>
+            )}
+          </div>
+        ) : null,
+    },
+  ];
 
-  if (!canView) {
-    return (
-      <div className="relative w-full px-4 sm:px-6 lg:px-8 py-6">
-        <PageHeader title="Internal Transaction Log" backHref="/bank-balance" backLabel="Back to dashboard" />
-        <Card><CardHeader><CardTitle>Access Denied</CardTitle><CardDescription>You do not have permission to view this page.</CardDescription></CardHeader>
-          <CardContent className="flex justify-center p-8"><ShieldAlert className="h-14 w-14 text-destructive" /></CardContent>
-        </Card>
-      </div>
-    );
-  }
+  const activeFilters = (dateRange ? 1 : 0) + (accountFilter !== 'all' ? 1 : 0);
+  const emptyMessage = (
+    <div className="px-6 py-10 text-center text-sm text-muted-foreground">
+      {transfers.length === 0 ? 'No internal transfers recorded yet.' : 'No internal transfers match these filters.'}
+    </div>
+  );
+  const topRoute = summary.topRoute;
+  const editAmount = Number(form.amount) || 0;
 
   return (
     <>
-      {/* ── Animated Background (Violet/Blue theme for Transfers) ── */}
-      <div className="fixed inset-0 -z-10 overflow-hidden pointer-events-none">
-        <div className="absolute inset-0 bg-gradient-to-br from-violet-50/60 via-background to-blue-50/40 dark:from-violet-950/20 dark:via-background dark:to-blue-950/15" />
-        <div className="animate-bb-orb-1 absolute top-[-10%] left-[-5%] w-[40vw] h-[40vw] rounded-full bg-violet-300/15 blur-3xl" />
-        <div className="animate-bb-orb-2 absolute bottom-[-8%] right-[-6%] w-[45vw] h-[45vw] rounded-full bg-blue-300/12 blur-3xl" />
-        <div className="animate-bb-orb-3 absolute top-[40%] left-[30%] w-[25vw] h-[25vw] rounded-full bg-indigo-200/10 blur-2xl" />
-        <div className="absolute inset-0 opacity-20 dark:opacity-12"
-          style={{ backgroundImage: 'radial-gradient(circle, rgba(139,92,246,0.12) 1px, transparent 1px)', backgroundSize: '28px 28px' }}
-        />
-      </div>
-
-    <div className="relative w-full px-4 sm:px-6 lg:px-8 py-4">
-      {/* ── Header ── */}
-      <PageHeader
-        title="Internal Transfers"
-        description={<>{filteredLogEntries.length} transfers · {formatCurrency(totalFiltered)}</>}
-        backHref="/bank-balance"
-        backLabel="Back to dashboard"
-        actions={
-          canAdd ? (
-            <Link href="/bank-balance/internal-transaction/new">
-              <Button className="rounded-full shadow-md shadow-violet-200/50 dark:shadow-violet-900/20 bg-violet-600 hover:bg-violet-700">
-                <Plus className="mr-2 h-4 w-4" />New Transfer
+      <BankBalanceBackground tone="blue" />
+      <div className={BANK_PAGE}>
+        <PageHeader
+          title="Transfers"
+          description={`${plural(filtered.length, 'transfer')} · ${formatInr(summary.total)}`}
+          backHref="/bank-balance"
+          backLabel="Back to dashboard"
+          actions={
+            canAdd ? (
+              <Button asChild>
+                <Link href="/bank-balance/internal-transaction/new">
+                  <Plus className="mr-2 h-4 w-4" />
+                  New Transfer
+                </Link>
               </Button>
-            </Link>
-          ) : (
-            <Button disabled className="rounded-full"><Plus className="mr-2 h-4 w-4" />New Transfer</Button>
-          )
-        }
-      />
+            ) : undefined
+          }
+        />
 
-      <TableCard
-        title="Transfers"
-        count={filteredLogEntries.length}
-        noun="transfer"
-        actions={
-          <>
-            <Button size="sm" variant={viewMode === 'current' ? 'default' : 'outline'} onClick={() => setViewMode('current')}>
-              Current View
-            </Button>
-            <Button size="sm" variant={viewMode === 'dateWise' ? 'default' : 'outline'} onClick={() => setViewMode('dateWise')}>
-              Date-wise View
-            </Button>
-          </>
-        }
-        toolbar={
-          <FilterBar activeCount={dateRange ? 1 : 0} onClear={clearFilters}>
-            <Select value={datePreset} onValueChange={handleDatePresetChange}>
-              <SelectTrigger>
-                <SelectValue placeholder="Quick filter" />
-              </SelectTrigger>
-              <SelectContent>
-                {DATE_RANGE_PRESET_OPTIONS.map((option) => (
-                  <SelectItem key={option.value} value={option.value}>
-                    {option.label}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+          <KpiCard
+            label="Transfers in range"
+            value={filtered.length}
+            hint={filtered.length === transfers.length ? 'All transfers' : `of ${transfers.length} recorded`}
+            icon={ArrowRightLeft}
+            tone="blue"
+            accent
+          />
+          <KpiCard label="Total moved" value={formatInr(summary.total)} icon={Wallet} tone="indigo" accent />
+          <KpiCard
+            label="Most-used route"
+            value={topRoute ? `${nameOf(topRoute.fromAccountId)} → ${nameOf(topRoute.toAccountId)}` : '—'}
+            hint={topRoute ? `${plural(topRoute.count, 'transfer')} · ${formatInr(topRoute.amount)}` : 'No transfers in range'}
+            icon={Route}
+            tone="violet"
+            accent
+          />
+        </div>
 
-            <Popover>
-              <PopoverTrigger asChild>
-                <Button
-                  id="date"
-                  variant="outline"
-                  className={cn(
-                    'justify-start text-left font-normal',
-                    !dateRange && 'text-muted-foreground'
-                  )}
-                >
-                  <CalendarIcon className="mr-2 h-4 w-4" />
-                  {dateRange?.from ? (
-                    dateRange.to ? (
-                      <>
-                        {format(
-                          dateRange.from,
-                          'LLL dd, y'
-                        )}{' '}
-                        -{' '}
-                        {format(
-                          dateRange.to,
-                          'LLL dd, y'
-                        )}
-                      </>
-                    ) : (
-                      format(
-                        dateRange.from,
-                        'LLL dd, y'
-                      )
-                    )
-                  ) : (
-                    <span>Pick a date range</span>
-                  )}
-                </Button>
-              </PopoverTrigger>
-              <PopoverContent
-                className="w-auto p-0"
-                align="start"
-              >
-                <Calendar
-                  initialFocus
-                  mode="range"
-                  defaultMonth={dateRange?.from}
-                  selected={dateRange}
-                  onSelect={(range) => {
-                    setDateRange(range);
-                    setDatePreset('custom');
-                  }}
-                  numberOfMonths={2}
-                />
-              </PopoverContent>
-            </Popover>
-          </FilterBar>
-        }
-      >
+        <TableCard
+          title={viewMode === 'current' ? 'Transfers' : 'Transfers by date'}
+          count={filtered.length}
+          noun="transfer"
+          scroll={viewMode === 'dateWise' ? 'contained' : 'natural'}
+          actions={
+            <>
+              <Button size="sm" variant={viewMode === 'current' ? 'default' : 'outline'} onClick={() => setViewMode('current')}>
+                Current view
+              </Button>
+              <Button size="sm" variant={viewMode === 'dateWise' ? 'default' : 'outline'} onClick={() => setViewMode('dateWise')}>
+                Date-wise view
+              </Button>
+            </>
+          }
+          toolbar={
+            <FilterBar
+              search={{ value: search, onChange: setSearch, placeholder: 'Search description or account…' }}
+              activeCount={activeFilters}
+              onClear={clearFilters}
+            >
+              <BankDateRangeFilter
+                range={dateRange}
+                preset={datePreset}
+                onChange={(range, preset) => {
+                  setDateRange(range);
+                  setDatePreset(preset);
+                }}
+              />
+              <Select value={accountFilter} onValueChange={setAccountFilter}>
+                <SelectTrigger className="sm:w-56" aria-label="Account, from or to">
+                  <SelectValue placeholder="From or to account" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All accounts (from or to)</SelectItem>
+                  {bankAccounts.map((account) => (
+                    <SelectItem key={account.id} value={account.id}>
+                      {accountLabel(account)} - {account.bankName}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </FilterBar>
+          }
+          footer={
+            filtered.length > 0 ? (
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <span>
+                  Total of {plural(filtered.length, 'transfer')}
+                  {accountFilter !== 'all' && ` involving ${nameOf(accountFilter)}`}
+                </span>
+                <span className="font-semibold tabular-nums text-foreground">{formatInr(summary.total)}</span>
+              </div>
+            ) : undefined
+          }
+        >
           {viewMode === 'current' ? (
-            <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Date</TableHead>
-                <TableHead>From Bank</TableHead>
-                <TableHead>To Bank</TableHead>
-                <TableHead>Amount</TableHead>
-                <TableHead className="text-right">
-                  Actions
-                </TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {isLogLoading ? (
-                Array.from({ length: 5 }).map((_, i) => (
-                  <TableRow key={i}>
-                    <TableCell colSpan={5}>
-                      <Skeleton className="h-6" />
-                    </TableCell>
-                  </TableRow>
-                ))
-              ) : filteredLogEntries.length > 0 ? (
-                filteredLogEntries.map((entry) => (
-                  <TableRow key={entry.id}>
-                    <TableCell>
-                      {format(
-                        new Date(entry.date),
-                        'dd MMM, yyyy'
-                      )}
-                    </TableCell>
-                    <TableCell>
-                      {entry.fromBankName}
-                    </TableCell>
-                    <TableCell>
-                      {entry.toBankName}
-                    </TableCell>
-                    <TableCell>
-                      {formatCurrency(entry.amount)}
-                    </TableCell>
-                    <TableCell className="text-right">
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() =>
-                          openEditDialog(entry)
-                        }
-                        disabled={!canEdit}
-                      >
-                        <Edit className="mr-2 h-4 w-4" />
-                        Edit
-                      </Button>
-                      <AlertDialog>
-                        <AlertDialogTrigger asChild>
-                          <Button
-                            variant="destructive"
-                            size="sm"
-                            className="ml-2"
-                            disabled={!canDelete}
-                          >
-                            <Trash2 className="mr-2 h-4 w-4" />
-                            Delete
-                          </Button>
-                        </AlertDialogTrigger>
-                        <AlertDialogContent>
-                          <AlertDialogHeader>
-                            <AlertDialogTitle>
-                              Are you absolutely sure?
-                            </AlertDialogTitle>
-                            <AlertDialogDescription>
-                              This will permanently delete
-                              both the debit and credit
-                              entries for this internal
-                              transaction.
-                            </AlertDialogDescription>
-                          </AlertDialogHeader>
-                          <AlertDialogFooter>
-                            <AlertDialogCancel>
-                              Cancel
-                            </AlertDialogCancel>
-                            <AlertDialogAction
-                              onClick={() =>
-                                handleDeleteTransaction(
-                                  entry
-                                )
-                              }
-                            >
-                              Delete
-                            </AlertDialogAction>
-                          </AlertDialogFooter>
-                        </AlertDialogContent>
-                      </AlertDialog>
-                    </TableCell>
-                  </TableRow>
-                ))
-              ) : (
-                <TableRow>
-                  <TableCell
-                    colSpan={5}
-                    className="text-center h-24"
-                  >
-                    No internal transfers found for the
-                    selected criteria.
-                  </TableCell>
-                </TableRow>
-              )}
-            </TableBody>
-            </Table>
+            <div className="p-3 sm:p-0">
+              <DataList rows={filtered} columns={columns} frameless dense maxHeightClassName="sm:max-h-[36rem]" empty={emptyMessage} />
+            </div>
+          ) : dateWiseRows.length === 0 ? (
+            emptyMessage
           ) : (
             <Table>
               <TableHeader>
                 <TableRow>
                   <TableHead>Date</TableHead>
-                  {transferColumns.map((column) => (
-                    <TableHead key={column} className="text-right">
-                      {column}
+                  {routeColumns.map((column) => (
+                    <TableHead key={column.key} className="whitespace-nowrap text-right">
+                      {column.label}
                     </TableHead>
                   ))}
                   <TableHead className="text-right">Total</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {dateWiseRows.length > 0 ? (
-                  dateWiseRows.map((row) => (
-                    <TableRow key={row.date}>
-                      <TableCell>{format(new Date(row.date), 'dd MMM, yyyy')}</TableCell>
-                      {transferColumns.map((column) => (
-                        <TableCell key={`${row.date}-${column}`} className="whitespace-nowrap text-right tabular-nums">
-                          {row.transferTotals[column] ? formatCurrency(row.transferTotals[column]) : '-'}
-                        </TableCell>
-                      ))}
-                      <TableCell className="whitespace-nowrap text-right font-medium tabular-nums">{formatCurrency(row.total)}</TableCell>
-                    </TableRow>
-                  ))
-                ) : (
-                  <TableRow>
-                    <TableCell
-                      colSpan={Math.max(2, transferColumns.length + 2)}
-                      className="text-center h-24"
-                    >
-                      No date-wise transfer data found.
-                    </TableCell>
+                {dateWiseRows.map((row) => (
+                  <TableRow key={row.key}>
+                    <TableCell className="whitespace-nowrap font-medium">{formatDay(row.key)}</TableCell>
+                    {routeColumns.map((column) => (
+                      <TableCell key={column.key} className="whitespace-nowrap text-right tabular-nums">
+                        {row.totals[column.key] ? formatInr(row.totals[column.key]) : '-'}
+                      </TableCell>
+                    ))}
+                    <TableCell className="whitespace-nowrap text-right font-semibold tabular-nums">{formatInr(row.total)}</TableCell>
                   </TableRow>
-                )}
+                ))}
               </TableBody>
+              <TableFooter>
+                <TableRow>
+                  <TableCell className="font-semibold">Total</TableCell>
+                  {routeColumns.map((column) => (
+                    <TableCell key={column.key} className="whitespace-nowrap text-right font-semibold tabular-nums">
+                      {formatInr(dateWiseRows.reduce((sum, row) => sum + (row.totals[column.key] || 0), 0))}
+                    </TableCell>
+                  ))}
+                  <TableCell className="whitespace-nowrap text-right font-bold tabular-nums">{formatInr(summary.total)}</TableCell>
+                </TableRow>
+              </TableFooter>
             </Table>
           )}
-      </TableCard>
+        </TableCard>
       </div>
 
       <Dialog
         open={!!editingEntry}
-        onOpenChange={(isOpen) => {
-          if (!isOpen) {
-            resetEditDialog();
-          }
+        onOpenChange={(open) => {
+          if (!open && !isEditSaving) resetEditDialog();
         }}
       >
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Edit Internal Transaction</DialogTitle>
+        <DialogContent className="hr-mobile-dialog gap-5 sm:max-w-lg">
+          <DialogHeader className="hr-dialog-header pr-8">
+            <DialogTitle>Edit transfer</DialogTitle>
             <DialogDescription>
-              Update the source bank, destination bank, date, or amount for this contra entry.
+              {editingEntry && (
+                <>
+                  {nameOf(editingEntry.fromAccountId)} → {nameOf(editingEntry.toAccountId)} · {formatInr(editingEntry.amount)} on{' '}
+                  {formatDay(editingEntry.at)}
+                </>
+              )}
             </DialogDescription>
           </DialogHeader>
 
-          <div className="space-y-4">
-            <div className="space-y-2">
-              <Label>Transaction Date</Label>
-              <Popover>
-                <PopoverTrigger asChild>
-                  <Button
-                    variant="outline"
-                    className={cn(
-                      'w-full justify-start text-left font-normal',
-                      !editDate && 'text-muted-foreground'
-                    )}
-                  >
-                    <CalendarIcon className="mr-2 h-4 w-4" />
-                    {editDate ? format(editDate, 'PPP') : 'Pick a date'}
-                  </Button>
-                </PopoverTrigger>
-                <PopoverContent className="w-auto p-0">
-                  <Calendar
-                    mode="single"
-                    selected={editDate}
-                    onSelect={setEditDate}
-                    initialFocus
-                  />
-                </PopoverContent>
-              </Popover>
-            </div>
-
-            <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-              <div className="space-y-2">
-                <Label>From Bank</Label>
-                <Select
-                  value={editFromAccountId}
-                  onValueChange={setEditFromAccountId}
-                >
-                  <SelectTrigger>
-                    <SelectValue placeholder="Select account" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {activeBankAccounts.map((account) => (
-                      <SelectItem
-                        key={account.id}
-                        value={account.id}
-                        disabled={account.id === editToAccountId}
-                      >
-                        {account.shortName} - {account.bankName}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-
-              <div className="space-y-2">
-                <Label>To Bank</Label>
-                <Select
-                  value={editToAccountId}
-                  onValueChange={setEditToAccountId}
-                >
-                  <SelectTrigger>
-                    <SelectValue placeholder="Select account" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {activeBankAccounts.map((account) => (
-                      <SelectItem
-                        key={account.id}
-                        value={account.id}
-                        disabled={account.id === editFromAccountId}
-                      >
-                        {account.shortName} - {account.bankName}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-            </div>
-
-            <div className="space-y-2">
-              <Label>Amount</Label>
+          <form id="transfer-edit-form" onSubmit={handleEditTransaction} className="hr-dialog-body space-y-4">
+            <div className="space-y-1.5">
+              <Label htmlFor="transfer-edit-date">Transfer date</Label>
               <Input
-                type="number"
-                placeholder="0.00"
-                value={editAmount || ''}
-                onChange={(event) =>
-                  setEditAmount(event.target.valueAsNumber || 0)
-                }
+                id="transfer-edit-date"
+                type="date"
+                required
+                value={form.day}
+                onChange={(event) => setForm((prev) => ({ ...prev, day: event.target.value }))}
               />
             </div>
 
-            {editFromAccountId && (
-              <div className="rounded-lg border bg-muted/30 px-3 py-2 text-sm">
-                Available from source account: <span className="font-semibold">{formatCurrency(editAvailableFunds)}</span>
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+              <div className="space-y-1.5">
+                <Label htmlFor="transfer-edit-from">From account</Label>
+                <Select value={form.fromAccountId} onValueChange={(value) => setForm((prev) => ({ ...prev, fromAccountId: value }))}>
+                  <SelectTrigger id="transfer-edit-from">
+                    <SelectValue placeholder="Select account" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {editOptions.map((account) => (
+                      <SelectItem key={account.id} value={account.id} disabled={account.id === form.toAccountId}>
+                        {accountLabel(account)} - {account.bankName}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="transfer-edit-to">To account</Label>
+                <Select value={form.toAccountId} onValueChange={(value) => setForm((prev) => ({ ...prev, toAccountId: value }))}>
+                  <SelectTrigger id="transfer-edit-to">
+                    <SelectValue placeholder="Select account" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {editOptions.map((account) => (
+                      <SelectItem key={account.id} value={account.id} disabled={account.id === form.fromAccountId}>
+                        {accountLabel(account)} - {account.bankName}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+
+            <div className="space-y-1.5">
+              <Label htmlFor="transfer-edit-amount">Amount</Label>
+              <Input
+                id="transfer-edit-amount"
+                type="number"
+                inputMode="decimal"
+                min={0}
+                step="any"
+                required
+                placeholder="0.00"
+                value={form.amount}
+                onChange={(event) => setForm((prev) => ({ ...prev, amount: event.target.value }))}
+              />
+            </div>
+
+            {editFromAccount && editAvailable !== null && (
+              <div className="space-y-2 rounded-lg border bg-muted/40 p-4 text-sm">
+                <div className="flex items-baseline justify-between gap-3">
+                  <span className="min-w-0 text-muted-foreground">
+                    {isCashCredit(editFromAccount) ? 'Available limit' : 'Available balance'} in {accountLabel(editFromAccount)}
+                    <span className="block text-xs">end of {formatDay(editDate)}, without this transfer</span>
+                  </span>
+                  <span className="shrink-0 font-semibold tabular-nums">{formatInr(editAvailable)}</span>
+                </div>
+                {editAmount > editAvailable && (
+                  <p className="border-t pt-2 text-xs text-rose-700">
+                    The amount is {formatInr(editAmount - editAvailable)} more than is available.
+                  </p>
+                )}
               </div>
             )}
-          </div>
+          </form>
 
-          <DialogFooter>
-            <Button
-              variant="outline"
-              onClick={resetEditDialog}
-              disabled={isEditSaving}
-            >
+          <DialogFooter className="hr-dialog-footer gap-2 sm:gap-0">
+            <Button type="button" variant="outline" onClick={resetEditDialog} disabled={isEditSaving}>
               Cancel
             </Button>
-            <Button
-              onClick={() => void handleEditTransaction()}
-              disabled={isEditSaving}
-            >
-              {isEditSaving ? 'Saving...' : 'Save Changes'}
+            <Button type="submit" form="transfer-edit-form" disabled={isEditSaving}>
+              {isEditSaving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
+              Save Changes
             </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <AlertDialog
+        open={!!deleteTarget}
+        onOpenChange={(open) => {
+          if (!open && !isDeleting) setDeleteTarget(null);
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete this transfer?</AlertDialogTitle>
+            <AlertDialogDescription>
+              {deleteTarget && (
+                <>
+                  {formatInr(deleteTarget.amount)} from {nameOf(deleteTarget.fromAccountId)} to {nameOf(deleteTarget.toAccountId)} on{' '}
+                  {formatDay(deleteTarget.at)}. This permanently deletes both the debit and the credit entry.
+                </>
+              )}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={isDeleting}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              disabled={isDeleting}
+              onClick={(event) => {
+                event.preventDefault();
+                void handleConfirmDelete();
+              }}
+            >
+              {isDeleting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Trash2 className="mr-2 h-4 w-4" />}
+              Delete
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </>
   );
 }

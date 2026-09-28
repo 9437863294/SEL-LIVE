@@ -248,9 +248,10 @@ export const permissionModules = {
     "Daily Log": ["View"],
     "Interest Rate": ["View", "Add", "Delete"],
     "Monthly Interest": ["View", "Edit"],
+    "Payment Entry Settings": ["View", "Edit"],
     Expenses: ["View", "Add", "Delete"],
     Receipts: ["View", "Add", "Delete"],
-    "Internal Transaction": ["View", "Add", "Delete"],
+    "Internal Transaction": ["View", "Add", "Edit", "Delete"],
     Reports: ["View"],
   },
   Expenses: {

@@ -12,18 +12,11 @@ import {
   Loader2,
   ChevronUp,
   History,
-  ShieldAlert,
 } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
 import { PageHeader } from '@/components/shared/page-header';
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from '@/components/ui/card';
+import { Card, CardContent } from '@/components/ui/card';
 import {
   Collapsible,
   CollapsibleContent,
@@ -42,7 +35,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Calendar } from '@/components/ui/calendar';
 import { cn } from '@/lib/utils';
-import { format, startOfDay } from 'date-fns';
+import { format } from 'date-fns';
 import { useToast } from '@/hooks/use-toast';
 import { db } from '@/lib/firebase';
 import { storage } from '@/lib/firebase-storage';
@@ -59,9 +52,16 @@ import type { BankAccount, BankExpense } from '@/lib/types';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useAuthorization } from '@/hooks/useAuthorization';
 import { getApplicableCcLimit } from '@/lib/bank-balance-limit';
+import { balanceAt, buildLedger, formatInr, isCashCredit } from '@/lib/bank-balance-ledger';
+import {
+  BANK_PAGE,
+  BankAccessDenied,
+  BankBalanceBackground,
+  BankPageSkeleton,
+} from '@/components/bank-balance/page-kit';
 
 type ExpenseItem = {
-  id: number;
+  id: string;
   description: string;
   paymentRequestRefNo: string;
   utrNumber: string;
@@ -84,8 +84,11 @@ interface PaymentSettings {
   paymentMethods: { id: string; name: string }[];
 }
 
+const makeId = () =>
+  globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+
 const createExpenseItem = (): ExpenseItem => ({
-  id: Date.now() + Math.floor(Math.random() * 100000),
+  id: makeId(),
   description: '',
   paymentRequestRefNo: '',
   utrNumber: '',
@@ -108,7 +111,7 @@ export default function NewPaymentPage() {
   const [allTransactions, setAllTransactions] = useState<BankExpense[]>([]);
 
   const [expenses, setExpenses] = useState<ExpenseItem[]>([createExpenseItem()]);
-  const [openCollapsibleId, setOpenCollapsibleId] = useState<number | null>(
+  const [openCollapsibleId, setOpenCollapsibleId] = useState<string | null>(
     expenses[0]?.id ?? null
   );
 
@@ -189,59 +192,21 @@ export default function NewPaymentPage() {
     [expenses]
   );
 
-  const getLatestDp = (account: BankAccount, onDate: Date): number => {
-    return getApplicableCcLimit(account, onDate);
-  };
-
+  // From the engine, so the opening date is honoured and every entry on the day counts: a
+  // Current Account's balance, or a Cash Credit account's limit in force less its utilisation.
+  const selectedAccount = bankAccounts.find((acc) => acc.id === selectedBank);
   const availableBalance = useMemo(() => {
-    if (!selectedBank || !date) return 0;
-    const account = bankAccounts.find((acc) => acc.id === selectedBank);
-    if (!account) return 0;
-
-    let balance =
-      account.accountType === 'Cash Credit'
-        ? account.openingUtilization || 0
-        : account.openingBalance || 0;
-
-    if (account.openingDate) {
-      const openingDate = startOfDay(new Date(account.openingDate));
-      const cutoff = startOfDay(date);
-
-      const historicalTransactions = allTransactions
-        .filter(
-          (t) =>
-            t.accountId === selectedBank &&
-            t.date.toDate() >= openingDate &&
-            t.date.toDate() < cutoff
-        )
-        .sort(
-          (a, b) => a.date.toMillis() - b.date.toMillis()
-        );
-
-      historicalTransactions.forEach((t) => {
-        const amount = t.amount;
-        if (account.accountType === 'Cash Credit') {
-          // Debit = more utilization, Credit = less utilization
-          balance += t.type === 'Debit' ? amount : -amount;
-        } else {
-          // Current: Credit increases, Debit decreases
-          balance += t.type === 'Credit' ? amount : -amount;
-        }
-      });
-    }
-
-    if (account.accountType === 'Cash Credit') {
-      const currentDp = getLatestDp(account, date);
-      return currentDp - balance; // available sanctioned limit
-    }
-
-    return balance;
-  }, [selectedBank, bankAccounts, allTransactions, date]);
+    if (!selectedAccount || !date) return 0;
+    const figure = balanceAt(buildLedger(selectedAccount, allTransactions), date);
+    return isCashCredit(selectedAccount)
+      ? getApplicableCcLimit(selectedAccount, date) - figure
+      : figure;
+  }, [selectedAccount, allTransactions, date]);
 
   const handleExpenseChange = (
-    id: number,
+    id: string,
     field: keyof ExpenseItem,
-    value: any
+    value: ExpenseItem[keyof ExpenseItem]
   ) => {
     setExpenses((prev) =>
       prev.map((exp) =>
@@ -256,7 +221,7 @@ export default function NewPaymentPage() {
     setOpenCollapsibleId(newItem.id);
   };
 
-  const removeExpense = (id: number) => {
+  const removeExpense = (id: string) => {
     setExpenses((prev) => {
       const updated = prev.filter((exp) => exp.id !== id);
       if (updated.length === 0) {
@@ -272,7 +237,7 @@ export default function NewPaymentPage() {
   };
 
   const handleFileChange = (
-    id: number,
+    id: string,
     field: 'approvalCopy' | 'bankTransferCopy',
     file: File | null
   ) => {
@@ -462,73 +427,49 @@ export default function NewPaymentPage() {
     }
   };
 
-  const formatCurrency = (amount: number) =>
-    new Intl.NumberFormat('en-IN', {
-      style: 'currency',
-      currency: 'INR',
-    }).format(amount || 0);
+  const formatCurrency = (amount: number) => formatInr(amount);
 
   // Loading / permission states
   if (authLoading || (isSettingsLoading && canAdd)) {
-    return (
-      <div className="w-full px-4 sm:px-6 lg:px-8 space-y-6">
-        <Skeleton className="h-10 w-64" />
-        <Skeleton className="h-96 w-full" />
-      </div>
-    );
+    return <BankPageSkeleton kpis={0} />;
   }
 
   if (!canAdd) {
     return (
-      <div className="w-full px-4 sm:px-6 lg:px-8">
-        <PageHeader title="New Payment Entry" backHref="/bank-balance/expenses" backLabel="Back to payments log" />
-        <Card>
-          <CardHeader>
-            <CardTitle>Access Denied</CardTitle>
-            <CardDescription>
-              You do not have permission to add new payments.
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="flex justify-center p-8">
-            <ShieldAlert className="h-16 w-16 text-destructive" />
-          </CardContent>
-        </Card>
-      </div>
+      <BankAccessDenied
+        title="New Payment Entry"
+        backHref="/bank-balance/expenses"
+        backLabel="Back to payments"
+        what="the payment entry form"
+      />
     );
   }
 
   // Main UI
   return (
     <>
-      <div className="fixed inset-0 -z-10 overflow-hidden pointer-events-none">
-        <div className="absolute inset-0 bg-gradient-to-br from-red-50/60 via-background to-rose-50/40 dark:from-red-950/20 dark:via-background dark:to-rose-950/15" />
-        <div className="animate-bb-orb-1 absolute top-[-10%] left-[-5%] w-[40vw] h-[40vw] rounded-full bg-red-300/15 blur-3xl" />
-        <div className="animate-bb-orb-2 absolute bottom-[-8%] right-[-6%] w-[45vw] h-[45vw] rounded-full bg-rose-300/12 blur-3xl" />
-        <div className="absolute inset-0 opacity-20 dark:opacity-12"
-          style={{ backgroundImage: 'radial-gradient(circle, rgba(239,68,68,0.12) 1px, transparent 1px)', backgroundSize: '28px 28px' }}
-        />
-      </div>
-    <div className="relative w-full px-4 sm:px-6 lg:px-8 py-4">
+      <BankBalanceBackground tone="red" />
+    <div className={BANK_PAGE}>
       <PageHeader
         title="New Payment Entry"
         description="Record a new payment transaction"
         backHref="/bank-balance/expenses"
-        backLabel="Back to payments log"
+        backLabel="Back to payments"
         actions={
-          <Link href="/bank-balance/expenses">
-            <Button variant="outline" className="rounded-full border-border/60">
+          <Button asChild variant="outline">
+            <Link href="/bank-balance/expenses">
               <History className="mr-2 h-4 w-4" />
-              Payments Log
-            </Button>
-          </Link>
+              Payments
+            </Link>
+          </Button>
         }
       />
 
       <Card>
         <CardContent className="space-y-6 pt-6">
           {/* Top controls */}
-          <div className="flex flex-col sm:flex-row items-start sm:items-end justify-between gap-4">
-            <div className="flex flex-wrap items-end gap-4">
+          <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+            <div className="flex flex-col gap-4 sm:flex-row sm:flex-wrap sm:items-end">
               {/* Date */}
               <div className="space-y-2">
                 <Label htmlFor="payment-date">Date</Label>
@@ -541,7 +482,7 @@ export default function NewPaymentPage() {
                       id="payment-date"
                       variant="outline"
                       className={cn(
-                        'w-[240px] justify-start text-left font-normal',
+                        'w-full justify-start text-left font-normal sm:w-60',
                         !date && 'text-muted-foreground'
                       )}
                     >
@@ -590,10 +531,17 @@ export default function NewPaymentPage() {
               </div>
 
               {/* Available balance */}
-              {selectedBank && (
+              {selectedAccount && (
                 <div className="space-y-2">
-                  <Label>Available Balance</Label>
-                  <p className="font-bold text-lg">
+                  <Label>
+                    {isCashCredit(selectedAccount) ? 'Available Limit' : 'Available Balance'}
+                  </Label>
+                  <p
+                    className={cn(
+                      'font-bold text-lg tabular-nums',
+                      totalAmount > availableBalance && 'text-destructive'
+                    )}
+                  >
                     {formatCurrency(availableBalance)}
                   </p>
                 </div>
@@ -601,7 +549,7 @@ export default function NewPaymentPage() {
             </div>
 
             {/* Total */}
-            <div className="text-right flex-shrink-0 w-full sm:w-auto mt-4 sm:mt-0">
+            <div className="flex-shrink-0 w-full text-left sm:w-auto sm:text-right">
               <p className="text-muted-foreground">Total</p>
               <p className="text-2xl font-bold">
                 {formatCurrency(totalAmount)}
@@ -681,6 +629,7 @@ export default function NewPaymentPage() {
                       variant="ghost"
                       size="icon"
                       className="h-8 w-8 ml-2 flex-shrink-0"
+                      aria-label={`Remove payment #${index + 1}`}
                       onClick={(e) => {
                         e.stopPropagation();
                         removeExpense(expense.id);
@@ -940,7 +889,7 @@ export default function NewPaymentPage() {
           </div>
 
           {/* Actions */}
-          <div className="flex justify-between items-center">
+          <div className="flex flex-col-reverse gap-2 sm:flex-row sm:items-center sm:justify-between">
             <Button
               variant="outline"
               onClick={addExpense}

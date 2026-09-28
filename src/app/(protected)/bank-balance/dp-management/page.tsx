@@ -9,7 +9,6 @@ import {
   Loader2,
   Plus,
   Save,
-  ShieldAlert,
   Trash2,
   Wallet,
 } from 'lucide-react';
@@ -20,7 +19,6 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Skeleton } from '@/components/ui/skeleton';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import {
   Dialog,
@@ -46,34 +44,17 @@ import { DataList, type ListColumn } from '@/components/shared/data-list';
 import { useToast } from '@/hooks/use-toast';
 import { useAuthorization } from '@/hooks/useAuthorization';
 import { db } from '@/lib/firebase';
-import { getEffectiveCcLimitFromEntry } from '@/lib/bank-balance-limit';
+import { cn } from '@/lib/utils';
+import { getApplicableCcLimitEntry, getEffectiveCcLimitFromEntry } from '@/lib/bank-balance-limit';
+import { entryAppliesOn, formatDay, formatInr, normaliseDatedLog } from '@/lib/bank-balance-ledger';
+import { BANK_PAGE, BankAccessDenied, BankBalanceBackground, BankPageSkeleton } from '@/components/bank-balance/page-kit';
 import type { BankAccount, DpLogEntry } from '@/lib/types';
 
 type EntryForm = { fromDate: string; amount: string; todAmount: string };
 
 const EMPTY_FORM: EntryForm = { fromDate: '', amount: '', todAmount: '' };
 
-const inr = new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR' });
-const formatMoney = (value: number) => inr.format(value || 0);
-const formatDay = (iso: string | null | undefined) => (iso ? format(parseISO(iso), 'dd MMM yyyy') : '—');
-
-/**
- * Newest first, with every entry closing the day before the next one starts and the newest left
- * open-ended.
- *
- * Recomputed on every add and delete rather than patched, so a back-dated entry slots into the
- * middle of the history and deleting a middle entry leaves no gap in the dates.
- */
-const normaliseLog = (entries: DpLogEntry[]): DpLogEntry[] =>
-  [...entries]
-    .sort((a, b) => b.fromDate.localeCompare(a.fromDate))
-    .map((entry, index, sorted) => ({
-      ...entry,
-      toDate:
-        index === 0
-          ? null
-          : format(subDays(parseISO(sorted[index - 1].fromDate), 1), 'yyyy-MM-dd'),
-    }));
+const formatMoney = (value: number) => formatInr(value);
 
 const makeId = () =>
   globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random().toString(16).slice(2)}`;
@@ -129,7 +110,7 @@ export default function DpManagementPage() {
   }, [authLoading, canView]);
 
   const summary = useMemo(() => {
-    const current = accounts.map((acc) => acc.drawingPower.find((entry) => entry.toDate === null) ?? acc.drawingPower[0]);
+    const current = accounts.map((acc) => getApplicableCcLimitEntry(acc, new Date()) ?? undefined);
     return {
       totalLimit: current.reduce((sum, entry) => sum + getEffectiveCcLimitFromEntry(entry), 0),
       totalTod: current.reduce((sum, entry) => sum + (entry?.todAmount || 0), 0),
@@ -153,8 +134,15 @@ export default function DpManagementPage() {
     }
   };
 
+  // Starts from the limit in force today, so a change to only DP or only TOD carries the other
+  // figure forward instead of silently resetting it to zero.
   const openForm = (account: BankAccount) => {
-    setForm({ ...EMPTY_FORM, fromDate: format(new Date(), 'yyyy-MM-dd') });
+    const current = getApplicableCcLimitEntry(account, new Date()) ?? account.drawingPower.find((entry) => entry.toDate === null);
+    setForm({
+      fromDate: format(new Date(), 'yyyy-MM-dd'),
+      amount: current ? String((current.amount || 0) + (current.odAmount || 0)) : '',
+      todAmount: current?.todAmount ? String(current.todAmount) : '',
+    });
     setFormAccount(account);
   };
 
@@ -173,28 +161,25 @@ export default function DpManagementPage() {
       toast({ title: 'Check the entry', description: 'TOD must be zero or a positive amount.', variant: 'destructive' });
       return;
     }
-    if (formAccount.drawingPower.some((entry) => entry.fromDate === form.fromDate)) {
-      toast({
-        title: 'Date already used',
-        description: `A limit already starts on ${formatDay(form.fromDate)}. Delete it first or pick another date.`,
-        variant: 'destructive',
-      });
-      return;
-    }
-
-    const nextLog = normaliseLog([
-      ...formAccount.drawingPower,
-      { id: makeId(), fromDate: form.fromDate, toDate: null, amount, odAmount: 0, todAmount },
+    // Two limits cannot start on the same day, so a second entry for a date replaces the first.
+    const sameDay = formAccount.drawingPower.find((entry) => entry.fromDate === form.fromDate);
+    const nextLog = normaliseDatedLog([
+      ...formAccount.drawingPower.filter((entry) => entry.id !== sameDay?.id),
+      { id: sameDay?.id ?? makeId(), fromDate: form.fromDate, toDate: null, amount, odAmount: 0, todAmount },
     ]);
 
-    const saved = await replaceLog(formAccount, nextLog, `Limit from ${formatDay(form.fromDate)} saved for ${formAccount.shortName || formAccount.bankName}.`);
+    const saved = await replaceLog(
+      formAccount,
+      nextLog,
+      `Limit from ${formatDay(form.fromDate)} ${sameDay ? 'updated' : 'saved'} for ${formAccount.shortName || formAccount.bankName}.`
+    );
     if (saved) setFormAccount(null);
   };
 
   const handleConfirmDelete = async () => {
     if (!deleteTarget) return;
     const { account, entry } = deleteTarget;
-    const nextLog = normaliseLog(account.drawingPower.filter((item) => item.id !== entry.id));
+    const nextLog = normaliseDatedLog(account.drawingPower.filter((item) => item.id !== entry.id));
     await replaceLog(account, nextLog, 'Limit entry deleted.');
     setDeleteTarget(null);
   };
@@ -209,8 +194,10 @@ export default function DpManagementPage() {
       header: 'Effective To',
       mobile: 'aside',
       cell: (entry) =>
-        entry.toDate === null ? (
+        entryAppliesOn(entry, new Date()) ? (
           <Badge variant="success">Current</Badge>
+        ) : entry.fromDate > format(new Date(), 'yyyy-MM-dd') ? (
+          <Badge variant="info">Upcoming</Badge>
         ) : (
           <span className="whitespace-nowrap text-muted-foreground">{formatDay(entry.toDate)}</span>
         ),
@@ -251,51 +238,25 @@ export default function DpManagementPage() {
     },
   ];
 
-  if (authLoading || (isLoading && canView)) {
-    return (
-      <div className="relative w-full px-4 sm:px-6 lg:px-8 py-6 space-y-4">
-        <Skeleton className="h-10 w-64 rounded-xl" />
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-          <Skeleton className="h-20 rounded-xl" />
-          <Skeleton className="h-20 rounded-xl" />
-          <Skeleton className="h-20 rounded-xl" />
-        </div>
-        <div className="grid grid-cols-1 xl:grid-cols-2 gap-5">
-          <Skeleton className="h-80 rounded-xl" />
-          <Skeleton className="h-80 rounded-xl" />
-        </div>
-      </div>
-    );
-  }
+  if (authLoading || (isLoading && canView)) return <BankPageSkeleton kpis={3} />;
 
-  if (!canView) {
-    return (
-      <div className="relative w-full px-4 sm:px-6 lg:px-8 py-6">
-        <PageHeader title="DP Management" backHref="/bank-balance/settings" backLabel="Back to settings" />
-        <Card><CardHeader><CardTitle>Access Denied</CardTitle><CardDescription>You do not have permission to view this page.</CardDescription></CardHeader>
-          <CardContent className="flex justify-center p-8"><ShieldAlert className="h-14 w-14 text-destructive" /></CardContent>
-        </Card>
-      </div>
-    );
-  }
+  if (!canView) return <BankAccessDenied title="DP Management" backHref="/bank-balance/settings" backLabel="Back to settings" />;
 
-  const formAmount = Number(form.amount) || 0;
-  const formTod = Number(form.todAmount) || 0;
-  const formCurrent = formAccount?.drawingPower.find((entry) => entry.toDate === null);
-  const closesCurrent = !!formCurrent && !!form.fromDate && form.fromDate > formCurrent.fromDate;
+  // What the new entry is compared against: the limit that would otherwise be in force on the
+  // chosen date (the log is newest first). On the same date, that is the entry being replaced.
+  const formLog = formAccount?.drawingPower ?? [];
+  const formNewTotal = (Number(form.amount) || 0) + (Number(form.todAmount) || 0);
+  const formPrevious = form.fromDate ? formLog.find((entry) => entry.fromDate <= form.fromDate) : undefined;
+  const formReplaces = formPrevious?.fromDate === form.fromDate ? formPrevious : undefined;
+  const formNext = form.fromDate ? [...formLog].reverse().find((entry) => entry.fromDate > form.fromDate) : undefined;
+  const formPreviousTotal = formPrevious ? getEffectiveCcLimitFromEntry(formPrevious) : 0;
+  const formChange = formNewTotal - formPreviousTotal;
+  const dayBefore = (iso: string) => formatDay(format(subDays(parseISO(iso), 1), 'yyyy-MM-dd'));
 
   return (
     <>
-      {/* ── Animated Background (Purple theme for DP Management) ── */}
-      <div className="fixed inset-0 -z-10 overflow-hidden pointer-events-none">
-        <div className="absolute inset-0 bg-gradient-to-br from-purple-50/60 via-background to-violet-50/40 dark:from-purple-950/20 dark:via-background dark:to-violet-950/15" />
-        <div className="animate-bb-orb-1 absolute top-[-10%] left-[-5%] w-[40vw] h-[40vw] rounded-full bg-purple-300/15 blur-3xl" />
-        <div className="animate-bb-orb-2 absolute bottom-[-8%] right-[-6%] w-[45vw] h-[45vw] rounded-full bg-violet-300/12 blur-3xl" />
-        <div className="absolute inset-0 opacity-20 dark:opacity-12"
-          style={{ backgroundImage: 'radial-gradient(circle, rgba(168,85,247,0.12) 1px, transparent 1px)', backgroundSize: '28px 28px' }}
-        />
-      </div>
-    <div className="relative w-full px-4 sm:px-6 lg:px-8 py-4 space-y-5">
+      <BankBalanceBackground tone="purple" />
+    <div className={BANK_PAGE}>
       <PageHeader
         title="DP Management"
         description="Dated limits for Cash Credit accounts — drawing power (DP) plus temporary overdrawn (TOD)."
@@ -330,7 +291,8 @@ export default function DpManagementPage() {
       ) : (
         <div className="grid grid-cols-1 xl:grid-cols-2 gap-5">
           {accounts.map((acc) => {
-            const current = acc.drawingPower.find((entry) => entry.toDate === null);
+            const current = getApplicableCcLimitEntry(acc, new Date()) ?? undefined;
+            const upcoming = acc.drawingPower.filter((entry) => entry.fromDate > format(new Date(), 'yyyy-MM-dd')).length;
 
             return (
               <Card key={acc.id} className="min-w-0 overflow-hidden">
@@ -364,6 +326,11 @@ export default function DpManagementPage() {
                         <CalendarDays className="h-3.5 w-3.5" />
                         Current limit, effective from
                         <span className="font-medium text-foreground">{formatDay(current.fromDate)}</span>
+                        {upcoming > 0 && (
+                          <Badge variant="info" className="ml-auto">
+                            {upcoming} upcoming
+                          </Badge>
+                        )}
                       </div>
                       <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
                         <div>
@@ -426,17 +393,19 @@ export default function DpManagementPage() {
     </div>
 
       <Dialog open={!!formAccount} onOpenChange={(open) => { if (!open && !savingId) setFormAccount(null); }}>
-        <DialogContent className="hr-mobile-dialog sm:max-w-lg">
-          <form onSubmit={handleSaveEntry} className="contents">
-            <DialogHeader className="hr-dialog-header">
-              <DialogTitle>New limit entry</DialogTitle>
-              <DialogDescription>
-                {formAccount?.bankName}
-                {formAccount?.shortName ? ` (${formAccount.shortName.trim()})` : ''} · {formAccount?.accountNumber}
-              </DialogDescription>
-            </DialogHeader>
+        {/* `gap-5`: DialogContent is a flex column with no gap of its own, so without it the
+            header, the fields and the buttons sit flush against each other. */}
+        <DialogContent className="hr-mobile-dialog gap-5 sm:max-w-lg">
+          <DialogHeader className="hr-dialog-header pr-8">
+            <DialogTitle>{formReplaces ? 'Update limit entry' : 'New limit entry'}</DialogTitle>
+            <DialogDescription>
+              {formAccount?.bankName}
+              {formAccount?.shortName ? ` (${formAccount.shortName.trim()})` : ''} · {formAccount?.accountNumber}
+            </DialogDescription>
+          </DialogHeader>
 
-            <div className="hr-dialog-body grid grid-cols-1 gap-4 sm:grid-cols-2">
+          <form id="dp-entry-form" onSubmit={handleSaveEntry} className="hr-dialog-body space-y-4">
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
               <div className="space-y-1.5 sm:col-span-2">
                 <Label htmlFor="dp-from-date">Effective from</Label>
                 <Input
@@ -474,36 +443,61 @@ export default function DpManagementPage() {
                   onChange={(e) => setForm((prev) => ({ ...prev, todAmount: e.target.value }))}
                 />
               </div>
-
-              <div className="rounded-lg border bg-muted/40 p-3 sm:col-span-2">
-                <div className="flex items-center justify-between gap-3">
-                  <span className="text-sm text-muted-foreground">Total limit</span>
-                  <span className="text-lg font-bold tabular-nums text-violet-700">{formatMoney(formAmount + formTod)}</span>
-                </div>
-                {closesCurrent && formCurrent && (
-                  <p className="mt-1 text-xs text-muted-foreground">
-                    The current limit ({formatMoney(getEffectiveCcLimitFromEntry(formCurrent))} from {formatDay(formCurrent.fromDate)}) will end on{' '}
-                    {formatDay(format(subDays(parseISO(form.fromDate), 1), 'yyyy-MM-dd'))}.
-                  </p>
-                )}
-                {!!formCurrent && !!form.fromDate && form.fromDate < formCurrent.fromDate && (
-                  <p className="mt-1 text-xs text-amber-700">
-                    This date is before the current limit, so it will be added to the history as a past entry.
-                  </p>
-                )}
-              </div>
             </div>
 
-            <DialogFooter className="hr-dialog-footer">
-              <Button type="button" variant="outline" onClick={() => setFormAccount(null)} disabled={!!savingId}>
-                Cancel
-              </Button>
-              <Button type="submit" disabled={!!savingId}>
-                {savingId ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
-                Save Entry
-              </Button>
-            </DialogFooter>
+            <div className="space-y-2 rounded-lg border bg-muted/40 p-4 text-sm">
+              <div className="flex items-baseline justify-between gap-3">
+                <span className="min-w-0 text-muted-foreground">
+                  {formReplaces ? 'Entry being replaced' : 'Previous limit'}
+                  {formPrevious && <span className="block text-xs">from {formatDay(formPrevious.fromDate)}</span>}
+                </span>
+                <span className="shrink-0 font-medium tabular-nums">{formPrevious ? formatMoney(formPreviousTotal) : 'None'}</span>
+              </div>
+              <div className="flex items-baseline justify-between gap-3">
+                <span className="text-muted-foreground">New limit (DP + TOD)</span>
+                <span className="shrink-0 text-lg font-bold tabular-nums text-violet-700">{formatMoney(formNewTotal)}</span>
+              </div>
+              <div className="flex items-baseline justify-between gap-3 border-t pt-2">
+                <span className="text-muted-foreground">Change</span>
+                <span
+                  className={cn(
+                    'shrink-0 font-semibold tabular-nums',
+                    formChange > 0 ? 'text-emerald-700' : formChange < 0 ? 'text-rose-700' : 'text-muted-foreground'
+                  )}
+                >
+                  {formChange > 0 ? '+' : formChange < 0 ? '−' : ''}
+                  {formatMoney(Math.abs(formChange))}
+                </span>
+              </div>
+
+              {form.fromDate && (formReplaces || formPrevious || formNext) && (
+                <div className="space-y-1 border-t pt-2 text-xs text-muted-foreground">
+                  {formReplaces && (
+                    <p>A limit already starts on {formatDay(form.fromDate)}. Saving replaces it.</p>
+                  )}
+                  {formPrevious && !formReplaces && (
+                    <p>The previous limit will end on {dayBefore(form.fromDate)}.</p>
+                  )}
+                  {formNext && (
+                    <p className="text-amber-700">
+                      This is a past date: the entry applies until {dayBefore(formNext.fromDate)}, when the limit from{' '}
+                      {formatDay(formNext.fromDate)} takes over.
+                    </p>
+                  )}
+                </div>
+              )}
+            </div>
           </form>
+
+          <DialogFooter className="hr-dialog-footer gap-2 sm:gap-0">
+            <Button type="button" variant="outline" onClick={() => setFormAccount(null)} disabled={!!savingId}>
+              Cancel
+            </Button>
+            <Button type="submit" form="dp-entry-form" disabled={!!savingId}>
+              {savingId ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
+              Save Entry
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
 
