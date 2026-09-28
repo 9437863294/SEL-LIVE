@@ -3,14 +3,16 @@
 import { useMemo, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { Ban, CheckCircle2, HardDrive, KeyRound, LogOut, Plus, RotateCcw, ShieldCheck, Wrench } from 'lucide-react';
+import { Ban, CheckCircle2, ChevronDown, HardDrive, KeyRound, LogOut, Plus, RotateCcw, ShieldCheck, Wrench } from 'lucide-react';
 
+import { cn } from '@/lib/utils';
 import { SearchInput } from '@/components/shared/filter-bar';
 import { StatusBadge } from '@/components/shared/status-badge';
 import { TableCard } from '@/components/shared/table-card';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Checkbox } from '@/components/ui/checkbox';
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -63,6 +65,7 @@ import {
   setDeviceStatus,
   setDeviceUpdateRing,
   setEnrollmentCodeEnabled,
+  type DirectoryEntry,
 } from '@/lib/windows-agent-service';
 import { useTickingNow, useWindowsAgent, useWindowsAgentAction, useWindowsAgentQuery } from './hooks';
 import { ClockTime, DeviceStatusBadge, RelativeTime, relativeLabel } from './ui';
@@ -462,6 +465,7 @@ export function DeviceDetail({ deviceId }: { deviceId: string }) {
   }>(null);
   const [reason, setReason] = useState('');
   const [maintenanceAccount, setMaintenanceAccount] = useState('none');
+  const [securityOpen, setSecurityOpen] = useState(false);
 
   if (loading || device.loading) return <HrLoader label="Loading device" />;
   if (!allowed) return <HrAccessDenied what="this device" />;
@@ -480,6 +484,20 @@ export function DeviceDetail({ deviceId }: { deviceId: string }) {
     ? Math.max(0, now.getTime() - Date.parse(record.lastHeartbeatAt))
     : null;
   const findingCount = record.securityPosture?.findings?.length ?? 0;
+
+  /** What the folded security card says about itself, so it need not be opened to be read. */
+  const securitySummary: { text: string; tone: 'success' | 'warning' | 'neutral' } = !record.securityPosture
+    ? { text: 'No report yet', tone: 'neutral' }
+    : findingCount === 0
+      ? { text: 'Compliant', tone: 'success' }
+      : {
+        text: `${findingCount} ${findingCount === 1 ? 'check' : 'checks'} failing`,
+        tone: 'warning',
+      };
+  const enforcedControlCount = SECURITY_CONTROL_ROWS.filter((control) => {
+    const stored = securityPolicy[control.key];
+    return control.inverted ? !stored : stored;
+  }).length;
 
   const ask = (
     title: string,
@@ -791,76 +809,112 @@ export function DeviceDetail({ deviceId }: { deviceId: string }) {
         </Card>
       </div>
 
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2 text-base">
-            <ShieldCheck className="h-4 w-4" aria-hidden />
-            Device security
-          </CardTitle>
-          <CardDescription>
-            Enforced by the LocalSystem service from this computer’s SEL LIVE-owned policy. Local
-            support cannot alter it. The tick is what SEL LIVE asks for; the badge is what the PC
-            reported at its last check.
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-3">
-          <DeviceSecurityControls
-            key={JSON.stringify(securityPolicy)}
-            device={record}
-            initialPolicy={securityPolicy}
-            posture={record.securityPosture}
-            maintenanceActive={maintenanceActive}
-            canEdit={canEdit}
-            onChanged={device.refresh}
-          />
+      {/*
+        Folded away by default.
 
-          {record.securityPosture?.findings?.length ? (
-            <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-amber-900">
-              <p className="text-sm font-medium">
-                {securityPolicy.loginBlockedOnFindings
-                  ? 'Nobody can sign in on this computer until these are fixed'
-                  : 'Reported, and nobody is locked out'}
-              </p>
-              {/*
-                Sentences, not codes. This printed `AGENT_BINARY_UNSIGNED · SECURE_BOOT_OFF`
-                under a heading saying attention was required, which tells whoever has to act
-                neither what is wrong nor whether it is their doing — and two of these are
-                expected states rather than faults.
-              */}
-              <ul className="mt-1.5 space-y-1 text-xs">
-                {record.securityPosture.findings.map((finding) => (
-                  <li key={finding} className="flex gap-1.5">
-                    <span aria-hidden>•</span>
-                    <span>{describeSecurityFinding(finding)}</span>
-                  </li>
-                ))}
-              </ul>
-              {securityPolicy.loginBlockedOnFindings ? (
-                <p className="mt-2 text-xs">
-                  Switch off <strong>Refuse sign-in when checks fail</strong> above to let people
-                  work while these are dealt with.
+        Ten controls and their reported states are the longest thing on this page, and they are
+        not what most visits are for — somebody opens a device to see whether it is online, who
+        used it, or to sign a user out. The header carries the summary, so the state is legible
+        without expanding: a device whose checks are failing says so on the closed card.
+      */}
+      <Collapsible open={securityOpen} onOpenChange={setSecurityOpen}>
+        <Card>
+          <CollapsibleTrigger asChild>
+            <button
+              type="button"
+              className="flex w-full items-start gap-3 p-[var(--card-pad,1.5rem)] text-left"
+              aria-expanded={securityOpen}
+            >
+              <ShieldCheck className="mt-0.5 h-4 w-4 shrink-0" aria-hidden />
+              <span className="min-w-0 flex-1">
+                <span className="flex flex-wrap items-center gap-2">
+                  <span className="text-base font-semibold leading-none">Device security</span>
+                  <StatusBadge
+                    status={securitySummary.text}
+                    tone={securitySummary.tone}
+                  >
+                    {securitySummary.text}
+                  </StatusBadge>
+                </span>
+                <span className="mt-1.5 block text-sm text-muted-foreground">
+                  {securityOpen
+                    ? 'The tick is what SEL LIVE asks for; the badge is what the PC reported at its last check.'
+                    : `${enforcedControlCount} of ${SECURITY_CONTROL_ROWS.length} controls are enforced on this computer. Open to review or change them.`}
+                </span>
+              </span>
+              <ChevronDown
+                className={cn('mt-0.5 h-4 w-4 shrink-0 transition-transform', securityOpen && 'rotate-180')}
+                aria-hidden
+              />
+            </button>
+          </CollapsibleTrigger>
+
+          <CollapsibleContent>
+            <CardContent className="space-y-3 pt-0">
+              <DeviceSecurityControls
+                key={JSON.stringify(securityPolicy)}
+                device={record}
+                initialPolicy={securityPolicy}
+                posture={record.securityPosture}
+                maintenanceActive={maintenanceActive}
+                canEdit={canEdit}
+                onChanged={device.refresh}
+              />
+
+              {record.securityPosture?.findings?.length ? (
+                <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-amber-900">
+                  <p className="text-sm font-medium">
+                    {securityPolicy.loginBlockedOnFindings
+                      ? 'Nobody can sign in on this computer until these are fixed'
+                      : 'Reported, and nobody is locked out'}
+                  </p>
+                  {/*
+                    Sentences, not codes. This printed `AGENT_BINARY_UNSIGNED · SECURE_BOOT_OFF`
+                    under a heading saying attention was required, which tells whoever has to act
+                    neither what is wrong nor whether it is their doing — and two of these are
+                    expected states rather than faults.
+                  */}
+                  <ul className="mt-1.5 space-y-1 text-xs">
+                    {record.securityPosture.findings.map((finding) => (
+                      <li key={finding} className="flex gap-1.5">
+                        <span aria-hidden>•</span>
+                        <span>{describeSecurityFinding(finding)}</span>
+                      </li>
+                    ))}
+                  </ul>
+                  {securityPolicy.loginBlockedOnFindings ? (
+                    <p className="mt-2 text-xs">
+                      Switch off <strong>Refuse sign-in when checks fail</strong> above to let people
+                      work while these are dealt with.
+                    </p>
+                  ) : null}
+                </div>
+              ) : record.lastSecurityCheckAt ? (
+                <p className="text-xs text-muted-foreground">
+                  Last checked <RelativeTime value={record.lastSecurityCheckAt} now={now} />. Nothing
+                  has drifted from the policy above.
                 </p>
-              ) : null}
-            </div>
-          ) : record.lastSecurityCheckAt ? (
-            <p className="text-xs text-muted-foreground">
-              Last checked <RelativeTime value={record.lastSecurityCheckAt} now={now} />. Nothing
-              has drifted from the policy above.
-            </p>
-          ) : (
-            <p className="text-xs text-muted-foreground">
-              Awaiting the first security report from the LocalSystem service. Agents older than
-              1.4 cannot produce one, so the badges stay at “no report yet” until this PC is
-              updated — and nobody is locked out in the meantime.
-            </p>
-          )}
+              ) : (
+                <p className="text-xs text-muted-foreground">
+                  Awaiting the first security report from the LocalSystem service. Agents older than
+                  1.4 cannot produce one, so the badges stay at “no report yet” until this PC is
+                  updated — and nobody is locked out in the meantime.
+                </p>
+              )}
 
-          <p className="text-xs text-muted-foreground">
-            The append-only audit log is always mandatory and cannot be switched off from here.
-          </p>
+              <p className="text-xs text-muted-foreground">
+                The append-only audit log is always mandatory and cannot be switched off from here.
+              </p>
+            </CardContent>
+          </CollapsibleContent>
 
+          {/*
+            Outside the fold on purpose: an open maintenance window is a temporary hole in the
+            lockdown with a clock on it, and the one thing on this card that must not be a click
+            away from being noticed.
+          */}
           {maintenanceActive && record.maintenanceAccess ? (
-            <div className="rounded-md border border-blue-200 bg-blue-50 p-3 text-sm text-blue-900">
+            <div className="mx-[var(--card-pad,1.5rem)] mb-[var(--card-pad,1.5rem)] rounded-md border border-blue-200 bg-blue-50 p-3 text-sm text-blue-900">
               <p className="font-medium">Temporary maintenance access is active</p>
               <p className="mt-1 text-xs">
                 Task Manager is available until <ClockTime value={record.maintenanceAccess.expiresAt} />.
@@ -871,8 +925,8 @@ export function DeviceDetail({ deviceId }: { deviceId: string }) {
               </p>
             </div>
           ) : null}
-        </CardContent>
-      </Card>
+        </Card>
+      </Collapsible>
 
       {canAssignDeviceUsers(viewer) ? (
         <AssignedUsersCard device={record} onChanged={device.refresh} directory={directory} />
@@ -916,13 +970,29 @@ export function DeviceDetail({ deviceId }: { deviceId: string }) {
   );
 }
 
+/**
+ * Who may sign in on this PC, with enough about each person to know who they are.
+ *
+ * ── Why a bare name is not enough ─────────────────────────────────────────────────────────────
+ *
+ * This was a scrolling list of two hundred names with a department occasionally beside one. A
+ * fleet has three people called the same thing, and an administrator assigning a site PC has no
+ * way to tell which "Rajesh Kumar" is the storekeeper at Bhubaneswar. So each row now carries the
+ * employee code HR uses, the job title and the posting location — joined on from the HR records
+ * by `people-directory`, which is where those facts are maintained.
+ *
+ * The people already assigned are listed first, and stay listed while a search is running. Before
+ * this, saving an assignment and then typing a name hid the very rows that were about to be
+ * changed, and "who can use this PC?" could only be answered by scrolling the whole directory
+ * looking for ticks.
+ */
 function AssignedUsersCard({
   device,
   directory,
   onChanged,
 }: {
   device: WindowsDevice;
-  directory: { id: string; name: string; departmentName: string | null }[];
+  directory: DirectoryEntry[];
   onChanged: () => void;
 }) {
   const { actor } = useWindowsAgent();
@@ -932,10 +1002,16 @@ function AssignedUsersCard({
 
   const visible = useMemo(() => {
     const needle = filter.trim().toLowerCase();
-    return directory
-      .filter((person) => (needle ? person.name.toLowerCase().includes(needle) : true))
-      .slice(0, 200);
-  }, [directory, filter]);
+    const matches = (person: DirectoryEntry) =>
+      !needle
+      || [person.name, person.employeeNo, person.designation, person.location, person.departmentName, person.email]
+        .some((field) => String(field ?? '').toLowerCase().includes(needle));
+
+    // Chosen people first, and never filtered out: they are the ones being changed.
+    const chosen = directory.filter((person) => selected.includes(person.id));
+    const rest = directory.filter((person) => !selected.includes(person.id) && matches(person));
+    return [...chosen, ...rest.slice(0, 200)];
+  }, [directory, filter, selected]);
 
   const dirty =
     selected.length !== (device.assignedUserIds ?? []).length ||
@@ -951,26 +1027,56 @@ function AssignedUsersCard({
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-3">
-        <SearchInput value={filter} onChange={setFilter} placeholder="Search people" className="max-w-sm" />
-        <div className="max-h-64 space-y-1 overflow-y-auto rounded-md border p-2">
-          {visible.map((person) => (
-            <label key={person.id} className="flex items-center gap-2 rounded px-2 py-1 hover:bg-muted">
-              <Checkbox
-                checked={selected.includes(person.id)}
-                onCheckedChange={(value) =>
-                  setSelected((current) =>
-                    value === true ? [...current, person.id] : current.filter((id) => id !== person.id),
-                  )
-                }
-              />
-              <span className="text-sm">
-                {person.name}
-                {person.departmentName ? (
-                  <span className="ml-2 text-xs text-muted-foreground">{person.departmentName}</span>
-                ) : null}
-              </span>
-            </label>
-          ))}
+        <SearchInput
+          value={filter}
+          onChange={setFilter}
+          placeholder="Search by name, employee code, designation or location"
+          className="max-w-md"
+        />
+        <div className="max-h-80 divide-y overflow-y-auto rounded-md border">
+          {visible.map((person) => {
+            const chosen = selected.includes(person.id);
+            // Designation, then the two places a person sits. Joined with a middle dot rather
+            // than laid out in columns: a title can be forty characters and a column grid for it
+            // either truncates it or leaves half the row empty.
+            const detail = [person.designation, person.department ?? person.departmentName, person.location]
+              .filter((part) => Boolean(part))
+              .join(' · ');
+
+            return (
+              <label
+                key={person.id}
+                className={cn('flex cursor-pointer items-start gap-3 px-3 py-2 hover:bg-muted/60', chosen && 'bg-primary/5')}
+              >
+                <Checkbox
+                  className="mt-0.5 shrink-0"
+                  checked={chosen}
+                  onCheckedChange={(value) =>
+                    setSelected((current) =>
+                      value === true ? [...current, person.id] : current.filter((id) => id !== person.id),
+                    )
+                  }
+                  aria-label={person.name}
+                />
+                <span className="min-w-0 flex-1">
+                  <span className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
+                    <span className="text-sm font-medium">{person.name}</span>
+                    {person.employeeNo ? (
+                      <span className="font-mono text-xs text-muted-foreground">{person.employeeNo}</span>
+                    ) : null}
+                  </span>
+                  <span className="mt-0.5 block text-xs text-muted-foreground">
+                    {detail || person.email || 'No HR record joined'}
+                  </span>
+                </span>
+              </label>
+            );
+          })}
+          {visible.length === 0 ? (
+            <p className="p-3 text-sm text-muted-foreground">
+              Nobody matches “{filter}”. Search by name, employee code, designation or location.
+            </p>
+          ) : null}
         </div>
         <div className="flex items-center gap-2">
           <Button

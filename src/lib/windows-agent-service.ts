@@ -29,6 +29,7 @@ import {
   windowsAgentIds,
 } from './windows-agent';
 import { sanitizePolicySettings } from './windows-agent-policy';
+import { withDesignations } from './people-directory-client';
 import type { ActivityScope, AgentApprover } from './windows-agent-permissions';
 import type {
   AppCategory,
@@ -861,6 +862,29 @@ export interface DirectoryEntry {
   departmentName: string | null;
   photoURL: string | null;
   status: string;
+
+  /* ── Who the person is, rather than what their login can do ──────────────────────────────
+   *
+   * Joined on from the HR records by `people-directory`, not stored on `users`. The device
+   * assignment screen is the reason: "who may sign in on this PC" was a list of bare names, and
+   * a fleet has three people called the same thing and two hundred names an administrator has
+   * no way to place. An employee code, a job title and a posting location are what makes a row
+   * identifiable — and they are facts HR maintains, so they stay right when somebody moves.
+   *
+   * All optional: `attachDesignations` leaves a person untouched when the HR index has no
+   * record of them, and a blank is honest where a guess from `users.role` would not be — see
+   * the header of `people-directory.ts` on why the role is never used as a job title.
+   */
+
+  /** The human-facing code HR uses, e.g. `E1597`. */
+  employeeNo?: string;
+  /** greytHR's numeric id, the key the HR join matches on. */
+  employeeId?: string;
+  designation?: string | null;
+  /** The HR department, which may be spelt differently from `departmentName`. */
+  department?: string | null;
+  /** Posting location — "Head Office", "Bhubaneswar site". */
+  location?: string | null;
 }
 
 /**
@@ -879,7 +903,7 @@ export async function fetchDirectory(): Promise<DirectoryEntry[]> {
   const departmentNames = new Map<string, string>();
   departments?.docs.forEach((entry) => departmentNames.set(entry.id, String(entry.data().name || '')));
 
-  return users.docs
+  const entries = users.docs
     .map((entry) => {
       const data = entry.data();
       const departmentId = typeof data.departmentId === 'string' ? data.departmentId : null;
@@ -891,9 +915,22 @@ export async function fetchDirectory(): Promise<DirectoryEntry[]> {
         departmentName: departmentId ? departmentNames.get(departmentId) ?? null : null,
         photoURL: typeof data.photoURL === 'string' ? data.photoURL : null,
         status: String(data.status || 'Active'),
-      };
+        // Read so the HR join can match on them; `employeeNo` is also shown directly.
+        ...(data.employeeId ? { employeeId: String(data.employeeId) } : {}),
+        ...(data.employeeNo ? { employeeNo: String(data.employeeNo) } : {}),
+      } as DirectoryEntry;
     })
     .sort((left, right) => left.name.localeCompare(right.name));
+
+  /**
+   * Designation, department and location, joined on from HR.
+   *
+   * The underlying read is cached for the session and de-duplicates concurrent callers, so the
+   * modules that already use it pay for this once between them. A failure returns the list
+   * unchanged rather than throwing — a directory with no job titles is usable, and one that
+   * fails to load is not.
+   */
+  return withDesignations(entries).catch(() => entries);
 }
 
 export async function fetchDepartments(): Promise<{ id: string; name: string }[]> {
