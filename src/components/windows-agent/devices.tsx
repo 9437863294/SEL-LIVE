@@ -1034,6 +1034,15 @@ function AssignedUsersCard({
       }
       count={selected.length}
       noun="person"
+      /*
+        `natural`, so the list below owns the one scroller.
+
+        TableCard's default `contained` mode makes its own body the scroll box — capped at
+        min(70vh, 42rem), about sixteen rows — and neutralises the child's overflow with
+        `[&>div]:overflow-visible`. So the height asked for here was being overridden and the
+        directory unrolled to the full height of the card instead. One scroller, the list's own.
+      */
+      scroll="natural"
       toolbar={
         <SearchInput
           value={filter}
@@ -1065,76 +1074,87 @@ function AssignedUsersCard({
         </div>
       }
     >
-      <HrDataList
-        rows={visible}
-        dense
-        frameless
-        // The row is the control, so the whole of it toggles. The checkbox stops the click from
-        // reaching the row, or tapping the box itself would toggle twice and do nothing.
-        onRowClick={(person) => toggle(person.id)}
-        maxHeightClassName="sm:max-h-[28rem]"
-        rowClassName={(person) => (selected.includes(person.id) ? 'bg-primary/5' : undefined)}
-        columns={[
-          {
-            header: '',
-            className: 'w-10',
-            mobile: 'aside',
-            cell: (person) => (
-              <span onClick={(event) => event.stopPropagation()}>
-                <Checkbox
-                  checked={selected.includes(person.id)}
-                  onCheckedChange={() => toggle(person.id)}
-                  aria-label={`Allow ${person.name} to sign in on this computer`}
-                  className="h-5 w-5 sm:h-4 sm:w-4"
-                />
-              </span>
-            ),
-          },
-          {
-            header: 'Employee',
-            className: 'w-24',
-            mobile: 'detail',
-            cell: (person) =>
-              person.employeeNo
-                ? <span className="font-mono text-xs">{person.employeeNo}</span>
-                : <span className="text-muted-foreground">—</span>,
-          },
-          {
-            header: 'Name',
-            mobile: 'title',
-            // The email in the tooltip rather than a column of its own: it is how somebody with
-            // no HR record is told apart, and it is nobody's first way of recognising a colleague.
-            cell: (person) => (
-              <span className="font-medium" title={person.email || undefined}>
-                {person.name}
-              </span>
-            ),
-          },
-          {
-            header: 'Designation',
-            mobile: 'detail',
-            cell: (person) => person.designation || <span className="text-muted-foreground">—</span>,
-          },
-          {
-            header: 'Department',
-            className: 'hidden lg:table-cell',
-            mobile: 'detail',
-            cell: (person) =>
-              person.department || person.departmentName || <span className="text-muted-foreground">—</span>,
-          },
-          {
-            header: 'Location',
-            mobile: 'detail',
-            cell: (person) => person.location || <span className="text-muted-foreground">—</span>,
-          },
-        ]}
-        empty={
-          <HrEmptyState
-            title="Nobody matches that"
-            description="Search by name, employee code, designation or location. Anybody already allowed to sign in stays listed whatever you type."
-          />
-        }
-      />
+      {/*
+        The phone cap, which `maxHeightClassName` cannot give: that prop lands on the list's
+        *desktop* container, so under `sm` the card list it renders instead has no height and the
+        whole directory unrolls down the page, pushing the Save button out of reach. Released
+        above `sm` so the table's own scroll container is the only one — two nested scrollers, one
+        of them pinning a sticky header, is how the header ends up sliding away.
+      */}
+      <div className="max-h-[26rem] overflow-y-auto overscroll-contain sm:max-h-none sm:overflow-visible">
+        <HrDataList
+          rows={visible}
+          dense
+          frameless
+          // The row is the control, so the whole of it toggles. The checkbox stops the click from
+          // reaching the row, or tapping the box itself would toggle twice and do nothing.
+          onRowClick={(person) => toggle(person.id)}
+          // About nine rows and the pinned header. A picker that shows the whole directory is a
+          // page-long table somebody has to scroll past to reach the button that saves it.
+          maxHeightClassName="sm:max-h-[24rem]"
+          rowClassName={(person) => (selected.includes(person.id) ? 'bg-primary/5' : undefined)}
+          columns={[
+            {
+              header: '',
+              className: 'w-10',
+              mobile: 'aside',
+              cell: (person) => (
+                <span onClick={(event) => event.stopPropagation()}>
+                  <Checkbox
+                    checked={selected.includes(person.id)}
+                    onCheckedChange={() => toggle(person.id)}
+                    aria-label={`Allow ${person.name} to sign in on this computer`}
+                    className="h-5 w-5 sm:h-4 sm:w-4"
+                  />
+                </span>
+              ),
+            },
+            {
+              header: 'Employee',
+              className: 'w-24',
+              mobile: 'detail',
+              cell: (person) =>
+                person.employeeNo
+                  ? <span className="font-mono text-xs">{person.employeeNo}</span>
+                  : <span className="text-muted-foreground">—</span>,
+            },
+            {
+              header: 'Name',
+              mobile: 'title',
+              // The email in the tooltip rather than a column of its own: it is how somebody with
+              // no HR record is told apart, and it is nobody's first way of recognising a colleague.
+              cell: (person) => (
+                <span className="font-medium" title={person.email || undefined}>
+                  {person.name}
+                </span>
+              ),
+            },
+            {
+              header: 'Designation',
+              mobile: 'detail',
+              cell: (person) => person.designation || <span className="text-muted-foreground">—</span>,
+            },
+            {
+              header: 'Department',
+              className: 'hidden lg:table-cell',
+              mobile: 'detail',
+              cell: (person) =>
+                person.department || person.departmentName || <span className="text-muted-foreground">—</span>,
+            },
+            {
+              header: 'Location',
+              mobile: 'detail',
+              cell: (person) => person.location || <span className="text-muted-foreground">—</span>,
+            },
+          ]}
+          empty={
+            <HrEmptyState
+              title="Nobody matches that"
+              description="Search by name, employee code, designation or location. Anybody already allowed to sign in stays listed whatever you type."
+            />
+          }
+        />
+      </div>
     </TableCard>
   );
 }
