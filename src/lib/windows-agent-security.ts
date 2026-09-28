@@ -23,6 +23,9 @@ export const WINDOWS_DEVICE_SECURITY_POLICY: WindowsDeviceSecurityPolicy = {
   secureBootRequired: true,
   tamperMonitoringEnabled: true,
   auditRequired: true,
+  // Off. See the field's note in the model: every other enforcing behaviour here ships off, and
+  // with the strict baseline above this one refused a sign-in on every PC in the company.
+  loginBlockedOnFindings: false,
   enforcementIntervalSeconds: 60,
 };
 
@@ -37,6 +40,7 @@ const POLICY_BOOLEAN_KEYS: (keyof Omit<WindowsDeviceSecurityPolicy, 'enforcement
   'secureBootRequired',
   'tamperMonitoringEnabled',
   'auditRequired',
+  'loginBlockedOnFindings',
 ];
 
 /** Resolve a partial or untrusted stored policy over the strict defaults. */
@@ -145,8 +149,13 @@ export function securityFindings(
  * Decide whether the server may open a work session on this device.
  *
  * This deliberately re-derives the baseline instead of trusting the device-supplied `compliant`
- * bit. Missing, invalid, future-dated and stale reports all fail closed. The only finding an
- * active maintenance grant may excuse is Task Manager being open.
+ * bit. An invalid, future-dated or stale report from a device that has reported before fails
+ * closed; a device that has never reported is allowed through, because it cannot be told apart
+ * from an agent older than the feature. The only finding an active maintenance grant may excuse
+ * is Task Manager being open.
+ *
+ * Returns true unconditionally unless `loginBlockedOnFindings` has been switched on for the
+ * device — see the field's note in the model for what happened when that was the default.
  */
 export function securityPostureAllowsLogin(
   posture: WindowsDeviceSecurityPosture | null | undefined,
@@ -154,16 +163,31 @@ export function securityPostureAllowsLogin(
   policyInput: unknown,
   now: Date = new Date(),
 ): boolean {
-  if (!posture) return false;
+  const policy = resolveDeviceSecurityPolicy(policyInput);
+
+  // Report-only, which is the default. The checks still run on the PC, the findings are still
+  // stored and still listed on the device page — they simply do not stand between an employee
+  // and their work until somebody decides they should.
+  if (!policy.loginBlockedOnFindings) return true;
+
+  // No report at all is *unknown*, not *failing*, and the difference matters enormously: the
+  // agents already installed across the fleet predate these checks and cannot produce one, so
+  // treating absence as a failure would mean switching enforcement on locked out every machine
+  // that had not yet been updated — which is the whole reason this setting exists. The device
+  // page shows "awaiting the first security report" for exactly this state.
+  if (!posture) return true;
+
   const checkedAt = Date.parse(posture.checkedAt);
+  if (!Number.isFinite(checkedAt)) return false;
+
+  // A device that *was* reporting and has stopped is a different matter. That is what tampering
+  // looks like, so a stale or future-dated report from a machine known to be capable of
+  // reporting is refused.
   const age = now.getTime() - checkedAt;
-  if (!Number.isFinite(checkedAt) || age < -60_000 || age > WINDOWS_DEVICE_SECURITY_POSTURE_MAX_AGE_MS) {
-    return false;
-  }
+  if (age < -60_000 || age > WINDOWS_DEVICE_SECURITY_POSTURE_MAX_AGE_MS) return false;
 
   const activeGrant = activeMaintenanceAccess(maintenance, now);
   const allowTaskManagerUnlocked = activeGrant?.allowTaskManager === true;
-  const policy = resolveDeviceSecurityPolicy(policyInput);
   if (securityFindings(posture, { allowTaskManagerUnlocked, policy }).length > 0) return false;
 
   return posture.findings.every((finding) =>

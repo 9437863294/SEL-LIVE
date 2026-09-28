@@ -1052,8 +1052,38 @@ test('security posture is derived server-side and a maintenance grant excuses on
   assert.deepEqual(stillUnsafe.findings, ['SERVICE_MODIFIABLE']);
 });
 
-test('work login requires a fresh complete security report', () => {
+test('device security findings are reported, and do not refuse a sign-in by default', () => {
+  // The default this replaces refused every sign-in in the company. The strict baseline requires
+  // signed agent binaries, and the agent has never been code-signed — so AGENT_BINARY_UNSIGNED
+  // alone meant nobody could open a work session, reported to the employee as "this computer has
+  // no fresh, compliant device-security report". Enforcement is now a decision, not a default.
   const now = new Date('2026-09-20T10:00:00Z');
+  const failing = sanitizeSecurityPosture({
+    secureBootEnabled: false,
+    taskManagerLocked: false,
+    agentStopBlocked: false,
+    serviceModificationBlocked: false,
+    agentBinariesSigned: false,
+    signedAppControlPolicyActive: false,
+    findings: [],
+  }, now);
+
+  assert.ok(failing.findings.length > 0, 'the checks still run and still find things');
+  assert.equal(failing.compliant, false);
+
+  // Report-only: every one of these is allowed to work.
+  assert.equal(securityPostureAllowsLogin(null, null, null, now), true, 'no report yet');
+  assert.equal(securityPostureAllowsLogin(failing, null, null, now), true, 'failing report');
+  assert.equal(
+    securityPostureAllowsLogin({ ...failing, checkedAt: '2026-09-19T10:00:00Z' }, null, null, now),
+    true,
+    'a day-old report',
+  );
+});
+
+test('with enforcement switched on, a fresh complete security report is required', () => {
+  const now = new Date('2026-09-20T10:00:00Z');
+  const enforcing = resolveDeviceSecurityPolicy({ loginBlockedOnFindings: true });
   const posture = sanitizeSecurityPosture({
     secureBootEnabled: true,
     taskManagerLocked: true,
@@ -1064,12 +1094,33 @@ test('work login requires a fresh complete security report', () => {
     findings: [],
   }, now);
 
-  assert.equal(securityPostureAllowsLogin(null, null, null, now), false);
-  assert.equal(securityPostureAllowsLogin(posture, null, null, now), true);
+  // A machine that has never reported is unknown, not failing: the agents already installed
+  // across the fleet predate these checks, and blocking them is how switching enforcement on
+  // takes a company offline. The device page says "awaiting the first security report".
+  assert.equal(securityPostureAllowsLogin(null, null, enforcing, now), true);
+
+  assert.equal(securityPostureAllowsLogin(posture, null, enforcing, now), true);
+
+  // But a device that *was* reporting and has gone quiet is what tampering looks like.
   assert.equal(securityPostureAllowsLogin(
     { ...posture, checkedAt: '2026-09-20T09:54:59Z' },
     null,
+    enforcing,
+    now,
+  ), false);
+
+  assert.equal(securityPostureAllowsLogin(
+    { ...posture, checkedAt: 'not-a-date' },
     null,
+    enforcing,
+    now,
+  ), false);
+
+  // And a real finding refuses the sign-in, which is the point of switching it on.
+  assert.equal(securityPostureAllowsLogin(
+    { ...posture, agentStopBlocked: false, findings: ['AGENT_STOP_ALLOWED'] },
+    null,
+    enforcing,
     now,
   ), false);
   assert.equal(securityPostureAllowsLogin(
@@ -1084,11 +1135,12 @@ test('work login requires a fresh complete security report', () => {
       reason: 'Support',
       allowTaskManager: true,
     },
-    null,
+    enforcing,
     now,
   ), true);
 
   const relaxed = resolveDeviceSecurityPolicy({
+    loginBlockedOnFindings: true,
     taskManagerLocked: false,
     secureBootRequired: false,
     signedAgentBinariesRequired: false,

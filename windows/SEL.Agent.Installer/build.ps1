@@ -47,7 +47,13 @@ param(
     # Override to produce an MSI whose agent runs on Windows 8.0. See Directory.Build.props.
     [string]$TargetFramework = 'net48',
 
-    [string]$Version = '1.4.0.0',
+    # Left empty and resolved from Directory.Build.props below, because two copies of a version
+    # number drift — and these had. The props file said 1.3.0.0 while this said 1.4.0.0, so a
+    # plain `dotnet build` produced an agent reporting 1.3.0 beside an installer named 1.4.0.0.
+    # On a fleet that matters: the agent's own version is what the update check compares, so a
+    # machine could install 1.4.0.0, keep reporting 1.3.0, and be offered 1.4.0.0 again every six
+    # hours for ever. Pass -Version to override for a one-off build.
+    [string]$Version = '',
 
     # §43 requires the agent to verify an update's Authenticode signature before running it, which
     # means the installer has to carry one. An unsigned MSI is only useful on a test device whose
@@ -82,6 +88,18 @@ param(
 $ErrorActionPreference = 'Stop'
 
 $here = Split-Path -Parent $MyInvocation.MyCommand.Path
+
+# One source of truth for the version. See the -Version parameter for what happened when there
+# were two. Resolved here rather than in the parameter default because $PSScriptRoot is not bound
+# while defaults are being evaluated, which fails with an empty Join-Path.
+if (-not $Version) {
+    $propsPath = Join-Path $here '..\Directory.Build.props'
+    $Version = [regex]::Match(
+        (Get-Content $propsPath -Raw),
+        '<AssemblyVersion>([^<]+)</AssemblyVersion>'
+    ).Groups[1].Value
+    if (-not $Version) { throw "Could not read AssemblyVersion from $propsPath." }
+}
 $windowsRoot = Split-Path -Parent $here
 $stage = Join-Path $here 'obj\stage'
 $serviceStage = Join-Path $here 'obj\service'

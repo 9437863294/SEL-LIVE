@@ -487,6 +487,27 @@
                   Impersonate="no"
                   Return="ignore" />
 
+    <!--
+      Undo what the security enforcer changed about the machine.
+
+      It writes DisableTaskMgr into every human profile on the PC, and only ever removed it on a
+      later security sync — which does not happen once the service has gone. So removing the agent
+      left every account on that computer with Task Manager permanently disabled, and nothing
+      behind to say why. Return="ignore" and the switch always exits zero: a PC with neither a
+      working agent nor a way to remove one is a far worse outcome than a missed revert.
+    -->
+    <SetProperty Id="RevertSecurityControls"
+                 Value="&quot;[INSTALLFOLDER]SEL.Agent.Service.exe&quot; --revert-security"
+                 Before="RevertSecurityControls"
+                 Sequence="execute" />
+
+    <CustomAction Id="RevertSecurityControls"
+                  BinaryRef="Wix4UtilCA_X86"
+                  DllEntry="WixQuietExec"
+                  Execute="deferred"
+                  Impersonate="no"
+                  Return="ignore" />
+
     <SetProperty Id="RevokeTemporaryAdmin"
                  Value="&quot;[INSTALLFOLDER]SEL.Agent.Service.exe&quot; --revoke-temporary-admin"
                  Before="RevokeTemporaryAdmin"
@@ -588,6 +609,10 @@
         uninstall, and the cost is one sc.exe call.
       -->
       <Custom Action="UnprotectService" Before="StopServices"
+              Condition="REMOVE~=&quot;ALL&quot;" />
+
+      <!-- Task Manager must not stay disabled on a PC that no longer has the agent on it. -->
+      <Custom Action="RevertSecurityControls" Before="RemoveFiles"
               Condition="REMOVE~=&quot;ALL&quot;" />
 
       <!-- A time-bounded support membership must never outlive the product that owns its expiry. -->

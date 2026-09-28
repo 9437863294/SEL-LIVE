@@ -711,7 +711,7 @@ export function DeviceDetail({ deviceId }: { deviceId: string }) {
               onChanged={device.refresh}
             />
           ) : null}
-          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
             <SecurityCheck
               label="Task Manager"
               status={!securityPolicy.taskManagerLocked ? 'ALLOWED BY POLICY' : maintenanceActive ? 'TEMPORARY ACCESS' : record.securityPosture?.taskManagerLocked ? 'LOCKED' : 'CHECK REQUIRED'}
@@ -906,6 +906,15 @@ const SECURITY_CONTROL_ROWS: Array<{
   description: string;
   inverted?: boolean;
 }> = [
+  {
+    key: 'loginBlockedOnFindings',
+    label: 'Refuse sign-in when checks fail',
+    // First in the list because it decides what all the others below it *do*. Off by default:
+    // with it on and the strict baseline, a sign-in needs signed agent binaries — and the agent
+    // is not code-signed yet, so switching this on before a device reports clean locks the
+    // people who use it out of their own computer.
+    description: 'Off by default. Until this is on, failed checks are reported here and nobody is locked out.',
+  },
   { key: 'taskManagerLocked', label: 'Lock Task Manager', description: 'Prevents local users opening Task Manager.' },
   { key: 'agentStopBlocked', label: 'Block SEL Agent service stop', description: 'Removes the administrator SERVICE_STOP right.' },
   { key: 'serviceModificationBlocked', label: 'Block service modification', description: 'Prevents reconfiguration, deletion and service ACL changes.' },
@@ -913,7 +922,7 @@ const SECURITY_CONTROL_ROWS: Array<{
   { key: 'monitoringPolicyLocallyMutable', label: 'Block local monitoring-policy changes', description: 'Keeps monitoring configuration server-only.', inverted: true },
   { key: 'signedAgentBinariesRequired', label: 'Require signed agent binaries', description: 'Unsigned installed agent files make the device non-compliant.' },
   { key: 'signedAppControlPolicyRequired', label: 'Require signed app-control policy', description: 'Requires an enforced signed WDAC policy.' },
-  { key: 'secureBootRequired', label: 'Require Secure Boot', description: 'Blocks SEL LIVE work login when Secure Boot is unavailable.' },
+  { key: 'secureBootRequired', label: 'Require Secure Boot', description: 'Reports the device non-compliant when Secure Boot is off or unreadable.' },
   { key: 'tamperMonitoringEnabled', label: 'Monitor tamper events', description: 'Writes drift and restoration events to the audit trail.' },
 ];
 
@@ -939,7 +948,7 @@ function DeviceSecurityPolicyEditor({
           Changes remain active until you change them again. The SYSTEM service applies them on its next security sync.
         </p>
       </div>
-      <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+      <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3">
         {SECURITY_CONTROL_ROWS.map((control) => {
           const stored = policy[control.key];
           const enabled = control.inverted ? !stored : stored;

@@ -139,6 +139,24 @@ export interface WindowsDeviceSecurityPolicy {
   secureBootRequired: boolean;
   tamperMonitoringEnabled: boolean;
   auditRequired: boolean;
+  /**
+   * Whether failing these checks *refuses a sign-in*, as opposed to being reported.
+   *
+   * ── Off by default, and that default is load-bearing ──────────────────────────────────────────
+   *
+   * Every other enforcing behaviour in this module ships off — the access gate, idle locking,
+   * `requireMorningLogin` — and §8's staged rollout exists because switching enforcement on
+   * before the fleet can satisfy it locks people out of their own computers. This is the same
+   * thing and it was the same mistake: with the strict baseline below and this on, a sign-in
+   * needs Secure Boot readable, Task Manager locked by policy, the service descriptor hardened,
+   * a signed App Control policy active, **and signed agent binaries**. The agent has never been
+   * code-signed, so `AGENT_BINARY_UNSIGNED` alone made every PC in the company unable to open a
+   * work session — reported as "this computer has no fresh, compliant device-security report".
+   *
+   * So the checks run, the findings are recorded, and the device page lists them, from day one.
+   * Refusing sign-ins is a decision an administrator makes per device once its report is clean.
+   */
+  loginBlockedOnFindings: boolean;
   /** How often the SYSTEM service re-checks and re-applies the baseline. */
   enforcementIntervalSeconds: number;
 }

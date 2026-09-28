@@ -98,6 +98,38 @@ namespace Sel.Agent.Service
             };
         }
 
+        /// <summary>
+        /// Undo everything this enforcer changed about the machine. Called when the agent is
+        /// removed.
+        /// </summary>
+        /// <remarks>
+        /// <para>
+        /// <b>Without this, uninstalling the agent left every account on the PC with Task Manager
+        /// permanently disabled</b> — and nothing on the machine that knew why or how to undo it.
+        /// <c>DisableTaskMgr</c> was written per user by the enforce loop and only ever removed
+        /// by the same loop on a later sync, which does not run again once the service is gone.
+        /// </para>
+        /// <para>
+        /// The service descriptor is put back separately by the installer's unprotect step, which
+        /// has to happen before Windows Installer tries to stop the service. This deals with the
+        /// changes that outlive the service itself.
+        /// </para>
+        /// </remarks>
+        internal static void RevertMachineChanges(Action<string> log)
+        {
+            try
+            {
+                ApplyTaskManagerPolicy(false);
+                if (log != null) log("Task Manager was re-enabled for every profile on this computer.");
+            }
+            catch (Exception error)
+            {
+                // Reported, not thrown: a failure here must not stop an uninstall, or a PC ends up
+                // with neither a working agent nor a way to remove it.
+                if (log != null) log("Could not re-enable Task Manager: " + error.Message);
+            }
+        }
+
         internal static void ApplyTaskManagerPolicy(bool locked)
         {
             using (RegistryKey users = RegistryKey.OpenBaseKey(RegistryHive.Users, RegistryView.Default))
