@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import ExcelJS from 'exceljs';
 import { collection, doc, getDocs, query, serverTimestamp, updateDoc, where } from 'firebase/firestore';
-import { Download, Search, X } from 'lucide-react';
+import { Download } from 'lucide-react';
 import { db } from '@/lib/firebase';
 import { useAuthorization } from '@/hooks/useAuthorization';
 import {
@@ -15,14 +15,17 @@ import {
 } from '@/lib/vehicle-management';
 import TripMapView from '@/components/vehicle-management/trip-map-view';
 import { VehicleTablePagination, useVehicleTablePagination } from '@/components/vehicle-management/table-pagination';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { PageHeader } from '@/components/shared/page-header';
+import { TableCard } from '@/components/shared/table-card';
+import { FilterBar } from '@/components/shared/filter-bar';
+import { StatusBadge } from '@/components/shared/status-badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Skeleton } from '@/components/ui/skeleton';
 import {
+  Table,
   TableBody,
   TableCell,
   TableHead,
@@ -262,58 +265,6 @@ export default function TripManagementPage() {
         description="Monitor driver trips, live locations, and completed ride history."
         actions={
           <div className="grid w-full grid-cols-2 gap-2 sm:flex sm:w-auto sm:flex-wrap sm:justify-end">
-            {/* Status filter */}
-            <Select value={statusFilter} onValueChange={(value) => setStatusFilter(value as StatusFilter)}>
-              <SelectTrigger className="h-11 w-full bg-white/85 sm:h-10 sm:w-40">
-                <SelectValue placeholder="Status" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="All">All Status</SelectItem>
-                <SelectItem value="In Progress">In Progress</SelectItem>
-                <SelectItem value="Completed">Completed</SelectItem>
-                <SelectItem value="Cancelled">Cancelled</SelectItem>
-              </SelectContent>
-            </Select>
-            {/* Search */}
-            <div className="relative w-full sm:w-52">
-              <Search className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
-              <Input
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder="Search driver, vehicle…"
-                className="h-11 bg-white/85 pl-8 sm:h-10"
-              />
-              {searchQuery && (
-                <button onClick={() => setSearchQuery('')} className="absolute right-2 top-1/2 -translate-y-1/2">
-                  <X className="h-3.5 w-3.5 text-muted-foreground hover:text-foreground" />
-                </button>
-              )}
-            </div>
-            {/* Date range */}
-            <Input
-              type="date"
-              value={dateFrom}
-              onChange={(e) => setDateFrom(e.target.value)}
-              className="h-11 w-full bg-white/85 sm:h-10 sm:w-40"
-              title="From date"
-            />
-            <Input
-              type="date"
-              value={dateTo}
-              onChange={(e) => setDateTo(e.target.value)}
-              className="h-11 w-full bg-white/85 sm:h-10 sm:w-40"
-              title="To date"
-            />
-            {(dateFrom || dateTo || searchQuery || statusFilter !== 'All') && (
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => { setStatusFilter('All'); setSearchQuery(''); setDateFrom(''); setDateTo(''); }}
-                className="w-full text-xs sm:w-auto"
-              >
-                <X className="mr-1 h-3 w-3" /> Clear
-              </Button>
-            )}
             {canExport && (
               <Button
                 variant="outline"
@@ -363,19 +314,65 @@ export default function TripManagementPage() {
         </Card>
       </div>
 
-      <Card className="vm-panel">
-        <CardHeader>
-          <CardTitle>Trip List</CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-3">
+      <TableCard
+        title="Trip List"
+        count={filteredTrips.length}
+        total={trips.length}
+        noun="trip"
+        toolbar={
+          <FilterBar
+            search={{ value: searchQuery, onChange: setSearchQuery, placeholder: 'Search driver, vehicle…' }}
+            activeCount={(statusFilter !== 'All' ? 1 : 0) + (dateFrom ? 1 : 0) + (dateTo ? 1 : 0)}
+            onClear={() => { setStatusFilter('All'); setSearchQuery(''); setDateFrom(''); setDateTo(''); }}
+          >
+            <Select value={statusFilter} onValueChange={(value) => setStatusFilter(value as StatusFilter)}>
+              <SelectTrigger>
+                <SelectValue placeholder="Status" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="All">All Status</SelectItem>
+                <SelectItem value="In Progress">In Progress</SelectItem>
+                <SelectItem value="Completed">Completed</SelectItem>
+                <SelectItem value="Cancelled">Cancelled</SelectItem>
+              </SelectContent>
+            </Select>
+            <Input
+              type="date"
+              value={dateFrom}
+              onChange={(e) => setDateFrom(e.target.value)}
+              title="From date"
+              aria-label="From date"
+            />
+            <Input
+              type="date"
+              value={dateTo}
+              onChange={(e) => setDateTo(e.target.value)}
+              title="To date"
+              aria-label="To date"
+            />
+          </FilterBar>
+        }
+        footer={
+          filteredTrips.length > 0 ? (
+            <VehicleTablePagination
+              currentPage={tripPagination.currentPage}
+              totalPages={tripPagination.totalPages}
+              totalRows={filteredTrips.length}
+              pageSize={tripPagination.pageSize}
+              onPageChange={tripPagination.setCurrentPage}
+            />
+          ) : undefined
+        }
+      >
+          {filteredTrips.length === 0 ? (
+            <div className="px-4 py-10 text-center text-sm text-muted-foreground">
+              No trips found.
+            </div>
+          ) : (
+          <>
           {/* Mobile card view */}
-          <div className="space-y-2.5 sm:hidden">
-            {filteredTrips.length === 0 ? (
-              <div className="rounded-xl border border-white/70 bg-white/85 px-4 py-8 text-center text-sm text-muted-foreground">
-                No trips found.
-              </div>
-            ) : (
-              tripPagination.paginatedRows.map((trip) => (
+          <div className="space-y-2.5 p-3 sm:hidden">
+            {tripPagination.paginatedRows.map((trip) => (
                 <div
                   key={String(trip.id)}
                   onClick={() => setSelectedTripId((current) => current === String(trip.id) ? '' : String(trip.id))}
@@ -388,12 +385,9 @@ export default function TripManagementPage() {
                       <p className="text-[11px] font-mono text-muted-foreground truncate max-w-[180px]">{String(trip.id || '-')}</p>
                       <p className="text-xs text-muted-foreground mt-0.5">{trip.vehicleNumber || '-'} · {trip.driverName || '-'}</p>
                     </div>
-                    <Badge
-                      variant={String(trip.tripStatus) === 'In Progress' ? 'default' : 'outline'}
-                      className={`shrink-0 text-[11px] ${String(trip.tripStatus) === 'In Progress' ? 'bg-emerald-600 text-white' : ''}`}
-                    >
+                    <StatusBadge status={String(trip.tripStatus || '')} dot={String(trip.tripStatus) === 'In Progress'} className="shrink-0">
                       {trip.tripStatus || '-'}
-                    </Badge>
+                    </StatusBadge>
                   </div>
                   <div className="space-y-1.5">
                     <div className="flex justify-between gap-2">
@@ -429,18 +423,12 @@ export default function TripManagementPage() {
                     </div>
                   )}
                 </div>
-              ))
-            )}
+              ))}
           </div>
 
-          {filteredTrips.length === 0 ? (
-              <div className="hidden sm:block rounded-xl border border-white/70 bg-white/85 px-4 py-10 text-center text-muted-foreground">
-                No trips found.
-              </div>
-            ) : (
-            <div className="hidden sm:block overflow-auto rounded-xl border border-white/70 bg-white/85 h-[calc(100vh-230px)]">
-              <table className="w-full caption-bottom text-sm">
-                <TableHeader className="sticky top-0 z-10 bg-slate-50 shadow-sm">
+            <div className="hidden sm:block">
+              <Table containerClassName="overflow-visible">
+                <TableHeader>
                   <TableRow>
                     <TableHead>Trip ID</TableHead>
                     <TableHead>Vehicle</TableHead>
@@ -448,8 +436,8 @@ export default function TripManagementPage() {
                     <TableHead>Status</TableHead>
                     <TableHead>Start</TableHead>
                     <TableHead>End</TableHead>
-                    <TableHead>Distance</TableHead>
-                    <TableHead>Points</TableHead>
+                    <TableHead className="text-right">Distance</TableHead>
+                    <TableHead className="text-right">Points</TableHead>
                     <TableHead>Start Address</TableHead>
                     <TableHead>End Address</TableHead>
                     <TableHead>Created Time</TableHead>
@@ -467,25 +455,20 @@ export default function TripManagementPage() {
                               current === String(trip.id) ? '' : String(trip.id)
                             )
                           }
-                          className={`cursor-pointer transition-colors ${
-                            isSelected ? 'bg-emerald-50/80 hover:bg-emerald-100/70' : 'hover:bg-emerald-50/70'
-                          }`}
+                          className={`cursor-pointer ${isSelected ? 'bg-emerald-50/80' : ''}`}
                         >
                           <TableCell className="font-medium">{String(trip.id || '-')}</TableCell>
                           <TableCell>{trip.vehicleNumber || '-'}</TableCell>
                           <TableCell>{trip.driverName || '-'}</TableCell>
                           <TableCell>
-                            <Badge
-                              variant={String(trip.tripStatus) === 'In Progress' ? 'default' : 'outline'}
-                              className={String(trip.tripStatus) === 'In Progress' ? 'bg-emerald-600 text-white' : ''}
-                            >
+                            <StatusBadge status={String(trip.tripStatus || '')} dot={String(trip.tripStatus) === 'In Progress'}>
                               {trip.tripStatus || '-'}
-                            </Badge>
+                            </StatusBadge>
                           </TableCell>
-                          <TableCell>{formatDateTime(String(trip.startTimeIso || ''))}</TableCell>
-                          <TableCell>{formatDateTime(String(trip.endTimeIso || ''))}</TableCell>
-                          <TableCell>{Number(trip.totalDistanceKm || 0).toFixed(2)} km</TableCell>
-                          <TableCell>{Number(trip.totalPoints || 0)}</TableCell>
+                          <TableCell className="whitespace-nowrap">{formatDateTime(String(trip.startTimeIso || ''))}</TableCell>
+                          <TableCell className="whitespace-nowrap">{formatDateTime(String(trip.endTimeIso || ''))}</TableCell>
+                          <TableCell className="whitespace-nowrap text-right tabular-nums">{Number(trip.totalDistanceKm || 0).toFixed(2)} km</TableCell>
+                          <TableCell className="text-right tabular-nums">{Number(trip.totalPoints || 0)}</TableCell>
                           <TableCell className="max-w-[280px] truncate">{String(trip.startAddress || '-')}</TableCell>
                           <TableCell className="max-w-[280px] truncate">{String(trip.endAddress || '-')}</TableCell>
                           <TableCell className="whitespace-nowrap">{formatVehicleTimestamp(trip.createdAt)}</TableCell>
@@ -527,18 +510,11 @@ export default function TripManagementPage() {
                     );
                   })}
                 </TableBody>
-              </table>
+              </Table>
             </div>
-            )}
-          <VehicleTablePagination
-            currentPage={tripPagination.currentPage}
-            totalPages={tripPagination.totalPages}
-            totalRows={filteredTrips.length}
-            pageSize={tripPagination.pageSize}
-            onPageChange={tripPagination.setCurrentPage}
-          />
-        </CardContent>
-      </Card>
+          </>
+          )}
+      </TableCard>
     </div>
   );
 }

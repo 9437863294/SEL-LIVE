@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { HardHat, Pencil, Plus, Trash2, Users } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
+import { StatusBadge } from '@/components/shared/status-badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -188,9 +189,7 @@ export function ProjectRoutingPanel({
                       {mode}
                     </Badge>
                   ) : (
-                    <Badge variant="outline" className="border-amber-300 bg-amber-50 text-[10px] text-amber-800">
-                      Not configured
-                    </Badge>
+                    <StatusBadge tone="warning">Not configured</StatusBadge>
                   )}
                   {posts.length > 0 && (
                     <Badge variant="outline" className="text-[10px]">

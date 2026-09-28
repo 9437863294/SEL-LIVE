@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { ArrowRight, FlaskConical, GitBranch, Pencil, Trash2 } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
+import { StatusBadge } from '@/components/shared/status-badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Checkbox } from '@/components/ui/checkbox';
@@ -201,12 +202,10 @@ export function ApprovalMatrixPanel({
                   </Badge>
                 )}
                 {row.active === false && (
-                  <Badge variant="outline" className="text-[10px]">
-                    Inactive
-                  </Badge>
+                  <StatusBadge status="Inactive" />
                 )}
                 {winner?.id === row.id && (
-                  <Badge className="bg-emerald-600 text-[10px] hover:bg-emerald-600">Matches the test</Badge>
+                  <StatusBadge tone="success">Matches the test</StatusBadge>
                 )}
               </>
             }

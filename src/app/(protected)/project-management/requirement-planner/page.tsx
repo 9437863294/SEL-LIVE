@@ -7,7 +7,6 @@ import {
   AlertTriangle,
   ClipboardList,
   ListChecks,
-  Search,
   ShieldAlert,
 } from "lucide-react";
 import { collection, doc, getDoc, getDocs, updateDoc } from "firebase/firestore";
@@ -22,10 +21,8 @@ import {
   REQUIREMENT_STATUSES,
   classifyRequirementStatus,
   computeIndentByDate,
-  requirementStatusStyles,
   type RequirementStatus,
 } from "@/lib/project-management-requirement-planner";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
@@ -47,10 +44,11 @@ import { Skeleton } from "@/components/ui/skeleton";
 import {
   PmDataList,
   PmEmptyState,
-  PmToolbar,
   type PmListColumn,
 } from "@/components/project-management/pm-shell";
+import { FilterBar } from "@/components/shared/filter-bar";
 import { PageHeader } from "@/components/shared/page-header";
+import { StatusBadge, type StatusTone } from "@/components/shared/status-badge";
 
 type ProjectMapping = {
   id: string;
@@ -93,6 +91,16 @@ const formatCurrency = (value: number) =>
   new Intl.NumberFormat("en-IN", { style: "currency", currency: "INR", maximumFractionDigits: 0 }).format(value);
 
 const getBoqSlNo = (item: BoqItem) => String(item["BOQ SL No"] ?? item["SL. No."] ?? "");
+
+/**
+ * Where this planner means something other than the word alone reads as: "Not Scheduled" has no
+ * date yet (not a booked one), "Late" is past its indent-by date, and "Clear" is on track.
+ */
+const REQUIREMENT_STATUS_TONE: Partial<Record<RequirementStatus, StatusTone>> = {
+  "Not Scheduled": "neutral",
+  Late: "danger",
+  Clear: "success",
+};
 
 const isSupplyLane = (item: BoqItem) => String(item["Scope 2"] ?? "").trim().toLowerCase() === "supply";
 
@@ -325,11 +333,7 @@ export default function RequirementPlannerPage() {
     {
       header: "Status",
       mobile: "aside",
-      cell: ({ status }) => (
-        <Badge variant="outline" className={requirementStatusStyles[status]}>
-          {status}
-        </Badge>
-      ),
+      cell: ({ status }) => <StatusBadge status={status} tone={REQUIREMENT_STATUS_TONE[status]} />,
     },
   ];
 
@@ -407,18 +411,16 @@ export default function RequirementPlannerPage() {
         </div>
       )}
 
-      <PmToolbar>
-        <div className="relative w-full sm:max-w-xs">
-          <Search className="absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-          <Input
-            className="pl-8"
-            placeholder="Search BOQ SL No or description..."
-            value={search}
-            onChange={(event) => setSearch(event.target.value)}
-          />
-        </div>
+      <FilterBar
+        search={{ value: search, onChange: setSearch, placeholder: "Search BOQ SL No or description..." }}
+        activeCount={statusFilter !== "All" ? 1 : 0}
+        onClear={() => {
+          setSearch("");
+          setStatusFilter("All");
+        }}
+      >
         <Select value={statusFilter} onValueChange={(value: RequirementStatus | "All") => setStatusFilter(value)}>
-          <SelectTrigger className="w-full sm:w-56">
+          <SelectTrigger>
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
@@ -430,7 +432,7 @@ export default function RequirementPlannerPage() {
             ))}
           </SelectContent>
         </Select>
-      </PmToolbar>
+      </FilterBar>
 
       <PmDataList
         rows={filteredRows.map((item) => ({ ...item, id: item.row.boqItem.id }))}

@@ -33,7 +33,6 @@ import {
   Pencil,
   Plus,
   ReceiptText,
-  Search,
   ShieldCheck,
   Trash2,
   WalletCards,
@@ -57,12 +56,12 @@ import {
   recurringDateOnly,
   visibleObligations,
 } from "@/lib/recurring-payments";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { PageHeader } from "@/components/shared/page-header";
-import CollapsibleFilterCard from "./collapsible-filter-card";
-import ModuleTableCard from "./module-table-card";
+import { FilterBar } from "@/components/shared/filter-bar";
+import { StatusBadge } from "@/components/shared/status-badge";
+import { TableCard } from "@/components/shared/table-card";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -435,132 +434,7 @@ function PaymentRegisterView() {
           tone="amber"
         />
       </div>
-      <CollapsibleFilterCard title="Operational filters" activeCount={activeFilterCount} onClear={() => setFilters(initialFilters)}>
-        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-          <div className="relative sm:col-span-2">
-            <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
-            <Input
-              className="pl-8"
-              placeholder="Search title, bill number, vendor or cycle…"
-              value={filters.search}
-              onChange={(e) =>
-                setFilters((f) => ({ ...f, search: e.target.value }))
-              }
-            />
-          </div>
-          <FilterSelect
-            value={filters.status}
-            onChange={(status) => setFilters((f) => ({ ...f, status }))}
-            placeholder="All statuses"
-            // A dashboard drill-down can arrive filtered on several statuses at once. Without it in
-            // the option list the Select has no item matching its own value and falls back to
-            // rendering the placeholder — the control would read "All statuses" over a filtered table.
-            options={[
-              ...new Set([
-                ...(filters.status.includes(",") ? [filters.status] : []),
-                ...normalized.map((x) => x.status),
-              ]),
-            ]}
-          />
-          <FilterSelect
-            value={filters.category}
-            onChange={(category) => setFilters((f) => ({ ...f, category }))}
-            placeholder="All categories"
-            options={categories}
-          />
-          <FilterSelect
-            value={filters.vendor}
-            onChange={(vendor) => setFilters((f) => ({ ...f, vendor }))}
-            placeholder="All vendors"
-            options={vendors}
-          />
-          <Select
-            value={filters.owner}
-            onValueChange={(owner) => setFilters((f) => ({ ...f, owner }))}
-          >
-            <SelectTrigger>
-              <SelectValue placeholder="All owners" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">All owners</SelectItem>
-              {users.map((x) => (
-                <SelectItem value={x.id} key={x.id}>
-                  {personOptionLabel(x)}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-          <Select
-            value={filters.project}
-            onValueChange={(project) =>
-              setFilters((current) => ({ ...current, project }))
-            }
-          >
-            <SelectTrigger>
-              <SelectValue placeholder="All projects" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">All global projects</SelectItem>
-              {activeProjects.map((project) => (
-                <SelectItem value={project.id} key={project.id}>
-                  {project.projectName}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-          <Select
-            value={filters.department}
-            onValueChange={(department) =>
-              setFilters((current) => ({ ...current, department }))
-            }
-          >
-            <SelectTrigger>
-              <SelectValue placeholder="All departments" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">All global departments</SelectItem>
-              {activeDepartments.map((department) => (
-                <SelectItem value={department.id} key={department.id}>
-                  {department.name}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-          <Input
-            type="date"
-            value={filters.from}
-            onChange={(e) =>
-              setFilters((f) => ({ ...f, from: e.target.value }))
-            }
-          />
-          <Input
-            type="date"
-            value={filters.to}
-            onChange={(e) => setFilters((f) => ({ ...f, to: e.target.value }))}
-          />
-          <div className="flex items-center justify-between rounded-md border px-3 py-2">
-            <span className="text-sm">Missing payment proof</span>
-            <input
-              type="checkbox"
-              checked={filters.missingReceipt}
-              onChange={(e) =>
-                setFilters((f) => ({ ...f, missingReceipt: e.target.checked }))
-              }
-            />
-          </div>
-          <div className="flex items-center justify-between rounded-md border px-3">
-            <span className="text-sm">Variance alerts only</span>
-            <input
-              type="checkbox"
-              checked={filters.varianceOnly}
-              onChange={(e) =>
-                setFilters((f) => ({ ...f, varianceOnly: e.target.checked }))
-              }
-            />
-          </div>
-        </div>
-      </CollapsibleFilterCard>
-      <ModuleTableCard
+      <TableCard
         title="All payment obligations"
         description={
           activeFilterCount
@@ -568,191 +442,313 @@ function PaymentRegisterView() {
             : "Every cycle raised for this organization"
         }
         count={rows.length}
-        countNoun="obligation"
+        total={normalized.length}
+        noun="obligation"
+        toolbar={
+          <FilterBar
+            search={{
+              value: filters.search,
+              onChange: (search) => setFilters((f) => ({ ...f, search })),
+              placeholder: "Search title, bill number, vendor or cycle…",
+            }}
+            // The search box is counted separately by the bar itself.
+            activeCount={activeFilterCount - (filters.search ? 1 : 0)}
+            onClear={() => setFilters(initialFilters)}
+          >
+            <FilterSelect
+              value={filters.status}
+              onChange={(status) => setFilters((f) => ({ ...f, status }))}
+              placeholder="All statuses"
+              // A dashboard drill-down can arrive filtered on several statuses at once. Without it in
+              // the option list the Select has no item matching its own value and falls back to
+              // rendering the placeholder — the control would read "All statuses" over a filtered table.
+              options={[
+                ...new Set([
+                  ...(filters.status.includes(",") ? [filters.status] : []),
+                  ...normalized.map((x) => x.status),
+                ]),
+              ]}
+            />
+            <FilterSelect
+              value={filters.category}
+              onChange={(category) => setFilters((f) => ({ ...f, category }))}
+              placeholder="All categories"
+              options={categories}
+            />
+            <FilterSelect
+              value={filters.vendor}
+              onChange={(vendor) => setFilters((f) => ({ ...f, vendor }))}
+              placeholder="All vendors"
+              options={vendors}
+            />
+            <Select
+              value={filters.owner}
+              onValueChange={(owner) => setFilters((f) => ({ ...f, owner }))}
+            >
+              <SelectTrigger>
+                <SelectValue placeholder="All owners" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All owners</SelectItem>
+                {users.map((x) => (
+                  <SelectItem value={x.id} key={x.id}>
+                    {personOptionLabel(x)}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <Select
+              value={filters.project}
+              onValueChange={(project) =>
+                setFilters((current) => ({ ...current, project }))
+              }
+            >
+              <SelectTrigger>
+                <SelectValue placeholder="All projects" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All global projects</SelectItem>
+                {activeProjects.map((project) => (
+                  <SelectItem value={project.id} key={project.id}>
+                    {project.projectName}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <Select
+              value={filters.department}
+              onValueChange={(department) =>
+                setFilters((current) => ({ ...current, department }))
+              }
+            >
+              <SelectTrigger>
+                <SelectValue placeholder="All departments" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All global departments</SelectItem>
+                {activeDepartments.map((department) => (
+                  <SelectItem value={department.id} key={department.id}>
+                    {department.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <Input
+              type="date"
+              value={filters.from}
+              onChange={(e) =>
+                setFilters((f) => ({ ...f, from: e.target.value }))
+              }
+            />
+            <Input
+              type="date"
+              value={filters.to}
+              onChange={(e) => setFilters((f) => ({ ...f, to: e.target.value }))}
+            />
+            <div className="flex h-10 items-center justify-between gap-3 rounded-md border px-3">
+              <span className="text-sm">Missing payment proof</span>
+              <input
+                type="checkbox"
+                checked={filters.missingReceipt}
+                onChange={(e) =>
+                  setFilters((f) => ({ ...f, missingReceipt: e.target.checked }))
+                }
+              />
+            </div>
+            <div className="flex h-10 items-center justify-between gap-3 rounded-md border px-3">
+              <span className="text-sm">Variance alerts only</span>
+              <input
+                type="checkbox"
+                checked={filters.varianceOnly}
+                onChange={(e) =>
+                  setFilters((f) => ({ ...f, varianceOnly: e.target.checked }))
+                }
+              />
+            </div>
+          </FilterBar>
+        }
       >
-            {/* Compact rows, matching the masters register: twelve columns of single-line values,
-                so the default 1rem cell padding and 3rem header only cost vertical space. */}
-            <Table className="[&_td]:py-2 [&_th]:h-9">
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Payment</TableHead>
-                  <TableHead>Category</TableHead>
-                  <TableHead>Vendor</TableHead>
-                  <TableHead>Owner</TableHead>
-                  <TableHead>Due date</TableHead>
-                  <TableHead>Status</TableHead>
-                  <TableHead className="text-right">Bill amount</TableHead>
-                  <TableHead className="text-right">Paid</TableHead>
-                  <TableHead className="text-right">Outstanding</TableHead>
-                  <TableHead>Workflow</TableHead>
-                  <TableHead>Stage</TableHead>
-                  <TableHead>Controls</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {rows.map((payment) => {
-                  const outstanding = Math.max(
-                    0,
-                    (payment.billAmount || payment.expectedAmount) -
-                      (payment.settledAmount || payment.paidAmount),
-                  );
-                  return (
-                    <TableRow
-                      key={payment.id}
-                      className="cursor-pointer hover:bg-muted/40"
-                      onClick={() =>
-                        router.push(
-                          `/recurring-payments/payments/${payment.id}`,
-                        )
-                      }
-                    >
-                      <TableCell className="whitespace-nowrap">
-                        <div className="flex items-center gap-2">
-                          {payment.varianceWarning && (
-                            <AlertTriangle className="h-4 w-4 shrink-0 text-amber-500" />
-                          )}
-                          <span className="font-medium">{payment.title}</span>
-                        </div>
-                      </TableCell>
-                      <TableCell className="whitespace-nowrap">
-                        {payment.category}
-                      </TableCell>
-                      <TableCell className="whitespace-nowrap">
-                        {payment.vendorName}
-                      </TableCell>
-                      <TableCell className="whitespace-nowrap">
-                        {users.find((x) => x.id === payment.assignedTo)
-                          ?.name || "Unassigned"}
-                      </TableCell>
-                      <TableCell className="whitespace-nowrap">
-                        {new Date(
-                          `${payment.dueDate}T00:00:00`,
-                        ).toLocaleDateString("en-IN")}
-                      </TableCell>
-                      <TableCell className="whitespace-nowrap">
-                        {paymentTiming(payment).label}
-                      </TableCell>
-                      <TableCell
-                        className={`whitespace-nowrap text-right font-semibold ${payment.varianceWarning ? "text-amber-600" : ""}`}
-                        title={
-                          payment.varianceWarning
-                            ? `${Number(payment.variancePercent).toFixed(1)}% variance`
-                            : undefined
-                        }
-                      >
-                        {currency(payment.billAmount || payment.expectedAmount)}
-                      </TableCell>
-                      <TableCell className="whitespace-nowrap text-right">
-                        {currency(payment.paidAmount || 0)}
-                      </TableCell>
-                      <TableCell className="whitespace-nowrap text-right">
-                        {currency(outstanding)}
-                      </TableCell>
-                      <TableCell className="whitespace-nowrap">
-                        <Badge variant="outline">{payment.status}</Badge>
-                      </TableCell>
-                      <TableCell className="max-w-40 truncate whitespace-nowrap">
-                        {payment.stage || "—"}
-                      </TableCell>
-                      <TableCell
-                        className="whitespace-nowrap text-right"
-                        // The row itself opens the payment, so anything in this cell has to stop
-                        // the click from also navigating away mid-action.
-                        onClick={(e) => e.stopPropagation()}
-                      >
-                        {/* Both controls below are trimmed under their default heights (sm is
-                            2.25rem, icon 2.5rem) because either one on its own would set the row
-                            height, leaving the reduced cell padding with no effect. */}
-                        <div className="flex items-center justify-end gap-1">
-                          {canRecord &&
-                            !payment.currentStepId &&
-                            !finalStatuses.includes(payment.status) && (
-                              <Button
-                                size="sm"
-                                variant="outline"
-                                className="h-7 px-2 text-xs"
-                                onClick={() => {
-                                  setSelected(payment);
-                                  setRecordOpen(true);
-                                }}
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead>Payment</TableHead>
+              <TableHead>Category</TableHead>
+              <TableHead>Vendor</TableHead>
+              <TableHead>Owner</TableHead>
+              <TableHead>Due date</TableHead>
+              <TableHead>Status</TableHead>
+              <TableHead className="text-right">Bill amount</TableHead>
+              <TableHead className="text-right">Paid</TableHead>
+              <TableHead className="text-right">Outstanding</TableHead>
+              <TableHead>Workflow</TableHead>
+              <TableHead>Stage</TableHead>
+              <TableHead>Controls</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {rows.map((payment) => {
+              const outstanding = Math.max(
+                0,
+                (payment.billAmount || payment.expectedAmount) -
+                  (payment.settledAmount || payment.paidAmount),
+              );
+              return (
+                <TableRow
+                  key={payment.id}
+                  className="cursor-pointer"
+                  onClick={() =>
+                    router.push(
+                      `/recurring-payments/payments/${payment.id}`,
+                    )
+                  }
+                >
+                  <TableCell className="whitespace-nowrap">
+                    <div className="flex items-center gap-2">
+                      {payment.varianceWarning && (
+                        <AlertTriangle className="h-4 w-4 shrink-0 text-amber-500" />
+                      )}
+                      <span className="font-medium">{payment.title}</span>
+                    </div>
+                  </TableCell>
+                  <TableCell className="whitespace-nowrap">
+                    {payment.category}
+                  </TableCell>
+                  <TableCell className="whitespace-nowrap">
+                    {payment.vendorName}
+                  </TableCell>
+                  <TableCell className="whitespace-nowrap">
+                    {users.find((x) => x.id === payment.assignedTo)
+                      ?.name || "Unassigned"}
+                  </TableCell>
+                  <TableCell className="whitespace-nowrap">
+                    {new Date(
+                      `${payment.dueDate}T00:00:00`,
+                    ).toLocaleDateString("en-IN")}
+                  </TableCell>
+                  <TableCell className="whitespace-nowrap">
+                    {paymentTiming(payment).label}
+                  </TableCell>
+                  <TableCell
+                    className={`whitespace-nowrap text-right tabular-nums ${payment.varianceWarning ? "text-amber-600" : ""}`}
+                    title={
+                      payment.varianceWarning
+                        ? `${Number(payment.variancePercent).toFixed(1)}% variance`
+                        : undefined
+                    }
+                  >
+                    {currency(payment.billAmount || payment.expectedAmount)}
+                  </TableCell>
+                  <TableCell className="whitespace-nowrap text-right">
+                    {currency(payment.paidAmount || 0)}
+                  </TableCell>
+                  <TableCell className="whitespace-nowrap text-right">
+                    {currency(outstanding)}
+                  </TableCell>
+                  <TableCell className="whitespace-nowrap">
+                    <StatusBadge status={payment.status} />
+                  </TableCell>
+                  <TableCell className="max-w-40 truncate whitespace-nowrap">
+                    {payment.stage || "—"}
+                  </TableCell>
+                  <TableCell
+                    className="whitespace-nowrap text-right"
+                    // The row itself opens the payment, so anything in this cell has to stop
+                    // the click from also navigating away mid-action.
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    {/* Both controls below are trimmed under their default heights (sm is
+                        2.25rem, icon 2.5rem) because either one on its own would set the row
+                        height, leaving the reduced cell padding with no effect. */}
+                    <div className="flex items-center justify-end gap-1">
+                      {canRecord &&
+                        !payment.currentStepId &&
+                        !finalStatuses.includes(payment.status) && (
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            className="h-7 px-2 text-xs"
+                            onClick={() => {
+                              setSelected(payment);
+                              setRecordOpen(true);
+                            }}
+                          >
+                            <Plus className="mr-1 h-3 w-3" />
+                            Payment
+                          </Button>
+                        )}
+                      {(canEdit || canDelete || payment.currentStepId) && (
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                            <Button size="icon" variant="ghost" className="h-7 w-7">
+                              <MoreHorizontal className="h-4 w-4" />
+                            </Button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="end">
+                            <DropdownMenuItem
+                              onSelect={() =>
+                                router.push(
+                                  `/recurring-payments/payments/${payment.id}`,
+                                )
+                              }
+                            >
+                              <FileText className="mr-2 h-4 w-4" />
+                              View details
+                            </DropdownMenuItem>
+                            {canEdit && isObligationEditable(payment) && (
+                              <DropdownMenuItem
+                                onSelect={() =>
+                                  router.push(
+                                    `/recurring-payments/payments/${payment.id}/edit`,
+                                  )
+                                }
                               >
-                                <Plus className="mr-1 h-3 w-3" />
-                                Payment
-                              </Button>
+                                <Pencil className="mr-2 h-4 w-4" />
+                                Edit payment
+                              </DropdownMenuItem>
                             )}
-                          {(canEdit || canDelete || payment.currentStepId) && (
-                            <DropdownMenu>
-                              <DropdownMenuTrigger asChild>
-                                <Button size="icon" variant="ghost" className="h-7 w-7">
-                                  <MoreHorizontal className="h-4 w-4" />
-                                </Button>
-                              </DropdownMenuTrigger>
-                              <DropdownMenuContent align="end">
-                                <DropdownMenuItem
-                                  onSelect={() =>
-                                    router.push(
-                                      `/recurring-payments/payments/${payment.id}`,
-                                    )
-                                  }
-                                >
-                                  <FileText className="mr-2 h-4 w-4" />
-                                  View details
-                                </DropdownMenuItem>
-                                {canEdit && isObligationEditable(payment) && (
-                                  <DropdownMenuItem
-                                    onSelect={() =>
-                                      router.push(
-                                        `/recurring-payments/payments/${payment.id}/edit`,
-                                      )
-                                    }
-                                  >
-                                    <Pencil className="mr-2 h-4 w-4" />
-                                    Edit payment
-                                  </DropdownMenuItem>
-                                )}
-                                {payment.currentStepId && (
-                                  <DropdownMenuItem
-                                    onSelect={() =>
-                                      router.push(
-                                        `/recurring-payments/stage/${payment.currentStepId}`,
-                                      )
-                                    }
-                                  >
-                                    <ExternalLink className="mr-2 h-4 w-4" />
-                                    Open workflow step
-                                  </DropdownMenuItem>
-                                )}
-                                {canDelete && (
-                                  <DropdownMenuItem
-                                    className="text-destructive focus:text-destructive"
-                                    onSelect={() => softDelete(payment)}
-                                  >
-                                    <Trash2 className="mr-2 h-4 w-4" />
-                                    Delete payment
-                                  </DropdownMenuItem>
-                                )}
-                              </DropdownMenuContent>
-                            </DropdownMenu>
-                          )}
-                        </div>
-                      </TableCell>
-                    </TableRow>
-                  );
-                })}
-                {!rows.length && (
-                  <TableRow>
-                    <TableCell
-                      colSpan={12}
-                      className="h-36 text-center text-muted-foreground"
-                    >
-                      <CheckCircle2 className="mx-auto mb-2 h-9 w-9 text-emerald-400" />
-                      No matching payment obligations.
-                    </TableCell>
-                  </TableRow>
-                )}
-              </TableBody>
-            </Table>
-      </ModuleTableCard>
+                            {payment.currentStepId && (
+                              <DropdownMenuItem
+                                onSelect={() =>
+                                  router.push(
+                                    `/recurring-payments/stage/${payment.currentStepId}`,
+                                  )
+                                }
+                              >
+                                <ExternalLink className="mr-2 h-4 w-4" />
+                                Open workflow step
+                              </DropdownMenuItem>
+                            )}
+                            {canDelete && (
+                              <DropdownMenuItem
+                                className="text-destructive focus:text-destructive"
+                                onSelect={() => softDelete(payment)}
+                              >
+                                <Trash2 className="mr-2 h-4 w-4" />
+                                Delete payment
+                              </DropdownMenuItem>
+                            )}
+                          </DropdownMenuContent>
+                        </DropdownMenu>
+                      )}
+                    </div>
+                  </TableCell>
+                </TableRow>
+              );
+            })}
+            {!rows.length && (
+              <TableRow>
+                <TableCell
+                  colSpan={12}
+                  className="h-36 text-center text-muted-foreground"
+                >
+                  <CheckCircle2 className="mx-auto mb-2 h-9 w-9 text-emerald-400" />
+                  No matching payment obligations.
+                </TableCell>
+              </TableRow>
+            )}
+          </TableBody>
+        </Table>
+      </TableCard>
       <PaymentDetail
         payment={selected}
         users={users}
@@ -957,7 +953,7 @@ function PaymentDetail({
                     </Button>
                   </a>
                 ) : (
-                  <Badge variant="outline">No receipt</Badge>
+                  <StatusBadge tone="neutral">No receipt</StatusBadge>
                 )}
               </div>
             ))}

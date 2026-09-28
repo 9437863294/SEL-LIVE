@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from 'react';
 import Link from 'next/link';
-import { Coins, Loader2, Search } from 'lucide-react';
+import { Coins, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -15,14 +15,19 @@ import {
   ADVANCE_REFERENCE_REQUIRED_MODES,
   TT_COLLECTIONS,
   roundMoney,
+  travelStatusLabel,
   type AdvancePaymentMode,
   type TravelPayment,
 } from '@/lib/tour-travel';
 import { TravelControlError, recordReimbursementPayment } from '@/lib/tour-travel-service';
 import { TT_PERMISSION_MODULE } from './module-layout-shell';
 import { useTravelActor, useTravelCollection } from './use-travel-config';
-import { Money, TravelDataList, TravelEmptyState, TravelFilterCard, TravelKpiCard, TravelLoader, TravelStatusBadge, travelDialog } from './travel-ui';
+import { Money, TravelEmptyState, TravelKpiCard, TravelLoader, travelDialog } from './travel-ui';
 import { PageHeader } from '@/components/shared/page-header';
+import { DataList } from '@/components/shared/data-list';
+import { FilterBar } from '@/components/shared/filter-bar';
+import { StatusBadge } from '@/components/shared/status-badge';
+import { TableCard } from '@/components/shared/table-card';
 
 const todayIso = () => new Date().toISOString().slice(0, 10);
 
@@ -87,83 +92,87 @@ export default function PaymentsRegister() {
         <TravelKpiCard label="Total Records" value={records.length} tone="slate" />
       </div>
 
-      <TravelFilterCard summary={`${filtered.length} payment(s)`}>
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-          <div className="sm:col-span-2">
-            <Label className="text-xs">Search</Label>
-            <div className="relative">
-              <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
-              <Input className="pl-8" value={search} onChange={event => setSearch(event.target.value)} placeholder="Reference, employee, UTR" />
-            </div>
-          </div>
-          <div>
-            <Label className="text-xs">Status</Label>
+      <TableCard
+        title="Reimbursement payments"
+        icon={Coins}
+        count={filtered.length}
+        total={records.length}
+        noun="payment"
+        toolbar={
+          <FilterBar
+            search={{ value: search, onChange: setSearch, placeholder: 'Reference, employee, UTR' }}
+            activeCount={status !== 'PENDING' ? 1 : 0}
+            onClear={() => { setSearch(''); setStatus('PENDING'); }}
+          >
             <Select value={status} onValueChange={setStatus}>
-              <SelectTrigger><SelectValue /></SelectTrigger>
+              <SelectTrigger aria-label="Status"><SelectValue /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="PENDING">Pending</SelectItem>
                 <SelectItem value="PAID">Paid</SelectItem>
-                <SelectItem value="all">All</SelectItem>
+                <SelectItem value="all">All statuses</SelectItem>
               </SelectContent>
             </Select>
-          </div>
+          </FilterBar>
+        }
+      >
+        <div className="p-3 sm:p-0">
+          <DataList
+            frameless
+            rows={filtered}
+            empty={<TravelEmptyState title="No reimbursements" description="Approved claims with an amount payable to the employee appear here." icon={Coins} />}
+            columns={[
+              { header: 'Reference', mobile: 'title', cell: payment => <span className="font-medium">{payment.referenceNumber}</span> },
+              { header: 'Employee', mobile: 'title', cell: payment => payment.employeeName },
+              { header: 'Status', mobile: 'aside', cell: payment => <StatusBadge status={payment.status}>{travelStatusLabel(payment.status)}</StatusBadge> },
+              {
+                header: 'Claim',
+                className: 'hidden md:table-cell',
+                mobile: 'omit',
+                cell: payment => (
+                  <Link href={`/tour-travel/claims/${payment.claimId}`} className="text-sky-700 hover:underline">
+                    View claim
+                  </Link>
+                ),
+              },
+              { header: 'Amount', align: 'right', cell: payment => <span className="font-medium"><Money value={payment.amount} /></span> },
+              { header: 'Paid on', cell: payment => <span className="tabular-nums">{payment.paymentDate || '—'}</span> },
+              {
+                header: 'Reference no.',
+                className: 'hidden lg:table-cell',
+                cell: payment => <span className="text-xs text-muted-foreground">{payment.transactionReference || '—'}</span>,
+              },
+              {
+                header: 'Action',
+                mobile: 'footer',
+                cell: payment => (
+                  <div className="flex flex-1 gap-2">
+                    {canPay && payment.status === 'PENDING' && (
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="h-7 px-2 text-xs"
+                        onClick={() => {
+                          setPaying(payment);
+                          setPayDate(todayIso());
+                          setPayReference('');
+                          setPayBankAccount('');
+                          setPayBankName('');
+                          setPayVoucher('');
+                        }}
+                      >
+                        Pay
+                      </Button>
+                    )}
+                    <Button asChild size="sm" variant="ghost" className="h-7 px-2 text-xs sm:hidden">
+                      <Link href={`/tour-travel/claims/${payment.claimId}`}>View claim</Link>
+                    </Button>
+                  </div>
+                ),
+              },
+            ]}
+          />
         </div>
-      </TravelFilterCard>
-
-      <TravelDataList
-        rows={filtered}
-        empty={<TravelEmptyState title="No reimbursements" description="Approved claims with an amount payable to the employee appear here." icon={Coins} />}
-        columns={[
-          { header: 'Reference', mobile: 'title', cell: payment => <span className="font-medium">{payment.referenceNumber}</span> },
-          { header: 'Employee', mobile: 'title', cell: payment => payment.employeeName },
-          { header: 'Status', mobile: 'aside', cell: payment => <TravelStatusBadge status={payment.status} /> },
-          {
-            header: 'Claim',
-            className: 'hidden md:table-cell',
-            mobile: 'omit',
-            cell: payment => (
-              <Link href={`/tour-travel/claims/${payment.claimId}`} className="text-sky-700 hover:underline">
-                View claim
-              </Link>
-            ),
-          },
-          { header: 'Amount', align: 'right', cell: payment => <span className="font-medium"><Money value={payment.amount} /></span> },
-          { header: 'Paid on', cell: payment => <span className="tabular-nums">{payment.paymentDate || '—'}</span> },
-          {
-            header: 'Reference no.',
-            className: 'hidden lg:table-cell',
-            cell: payment => <span className="text-xs text-muted-foreground">{payment.transactionReference || '—'}</span>,
-          },
-          {
-            header: 'Action',
-            mobile: 'footer',
-            cell: payment => (
-              <div className="flex flex-1 gap-2">
-                {canPay && payment.status === 'PENDING' && (
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    className="h-7 px-2 text-xs"
-                    onClick={() => {
-                      setPaying(payment);
-                      setPayDate(todayIso());
-                      setPayReference('');
-                      setPayBankAccount('');
-                      setPayBankName('');
-                      setPayVoucher('');
-                    }}
-                  >
-                    Pay
-                  </Button>
-                )}
-                <Button asChild size="sm" variant="ghost" className="h-7 px-2 text-xs sm:hidden">
-                  <Link href={`/tour-travel/claims/${payment.claimId}`}>View claim</Link>
-                </Button>
-              </div>
-            ),
-          },
-        ]}
-      />
+      </TableCard>
 
       <Dialog open={!!paying} onOpenChange={open => !open && setPaying(null)}>
         <DialogContent className={travelDialog.content}>

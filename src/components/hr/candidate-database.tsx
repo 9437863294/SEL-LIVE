@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from 'react';
 import Link from 'next/link';
-import { Ban, Download, Loader2, Plus, Search, ShieldAlert, Sparkles, Users } from 'lucide-react';
+import { Ban, Download, Loader2, Plus, ShieldAlert, Sparkles, Users } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
@@ -26,7 +26,6 @@ import {
   HrAlertNotice,
   HrDataList,
   HrEmptyState,
-  HrFilterCard,
   HrLoader,
   SensitiveMoney,
   hrDialog,
@@ -34,6 +33,9 @@ import {
 } from './hr-ui';
 import { useHrCollection, useHrConfig, useHrPermissions } from './use-hr-config';
 import { PageHeader } from '@/components/shared/page-header';
+import { FilterBar } from '@/components/shared/filter-bar';
+import { StatusBadge } from '@/components/shared/status-badge';
+import { TableCard } from '@/components/shared/table-card';
 
 /**
  * The candidate database of spec section 19 — one profile per person, never one per application.
@@ -140,17 +142,15 @@ export default function CandidateDatabase() {
       cell: row => (
         <div className="flex flex-wrap gap-1">
           {row.inTalentPool && (
-            <Badge variant="outline" className="gap-1 border-cyan-200 bg-cyan-50 text-cyan-700">
+            <Badge variant="outline" className="gap-1">
               <Sparkles className="h-3 w-3" /> Pool
             </Badge>
           )}
-          {row.isInternal && (
-            <Badge variant="outline" className="border-blue-200 bg-blue-50 text-blue-700">Internal</Badge>
-          )}
+          {row.isInternal && <Badge variant="outline">Internal</Badge>}
           {row.doNotHire && (
-            <Badge variant="outline" className="gap-1 border-rose-200 bg-rose-50 text-rose-700">
+            <StatusBadge tone="danger">
               <Ban className="h-3 w-3" /> Do not hire
-            </Badge>
+            </StatusBadge>
           )}
         </div>
       ),
@@ -221,24 +221,23 @@ export default function CandidateDatabase() {
         }
       />
 
-      <HrFilterCard summary={`${filtered.length} candidates`}>
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-          <div className="sm:col-span-2">
-            <Label className="text-xs">Search</Label>
-            <div className="relative">
-              <Search className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-              <Input
-                value={search}
-                onChange={event => setSearch(event.target.value)}
-                placeholder="Name, mobile, email, company, skill…"
-                className="pl-8"
-              />
-            </div>
-          </div>
-          <div>
-            <Label className="text-xs">Source</Label>
+      <TableCard
+        title="Candidates"
+        count={filtered.length}
+        total={candidates.length}
+        noun="candidate"
+        toolbar={
+          <FilterBar
+            search={{ value: search, onChange: setSearch, placeholder: 'Name, mobile, email, company, skill…' }}
+            activeCount={(source !== 'all' ? 1 : 0) + (poolOnly ? 1 : 0)}
+            onClear={() => {
+              setSearch('');
+              setSource('all');
+              setPoolOnly(false);
+            }}
+          >
             <Select value={source} onValueChange={setSource}>
-              <SelectTrigger><SelectValue /></SelectTrigger>
+              <SelectTrigger aria-label="Source"><SelectValue /></SelectTrigger>
               <SelectContent className="max-h-64">
                 <SelectItem value="all">All sources</SelectItem>
                 {RECRUITMENT_SOURCES.map(value => (
@@ -246,35 +245,36 @@ export default function CandidateDatabase() {
                 ))}
               </SelectContent>
             </Select>
-          </div>
-          <div className="flex items-end">
-            <label className="flex items-center gap-2 pb-2">
+            <label className="flex items-center gap-2">
               <Checkbox checked={poolOnly} onCheckedChange={value => setPoolOnly(value === true)} />
               <span className="text-sm">Talent pool only</span>
             </label>
-          </div>
-        </div>
-      </HrFilterCard>
-
-      <HrDataList
-        rows={filtered}
-        columns={columns}
-        rowClassName={row => (row.doNotHire ? 'bg-rose-50/40' : undefined)}
-        empty={
-          <HrEmptyState
-            icon={Users}
-            title="No candidates match"
-            description="Add a candidate once and apply them to as many requirements as you need."
-            action={
-              permissions.can('Add', 'Candidates') ? (
-                <Button size="sm" className="gap-2" onClick={() => setAddOpen(true)}>
-                  <Plus className="h-4 w-4" /> Add Candidate
-                </Button>
-              ) : undefined
+          </FilterBar>
+        }
+      >
+        <div className="p-3 sm:p-0">
+          <HrDataList
+            frameless
+            rows={filtered}
+            columns={columns}
+            rowClassName={row => (row.doNotHire ? 'bg-rose-50/40' : undefined)}
+            empty={
+              <HrEmptyState
+                icon={Users}
+                title="No candidates match"
+                description="Add a candidate once and apply them to as many requirements as you need."
+                action={
+                  permissions.can('Add', 'Candidates') ? (
+                    <Button size="sm" className="gap-2" onClick={() => setAddOpen(true)}>
+                      <Plus className="h-4 w-4" /> Add Candidate
+                    </Button>
+                  ) : undefined
+                }
+              />
             }
           />
-        }
-      />
+        </div>
+      </TableCard>
 
       <AddCandidateDialog open={addOpen} onOpenChange={setAddOpen} candidates={candidates} />
 

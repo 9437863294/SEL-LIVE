@@ -15,7 +15,7 @@
 
 import type { ReactNode } from "react";
 import Link from "next/link";
-import { Badge } from "@/components/ui/badge";
+import { StatusBadge } from "@/components/shared/status-badge";
 import {
   Table,
   TableBody,
@@ -71,7 +71,7 @@ import {
   buildTowerRouteMap,
 } from "@/lib/project-management-tower-map";
 import { ALL_SECTIONS_INCLUDED, type ReportInclude } from "./report-filter-bar";
-import { MissingPhotoPlate, TowerReportPhoto } from "./tower-progress-ui";
+import { ACTIVITY_STATUS_TONE, MissingPhotoPlate, TowerReportPhoto } from "./tower-progress-ui";
 
 /** How many towers a photo-heavy report renders on screen before asking for a narrower filter.
  *  Print is uncapped — a client report is meant to be long. */
@@ -256,9 +256,7 @@ function towerLink(ctx: ReportContext, towerId: string, towerNo: string): ReactN
 
 function statusCell(status: TowerActivityStatus): ReactNode {
   return (
-    <Badge className={cn(activityStatusStyles[status], "whitespace-nowrap text-[10px]")}>
-      {status}
-    </Badge>
+    <StatusBadge status={status} tone={ACTIVITY_STATUS_TONE[status]} />
   );
 }
 
@@ -690,8 +688,8 @@ function TowerStatusReport({ ctx }: { ctx: ReportContext }) {
               <TableCell className={cn(!ctx.print && PHONE_STICKY_CELL)}>
                 {towerLink(ctx, row.towerId, row.towerNo)}
               </TableCell>
-              <TableCell className="max-w-40 truncate text-xs">{dash(row.location)}</TableCell>
-              <TableCell className="text-xs">{dash(row.towerType)}</TableCell>
+              <TableCell className="max-w-40 truncate">{dash(row.location)}</TableCell>
+              <TableCell>{dash(row.towerType)}</TableCell>
               {row.cells.map((cell) => (
                 <TableCell key={cell.activity} className="text-center">
                   <span
@@ -1290,7 +1288,7 @@ function PhotoPagesReport({ ctx }: { ctx: ReportContext }) {
           </div>
 
           {ctx.include.status ? (
-            <Table className={ctx.print ? "text-[8pt]" : cn("text-sm", PHONE_TABLE)}>
+            <Table className={ctx.print ? "text-[8pt]" : PHONE_TABLE}>
               <TableHeader>
                 <TableRow>
                   <TableHead>Activity</TableHead>

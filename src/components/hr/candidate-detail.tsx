@@ -14,6 +14,7 @@ import {
   type Interview,
   type InterviewFeedback,
   type JoiningRecord,
+  hrStatusLabel,
 } from '@/lib/hr-requirement';
 import {
   HrAlertNotice,
@@ -21,12 +22,13 @@ import {
   HrEmptyState,
   HrField,
   HrLoader,
-  HrSection,
-  HrStatusBadge,
   SensitiveMoney,
+  hrBadgeTone,
 } from './hr-ui';
 import { useHrCollection, useHrConfig, useHrPermissions } from './use-hr-config';
 import { PageHeader } from '@/components/shared/page-header';
+import { StatusBadge } from '@/components/shared/status-badge';
+import { TableCard } from '@/components/shared/table-card';
 
 /**
  * One candidate, and every requirement they have ever been considered for (spec sections 19, 21).
@@ -167,7 +169,7 @@ export default function CandidateDetail({ candidateId }: { candidateId: string }
                 <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Skills</p>
                 <div className="mt-1 flex flex-wrap gap-1">
                   {candidate.skills.map(skill => (
-                    <Badge key={skill} variant="secondary" className="text-[10px]">{skill}</Badge>
+                    <Badge key={skill} variant="neutral">{skill}</Badge>
                   ))}
                 </div>
               </div>
@@ -211,7 +213,7 @@ export default function CandidateDetail({ candidateId }: { candidateId: string }
                 </p>
                 <div className="mt-1.5 flex flex-wrap gap-1">
                   {(candidate.talentPoolCategories || []).map(category => (
-                    <Badge key={category} variant="outline" className="border-cyan-300 bg-white text-[10px] text-cyan-800">
+                    <Badge key={category} variant="outline">
                       {category}
                     </Badge>
                   ))}
@@ -235,8 +237,10 @@ export default function CandidateDetail({ candidateId }: { candidateId: string }
 
       {/* Application history — the reason a single candidate master matters (spec section 21). */}
       <div className="mt-4 space-y-4">
-        <HrSection title="Application history" description="Every requirement this candidate has been considered for.">
+        <TableCard title="Application history" description="Every requirement this candidate has been considered for." scroll="natural">
+          <div className="p-3 sm:p-0">
           <HrDataList
+            frameless
             rows={scoped.applications}
             columns={[
               {
@@ -257,7 +261,15 @@ export default function CandidateDetail({ candidateId }: { candidateId: string }
                 cell: row => (row.latestInterviewScore ? `${row.latestInterviewScore}/5` : '—'),
               },
               { header: 'Panel', className: 'hidden xl:table-cell', cell: row => row.panelRecommendation || '—' },
-              { header: 'Stage', mobile: 'aside', cell: row => <HrStatusBadge status={row.stage} /> },
+              {
+                header: 'Stage',
+                mobile: 'aside',
+                cell: row => (
+                  <StatusBadge status={row.stage} tone={hrBadgeTone(row.stage)}>
+                    {hrStatusLabel(row.stage)}
+                  </StatusBadge>
+                ),
+              },
               {
                 header: 'Outcome',
                 className: 'hidden lg:table-cell',
@@ -266,10 +278,13 @@ export default function CandidateDetail({ candidateId }: { candidateId: string }
             ]}
             empty={<HrEmptyState icon={ExternalLink} title="No applications yet" description="This candidate has not been put forward for a requirement." />}
           />
-        </HrSection>
+          </div>
+        </TableCard>
 
-        <HrSection title="Interview history" description="Scores and the panel's view; written feedback stays with the panel.">
+        <TableCard title="Interview history" description="Scores and the panel's view; written feedback stays with the panel." scroll="natural">
+          <div className="p-3 sm:p-0">
           <HrDataList
+            frameless
             rows={scoped.interviews}
             columns={[
               { header: 'Round', mobile: 'title', cell: row => row.round },
@@ -306,21 +321,30 @@ export default function CandidateDetail({ candidateId }: { candidateId: string }
                 cell: row => (
                   <span className="inline-flex items-center gap-1.5">
                     {row.panelRecommendation || '—'}
-                    {row.hasDissent && (
-                      <Badge variant="outline" className="border-rose-200 bg-rose-50 text-[10px] text-rose-700">dissent</Badge>
-                    )}
+                    {row.hasDissent && <StatusBadge tone="danger">dissent</StatusBadge>}
                   </span>
                 ),
               },
-              { header: 'Status', mobile: 'aside', cell: row => <HrStatusBadge status={row.status} /> },
+              {
+                header: 'Status',
+                mobile: 'aside',
+                cell: row => (
+                  <StatusBadge status={row.status} tone={hrBadgeTone(row.status)}>
+                    {hrStatusLabel(row.status)}
+                  </StatusBadge>
+                ),
+              },
             ]}
             empty={<HrEmptyState icon={Star} title="No interviews yet" />}
           />
-        </HrSection>
+          </div>
+        </TableCard>
 
         {scoped.offers.length > 0 && (
-          <HrSection title="Offers">
+          <TableCard title="Offers" scroll="natural">
+            <div className="p-3 sm:p-0">
             <HrDataList
+              frameless
               rows={scoped.offers}
               columns={[
                 { header: 'Offer', mobile: 'title', cell: row => row.offerNumber },
@@ -331,7 +355,15 @@ export default function CandidateDetail({ candidateId }: { candidateId: string }
                   cell: row => <SensitiveMoney value={row.offeredCtc} canView={permissions.canViewSalary} />,
                 },
                 { header: 'Joining', cell: row => row.joiningDate || '—' },
-                { header: 'Status', mobile: 'aside', cell: row => <HrStatusBadge status={row.status} /> },
+                {
+                  header: 'Status',
+                  mobile: 'aside',
+                  cell: row => (
+                    <StatusBadge status={row.status} tone={hrBadgeTone(row.status)}>
+                      {hrStatusLabel(row.status)}
+                    </StatusBadge>
+                  ),
+                },
                 {
                   header: 'Outcome',
                   className: 'hidden lg:table-cell',
@@ -339,7 +371,8 @@ export default function CandidateDetail({ candidateId }: { candidateId: string }
                 },
               ]}
             />
-          </HrSection>
+            </div>
+          </TableCard>
         )}
       </div>
     </div>

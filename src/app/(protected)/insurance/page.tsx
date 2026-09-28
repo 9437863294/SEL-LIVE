@@ -203,7 +203,7 @@ export default function InsuranceDashboardPage() {
         description="Comprehensive coverage management for personal & project assets"
         badge={
           criticalAlerts.length > 0 && (
-            <Badge className="gap-1.5 bg-red-500/90 text-white shadow-sm text-xs">
+            <Badge variant="danger" className="gap-1.5">
               <AlertTriangle className="h-3 w-3" />
               {criticalAlerts.length} Critical Alert{criticalAlerts.length !== 1 ? 's' : ''}
             </Badge>

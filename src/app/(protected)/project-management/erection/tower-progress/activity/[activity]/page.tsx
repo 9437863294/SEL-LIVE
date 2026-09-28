@@ -13,11 +13,9 @@
 import { useMemo, useState } from "react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
-import { BarChart3, Camera, HardHat, RefreshCw, Search } from "lucide-react";
-import { Badge } from "@/components/ui/badge";
+import { BarChart3, Camera, HardHat, RefreshCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
 import { Progress } from "@/components/ui/progress";
 import {
   Select,
@@ -52,7 +50,7 @@ import { PmDataList, type PmListColumn } from "@/components/project-management/p
 import { useTowerProgress } from "@/components/project-management/tower-progress/tower-progress-provider";
 import { ProgressUpdateDialog } from "@/components/project-management/tower-progress/progress-update-dialog";
 import {
-  ActivityStatusBadge,
+  ACTIVITY_STATUS_TONE,
   EmptyState,
   MetricCard,
   TowerProgressGuard,
@@ -60,7 +58,9 @@ import {
   TowerProgressShell,
   TowerReportPhoto,
 } from "@/components/project-management/tower-progress/tower-progress-ui";
+import { FilterBar } from "@/components/shared/filter-bar";
 import { PageHeader } from "@/components/shared/page-header";
+import { StatusBadge } from "@/components/shared/status-badge";
 
 /** One register row: a tower with this activity's state and evidence position. */
 interface ActivityRow {
@@ -187,12 +187,11 @@ function ActivityWorkspace() {
     },
     {
       header: "Location",
-      className: "max-w-40 truncate text-xs",
+      className: "max-w-40 truncate",
       cell: ({ tower }) => tower.location || "—",
     },
     {
       header: "Contractor",
-      className: "text-xs",
       cell: ({ tower }) => tower.contractor || "—",
     },
     {
@@ -200,7 +199,7 @@ function ActivityWorkspace() {
       mobile: "aside",
       cell: ({ state, days }) => (
         <>
-          <ActivityStatusBadge status={state.status} />
+          <StatusBadge status={state.status} tone={ACTIVITY_STATUS_TONE[state.status]} />
           {!isActivityComplete(state.status) && days !== undefined ? (
             <p className="mt-1 text-[11px] text-muted-foreground max-sm:text-right">
               {days}d in status
@@ -211,12 +210,12 @@ function ActivityWorkspace() {
     },
     {
       header: "Started",
-      className: "text-xs",
+      className: "whitespace-nowrap",
       cell: ({ state }) => formatTowerDate(state.startedDate),
     },
     {
       header: "Completed",
-      className: "text-xs",
+      className: "whitespace-nowrap",
       cell: ({ state }) => formatTowerDate(state.completedDate),
     },
     ...(definition.measure === "span"
@@ -224,7 +223,7 @@ function ActivityWorkspace() {
           {
             header: "Length",
             align: "right" as const,
-            className: "text-xs",
+            className: "whitespace-nowrap tabular-nums",
             cell: ({ state }: ActivityRow) => (state.quantityM ? formatKm(state.quantityM) : "—"),
           },
         ]
@@ -233,14 +232,8 @@ function ActivityWorkspace() {
       header: "Evidence",
       className: "text-center",
       cell: ({ state, missing }) => (
-        <Badge
-          variant="outline"
-          className={cn(
-            "text-[10px]",
-            hasCompleteEvidence(activity, state)
-              ? "border-emerald-200 bg-emerald-50 text-emerald-700"
-              : "border-red-200 bg-red-50 text-red-700",
-          )}
+        <StatusBadge
+          tone={hasCompleteEvidence(activity, state) ? "success" : "danger"}
           title={
             missing.length
               ? `Missing: ${missing.map((kind) => TOWER_PHOTO_KIND_LABELS[kind]).join(", ")}`
@@ -248,7 +241,7 @@ function ActivityWorkspace() {
           }
         >
           {state.presentPhotoKinds.length}/{definition.requiredPhotoKinds.length}
-        </Badge>
+        </StatusBadge>
       ),
     },
     {
@@ -406,20 +399,19 @@ function ActivityWorkspace() {
               .
             </p>
           </div>
-          {/* Search across a phone, the filters two to a row beneath it. */}
-          <div className="grid grid-cols-2 gap-2 sm:flex sm:flex-row">
-            <div className="relative col-span-2 sm:w-52">
-              <Search className="absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
-              <Input
-                value={search}
-                onChange={(event) => setSearch(event.target.value)}
-                placeholder="Tower, location..."
-                className="pl-9"
-              />
-            </div>
+          <FilterBar
+            search={{ value: search, onChange: setSearch, placeholder: "Tower, location..." }}
+            activeCount={[section, contractor, status].filter((value) => value !== "All").length}
+            onClear={() => {
+              setSearch("");
+              setSection("All");
+              setContractor("All");
+              setStatus("All");
+            }}
+          >
             {sections.length ? (
               <Select value={section} onValueChange={setSection}>
-                <SelectTrigger className="sm:w-36">
+                <SelectTrigger>
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -434,7 +426,7 @@ function ActivityWorkspace() {
             ) : null}
             {contractors.length ? (
               <Select value={contractor} onValueChange={setContractor}>
-                <SelectTrigger className="sm:w-40">
+                <SelectTrigger>
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -451,7 +443,7 @@ function ActivityWorkspace() {
               value={status}
               onValueChange={(value) => setStatus(value as TowerActivityStatus | "All")}
             >
-              <SelectTrigger className="sm:w-44">
+              <SelectTrigger>
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -463,7 +455,7 @@ function ActivityWorkspace() {
                 ))}
               </SelectContent>
             </Select>
-          </div>
+          </FilterBar>
         </div>
 
         <PmDataList

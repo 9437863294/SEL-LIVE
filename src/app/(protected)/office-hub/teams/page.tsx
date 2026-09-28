@@ -11,11 +11,9 @@
 import Link from 'next/link';
 import { useEffect, useMemo, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
-import { Crown, Plus, Search, Users } from 'lucide-react';
-import { Badge } from '@/components/ui/badge';
+import { Crown, Plus, Users } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
-import { Input } from '@/components/ui/input';
 import { Skeleton } from '@/components/ui/skeleton';
 import {
   OFFICE_HUB_BASE_PATH,
@@ -32,11 +30,13 @@ import {
   OfficeHubEmptyState,
   OfficeHubKpiCard,
   PersonChip,
-  ResultCount,
   type OfficeHubListColumn,
 } from '@/components/office-hub/ui';
 import { TeamDialog, emptyTeamDraft } from '@/components/office-hub/team-form';
+import { FilterBar } from '@/components/shared/filter-bar';
 import { PageHeader } from '@/components/shared/page-header';
+import { StatusBadge } from '@/components/shared/status-badge';
+import { TableCard } from '@/components/shared/table-card';
 
 export default function TeamsPage() {
   const searchParams = useSearchParams();
@@ -140,18 +140,7 @@ export default function TeamsPage() {
       header: 'Status',
       mobile: 'detail',
       className: 'w-28',
-      cell: (team) => (
-        <Badge
-          variant="outline"
-          className={
-            team.status === 'Archived'
-              ? 'border-slate-200 bg-slate-50 text-[11px] text-slate-500'
-              : 'border-emerald-200 bg-emerald-50 text-[11px] text-emerald-700'
-          }
-        >
-          {team.status}
-        </Badge>
-      ),
+      cell: (team) => <StatusBadge status={team.status} />,
     },
     {
       header: '',
@@ -187,53 +176,63 @@ export default function TeamsPage() {
         <OfficeHubKpiCard label="Archived" value={all.filter((team) => team.status === 'Archived').length} icon={Users} tone="slate" />
       </div>
 
-      <div className="flex flex-wrap items-center gap-3">
-        <div className="relative min-w-[14rem] flex-1">
-          <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
-          <Input
-            value={search}
-            onChange={(event) => setSearch(event.target.value)}
-            placeholder="Search teams by name, leader or department"
-            className="bg-white pl-8"
-            aria-label="Search teams"
+      <TableCard
+        title="Team register"
+        icon={Users}
+        count={filtered.length}
+        total={all.length}
+        noun="team"
+        toolbar={
+          <FilterBar
+            search={{
+              value: search,
+              onChange: setSearch,
+              placeholder: 'Search teams by name, leader or department',
+              label: 'Search teams',
+            }}
+            activeCount={includeArchived ? 1 : 0}
+            onClear={() => {
+              setSearch('');
+              setIncludeArchived(false);
+            }}
+          >
+            <label className="flex cursor-pointer items-center gap-2 text-xs text-muted-foreground">
+              <Checkbox checked={includeArchived} onCheckedChange={(value) => setIncludeArchived(value === true)} />
+              Show archived
+            </label>
+          </FilterBar>
+        }
+      >
+        {teamsQuery.isLoading ? (
+          <Skeleton className="h-96 w-full rounded-xl" />
+        ) : (
+          <OfficeHubDataList
+            rows={filtered}
+            columns={columns}
+            cardHref={(team) => `${OFFICE_HUB_BASE_PATH}/teams/${team.id}`}
+            frameless
+            rowClassName={(team) => (team.status === 'Archived' ? 'opacity-60' : undefined)}
+            empty={
+              <OfficeHubEmptyState
+                icon={Users}
+                title={search ? 'No teams match that search.' : 'No teams yet.'}
+                description={
+                  search
+                    ? undefined
+                    : 'A team lets you invite a whole group to a meeting, or hand one task to several people, without picking names each time.'
+                }
+                action={
+                  capabilities.canCreateTeam && !search ? (
+                    <Button size="sm" onClick={() => setCreating(true)}>
+                      Create the first team
+                    </Button>
+                  ) : undefined
+                }
+              />
+            }
           />
-        </div>
-        <label className="flex cursor-pointer items-center gap-2 text-xs text-muted-foreground">
-          <Checkbox checked={includeArchived} onCheckedChange={(value) => setIncludeArchived(value === true)} />
-          Show archived
-        </label>
-      </div>
-
-      <ResultCount shown={filtered.length} total={all.length} noun="team" />
-
-      {teamsQuery.isLoading ? (
-        <Skeleton className="h-96 w-full rounded-xl" />
-      ) : (
-        <OfficeHubDataList
-          rows={filtered}
-          columns={columns}
-          cardHref={(team) => `${OFFICE_HUB_BASE_PATH}/teams/${team.id}`}
-          rowClassName={(team) => (team.status === 'Archived' ? 'opacity-60' : undefined)}
-          empty={
-            <OfficeHubEmptyState
-              icon={Users}
-              title={search ? 'No teams match that search.' : 'No teams yet.'}
-              description={
-                search
-                  ? undefined
-                  : 'A team lets you invite a whole group to a meeting, or hand one task to several people, without picking names each time.'
-              }
-              action={
-                capabilities.canCreateTeam && !search ? (
-                  <Button size="sm" onClick={() => setCreating(true)}>
-                    Create the first team
-                  </Button>
-                ) : undefined
-              }
-            />
-          }
-        />
-      )}
+        )}
+      </TableCard>
 
       <TeamDialog
         open={creating}

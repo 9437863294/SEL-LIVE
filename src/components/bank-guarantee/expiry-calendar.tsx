@@ -26,23 +26,18 @@ import {
   BG_COLLECTIONS,
   BG_PERMISSION_MODULE,
   bgLabel,
-  bgStatusTone,
   daysToBgDate,
   formatBgCurrency,
   toBgDate,
   toBgDateInput,
   type BankGuarantee,
 } from "@/lib/bank-guarantee";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { PageHeader } from "@/components/shared/page-header";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
+import { FilterBar } from "@/components/shared/filter-bar";
+import { StatusBadge, type StatusTone } from "@/components/shared/status-badge";
+import { TableCard } from "@/components/shared/table-card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   Select,
   SelectContent,
@@ -59,22 +54,18 @@ import {
   TableRow,
 } from "@/components/ui/table";
 
-const band = (days: number | null, status: string) =>
+const band = (days: number | null, status: string): StatusTone =>
   status === "CLOSED" || status === "CANCELLED"
-    ? "bg-slate-100 text-slate-600"
+    ? "neutral"
     : status === "CLAIM_PERIOD_ACTIVE"
-      ? "bg-violet-100 text-violet-700"
+      ? "progress"
       : days === null
-        ? "bg-slate-100"
-        : days < 0
-          ? "bg-red-950 text-white"
-          : days <= 7
-            ? "bg-rose-100 text-rose-800"
-            : days <= 30
-              ? "bg-orange-100 text-orange-800"
-              : days <= 90
-                ? "bg-amber-100 text-amber-800"
-                : "bg-blue-50 text-blue-700";
+        ? "neutral"
+        : days <= 7
+          ? "danger"
+          : days <= 90
+            ? "warning"
+            : "info";
 export default function BGExpiryCalendar() {
   const { user } = useAuth();
   const { can, isLoading: authLoading } = useAuthorization();
@@ -223,10 +214,26 @@ export default function BGExpiryCalendar() {
           </>
         }
       />
-      <Card>
-        <CardContent className="grid gap-2 p-3 sm:grid-cols-3">
+      <TableCard
+        title="Expiry calendar"
+        count={visible.length}
+        total={rows.length}
+        noun="BG"
+        toolbar={
+      <FilterBar
+        activeCount={
+          (windowDays !== "120" ? 1 : 0) +
+          (bank !== "ALL" ? 1 : 0) +
+          (project !== "ALL" ? 1 : 0)
+        }
+        onClear={() => {
+          setWindowDays("120");
+          setBank("ALL");
+          setProject("ALL");
+        }}
+      >
           <Select value={windowDays} onValueChange={setWindowDays}>
-            <SelectTrigger>
+            <SelectTrigger aria-label="Expiry window">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
@@ -239,7 +246,7 @@ export default function BGExpiryCalendar() {
             </SelectContent>
           </Select>
           <Select value={bank} onValueChange={setBank}>
-            <SelectTrigger>
+            <SelectTrigger aria-label="Bank">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
@@ -256,7 +263,7 @@ export default function BGExpiryCalendar() {
             </SelectContent>
           </Select>
           <Select value={project} onValueChange={setProject}>
-            <SelectTrigger>
+            <SelectTrigger aria-label="Project">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
@@ -272,11 +279,9 @@ export default function BGExpiryCalendar() {
               ))}
             </SelectContent>
           </Select>
-        </CardContent>
-      </Card>
-      <Card>
-        <CardContent className="p-0">
-          <div className="overflow-x-auto">
+      </FilterBar>
+        }
+      >
             <Table>
               <TableHeader>
                 <TableRow>
@@ -313,10 +318,10 @@ export default function BGExpiryCalendar() {
                       <TableCell className="text-right">
                         {formatBgCurrency(item.currentAmount, item.currency)}
                       </TableCell>
-                      <TableCell>
-                        <Badge className={band(days, item.status)}>
+                      <TableCell className="whitespace-nowrap">
+                        <StatusBadge tone={band(days, item.status)}>
                           {toBgDateInput(item.currentExpiryDate)} · {days}d
-                        </Badge>
+                        </StatusBadge>
                       </TableCell>
                       <TableCell>
                         {toBgDateInput(item.currentClaimExpiryDate)}
@@ -324,13 +329,10 @@ export default function BGExpiryCalendar() {
                           {daysToBgDate(item.currentClaimExpiryDate)} days
                         </p>
                       </TableCell>
-                      <TableCell>
-                        <Badge
-                          variant="outline"
-                          className={bgStatusTone(item.status)}
-                        >
+                      <TableCell className="whitespace-nowrap">
+                        <StatusBadge status={item.status}>
                           {bgLabel(item.status)}
-                        </Badge>
+                        </StatusBadge>
                       </TableCell>
                       <TableCell>
                         {canDecide ? (
@@ -374,9 +376,7 @@ export default function BGExpiryCalendar() {
                 )}
               </TableBody>
             </Table>
-          </div>
-        </CardContent>
-      </Card>
+      </TableCard>
     </div>
   );
 }

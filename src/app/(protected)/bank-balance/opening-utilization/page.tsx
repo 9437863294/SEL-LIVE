@@ -22,6 +22,7 @@ import {
   TableRow,
 } from '@/components/ui/table';
 import { Input } from '@/components/ui/input';
+import { TableCard } from '@/components/shared/table-card';
 import { useToast } from '@/hooks/use-toast';
 import { db } from '@/lib/firebase';
 import { collection, getDocs, doc, writeBatch } from 'firebase/firestore';
@@ -259,18 +260,13 @@ export default function OpeningUtilizationPage() {
         }
       />
 
-      <Card>
-        <CardHeader>
-          <CardTitle>
-            Cash Credit Accounts
-          </CardTitle>
-          <CardDescription>
-            Enter the opening
-            utilization values and
-            dates for each account.
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="p-0">
+      <TableCard
+        title="Cash Credit Accounts"
+        description="Enter the opening utilization values and dates for each account."
+        count={accounts.length}
+        noun="account"
+        scroll="natural"
+      >
           <Table>
             <TableHeader>
               <TableRow>
@@ -373,8 +369,7 @@ export default function OpeningUtilizationPage() {
               )}
             </TableBody>
           </Table>
-        </CardContent>
-      </Card>
+      </TableCard>
     </div>
     </>
   );

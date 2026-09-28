@@ -24,6 +24,8 @@ import { useAuthorization } from "@/hooks/useAuthorization";
 import { useToast } from "@/hooks/use-toast";
 import { Button } from "@/components/ui/button";
 import { PageHeader } from "@/components/shared/page-header";
+import { TableCard } from "@/components/shared/table-card";
+import { StatusBadge } from "@/components/shared/status-badge";
 import {
   Card,
   CardContent,
@@ -382,14 +384,7 @@ export default function VendorsPage() {
         }
       />
 
-      <Card className="overflow-hidden border-border/60">
-        <div className="h-1 w-full bg-gradient-to-r from-indigo-500 to-blue-600" />
-        <CardHeader>
-          <CardTitle>Vendor Registry</CardTitle>
-          <CardDescription>{vendors.length} vendor{vendors.length === 1 ? "" : "s"} on file.</CardDescription>
-        </CardHeader>
-        <CardContent className="p-0">
-          <div className="overflow-x-auto">
+      <TableCard title="Vendor Registry" icon={Truck} count={vendors.length} noun="vendor">
             <Table>
               <TableHeader>
                 <TableRow>
@@ -405,26 +400,18 @@ export default function VendorsPage() {
               <TableBody>
                 {vendors.length ? vendors.map((vendor) => (
                   <TableRow key={vendor.id}>
-                    <TableCell className="font-mono text-xs">{vendor.vendorCode}</TableCell>
+                    <TableCell className="whitespace-nowrap font-mono">{vendor.vendorCode}</TableCell>
                     <TableCell className="font-medium">{vendor.vendorName}</TableCell>
                     <TableCell>{vendor.category}</TableCell>
                     <TableCell>
-                      <div className="flex flex-col text-sm">
+                      <div className="flex flex-col">
                         <span>{vendor.contactPerson || "—"}</span>
                         <span className="text-xs text-muted-foreground">{vendor.phone || vendor.email || ""}</span>
                       </div>
                     </TableCell>
                     <TableCell>{vendor.gstin || "—"}</TableCell>
                     <TableCell>
-                      <span
-                        className={
-                          vendor.status === "Active"
-                            ? "rounded-full bg-emerald-100 px-2.5 py-1 text-xs font-medium text-emerald-700"
-                            : "rounded-full bg-muted px-2.5 py-1 text-xs font-medium text-muted-foreground"
-                        }
-                      >
-                        {vendor.status}
-                      </span>
+                      <StatusBadge status={vendor.status} />
                     </TableCell>
                     <TableCell className="text-right">
                       <div className="flex justify-end gap-2">
@@ -463,9 +450,7 @@ export default function VendorsPage() {
                 )}
               </TableBody>
             </Table>
-          </div>
-        </CardContent>
-      </Card>
+      </TableCard>
     </main>
   );
 }

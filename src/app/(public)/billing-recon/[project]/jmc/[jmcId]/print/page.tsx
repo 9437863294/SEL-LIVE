@@ -423,7 +423,7 @@ export default function PrintJmcPage() {
                   </TableHead>
                   <TableHead
                     colSpan={3}
-                    className="border-black text-center font-bold"
+                    className="border-black text-center"
                   >
                     QNTY EXECUTED
                   </TableHead>

@@ -12,6 +12,7 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from '@/components/ui/alert-dialog';
+import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import { AppearanceGallery } from '@/components/appearance/AppearanceGallery';
@@ -100,7 +101,7 @@ export default function MyAppearancePage() {
                 <RotateCcw className="h-3 w-3" aria-hidden="true" /> Use company default
               </Button>
             ) : (
-              <span className="rounded-full border px-2 py-0.5 text-[11px] font-medium text-muted-foreground">Company default</span>
+              <Badge variant="neutral">Company default</Badge>
             )
           }
         >

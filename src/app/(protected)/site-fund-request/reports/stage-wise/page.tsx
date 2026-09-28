@@ -13,6 +13,9 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Skeleton } from '@/components/ui/skeleton';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { TableCard } from '@/components/shared/table-card';
+import { FilterBar } from '@/components/shared/filter-bar';
 
 // ─── helpers ─────────────────────────────────────────────────────────────────
 
@@ -294,44 +297,33 @@ export default function StageWiseAnalysisPage() {
         }
       />
 
-      {/* Filters */}
-      <Card className="overflow-hidden bg-white/70 border border-white/70 rounded-2xl shadow-[0_20px_70px_-55px_rgba(2,6,23,0.55)] backdrop-blur">
-        <div className="h-1.5 w-full bg-gradient-to-r from-fuchsia-400 via-violet-400 to-purple-400 opacity-70" />
-        <CardContent className="p-4">
-          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
-            <div className="space-y-1">
-              <p className="text-xs font-medium text-slate-600">Financial Year</p>
-              <Select value={filterFY} onValueChange={setFilterFY}>
-                <SelectTrigger className="bg-white/80 border-white/70"><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All Years</SelectItem>
-                  {fyOptions.map(fy => <SelectItem key={fy} value={fy}>{fy}</SelectItem>)}
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="space-y-1">
-              <p className="text-xs font-medium text-slate-600">Month</p>
-              <Select value={filterMonth} onValueChange={setFilterMonth}>
-                <SelectTrigger className="bg-white/80 border-white/70"><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All Months</SelectItem>
-                  {MONTHS.map(m => <SelectItem key={m.value} value={m.value}>{m.label}</SelectItem>)}
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="space-y-1">
-              <p className="text-xs font-medium text-slate-600">Project</p>
-              <Select value={filterProject} onValueChange={setFilterProject}>
-                <SelectTrigger className="bg-white/80 border-white/70"><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All Projects</SelectItem>
-                  {projects.map(p => <SelectItem key={p.id} value={p.id}>{p.projectName}</SelectItem>)}
-                </SelectContent>
-              </Select>
-            </div>
-          </div>
-        </CardContent>
-      </Card>
+      {/* Filters — they drive the stats and every step table */}
+      <FilterBar
+        activeCount={[filterFY, filterMonth, filterProject].filter(v => v !== 'all').length}
+        onClear={() => { setFilterFY('all'); setFilterMonth('all'); setFilterProject('all'); }}
+      >
+        <Select value={filterFY} onValueChange={setFilterFY}>
+          <SelectTrigger aria-label="Financial Year"><SelectValue /></SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All Years</SelectItem>
+            {fyOptions.map(fy => <SelectItem key={fy} value={fy}>{fy}</SelectItem>)}
+          </SelectContent>
+        </Select>
+        <Select value={filterMonth} onValueChange={setFilterMonth}>
+          <SelectTrigger aria-label="Month"><SelectValue /></SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All Months</SelectItem>
+            {MONTHS.map(m => <SelectItem key={m.value} value={m.value}>{m.label}</SelectItem>)}
+          </SelectContent>
+        </Select>
+        <Select value={filterProject} onValueChange={setFilterProject}>
+          <SelectTrigger aria-label="Project"><SelectValue /></SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All Projects</SelectItem>
+            {projects.map(p => <SelectItem key={p.id} value={p.id}>{p.projectName}</SelectItem>)}
+          </SelectContent>
+        </Select>
+      </FilterBar>
 
       {/* Stats */}
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
@@ -368,45 +360,34 @@ export default function StageWiseAnalysisPage() {
       ) : (
         <div className="space-y-4">
           {stepAnalyses.map(({ step, userStats }) => (
-            <Card key={step.id} className="overflow-hidden rounded-2xl border border-white/70 bg-white/70 shadow-[0_20px_70px_-55px_rgba(2,6,23,0.55)] backdrop-blur">
-              <div className="h-1.5 w-full bg-gradient-to-r from-fuchsia-400 via-violet-400 to-purple-400 opacity-70" />
-              <CardHeader className="pb-2 pt-4 px-5">
-                <CardTitle className="text-slate-800">
-                  {step.name}
-                  <span className="ml-2 text-xs font-normal text-muted-foreground">TAT: {step.tat}h</span>
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="p-0">
+            <TableCard key={step.id} title={step.name} description={`TAT: ${step.tat}h`} scroll="natural">
                 {userStats.length === 0 ? (
-                  <p className="px-5 pb-5 text-xs text-muted-foreground">No activity in the selected period.</p>
+                  <p className="px-5 py-4 text-xs text-muted-foreground">No activity in the selected period.</p>
                 ) : (
-                  <div className="overflow-auto rounded-b-2xl border-t border-white/70 bg-white/80 max-h-72">
-                    <table className="w-full text-sm">
-                      <thead>
-                        <tr className="border-b bg-slate-50/90 sticky top-0 z-10">
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
                           {['User', 'Total Assigned', 'Completed', 'On Time', 'Rejected'].map(h => (
-                            <th key={h} className="px-4 py-2.5 text-left text-xs font-semibold uppercase tracking-wide text-slate-500 whitespace-nowrap">
+                            <TableHead key={h} className={h === 'User' ? undefined : 'text-right'}>
                               {h}
-                            </th>
+                            </TableHead>
                           ))}
-                        </tr>
-                      </thead>
-                      <tbody>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
                         {userStats.map(u => (
-                          <tr key={u.userId} className="border-b border-slate-100 hover:bg-slate-50/70 transition-colors">
-                            <td className="px-4 py-2.5 font-medium text-slate-700">{u.userName}</td>
-                            <td className="px-4 py-2.5 text-slate-600">{u.totalAssigned}</td>
-                            <td className="px-4 py-2.5 text-slate-600">{u.completed}</td>
-                            <td className="px-4 py-2.5 font-medium text-emerald-600">{u.onTime}</td>
-                            <td className="px-4 py-2.5 font-medium text-rose-600">{u.rejected}</td>
-                          </tr>
+                          <TableRow key={u.userId}>
+                            <TableCell className="font-medium">{u.userName}</TableCell>
+                            <TableCell className="text-right tabular-nums">{u.totalAssigned}</TableCell>
+                            <TableCell className="text-right tabular-nums">{u.completed}</TableCell>
+                            <TableCell className="text-right tabular-nums">{u.onTime}</TableCell>
+                            <TableCell className="text-right tabular-nums">{u.rejected}</TableCell>
+                          </TableRow>
                         ))}
-                      </tbody>
-                    </table>
-                  </div>
+                      </TableBody>
+                    </Table>
                 )}
-              </CardContent>
-            </Card>
+            </TableCard>
           ))}
         </div>
       )}

@@ -290,7 +290,7 @@ export default function OfficeHubSettingsPage() {
                     The bell in the header. Always on — it is the record of what you were told.
                   </p>
                 </div>
-                <Badge variant="outline" className="border-emerald-200 bg-emerald-50 text-[11px] text-emerald-700">
+                <Badge variant="success">
                   Always on
                 </Badge>
               </div>
@@ -481,7 +481,7 @@ export default function OfficeHubSettingsPage() {
             >
               <div className="mb-2 flex flex-wrap gap-1.5">
                 {office.meetingTypes.map((type) => (
-                  <Badge key={type} variant="outline" className="gap-1 border-slate-200 bg-white py-1 text-xs">
+                  <Badge key={type} variant="outline" className="gap-1">
                     {type}
                     {capabilities.canEditSettings && office.meetingTypes.length > 1 && (
                       <button

@@ -13,11 +13,12 @@ import { PM_FORM_KEYS, PM_FORM_REGISTRY, type PMFieldDef, type PMFormKey } from 
 import { PM_FIELD_CONTROL_DOC_ID, PM_SETTINGS_COLLECTION, type PMFieldSetting } from './use-field-control';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Switch } from '@/components/ui/switch';
 import { PmDataList, type PmListColumn } from '@/components/project-management/pm-shell';
+import { TableCard } from '@/components/shared/table-card';
 
 const MODULE = 'Project Management';
 const PERMISSION_RESOURCE = `${MODULE}.Settings`;
@@ -199,12 +200,12 @@ export default function ProjectManagementFieldControlSettings() {
       // The phone card's headline.
       header: 'Field key',
       mobile: 'title',
-      className: 'whitespace-nowrap text-xs text-muted-foreground',
+      className: 'whitespace-nowrap',
       cell: ({ field }) => (
         <>
           {field.key}
           {field.locked && (
-            <Badge variant="outline" className="ml-2 gap-1 text-[10px]">
+            <Badge variant="outline" className="ml-2 gap-1">
               <Lock className="h-2.5 w-2.5" /> Locked
             </Badge>
           )}
@@ -243,17 +244,11 @@ export default function ProjectManagementFieldControlSettings() {
         </div>
       )}
 
-      {/* On a phone the card drops its frame: the header reads as a section heading and the field
-          cards stand on the page, rather than sitting as cards inside a card. */}
-      <Card className="max-sm:border-0 max-sm:bg-transparent max-sm:shadow-none">
-        <CardHeader className="flex flex-col gap-3 max-sm:px-0 max-sm:pt-0 sm:flex-row sm:items-center sm:justify-between">
-          <div className="min-w-0">
-            <CardTitle className="flex items-center gap-2 text-lg sm:text-2xl">
-              <SlidersHorizontal className="h-5 w-5 shrink-0 text-indigo-600" />
-              {formDef.title}
-            </CardTitle>
-            <CardDescription>{formDef.description}</CardDescription>
-          </div>
+      <TableCard
+        title={formDef.title}
+        icon={SlidersHorizontal}
+        description={formDef.description}
+        actions={
           <div className="flex w-full items-center gap-2 sm:w-auto">
             <Select value={activeForm} onValueChange={(value) => setActiveForm(value as PMFormKey)}>
               <SelectTrigger className="min-w-0 flex-1 sm:w-64 sm:flex-none">
@@ -274,15 +269,16 @@ export default function ProjectManagementFieldControlSettings() {
               </Button>
             )}
           </div>
-        </CardHeader>
-        <CardContent className="p-0">
+        }
+      >
+        <div className="p-3 sm:p-0">
           <PmDataList
             rows={fieldRows}
             columns={columns}
             className="sm:rounded-none sm:border-0 sm:shadow-none"
           />
-        </CardContent>
-      </Card>
+        </div>
+      </TableCard>
       <p className="text-xs text-muted-foreground">
         Locked fields are required by the form's own logic — for example, the Scope 1/Scope 2/BOQ SL No
         combination a BOQ item's duplicate check keys off, or a Purchase Order's vendor and dates — so they

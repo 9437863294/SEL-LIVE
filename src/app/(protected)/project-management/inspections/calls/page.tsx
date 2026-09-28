@@ -43,14 +43,11 @@ import { INSPECTION_PERMISSION_RESOURCE, PUNCH_SEVERITIES, type PunchItem, type 
 import {
   buildInspectionRegisterRows,
   canIssueMdccForItem,
-  inspectionCallStatusStyles,
-  inspectionItemStatusStyles,
   inspectionPoLineKey,
   rejectedQtyOf,
   resultStatusFor,
   validateInspectionResult,
   type InspectionCallItem,
-  type InspectionCallStatus,
   type InspectionRegisterRow,
 } from "@/lib/project-management-inspection-quantity";
 import {
@@ -102,6 +99,8 @@ import {
 } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { PageHeader } from "@/components/shared/page-header";
+import { StatusBadge } from "@/components/shared/status-badge";
+import { pmStatusTone } from "@/components/project-management/pm-status-tones";
 
 const VIEWS = [
   { key: "all", label: "All calls", icon: ClipboardList },
@@ -494,10 +493,9 @@ export default function InspectionCallsPage() {
   // (desktop only) so the phone card's two-column grid stays left-aligned; the accepted/rejected
   // colours sit on the value so the cards keep them too.
   const lineColumns: PmListColumn<InspectionCallItem>[] = [
-    { header: "PO", className: "text-xs text-muted-foreground", cell: (line) => line.poNumber },
+    { header: "PO", className: "whitespace-nowrap", cell: (line) => line.poNumber },
     {
       header: "Item",
-      className: "text-sm",
       mobile: "title",
       cell: (line) => (
         <span className="block break-words sm:max-w-[24rem] sm:truncate">{line.itemDescription}</span>
@@ -505,13 +503,13 @@ export default function InspectionCallsPage() {
     },
     {
       header: "Cleared",
-      className: "text-xs text-muted-foreground",
+      className: "whitespace-nowrap",
       cell: (line) => {
         const ledger = workspace?.ledgers.get(inspectionPoLineKey(line.poId, line.poLineId));
         return ledger ? `${formatQuantity(ledger.clearedQty)} cleared` : "";
       },
     },
-    { header: "Unit", className: "text-right text-xs text-muted-foreground", cell: (line) => line.unit },
+    { header: "Unit", className: "text-right", cell: (line) => line.unit },
     {
       header: "Offered",
       className: "text-right tabular-nums",
@@ -538,18 +536,12 @@ export default function InspectionCallsPage() {
       header: "Status",
       mobile: "aside",
       cell: (line) => (
-        <Badge
-          variant="outline"
-          className={`border-transparent text-[11px] ${inspectionItemStatusStyles[line.status] ?? ""}`}
-        >
-          {line.status}
-        </Badge>
+        <StatusBadge status={line.status} tone={pmStatusTone(line.status)} />
       ),
     },
     {
       header: "Outcome",
       align: "right",
-      className: "text-xs",
       mobile: "aside",
       cell: (line) =>
         line.status === "Pending" ? (
@@ -578,10 +570,10 @@ export default function InspectionCallsPage() {
         ),
     },
     { header: "Call No.", mobile: "title", cell: (row) => <span className="font-medium">{row.callNumber}</span> },
-    { header: "Call date", className: "text-muted-foreground", cell: (row) => formatDate(row.callDate) },
-    { header: "Inspected", className: "text-muted-foreground", cell: (row) => formatDate(row.inspectionDate) },
+    { header: "Call date", className: "whitespace-nowrap", cell: (row) => formatDate(row.callDate) },
+    { header: "Inspected", className: "whitespace-nowrap", cell: (row) => formatDate(row.inspectionDate) },
     { header: "Vendor", mobile: "title", cell: (row) => row.vendorName },
-    { header: "Inspector", className: "text-muted-foreground", cell: (row) => row.inspectorName || "—" },
+    { header: "Inspector", cell: (row) => row.inspectorName || "—" },
     { header: "Lines", className: "text-right tabular-nums", cell: (row) => row.itemCount },
     {
       header: "Offered",
@@ -609,12 +601,7 @@ export default function InspectionCallsPage() {
       mobile: "aside",
       cell: (row) => (
         <>
-          <Badge
-            variant="outline"
-            className={`border-transparent ${inspectionCallStatusStyles[row.status as InspectionCallStatus] ?? ""}`}
-          >
-            {row.status}
-          </Badge>
+          <StatusBadge status={row.status} tone={pmStatusTone(row.status)} />
           {row.blockingPunchCount > 0 && (
             <span
               className="ml-1 inline-flex items-center gap-0.5 text-xs text-amber-700"
@@ -941,12 +928,7 @@ export default function InspectionCallsPage() {
                           {item.poNumber}
                         </p>
                       </div>
-                      <Badge
-                        variant="outline"
-                        className={cn("shrink-0", inspectionItemStatusStyles[outcome])}
-                      >
-                        {outcome}
-                      </Badge>
+                      <StatusBadge status={outcome} tone={pmStatusTone(outcome)} className="shrink-0" />
                     </div>
 
                     {/* The quantity decision, as the arithmetic it actually is: offered is fixed,

@@ -30,14 +30,18 @@ import { useActivityLogger } from '@/hooks/useActivityLogger';
 import { useToast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { PageHeader } from '@/components/shared/page-header';
+import { TableCard } from '@/components/shared/table-card';
+import { FilterBar } from '@/components/shared/filter-bar';
+import { StatusBadge, type StatusTone } from '@/components/shared/status-badge';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Badge } from '@/components/ui/badge';
 import {
+  Table,
   TableBody,
   TableCell,
   TableHead,
@@ -73,7 +77,7 @@ import {
 } from '@/components/ui/command';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import ExcelJS from 'exceljs';
-import { Check, ChevronsUpDown, Download, ExternalLink, Eye, FileUp, History, Loader2, Pencil, RefreshCw, RotateCcw, Search, ShieldCheck, Trash2, Upload } from 'lucide-react';
+import { Check, ChevronsUpDown, Download, ExternalLink, Eye, FileUp, History, Loader2, Pencil, RefreshCw, ShieldCheck, Trash2, Upload } from 'lucide-react';
 import { VehicleImportDialog, type ImportField } from '@/components/vehicle-management/import-dialog';
 import { VehicleTablePagination, useVehicleTablePagination } from '@/components/vehicle-management/table-pagination';
 
@@ -118,15 +122,20 @@ const mapRowToState = (row: InsuranceRow): InsuranceForm => ({
   remarks: String(row.remarks || ''),
 });
 
-const insuranceAlertClass = (stage: string) =>
-  cn(
-    'whitespace-nowrap border text-xs font-semibold',
-    stage === 'Expired' && 'border-rose-200 bg-rose-50 text-rose-700',
-    ['Due Today', '7d', '15d', '30d'].includes(stage) && 'border-amber-200 bg-amber-50 text-amber-700',
-    stage === 'Not Due' && 'border-emerald-200 bg-emerald-50 text-emerald-700',
-    stage === 'Missing' && 'border-slate-200 bg-slate-100 text-slate-600',
-    stage === 'Not Applicable' && 'border-slate-200 bg-slate-100 text-slate-500'
-  );
+/** Alert stages are this module's own words ("7d", "Not Due"), so their tone is stated here. */
+const insuranceAlertTone = (stage: string): StatusTone =>
+  stage === 'Expired'
+    ? 'danger'
+    : ['Due Today', '7d', '15d', '30d'].includes(stage)
+      ? 'warning'
+      : stage === 'Not Due'
+        ? 'success'
+        : 'neutral';
+
+function InsuranceAlertBadge({ stage }: { stage: unknown }) {
+  const value = String(stage || '');
+  return <StatusBadge status={value} tone={insuranceAlertTone(value)}>{value || '-'}</StatusBadge>;
+}
 
 export default function InsuranceManagementPage() {
   const { toast } = useToast();
@@ -698,7 +707,7 @@ export default function InsuranceManagementPage() {
         description="Manage current policies, renewals, expiry status, and policy history."
         icon={ShieldCheck}
         badge={
-          <Badge variant="outline" className="w-fit bg-white/70">
+          <Badge variant="neutral" className="w-fit">
             {rows.length} records
           </Badge>
         }
@@ -728,50 +737,67 @@ export default function InsuranceManagementPage() {
           </>
         }
       />
-      <Card className="vm-panel-strong overflow-hidden">
-        <CardContent className="space-y-4 px-3 pb-4 pt-4 sm:px-6 sm:pb-6 sm:pt-6">
-          <div className="grid grid-cols-3 gap-2">
-            <div className="rounded-xl border border-emerald-100 bg-emerald-50/70 px-3 py-2.5"><p className="text-[11px] font-semibold uppercase tracking-wide text-emerald-700">Current</p><p className="text-xl font-bold text-emerald-800">{currentCount}</p></div>
-            <div className="rounded-xl border border-amber-100 bg-amber-50/70 px-3 py-2.5"><p className="text-[11px] font-semibold uppercase tracking-wide text-amber-700">Needs Attention</p><p className="text-xl font-bold text-amber-800">{attentionCount}</p></div>
-            <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5"><p className="text-[11px] font-semibold uppercase tracking-wide text-slate-600">History</p><p className="text-xl font-bold text-slate-700">{historyCount}</p></div>
-          </div>
+      <div className="grid grid-cols-3 gap-2">
+        <div className="rounded-xl border border-emerald-100 bg-emerald-50/70 px-3 py-2.5"><p className="text-[11px] font-semibold uppercase tracking-wide text-emerald-700">Current</p><p className="text-xl font-bold text-emerald-800">{currentCount}</p></div>
+        <div className="rounded-xl border border-amber-100 bg-amber-50/70 px-3 py-2.5"><p className="text-[11px] font-semibold uppercase tracking-wide text-amber-700">Needs Attention</p><p className="text-xl font-bold text-amber-800">{attentionCount}</p></div>
+        <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5"><p className="text-[11px] font-semibold uppercase tracking-wide text-slate-600">History</p><p className="text-xl font-bold text-slate-700">{historyCount}</p></div>
+      </div>
 
-          <div className="rounded-xl border border-slate-200 bg-slate-50/80 p-3">
-            <div className="mb-3 flex w-full rounded-lg border border-slate-200 bg-slate-100 p-1 sm:w-fit">
-              <button type="button" onClick={() => setActiveTab('current')} className={cn('flex-1 rounded-md px-4 py-2 text-xs font-semibold transition-colors sm:flex-none', activeTab === 'current' ? 'bg-white text-emerald-700 shadow-sm' : 'text-slate-500 hover:text-slate-700')}>Current Policies <span className="ml-1 text-[10px] opacity-70">{currentCount}</span></button>
-              <button type="button" onClick={() => setActiveTab('history')} className={cn('flex flex-1 items-center justify-center gap-1.5 rounded-md px-4 py-2 text-xs font-semibold transition-colors sm:flex-none', activeTab === 'history' ? 'bg-white text-emerald-700 shadow-sm' : 'text-slate-500 hover:text-slate-700')}><History className="h-3.5 w-3.5" />History <span className="text-[10px] opacity-70">{historyCount}</span></button>
-            </div>
-            <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 xl:grid-cols-5">
-              <div className="relative sm:col-span-2 xl:col-span-1">
-                <Search className="pointer-events-none absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
-                <Input placeholder="Vehicle, policy or company..." value={query} onChange={(event) => setQuery(event.target.value)} className="h-10 bg-white pl-9" />
-              </div>
-              <Select value={policyTypeFilter} onValueChange={setPolicyTypeFilter}>
-                <SelectTrigger className="h-10 bg-white"><SelectValue placeholder="Policy type" /></SelectTrigger>
-                <SelectContent><SelectItem value="All">All Policy Types</SelectItem>{policyTypeOptions.map((option) => <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>)}</SelectContent>
-              </Select>
-              <Select value={statusFilter} onValueChange={setStatusFilter}>
-                <SelectTrigger className="h-10 bg-white"><SelectValue placeholder="Status" /></SelectTrigger>
-                <SelectContent>{['All', 'Valid', 'Due Soon', 'Expired', 'Missing'].map((status) => <SelectItem key={status} value={status}>{status === 'All' ? 'All Statuses' : status}</SelectItem>)}</SelectContent>
-              </Select>
-              <Select value={expiryFilter} onValueChange={setExpiryFilter}>
-                <SelectTrigger className="h-10 bg-white"><SelectValue placeholder="Expiry period" /></SelectTrigger>
-                <SelectContent>{['All', 'This Month', 'Next 30 Days', 'Next 90 Days', 'This Year'].map((period) => <SelectItem key={period} value={period}>{period === 'All' ? 'All Expiry Dates' : period}</SelectItem>)}</SelectContent>
-              </Select>
-              <Button type="button" variant="outline" onClick={resetFilters} className="h-10 bg-white"><RotateCcw className="mr-2 h-4 w-4" />Reset</Button>
-            </div>
-            <p className="mt-2 text-xs text-muted-foreground">Showing {filteredRows.length} of {activeTab === 'current' ? currentCount : historyCount} policies</p>
+      <TableCard
+        title={activeTab === 'current' ? 'Current Policies' : 'Policy History'}
+        icon={ShieldCheck}
+        count={filteredRows.length}
+        total={activeTab === 'current' ? currentCount : historyCount}
+        actions={
+          <div className="flex w-full rounded-lg border border-slate-200 bg-slate-100 p-1 sm:w-fit">
+            <button type="button" onClick={() => setActiveTab('current')} className={cn('flex-1 rounded-md px-4 py-2 text-xs font-semibold transition-colors sm:flex-none', activeTab === 'current' ? 'bg-white text-emerald-700 shadow-sm' : 'text-slate-500 hover:text-slate-700')}>Current Policies <span className="ml-1 text-[10px] opacity-70">{currentCount}</span></button>
+            <button type="button" onClick={() => setActiveTab('history')} className={cn('flex flex-1 items-center justify-center gap-1.5 rounded-md px-4 py-2 text-xs font-semibold transition-colors sm:flex-none', activeTab === 'history' ? 'bg-white text-emerald-700 shadow-sm' : 'text-slate-500 hover:text-slate-700')}><History className="h-3.5 w-3.5" />History <span className="text-[10px] opacity-70">{historyCount}</span></button>
           </div>
+        }
+        toolbar={
+          <FilterBar
+            search={{ value: query, onChange: setQuery, placeholder: 'Vehicle, policy or company...' }}
+            activeCount={[policyTypeFilter, statusFilter, expiryFilter].filter((value) => value !== 'All').length}
+            onClear={resetFilters}
+          >
+            <Select value={policyTypeFilter} onValueChange={setPolicyTypeFilter}>
+              <SelectTrigger><SelectValue placeholder="Policy type" /></SelectTrigger>
+              <SelectContent><SelectItem value="All">All Policy Types</SelectItem>{policyTypeOptions.map((option) => <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>)}</SelectContent>
+            </Select>
+            <Select value={statusFilter} onValueChange={setStatusFilter}>
+              <SelectTrigger><SelectValue placeholder="Status" /></SelectTrigger>
+              <SelectContent>{['All', 'Valid', 'Due Soon', 'Expired', 'Missing'].map((status) => <SelectItem key={status} value={status}>{status === 'All' ? 'All Statuses' : status}</SelectItem>)}</SelectContent>
+            </Select>
+            <Select value={expiryFilter} onValueChange={setExpiryFilter}>
+              <SelectTrigger><SelectValue placeholder="Expiry period" /></SelectTrigger>
+              <SelectContent>{['All', 'This Month', 'Next 30 Days', 'Next 90 Days', 'This Year'].map((period) => <SelectItem key={period} value={period}>{period === 'All' ? 'All Expiry Dates' : period}</SelectItem>)}</SelectContent>
+            </Select>
+          </FilterBar>
+        }
+        footer={
+          !isLoading && filteredRows.length > 0 ? (
+            <VehicleTablePagination
+              currentPage={insurancePagination.currentPage}
+              totalPages={insurancePagination.totalPages}
+              totalRows={filteredRows.length}
+              pageSize={insurancePagination.pageSize}
+              onPageChange={insurancePagination.setCurrentPage}
+            />
+          ) : undefined
+        }
+      >
+          {!isLoading && filteredRows.length === 0 ? (
+            <div className="px-4 py-10 text-center text-sm text-muted-foreground">
+              No records found.
+            </div>
+          ) : (
+          <>
           {/* Mobile card list — visible only on small screens */}
-          <div className="space-y-2.5 sm:hidden">
+          <div className="space-y-2.5 p-3 sm:hidden">
             {isLoading ? (
               Array.from({ length: 4 }).map((_, index) => (
                 <Skeleton key={index} className="h-36 w-full rounded-xl" />
               ))
-            ) : filteredRows.length === 0 ? (
-              <div className="rounded-lg border border-white/70 bg-white/80 px-4 py-10 text-center text-muted-foreground">
-                No records found.
-              </div>
             ) : (
               insurancePagination.paginatedRows.map((row) => (
                 <div key={row.id} role="button" tabIndex={0} onClick={() => setViewRow(row)} onKeyDown={(event) => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); setViewRow(row); } }} className="cursor-pointer rounded-xl border border-white/70 bg-white/85 p-4 shadow-sm transition-transform active:scale-[0.99]">
@@ -781,9 +807,7 @@ export default function InsuranceManagementPage() {
                       <p className="text-sm font-semibold text-slate-800">{row.vehicleNumber || '-'}</p>
                       <p className="text-xs text-muted-foreground">{row.insuranceCompany || '-'}</p>
                     </div>
-                    <Badge variant="outline" className={insuranceAlertClass(String(row.alertStage || ''))}>
-                      {row.alertStage || '-'}
-                    </Badge>
+                    <InsuranceAlertBadge stage={row.alertStage} />
                   </div>
                   {/* Key fields grid */}
                   <div className="space-y-2 text-sm">
@@ -820,14 +844,8 @@ export default function InsuranceManagementPage() {
 
           {/* Desktop table — hidden on small screens */}
           <div className="hidden sm:block">
-          {!isLoading && filteredRows.length === 0 ? (
-            <div className="rounded-lg border border-white/70 bg-white/80 px-4 py-10 text-center text-muted-foreground">
-              No records found.
-            </div>
-          ) : (
-          <div className="min-h-[320px] overflow-auto rounded-xl border border-slate-200 bg-white h-[calc(100vh-500px)]">
-            <table className="w-full caption-bottom text-sm">
-              <TableHeader className="sticky top-0 z-10 bg-slate-50 shadow-sm">
+            <Table containerClassName="overflow-visible">
+              <TableHeader>
                 <TableRow>
                   <TableHead>Vehicle Number</TableHead>
                   <TableHead>Insurance Company</TableHead>
@@ -852,12 +870,12 @@ export default function InsuranceManagementPage() {
                   ))
                 ) : (
                   insurancePagination.paginatedRows.map((row) => (
-                    <TableRow key={String(row.id)} tabIndex={0} onClick={() => setViewRow(row)} onKeyDown={(event) => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); setViewRow(row); } }} className="cursor-pointer transition-colors hover:bg-emerald-50/60 focus-visible:bg-emerald-50 focus-visible:outline-none">
-                      <TableCell className="font-semibold text-slate-800">{row.vehicleNumber || '-'}</TableCell>
+                    <TableRow key={String(row.id)} tabIndex={0} onClick={() => setViewRow(row)} onKeyDown={(event) => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); setViewRow(row); } }} className="cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring">
+                      <TableCell className="font-medium">{row.vehicleNumber || '-'}</TableCell>
                       <TableCell>{row.insuranceCompany || '-'}</TableCell>
-                      <TableCell>{row.policyNumber || '-'}</TableCell>
-                      <TableCell>{row.expiryDate || '-'}</TableCell>
-                      <TableCell><Badge variant="outline" className={insuranceAlertClass(String(row.alertStage || ''))}>{row.alertStage || '-'}</Badge></TableCell>
+                      <TableCell className="whitespace-nowrap">{row.policyNumber || '-'}</TableCell>
+                      <TableCell className="whitespace-nowrap">{row.expiryDate || '-'}</TableCell>
+                      <TableCell><InsuranceAlertBadge stage={row.alertStage} /></TableCell>
                       <TableCell>{row.renewalStatus || '-'}</TableCell>
                       <TableCell>{row.complianceStatus || '-'}</TableCell>
                       <TableCell className="whitespace-nowrap">{formatVehicleTimestamp(row.createdAt)}</TableCell>
@@ -889,19 +907,11 @@ export default function InsuranceManagementPage() {
                   ))
                 )}
               </TableBody>
-            </table>
+            </Table>
           </div>
+          </>
           )}
-          </div>
-          <VehicleTablePagination
-            currentPage={insurancePagination.currentPage}
-            totalPages={insurancePagination.totalPages}
-            totalRows={filteredRows.length}
-            pageSize={insurancePagination.pageSize}
-            onPageChange={insurancePagination.setCurrentPage}
-          />
-        </CardContent>
-      </Card>
+      </TableCard>
 
       <Dialog open={!!viewRow} onOpenChange={(open) => { if (!open) setViewRow(null); }}>
         <DialogContent size="default" className="vm-mobile-dialog flex max-h-[88dvh] w-[calc(100vw-1.5rem)] flex-col gap-0 overflow-hidden p-0 sm:max-w-2xl">
@@ -912,7 +922,7 @@ export default function InsuranceManagementPage() {
             </DialogHeader>
             {viewRow.isMissingRecord ? (
               <div className="min-h-0 flex-1 space-y-3 overflow-y-auto bg-slate-50/70 p-3">
-                <div className="flex flex-wrap gap-1.5"><Badge variant="outline" className={insuranceAlertClass('Missing')}>Missing</Badge></div>
+                <div className="flex flex-wrap gap-1.5"><InsuranceAlertBadge stage="Missing" /></div>
                 <section className="rounded-xl border border-dashed border-slate-300 bg-white p-4 text-center shadow-sm">
                   <p className="text-sm font-medium text-slate-700">No insurance record found for this vehicle.</p>
                   <p className="mt-1 text-xs text-muted-foreground">This vehicle requires insurance but has no policy on file yet.</p>
@@ -920,7 +930,7 @@ export default function InsuranceManagementPage() {
               </div>
             ) : (
             <div className="min-h-0 flex-1 space-y-3 overflow-y-auto bg-slate-50/70 p-3">
-              <div className="flex flex-wrap gap-1.5"><Badge variant="outline" className={insuranceAlertClass(String(viewRow.alertStage || ''))}>{viewRow.alertStage || '-'}</Badge><Badge variant="outline" className="bg-white">{viewRow.renewalStatus || '-'}</Badge><Badge variant="outline" className="bg-white">{viewRow.complianceStatus || '-'}</Badge></div>
+              <div className="flex flex-wrap gap-1.5"><InsuranceAlertBadge stage={viewRow.alertStage} /><StatusBadge status={viewRow.renewalStatus}>{viewRow.renewalStatus || '-'}</StatusBadge><StatusBadge status={viewRow.complianceStatus}>{viewRow.complianceStatus || '-'}</StatusBadge></div>
               <section className="rounded-xl border bg-white p-3 shadow-sm">
                 <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-600">Policy Details</p>
                 <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
@@ -964,7 +974,7 @@ export default function InsuranceManagementPage() {
             <div className="flex items-start gap-3">
               <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-emerald-500 to-teal-600 text-white shadow-lg shadow-emerald-500/20"><ShieldCheck className="h-5 w-5" /></div>
               <div className="min-w-0 flex-1">
-                {isRenewalMode && renewingFromId && !editingRow && <span className="mb-1 inline-flex rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-[10px] font-semibold text-amber-700">Renewing Existing Policy</span>}
+                {isRenewalMode && renewingFromId && !editingRow && <Badge variant="warning" className="mb-1">Renewing Existing Policy</Badge>}
                 <DialogTitle className="text-lg text-slate-900">{editingRow ? 'Edit Insurance Policy' : isRenewalMode && renewingFromId ? 'Renew Insurance Policy' : 'Add Insurance Policy'}</DialogTitle>
                 <DialogDescription className="mt-0.5">Policy information, coverage dates, value, agent, and document.</DialogDescription>
               </div>

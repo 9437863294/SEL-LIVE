@@ -10,10 +10,11 @@ import { useSortControl } from '@/components/site-account-statement/use-sort-con
 import { SortControl } from '@/components/site-account-statement/sort-control';
 import { useAuth } from '@/components/auth/AuthProvider';
 import { Button } from '@/components/ui/button';
-import { Badge } from '@/components/ui/badge';
-import { Card, CardContent } from '@/components/ui/card';
+import { Table, TableBody, TableCell, TableFooter, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { PageHeader } from '@/components/shared/page-header';
-import { Input } from '@/components/ui/input';
+import { TableCard } from '@/components/shared/table-card';
+import { FilterBar } from '@/components/shared/filter-bar';
+import { StatusBadge } from '@/components/shared/status-badge';
 import { Skeleton } from '@/components/ui/skeleton';
 import { cn } from '@/lib/utils';
 import { AlertTriangle, CheckCircle2, Download, Loader2, ShieldAlert, Target, TrendingDown, TrendingUp, Wallet } from 'lucide-react';
@@ -154,9 +155,9 @@ export default function BalanceStatusPage() {
   }
 
   const statusConfig = {
-    healthy:  { label: 'Healthy',  icon: CheckCircle2,  color: 'text-emerald-600', bg: 'bg-emerald-50',  border: 'border-emerald-200', badge: 'bg-emerald-100 text-emerald-700' },
-    warning:  { label: 'Warning',  icon: AlertTriangle, color: 'text-amber-600',   bg: 'bg-amber-50',    border: 'border-amber-200',   badge: 'bg-amber-100 text-amber-700'    },
-    critical: { label: 'Critical', icon: ShieldAlert,   color: 'text-destructive', bg: 'bg-red-50',      border: 'border-red-200',     badge: 'bg-red-100 text-red-700'        },
+    healthy:  { label: 'Healthy',  icon: CheckCircle2,  color: 'text-emerald-600', bg: 'bg-emerald-50',  border: 'border-emerald-200', tone: 'success' as const },
+    warning:  { label: 'Warning',  icon: AlertTriangle, color: 'text-amber-600',   bg: 'bg-amber-50',    border: 'border-amber-200',   tone: 'warning' as const },
+    critical: { label: 'Critical', icon: ShieldAlert,   color: 'text-destructive', bg: 'bg-red-50',      border: 'border-red-200',     tone: 'danger' as const  },
   };
 
   return (
@@ -200,97 +201,95 @@ export default function BalanceStatusPage() {
         })}
       </div>
 
-      {/* Search */}
-      <div className="flex gap-2 flex-wrap">
-        <Input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search project or person..." className="h-9 text-sm max-w-xs" />
-        <SortControl control={sortControl} />
-        {filterStatus && (
-          <Button variant="outline" size="sm" className="h-9 gap-1" onClick={() => setFilterStatus('')}>
-            Clear: {statusConfig[filterStatus].label}
-          </Button>
-        )}
-      </div>
-
       {/* Table */}
+      <TableCard
+        title="Project balances"
+        count={filtered.length}
+        total={projectStats.length}
+        noun="project"
+        toolbar={
+          <FilterBar
+            search={{ value: search, onChange: setSearch, placeholder: 'Search project or person...' }}
+            activeCount={filterStatus ? 1 : 0}
+            onClear={() => { setSearch(''); setFilterStatus(''); }}
+            summary={filterStatus ? `Status: ${statusConfig[filterStatus].label}` : undefined}
+          >
+            <SortControl control={sortControl} />
+          </FilterBar>
+        }
+      >
       {filtered.length === 0 ? (
-        <Card className="bg-white/80">
-          <CardContent className="flex flex-col items-center gap-3 py-12">
+          <div className="flex flex-col items-center gap-3 py-12">
             <Wallet className="h-10 w-10 text-muted-foreground/40" />
             <p className="text-sm text-muted-foreground">No projects match the selected filter.</p>
-          </CardContent>
-        </Card>
+          </div>
       ) : (
-        <Card className="bg-white/80 backdrop-blur-sm">
-          <CardContent className="p-0">
-            <div className="overflow-x-auto overflow-y-auto max-h-[60vh]">
-              <table className="min-w-[700px] w-full text-sm">
-                <thead className="sticky top-0 z-10">
-                  <tr className="border-b bg-slate-100">
-                    <th className="px-4 py-2.5 text-left font-medium">#</th>
-                    <th className="px-4 py-2.5 text-left font-medium">Project</th>
-                    <th className="px-4 py-2.5 text-left font-medium">Assigned To</th>
-                    <th className="px-4 py-2.5 text-right font-medium">
+              <Table className="min-w-[700px]">
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>#</TableHead>
+                    <TableHead>Project</TableHead>
+                    <TableHead>Assigned To</TableHead>
+                    <TableHead className="text-right">
                       <span className="flex items-center justify-end gap-1"><TrendingUp className="h-3.5 w-3.5 text-blue-500" />Received</span>
-                    </th>
-                    <th className="px-4 py-2.5 text-right font-medium">
+                    </TableHead>
+                    <TableHead className="text-right">
                       <span className="flex items-center justify-end gap-1"><TrendingDown className="h-3.5 w-3.5 text-rose-500" />Expenses</span>
-                    </th>
-                    <th className="px-4 py-2.5 text-right font-medium">
+                    </TableHead>
+                    <TableHead className="text-right">
                       <span className="flex items-center justify-end gap-1"><Wallet className="h-3.5 w-3.5 text-emerald-500" />Balance</span>
-                    </th>
-                    <th className="px-4 py-2.5 text-right font-medium">
+                    </TableHead>
+                    <TableHead className="text-right">
                       <span className="flex items-center justify-end gap-1"><Target className="h-3.5 w-3.5 text-emerald-500" />Budget Used</span>
-                    </th>
-                    <th className="px-4 py-2.5 text-center font-medium">Status</th>
-                  </tr>
-                </thead>
-                <tbody>
+                    </TableHead>
+                    <TableHead className="text-center">Status</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
                   {sorted.map((proj, idx) => {
                     const cfg = statusConfig[proj.status];
                     return (
-                      <tr key={proj.id} className={cn('border-b hover:bg-muted/20 transition-colors', proj.status === 'critical' && 'bg-red-50/30')}>
-                        <td className="px-4 py-2.5 text-muted-foreground">{idx + 1}</td>
-                        <td className="px-4 py-2.5">
+                      <TableRow key={proj.id} className={cn(proj.status === 'critical' && 'bg-rose-50/60')}>
+                        <TableCell className="tabular-nums">{idx + 1}</TableCell>
+                        <TableCell>
                           <p className="font-medium">{proj.name}</p>
                           {proj.code && <p className="text-xs text-muted-foreground">{proj.code}</p>}
-                        </td>
-                        <td className="px-4 py-2.5 text-muted-foreground">{proj.assignedPerson}</td>
-                        <td className="px-4 py-2.5 text-right text-blue-600">{formatINR(proj.received)}</td>
-                        <td className="px-4 py-2.5 text-right text-rose-600">{formatINR(proj.spent)}</td>
-                        <td className={cn('px-4 py-2.5 text-right font-semibold', proj.balance >= 0 ? 'text-emerald-600' : 'text-destructive')}>
+                        </TableCell>
+                        <TableCell>{proj.assignedPerson}</TableCell>
+                        <TableCell className="text-right whitespace-nowrap tabular-nums text-blue-600">{formatINR(proj.received)}</TableCell>
+                        <TableCell className="text-right whitespace-nowrap tabular-nums text-rose-600">{formatINR(proj.spent)}</TableCell>
+                        <TableCell className={cn('text-right whitespace-nowrap tabular-nums font-medium', proj.balance >= 0 ? 'text-emerald-600' : 'text-destructive')}>
                           {formatINR(proj.balance)}
-                        </td>
-                        <td className="px-4 py-2.5 text-right">
+                        </TableCell>
+                        <TableCell className="text-right whitespace-nowrap tabular-nums">
                           {proj.totalBudget > 0 ? (
-                            <span className={cn('text-sm font-medium', proj.budgetUsedPct >= 100 ? 'text-destructive' : proj.budgetUsedPct >= 80 ? 'text-amber-600' : 'text-emerald-600')}>
+                            <span className={cn('font-medium', proj.budgetUsedPct >= 100 ? 'text-destructive' : proj.budgetUsedPct >= 80 ? 'text-amber-600' : 'text-emerald-600')}>
                               {proj.budgetUsedPct.toFixed(1)}%
                             </span>
-                          ) : <span className="text-muted-foreground text-xs">—</span>}
-                        </td>
-                        <td className="px-4 py-2.5 text-center">
-                          <Badge className={cn('text-xs', cfg.badge)}>{cfg.label}</Badge>
-                        </td>
-                      </tr>
+                          ) : <span className="text-muted-foreground">—</span>}
+                        </TableCell>
+                        <TableCell className="text-center">
+                          <StatusBadge status={proj.status} tone={cfg.tone}>{cfg.label}</StatusBadge>
+                        </TableCell>
+                      </TableRow>
                     );
                   })}
-                </tbody>
-                <tfoot>
-                  <tr className="bg-muted/30 font-bold">
-                    <td colSpan={3} className="px-4 py-2.5">Total ({filtered.length} projects)</td>
-                    <td className="px-4 py-2.5 text-right text-blue-700">{formatINR(totals.received)}</td>
-                    <td className="px-4 py-2.5 text-right text-rose-700">{formatINR(totals.spent)}</td>
-                    <td className={cn('px-4 py-2.5 text-right', totals.balance >= 0 ? 'text-emerald-700' : 'text-destructive')}>
+                </TableBody>
+                <TableFooter>
+                  <TableRow>
+                    <TableCell colSpan={3}>Total ({filtered.length} projects)</TableCell>
+                    <TableCell className="text-right whitespace-nowrap tabular-nums text-blue-700">{formatINR(totals.received)}</TableCell>
+                    <TableCell className="text-right whitespace-nowrap tabular-nums text-rose-700">{formatINR(totals.spent)}</TableCell>
+                    <TableCell className={cn('text-right whitespace-nowrap tabular-nums', totals.balance >= 0 ? 'text-emerald-700' : 'text-destructive')}>
                       {formatINR(totals.balance)}
-                    </td>
-                    <td />
-                    <td />
-                  </tr>
-                </tfoot>
-              </table>
-            </div>
-          </CardContent>
-        </Card>
+                    </TableCell>
+                    <TableCell />
+                    <TableCell />
+                  </TableRow>
+                </TableFooter>
+              </Table>
       )}
+      </TableCard>
     </div>
   );
 }

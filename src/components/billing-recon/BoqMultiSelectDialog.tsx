@@ -11,11 +11,11 @@ import {
   DialogDescription,
 } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
 import { Checkbox } from '@/components/ui/checkbox';
 import { ScrollArea } from '@/components/ui/scroll-area';
+import { FilterBar } from '@/components/shared/filter-bar';
 import type { BoqItem } from '@/lib/types';
-import { Search, Loader2, ArrowUpDown } from 'lucide-react';
+import { Loader2, ArrowUpDown } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import {
   Select,
@@ -290,18 +290,15 @@ export function BoqMultiSelectDialog({
         </DialogHeader>
 
         <div className="hr-dialog-body py-4">
-          <div className="flex flex-col sm:flex-row items-center gap-2 mb-4">
-            <div className="relative flex-grow w-full">
-              <Search className="absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-              <Input
-                placeholder="Search..."
-                aria-label="Search items"
-                value={searchInput}
-                onChange={(e) => setSearchInput(e.target.value)}
-                className="pl-8"
-              />
-            </div>
-
+          <FilterBar
+            className="mb-4"
+            search={{ value: searchInput, onChange: setSearchInput, placeholder: 'Search...', label: 'Search items' }}
+            activeCount={(['Scope 1', 'Scope 2', 'Category 1'] as const).filter((k) => filters[k] !== 'all').length}
+            onClear={() => {
+              setSearchInput('');
+              handleFilterChange('Scope 1', 'all');
+            }}
+          >
             {(['Scope 1', 'Scope 2', 'Category 1'] as const).map((key) => {
               const options = filterOptions[key];
               if (!options || options.length === 0) return null;
@@ -311,7 +308,7 @@ export function BoqMultiSelectDialog({
                   value={filters[key]}
                   onValueChange={(v) => handleFilterChange(key, v)}
                 >
-                  <SelectTrigger className="w-full sm:w-[180px]">
+                  <SelectTrigger>
                     <SelectValue placeholder={`Filter by ${key}`} />
                   </SelectTrigger>
                   <SelectContent>
@@ -325,7 +322,7 @@ export function BoqMultiSelectDialog({
                 </Select>
               );
             })}
-          </div>
+          </FilterBar>
 
           {/* No fixed height on a phone: the sheet's body is already the scroller. */}
           <ScrollArea className="border rounded-md sm:h-96">

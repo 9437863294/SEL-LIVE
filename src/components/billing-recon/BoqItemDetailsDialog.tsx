@@ -117,14 +117,9 @@ const compositeKey = (scope2: unknown, slNo: unknown) =>
   `${String(scope2 ?? '').trim().toLowerCase()}__${String(slNo ?? '').trim()}`;
 
 /**
- * The breakdowns render through the shared DataList so a phone gets one card per entry. On a
- * desktop these put back this dialog's own table look — sentence-case headers on the card
- * background — over the list's tinted small-caps header band.
+ * The breakdowns render through the shared DataList so a phone gets one card per entry. The list's
+ * phone cards are near-white on near-white inside this dialog; a real border separates them.
  */
-const BREAKDOWN_TABLE =
-  '[&_thead]:bg-transparent [&_th]:h-12 [&_th]:text-sm [&_th]:font-medium [&_th]:normal-case [&_th]:tracking-normal [&_th]:text-muted-foreground';
-
-/** The list's phone cards are near-white on near-white inside this dialog; a real border separates them. */
 const breakdownCard = () => 'max-sm:border-border';
 
 function BreakdownEmpty({ children }: { children: ReactNode }) {
@@ -461,7 +456,6 @@ export default function BoqItemDetailsDialog({
                             }))}
                             columns={jmcColumns}
                             frameless
-                            tableClassName={BREAKDOWN_TABLE}
                             rowClassName={breakdownCard}
                             empty={<BreakdownEmpty>No JMC entries found for this item.</BreakdownEmpty>}
                           />
@@ -480,7 +474,6 @@ export default function BoqItemDetailsDialog({
                             }))}
                             columns={mvacColumns}
                             frameless
-                            tableClassName={BREAKDOWN_TABLE}
                             rowClassName={breakdownCard}
                             empty={<BreakdownEmpty>No MVAC entries found.</BreakdownEmpty>}
                           />
@@ -500,7 +493,6 @@ export default function BoqItemDetailsDialog({
                           }))}
                           columns={billColumns}
                           frameless
-                          tableClassName={BREAKDOWN_TABLE}
                           rowClassName={breakdownCard}
                           empty={<BreakdownEmpty>No bills found for this item.</BreakdownEmpty>}
                         />

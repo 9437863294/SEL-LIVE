@@ -10,9 +10,7 @@ import {
   Loader2,
   Plus,
   RefreshCw,
-  Search,
   TrendingDown,
-  X,
   XCircle,
 } from 'lucide-react';
 import { format } from 'date-fns';
@@ -49,6 +47,9 @@ import { Label } from '@/components/ui/label';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { PageHeader } from '@/components/shared/page-header';
+import { TableCard } from '@/components/shared/table-card';
+import { SearchInput } from '@/components/shared/filter-bar';
+import { StatusBadge } from '@/components/shared/status-badge';
 import { cn } from '@/lib/utils';
 
 // ─── helpers ─────────────────────────────────────────────────────────────────
@@ -57,12 +58,6 @@ const fmtCur = (n: number) =>
   new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 0 }).format(n || 0);
 
 const fmtDate = (d: string) => { try { return format(new Date(d), 'dd MMM yyyy'); } catch { return d || '—'; } };
-
-const STATUS_CFG: Record<string, { cls: string; dot: string }> = {
-  Active:                { cls: 'bg-emerald-100 text-emerald-700 border-emerald-200', dot: 'bg-emerald-500' },
-  Closed:                { cls: 'bg-slate-100 text-slate-600 border-slate-200',       dot: 'bg-slate-400' },
-  'Pre-closure Pending': { cls: 'bg-amber-100 text-amber-700 border-amber-200',       dot: 'bg-amber-400' },
-};
 
 interface LoanWithDetails extends Loan {
   totalInterest: number;
@@ -212,20 +207,17 @@ export default function ManageLoanPage() {
         </CardContent>
       </Card>
 
-      {/* Search */}
-      <div className="flex items-center gap-2">
-        <div className="relative flex-1 max-w-sm">
-          <Search className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
-          <Input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search lender, account no…" className="pl-8 h-9 text-sm" />
-          {search && <button onClick={() => setSearch('')} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"><X className="h-3.5 w-3.5" /></button>}
-        </div>
-        <span className="text-xs text-muted-foreground">{filtered.length} loans</span>
-      </div>
-
+      <TableCard
+        title="Loans"
+        icon={Briefcase}
+        count={filtered.length}
+        total={loans.length}
+        noun="loan"
+        toolbar={<SearchInput value={search} onChange={setSearch} placeholder="Search lender, account no…" className="sm:max-w-sm" />}
+      >
       {/* Mobile cards */}
-      <div className="space-y-2 sm:hidden">
+      <div className="space-y-2 p-3 sm:hidden">
         {filtered.map((loan) => {
-          const cfg = STATUS_CFG[loan.status] ?? { cls: '', dot: 'bg-slate-400' };
           const pctPaid = loan.tenure > 0 ? Math.round((loan.paidCount / loan.tenure) * 100) : 0;
           return (
             <Card key={loan.id} className="border-border/60 cursor-pointer" onClick={() => router.push(`/loan/${loan.id}`)}>
@@ -235,7 +227,7 @@ export default function ManageLoanPage() {
                     <p className="font-semibold text-sm">{loan.lenderName}</p>
                     <p className="text-xs text-muted-foreground font-mono">{loan.accountNo}</p>
                   </div>
-                  <Badge variant="outline" className={cn('text-[10px] shrink-0', cfg.cls)}>{loan.status}</Badge>
+                  <StatusBadge status={loan.status} className="shrink-0" />
                 </div>
                 <div className="grid grid-cols-2 gap-1 text-xs">
                   <div><span className="text-muted-foreground">Principal: </span>{fmtCur(loan.loanAmount)}</div>
@@ -253,12 +245,9 @@ export default function ManageLoanPage() {
       </div>
 
       {/* Desktop table */}
-      <Card className="hidden sm:block overflow-hidden border-border/60">
-        <div className="overflow-x-auto">
-          <Table>
+          <Table containerClassName="hidden sm:block">
             <TableHeader>
-              <TableRow className="bg-muted/40 hover:bg-muted/40">
-                <TableHead className="w-6" />
+              <TableRow>
                 <TableHead>Lender</TableHead>
                 <TableHead>A/C No</TableHead>
                 <TableHead>Type</TableHead>
@@ -278,33 +267,31 @@ export default function ManageLoanPage() {
             <TableBody>
               {filtered.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={15} className="h-32 text-center text-muted-foreground">No loans found.</TableCell>
+                  <TableCell colSpan={14} className="h-32 text-center text-muted-foreground">No loans found.</TableCell>
                 </TableRow>
               ) : filtered.map((loan) => {
-                const cfg = STATUS_CFG[loan.status] ?? { cls: '', dot: 'bg-slate-400' };
                 return (
                   <TableRow
                     key={loan.id}
-                    className="cursor-pointer transition-colors hover:bg-muted/20"
+                    className="cursor-pointer"
                     onClick={() => router.push(`/loan/${loan.id}`)}
                   >
-                    <TableCell className="pr-0"><div className={cn('h-2 w-2 rounded-full mx-auto', cfg.dot)} /></TableCell>
                     <TableCell className="font-medium">{loan.lenderName}</TableCell>
-                    <TableCell className="font-mono text-xs">{loan.accountNo}</TableCell>
-                    <TableCell><Badge variant="outline" className="text-[10px]">{loan.loanType || 'Loan'}</Badge></TableCell>
-                    <TableCell className="text-right">{fmtCur(loan.loanAmount)}</TableCell>
-                    <TableCell className="text-right">{fmtCur(loan.totalInterest)}</TableCell>
-                    <TableCell className="text-right">{fmtCur(loan.emiAmount)}</TableCell>
-                    <TableCell className="text-center">{loan.tenure}m</TableCell>
-                    <TableCell className="text-sm">{fmtDate(loan.startDate)}</TableCell>
-                    <TableCell className="text-sm text-muted-foreground">{fmtDate(loan.endDate)}</TableCell>
-                    <TableCell className="text-sm">{loan.linkedBank}</TableCell>
-                    <TableCell className="text-right">{fmtCur(loan.totalAmountToBePaid)}</TableCell>
-                    <TableCell className="text-right text-emerald-600 font-medium">{fmtCur(loan.totalPaid || 0)}</TableCell>
+                    <TableCell className="font-mono whitespace-nowrap">{loan.accountNo}</TableCell>
+                    <TableCell><Badge variant="outline">{loan.loanType || 'Loan'}</Badge></TableCell>
+                    <TableCell className="text-right whitespace-nowrap tabular-nums">{fmtCur(loan.loanAmount)}</TableCell>
+                    <TableCell className="text-right whitespace-nowrap tabular-nums">{fmtCur(loan.totalInterest)}</TableCell>
+                    <TableCell className="text-right whitespace-nowrap tabular-nums">{fmtCur(loan.emiAmount)}</TableCell>
+                    <TableCell className="text-center tabular-nums">{loan.tenure}m</TableCell>
+                    <TableCell className="whitespace-nowrap">{fmtDate(loan.startDate)}</TableCell>
+                    <TableCell className="whitespace-nowrap">{fmtDate(loan.endDate)}</TableCell>
+                    <TableCell>{loan.linkedBank}</TableCell>
+                    <TableCell className="text-right whitespace-nowrap tabular-nums">{fmtCur(loan.totalAmountToBePaid)}</TableCell>
+                    <TableCell className="text-right whitespace-nowrap tabular-nums">{fmtCur(loan.totalPaid || 0)}</TableCell>
                     <TableCell>
-                      <Badge variant="outline" className={cn('text-[10px]', cfg.cls)}>{loan.status}</Badge>
+                      <StatusBadge status={loan.status} />
                     </TableCell>
-                    <TableCell className="text-right" onClick={(e) => e.stopPropagation()}>
+                    <TableCell className="text-right whitespace-nowrap" onClick={(e) => e.stopPropagation()}>
                       {loan.status === 'Active' && (
                         loan.areAllEmisPaid ? (
                           <AlertDialog>
@@ -335,7 +322,7 @@ export default function ManageLoanPage() {
                         )
                       )}
                       {loan.status === 'Pre-closure Pending' && (
-                        <Badge variant="outline" className="text-[10px] bg-amber-50 text-amber-700 border-amber-200">Pending</Badge>
+                        <StatusBadge status="Pending" />
                       )}
                     </TableCell>
                   </TableRow>
@@ -343,8 +330,7 @@ export default function ManageLoanPage() {
               })}
             </TableBody>
           </Table>
-        </div>
-      </Card>
+      </TableCard>
 
       {/* Pre-closure dialog */}
       {loanToClose && (

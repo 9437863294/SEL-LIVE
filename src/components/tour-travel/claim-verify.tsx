@@ -36,7 +36,10 @@ import {
 } from '@/lib/tour-travel-service';
 import { TT_PERMISSION_MODULE } from './module-layout-shell';
 import { useTravelActor } from './use-travel-config';
-import { Money, TravelAccessDenied, TravelDataList, TravelLoader, TravelSection, TravelStatusBadge, travelDialog } from './travel-ui';
+import { Money, TravelAccessDenied, TravelLoader, TravelSection, travelDialog } from './travel-ui';
+import { DataList } from '@/components/shared/data-list';
+import { StatusBadge } from '@/components/shared/status-badge';
+import { TableCard } from '@/components/shared/table-card';
 import { PageHeader } from '@/components/shared/page-header';
 
 const DECISION_LABEL: Record<VerificationDecision, string> = {
@@ -192,7 +195,7 @@ export default function ClaimVerify({ claimId }: { claimId: string }) {
         description={`${claim.employeeName} · tour ${claim.travelRequestNumber} · ${claim.itemCount} line(s)`}
         actions={
           <div className="flex items-center gap-2">
-            <TravelStatusBadge status={claim.status} />
+            <StatusBadge status={claim.status}>{travelStatusLabel(claim.status)}</StatusBadge>
             <Button asChild variant="outline" size="sm">
               <Link href={`/tour-travel/claims/${claimId}`}>Claim summary</Link>
             </Button>
@@ -214,132 +217,131 @@ export default function ClaimVerify({ claimId }: { claimId: string }) {
         </div>
       )}
 
-      <TravelSection
+      <TableCard
         title="Line Verification"
         description="The claimed amount is the employee's submission and is never overwritten — a reduction is recorded as a separate allowed figure."
+        count={items.length}
+        noun="line"
       >
-        <TravelDataList
-          rows={items}
-          rowClassName={item =>
-            (item.policyLimit != null && item.claimedAmount > item.policyLimit) || duplicateIds.has(item.id)
-              ? 'bg-amber-50/40 border-amber-200'
-              : undefined
-          }
-          columns={[
-            {
-              header: 'Expense',
-              mobile: 'title',
-              cell: item => (
-                <>
-                  <p className="font-medium text-slate-800">
-                    {item.category}
-                    <span className="ml-1.5 text-xs font-normal tabular-nums text-muted-foreground">{item.expenseDate}</span>
-                  </p>
-                  {item.vendor && <p className="text-[11px] font-normal text-muted-foreground">{item.vendor}</p>}
-                  {item.description && <p className="text-[11px] font-normal text-muted-foreground">{item.description}</p>}
-                  <div className="mt-0.5 flex flex-wrap gap-1">
-                    {item.paidByCompany && (
-                      <Badge variant="outline" className="border-slate-300 text-[10px] text-slate-600">Company paid</Badge>
-                    )}
-                    {duplicateIds.has(item.id) && (
-                      <Badge variant="outline" className="border-rose-300 bg-rose-50 text-[10px] text-rose-700">Possible duplicate</Badge>
-                    )}
-                    {(item.flags || []).map(flag => (
-                      <Badge key={flag} variant="outline" className="border-amber-300 bg-amber-50 text-[10px] text-amber-800">{flag}</Badge>
-                    ))}
-                  </div>
-                  {item.exceptionReason && (
-                    <p className="mt-1 text-[11px] font-normal italic text-amber-800">
-                      Exception: {item.exceptionReason}
-                      {item.exceptionApprovedBy ? ` — approved by ${item.exceptionApprovedByName}` : ' — awaiting approval'}
+        <div className="p-3 sm:p-0">
+          <DataList
+            frameless
+            rows={items}
+            rowClassName={item =>
+              (item.policyLimit != null && item.claimedAmount > item.policyLimit) || duplicateIds.has(item.id)
+                ? 'bg-amber-50/40 border-amber-200'
+                : undefined
+            }
+            columns={[
+              {
+                header: 'Expense',
+                mobile: 'title',
+                cell: item => (
+                  <>
+                    <p className="font-medium text-slate-800">
+                      {item.category}
+                      <span className="ml-1.5 text-xs font-normal tabular-nums text-muted-foreground">{item.expenseDate}</span>
                     </p>
-                  )}
-                </>
-              ),
-            },
-            {
-              header: 'Decision',
-              mobile: 'aside',
-              cell: item => (
-                <>
-                  <Badge
-                    variant="outline"
-                    className={
-                      item.decision === 'ACCEPTED'
-                        ? 'border-emerald-200 bg-emerald-50 text-emerald-700'
-                        : item.decision === 'PENDING'
-                          ? 'border-slate-200 text-slate-600'
-                          : 'border-amber-300 bg-amber-50 text-amber-800'
-                    }
-                  >
-                    {DECISION_LABEL[item.decision]}
-                  </Badge>
-                  {item.verifierRemarks && <p className="mt-0.5 max-w-[16rem] text-[11px] italic text-slate-600">{item.verifierRemarks}</p>}
-                </>
-              ),
-            },
-            { header: 'Date', className: 'hidden lg:table-cell', mobile: 'omit', cell: item => <span className="tabular-nums">{item.expenseDate}</span> },
-            // Claimed is always rendered, never an input — see the component comment.
-            {
-              header: 'Claimed',
-              align: 'right',
-              cell: item => <span className="font-medium tabular-nums"><Money value={item.claimedAmount} exact /></span>,
-            },
-            {
-              header: 'Policy',
-              align: 'right',
-              cell: item =>
-                item.policyLimit == null ? <span className="text-muted-foreground">—</span> : <Money value={item.policyLimit} exact />,
-            },
-            {
-              header: 'Allowed',
-              align: 'right',
-              cell: item =>
-                item.approvedAmount == null ? <span className="text-muted-foreground">—</span> : <Money value={item.approvedAmount} exact />,
-            },
-            {
-              header: 'Disallowed',
-              align: 'right',
-              cell: item =>
-                item.disallowedAmount > 0 ? (
-                  <span className="font-medium text-rose-600"><Money value={item.disallowedAmount} exact /></span>
-                ) : (
-                  <span className="text-muted-foreground">—</span>
+                    {item.vendor && <p className="text-[11px] font-normal text-muted-foreground">{item.vendor}</p>}
+                    {item.description && <p className="text-[11px] font-normal text-muted-foreground">{item.description}</p>}
+                    <div className="mt-0.5 flex flex-wrap gap-1">
+                      {item.paidByCompany && (
+                        <Badge variant="outline">Company paid</Badge>
+                      )}
+                      {duplicateIds.has(item.id) && (
+                        <Badge variant="danger">Possible duplicate</Badge>
+                      )}
+                      {(item.flags || []).map(flag => (
+                        <Badge key={flag} variant="warning">{flag}</Badge>
+                      ))}
+                    </div>
+                    {item.exceptionReason && (
+                      <p className="mt-1 text-[11px] font-normal italic text-amber-800">
+                        Exception: {item.exceptionReason}
+                        {item.exceptionApprovedBy ? ` — approved by ${item.exceptionApprovedByName}` : ' — awaiting approval'}
+                      </p>
+                    )}
+                  </>
                 ),
-            },
-            ...(underVerification && canVerify
-              ? [
-                  {
-                    header: 'Action',
-                    mobile: 'footer' as const,
-                    cell: (item: TravelClaimItem) => (
-                      <div className="flex flex-1 items-center gap-1.5">
-                        <Button size="sm" variant="outline" className="h-7 px-2 text-xs" onClick={() => openEditor(item)}>
-                          Verify
-                        </Button>
-                        {item.policyLimit != null &&
-                          item.claimedAmount > item.policyLimit &&
-                          item.exceptionReason &&
-                          !item.exceptionApprovedBy &&
-                          canApproveException && (
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              className="h-7 px-2 text-xs text-emerald-700"
-                              disabled={busy === `exception-${item.id}`}
-                              onClick={() => run(`exception-${item.id}`, () => approveClaimItemException(item.id, actor!), 'Exception approved')}
-                            >
-                              Approve exception
-                            </Button>
-                          )}
-                      </div>
-                    ),
-                  },
-                ]
-              : []),
-          ]}
-        />
-      </TravelSection>
+              },
+              {
+                header: 'Decision',
+                mobile: 'aside',
+                cell: item => (
+                  <>
+                    <StatusBadge
+                      status={item.decision}
+                      tone={item.decision === 'ACCEPTED' ? 'success' : item.decision === 'PENDING' ? 'neutral' : 'warning'}
+                    >
+                      {DECISION_LABEL[item.decision]}
+                    </StatusBadge>
+                    {item.verifierRemarks && <p className="mt-0.5 max-w-[16rem] text-[11px] italic text-slate-600">{item.verifierRemarks}</p>}
+                  </>
+                ),
+              },
+              { header: 'Date', className: 'hidden lg:table-cell', mobile: 'omit', cell: item => <span className="tabular-nums">{item.expenseDate}</span> },
+              // Claimed is always rendered, never an input — see the component comment.
+              {
+                header: 'Claimed',
+                align: 'right',
+                cell: item => <span className="font-medium tabular-nums"><Money value={item.claimedAmount} exact /></span>,
+              },
+              {
+                header: 'Policy',
+                align: 'right',
+                cell: item =>
+                  item.policyLimit == null ? <span className="text-muted-foreground">—</span> : <Money value={item.policyLimit} exact />,
+              },
+              {
+                header: 'Allowed',
+                align: 'right',
+                cell: item =>
+                  item.approvedAmount == null ? <span className="text-muted-foreground">—</span> : <Money value={item.approvedAmount} exact />,
+              },
+              {
+                header: 'Disallowed',
+                align: 'right',
+                cell: item =>
+                  item.disallowedAmount > 0 ? (
+                    <span className="font-medium text-rose-600"><Money value={item.disallowedAmount} exact /></span>
+                  ) : (
+                    <span className="text-muted-foreground">—</span>
+                  ),
+              },
+              ...(underVerification && canVerify
+                ? [
+                    {
+                      header: 'Action',
+                      mobile: 'footer' as const,
+                      cell: (item: TravelClaimItem) => (
+                        <div className="flex flex-1 items-center gap-1.5">
+                          <Button size="sm" variant="outline" className="h-7 px-2 text-xs" onClick={() => openEditor(item)}>
+                            Verify
+                          </Button>
+                          {item.policyLimit != null &&
+                            item.claimedAmount > item.policyLimit &&
+                            item.exceptionReason &&
+                            !item.exceptionApprovedBy &&
+                            canApproveException && (
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                className="h-7 px-2 text-xs text-emerald-700"
+                                disabled={busy === `exception-${item.id}`}
+                                onClick={() => run(`exception-${item.id}`, () => approveClaimItemException(item.id, actor!), 'Exception approved')}
+                              >
+                                Approve exception
+                              </Button>
+                            )}
+                        </div>
+                      ),
+                    },
+                  ]
+                : []),
+            ]}
+          />
+        </div>
+      </TableCard>
 
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
         <TravelSection title="Settlement Statement" description="Derived live from the verified lines.">

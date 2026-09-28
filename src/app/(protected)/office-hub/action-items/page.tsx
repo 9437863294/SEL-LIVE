@@ -17,13 +17,9 @@ import {
   Download,
   ExternalLink,
   ListTodo,
-  Search,
-  X,
 } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import {
@@ -47,25 +43,19 @@ import {
   OfficeHubAccessDenied,
   OfficeHubDataList,
   OfficeHubEmptyState,
-  OfficeHubFilterCard,
   OfficeHubKpiCard,
   PersonChip,
   PriorityBadge,
-  ResultCount,
   type OfficeHubListColumn,
 } from '@/components/office-hub/ui';
 import { MultiSelect } from '@/components/office-hub/selectors';
 import { CreateTaskFromActionItemDialog } from '@/components/office-hub/decision-forms';
+import { FilterBar } from '@/components/shared/filter-bar';
 import { PageHeader } from '@/components/shared/page-header';
+import { StatusBadge } from '@/components/shared/status-badge';
+import { TableCard } from '@/components/shared/table-card';
 
 type View = 'open' | 'overdue' | 'no-task' | 'mine' | 'all';
-
-const STATUS_TONE: Record<ActionItemStatus, string> = {
-  Open: 'border-sky-200 bg-sky-50 text-sky-700',
-  'In Progress': 'border-indigo-200 bg-indigo-50 text-indigo-700',
-  Completed: 'border-emerald-200 bg-emerald-50 text-emerald-700',
-  Cancelled: 'border-rose-200 bg-rose-50 text-rose-700',
-};
 
 export default function ActionItemsPage() {
   const { viewer, capabilities, directory, today, isLoading } = useOfficeHub();
@@ -204,11 +194,7 @@ export default function ActionItemsPage() {
       header: 'Status',
       mobile: 'detail',
       className: 'w-28',
-      cell: (item) => (
-        <Badge variant="outline" className={`border text-[11px] font-medium ${STATUS_TONE[item.status]}`}>
-          {item.status}
-        </Badge>
-      ),
+      cell: (item) => <StatusBadge status={item.status} />,
     },
     {
       header: 'Task',
@@ -290,107 +276,85 @@ export default function ActionItemsPage() {
         </p>
       )}
 
-      <OfficeHubFilterCard
-        summary={
-          hasActiveFilters(effectiveFilters)
-            ? `${activeFilterCount(effectiveFilters)} filter(s) active`
-            : 'Open action items'
-        }
-        actions={
-          hasActiveFilters(effectiveFilters) ? (
-            <Button size="sm" variant="ghost" onClick={clearFilters} className="h-7 gap-1 px-2 text-[11px]">
-              <X className="h-3 w-3" />
-              Clear
-            </Button>
-          ) : undefined
+      <TableCard
+        title="Action item register"
+        icon={CheckSquare}
+        count={filtered.length}
+        total={all.length}
+        noun="action item"
+        toolbar={
+          <FilterBar
+            search={{ value: search, onChange: setSearch, placeholder: 'Reference, action, person' }}
+            activeCount={activeFilterCount(filters)}
+            onClear={clearFilters}
+          >
+            <MultiSelect
+              placeholder="Anyone responsible"
+              options={directory.people.map((person) => ({ value: person.userId, label: person.name }))}
+              value={filters.responsibleIds ?? []}
+              onChange={(next) => setFilters((current) => ({ ...current, responsibleIds: next }))}
+            />
+
+            <MultiSelect
+              placeholder="Any team"
+              options={directory.teams.map((team) => ({ value: team.id, label: team.name }))}
+              value={filters.teamIds ?? []}
+              onChange={(next) => setFilters((current) => ({ ...current, teamIds: next }))}
+            />
+
+            <MultiSelect
+              placeholder="Any status"
+              options={ACTION_ITEM_STATUSES.map((status) => ({ value: status, label: status }))}
+              value={filters.statuses ?? []}
+              onChange={(next) => setFilters((current) => ({ ...current, statuses: next as ActionItemStatus[] }))}
+            />
+
+            <MultiSelect
+              placeholder="Any priority"
+              options={OFFICE_HUB_PRIORITIES.map((priority) => ({ value: priority, label: priority }))}
+              value={filters.priorities ?? []}
+              onChange={(next) => setFilters((current) => ({ ...current, priorities: next as OfficeHubPriority[] }))}
+            />
+          </FilterBar>
         }
       >
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
-          <div className="sm:col-span-2">
-            <Label className="mb-1 block text-xs">Search</Label>
-            <div className="relative">
-              <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
-              <Input
-                value={search}
-                onChange={(event) => setSearch(event.target.value)}
-                placeholder="Reference, action, person"
-                className="bg-white pl-8"
+        {itemsQuery.isLoading ? (
+          <Skeleton className="h-96 w-full rounded-xl" />
+        ) : (
+          <OfficeHubDataList
+            rows={filtered}
+            columns={columns}
+            frameless
+            rowClassName={(item) => (isActionItemOverdue(item, today) ? 'bg-rose-50/60' : undefined)}
+            empty={
+              <OfficeHubEmptyState
+                icon={CheckSquare}
+                title={
+                  view === 'overdue'
+                    ? 'Nothing overdue.'
+                    : view === 'no-task'
+                      ? 'Every open action item has a task.'
+                      : 'No action items.'
+                }
+                description={
+                  view === 'no-task'
+                    ? 'Everything agreed in a meeting is being tracked.'
+                    : hasActiveFilters(effectiveFilters)
+                      ? 'Clear a filter to widen the list.'
+                      : 'Action items raised during a meeting appear here.'
+                }
+                action={
+                  hasActiveFilters(effectiveFilters) ? (
+                    <Button size="sm" variant="outline" onClick={clearFilters}>
+                      Clear filters
+                    </Button>
+                  ) : undefined
+                }
               />
-            </div>
-          </div>
-
-          <MultiSelect
-            label="Responsible"
-            placeholder="Anyone"
-            options={directory.people.map((person) => ({ value: person.userId, label: person.name }))}
-            value={filters.responsibleIds ?? []}
-            onChange={(next) => setFilters((current) => ({ ...current, responsibleIds: next }))}
+            }
           />
-
-          <MultiSelect
-            label="Team"
-            placeholder="Any team"
-            options={directory.teams.map((team) => ({ value: team.id, label: team.name }))}
-            value={filters.teamIds ?? []}
-            onChange={(next) => setFilters((current) => ({ ...current, teamIds: next }))}
-          />
-
-          <MultiSelect
-            label="Status"
-            placeholder="Any status"
-            options={ACTION_ITEM_STATUSES.map((status) => ({ value: status, label: status }))}
-            value={filters.statuses ?? []}
-            onChange={(next) => setFilters((current) => ({ ...current, statuses: next as ActionItemStatus[] }))}
-          />
-
-          <MultiSelect
-            label="Priority"
-            placeholder="Any priority"
-            options={OFFICE_HUB_PRIORITIES.map((priority) => ({ value: priority, label: priority }))}
-            value={filters.priorities ?? []}
-            onChange={(next) => setFilters((current) => ({ ...current, priorities: next as OfficeHubPriority[] }))}
-          />
-        </div>
-      </OfficeHubFilterCard>
-
-      <ResultCount shown={filtered.length} total={all.length} noun="action item" />
-
-      {itemsQuery.isLoading ? (
-        <Skeleton className="h-96 w-full rounded-xl" />
-      ) : (
-        <OfficeHubDataList
-          rows={filtered}
-          columns={columns}
-          maxHeightClassName="sm:max-h-[42rem]"
-          rowClassName={(item) => (isActionItemOverdue(item, today) ? 'bg-rose-50/60' : undefined)}
-          empty={
-            <OfficeHubEmptyState
-              icon={CheckSquare}
-              title={
-                view === 'overdue'
-                  ? 'Nothing overdue.'
-                  : view === 'no-task'
-                    ? 'Every open action item has a task.'
-                    : 'No action items.'
-              }
-              description={
-                view === 'no-task'
-                  ? 'Everything agreed in a meeting is being tracked.'
-                  : hasActiveFilters(effectiveFilters)
-                    ? 'Clear a filter to widen the list.'
-                    : 'Action items raised during a meeting appear here.'
-              }
-              action={
-                hasActiveFilters(effectiveFilters) ? (
-                  <Button size="sm" variant="outline" onClick={clearFilters}>
-                    Clear filters
-                  </Button>
-                ) : undefined
-              }
-            />
-          }
-        />
-      )}
+        )}
+      </TableCard>
 
       {report.byResponsible.length > 1 && (
         <div className="flex flex-wrap items-center gap-2">
@@ -398,7 +362,7 @@ export default function ActionItemsPage() {
             Open items by person
           </span>
           {report.byResponsible.slice(0, 8).map((row) => (
-            <Badge key={row.label} variant="outline" className="border-slate-200 bg-white text-[11px]">
+            <Badge key={row.label} variant="neutral">
               {row.label}: <span className="ml-1 font-semibold tabular-nums">{row.count}</span>
             </Badge>
           ))}

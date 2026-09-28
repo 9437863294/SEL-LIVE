@@ -40,16 +40,13 @@ import {
   Download,
   Plus,
   RefreshCw,
-  Search,
   ShieldCheck,
   Trash2,
   UserCheck,
   UserMinus,
   Users,
-  X,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { Badge } from '@/components/ui/badge';
 import { Card, CardContent } from '@/components/ui/card';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
@@ -63,12 +60,14 @@ import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger,
 } from '@/components/ui/alert-dialog';
+import { FilterBar } from '@/components/shared/filter-bar';
+import { StatusBadge } from '@/components/shared/status-badge';
+import { TableCard } from '@/components/shared/table-card';
 import {
   HrAccessDenied,
   HrAlertNotice,
   HrDataList,
   HrEmptyState,
-  HrFilterCard,
   HrLoader,
   hrDialog,
   type HrListColumn,
@@ -76,10 +75,9 @@ import {
 import {
   EmployeeKpiCard,
   EmployeePageShell,
-  EmployeeStatusPill,
   EmployeeSubNav,
   EMP_CARD_CLASS,
-  EMP_REGISTER_HEIGHT,
+  employmentStateTone,
 } from '@/components/employee/employee-ui';
 import { useAuthorization } from '@/hooks/useAuthorization';
 import { useToast } from '@/hooks/use-toast';
@@ -88,7 +86,7 @@ import { doc, setDoc, updateDoc, deleteDoc, writeBatch } from 'firebase/firestor
 import { cn } from '@/lib/utils';
 import { exportRowsToExcel } from '@/lib/report-excel';
 import { fetchEmployeeRoster, type EmployeeRosterResponse, type RosterEmployeeRow } from '@/lib/greythr-sync-client';
-import { hasExited, isWorkingState, type EmploymentState } from '@/lib/greythr';
+import { hasExited, isWorkingState } from '@/lib/greythr';
 import { PageHeader } from '@/components/shared/page-header';
 
 /**
@@ -109,16 +107,6 @@ const AUTO_REFRESH_MS = 10 * 60 * 1000;
  * this screen finds out the hard way. The filters above are the fast route to a specific person.
  */
 const PAGE_SIZE = 300;
-
-const STATE_TONE: Record<EmploymentState, string> = {
-  Active: 'border-emerald-200 bg-emerald-50 text-emerald-700',
-  'Notice Period': 'border-amber-200 bg-amber-50 text-amber-800',
-  Relieved: 'border-rose-200 bg-rose-50 text-rose-700',
-  Retired: 'border-violet-200 bg-violet-50 text-violet-700',
-  Settled: 'border-slate-300 bg-slate-100 text-slate-700',
-  Left: 'border-rose-200 bg-rose-50 text-rose-700',
-  Unknown: 'border-slate-200 bg-white text-slate-500',
-};
 
 const AVATAR_PALETTE = [
   'bg-indigo-100 text-indigo-700',
@@ -150,27 +138,11 @@ function formatDate(value: string | null | undefined): string {
   return parsed.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
 }
 
-/**
- * Filter columns, in display order. The server only returns the ones a tenant actually uses.
- *
- * Ten of them, which is why the grid below is five across: two exact rows, no ragged tail.
- */
+/** Filter columns, in display order. The server only returns the ones a tenant actually uses. */
 const FILTER_ORDER = [
   'Project Name', 'Project Division', 'Department', 'Location', 'Cost Center',
   'Designation', 'EMPLOYEE TYPE', 'Grade', 'Shift', 'COST CENTER CODE',
 ];
-
-/**
- * The compact filter control, one class string so all eleven selects stay identical.
- *
- * `h-8 text-xs` against the `h-10 text-sm` default: these are secondary controls sitting above the
- * thing somebody actually came to read, and at full size eleven of them crowd the table off the
- * screen entirely.
- */
-const FILTER_TRIGGER = 'h-8 text-xs';
-
-/** Applied filters are tinted, so the set ones are findable among the unset ones without reading all ten. */
-const FILTER_TRIGGER_ACTIVE = 'border-primary/40 bg-primary/5 font-medium text-primary';
 
 const initialFilters = { status: 'all' as string, categories: {} as Record<string, string> };
 
@@ -557,23 +529,25 @@ export default function ManageEmployeePage() {
       mobile: 'aside',
       cell: (row) => (
         <div className="flex flex-col items-end gap-1 sm:items-start">
-          <Badge variant="outline" className={cn('font-medium', STATE_TONE[row.employmentState])} title={row.employmentStateReason}>
-            {row.employmentState}
-          </Badge>
+          <StatusBadge
+            status={row.employmentState}
+            tone={employmentStateTone(row.employmentState)}
+            title={row.employmentStateReason}
+          />
           {/*
             Surfaced rather than applied silently: "Active because greytHR says so" and "Active
             because we disbelieved the stored leaving date" are different claims, and somebody
             deciding whether to grant a login should be able to tell them apart.
           */}
           {row.employmentStateCorrected && (
-            <span className="text-[10px] font-medium text-blue-600" title={row.employmentStateReason}>
+            <StatusBadge tone="info" title={row.employmentStateReason}>
               corrected
-            </span>
+            </StatusBadge>
           )}
           {row.awaitingSync && (
-            <span className="text-[10px] font-medium text-amber-600" title="In greytHR but not yet written to the local mirror">
+            <StatusBadge tone="warning" title="In greytHR but not yet written to the local mirror">
               awaiting sync
-            </span>
+            </StatusBadge>
           )}
         </div>
       ),
@@ -601,7 +575,7 @@ export default function ManageEmployeePage() {
     { header: 'Joined', className: 'whitespace-nowrap', cell: (row) => formatDate(row.dateOfJoin) },
     {
       header: 'Exit date',
-      className: 'whitespace-nowrap text-muted-foreground',
+      className: 'whitespace-nowrap',
       cell: (row) => formatDate(row.exitDate),
     },
     ...(canEdit || canDelete ? [actionsColumn] : []),
@@ -643,13 +617,14 @@ export default function ManageEmployeePage() {
         badge={
           report ? (
             report.liveRoster ? (
-              <EmployeeStatusPill tone="emerald" pulse>
+              <StatusBadge tone="success" dot>
                 Verified against greytHR
-              </EmployeeStatusPill>
+              </StatusBadge>
             ) : (
-              <EmployeeStatusPill tone="amber" icon={CloudOff}>
+              <StatusBadge tone="warning">
+                <CloudOff className="h-3 w-3" aria-hidden="true" />
                 Stored mirror only
-              </EmployeeStatusPill>
+              </StatusBadge>
             )
           ) : undefined
         }
@@ -783,65 +758,79 @@ export default function ManageEmployeePage() {
             />
           </div>
 
-          {/* ── Filters ── */}
-          <HrFilterCard
-            summary={activeFilterCount ? `${activeFilterCount} filter(s) active` : 'No filters applied'}
+          {/* ── Register ── */}
+          <TableCard
+            count={filtered.length}
+            total={employees.length}
+            noun="record"
             actions={
-              activeFilterCount ? (
-                <Button variant="ghost" size="sm" onClick={clearFilters}>Clear</Button>
+              /*
+                Select-all used to live in the table's header row; the responsive register has no
+                header on a phone, so it sits in the register's head at every width. It selects
+                everything the filter matched — not just the rows rendered so far — which is what
+                "all" means to the person about to delete them. Rendered only when there is something
+                to select.
+              */
+              canDelete && filtered.length > 0 ? (
+                <>
+                  <label className="flex cursor-pointer items-center gap-2 text-xs text-muted-foreground">
+                    <Checkbox
+                      checked={selectedIds.length === filtered.length}
+                      onCheckedChange={(checked) =>
+                        setSelectedIds(checked ? filtered.map((row) => row.employeeId) : [])
+                      }
+                      aria-label="Select all"
+                    />
+                    <span>
+                      Select all {filtered.length}
+                      {selectedIds.length > 0 && (
+                        <span className="font-medium text-slate-700"> · {selectedIds.length} selected</span>
+                      )}
+                    </span>
+                  </label>
+                  {selectedIds.length > 0 && (
+                    <AlertDialog>
+                      <AlertDialogTrigger asChild>
+                        <Button variant="destructive" size="sm">
+                          <Trash2 className="mr-1.5 h-4 w-4" />
+                          Delete ({selectedIds.length})
+                        </Button>
+                      </AlertDialogTrigger>
+                      <AlertDialogContent>
+                        <AlertDialogHeader>
+                          <AlertDialogTitle>Delete {selectedIds.length} employee record(s)?</AlertDialogTitle>
+                          <AlertDialogDescription>
+                            This removes the local records only — it does not change anything in greytHR, so the
+                            next sync will recreate anyone greytHR still has. This cannot be undone.
+                          </AlertDialogDescription>
+                        </AlertDialogHeader>
+                        <AlertDialogFooter>
+                          <AlertDialogCancel>Cancel</AlertDialogCancel>
+                          <AlertDialogAction onClick={() => void handleDeleteSelected()} className="bg-destructive hover:bg-destructive/90">
+                            Delete
+                          </AlertDialogAction>
+                        </AlertDialogFooter>
+                      </AlertDialogContent>
+                    </AlertDialog>
+                  )}
+                </>
               ) : undefined
             }
-          >
-            {/*
-              Two bands, not one twelve-cell grid.
-
-              Search and status answer "find this person"; the ten category selects answer "narrow
-              this list", and they are used at different moments. Sharing one three-column grid gave
-              every control the same 600px on a wide screen — a box that wide to hold the word
-              "Grade" — and stacked twelve of them into four full-height rows that pushed the table
-              itself below the fold.
-
-              Now the finders keep a fixed, readable width instead of stretching to fill, and the
-              categories sit in a five-across grid that divides exactly into two rows. Same twelve
-              controls, roughly half the height, and nothing hidden behind a disclosure — on a screen
-              whose whole purpose is filtering, a filter you have to go looking for is worse than a
-              small one.
-            */}
-            <div className="flex flex-col gap-2">
-              {/*
-                The record count moved in here, into the width the fixed-size finders leave over.
-                It was a standalone line below the card; now the row carries it instead of trailing a
-                thousand pixels of nothing, and the page is one element shorter.
-              */}
-              <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
-                <div className="relative w-full sm:w-[340px]">
-                  <Search className="absolute left-2.5 top-2 h-4 w-4 text-muted-foreground" />
-                  <Input
-                    placeholder="Search name, employee no, email…"
-                    className="h-8 pl-8 pr-8 text-xs"
-                    value={search}
-                    onChange={(event) => setSearch(event.target.value)}
-                  />
-                  {search && (
-                    <button
-                      type="button"
-                      onClick={() => setSearch('')}
-                      className="hr-inline-action absolute inset-y-0 right-0 flex w-8 items-center justify-center text-muted-foreground hover:text-slate-600"
-                      aria-label="Clear search"
-                    >
-                      <X className="h-4 w-4" />
-                    </button>
-                  )}
-                </div>
-
+            toolbar={
+              /*
+                Search and status first — "find this person" — then the category selects that narrow
+                the list. On a phone the selects fold behind the bar's Filters button.
+              */
+              <FilterBar
+                search={{ value: search, onChange: setSearch, placeholder: 'Search name, employee no, email…' }}
+                activeCount={
+                  (filters.status !== 'all' ? 1 : 0) +
+                  Object.values(filters.categories).filter((value) => value && value !== 'all').length
+                }
+                onClear={clearFilters}
+              >
                 <Select value={filters.status} onValueChange={(value) => setFilters((f) => ({ ...f, status: value }))}>
-                  <SelectTrigger
-                    className={cn(
-                      FILTER_TRIGGER,
-                      'w-full sm:w-[200px]',
-                      filters.status !== 'all' && FILTER_TRIGGER_ACTIVE,
-                    )}
-                  >
+                  <SelectTrigger aria-label="Status">
                     <SelectValue placeholder="All statuses" />
                   </SelectTrigger>
                   <SelectContent>
@@ -859,14 +848,6 @@ export default function ManageEmployeePage() {
                   </SelectContent>
                 </Select>
 
-                <p className="text-xs text-muted-foreground sm:ml-auto">
-                  Showing <span className="font-medium text-slate-700">{filtered.length}</span>
-                  {filtered.length !== employees.length ? <> of {employees.length}</> : null} record
-                  {filtered.length === 1 ? '' : 's'}
-                </p>
-              </div>
-
-              <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5">
                 {FILTER_ORDER.filter((category) => filterOptions[category]?.length).map((category) => {
                   const value = filters.categories[category] ?? 'all';
                   const isActive = value !== 'all';
@@ -879,19 +860,13 @@ export default function ManageEmployeePage() {
                       }
                     >
                       {/*
-                        Tinted when set, so which of the ten are actually filtering is answerable at a
-                        glance. A chip row below would say the same thing twice and would spend the
-                        height this change just saved.
-
                         The label is carried in the trigger rather than left to `SelectValue`, which
-                        renders the bare value: "S1" and "Directors" sitting in a ten-cell grid do not
-                        say *which* filter they are, and once the fields are small enough to fit two
-                        rows there is no column heading to infer it from either. Prefixing costs
-                        nothing when the field is wide and truncates the value — never the category —
-                        when it is not, so the more useful half always survives.
+                        renders the bare value: "S1" and "Directors" in a row of ten selects do not
+                        say *which* filter they are. Prefixing truncates the value — never the
+                        category — when the field is narrow, so the more useful half always survives.
                       */}
                       <SelectTrigger
-                        className={cn(FILTER_TRIGGER, isActive && FILTER_TRIGGER_ACTIVE)}
+                        aria-label={category}
                         title={isActive ? `${category}: ${value}` : `Filter by ${category}`}
                       >
                         <span className="truncate">
@@ -913,108 +888,57 @@ export default function ManageEmployeePage() {
                     </Select>
                   );
                 })}
-              </div>
-            </div>
-          </HrFilterCard>
-
-          {/*
-            Select-all used to live in the table's header row; the responsive register has no header
-            on a phone, so it sits above the list at every width. It selects everything the filter
-            matched — not just the rows rendered so far — which is what "all" means to the person
-            about to delete them. Rendered only when there is something to select, so an unselectable
-            list has no gap above it.
-          */}
-          {canDelete && filtered.length > 0 && (
-            <div className="flex flex-wrap items-center justify-between gap-2">
-              <label className="flex cursor-pointer items-center gap-2 text-xs text-muted-foreground">
-                <Checkbox
-                  checked={selectedIds.length === filtered.length}
-                  onCheckedChange={(checked) =>
-                    setSelectedIds(checked ? filtered.map((row) => row.employeeId) : [])
-                  }
-                  aria-label="Select all"
-                />
-                <span>
-                  Select all {filtered.length}
-                  {selectedIds.length > 0 && (
-                    <span className="font-medium text-slate-700"> · {selectedIds.length} selected</span>
-                  )}
-                </span>
-              </label>
-              {selectedIds.length > 0 && (
-                <AlertDialog>
-                  <AlertDialogTrigger asChild>
-                    <Button variant="destructive" size="sm">
-                      <Trash2 className="mr-1.5 h-4 w-4" />
-                      Delete ({selectedIds.length})
+              </FilterBar>
+            }
+            footer={
+              filtered.length > 0 ? (
+                /* The old <tfoot> totals, as a line that reads on a phone too. Kept bespoke rather
+                   than swapped for `EmployeeListFooter`: this one also splits the filtered set into
+                   working and departed, which the shared footer does not do. */
+                <div className="flex flex-col items-center gap-2 text-center">
+                  <p className="text-xs text-muted-foreground">
+                    Showing <span className="font-medium text-slate-700">{visibleRows.length}</span> of{' '}
+                    {filtered.length} record{filtered.length === 1 ? '' : 's'} ·{' '}
+                    <span className="text-emerald-700">
+                      {filtered.filter((row) => isWorkingState(row.employmentState)).length} working
+                    </span>{' '}
+                    ·{' '}
+                    <span className="text-rose-700">
+                      {filtered.filter((row) => hasExited(row.employmentState)).length} departed
+                    </span>
+                  </p>
+                  {visibleRows.length < filtered.length && (
+                    <Button variant="outline" size="sm" onClick={() => setVisibleCount((count) => count + PAGE_SIZE)}>
+                      Show {Math.min(PAGE_SIZE, filtered.length - visibleRows.length)} more
                     </Button>
-                  </AlertDialogTrigger>
-                  <AlertDialogContent>
-                    <AlertDialogHeader>
-                      <AlertDialogTitle>Delete {selectedIds.length} employee record(s)?</AlertDialogTitle>
-                      <AlertDialogDescription>
-                        This removes the local records only — it does not change anything in greytHR, so the
-                        next sync will recreate anyone greytHR still has. This cannot be undone.
-                      </AlertDialogDescription>
-                    </AlertDialogHeader>
-                    <AlertDialogFooter>
-                      <AlertDialogCancel>Cancel</AlertDialogCancel>
-                      <AlertDialogAction onClick={() => void handleDeleteSelected()} className="bg-destructive hover:bg-destructive/90">
-                        Delete
-                      </AlertDialogAction>
-                    </AlertDialogFooter>
-                  </AlertDialogContent>
-                </AlertDialog>
-              )}
-            </div>
-          )}
-
-          {/* ── Register ── */}
-          {filtered.length === 0 ? (
-            <HrEmptyState
-              icon={Users}
-              title={activeFilterCount ? 'No employees match these filters' : 'No employee records yet'}
-              description={
-                activeFilterCount
-                  ? 'Try a different name, status, department or project.'
-                  : 'Run a greytHR sync to populate the roster.'
-              }
-              action={
-                activeFilterCount ? (
-                  <Button size="sm" variant="outline" onClick={clearFilters}>Clear filters</Button>
-                ) : undefined
-              }
-            />
-          ) : (
-            <div className="space-y-2.5">
-              {/* `dense` and a scroll frame: at 1,300 rows the page-level scroll took the column
-                  headers away with it, leaving unlabelled lines of dates and badges. The table now
-                  scrolls inside its own frame with the header pinned. */}
-              <HrDataList rows={visibleRows} columns={columns} dense maxHeightClassName={EMP_REGISTER_HEIGHT} />
-
-              {/* The old <tfoot> totals, as a line that reads on a phone too. Kept bespoke rather
-                  than swapped for `EmployeeListFooter`: this one also splits the filtered set into
-                  working and departed, which the shared footer does not do. */}
-              <div className="flex flex-col items-center gap-2 pb-2 text-center">
-                <p className="text-xs text-muted-foreground">
-                  Showing <span className="font-medium text-slate-700">{visibleRows.length}</span> of{' '}
-                  {filtered.length} record{filtered.length === 1 ? '' : 's'} ·{' '}
-                  <span className="text-emerald-700">
-                    {filtered.filter((row) => isWorkingState(row.employmentState)).length} working
-                  </span>{' '}
-                  ·{' '}
-                  <span className="text-rose-700">
-                    {filtered.filter((row) => hasExited(row.employmentState)).length} departed
-                  </span>
-                </p>
-                {visibleRows.length < filtered.length && (
-                  <Button variant="outline" size="sm" onClick={() => setVisibleCount((count) => count + PAGE_SIZE)}>
-                    Show {Math.min(PAGE_SIZE, filtered.length - visibleRows.length)} more
-                  </Button>
-                )}
+                  )}
+                </div>
+              ) : undefined
+            }
+          >
+            {filtered.length === 0 ? (
+              <div className="p-3">
+                <HrEmptyState
+                  icon={Users}
+                  title={activeFilterCount ? 'No employees match these filters' : 'No employee records yet'}
+                  description={
+                    activeFilterCount
+                      ? 'Try a different name, status, department or project.'
+                      : 'Run a greytHR sync to populate the roster.'
+                  }
+                  action={
+                    activeFilterCount ? (
+                      <Button size="sm" variant="outline" onClick={clearFilters}>Clear filters</Button>
+                    ) : undefined
+                  }
+                />
               </div>
-            </div>
-          )}
+            ) : (
+              <div className="p-3 sm:p-0">
+                <HrDataList rows={visibleRows} columns={columns} dense frameless />
+              </div>
+            )}
+          </TableCard>
         </div>
       )}
 

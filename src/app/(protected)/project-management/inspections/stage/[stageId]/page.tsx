@@ -30,7 +30,7 @@ import { useToast } from "@/hooks/use-toast";
 import { logUserActivity } from "@/lib/activity-logger";
 import { getAssigneeForStep, calculateDeadline } from "@/lib/workflow-utils";
 import { actOnInspectionResult } from "@/lib/project-management-inspection-entries";
-import { formatGateDate, inspectionStatusStyles, type PunchItem } from "@/lib/supply-gates";
+import { formatGateDate, type PunchItem } from "@/lib/supply-gates";
 import { formatSerialList } from "@/lib/serial-tracking";
 import {
   DEFAULT_INSPECTION_RESULT_STEPS,
@@ -38,7 +38,6 @@ import {
   INSPECTION_RESULT_APPROVAL_COLLECTION,
   INSPECTION_RESULT_WORKFLOW_DOC_ID,
   canActOnInspectionApproval,
-  inspectionApprovalStatusStyles,
   inspectionApprovalsForStep,
   inspectionResultConcerns,
   type InspectionApprovalAction,
@@ -58,7 +57,6 @@ import {
   PmEmptyState,
   type PmListColumn,
 } from "@/components/project-management/pm-shell";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import {
@@ -74,6 +72,8 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
 import { PageHeader } from "@/components/shared/page-header";
+import { StatusBadge } from "@/components/shared/status-badge";
+import { pmStatusTone } from "@/components/project-management/pm-status-tones";
 
 const toDateSafe = (value: unknown): Date | null => {
   if (!value) return null;
@@ -348,9 +348,7 @@ export default function InspectionResultStagePage() {
     {
       header: "Proposed Result",
       cell: (approval) => (
-        <Badge variant="outline" className={inspectionStatusStyles[approval.result]}>
-          {approval.result}
-        </Badge>
+        <StatusBadge status={approval.result} tone={pmStatusTone(approval.result)} />
       ),
     },
     {
@@ -365,7 +363,6 @@ export default function InspectionResultStagePage() {
     },
     {
       header: "Flags",
-      className: "text-xs",
       cell: (approval) => {
         const concerns = inspectionResultConcerns(approval);
         return concerns.length ? (
@@ -378,19 +375,17 @@ export default function InspectionResultStagePage() {
         );
       },
     },
-    { header: "Inspector", className: "text-sm", cell: (approval) => approval.inspectorName || "—" },
+    { header: "Inspector", cell: (approval) => approval.inspectorName || "—" },
     {
       header: "Status",
       mobile: "aside",
       cell: (approval) => (
-        <Badge variant="outline" className={inspectionApprovalStatusStyles[approval.status]}>
-          {approval.status}
-        </Badge>
+        <StatusBadge status={approval.status} />
       ),
     },
     {
       header: "Due",
-      className: "text-xs text-muted-foreground",
+      className: "whitespace-nowrap",
       cell: (approval) => {
         const due = toDateSafe(approval.deadline);
         return due ? (

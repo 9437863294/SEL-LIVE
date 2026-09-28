@@ -77,6 +77,7 @@ import { Progress } from '@/components/ui/progress';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { TableCard } from '@/components/shared/table-card';
 import { cn } from '@/lib/utils';
 
 /* ── constants ───────────────────────────────────────────────────────────── */
@@ -672,16 +673,11 @@ export function ExpenseImportDialog({
                     return (
                       <Badge
                         key={column.key}
-                        variant="outline"
-                        className={cn(
-                          'text-xs font-normal',
-                          required
-                            ? 'border-rose-500/30 bg-rose-500/5 text-rose-600 dark:text-rose-400'
-                            : 'border-border/60 text-muted-foreground',
-                        )}
+                        variant={required ? 'danger' : 'outline'}
+                        className="font-normal"
                       >
                         {column.label}
-                        {required && <span className="ml-0.5 text-rose-500">*</span>}
+                        {required && <span className="ml-0.5">*</span>}
                       </Badge>
                     );
                   })}
@@ -802,25 +798,25 @@ export function ExpenseImportDialog({
 
               <div className="flex flex-wrap items-center justify-between gap-3">
                 <div className="flex flex-wrap items-center gap-2">
-                  <Badge className="gap-1 border-emerald-500/20 bg-emerald-500/10 text-emerald-700 hover:bg-emerald-500/10 dark:text-emerald-400">
+                  <Badge variant="success" className="gap-1">
                     <CheckCircle2 className="h-3.5 w-3.5" /> {result.rows.length} ready
                   </Badge>
                   {warningCount > 0 && (
-                    <Badge className="gap-1 border-amber-500/20 bg-amber-500/10 text-amber-700 hover:bg-amber-500/10 dark:text-amber-400">
+                    <Badge variant="warning" className="gap-1">
                       <AlertTriangle className="h-3.5 w-3.5" /> {warningCount} with warnings
                     </Badge>
                   )}
                   {result.duplicates.length > 0 && (
-                    <Badge className="gap-1 border-blue-500/20 bg-blue-500/10 text-blue-700 hover:bg-blue-500/10 dark:text-blue-400">
+                    <Badge variant="info" className="gap-1">
                       {result.duplicates.length} duplicates skipped
                     </Badge>
                   )}
                   {result.issues.length > 0 && (
-                    <Badge className="gap-1 border-rose-500/20 bg-rose-500/10 text-rose-700 hover:bg-rose-500/10 dark:text-rose-400">
+                    <Badge variant="danger" className="gap-1">
                       <XCircle className="h-3.5 w-3.5" /> {result.issues.length} rejected
                     </Badge>
                   )}
-                  <Badge variant="outline" className="text-muted-foreground">
+                  <Badge variant="neutral">
                     ₹{result.totalAmount.toLocaleString('en-IN')} total
                   </Badge>
                 </div>
@@ -846,15 +842,15 @@ export function ExpenseImportDialog({
                 </p>
               )}
 
-              <div className="overflow-auto rounded-xl border border-border/60" style={{ maxHeight: '48vh' }}>
+              <TableCard>
                 <Table>
-                  <TableHeader className="sticky top-0 z-10 bg-muted/60 backdrop-blur-sm">
+                  <TableHeader>
                     <TableRow>
-                      <TableHead className="w-14 text-[11px] font-semibold uppercase tracking-wider">Row</TableHead>
+                      <TableHead className="w-14">Row</TableHead>
                       {PREVIEW_KEYS.map((key) => (
                         <TableHead
                           key={key}
-                          className="whitespace-nowrap text-[11px] font-semibold uppercase tracking-wider"
+                          className="whitespace-nowrap"
                         >
                           {EXPENSE_IMPORT_COLUMNS.find((column) => column.key === key)?.label}
                         </TableHead>
@@ -864,7 +860,7 @@ export function ExpenseImportDialog({
                   <TableBody>
                     {previewRows.length === 0 ? (
                       <TableRow>
-                        <TableCell colSpan={PREVIEW_KEYS.length + 1} className="py-10 text-center text-sm text-muted-foreground">
+                        <TableCell colSpan={PREVIEW_KEYS.length + 1} className="h-28 text-center text-muted-foreground">
                           No rows match this filter.
                         </TableCell>
                       </TableRow>
@@ -873,14 +869,14 @@ export function ExpenseImportDialog({
                         <TableRow
                           key={`${line.kind}-${line.row}`}
                           className={cn(
-                            line.kind === 'rejected' && 'bg-rose-500/5',
-                            line.kind === 'duplicate' && 'bg-blue-500/5',
+                            line.kind === 'rejected' && 'bg-rose-50/60',
+                            line.kind === 'duplicate' && 'bg-sky-50/60',
                           )}
                         >
-                          <TableCell className="align-top text-xs text-muted-foreground">{line.row}</TableCell>
+                          <TableCell className="align-top tabular-nums">{line.row}</TableCell>
                           {line.kind === 'ready' ? (
                             PREVIEW_KEYS.map((key, index) => (
-                              <TableCell key={key} className="align-top text-xs">
+                              <TableCell key={key} className="align-top">
                                 <span className="block max-w-[220px] truncate" title={line.values[key] ?? ''}>
                                   {line.values[key] || <span className="italic text-muted-foreground/50">—</span>}
                                 </span>
@@ -895,7 +891,7 @@ export function ExpenseImportDialog({
                             <TableCell
                               colSpan={PREVIEW_KEYS.length}
                               className={cn(
-                                'align-top text-xs',
+                                'align-top',
                                 line.kind === 'rejected' ? 'text-rose-600 dark:text-rose-400' : 'text-blue-700 dark:text-blue-400',
                               )}
                             >
@@ -907,7 +903,7 @@ export function ExpenseImportDialog({
                     )}
                   </TableBody>
                 </Table>
-              </div>
+              </TableCard>
 
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <p className="text-xs text-muted-foreground">

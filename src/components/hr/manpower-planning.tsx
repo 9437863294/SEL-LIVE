@@ -3,7 +3,6 @@
 import { useMemo, useState } from 'react';
 import Link from 'next/link';
 import { Download, Loader2, Pencil, Plus, Target } from 'lucide-react';
-import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
@@ -25,7 +24,6 @@ import { exportRowsToExcel } from '@/lib/report-excel';
 import {
   HrDataList,
   HrEmptyState,
-  HrFilterCard,
   HrKpiCard,
   HrLoader,
   HrMeter,
@@ -34,6 +32,9 @@ import {
 } from './hr-ui';
 import { useHrCollection, useHrConfig, useHrPermissions } from './use-hr-config';
 import { PageHeader } from '@/components/shared/page-header';
+import { FilterBar } from '@/components/shared/filter-bar';
+import { StatusBadge, type StatusTone } from '@/components/shared/status-badge';
+import { TableCard } from '@/components/shared/table-card';
 
 /**
  * Manpower planning, spec section 4.
@@ -47,6 +48,15 @@ import { PageHeader } from '@/components/shared/page-header';
  * The "under recruitment" column is live, though — it comes from open requirements, which is what
  * makes the vacancy figure actionable rather than historical.
  */
+
+/** A plan line's staffing position on the app's status tones. */
+const POSITION_TONE: Record<string, StatusTone> = {
+  'Fully staffed': 'success',
+  'Covered by pipeline': 'info',
+  'Short staffed': 'warning',
+  'Critically short': 'danger',
+  'Over strength': 'neutral',
+};
 
 export default function ManpowerPlanning() {
   const { toast } = useToast();
@@ -158,9 +168,9 @@ export default function ManpowerPlanning() {
       align: 'right',
       cell: row =>
         row.position.criticalShortage > 0 ? (
-          <Badge variant="outline" className="border-rose-200 bg-rose-50 tabular-nums text-rose-800">
+          <StatusBadge tone="danger" className="tabular-nums">
             {row.position.criticalShortage}
-          </Badge>
+          </StatusBadge>
         ) : (
           <span className="text-xs text-muted-foreground">—</span>
         ),
@@ -169,19 +179,7 @@ export default function ManpowerPlanning() {
       header: 'Position',
       className: 'hidden xl:table-cell',
       mobile: 'aside',
-      cell: row => (
-        <span
-          className={
-            row.position.status === 'Critically short'
-              ? 'text-xs font-medium text-rose-700'
-              : row.position.status === 'Short staffed'
-                ? 'text-xs font-medium text-amber-700'
-                : 'text-xs text-muted-foreground'
-          }
-        >
-          {row.position.status}
-        </span>
-      ),
+      cell: row => <StatusBadge status={row.position.status} tone={POSITION_TONE[row.position.status]} />,
     },
     {
       header: 'Fulfilment',
@@ -261,12 +259,22 @@ export default function ManpowerPlanning() {
         <HrKpiCard label="Critical gap" value={totals.critical} tone="rose" hint="No recruitment running" />
       </div>
 
-      <HrFilterCard summary={`${decorated.length} of ${plans.length} lines`}>
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-          <div>
-            <Label className="text-xs">Financial year</Label>
+      <TableCard
+        title="Plan lines"
+        count={decorated.length}
+        total={plans.length}
+        noun="line"
+        toolbar={
+          <FilterBar
+            activeCount={(financialYear !== financialYearForHrDate() ? 1 : 0) + (departmentId !== 'all' ? 1 : 0) + (projectId !== 'all' ? 1 : 0)}
+            onClear={() => {
+              setFinancialYear(financialYearForHrDate());
+              setDepartmentId('all');
+              setProjectId('all');
+            }}
+          >
             <Select value={financialYear} onValueChange={setFinancialYear}>
-              <SelectTrigger><SelectValue /></SelectTrigger>
+              <SelectTrigger aria-label="Financial year"><SelectValue /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">All years</SelectItem>
                 {years.map(year => (
@@ -274,11 +282,8 @@ export default function ManpowerPlanning() {
                 ))}
               </SelectContent>
             </Select>
-          </div>
-          <div>
-            <Label className="text-xs">Department</Label>
             <Select value={departmentId} onValueChange={setDepartmentId}>
-              <SelectTrigger><SelectValue /></SelectTrigger>
+              <SelectTrigger aria-label="Department"><SelectValue /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">All departments</SelectItem>
                 {departments.map(department => (
@@ -286,11 +291,8 @@ export default function ManpowerPlanning() {
                 ))}
               </SelectContent>
             </Select>
-          </div>
-          <div>
-            <Label className="text-xs">Project</Label>
             <Select value={projectId} onValueChange={setProjectId}>
-              <SelectTrigger><SelectValue /></SelectTrigger>
+              <SelectTrigger aria-label="Project"><SelectValue /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">All projects</SelectItem>
                 {projects.map(project => (
@@ -298,29 +300,32 @@ export default function ManpowerPlanning() {
                 ))}
               </SelectContent>
             </Select>
-          </div>
-        </div>
-      </HrFilterCard>
-
-      <HrDataList
-        rows={decorated}
-        columns={columns}
-        rowClassName={row => (row.position.criticalShortage > 0 ? 'bg-rose-50/40' : undefined)}
-        empty={
-          <HrEmptyState
-            icon={Target}
-            title="No manpower plan lines yet"
-            description="Set the sanctioned strength per designation so requirements can be checked against an approved plan."
-            action={
-              permissions.can('Add', 'Manpower Planning') ? (
-                <Button size="sm" className="gap-2" onClick={() => setCreating(true)}>
-                  <Plus className="h-4 w-4" /> Add plan line
-                </Button>
-              ) : undefined
+          </FilterBar>
+        }
+      >
+        <div className="p-3 sm:p-0">
+          <HrDataList
+            frameless
+            rows={decorated}
+            columns={columns}
+            rowClassName={row => (row.position.criticalShortage > 0 ? 'bg-rose-50/40' : undefined)}
+            empty={
+              <HrEmptyState
+                icon={Target}
+                title="No manpower plan lines yet"
+                description="Set the sanctioned strength per designation so requirements can be checked against an approved plan."
+                action={
+                  permissions.can('Add', 'Manpower Planning') ? (
+                    <Button size="sm" className="gap-2" onClick={() => setCreating(true)}>
+                      <Plus className="h-4 w-4" /> Add plan line
+                    </Button>
+                  ) : undefined
+                }
+              />
             }
           />
-        }
-      />
+        </div>
+      </TableCard>
 
       <PlanDialog
         open={creating || Boolean(editing)}

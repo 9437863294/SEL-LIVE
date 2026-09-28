@@ -7,6 +7,7 @@ import { Save, Loader2, Plus, Trash2, Library } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { PageHeader } from '@/components/shared/page-header';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { TableCard } from '@/components/shared/table-card';
 import { Input } from '@/components/ui/input';
 import { useToast } from '@/hooks/use-toast';
 import { db } from '@/lib/firebase';
@@ -553,20 +554,20 @@ export default function MvacEntryPage() {
           </CardContent>
         </Card>
 
-        <Card>
-          <CardHeader>
-            <div className="flex items-center justify-between">
-              <div>
-                <CardTitle>MVAC Items</CardTitle>
-                <CardDescription>Add one or more items executed under this MVAC.</CardDescription>
-              </div>
+        <TableCard
+          title="MVAC Items"
+          description="Add one or more items executed under this MVAC."
+          actions={
               <Button variant="outline" type="button" onClick={() => setIsBoqMultiSelectOpen(true)} disabled={!currentProject}>
                 <Library className="mr-2 h-4 w-4" /> Add Items from BOQ
               </Button>
-            </div>
-          </CardHeader>
-          <CardContent>
-            <div className="overflow-x-auto">
+          }
+          footer={
+            <Button variant="outline" onClick={addItem}>
+              <Plus className="mr-2 h-4 w-4" /> Add Item
+            </Button>
+          }
+        >
               <Table>
                 <TableHeader>
                   <TableRow>
@@ -638,13 +639,7 @@ export default function MvacEntryPage() {
                   ))}
                 </TableBody>
               </Table>
-            </div>
-
-            <Button variant="outline" onClick={addItem} className="mt-4">
-              <Plus className="mr-2 h-4 w-4" /> Add Item
-            </Button>
-          </CardContent>
-        </Card>
+        </TableCard>
       </div>
 
       <BoqMultiSelectDialog

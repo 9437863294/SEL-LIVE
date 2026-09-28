@@ -3,29 +3,28 @@
 
 import { useState, useEffect, useMemo, Fragment, useCallback } from 'react';
 import { useParams } from 'next/navigation';
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { db } from '@/lib/firebase';
 import { collection, getDocs, query, where } from 'firebase/firestore';
 import type { InventoryLog, EnrichedLogItem, BoqItem, Project } from '@/lib/types';
 import { useToast } from '@/hooks/use-toast';
 import { Skeleton } from '@/components/ui/skeleton';
-import { ScrollArea } from '@/components/ui/scroll-area';
-import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Calendar } from '@/components/ui/calendar';
-import { Calendar as CalendarIcon, Search, ChevronDown, ChevronRight } from 'lucide-react';
+import { Calendar as CalendarIcon, ChevronDown, ChevronRight } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { DateRange } from 'react-day-picker';
 import { format } from 'date-fns';
 import { Switch } from '@/components/ui/switch';
 import { Label } from '@/components/ui/label';
-import { Badge } from '@/components/ui/badge';
 import type { TransactionSummary } from '@/app/(protected)/store-stock-management/[project]/transactions/page';
 import ViewTransactionDialog from '@/components/store-stock-management/ViewTransactionDialog';
 import { projectMatchesSlug } from '@/lib/project-slug';
+import { FilterBar } from '@/components/shared/filter-bar';
 import { PageHeader } from '@/components/shared/page-header';
+import { StatusBadge } from '@/components/shared/status-badge';
+import { TableCard } from '@/components/shared/table-card';
 
 
 interface InventoryItem {
@@ -227,25 +226,20 @@ export default function InventoryPage() {
             <div>
                 <PageHeader title="Inventory Status" />
 
-                <Card className="mb-6">
-                    <CardContent className="p-4 flex flex-col sm:flex-row items-start sm:items-end gap-4">
-                        <div className="relative w-full sm:w-auto flex-grow">
-                            <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
-                            <Input
-                                placeholder="Search by Sl. No. or Description..."
-                                value={searchTerm}
-                                onChange={(e) => setSearchTerm(e.target.value)}
-                                className="pl-8"
-                            />
-                        </div>
-                        <div className="w-full sm:w-auto">
+                <TableCard
+                    toolbar={
+                    <FilterBar
+                        search={{ value: searchTerm, onChange: setSearchTerm, placeholder: 'Search by Sl. No. or Description...' }}
+                        activeCount={(dateRange ? 1 : 0) + (showOnlyWithTransactions ? 1 : 0)}
+                        onClear={clearFilters}
+                    >
                             <Popover>
                                 <PopoverTrigger asChild>
                                     <Button
                                         id="date"
                                         variant={"outline"}
                                         className={cn(
-                                        "w-full sm:w-[300px] justify-start text-left font-normal",
+                                        "justify-start text-left font-normal",
                                         !dateRange && "text-muted-foreground"
                                         )}
                                     >
@@ -275,20 +269,15 @@ export default function InventoryPage() {
                                     />
                                 </PopoverContent>
                             </Popover>
-                        </div>
                         <div className="flex items-center space-x-2">
                             <Switch id="filter-transactions" checked={showOnlyWithTransactions} onCheckedChange={setShowOnlyWithTransactions} />
                             <Label htmlFor="filter-transactions" className="whitespace-nowrap">Show only items with transactions</Label>
                         </div>
-                        <Button onClick={clearFilters} variant="secondary">Clear</Button>
-                    </CardContent>
-                </Card>
-
-                <Card>
-                    <CardContent>
-                        <ScrollArea className="h-[calc(100vh-28rem)]">
+                    </FilterBar>
+                    }
+                >
                             <Table>
-                                <TableHeader className="sticky top-0 bg-background z-10">
+                                <TableHeader>
                                     <TableRow>
                                         <TableHead className="w-12"></TableHead>
                                         <TableHead>Sl. No.</TableHead>
@@ -297,8 +286,8 @@ export default function InventoryPage() {
                                         <TableHead className="text-right">BOQ Qty</TableHead>
                                         <TableHead className="text-right">Stock In</TableHead>
                                         <TableHead className="text-right">Stock Out</TableHead>
-                                        <TableHead className="text-right font-bold">Balance</TableHead>
-                                        <TableHead className="text-right font-bold">Stock item Value</TableHead>
+                                        <TableHead className="text-right">Balance</TableHead>
+                                        <TableHead className="text-right">Stock item Value</TableHead>
                                     </TableRow>
                                 </TableHeader>
                                 <TableBody>
@@ -320,14 +309,14 @@ export default function InventoryPage() {
                                                     <TableCell>{item.slNo}</TableCell>
                                                     <TableCell className="font-medium">{item.description}</TableCell>
                                                     <TableCell>{item.unit}</TableCell>
-                                                    <TableCell className="text-right">{item.boqQty.toLocaleString()}</TableCell>
-                                                    <TableCell className="text-right text-green-600">{item.stockIn.toLocaleString()}</TableCell>
-                                                    <TableCell className="text-right text-red-600">{item.stockOut.toLocaleString()}</TableCell>
-                                                    <TableCell className="text-right font-bold">{item.balance.toLocaleString()}</TableCell>
-                                                    <TableCell className="text-right font-bold">{formatCurrency(item.stockValue)}</TableCell>
+                                                    <TableCell className="text-right tabular-nums">{item.boqQty.toLocaleString()}</TableCell>
+                                                    <TableCell className="text-right tabular-nums text-green-600">{item.stockIn.toLocaleString()}</TableCell>
+                                                    <TableCell className="text-right tabular-nums text-red-600">{item.stockOut.toLocaleString()}</TableCell>
+                                                    <TableCell className="text-right font-medium tabular-nums">{item.balance.toLocaleString()}</TableCell>
+                                                    <TableCell className="whitespace-nowrap text-right font-medium tabular-nums">{formatCurrency(item.stockValue)}</TableCell>
                                                 </TableRow>
                                                 {expandedRows.has(item.id) && (
-                                                    <TableRow className="bg-muted/50 hover:bg-muted/50">
+                                                    <TableRow className="bg-muted/30">
                                                         <TableCell colSpan={9} className="p-2">
                                                             <div className="p-2 bg-background rounded-md">
                                                                 <h4 className="font-semibold text-sm mb-2">Transaction History</h4>
@@ -356,15 +345,15 @@ export default function InventoryPage() {
                                                                                             {log.details?.grnNo || `Issued to ${log.details?.issuedTo}`}
                                                                                         </Button>
                                                                                     </TableCell>
-                                                                                    <TableCell>
-                                                                                    <Badge variant={log.transactionType === 'Goods Receipt' ? 'default' : 'destructive'}>{log.transactionType}</Badge>
+                                                                                    <TableCell className="whitespace-nowrap">
+                                                                                    <StatusBadge status={log.transactionType} tone={log.transactionType === 'Goods Receipt' ? 'success' : 'danger'} />
                                                                                     </TableCell>
                                                                                     <TableCell>{log.unit}</TableCell>
-                                                                                    <TableCell className="text-right">{log.quantity.toLocaleString()}</TableCell>
-                                                                                    <TableCell className="text-right">{formatCurrency(log.cost || 0)}</TableCell>
-                                                                                    <TableCell className="text-right">{formatCurrency((log.quantity || 0) * (log.cost || 0))}</TableCell>
-                                                                                    <TableCell className="text-right font-semibold">{log.availableQuantity || 0}</TableCell>
-                                                                                    <TableCell className="text-right font-semibold">{formatCurrency(remainingValue)}</TableCell>
+                                                                                    <TableCell className="text-right tabular-nums">{log.quantity.toLocaleString()}</TableCell>
+                                                                                    <TableCell className="whitespace-nowrap text-right tabular-nums">{formatCurrency(log.cost || 0)}</TableCell>
+                                                                                    <TableCell className="whitespace-nowrap text-right tabular-nums">{formatCurrency((log.quantity || 0) * (log.cost || 0))}</TableCell>
+                                                                                    <TableCell className="text-right font-medium tabular-nums">{log.availableQuantity || 0}</TableCell>
+                                                                                    <TableCell className="whitespace-nowrap text-right font-medium tabular-nums">{formatCurrency(remainingValue)}</TableCell>
                                                                                 </TableRow>
                                                                             )
                                                                         })}
@@ -385,9 +374,7 @@ export default function InventoryPage() {
                                     )}
                                 </TableBody>
                             </Table>
-                        </ScrollArea>
-                    </CardContent>
-                </Card>
+                </TableCard>
             </div>
              <ViewTransactionDialog 
                 isOpen={isViewOpen}

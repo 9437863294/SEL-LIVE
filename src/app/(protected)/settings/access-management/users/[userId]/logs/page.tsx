@@ -19,7 +19,6 @@
 import { useState, useEffect, useMemo } from 'react';
 import { useParams } from 'next/navigation';
 import { FilePen, FilePlus, History, LogIn, LogOut } from 'lucide-react';
-import { CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { db } from '@/lib/firebase';
 import { collection, query, where, getDocs, doc, getDoc } from 'firebase/firestore';
@@ -28,7 +27,8 @@ import { format } from 'date-fns';
 import type { User } from '@/lib/types';
 import { HrDataList, HrEmptyState, type HrListColumn } from '@/components/hr/hr-ui';
 import { PageHeader } from '@/components/shared/page-header';
-import { AccessCard, AccessPageShell, ACCESS_SCROLL_FRAME_CLASS } from '@/components/access-management/access-ui';
+import { TableCard } from '@/components/shared/table-card';
+import { AccessPageShell, ACCESS_SCROLL_FRAME_CLASS } from '@/components/access-management/access-ui';
 
 type UserLog = {
   id: string;
@@ -37,22 +37,19 @@ type UserLog = {
   details: Record<string, any>;
 };
 
-/** One tone per action, so a long trail is scannable by colour before it is read. */
-const ACTION_TONE: Record<string, { icon: React.ElementType; className: string }> = {
-  Login: { icon: LogIn, className: 'border-emerald-200 bg-emerald-50 text-emerald-700' },
-  Logout: { icon: LogOut, className: 'border-slate-200 bg-slate-50 text-slate-600' },
-  'Create User': { icon: FilePlus, className: 'border-sky-200 bg-sky-50 text-sky-700' },
-  'Update User': { icon: FilePen, className: 'border-amber-200 bg-amber-50 text-amber-700' },
+/** One icon per action, so a long trail is scannable before it is read. An action is a kind of
+ * event, not a status, so the chip itself is the plain tag. */
+const ACTION_ICON: Record<string, React.ElementType> = {
+  Login: LogIn,
+  Logout: LogOut,
+  'Create User': FilePlus,
+  'Update User': FilePen,
 };
 
 function ActionBadge({ action }: { action: string }) {
-  const tone = ACTION_TONE[action];
-  const Icon = tone?.icon ?? History;
+  const Icon = ACTION_ICON[action] ?? History;
   return (
-    <Badge
-      variant="outline"
-      className={`gap-1 whitespace-nowrap text-[11px] ${tone?.className ?? 'border-slate-200 bg-white text-slate-600'}`}
-    >
+    <Badge variant="outline" className="gap-1 whitespace-nowrap">
       <Icon className="h-3 w-3" />
       {action}
     </Badge>
@@ -138,38 +135,40 @@ export default function UserLogsPage() {
       />
 
       <div className={ACCESS_SCROLL_FRAME_CLASS}>
-        <AccessCard>
-          <CardHeader className="px-4 py-3">
-            <CardTitle>Activity log</CardTitle>
-            <CardDescription className="text-xs">
-              {isLoading ? 'Loading…' : `${logs.length} ${logs.length === 1 ? 'entry' : 'entries'}, newest first.`}
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="px-4 pb-4">
-            {isLoading ? (
-              <div className="space-y-2">
-                {Array.from({ length: 6 }).map((_, i) => (
-                  <Skeleton key={i} className="h-10 w-full rounded-lg" />
-                ))}
-              </div>
-            ) : (
-              // The module's responsive register: a real table from `sm` up, stacked cards below
-              // it, from one column spec — rather than the two hand-written copies of the same
-              // three fields this page used to carry.
+        <TableCard
+          title="Activity log"
+          description={
+            isLoading ? 'Loading…' : `${logs.length} ${logs.length === 1 ? 'entry' : 'entries'}, newest first.`
+          }
+        >
+          {isLoading ? (
+            <div className="space-y-2 p-4">
+              {Array.from({ length: 6 }).map((_, i) => (
+                <Skeleton key={i} className="h-10 w-full rounded-lg" />
+              ))}
+            </div>
+          ) : (
+            // The module's responsive register: a real table from `sm` up, stacked cards below
+            // it, from one column spec — rather than the two hand-written copies of the same
+            // three fields this page used to carry.
+            <div className="p-3 sm:p-0">
               <HrDataList
                 rows={logs}
                 columns={columns}
+                frameless
                 empty={
-                  <HrEmptyState
-                    icon={History}
-                    title="No activity yet"
-                    description="Nothing has been recorded against this user. Sign-ins and record edits will appear here."
-                  />
+                  <div className="sm:p-3">
+                    <HrEmptyState
+                      icon={History}
+                      title="No activity yet"
+                      description="Nothing has been recorded against this user. Sign-ins and record edits will appear here."
+                    />
+                  </div>
                 }
               />
-            )}
-          </CardContent>
-        </AccessCard>
+            </div>
+          )}
+        </TableCard>
       </div>
     </AccessPageShell>
   );

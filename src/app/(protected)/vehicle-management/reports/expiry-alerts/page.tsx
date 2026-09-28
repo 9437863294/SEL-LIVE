@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import ExcelJS from 'exceljs';
 import { collection, getDocs } from 'firebase/firestore';
-import { AlertTriangle, Download, RotateCcw, Search } from 'lucide-react';
+import { AlertTriangle, Download } from 'lucide-react';
 import { db } from '@/lib/firebase';
 import {
   ALERT_STAGE_LABELS,
@@ -16,10 +16,11 @@ import { useAuthorization } from '@/hooks/useAuthorization';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { PageHeader } from '@/components/shared/page-header';
+import { TableCard } from '@/components/shared/table-card';
+import { FilterBar } from '@/components/shared/filter-bar';
+import { StatusBadge } from '@/components/shared/status-badge';
 import { Skeleton } from '@/components/ui/skeleton';
-import { TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { Badge } from '@/components/ui/badge';
-import { Input } from '@/components/ui/input';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 
 const ALL_MODULES = ['All', 'Insurance', 'PUC', 'Fitness', 'Road Tax', 'Permit', 'Documents', 'Driver License'] as const;
@@ -259,12 +260,9 @@ export default function ExpiryAlertsReportPage() {
   }
 
   const alertBadge = (stage: string) => (
-    <Badge
-      variant={stage === 'Expired' ? 'destructive' : 'outline'}
-      className={stage !== 'Expired' ? 'bg-amber-50 text-amber-700' : ''}
-    >
+    <StatusBadge status={stage} tone={stage === 'Expired' ? 'danger' : 'warning'}>
       {ALERT_STAGE_LABELS[stage] || stage}
-    </Badge>
+    </StatusBadge>
   );
 
   return (
@@ -325,120 +323,103 @@ export default function ExpiryAlertsReportPage() {
         </Card>
       </div>
 
-      <Card className="vm-panel-strong">
-        <CardHeader className="pb-3">
-          <CardTitle>Report Filters</CardTitle>
-          <CardDescription>Select any future month and year to plan renewals in advance.</CardDescription>
-        </CardHeader>
-        <CardContent className="grid grid-cols-1 gap-2 sm:grid-cols-2 xl:grid-cols-5">
-          <div className="relative sm:col-span-2 xl:col-span-1">
-            <Search className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
-            <Input
-              value={searchQuery}
-              onChange={(event) => setSearchQuery(event.target.value)}
-              placeholder="Vehicle or reference..."
-              className="pl-9"
-            />
+      <TableCard
+        title={moduleFilter === 'All' ? 'All Expiry Records' : `${moduleFilter} Expiries`}
+        description="Select any future month and year to plan renewals in advance."
+        icon={AlertTriangle}
+        count={filteredAlerts.length}
+        total={allAlerts.length}
+        noun="alert"
+        toolbar={
+          <div className="space-y-2">
+            {/* Module filter tabs */}
+            <div className="flex flex-wrap gap-2">
+              {ALL_MODULES.map((m) => (
+                <button
+                  key={m}
+                  onClick={() => setModuleFilter(m)}
+                  className={`rounded-full border px-3 py-1 text-xs font-medium transition-all ${
+                    moduleFilter === m
+                      ? 'border-rose-300 bg-rose-500 text-white shadow-sm'
+                      : 'border-white/70 bg-white/80 text-slate-600 hover:bg-white'
+                  }`}
+                >
+                  {m}
+                  {m !== 'All' && (
+                    <span className="ml-1.5 opacity-70">
+                      {allAlerts.filter((r) => r.module === m).length}
+                    </span>
+                  )}
+                </button>
+              ))}
+            </div>
+            <FilterBar
+              search={{ value: searchQuery, onChange: setSearchQuery, placeholder: 'Vehicle or reference...' }}
+              activeCount={[moduleFilter, statusFilter, monthFilter, yearFilter].filter((value) => value !== 'All').length}
+              onClear={resetFilters}
+            >
+              <Select value={statusFilter} onValueChange={setStatusFilter}>
+                <SelectTrigger><SelectValue placeholder="Expiry status" /></SelectTrigger>
+                <SelectContent>{STATUS_OPTIONS.map((status) => <SelectItem key={status} value={status}>{status}</SelectItem>)}</SelectContent>
+              </Select>
+              <Select value={monthFilter} onValueChange={setMonthFilter}>
+                <SelectTrigger><SelectValue placeholder="Expiry month" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="All">All Months</SelectItem>
+                  {MONTHS.map((month, index) => <SelectItem key={month} value={String(index + 1)}>{month}</SelectItem>)}
+                </SelectContent>
+              </Select>
+              <Select value={yearFilter} onValueChange={setYearFilter}>
+                <SelectTrigger><SelectValue placeholder="Expiry year" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="All">All Years</SelectItem>
+                  {availableYears.map((year) => <SelectItem key={year} value={String(year)}>{year}</SelectItem>)}
+                </SelectContent>
+              </Select>
+            </FilterBar>
           </div>
-          <Select value={statusFilter} onValueChange={setStatusFilter}>
-            <SelectTrigger><SelectValue placeholder="Expiry status" /></SelectTrigger>
-            <SelectContent>{STATUS_OPTIONS.map((status) => <SelectItem key={status} value={status}>{status}</SelectItem>)}</SelectContent>
-          </Select>
-          <Select value={monthFilter} onValueChange={setMonthFilter}>
-            <SelectTrigger><SelectValue placeholder="Expiry month" /></SelectTrigger>
-            <SelectContent>
-              <SelectItem value="All">All Months</SelectItem>
-              {MONTHS.map((month, index) => <SelectItem key={month} value={String(index + 1)}>{month}</SelectItem>)}
-            </SelectContent>
-          </Select>
-          <Select value={yearFilter} onValueChange={setYearFilter}>
-            <SelectTrigger><SelectValue placeholder="Expiry year" /></SelectTrigger>
-            <SelectContent>
-              <SelectItem value="All">All Years</SelectItem>
-              {availableYears.map((year) => <SelectItem key={year} value={String(year)}>{year}</SelectItem>)}
-            </SelectContent>
-          </Select>
-          <Button variant="outline" onClick={resetFilters} className="bg-white/80">
-            <RotateCcw className="mr-2 h-4 w-4" /> Reset Filters
-          </Button>
-        </CardContent>
-      </Card>
-
-      {/* Module filter tabs */}
-      <div className="flex flex-wrap gap-2">
-        {ALL_MODULES.map((m) => (
-          <button
-            key={m}
-            onClick={() => setModuleFilter(m)}
-            className={`rounded-full border px-3 py-1 text-xs font-medium transition-all ${
-              moduleFilter === m
-                ? 'border-rose-300 bg-rose-500 text-white shadow-sm'
-                : 'border-white/70 bg-white/80 text-slate-600 hover:bg-white'
-            }`}
-          >
-            {m}
-            {m !== 'All' && (
-              <span className="ml-1.5 opacity-70">
-                {allAlerts.filter((r) => r.module === m).length}
-              </span>
-            )}
-          </button>
-        ))}
-      </div>
-
-      <Card className="vm-panel-strong">
-        <CardHeader>
-          <CardTitle>
-            {moduleFilter === 'All' ? 'All Expiry Records' : `${moduleFilter} Expiries`}
-          </CardTitle>
-          <CardDescription>{filteredAlerts.length} alert{filteredAlerts.length !== 1 ? 's' : ''} found</CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-2 sm:hidden">
-          {filteredAlerts.length === 0 ? (
-            <div className="rounded-lg border border-white/70 bg-white/80 px-3 py-6 text-center text-muted-foreground">
-              No expiry records match the selected filters.
-            </div>
-          ) : (
-            filteredAlerts.map((item, idx) => (
-              <div
-                key={`${item.module}-${item.reference}-${idx}`}
-                className="rounded-xl border border-white/70 bg-white/85 p-3 shadow-sm"
-              >
-                <div className="mb-1.5 flex items-center justify-between gap-2">
-                  <span className="text-sm font-semibold">{item.module}</span>
-                  {alertBadge(item.alertStage)}
-                </div>
-                <div className="space-y-1 text-sm">
-                  <div className="flex justify-between">
-                    <span className="text-muted-foreground">Vehicle</span>
-                    <span className="font-medium">{item.vehicleNumber}</span>
+        }
+      >
+        {filteredAlerts.length === 0 ? (
+          <div className="px-4 py-10 text-center text-sm text-muted-foreground">
+            No expiry records match the selected filters.
+          </div>
+        ) : (
+          <>
+            <div className="space-y-2 p-3 sm:hidden">
+              {filteredAlerts.map((item, idx) => (
+                <div
+                  key={`${item.module}-${item.reference}-${idx}`}
+                  className="rounded-xl border border-white/70 bg-white/85 p-3 shadow-sm"
+                >
+                  <div className="mb-1.5 flex items-center justify-between gap-2">
+                    <span className="text-sm font-semibold">{item.module}</span>
+                    {alertBadge(item.alertStage)}
                   </div>
-                  <div className="flex justify-between">
-                    <span className="text-muted-foreground">Time Remaining</span>
-                    <span>{item.daysToExpiry === null ? '-' : item.daysToExpiry < 0 ? `${Math.abs(item.daysToExpiry)} days overdue` : `${item.daysToExpiry} days`}</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-muted-foreground">Reference</span>
-                    <span>{item.reference}</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-muted-foreground">Expiry</span>
-                    <span>{item.expiryDate || '-'}</span>
+                  <div className="space-y-1 text-sm">
+                    <div className="flex justify-between">
+                      <span className="text-muted-foreground">Vehicle</span>
+                      <span className="font-medium">{item.vehicleNumber}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-muted-foreground">Time Remaining</span>
+                      <span>{item.daysToExpiry === null ? '-' : item.daysToExpiry < 0 ? `${Math.abs(item.daysToExpiry)} days overdue` : `${item.daysToExpiry} days`}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-muted-foreground">Reference</span>
+                      <span>{item.reference}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-muted-foreground">Expiry</span>
+                      <span>{item.expiryDate || '-'}</span>
+                    </div>
                   </div>
                 </div>
-              </div>
-            ))
-          )}
-        </CardContent>
-        <CardContent className="hidden sm:block p-0">
-          {filteredAlerts.length === 0 ? (
-            <div className="rounded-lg border border-white/70 bg-white/80 px-4 py-10 text-center text-muted-foreground">
-              No expiry records match the selected filters.
+              ))}
             </div>
-          ) : (
-            <div className="overflow-auto rounded-lg border border-white/70 bg-white/80 h-[calc(100vh-420px)]">
-              <table className="w-full caption-bottom text-sm">
-                <TableHeader className="sticky top-0 z-10 bg-slate-50 shadow-sm">
+            <div className="hidden sm:block">
+              <Table containerClassName="overflow-visible">
+                <TableHeader>
                   <TableRow>
                     <TableHead>Module</TableHead>
                     <TableHead>Vehicle</TableHead>
@@ -451,27 +432,24 @@ export default function ExpiryAlertsReportPage() {
                 </TableHeader>
                 <TableBody>
                   {filteredAlerts.map((item, idx) => (
-                    <TableRow
-                      key={`${item.module}-${item.reference}-${idx}`}
-                      className="hover:bg-rose-50/50 transition-colors"
-                    >
+                    <TableRow key={`${item.module}-${item.reference}-${idx}`}>
                       <TableCell>{item.module}</TableCell>
                       <TableCell className="font-medium">{item.vehicleNumber}</TableCell>
                       <TableCell>{item.reference}</TableCell>
-                      <TableCell>{item.expiryDate || '-'}</TableCell>
+                      <TableCell className="whitespace-nowrap">{item.expiryDate || '-'}</TableCell>
                       <TableCell>{alertBadge(item.alertStage)}</TableCell>
                       <TableCell>{item.complianceStatus}</TableCell>
-                      <TableCell className={item.daysToExpiry !== null && item.daysToExpiry < 0 ? 'font-medium text-rose-600' : ''}>
+                      <TableCell className={item.daysToExpiry !== null && item.daysToExpiry < 0 ? 'whitespace-nowrap font-medium text-rose-600' : 'whitespace-nowrap'}>
                         {item.daysToExpiry === null ? '-' : item.daysToExpiry < 0 ? `${Math.abs(item.daysToExpiry)} days overdue` : item.daysToExpiry === 0 ? 'Today' : `${item.daysToExpiry} days`}
                       </TableCell>
                     </TableRow>
                   ))}
                 </TableBody>
-              </table>
+              </Table>
             </div>
-          )}
-        </CardContent>
-      </Card>
+          </>
+        )}
+      </TableCard>
     </div>
   );
 }

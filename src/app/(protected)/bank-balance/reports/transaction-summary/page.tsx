@@ -1,13 +1,15 @@
 'use client';
 export const dynamic = 'force-dynamic';
 
-import { useState, useEffect, useMemo } from 'react';
+import { Fragment, useState, useEffect, useMemo } from 'react';
 import { ShieldAlert, LayoutGrid, Building2, CreditCard } from 'lucide-react';
 import { PageHeader } from '@/components/shared/page-header';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
+import { Table, TableBody, TableCell, TableFooter, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { TableCard } from '@/components/shared/table-card';
 import { db } from '@/lib/firebase';
 import { collection, getDocs } from 'firebase/firestore';
 import type { BankAccount, BankExpense } from '@/lib/types';
@@ -164,11 +166,11 @@ export default function TransactionSummaryPage() {
         {/* Filters */}
         <Card className="mb-5 rounded-xl border-border/60 shadow-sm">
           <CardContent className="p-4">
-            <div className="flex flex-wrap gap-4 items-end">
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 sm:items-end lg:max-w-2xl">
               <div>
                 <Label className="text-xs text-muted-foreground mb-1.5 block">Date Range</Label>
                 <Select value={rangeOption} onValueChange={v => setRangeOption(v as RangeOption)}>
-                  <SelectTrigger className="h-9 w-44">
+                  <SelectTrigger>
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
@@ -182,7 +184,7 @@ export default function TransactionSummaryPage() {
               <div>
                 <Label className="text-xs text-muted-foreground mb-1.5 block">Transaction Type</Label>
                 <Select value={excludeContra ? 'exclude' : 'include'} onValueChange={v => setExcludeContra(v === 'exclude')}>
-                  <SelectTrigger className="h-9 w-48">
+                  <SelectTrigger>
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
@@ -196,141 +198,117 @@ export default function TransactionSummaryPage() {
         </Card>
 
         {/* Summary Table */}
-        <Card className="rounded-xl border-border/60 shadow-sm overflow-hidden">
-          <CardHeader className="border-b border-border/40 pb-4">
-            <CardTitle>Monthly Breakdown by Account</CardTitle>
-            <CardDescription>
+        <TableCard
+          title="Monthly Breakdown by Account"
+          description={
+            <>
               {format(months[0] ?? new Date(), 'MMM yyyy')} — {format(months[months.length - 1] ?? new Date(), 'MMM yyyy')}
               &nbsp;·&nbsp; {months.length} month{months.length !== 1 ? 's' : ''}
               {excludeContra && ' · Contra excluded'}
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="p-0">
-            <div className="overflow-x-auto">
-              <table className="w-full text-xs border-collapse">
-                {/* Header */}
-                <thead>
-                  <tr className="bg-muted/40 border-b border-border/40">
-                    <th className="sticky left-0 bg-muted/40 text-left font-semibold px-3 py-2.5 min-w-[180px] z-10">Account</th>
+            </>
+          }
+          count={summaryRows.length}
+          noun="account"
+        >
+              <Table className="w-max min-w-full">
+                <TableHeader>
+                  <TableRow>
+                    <TableHead rowSpan={2} className="sticky left-0 !z-30 min-w-[180px] border-r">Account</TableHead>
                     {months.map(m => (
-                      <th key={format(m, 'yyyy-MM')} colSpan={3} className="text-center font-semibold px-2 py-2.5 min-w-[180px] border-l border-border/20">
+                      <TableHead key={format(m, 'yyyy-MM')} colSpan={3} className="text-center border-l">
                         {format(m, 'MMM yyyy')}
-                      </th>
+                      </TableHead>
                     ))}
-                    <th colSpan={3} className="text-center font-semibold px-2 py-2.5 min-w-[180px] border-l border-border/40 bg-primary/5">
+                    <TableHead colSpan={3} className="text-center border-l">
                       Total
-                    </th>
-                  </tr>
-                  <tr className="bg-muted/20 border-b border-border/40">
-                    <th className="sticky left-0 bg-muted/20 z-10" />
-                    {months.map(m => (
-                      <th key={format(m, 'yyyy-MM') + '-sub'} className="border-l border-border/20" colSpan={3}>
-                        <div className="grid grid-cols-3 text-[10px] font-medium text-muted-foreground">
-                          <span className="px-2 py-1 text-green-700 dark:text-green-400">Receipts</span>
-                          <span className="px-2 py-1 text-red-700 dark:text-red-400">Payments</span>
-                          <span className="px-2 py-1">Net</span>
-                        </div>
-                      </th>
+                    </TableHead>
+                  </TableRow>
+                  <TableRow className="[&>th]:!top-[var(--table-head-h,2.5rem)]">
+                    {[...months.map(m => format(m, 'yyyy-MM')), 'total'].map(key => (
+                      <Fragment key={`${key}-sub`}>
+                        <TableHead className="text-right border-l">Receipts</TableHead>
+                        <TableHead className="text-right">Payments</TableHead>
+                        <TableHead className="text-right">Net</TableHead>
+                      </Fragment>
                     ))}
-                    <th className="border-l border-border/40 bg-primary/5" colSpan={3}>
-                      <div className="grid grid-cols-3 text-[10px] font-medium text-muted-foreground">
-                        <span className="px-2 py-1 text-green-700 dark:text-green-400">Receipts</span>
-                        <span className="px-2 py-1 text-red-700 dark:text-red-400">Payments</span>
-                        <span className="px-2 py-1">Net</span>
-                      </div>
-                    </th>
-                  </tr>
-                </thead>
-                <tbody>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
                   {summaryRows.length === 0 ? (
-                    <tr>
-                      <td colSpan={1 + months.length * 3 + 3} className="text-center py-12 text-muted-foreground">
+                    <TableRow>
+                      <TableCell colSpan={1 + months.length * 3 + 3} className="text-center py-12 text-muted-foreground">
                         No accounts found.
-                      </td>
-                    </tr>
-                  ) : summaryRows.map((row, idx) => (
-                    <tr key={row.account.id} className={cn('border-b border-border/20 hover:bg-muted/10 transition-colors', idx % 2 === 1 && 'bg-muted/5')}>
-                      <td className={cn('sticky left-0 z-10 px-3 py-2 font-medium', idx % 2 === 1 ? 'bg-muted/10' : 'bg-background')}>
+                      </TableCell>
+                    </TableRow>
+                  ) : summaryRows.map(row => (
+                    <TableRow key={row.account.id}>
+                      <TableCell className="sticky left-0 z-[1] border-r bg-background font-medium">
                         <div className="flex items-center gap-1.5">
                           {row.account.accountType === 'Cash Credit'
                             ? <CreditCard className="h-3.5 w-3.5 text-violet-500 shrink-0" />
                             : <Building2 className="h-3.5 w-3.5 text-sky-500 shrink-0" />
                           }
                           <div>
-                            <p className="font-semibold leading-none">{row.account.shortName}</p>
+                            <p className="leading-none">{row.account.shortName}</p>
                             <p className="text-[10px] text-muted-foreground leading-none mt-0.5">{row.account.bankName}</p>
                           </div>
                         </div>
-                      </td>
+                      </TableCell>
                       {months.map(m => {
                         const mk = format(m, 'yyyy-MM');
                         const cell = row.months[mk] || { receipts: 0, payments: 0, net: 0 };
                         const hasActivity = cell.receipts > 0 || cell.payments > 0;
                         return (
-                          <td key={mk} colSpan={3} className="border-l border-border/10 p-0">
-                            <div className={cn('grid grid-cols-3', !hasActivity && 'opacity-30')}>
-                              <span className="px-2 py-2 text-green-700 dark:text-green-400 font-mono text-right">
-                                {cell.receipts > 0 ? formatCurrency(cell.receipts) : '—'}
-                              </span>
-                              <span className="px-2 py-2 text-red-700 dark:text-red-400 font-mono text-right">
-                                {cell.payments > 0 ? formatCurrency(cell.payments) : '—'}
-                              </span>
-                              <span className={cn('px-2 py-2 font-semibold font-mono text-right', cell.net < 0 ? 'text-red-600' : cell.net > 0 ? 'text-emerald-600' : 'text-muted-foreground')}>
-                                {hasActivity ? formatCurrency(cell.net) : '—'}
-                              </span>
-                            </div>
-                          </td>
+                          <Fragment key={mk}>
+                            <TableCell className={cn('whitespace-nowrap border-l text-right font-mono text-green-700 dark:text-green-400', !hasActivity && 'opacity-30')}>
+                              {cell.receipts > 0 ? formatCurrency(cell.receipts) : '—'}
+                            </TableCell>
+                            <TableCell className={cn('whitespace-nowrap text-right font-mono text-red-700 dark:text-red-400', !hasActivity && 'opacity-30')}>
+                              {cell.payments > 0 ? formatCurrency(cell.payments) : '—'}
+                            </TableCell>
+                            <TableCell className={cn('whitespace-nowrap text-right font-medium font-mono', cell.net < 0 ? 'text-red-600' : cell.net > 0 ? 'text-emerald-600' : 'text-muted-foreground', !hasActivity && 'opacity-30')}>
+                              {hasActivity ? formatCurrency(cell.net) : '—'}
+                            </TableCell>
+                          </Fragment>
                         );
                       })}
-                      <td colSpan={3} className="border-l border-border/40 bg-primary/3 p-0">
-                        <div className="grid grid-cols-3">
-                          <span className="px-2 py-2 text-green-700 dark:text-green-400 font-mono font-semibold text-right">{formatCurrency(row.totalReceipts)}</span>
-                          <span className="px-2 py-2 text-red-700 dark:text-red-400 font-mono font-semibold text-right">{formatCurrency(row.totalPayments)}</span>
-                          <span className={cn('px-2 py-2 font-bold font-mono text-right', row.totalNet < 0 ? 'text-red-600' : 'text-emerald-600')}>{formatCurrency(row.totalNet)}</span>
-                        </div>
-                      </td>
-                    </tr>
+                      <TableCell className="whitespace-nowrap border-l text-right font-medium font-mono text-green-700 dark:text-green-400">{formatCurrency(row.totalReceipts)}</TableCell>
+                      <TableCell className="whitespace-nowrap text-right font-medium font-mono text-red-700 dark:text-red-400">{formatCurrency(row.totalPayments)}</TableCell>
+                      <TableCell className={cn('whitespace-nowrap text-right font-medium font-mono', row.totalNet < 0 ? 'text-red-600' : 'text-emerald-600')}>{formatCurrency(row.totalNet)}</TableCell>
+                    </TableRow>
                   ))}
-                </tbody>
+                </TableBody>
                 {/* Grand Total Footer */}
                 {summaryRows.length > 0 && (
-                  <tfoot>
-                    <tr className="bg-muted/40 border-t-2 border-border/60 font-bold">
-                      <td className="sticky left-0 bg-muted/40 z-10 px-3 py-2.5 font-bold text-xs">GRAND TOTAL</td>
+                  <TableFooter>
+                    <TableRow>
+                      <TableCell className="sticky left-0 z-[1] border-r bg-slate-50">GRAND TOTAL</TableCell>
                       {months.map(m => {
                         const mk = format(m, 'yyyy-MM');
                         const cell = grandRow.months[mk] || { receipts: 0, payments: 0, net: 0 };
                         return (
-                          <td key={mk} colSpan={3} className="border-l border-border/20 p-0">
-                            <div className="grid grid-cols-3">
-                              <span className="px-2 py-2.5 text-green-700 font-mono font-bold text-right">{formatCurrency(cell.receipts)}</span>
-                              <span className="px-2 py-2.5 text-red-700 font-mono font-bold text-right">{formatCurrency(cell.payments)}</span>
-                              <span className={cn('px-2 py-2.5 font-bold font-mono text-right', cell.net < 0 ? 'text-red-700' : 'text-emerald-700')}>{formatCurrency(cell.net)}</span>
-                            </div>
-                          </td>
+                          <Fragment key={mk}>
+                            <TableCell className="whitespace-nowrap border-l text-right font-mono text-green-700">{formatCurrency(cell.receipts)}</TableCell>
+                            <TableCell className="whitespace-nowrap text-right font-mono text-red-700">{formatCurrency(cell.payments)}</TableCell>
+                            <TableCell className={cn('whitespace-nowrap text-right font-mono', cell.net < 0 ? 'text-red-700' : 'text-emerald-700')}>{formatCurrency(cell.net)}</TableCell>
+                          </Fragment>
                         );
                       })}
-                      <td colSpan={3} className="border-l border-border/40 bg-primary/5 p-0">
-                        <div className="grid grid-cols-3">
-                          <span className="px-2 py-2.5 text-green-700 font-mono font-bold text-right">{formatCurrency(grandRow.totalReceipts)}</span>
-                          <span className="px-2 py-2.5 text-red-700 font-mono font-bold text-right">{formatCurrency(grandRow.totalPayments)}</span>
-                          <span className={cn('px-2 py-2.5 font-bold font-mono text-right', grandRow.totalNet < 0 ? 'text-red-700' : 'text-emerald-700')}>{formatCurrency(grandRow.totalNet)}</span>
-                        </div>
-                      </td>
-                    </tr>
-                  </tfoot>
+                      <TableCell className="whitespace-nowrap border-l text-right font-mono text-green-700">{formatCurrency(grandRow.totalReceipts)}</TableCell>
+                      <TableCell className="whitespace-nowrap text-right font-mono text-red-700">{formatCurrency(grandRow.totalPayments)}</TableCell>
+                      <TableCell className={cn('whitespace-nowrap text-right font-mono', grandRow.totalNet < 0 ? 'text-red-700' : 'text-emerald-700')}>{formatCurrency(grandRow.totalNet)}</TableCell>
+                    </TableRow>
+                  </TableFooter>
                 )}
-              </table>
-            </div>
-          </CardContent>
-        </Card>
+              </Table>
+        </TableCard>
 
         {/* Legend */}
         <div className="mt-4 flex flex-wrap gap-3 text-xs text-muted-foreground">
           <div className="flex items-center gap-1.5"><Building2 className="h-3.5 w-3.5 text-sky-500" /> Current Account</div>
           <div className="flex items-center gap-1.5"><CreditCard className="h-3.5 w-3.5 text-violet-500" /> Cash Credit</div>
-          <Badge variant="outline" className="text-[10px] border-green-200 text-green-700 bg-green-50">Receipts = Credits</Badge>
-          <Badge variant="outline" className="text-[10px] border-red-200 text-red-700 bg-red-50">Payments = Debits</Badge>
+          <Badge variant="success">Receipts = Credits</Badge>
+          <Badge variant="danger">Payments = Debits</Badge>
         </div>
       </div>
     </>

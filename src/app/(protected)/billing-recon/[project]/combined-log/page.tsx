@@ -4,7 +4,8 @@ import { useState, useEffect, useMemo, useCallback } from 'react';
 import { View } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { PageHeader } from '@/components/shared/page-header';
-import { Card, CardContent, CardHeader } from '@/components/ui/card';
+import { TableCard } from '@/components/shared/table-card';
+import { FilterBar } from '@/components/shared/filter-bar';
 import {
   Table,
   TableBody,
@@ -288,14 +289,24 @@ export default function CombinedLogPage() {
           backLabel="Back to project"
         />
 
-        <Card>
-          <CardHeader>
-            <div className="flex flex-wrap items-center gap-4">
+        <TableCard
+          title="JMC & MVAC entries"
+          count={isLoading ? undefined : filteredLog.length}
+          total={log.length}
+          toolbar={
+            <FilterBar
+              activeCount={[yearFilter, monthFilter, typeFilter].filter((v) => v !== 'all').length}
+              onClear={() => {
+                setYearFilter('all');
+                setMonthFilter('all');
+                setTypeFilter('all');
+              }}
+            >
               <Select
                 value={yearFilter}
                 onValueChange={setYearFilter}
               >
-                <SelectTrigger className="w-[180px]">
+                <SelectTrigger>
                   <SelectValue placeholder="All Years" />
                 </SelectTrigger>
                 <SelectContent>
@@ -315,7 +326,7 @@ export default function CombinedLogPage() {
                 value={monthFilter}
                 onValueChange={setMonthFilter}
               >
-                <SelectTrigger className="w-[180px]">
+                <SelectTrigger>
                   <SelectValue placeholder="All Months" />
                 </SelectTrigger>
                 <SelectContent>
@@ -335,7 +346,7 @@ export default function CombinedLogPage() {
                 value={typeFilter}
                 onValueChange={setTypeFilter}
               >
-                <SelectTrigger className="w-[180px]">
+                <SelectTrigger>
                   <SelectValue placeholder="All Types" />
                 </SelectTrigger>
                 <SelectContent>
@@ -344,21 +355,9 @@ export default function CombinedLogPage() {
                   <SelectItem value="MVAC">MVAC</SelectItem>
                 </SelectContent>
               </Select>
-
-              <Button
-                variant="secondary"
-                onClick={() => {
-                  setYearFilter('all');
-                  setMonthFilter('all');
-                  setTypeFilter('all');
-                }}
-              >
-                Clear Filters
-              </Button>
-            </div>
-          </CardHeader>
-
-          <CardContent className="p-0 overflow-x-auto">
+            </FilterBar>
+          }
+        >
             <Table className="min-w-[1200px]">
               <TableHeader>
                 <TableRow>
@@ -396,13 +395,7 @@ export default function CombinedLogPage() {
                       className="cursor-pointer"
                     >
                       <TableCell>
-                        <Badge
-                          variant={
-                            entry.type === 'JMC'
-                              ? 'default'
-                              : 'secondary'
-                          }
-                        >
+                        <Badge variant="neutral">
                           {entry.type}
                         </Badge>
                       </TableCell>
@@ -459,8 +452,7 @@ export default function CombinedLogPage() {
                 )}
               </TableBody>
             </Table>
-          </CardContent>
-        </Card>
+        </TableCard>
       </div>
 
       {/* Detail dialogs (they handle print themselves) */}

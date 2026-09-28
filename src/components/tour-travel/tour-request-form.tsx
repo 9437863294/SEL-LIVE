@@ -730,8 +730,8 @@ export default function TourRequestForm() {
 function EstimateRow({ label, value }: { label: string; value: number }) {
   return (
     <TableRow>
-      <TableCell className="text-sm text-muted-foreground">{label}</TableCell>
-      <TableCell className="text-right text-sm"><Money value={value} /></TableCell>
+      <TableCell>{label}</TableCell>
+      <TableCell className="text-right"><Money value={value} /></TableCell>
     </TableRow>
   );
 }

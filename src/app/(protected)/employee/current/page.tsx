@@ -40,18 +40,18 @@ import {
   Download,
   MapPin,
   RefreshCw,
-  Search,
   UserCheck,
   Users,
-  X,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Card, CardContent } from '@/components/ui/card';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { FilterBar } from '@/components/shared/filter-bar';
+import { StatusBadge } from '@/components/shared/status-badge';
+import { TableCard } from '@/components/shared/table-card';
 import {
   HrAccessDenied,
   HrAlertNotice,
@@ -62,31 +62,21 @@ import {
 } from '@/components/hr/hr-ui';
 import {
   EmployeeKpiCard,
+  EmployeeListFooter,
   EmployeePageShell,
-  EmployeeStatusPill,
   EmployeeSubNav,
   EMP_CARD_CLASS,
-  EMP_REGISTER_HEIGHT,
+  employmentStateTone,
 } from '@/components/employee/employee-ui';
 import { useAuthorization } from '@/hooks/useAuthorization';
 import { useToast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
 import { exportRowsToExcel } from '@/lib/report-excel';
 import { fetchCurrentEmployeesLive, type LiveCurrentEmployeesResponse } from '@/lib/greythr-sync-client';
-import type { EmploymentState, SyncedEmployee } from '@/lib/greythr';
+import type { SyncedEmployee } from '@/lib/greythr';
 import { PageHeader } from '@/components/shared/page-header';
 
 type Row = SyncedEmployee & { id: string };
-
-const STATE_TONE: Record<EmploymentState, string> = {
-  Active: 'border-emerald-200 bg-emerald-50 text-emerald-700',
-  'Notice Period': 'border-amber-200 bg-amber-50 text-amber-800',
-  Relieved: 'border-rose-200 bg-rose-50 text-rose-700',
-  Retired: 'border-slate-200 bg-slate-100 text-slate-600',
-  Settled: 'border-slate-200 bg-slate-100 text-slate-600',
-  Left: 'border-rose-200 bg-rose-50 text-rose-700',
-  Unknown: 'border-slate-300 bg-white text-slate-500',
-};
 
 /** A stable colour per person, so the same name always gets the same avatar — not random per render. */
 const AVATAR_PALETTE = [
@@ -138,12 +128,6 @@ function formatJoinDate(value: string | null): string {
   if (Number.isNaN(parsed.getTime())) return value;
   return parsed.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
 }
-
-/** The compact filter controls, matching Manage Employee's bar so the two rosters read as siblings. */
-const FILTER_TRIGGER = 'h-8 text-xs';
-
-/** Applied filters are tinted, so a narrowed list is attributable at a glance. */
-const FILTER_TRIGGER_ACTIVE = 'border-primary/40 bg-primary/5 font-medium text-primary';
 
 const INITIAL_FILTERS = { department: 'all', location: 'all', state: 'all' };
 
@@ -346,9 +330,11 @@ export default function CurrentEmployeesLivePage() {
       header: 'State',
       mobile: 'aside',
       cell: (row) => (
-        <Badge variant="outline" className={cn('font-medium', STATE_TONE[row.employmentState])} title={row.employmentStateReason}>
-          {row.employmentState}
-        </Badge>
+        <StatusBadge
+          status={row.employmentState}
+          tone={employmentStateTone(row.employmentState)}
+          title={row.employmentStateReason}
+        />
       ),
     },
     { header: 'Department', className: 'max-w-[140px] truncate', cell: (row) => row.department || '—' },
@@ -358,11 +344,11 @@ export default function CurrentEmployeesLivePage() {
     {
       header: 'Type',
       cell: (row) =>
-        row.employmentType ? <Badge variant="secondary" className="font-normal">{row.employmentType}</Badge> : '—',
+        row.employmentType ? <Badge variant="outline">{row.employmentType}</Badge> : '—',
     },
     { header: 'Joined', className: 'whitespace-nowrap', cell: (row) => formatJoinDate(row.dateOfJoin) },
-    { header: 'Email', className: 'max-w-[170px] truncate text-muted-foreground', cell: (row) => row.email || '—' },
-    { header: 'Phone', className: 'whitespace-nowrap text-muted-foreground', cell: (row) => row.phone || '—' },
+    { header: 'Email', className: 'max-w-[170px] truncate', cell: (row) => row.email || '—' },
+    { header: 'Phone', className: 'whitespace-nowrap', cell: (row) => row.phone || '—' },
   ];
 
   /*
@@ -391,7 +377,7 @@ export default function CurrentEmployeesLivePage() {
       {/*
         This screen's own header card was the best one in the module — icon tile, live pill,
         freshness stamp — and `PageHeader` is that design, generalised, so its nine siblings wear
-        it too. The only thing lost in the move is the bespoke pulse markup, now `pulse` on the pill.
+        it too. The only thing lost in the move is the bespoke pulse markup, now `dot` on the status badge.
       */}
       <PageHeader
         icon={Users}
@@ -407,17 +393,19 @@ export default function CurrentEmployeesLivePage() {
             not a status.
           */
           store?.stale ? (
-            <EmployeeStatusPill tone="amber" icon={CloudOff}>
+            <StatusBadge tone="warning">
+              <CloudOff className="h-3 w-3" aria-hidden="true" />
               Stored — greytHR unreachable
-            </EmployeeStatusPill>
+            </StatusBadge>
           ) : store?.source === 'greythr-live' ? (
-            <EmployeeStatusPill tone="emerald" pulse>
+            <StatusBadge tone="success" dot>
               Live from greytHR
-            </EmployeeStatusPill>
+            </StatusBadge>
           ) : (
-            <EmployeeStatusPill tone="blue" icon={Database}>
+            <StatusBadge tone="info">
+              <Database className="h-3 w-3" aria-hidden="true" />
               Stored roster
-            </EmployeeStatusPill>
+            </StatusBadge>
           )
         }
         meta={
@@ -504,87 +492,72 @@ export default function CurrentEmployeesLivePage() {
             <EmployeeKpiCard label="Locations" value={stats.locations} icon={MapPin} tone="violet" index={3} />
           </div>
 
-          {/* ── Search / toolbar ── */}
-          <div className="flex flex-col gap-2 lg:flex-row lg:flex-wrap lg:items-center">
-            <div className="relative w-full lg:w-[300px]">
-              <Search className="absolute left-2.5 top-2 h-4 w-4 text-muted-foreground" />
-              <Input
-                placeholder="Search name, employee no, project…"
-                className="h-8 pl-8 pr-8 text-xs"
-                value={search}
-                onChange={(event) => setSearch(event.target.value)}
-              />
-              {search && (
-                <button
-                  type="button"
-                  onClick={() => setSearch('')}
-                  className="hr-inline-action absolute inset-y-0 right-0 flex w-8 items-center justify-center text-muted-foreground hover:text-slate-600"
-                  aria-label="Clear search"
-                >
-                  <X className="h-4 w-4" />
-                </button>
-              )}
-            </div>
-
-            <Select value={filters.department} onValueChange={(value) => setFilters((f) => ({ ...f, department: value }))}>
-              <SelectTrigger
-                className={cn(FILTER_TRIGGER, 'w-full lg:w-[180px]', filters.department !== 'all' && FILTER_TRIGGER_ACTIVE)}
-              >
-                <SelectValue placeholder="All departments" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All departments</SelectItem>
-                {filterOptions.departments.map((option) => (
-                  <SelectItem key={option} value={option}>{option}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-
-            <Select value={filters.location} onValueChange={(value) => setFilters((f) => ({ ...f, location: value }))}>
-              <SelectTrigger
-                className={cn(FILTER_TRIGGER, 'w-full lg:w-[160px]', filters.location !== 'all' && FILTER_TRIGGER_ACTIVE)}
-              >
-                <SelectValue placeholder="All locations" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All locations</SelectItem>
-                {filterOptions.locations.map((option) => (
-                  <SelectItem key={option} value={option}>{option}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-
-            <Select value={filters.state} onValueChange={(value) => setFilters((f) => ({ ...f, state: value }))}>
-              <SelectTrigger
-                className={cn(FILTER_TRIGGER, 'w-full lg:w-[160px]', filters.state !== 'all' && FILTER_TRIGGER_ACTIVE)}
-              >
-                <SelectValue placeholder="All states" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All states</SelectItem>
-                {filterOptions.states.map((option) => (
-                  <SelectItem key={option} value={option}>{option}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-
-            {activeFilterCount > 0 && (
-              <Button variant="ghost" size="sm" className="h-8 gap-1 text-xs" onClick={clearFilters}>
-                <X className="h-3.5 w-3.5" />
-                Clear
-              </Button>
-            )}
-
-            <p className="text-xs text-muted-foreground lg:ml-auto lg:text-right">
-              Showing <span className="font-medium text-slate-700">{filtered.length}</span>
-              {activeFilterCount > 0 ? <> of {employees.length}</> : null} current employee{filtered.length === 1 ? '' : 's'}
-            </p>
-          </div>
-
           {/* ── Register ── */}
-          {filtered.length === 0 ? (
-            <Card className={EMP_CARD_CLASS}>
-              <CardContent className="flex flex-col items-center gap-3 py-12 text-center">
+          <TableCard
+            toolbar={
+              <FilterBar
+                search={{ value: search, onChange: setSearch, placeholder: 'Search name, employee no, project…' }}
+                activeCount={Object.values(filters).filter((value) => value !== 'all').length}
+                onClear={clearFilters}
+                summary={
+                  <>
+                    Showing <span className="font-medium text-slate-700">{filtered.length}</span>
+                    {activeFilterCount > 0 ? <> of {employees.length}</> : null} current employee{filtered.length === 1 ? '' : 's'}
+                  </>
+                }
+              >
+                <Select value={filters.department} onValueChange={(value) => setFilters((f) => ({ ...f, department: value }))}>
+                  <SelectTrigger aria-label="Department">
+                    <SelectValue placeholder="All departments" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All departments</SelectItem>
+                    {filterOptions.departments.map((option) => (
+                      <SelectItem key={option} value={option}>{option}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+
+                <Select value={filters.location} onValueChange={(value) => setFilters((f) => ({ ...f, location: value }))}>
+                  <SelectTrigger aria-label="Location">
+                    <SelectValue placeholder="All locations" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All locations</SelectItem>
+                    {filterOptions.locations.map((option) => (
+                      <SelectItem key={option} value={option}>{option}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+
+                <Select value={filters.state} onValueChange={(value) => setFilters((f) => ({ ...f, state: value }))}>
+                  <SelectTrigger aria-label="Employment state">
+                    <SelectValue placeholder="All states" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All states</SelectItem>
+                    {filterOptions.states.map((option) => (
+                      <SelectItem key={option} value={option}>{option}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </FilterBar>
+            }
+            footer={
+              filtered.length > 0 ? (
+                /* The old <tfoot> total, as a line that reads on a phone too. */
+                <EmployeeListFooter
+                  shown={visibleRows.length}
+                  total={filtered.length}
+                  noun="current employee"
+                  pageSize={PAGE_SIZE}
+                  onMore={() => setVisibleCount((count) => count + PAGE_SIZE)}
+                />
+              ) : undefined
+            }
+          >
+            {filtered.length === 0 ? (
+              <div className="flex flex-col items-center gap-3 py-12 text-center">
                 <Users className="h-10 w-10 text-muted-foreground/40" />
                 <p className="text-sm text-muted-foreground">
                   {activeFilterCount > 0 ? 'No employees match these filters.' : "greytHR reports nobody current."}
@@ -594,33 +567,19 @@ export default function CurrentEmployeesLivePage() {
                     Clear filters
                   </Button>
                 )}
-              </CardContent>
-            </Card>
-          ) : (
-            <div className="space-y-2.5">
-              <HrDataList
-                rows={visibleRows}
-                columns={columns}
-                dense
-                maxHeightClassName={EMP_REGISTER_HEIGHT}
-                onRowClick={(row) => setViewEmployee(row)}
-              />
-
-              {/* The old <tfoot> total, as a line that reads on a phone too. */}
-              <div className="flex flex-col items-center gap-2 pb-2 text-center">
-                <p className="text-xs text-muted-foreground">
-                  Showing <span className="font-medium text-slate-700">{visibleRows.length}</span> of{' '}
-                  <span className="font-medium text-emerald-700">{filtered.length}</span> current employee
-                  {filtered.length === 1 ? '' : 's'}
-                </p>
-                {visibleRows.length < filtered.length && (
-                  <Button variant="outline" size="sm" onClick={() => setVisibleCount((count) => count + PAGE_SIZE)}>
-                    Show {Math.min(PAGE_SIZE, filtered.length - visibleRows.length)} more
-                  </Button>
-                )}
               </div>
-            </div>
-          )}
+            ) : (
+              <div className="p-3 sm:p-0">
+                <HrDataList
+                  rows={visibleRows}
+                  columns={columns}
+                  dense
+                  frameless
+                  onRowClick={(row) => setViewEmployee(row)}
+                />
+              </div>
+            )}
+          </TableCard>
         </div>
       )}
 
@@ -646,9 +605,11 @@ export default function CurrentEmployeesLivePage() {
                   <p className="truncate text-base font-bold text-slate-800">{viewEmployee.name || '—'}</p>
                   <p className="text-xs text-muted-foreground">{viewEmployee.employeeNo || viewEmployee.employeeId}</p>
                 </div>
-                <Badge variant="outline" className={cn('shrink-0 font-medium', STATE_TONE[viewEmployee.employmentState])}>
-                  {viewEmployee.employmentState}
-                </Badge>
+                <StatusBadge
+                  status={viewEmployee.employmentState}
+                  tone={employmentStateTone(viewEmployee.employmentState)}
+                  className="shrink-0"
+                />
               </div>
 
               {/* Fields grid */}
@@ -675,7 +636,7 @@ export default function CurrentEmployeesLivePage() {
                 <DetailField label="Employee Type" value={viewEmployee.employeeType} />
                 <DetailField
                   label="Employment Type"
-                  value={viewEmployee.employmentType && <Badge variant="secondary">{viewEmployee.employmentType}</Badge>}
+                  value={viewEmployee.employmentType && <Badge variant="outline">{viewEmployee.employmentType}</Badge>}
                 />
                 <DetailField
                   label="Date of Join"

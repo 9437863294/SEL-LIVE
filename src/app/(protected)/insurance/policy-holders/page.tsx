@@ -5,7 +5,6 @@ import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { ArrowLeft, Plus, Edit, Trash2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import {
   Dialog,
@@ -29,6 +28,7 @@ import { Calendar } from '@/components/ui/calendar';
 import { Calendar as CalendarIcon } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { PageHeader } from '@/components/shared/page-header';
+import { TableCard } from '@/components/shared/table-card';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogHeader, AlertDialogTitle, AlertDialogDescription, AlertDialogFooter, AlertDialogTrigger } from '@/components/ui/alert-dialog';
 
 
@@ -144,8 +144,7 @@ export default function ManagePolicyHoldersPage() {
         actions={<Button onClick={() => openDialog('add')}><Plus className="mr-2 h-4 w-4"/> Add Holder</Button>}
       />
 
-      <Card>
-        <CardContent className="p-0">
+      <TableCard title="Policy holders" count={isLoading ? undefined : holders.length} noun="holder">
           <Table>
             <TableHeader>
               <TableRow>
@@ -166,11 +165,11 @@ export default function ManagePolicyHoldersPage() {
                 holders.map(holder => (
                   <TableRow key={holder.id}>
                     <TableCell className="font-medium">{holder.name}</TableCell>
-                    <TableCell>{formatDate(holder.date_of_birth)}</TableCell>
+                    <TableCell className="whitespace-nowrap">{formatDate(holder.date_of_birth)}</TableCell>
                     <TableCell>{holder.contact || 'N/A'}</TableCell>
                     <TableCell>{holder.email || 'N/A'}</TableCell>
                     <TableCell>{holder.address || 'N/A'}</TableCell>
-                    <TableCell className="text-right">
+                    <TableCell className="text-right whitespace-nowrap">
                        <Button variant="outline" size="sm" onClick={() => openDialog('edit', holder)}><Edit className="mr-2 h-4 w-4" />Edit</Button>
                         <AlertDialog>
                             <AlertDialogTrigger asChild>
@@ -195,9 +194,8 @@ export default function ManagePolicyHoldersPage() {
               )}
             </TableBody>
           </Table>
-        </CardContent>
-      </Card>
-      
+      </TableCard>
+
       <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
           <DialogContent className="sm:max-w-xl">
             <DialogHeader>

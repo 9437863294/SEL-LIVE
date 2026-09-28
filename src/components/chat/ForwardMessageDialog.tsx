@@ -1,7 +1,7 @@
 'use client';
 
 import { useMemo, useState } from 'react';
-import { Forward, Search } from 'lucide-react';
+import { Forward } from 'lucide-react';
 import type { User } from '@/lib/types';
 import type { ChatConversation, ChatMessage } from '@/lib/chat';
 import { getConversationTitle, getInitials } from '@/lib/chat';
@@ -16,7 +16,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
-import { Input } from '@/components/ui/input';
+import { SearchInput } from '@/components/shared/filter-bar';
 
 export function ForwardMessageDialog({
   open,
@@ -62,10 +62,7 @@ export function ForwardMessageDialog({
           <DialogDescription>Select one or more conversations.</DialogDescription>
         </DialogHeader>
         <div className="flex min-h-0 flex-1 flex-col px-5 py-4">
-          <div className="relative">
-            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-            <Input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search conversations" className="pl-9" />
-          </div>
+          <SearchInput value={search} onChange={setSearch} placeholder="Search conversations" />
           {message && (
             <div className="mt-3 truncate rounded-lg border-l-4 border-primary bg-muted/60 px-3 py-2 text-xs text-muted-foreground">
               {message.text || message.attachments?.[0]?.name || 'Attachment'}

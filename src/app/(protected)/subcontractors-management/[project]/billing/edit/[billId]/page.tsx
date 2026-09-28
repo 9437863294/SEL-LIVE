@@ -6,6 +6,7 @@ import Link from 'next/link';
 import { ArrowLeft, Save, Loader2, Library, Trash2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { TableCard } from '@/components/shared/table-card';
 import { Input } from '@/components/ui/input';
 import { useToast } from '@/hooks/use-toast';
 import { db } from '@/lib/firebase';
@@ -236,10 +237,7 @@ export default function EditBillPage() {
       <PmContent>
 
       {/* Bill Items */}
-       <Card>
-          <CardHeader><CardTitle>Bill Items</CardTitle></CardHeader>
-          <CardContent>
-              <div className="overflow-x-auto">
+       <TableCard title="Bill Items">
                   <Table>
                       <TableHeader>
                           <TableRow>
@@ -275,10 +273,8 @@ export default function EditBillPage() {
                           ))}
                       </TableBody>
                   </Table>
-              </div>
-          </CardContent>
-        </Card>
-      
+        </TableCard>
+
       {/* Financial Summary */}
       <Card className="mt-6">
         <CardHeader><CardTitle>Financial Summary</CardTitle></CardHeader>

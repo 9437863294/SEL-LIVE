@@ -11,7 +11,7 @@ import {
   type EApprovalRequest,
   type EApprovalStep,
 } from '@/lib/e-approval';
-import { EApprovalStatusBadge } from './shared';
+import { StatusBadge } from '@/components/shared/status-badge';
 import { formatEApprovalDateTime } from './hooks';
 
 /**
@@ -37,7 +37,11 @@ export function ResponsibilityCard({
         <CardContent className="flex flex-wrap items-center gap-x-6 gap-y-1 px-3 py-2.5 sm:px-4">
           <div>
             <p className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">Final status</p>
-            <div className="mt-0.5"><EApprovalStatusBadge status={request.status} /></div>
+            <div className="mt-0.5">
+              <StatusBadge status={request.status}>
+                {request.status === 'Superseded' ? <s>Superseded</s> : undefined}
+              </StatusBadge>
+            </div>
           </div>
           <div>
             <p className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">Closed</p>

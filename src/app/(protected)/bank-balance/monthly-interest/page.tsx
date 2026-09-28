@@ -63,8 +63,8 @@ import {
   TableRow,
 } from '@/components/ui/table';
 import { useAuthorization } from '@/hooks/useAuthorization';
-import { ScrollArea } from '@/components/ui/scroll-area';
-import { Badge } from '@/components/ui/badge';
+import { TableCard } from '@/components/shared/table-card';
+import { FilterBar } from '@/components/shared/filter-bar';
 
 interface MonthlyLogEntry {
   month: string; // "yyyy-MM"
@@ -880,13 +880,15 @@ export default function MonthlyInterestPage() {
 
         {/* LOG TAB */}
         <TabsContent value="log">
-          <Card>
-            <CardHeader>
-              <CardTitle>
-                Monthly Interest
-                Log
-              </CardTitle>
-              <div className="flex flex-wrap gap-4 mt-2">
+          <TableCard
+            title="Monthly Interest Log"
+            count={monthlyLogMatrix.length}
+            noun="month"
+            toolbar={
+              <FilterBar
+                activeCount={[logFilters.year, logFilters.month, logFilters.bank].filter((value) => value !== 'all').length}
+                onClear={() => setLogFilters({ year: 'all', month: 'all', bank: 'all' })}
+              >
                 <Select
                   value={logFilters.year}
                   onValueChange={(
@@ -900,7 +902,7 @@ export default function MonthlyInterestPage() {
                     )
                   }
                 >
-                  <SelectTrigger className="w-[180px]">
+                  <SelectTrigger>
                     <SelectValue placeholder="All Years" />
                   </SelectTrigger>
                   <SelectContent>
@@ -940,7 +942,7 @@ export default function MonthlyInterestPage() {
                     )
                   }
                 >
-                  <SelectTrigger className="w-[180px]">
+                  <SelectTrigger>
                     <SelectValue placeholder="All Months" />
                   </SelectTrigger>
                   <SelectContent>
@@ -982,7 +984,7 @@ export default function MonthlyInterestPage() {
                     )
                   }
                 >
-                  <SelectTrigger className="w-[240px]">
+                  <SelectTrigger>
                     <SelectValue placeholder="All Banks" />
                   </SelectTrigger>
                   <SelectContent>
@@ -1008,30 +1010,15 @@ export default function MonthlyInterestPage() {
                     )}
                   </SelectContent>
                 </Select>
-              </div>
-            </CardHeader>
-            <CardContent className="space-y-3">
-              <div className="flex items-center justify-end">
-                <Badge
-                  variant="secondary"
-                  className="font-medium"
-                >
-                  {monthlyLogMatrix.length}{' '}
-                  {monthlyLogMatrix.length === 1
-                    ? 'month'
-                    : 'months'}
-                </Badge>
-              </div>
-
-              <div className="rounded-md border bg-card">
-                <ScrollArea className="h-[62vh] w-full">
-                  <div className="min-w-[1200px]">
-                    <Table>
-                      <TableHeader className="sticky top-0 z-20 bg-muted/95 backdrop-blur supports-[backdrop-filter]:bg-muted/75">
+              </FilterBar>
+            }
+          >
+                    <Table className="min-w-[1200px]">
+                      <TableHeader>
                         <TableRow>
                           <TableHead
                             rowSpan={2}
-                            className="align-middle min-w-[140px] border-r bg-muted/95"
+                            className="min-w-[140px] border-r"
                           >
                             Month
                           </TableHead>
@@ -1054,12 +1041,12 @@ export default function MonthlyInterestPage() {
                           </TableHead>
                           <TableHead
                             rowSpan={2}
-                            className="text-right align-middle min-w-[120px]"
+                            className="text-right min-w-[120px]"
                           >
                             Action
                           </TableHead>
                         </TableRow>
-                        <TableRow>
+                        <TableRow className="[&>th]:!top-[var(--table-head-h,2.5rem)]">
                           {visibleLogAccounts.map(
                             (acc) => (
                               <Fragment
@@ -1126,7 +1113,7 @@ export default function MonthlyInterestPage() {
                                   row.month
                                 }
                               >
-                                <TableCell className="font-medium border-r">
+                                <TableCell className="whitespace-nowrap font-medium border-r">
                                   {format(
                                     parse(
                                       row.month,
@@ -1246,11 +1233,7 @@ export default function MonthlyInterestPage() {
                         )}
                       </TableBody>
                     </Table>
-                  </div>
-                </ScrollArea>
-              </div>
-            </CardContent>
-          </Card>
+          </TableCard>
         </TabsContent>
       </Tabs>
     </div>

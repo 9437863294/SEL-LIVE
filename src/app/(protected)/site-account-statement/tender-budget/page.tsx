@@ -22,6 +22,9 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Badge } from '@/components/ui/badge';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { TableCard } from '@/components/shared/table-card';
+import { StatusBadge } from '@/components/shared/status-badge';
 import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
@@ -226,24 +229,25 @@ export default function TenderBudgetSetupPage() {
 
       {/* Configured projects table */}
       {configuredProjects.length > 0 && (
-        <Card>
-          <div className="px-4 py-2.5 border-b bg-slate-50/60">
-            <p className="text-xs font-semibold text-slate-600 uppercase tracking-wide">Configured Projects</p>
-          </div>
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm min-w-[640px]">
-              <thead>
-                <tr className="border-b bg-muted/30">
-                  <th className="px-4 py-2.5 text-left font-medium text-slate-600">Project</th>
-                  <th className="px-4 py-2.5 text-right font-medium text-slate-600">Tender Budget (₹)</th>
-                  <th className="px-4 py-2.5 text-center font-medium text-slate-600">Start</th>
-                  <th className="px-4 py-2.5 text-center font-medium text-slate-600">End</th>
-                  <th className="px-4 py-2.5 text-center font-medium text-slate-600">Duration</th>
-                  <th className="px-4 py-2.5 text-right font-medium text-slate-600">Per Month (₹)</th>
-                  {(effectiveCanEdit || canDelete) && <th className="px-4 py-2.5 text-right font-medium text-slate-600">Actions</th>}
-                </tr>
-              </thead>
-              <tbody>
+        <TableCard
+          title="Configured projects"
+          count={configuredProjects.length}
+          noun="project"
+          scroll="natural"
+        >
+            <Table className="min-w-[640px]">
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Project</TableHead>
+                  <TableHead className="text-right">Tender Budget (₹)</TableHead>
+                  <TableHead className="text-center">Start</TableHead>
+                  <TableHead className="text-center">End</TableHead>
+                  <TableHead className="text-center">Duration</TableHead>
+                  <TableHead className="text-right">Per Month (₹)</TableHead>
+                  {(effectiveCanEdit || canDelete) && <TableHead className="text-right">Actions</TableHead>}
+                </TableRow>
+              </TableHeader>
+              <TableBody>
                 {configuredProjects.map(project => {
                   const tb = tenderBudgets.find(t => t.projectId === project.id)!;
                   const months = monthDiff(tb.startMonth, tb.endMonth) + 1;
@@ -251,28 +255,28 @@ export default function TenderBudgetSetupPage() {
                   const isActive = currentMonthStr() >= tb.startMonth && currentMonthStr() <= tb.endMonth;
                   const isEnded  = currentMonthStr() > tb.endMonth;
                   return (
-                    <tr key={project.id} className="border-b last:border-0 hover:bg-muted/20 transition-colors">
-                      <td className="px-4 py-3">
+                    <TableRow key={project.id}>
+                      <TableCell>
                         <div className="flex items-center gap-2">
-                          <span className="font-medium text-slate-800">{project.projectName}</span>
+                          <span className="font-medium">{project.projectName}</span>
                           {project.projectCode && (
-                            <Badge variant="outline" className="text-[10px] px-1.5 py-0 border-slate-200 text-slate-500">{project.projectCode}</Badge>
+                            <Badge variant="outline" className="font-mono">{project.projectCode}</Badge>
                           )}
-                          {isActive && <Badge className="text-[9px] px-1.5 py-0 bg-emerald-100 text-emerald-700 hover:bg-emerald-100">Active</Badge>}
-                          {isEnded  && <Badge className="text-[9px] px-1.5 py-0 bg-slate-100 text-slate-500 hover:bg-slate-100">Ended</Badge>}
+                          {isActive && <StatusBadge status="Active" />}
+                          {isEnded  && <StatusBadge status="Ended" tone="neutral" />}
                         </div>
                         {tb.notes && <p className="text-[11px] text-muted-foreground mt-0.5 line-clamp-1">{tb.notes}</p>}
-                      </td>
-                      <td className="px-4 py-3 text-right font-semibold text-emerald-700">{formatINR(tb.tenderAmount)}</td>
-                      <td className="px-4 py-3 text-center text-slate-600">{monthLabel(tb.startMonth)}</td>
-                      <td className="px-4 py-3 text-center text-slate-600">{monthLabel(tb.endMonth)}</td>
-                      <td className="px-4 py-3 text-center">
-                        <span className="text-slate-700 font-medium">{months}</span>
+                      </TableCell>
+                      <TableCell className="text-right whitespace-nowrap tabular-nums font-medium text-emerald-700">{formatINR(tb.tenderAmount)}</TableCell>
+                      <TableCell className="text-center whitespace-nowrap">{monthLabel(tb.startMonth)}</TableCell>
+                      <TableCell className="text-center whitespace-nowrap">{monthLabel(tb.endMonth)}</TableCell>
+                      <TableCell className="text-center whitespace-nowrap tabular-nums">
+                        <span className="font-medium">{months}</span>
                         <span className="text-muted-foreground text-xs ml-0.5">mo</span>
-                      </td>
-                      <td className="px-4 py-3 text-right text-blue-700 font-medium">{formatINR(Math.round(perMonth))}</td>
+                      </TableCell>
+                      <TableCell className="text-right whitespace-nowrap tabular-nums text-blue-700 font-medium">{formatINR(Math.round(perMonth))}</TableCell>
                       {(effectiveCanEdit || canDelete) && (
-                        <td className="px-4 py-3 text-right">
+                        <TableCell className="text-right">
                           <div className="flex justify-end gap-1">
                             {effectiveCanEdit && (
                               <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => openEdit(tb)}>
@@ -301,15 +305,14 @@ export default function TenderBudgetSetupPage() {
                               </AlertDialog>
                             )}
                           </div>
-                        </td>
+                        </TableCell>
                       )}
-                    </tr>
+                    </TableRow>
                   );
                 })}
-              </tbody>
-            </table>
-          </div>
-        </Card>
+              </TableBody>
+            </Table>
+        </TableCard>
       )}
 
       {/* Unconfigured projects */}

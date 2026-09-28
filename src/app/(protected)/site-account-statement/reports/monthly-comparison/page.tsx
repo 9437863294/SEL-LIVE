@@ -12,7 +12,10 @@ import { useAuthorization } from '@/hooks/useAuthorization';
 import { useAuth } from '@/components/auth/AuthProvider';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
+import { Badge } from '@/components/ui/badge';
+import { Table, TableBody, TableCell, TableFooter, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { PageHeader } from '@/components/shared/page-header';
+import { TableCard } from '@/components/shared/table-card';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Skeleton } from '@/components/ui/skeleton';
 import { cn } from '@/lib/utils';
@@ -311,7 +314,7 @@ export default function MonthlyComparisonPage() {
       <div className="flex items-center gap-3 flex-wrap">
         <span className="text-sm font-medium text-slate-600">Show previous:</span>
         <Select value={String(prevCount)} onValueChange={v => setPrevCount(Number(v))}>
-          <SelectTrigger className="h-9 w-full sm:w-60 text-sm">
+          <SelectTrigger className="w-full sm:w-auto" aria-label="Previous months to show">
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
@@ -405,171 +408,170 @@ export default function MonthlyComparisonPage() {
           </CardContent>
         </Card>
       ) : (
-        <Card className="bg-white/80 backdrop-blur-sm">
-          <CardContent className="p-0">
-            <div className="overflow-auto max-h-[65vh]">
-              <table className="w-full text-sm border-separate border-spacing-0 min-w-[800px]">
-                <thead className="sticky top-0 z-10">
+        <TableCard
+          title="Project comparison"
+          count={rows.length}
+          noun="project"
+          // Natural height: the two-row month header cannot pin as one band.
+          scroll="natural"
+        >
+              <Table className="min-w-[800px]">
+                <TableHeader>
                   {/* Month group headers */}
-                  <tr>
-                    <th rowSpan={2} className="border-b-2 border-r border-slate-200 bg-slate-100 px-4 py-2.5 text-left font-semibold min-w-[180px] align-bottom whitespace-nowrap">
+                  <TableRow>
+                    <TableHead rowSpan={2} className="border-r min-w-[180px] align-bottom whitespace-nowrap">
                       Project
-                    </th>
+                    </TableHead>
                     {months.map((ym, i) => {
                       const isCurr = ym === currYM;
                       const cols = perMonthCols + (i > 0 ? 1 : 0);
                       return (
-                        <th
+                        <TableHead
                           key={ym}
                           colSpan={cols}
-                          className={cn(
-                            'border-b border-l px-3 py-2 text-center text-xs font-bold whitespace-nowrap',
-                            isCurr ? 'bg-slate-800 text-white border-l-slate-600' : 'bg-slate-100 text-slate-600 border-l-slate-200'
-                          )}
+                          className={cn('border-l text-center whitespace-nowrap', isCurr && 'bg-slate-200/70')}
                         >
                           {monthLabel(ym, true)}
-                          {isCurr && <span className="ml-1.5 rounded-full bg-white/20 px-1.5 py-0.5 text-[9px] font-normal">current</span>}
-                        </th>
+                          {isCurr && <Badge variant="info" className="ml-1.5">current</Badge>}
+                        </TableHead>
                       );
                     })}
-                  </tr>
+                  </TableRow>
                   {/* Sub-column headers */}
-                  <tr>
+                  <TableRow>
                     {months.map((ym, i) => {
                       const isCurr = ym === currYM;
-                      const base = 'border-b-2 border-slate-200 px-3 py-1.5 text-right text-[11px] font-semibold whitespace-nowrap';
+                      const base = cn('text-right whitespace-nowrap', isCurr && 'bg-slate-200/70');
                       return (
                         <React.Fragment key={ym}>
                           {hasBudgets && (
-                            <th className={cn(base, 'border-l', isCurr ? 'bg-slate-700 text-emerald-300 border-l-slate-600' : 'bg-emerald-50 text-emerald-700 border-l-emerald-100')}>
+                            <TableHead className={cn(base, 'border-l')}>
                               Budget
-                            </th>
+                            </TableHead>
                           )}
-                          <th className={cn(base, hasBudgets ? '' : 'border-l', isCurr ? 'bg-slate-700 text-blue-300 border-l-slate-600' : 'bg-blue-50 text-blue-600 border-l-blue-100')}>
+                          <TableHead className={cn(base, !hasBudgets && 'border-l')}>
                             Received
-                          </th>
-                          <th className={cn(base, isCurr ? 'bg-slate-700 text-rose-300' : 'bg-rose-50 text-rose-600')}>
+                          </TableHead>
+                          <TableHead className={base}>
                             Expenses
-                          </th>
+                          </TableHead>
                           {hasBudgets && (
-                            <th className={cn(base, isCurr ? 'bg-slate-700 text-slate-300' : 'bg-slate-50 text-slate-500')}>
+                            <TableHead className={base}>
                               Balance
-                            </th>
+                            </TableHead>
                           )}
                           {i > 0 && (
-                            <th className={cn(base, 'border-l text-center w-[56px]', isCurr ? 'bg-slate-600 text-slate-300 border-l-slate-500' : 'bg-slate-50 text-slate-400 border-l-slate-200')}>
+                            <TableHead className={cn(base, 'border-l text-center w-[56px]')}>
                               Δ%
-                            </th>
+                            </TableHead>
                           )}
                         </React.Fragment>
                       );
                     })}
-                  </tr>
-                </thead>
+                  </TableRow>
+                </TableHeader>
 
-                <tbody>
-                  {rows.map((r, idx) => (
-                    <tr key={r.project.id} className={idx % 2 === 0 ? 'bg-white hover:bg-slate-50' : 'bg-slate-50/40 hover:bg-slate-100/60'}>
-                      <td className="border-b border-r border-slate-100 px-4 py-2.5 whitespace-nowrap">
-                        <div className="font-medium text-slate-700 text-[13px]">{r.project.projectName}</div>
+                <TableBody>
+                  {rows.map(r => (
+                    <TableRow key={r.project.id}>
+                      <TableCell className="border-r whitespace-nowrap">
+                        <div className="font-medium">{r.project.projectName}</div>
                         {r.project.projectCode && <div className="text-[10px] text-muted-foreground">{r.project.projectCode}</div>}
-                      </td>
+                      </TableCell>
                       {r.monthData.map((m, i) => {
                         const isCurr  = m.ym === currYM;
                         const prev    = i > 0 ? r.monthData[i - 1] : null;
                         const balance = m.budget - m.expenses;
-                        const bgCurr  = isCurr ? 'bg-slate-50/60' : '';
-                        const cell    = cn('border-b border-slate-100 px-3 py-2 text-right', bgCurr);
+                        const cell    = cn('text-right whitespace-nowrap tabular-nums', isCurr && 'bg-slate-50/60');
 
                         return (
                           <React.Fragment key={m.ym}>
                             {hasBudgets && (
-                              <td className={cn(cell, 'border-l', isCurr ? 'border-l-slate-300' : 'border-l-emerald-100/60')}>
+                              <TableCell className={cn(cell, 'border-l')}>
                                 {m.budget > 0
-                                  ? <span className="text-xs font-semibold text-emerald-700">{formatINR(m.budget)}</span>
-                                  : <span className="text-xs text-muted-foreground">—</span>}
-                              </td>
+                                  ? <span className="font-medium text-emerald-700">{formatINR(m.budget)}</span>
+                                  : <span className="text-muted-foreground">—</span>}
+                              </TableCell>
                             )}
-                            <td className={cn(cell, !hasBudgets && 'border-l', !hasBudgets && (isCurr ? 'border-l-slate-300' : 'border-l-blue-100/60'))}>
+                            <TableCell className={cn(cell, !hasBudgets && 'border-l')}>
                               {m.received > 0
-                                ? <span className="text-xs font-semibold text-blue-700">{formatINR(m.received)}</span>
-                                : <span className="text-xs text-muted-foreground">—</span>}
-                            </td>
-                            <td className={cell}>
+                                ? <span className="font-medium text-blue-700">{formatINR(m.received)}</span>
+                                : <span className="text-muted-foreground">—</span>}
+                            </TableCell>
+                            <TableCell className={cell}>
                               <div>
                                 {m.expenses > 0
-                                  ? <span className="text-xs font-semibold text-rose-700">{formatINR(m.expenses)}</span>
-                                  : <span className="text-xs text-muted-foreground">—</span>}
+                                  ? <span className="font-medium text-rose-700">{formatINR(m.expenses)}</span>
+                                  : <span className="text-muted-foreground">—</span>}
                                 {hasBudgets && m.budget > 0 && m.expenses > 0 && (
                                   <UtilBar actual={m.expenses} budget={m.budget} />
                                 )}
                               </div>
-                            </td>
+                            </TableCell>
                             {hasBudgets && (
-                              <td className={cell}>
+                              <TableCell className={cell}>
                                 {m.budget > 0
-                                  ? <span className={cn('text-xs font-semibold', balance >= 0 ? 'text-indigo-700' : 'text-destructive')}>
+                                  ? <span className={cn('font-medium', balance >= 0 ? 'text-indigo-700' : 'text-destructive')}>
                                       {balance >= 0 ? '+' : ''}{formatINR(balance)}
                                     </span>
-                                  : <span className="text-xs text-muted-foreground">—</span>}
-                              </td>
+                                  : <span className="text-muted-foreground">—</span>}
+                              </TableCell>
                             )}
                             {i > 0 && prev && (
-                              <td className={cn(cell, 'border-l text-center', isCurr ? 'border-l-slate-300' : 'border-l-slate-200 bg-slate-50/30')}>
+                              <TableCell className={cn(cell, 'border-l text-center')}>
                                 <div className="flex flex-col gap-0.5 items-center">
                                   <DeltaChip curr={m.expenses} prev={prev.expenses} inverse />
                                 </div>
-                              </td>
+                              </TableCell>
                             )}
                           </React.Fragment>
                         );
                       })}
-                    </tr>
+                    </TableRow>
                   ))}
-                </tbody>
+                </TableBody>
 
-                <tfoot>
-                  <tr className="border-t-2 border-slate-300 bg-slate-100 font-bold text-[13px]">
-                    <td className="border-r border-slate-200 px-4 py-2.5 text-slate-700 whitespace-nowrap">
+                <TableFooter>
+                  <TableRow>
+                    <TableCell className="border-r whitespace-nowrap">
                       Total ({rows.length} project{rows.length !== 1 ? 's' : ''})
-                    </td>
+                    </TableCell>
                     {colTotals.map((c, i) => {
                       const isCurr  = c.ym === currYM;
                       const prev    = i > 0 ? colTotals[i - 1] : null;
                       const balance = c.budget - c.expenses;
+                      const cell    = cn('text-right whitespace-nowrap tabular-nums', isCurr && 'bg-slate-200/40');
 
                       return (
                         <React.Fragment key={c.ym}>
                           {hasBudgets && (
-                            <td className={cn('border-l px-3 py-2.5 text-right text-emerald-700', isCurr ? 'border-l-slate-400' : 'border-l-emerald-200')}>
+                            <TableCell className={cn(cell, 'border-l text-emerald-700')}>
                               {c.budget > 0 ? formatINR(c.budget) : '—'}
-                            </td>
+                            </TableCell>
                           )}
-                          <td className={cn('px-3 py-2.5 text-right text-blue-700', !hasBudgets && 'border-l', !hasBudgets && (isCurr ? 'border-l-slate-400' : 'border-l-blue-200'))}>
+                          <TableCell className={cn(cell, 'text-blue-700', !hasBudgets && 'border-l')}>
                             {formatINR(c.received)}
-                          </td>
-                          <td className="px-3 py-2.5 text-right text-rose-700">
+                          </TableCell>
+                          <TableCell className={cn(cell, 'text-rose-700')}>
                             {formatINR(c.expenses)}
-                          </td>
+                          </TableCell>
                           {hasBudgets && (
-                            <td className={cn('px-3 py-2.5 text-right', balance >= 0 ? 'text-indigo-700' : 'text-destructive')}>
+                            <TableCell className={cn(cell, balance >= 0 ? 'text-indigo-700' : 'text-destructive')}>
                               {c.budget > 0 ? (balance >= 0 ? '+' : '') + formatINR(balance) : '—'}
-                            </td>
+                            </TableCell>
                           )}
                           {i > 0 && prev && (
-                            <td className={cn('border-l px-2 py-2.5 text-center', isCurr ? 'border-l-slate-400 bg-slate-200/40' : 'border-l-slate-300')}>
+                            <TableCell className={cn(cell, 'border-l text-center')}>
                               <DeltaChip curr={c.expenses} prev={prev.expenses} inverse />
-                            </td>
+                            </TableCell>
                           )}
                         </React.Fragment>
                       );
                     })}
-                  </tr>
-                </tfoot>
-              </table>
-            </div>
-          </CardContent>
-        </Card>
+                  </TableRow>
+                </TableFooter>
+              </Table>
+        </TableCard>
       )}
     </div>
   );

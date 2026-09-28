@@ -14,7 +14,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { FolderKanban, Search, ShieldAlert } from "lucide-react";
+import { FolderKanban, ShieldAlert } from "lucide-react";
 import { collection, getDocs } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import type { Project } from "@/lib/types";
@@ -23,7 +23,6 @@ import { useToast } from "@/hooks/use-toast";
 import {
   PM_PROJECT_COLLECTION,
   PROJECT_LIFECYCLE_STATES,
-  projectLifecycleStyles,
   resolveLifecycle,
   type PmProject,
   type ProjectLifecycleState,
@@ -37,7 +36,6 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
 import {
   Select,
   SelectContent,
@@ -49,10 +47,11 @@ import { Skeleton } from "@/components/ui/skeleton";
 import {
   PmDataList,
   PmEmptyState,
-  PmToolbar,
   type PmListColumn,
 } from "@/components/project-management/pm-shell";
+import { FilterBar } from "@/components/shared/filter-bar";
 import { PageHeader } from "@/components/shared/page-header";
+import { StatusBadge } from "@/components/shared/status-badge";
 import { cn } from "@/lib/utils";
 
 const MODULE_NAME = "Project Management";
@@ -182,7 +181,7 @@ export default function ProjectRegisterPage() {
   const columns: PmListColumn<PmProject>[] = [
     {
       header: "Code",
-      className: "whitespace-nowrap text-xs text-muted-foreground",
+      className: "whitespace-nowrap",
       cell: (project) => project.projectCode || "—",
     },
     {
@@ -203,12 +202,12 @@ export default function ProjectRegisterPage() {
     },
     {
       header: "Client",
-      className: "max-w-[10rem] truncate text-xs",
+      className: "max-w-[10rem] truncate",
       cell: (project) => globalProjects.get(project.globalProjectId)?.clientName || "—",
     },
     {
       header: "Location",
-      className: "max-w-[10rem] truncate text-xs",
+      className: "max-w-[10rem] truncate",
       cell: (project) => {
         const global = globalProjects.get(project.globalProjectId);
         return global?.location || global?.projectSite || "—";
@@ -216,7 +215,6 @@ export default function ProjectRegisterPage() {
     },
     {
       header: "Project Manager",
-      className: "text-xs",
       cell: (project) => project.projectManagerName || "—",
     },
     {
@@ -237,14 +235,14 @@ export default function ProjectRegisterPage() {
     {
       header: "Contract Value",
       align: "right",
-      className: "whitespace-nowrap text-xs",
+      className: "whitespace-nowrap tabular-nums",
       cell: (project) => formatCurrency(globalProjects.get(project.globalProjectId)?.contractValue),
     },
     {
       // A sub-line on the phone card: two dates do not fit a half-width detail cell.
       header: "Schedule",
       mobile: "title",
-      className: "whitespace-nowrap text-xs",
+      className: "whitespace-nowrap",
       cell: (project) => (
         <>
           {formatDate(project.startDate)} → {formatDate(project.endDate)}
@@ -256,11 +254,7 @@ export default function ProjectRegisterPage() {
       mobile: "aside",
       cell: (project) => {
         const lifecycle = resolveLifecycle(project);
-        return (
-          <Badge variant="outline" className={projectLifecycleStyles[lifecycle]}>
-            {lifecycle}
-          </Badge>
-        );
+        return <StatusBadge status={lifecycle} />;
       },
     },
     {
@@ -314,21 +308,23 @@ export default function ProjectRegisterPage() {
         ))}
       </div>
 
-      <PmToolbar className="mb-0">
-        <div className="relative flex-1">
-          <Search className="absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-          <Input
-            placeholder="Search by project, code, manager, client or location…"
-            className="pl-8"
-            value={search}
-            onChange={(event) => setSearch(event.target.value)}
-          />
-        </div>
+      <FilterBar
+        search={{
+          value: search,
+          onChange: setSearch,
+          placeholder: "Search by project, code, manager, client or location…",
+        }}
+        activeCount={lifecycleFilter !== "all" ? 1 : 0}
+        onClear={() => {
+          setSearch("");
+          setLifecycleFilter("all");
+        }}
+      >
         <Select
           value={lifecycleFilter}
           onValueChange={(value: ProjectLifecycleState | "all") => setLifecycleFilter(value)}
         >
-          <SelectTrigger className="sm:w-48">
+          <SelectTrigger>
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
@@ -338,7 +334,7 @@ export default function ProjectRegisterPage() {
             ))}
           </SelectContent>
         </Select>
-      </PmToolbar>
+      </FilterBar>
 
       <PmDataList
         rows={rows}

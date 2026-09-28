@@ -584,7 +584,7 @@ export default function WorkflowConfigurationPage() {
                             <div className="h-1 w-full bg-gradient-to-r from-cyan-300 via-fuchsia-300 to-amber-200 opacity-70" />
                             <div className="overflow-x-auto">
                               <Table className="min-w-[720px]">
-                                <TableHeader className="bg-white/80 border-b border-white/70">
+                                <TableHeader>
                                   <TableRow>
                                     <TableHead className="whitespace-nowrap">
                                       {step.assignmentType === 'Project-based' ? 'Project' : 'Department'}
@@ -610,7 +610,7 @@ export default function WorkflowConfigurationPage() {
                                             }
                                             disabled={!canEditPage}
                                           >
-                                            <SelectTrigger className="bg-white/80 border-white/70">
+                                            <SelectTrigger>
                                               <SelectValue placeholder="Select primary user" />
                                             </SelectTrigger>
                                             <SelectContent>
@@ -630,7 +630,7 @@ export default function WorkflowConfigurationPage() {
                                             }
                                             disabled={!canEditPage}
                                           >
-                                            <SelectTrigger className="bg-white/80 border-white/70">
+                                            <SelectTrigger>
                                               <SelectValue placeholder="Select alternative user" />
                                             </SelectTrigger>
                                             <SelectContent>

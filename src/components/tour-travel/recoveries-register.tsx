@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from 'react';
 import Link from 'next/link';
-import { Loader2, Search, Undo2 } from 'lucide-react';
+import { Loader2, Undo2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -16,14 +16,19 @@ import {
   RECOVERY_MODES,
   TT_COLLECTIONS,
   roundMoney,
+  travelStatusLabel,
   type RecoveryMode,
   type TravelRecovery,
 } from '@/lib/tour-travel';
 import { TravelControlError, recordRecovery } from '@/lib/tour-travel-service';
 import { TT_PERMISSION_MODULE } from './module-layout-shell';
 import { useTravelActor, useTravelCollection } from './use-travel-config';
-import { Money, TravelDataList, TravelEmptyState, TravelFilterCard, TravelKpiCard, TravelLoader, TravelStatusBadge, travelDialog } from './travel-ui';
+import { Money, TravelEmptyState, TravelKpiCard, TravelLoader, travelDialog } from './travel-ui';
 import { PageHeader } from '@/components/shared/page-header';
+import { DataList } from '@/components/shared/data-list';
+import { FilterBar } from '@/components/shared/filter-bar';
+import { StatusBadge } from '@/components/shared/status-badge';
+import { TableCard } from '@/components/shared/table-card';
 
 const todayIso = () => new Date().toISOString().slice(0, 10);
 
@@ -91,116 +96,120 @@ export default function RecoveriesRegister() {
         <TravelKpiCard label="Total Records" value={records.length} tone="slate" />
       </div>
 
-      <TravelFilterCard summary={`${filtered.length} recovery record(s)`}>
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-          <div className="sm:col-span-2">
-            <Label className="text-xs">Search</Label>
-            <div className="relative">
-              <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
-              <Input className="pl-8" value={search} onChange={event => setSearch(event.target.value)} placeholder="Reference or employee" />
-            </div>
-          </div>
-          <div>
-            <Label className="text-xs">Status</Label>
+      <TableCard
+        title="Recoveries"
+        icon={Undo2}
+        count={filtered.length}
+        total={records.length}
+        noun="recovery record"
+        toolbar={
+          <FilterBar
+            search={{ value: search, onChange: setSearch, placeholder: 'Reference or employee' }}
+            activeCount={status !== 'open' ? 1 : 0}
+            onClear={() => { setSearch(''); setStatus('open'); }}
+          >
             <Select value={status} onValueChange={setStatus}>
-              <SelectTrigger><SelectValue /></SelectTrigger>
+              <SelectTrigger aria-label="Status"><SelectValue /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="open">Open</SelectItem>
                 <SelectItem value="PENDING">Pending</SelectItem>
                 <SelectItem value="PARTIALLY_RECOVERED">Partially recovered</SelectItem>
                 <SelectItem value="RECOVERED">Recovered</SelectItem>
                 <SelectItem value="WAIVED">Waived</SelectItem>
-                <SelectItem value="all">All</SelectItem>
+                <SelectItem value="all">All statuses</SelectItem>
               </SelectContent>
             </Select>
-          </div>
-        </div>
-      </TravelFilterCard>
-
-      <TravelDataList
-        rows={filtered}
-        rowClassName={recovery => (balanceOf(recovery) > 0 ? 'bg-rose-50/40 border-rose-200' : undefined)}
-        empty={
-          <TravelEmptyState
-            title="No recoveries"
-            description="When an approved claim is less than the advance paid, the difference appears here."
-            icon={Undo2}
-          />
+          </FilterBar>
         }
-        columns={[
-          { header: 'Reference', mobile: 'title', cell: recovery => <span className="font-medium">{recovery.referenceNumber}</span> },
-          { header: 'Employee', mobile: 'title', cell: recovery => recovery.employeeName },
-          { header: 'Status', mobile: 'aside', cell: recovery => <TravelStatusBadge status={recovery.status} /> },
-          {
-            header: 'Claim',
-            className: 'hidden md:table-cell',
-            mobile: 'omit',
-            cell: recovery => (
-              <Link href={`/tour-travel/claims/${recovery.claimId}`} className="text-sky-700 hover:underline">
-                View claim
-              </Link>
-            ),
-          },
-          { header: 'Due', align: 'right', cell: recovery => <Money value={recovery.amount} /> },
-          {
-            header: 'Recovered',
-            align: 'right',
-            cell: recovery => {
-              const percent = recovery.amount > 0 ? Math.round((Number(recovery.recoveredAmount || 0) / recovery.amount) * 100) : 0;
-              return (
-                <>
-                  <Money value={recovery.recoveredAmount || 0} />
-                  {percent > 0 && percent < 100 && <Progress value={percent} className="mt-1 h-1" />}
-                </>
-              );
-            },
-          },
-          {
-            header: 'Balance',
-            align: 'right',
-            cell: recovery => {
-              const balance = balanceOf(recovery);
-              return <span className={balance > 0 ? 'font-medium text-rose-600' : ''}><Money value={balance} /></span>;
-            },
-          },
-          {
-            header: 'Mode',
-            className: 'hidden lg:table-cell',
-            cell: recovery => <span className="text-xs text-muted-foreground">{recovery.mode || '—'}</span>,
-          },
-          {
-            header: 'Action',
-            mobile: 'footer',
-            cell: recovery => {
-              const balance = balanceOf(recovery);
-              return (
-                <div className="flex flex-1 gap-2">
-                  {canRecover && balance > 0 && (
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      className="h-7 px-2 text-xs"
-                      onClick={() => {
-                        setRecovering(recovery);
-                        setAmount(balance);
-                        setReceivedOn(todayIso());
-                        setReference('');
-                        setPayrollPeriod('');
-                        setRemarks('');
-                      }}
-                    >
-                      Record
-                    </Button>
-                  )}
-                  <Button asChild size="sm" variant="ghost" className="h-7 px-2 text-xs sm:hidden">
-                    <Link href={`/tour-travel/claims/${recovery.claimId}`}>View claim</Link>
-                  </Button>
-                </div>
-              );
-            },
-          },
-        ]}
-      />
+      >
+        <div className="p-3 sm:p-0">
+          <DataList
+            frameless
+            rows={filtered}
+            rowClassName={recovery => (balanceOf(recovery) > 0 ? 'bg-rose-50/40 border-rose-200' : undefined)}
+            empty={
+              <TravelEmptyState
+                title="No recoveries"
+                description="When an approved claim is less than the advance paid, the difference appears here."
+                icon={Undo2}
+              />
+            }
+            columns={[
+              { header: 'Reference', mobile: 'title', cell: recovery => <span className="font-medium">{recovery.referenceNumber}</span> },
+              { header: 'Employee', mobile: 'title', cell: recovery => recovery.employeeName },
+              { header: 'Status', mobile: 'aside', cell: recovery => <StatusBadge status={recovery.status}>{travelStatusLabel(recovery.status)}</StatusBadge> },
+              {
+                header: 'Claim',
+                className: 'hidden md:table-cell',
+                mobile: 'omit',
+                cell: recovery => (
+                  <Link href={`/tour-travel/claims/${recovery.claimId}`} className="text-sky-700 hover:underline">
+                    View claim
+                  </Link>
+                ),
+              },
+              { header: 'Due', align: 'right', cell: recovery => <Money value={recovery.amount} /> },
+              {
+                header: 'Recovered',
+                align: 'right',
+                cell: recovery => {
+                  const percent = recovery.amount > 0 ? Math.round((Number(recovery.recoveredAmount || 0) / recovery.amount) * 100) : 0;
+                  return (
+                    <>
+                      <Money value={recovery.recoveredAmount || 0} />
+                      {percent > 0 && percent < 100 && <Progress value={percent} className="mt-1 h-1" />}
+                    </>
+                  );
+                },
+              },
+              {
+                header: 'Balance',
+                align: 'right',
+                cell: recovery => {
+                  const balance = balanceOf(recovery);
+                  return <span className={balance > 0 ? 'font-medium text-rose-600' : ''}><Money value={balance} /></span>;
+                },
+              },
+              {
+                header: 'Mode',
+                className: 'hidden lg:table-cell',
+                cell: recovery => <span className="text-xs text-muted-foreground">{recovery.mode || '—'}</span>,
+              },
+              {
+                header: 'Action',
+                mobile: 'footer',
+                cell: recovery => {
+                  const balance = balanceOf(recovery);
+                  return (
+                    <div className="flex flex-1 gap-2">
+                      {canRecover && balance > 0 && (
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="h-7 px-2 text-xs"
+                          onClick={() => {
+                            setRecovering(recovery);
+                            setAmount(balance);
+                            setReceivedOn(todayIso());
+                            setReference('');
+                            setPayrollPeriod('');
+                            setRemarks('');
+                          }}
+                        >
+                          Record
+                        </Button>
+                      )}
+                      <Button asChild size="sm" variant="ghost" className="h-7 px-2 text-xs sm:hidden">
+                        <Link href={`/tour-travel/claims/${recovery.claimId}`}>View claim</Link>
+                      </Button>
+                    </div>
+                  );
+                },
+              },
+            ]}
+          />
+        </div>
+      </TableCard>
 
       <Dialog open={!!recovering} onOpenChange={open => !open && setRecovering(null)}>
         <DialogContent className={travelDialog.content}>

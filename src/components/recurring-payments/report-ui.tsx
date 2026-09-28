@@ -5,14 +5,9 @@ import {
   AlertTriangle,
   CheckCircle2,
   Loader2,
+  type LucideIcon,
 } from "lucide-react";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import {
   Table,
   TableBody,
@@ -22,7 +17,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { TableScrollArea } from "./module-table-card";
+import { TableCard } from "@/components/shared/table-card";
 
 /**
  * Shared chrome for the Recurring Payments "Reports" section. Every report hand-rolled its own
@@ -184,7 +179,7 @@ export function ReportSummaryTable({
 }: {
   title: string;
   description?: string;
-  icon?: React.ElementType;
+  icon?: LucideIcon;
   rows: Array<{ name: string; count: number; amount: number }>;
   nameHeader?: string;
   countHeader?: string;
@@ -195,92 +190,74 @@ export function ReportSummaryTable({
   const magnitude = ranked.reduce((sum, row) => sum + Math.abs(row.amount || 0), 0);
   const totalCount = ranked.reduce((sum, row) => sum + (row.count || 0), 0);
   return (
-    <Card className="min-w-0">
-      <CardHeader className="py-4">
-        <CardTitle className="flex items-center gap-2 text-base">
-          {Icon && <Icon className="h-5 w-5 text-emerald-600" />}
-          {title}
-        </CardTitle>
-        <CardDescription>
-          {[
-            `${ranked.length.toLocaleString("en-IN")} row${ranked.length === 1 ? "" : "s"}`,
-            description,
-          ]
-            .filter(Boolean)
-            .join(" · ")}
-        </CardDescription>
-      </CardHeader>
-      <CardContent className="p-0">
-        <TableScrollArea>
-          <Table className="[&_td]:py-2 [&_th]:h-9">
-            <TableHeader>
-              <TableRow>
-                <TableHead>{nameHeader}</TableHead>
-                <TableHead className="text-right">{countHeader}</TableHead>
-                <TableHead className="text-right">Amount</TableHead>
-                <TableHead className="w-[34%] min-w-40">Share of total</TableHead>
+    <TableCard title={title} description={description} icon={Icon} count={ranked.length} noun="row">
+      <Table>
+        <TableHeader>
+          <TableRow>
+            <TableHead>{nameHeader}</TableHead>
+            <TableHead className="text-right">{countHeader}</TableHead>
+            <TableHead className="text-right">Amount</TableHead>
+            <TableHead className="w-[34%] min-w-40">Share of total</TableHead>
+          </TableRow>
+        </TableHeader>
+        <TableBody>
+          {ranked.map((row) => {
+            const amount = row.amount || 0;
+            const sharePct = magnitude ? (Math.abs(amount) / magnitude) * 100 : 0;
+            // A row worth a fraction of a percent still isn't nothing, and "0.0%" claims it is.
+            const shareLabel = !magnitude
+              ? "—"
+              : amount && sharePct < 0.05
+                ? "<0.1%"
+                : `${sharePct.toFixed(1)}%`;
+            return (
+              <TableRow key={row.name}>
+                <TableCell className="font-medium">{row.name}</TableCell>
+                <TableCell className="text-right tabular-nums">
+                  {row.count.toLocaleString("en-IN")}
+                </TableCell>
+                <TableCell className="text-right tabular-nums">
+                  {inr(amount)}
+                </TableCell>
+                <TableCell>
+                  <div className="flex items-center gap-2">
+                    <div className={`h-2 flex-1 overflow-hidden rounded-[4px] ${BAR_TRACK}`} aria-hidden="true">
+                      {/* Square at the baseline, 4px rounded at the data end. `min-w` keeps a
+                          small-but-nonzero value from rendering as nothing at all. */}
+                      <div
+                        className={`h-full rounded-r-[4px] ${BAR_FILL} ${amount ? "min-w-[2px]" : ""}`}
+                        style={{ width: `${Math.max(0, Math.min(100, sharePct))}%` }}
+                      />
+                    </div>
+                    <span className="w-12 shrink-0 text-right text-xs tabular-nums text-muted-foreground">
+                      {shareLabel}
+                    </span>
+                  </div>
+                </TableCell>
               </TableRow>
-            </TableHeader>
-            <TableBody>
-              {ranked.map((row) => {
-                const amount = row.amount || 0;
-                const sharePct = magnitude ? (Math.abs(amount) / magnitude) * 100 : 0;
-                // A row worth a fraction of a percent still isn't nothing, and "0.0%" claims it is.
-                const shareLabel = !magnitude
-                  ? "—"
-                  : amount && sharePct < 0.05
-                    ? "<0.1%"
-                    : `${sharePct.toFixed(1)}%`;
-                return (
-                  <TableRow key={row.name}>
-                    <TableCell className="font-medium">{row.name}</TableCell>
-                    <TableCell className="text-right tabular-nums">
-                      {row.count.toLocaleString("en-IN")}
-                    </TableCell>
-                    <TableCell className="text-right font-semibold tabular-nums">
-                      {inr(amount)}
-                    </TableCell>
-                    <TableCell>
-                      <div className="flex items-center gap-2">
-                        <div className={`h-2 flex-1 overflow-hidden rounded-[4px] ${BAR_TRACK}`} aria-hidden="true">
-                          {/* Square at the baseline, 4px rounded at the data end. `min-w` keeps a
-                              small-but-nonzero value from rendering as nothing at all. */}
-                          <div
-                            className={`h-full rounded-r-[4px] ${BAR_FILL} ${amount ? "min-w-[2px]" : ""}`}
-                            style={{ width: `${Math.max(0, Math.min(100, sharePct))}%` }}
-                          />
-                        </div>
-                        <span className="w-12 shrink-0 text-right text-xs tabular-nums text-muted-foreground">
-                          {shareLabel}
-                        </span>
-                      </div>
-                    </TableCell>
-                  </TableRow>
-                );
-              })}
-              {!ranked.length && (
-                <TableRow>
-                  <TableCell colSpan={4} className="h-20 text-center text-muted-foreground">
-                    {emptyLabel}
-                  </TableCell>
-                </TableRow>
-              )}
-            </TableBody>
-            {ranked.length > 1 && (
-              <TableFooter>
-                <TableRow>
-                  <TableCell className="font-semibold">Total</TableCell>
-                  <TableCell className="text-right font-semibold tabular-nums">
-                    {totalCount.toLocaleString("en-IN")}
-                  </TableCell>
-                  <TableCell className="text-right font-semibold tabular-nums">{inr(total)}</TableCell>
-                  <TableCell />
-                </TableRow>
-              </TableFooter>
-            )}
-          </Table>
-        </TableScrollArea>
-      </CardContent>
-    </Card>
+            );
+          })}
+          {!ranked.length && (
+            <TableRow>
+              <TableCell colSpan={4} className="h-20 text-center text-muted-foreground">
+                {emptyLabel}
+              </TableCell>
+            </TableRow>
+          )}
+        </TableBody>
+        {ranked.length > 1 && (
+          <TableFooter>
+            <TableRow>
+              <TableCell>Total</TableCell>
+              <TableCell className="text-right tabular-nums">
+                {totalCount.toLocaleString("en-IN")}
+              </TableCell>
+              <TableCell className="text-right tabular-nums">{inr(total)}</TableCell>
+              <TableCell />
+            </TableRow>
+          </TableFooter>
+        )}
+      </Table>
+    </TableCard>
   );
 }

@@ -7,9 +7,7 @@ import {
   ChevronRight,
   Files,
   RefreshCw,
-  Search,
   ShieldAlert,
-  X,
 } from 'lucide-react';
 import { addDays, format, isPast, isWithinInterval } from 'date-fns';
 import { collection, getDocs, orderBy, query } from 'firebase/firestore';
@@ -18,24 +16,18 @@ import { useAuthorization } from '@/hooks/useAuthorization';
 import { useToast } from '@/hooks/use-toast';
 import { useRouter } from 'next/navigation';
 import type { ProjectInsurancePolicy, ProjectPolicyRenewal } from '@/lib/types';
-import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Input } from '@/components/ui/input';
+import { Card, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { PageHeader } from '@/components/shared/page-header';
+import { TableCard } from '@/components/shared/table-card';
+import { FilterBar } from '@/components/shared/filter-bar';
+import { StatusBadge } from '@/components/shared/status-badge';
 import { cn } from '@/lib/utils';
 
 // ─── helpers ─────────────────────────────────────────────────────────────────
-
-const STATUS_CFG: Record<string, { cls: string }> = {
-  Active:       { cls: 'bg-emerald-100 text-emerald-700 border-emerald-200' },
-  Expired:      { cls: 'bg-red-100 text-red-700 border-red-200' },
-  'Not Required': { cls: 'bg-slate-100 text-slate-600 border-slate-200' },
-  Close:        { cls: 'bg-slate-100 text-slate-600 border-slate-200' },
-};
 
 const fmtCur = (n: number) =>
   typeof n === 'number'
@@ -112,7 +104,7 @@ export default function AllProjectPoliciesPage() {
   }, [policies, filters]);
 
   const setFilter = (k: keyof typeof filters, v: string) => setFilters((p) => ({ ...p, [k]: v }));
-  const hasFilters = Object.entries(filters).some(([, v]) => v !== '' && v !== 'all');
+  const activeFilterCount = Object.entries(filters).filter(([k, v]) => k !== 'search' && v !== 'all').length;
 
   if (isAuthLoading || (isLoading && canViewPage)) {
     return <div className="space-y-4"><Skeleton className="h-28 w-full rounded-xl" /><Skeleton className="h-64 w-full rounded-xl" /></div>;
@@ -136,38 +128,33 @@ export default function AllProjectPoliciesPage() {
         }
       />
 
-      {/* Filters */}
-      <Card className="border-border/60">
-        <CardContent className="p-3 grid grid-cols-1 gap-2 sm:grid-cols-2 md:grid-cols-5">
-          <div className="relative md:col-span-2">
-            <Search className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
-            <Input value={filters.search} onChange={(e) => setFilter('search', e.target.value)} placeholder="Search policy no. or asset…" className="pl-8 h-9 text-sm" />
-            {filters.search && <button onClick={() => setFilter('search', '')} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground"><X className="h-3.5 w-3.5" /></button>}
-          </div>
-          {([['assetName', 'All Assets', filterOptions.assetNames], ['insuranceCompany', 'All Companies', filterOptions.companies], ['policyCategory', 'All Categories', filterOptions.categories]] as const).map(([key, placeholder, opts]) => (
-            <Select key={key} value={filters[key]} onValueChange={(v) => setFilter(key, v)}>
-              <SelectTrigger className="h-9 text-sm"><SelectValue placeholder={placeholder} /></SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">{placeholder}</SelectItem>
-                {opts.map((o) => <SelectItem key={o} value={o}>{o}</SelectItem>)}
-              </SelectContent>
-            </Select>
-          ))}
-        </CardContent>
-        {hasFilters && (
-          <div className="px-3 pb-3 flex items-center gap-2">
-            <span className="text-xs text-muted-foreground">{filtered.length} of {policies.length} shown</span>
-            <button onClick={() => setFilters({ search: '', assetName: 'all', insuranceCompany: 'all', policyCategory: 'all', status: 'all' })} className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground ml-auto"><X className="h-3 w-3" /> Clear filters</button>
-          </div>
-        )}
-      </Card>
-
       {/* Table */}
-      <Card className="overflow-hidden border-border/60">
-        <div className="overflow-x-auto">
+      <TableCard
+        title="Project policies"
+        icon={Files}
+        count={filtered.length}
+        total={policies.length}
+        toolbar={
+          <FilterBar
+            search={{ value: filters.search, onChange: (v) => setFilter('search', v), placeholder: 'Search policy no. or asset…' }}
+            activeCount={activeFilterCount}
+            onClear={() => setFilters({ search: '', assetName: 'all', insuranceCompany: 'all', policyCategory: 'all', status: 'all' })}
+          >
+            {([['assetName', 'All Assets', filterOptions.assetNames], ['insuranceCompany', 'All Companies', filterOptions.companies], ['policyCategory', 'All Categories', filterOptions.categories]] as const).map(([key, placeholder, opts]) => (
+              <Select key={key} value={filters[key]} onValueChange={(v) => setFilter(key, v)}>
+                <SelectTrigger><SelectValue placeholder={placeholder} /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">{placeholder}</SelectItem>
+                  {opts.map((o) => <SelectItem key={o} value={o}>{o}</SelectItem>)}
+                </SelectContent>
+              </Select>
+            ))}
+          </FilterBar>
+        }
+      >
           <Table>
             <TableHeader>
-              <TableRow className="bg-muted/40 hover:bg-muted/40">
+              <TableRow>
                 <TableHead className="w-10" />
                 <TableHead>Asset Name</TableHead>
                 <TableHead>Category</TableHead>
@@ -185,32 +172,31 @@ export default function AllProjectPoliciesPage() {
                 <TableRow><TableCell colSpan={10} className="h-32 text-center text-muted-foreground">No policies match your filters.</TableCell></TableRow>
               ) : filtered.map((policy) => {
                 const expanded = expandedRows.has(policy.id);
-                const statusCfg = STATUS_CFG[policy.status] ?? { cls: 'bg-slate-100 text-slate-600' };
                 const expiryDate = policy.insured_until?.toDate?.();
                 const isExpiredOrExpiring = expiryDate && (isPast(expiryDate) || isWithinInterval(expiryDate, { start: new Date(), end: addDays(new Date(), 30) }));
                 return (
                   <Fragment key={policy.id}>
                     <TableRow
-                      className={cn('cursor-pointer transition-colors', isExpiredOrExpiring ? 'hover:bg-red-50/30' : 'hover:bg-muted/20')}
+                      className="cursor-pointer"
                       onClick={(e) => { if (!(e.target as HTMLElement).closest('[data-toggle]')) router.push(`/insurance/project/${policy.assetId}`); }}
                     >
-                      <TableCell className="px-2" data-toggle>
+                      <TableCell data-toggle>
                         <Button size="icon" variant="ghost" className="h-7 w-7" data-toggle onClick={(e) => { e.stopPropagation(); toggleRow(policy.id); }}>
                           {expanded ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
                         </Button>
                       </TableCell>
                       <TableCell className="font-medium">{policy.assetName}</TableCell>
                       <TableCell>{policy.policy_category}</TableCell>
-                      <TableCell className="font-mono text-xs">{policy.policy_no}</TableCell>
+                      <TableCell className="font-mono whitespace-nowrap">{policy.policy_no}</TableCell>
                       <TableCell>{policy.insurance_company}</TableCell>
-                      <TableCell>{fmtCur(policy.premium)}</TableCell>
-                      <TableCell>{fmtCur(policy.sum_insured)}</TableCell>
-                      <TableCell className="text-sm text-muted-foreground">{fmtDate(policy.insurance_start_date)}</TableCell>
-                      <TableCell className={cn('text-sm font-medium', isExpiredOrExpiring ? 'text-red-600' : '')}>{fmtDate(policy.insured_until)}</TableCell>
-                      <TableCell><Badge variant="outline" className={cn('text-[10px]', statusCfg.cls)}>{policy.status}</Badge></TableCell>
+                      <TableCell className="whitespace-nowrap tabular-nums">{fmtCur(policy.premium)}</TableCell>
+                      <TableCell className="whitespace-nowrap tabular-nums">{fmtCur(policy.sum_insured)}</TableCell>
+                      <TableCell className="whitespace-nowrap">{fmtDate(policy.insurance_start_date)}</TableCell>
+                      <TableCell className={cn('whitespace-nowrap', isExpiredOrExpiring && 'font-medium text-red-600')}>{fmtDate(policy.insured_until)}</TableCell>
+                      <TableCell><StatusBadge status={policy.status} /></TableCell>
                     </TableRow>
                     {expanded && (
-                      <TableRow className="bg-muted/30 hover:bg-muted/30">
+                      <TableRow>
                         <TableCell colSpan={10} className="p-0">
                           <div className="p-4 border-t border-border/40">
                             <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-3">Renewal History</p>
@@ -219,7 +205,7 @@ export default function AllProjectPoliciesPage() {
                             ) : (
                               <Table>
                                 <TableHeader>
-                                  <TableRow className="bg-muted/50">
+                                  <TableRow>
                                     <TableHead>Renewal Date</TableHead>
                                     <TableHead>Policy No.</TableHead>
                                     <TableHead>Premium</TableHead>
@@ -230,11 +216,11 @@ export default function AllProjectPoliciesPage() {
                                 <TableBody>
                                   {policy.history.map((h) => (
                                     <TableRow key={h.id}>
-                                      <TableCell className="text-sm">{fmtDate(h.renewalDate)}</TableCell>
-                                      <TableCell className="font-mono text-xs">{h.policyNo}</TableCell>
-                                      <TableCell>{fmtCur(h.premium)}</TableCell>
-                                      <TableCell>{fmtCur(h.sumInsured)}</TableCell>
-                                      <TableCell className="text-sm">{fmtDate(h.startDate)} — {fmtDate(h.endDate)}</TableCell>
+                                      <TableCell className="whitespace-nowrap">{fmtDate(h.renewalDate)}</TableCell>
+                                      <TableCell className="font-mono whitespace-nowrap">{h.policyNo}</TableCell>
+                                      <TableCell className="whitespace-nowrap tabular-nums">{fmtCur(h.premium)}</TableCell>
+                                      <TableCell className="whitespace-nowrap tabular-nums">{fmtCur(h.sumInsured)}</TableCell>
+                                      <TableCell className="whitespace-nowrap">{fmtDate(h.startDate)} — {fmtDate(h.endDate)}</TableCell>
                                     </TableRow>
                                   ))}
                                 </TableBody>
@@ -249,8 +235,7 @@ export default function AllProjectPoliciesPage() {
               })}
             </TableBody>
           </Table>
-        </div>
-      </Card>
+      </TableCard>
     </div>
   );
 }

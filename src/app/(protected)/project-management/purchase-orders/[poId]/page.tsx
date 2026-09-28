@@ -24,7 +24,7 @@ import { getDownloadURL, ref as storageRef, uploadBytes } from "firebase/storage
 import { db } from "@/lib/firebase";
 import { storage } from "@/lib/firebase-storage";
 import { cn } from "@/lib/utils";
-import { MDL_COLLECTION, mdlOverallStatusStyles, type MdlDrawing, type MdlOverallStatus } from "@/lib/mdl";
+import { MDL_COLLECTION, type MdlDrawing, type MdlOverallStatus } from "@/lib/mdl";
 import {
   DI_COLLECTION,
   GRN_COLLECTION,
@@ -32,12 +32,6 @@ import {
   MC_COLLECTION,
   MDCC_COLLECTION,
   MVAC_COLLECTION,
-  diStatusStyles,
-  grnStatusStyles,
-  inspectionStatusStyles,
-  mcStatusStyles,
-  mdccStatusStyles,
-  mvacStatusStyles,
   type DiRecord,
   type DiStatus,
   type GrnRecord,
@@ -87,6 +81,9 @@ import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
 import { PM_DIALOG, PmDataList, PmEmptyState, type PmListColumn } from "@/components/project-management/pm-shell";
 import { PageHeader } from "@/components/shared/page-header";
+import { TableCard } from "@/components/shared/table-card";
+import { StatusBadge } from "@/components/shared/status-badge";
+import { pmStatusTone } from "@/components/project-management/pm-status-tones";
 import {
   PO_COLLECTION,
   PO_PERMISSION_RESOURCE,
@@ -95,7 +92,6 @@ import {
   formatQuantity,
   isCommitmentOverBoq,
   isPoOverdue,
-  poStatusStyles,
   toNumber,
   type FlowDownObligation,
   type PurchaseOrder,
@@ -110,7 +106,6 @@ import {
   PO_ISSUE_WORKFLOW_DOC_ID,
   openIssueRequestForPo,
   poIssueRequiresApproval,
-  poIssueStatusStyles,
   type PoIssueApproval,
   type PoIssueException,
   type PoLike,
@@ -144,7 +139,7 @@ const LIST_CARD_HEADER_CLASS = "max-sm:px-0";
 const LIST_IN_CARD_CLASS = "sm:rounded-none sm:border-0 sm:shadow-none";
 
 /** One supply gate's status on a line item, as a pill. */
-type GateStatus = { gate: string; status: string; style: string };
+type GateStatus = { gate: string; status: string };
 
 type PoLineRow = {
   id: string;
@@ -670,44 +665,35 @@ export default function ProjectPurchaseOrderDetailPage() {
       budgetPrice: item.boqItemId ? budgetPriceByBoqItemId.get(item.boqItemId) ?? 0 : 0,
       mdlStatus: item.boqItemId ? mdlStatusByBoqItemId.get(item.boqItemId) : undefined,
       gates: [
-        { gate: "MC", status: mcStatus ?? "Pending", style: mcStatusStyles[mcStatus ?? "Pending"] },
-        {
-          gate: "Inspection",
-          status: inspectionStatus ?? "Not Requested",
-          style: inspectionStatusStyles[inspectionStatus ?? "Not Requested"],
-        },
-        { gate: "MDCC", status: mdccStatus ?? "Pending", style: mdccStatusStyles[mdccStatus ?? "Pending"] },
-        { gate: "DI", status: diStatus ?? "Pending", style: diStatusStyles[diStatus ?? "Pending"] },
-        { gate: "GRN", status: grnStatus ?? "Not Received", style: grnStatusStyles[grnStatus ?? "Not Received"] },
-        { gate: "MVAC", status: mvacStatus ?? "Pending", style: mvacStatusStyles[mvacStatus ?? "Pending"] },
+        { gate: "MC", status: mcStatus ?? "Pending" },
+        { gate: "Inspection", status: inspectionStatus ?? "Not Requested" },
+        { gate: "MDCC", status: mdccStatus ?? "Pending" },
+        { gate: "DI", status: diStatus ?? "Pending" },
+        { gate: "GRN", status: grnStatus ?? "Not Received" },
+        { gate: "MVAC", status: mvacStatus ?? "Pending" },
       ],
     };
   });
 
-  const gatePill = (gate: GateStatus) => (
-    <span className={cn("rounded-full px-2.5 py-1 text-xs font-medium", gate.style)}>{gate.status}</span>
-  );
+  const gatePill = (gate: GateStatus) => <StatusBadge status={gate.status} tone={pmStatusTone(gate.status)} />;
 
   const lineColumns: PmListColumn<PoLineRow>[] = [
-    { header: "BOQ SL No", className: "whitespace-nowrap text-muted-foreground", cell: (row) => row.boqSlNo || "—" },
+    { header: "BOQ SL No", className: "whitespace-nowrap", cell: (row) => row.boqSlNo || "—" },
     { header: "Description", className: "max-w-md", mobile: "title", cell: (row) => row.item.description },
     { header: "Unit", cell: (row) => row.item.unit || "—" },
     {
       header: "BOQ Qty",
-      className: "text-muted-foreground",
       cell: (row) => (typeof row.item.boqQty === "number" ? formatQuantity(row.item.boqQty) : "—"),
     },
     {
       header: "Indent Qty",
-      className: "text-muted-foreground",
       cell: (row) => (typeof row.item.indentQty === "number" ? formatQuantity(row.item.indentQty) : "—"),
     },
     { header: "PO Qty", cell: (row) => formatQuantity(row.item.qty) },
     { header: "Rate", cell: (row) => formatCurrency(row.item.rate) },
-    { header: "Budget Price", className: "text-muted-foreground", cell: (row) => formatCurrency(row.budgetPrice) },
+    { header: "Budget Price", cell: (row) => formatCurrency(row.budgetPrice) },
     {
       header: "Total Budget Price",
-      className: "text-muted-foreground",
       cell: (row) => formatCurrency(row.budgetPrice * row.item.qty),
     },
     {
@@ -715,15 +701,13 @@ export default function ProjectPurchaseOrderDetailPage() {
       mobile: "aside",
       cell: (row) => <span className="font-medium">{formatCurrency(row.item.amount)}</span>,
     },
-    { header: "Source RFQ", className: "text-xs text-muted-foreground", cell: (row) => row.item.sourceRfqNumber || "—" },
+    { header: "Source RFQ", className: "whitespace-nowrap", cell: (row) => row.item.sourceRfqNumber || "—" },
     {
       header: "MDL Status",
       mobile: "omit",
       cell: (row) =>
         row.mdlStatus ? (
-          <span className={cn("rounded-full px-2.5 py-1 text-xs font-medium", mdlOverallStatusStyles[row.mdlStatus])}>
-            {row.mdlStatus}
-          </span>
+          <StatusBadge status={row.mdlStatus} tone={pmStatusTone(row.mdlStatus)} />
         ) : (
           <span className="text-muted-foreground">—</span>
         ),
@@ -744,14 +728,14 @@ export default function ProjectPurchaseOrderDetailPage() {
       cell: (row) => (
         <div className="flex flex-wrap gap-1.5">
           {row.mdlStatus && (
-            <span className={cn("rounded-full px-2 py-0.5 text-[11px] font-medium", mdlOverallStatusStyles[row.mdlStatus])}>
+            <StatusBadge status={row.mdlStatus} tone={pmStatusTone(row.mdlStatus)}>
               MDL · {row.mdlStatus}
-            </span>
+            </StatusBadge>
           )}
           {row.gates.map((gate) => (
-            <span key={gate.gate} className={cn("rounded-full px-2 py-0.5 text-[11px] font-medium", gate.style)}>
+            <StatusBadge key={gate.gate} status={gate.status} tone={pmStatusTone(gate.status)}>
               {gate.gate} · {gate.status}
-            </span>
+            </StatusBadge>
           ))}
         </div>
       ),
@@ -767,13 +751,13 @@ export default function ProjectPurchaseOrderDetailPage() {
       mobile: "aside",
       cell: (item) =>
         item.status === "gap" ? (
-          <span className="inline-flex items-center gap-1 rounded-full bg-red-100 px-2 py-0.5 text-xs font-medium text-red-700">
+          <StatusBadge status="Gap" tone="danger">
             <AlertTriangle className="h-3 w-3" /> Gap
-          </span>
+          </StatusBadge>
         ) : item.status === "ok" ? (
-          <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-medium text-emerald-700">Covered</span>
+          <StatusBadge status="Covered" tone="success" />
         ) : (
-          <span className="rounded-full bg-muted px-2 py-0.5 text-xs font-medium text-muted-foreground">Confirm manually</span>
+          <StatusBadge status="Confirm manually" tone="neutral" />
         ),
     },
   ];
@@ -802,11 +786,7 @@ export default function ProjectPurchaseOrderDetailPage() {
         icon={ShoppingCart}
         backHref={`/project-management/purchase-orders?project=${encodeURIComponent(mappingId)}`}
         backLabel="Back to Purchase Orders"
-        badge={
-          <span className={`shrink-0 rounded-full px-3 py-1 text-xs font-medium ${poStatusStyles[po.status]}`}>
-            {po.status}
-          </span>
-        }
+        badge={<StatusBadge status={po.status} tone={pmStatusTone(po.status)} className="shrink-0" />}
         actions={
         // On a phone the actions take a row of their own and share it; Print, the secondary
         // action, drops to its icon there.
@@ -816,13 +796,14 @@ export default function ProjectPurchaseOrderDetailPage() {
             <span className="hidden sm:inline">Print for Approval</span>
           </Button>
           {po.status === "Draft" && openIssueRequest ? (
-            <span
-              className={`rounded-full border px-3 py-1.5 text-xs font-medium ${poIssueStatusStyles[openIssueRequest.status]}`}
+            <StatusBadge
+              status={openIssueRequest.status}
+              tone={pmStatusTone(openIssueRequest.status)}
               title="An issue approval request is already open for this purchase order."
             >
               {openIssueRequest.status}
               {openIssueRequest.currentStepName ? ` · ${openIssueRequest.currentStepName}` : ""}
-            </span>
+            </StatusBadge>
           ) : po.status === "Draft" && canIssue ? (
             <Button onClick={handleRequestIssue} disabled={isUpdating} className="max-sm:flex-1">
               <Truck className="mr-2 h-4 w-4" />
@@ -902,7 +883,7 @@ export default function ProjectPurchaseOrderDetailPage() {
             </div>
             <p className={`font-semibold ${isPoOverdue(po) ? "text-red-600" : ""}`}>
               {formatDate(po.endDate)}
-              {isPoOverdue(po) && <span className="ml-1.5 rounded-full bg-red-100 px-1.5 py-0.5 text-[10px] font-semibold text-red-700">Overdue</span>}
+              {isPoOverdue(po) && <StatusBadge status="Overdue" className="ml-1.5" />}
             </p>
           </CardContent>
         </Card>
@@ -917,20 +898,19 @@ export default function ProjectPurchaseOrderDetailPage() {
         </Card>
       )}
 
-      <Card className={LIST_CARD_CLASS}>
-        <CardHeader className={LIST_CARD_HEADER_CLASS}>
-          <CardTitle>Items</CardTitle>
-          <CardDescription>Line items included in this purchase order.</CardDescription>
-        </CardHeader>
-        <CardContent className="p-0">
-          <PmDataList
-            rows={lineRows}
-            columns={lineColumns}
-            className={LIST_IN_CARD_CLASS}
-            empty={<PmEmptyState title="No line items on this purchase order." />}
-          />
-        </CardContent>
-      </Card>
+      <TableCard
+        title="Items"
+        description="Line items included in this purchase order."
+        scroll="natural"
+        className={LIST_CARD_CLASS}
+      >
+        <PmDataList
+          rows={lineRows}
+          columns={lineColumns}
+          className={LIST_IN_CARD_CLASS}
+          empty={<PmEmptyState title="No line items on this purchase order." />}
+        />
+      </TableCard>
 
       {(flowDownObligations.length > 0 || commitmentExceptions.length > 0) && (
         <Card className={LIST_CARD_CLASS}>

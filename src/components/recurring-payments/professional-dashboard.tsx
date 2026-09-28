@@ -39,7 +39,6 @@ import {
   effectiveStatus,
   visibleObligations,
 } from "@/lib/recurring-payments";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -50,7 +49,7 @@ import {
 } from "@/components/ui/card";
 import { chartChrome } from "@/components/ui/chart";
 import { PageHeader } from "@/components/shared/page-header";
-import CollapsibleFilterCard from "./collapsible-filter-card";
+import { FilterBar } from "@/components/shared/filter-bar";
 import { Input } from "@/components/ui/input";
 import {
   Select,
@@ -59,14 +58,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
 import { useGlobalScopes } from "./use-global-scopes";
 
 const DAY = 86_400_000;
@@ -453,71 +444,69 @@ export default function ProfessionalRecurringDashboard() {
         }
       />
 
-      <CollapsibleFilterCard activeCount={activeFilterCount} onClear={() => setFilters(defaultFilters)}>
-          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-7">
-            <FilterSelect
-              value={organizationId}
-              options={[organizationId]}
-              label={user?.organizationName || organizationId}
-              disabled
-              onChange={() => undefined}
-            />
-            <FilterSelect
-              value={filters.financialYear}
-              options={years}
-              label="Financial year"
-              onChange={(financialYear) =>
-                setFilters((current) => ({ ...current, financialYear }))
-              }
-            />
-            <FilterSelect
-              value={filters.branch}
-              options={branches}
-              label="All branches"
-              onChange={(branch) =>
-                setFilters((current) => ({ ...current, branch }))
-              }
-            />
-            <FilterSelect
-              value={filters.project}
-              options={projects}
-              label="All projects"
-              onChange={(project) =>
-                setFilters((current) => ({ ...current, project }))
-              }
-            />
-            <FilterSelect
-              value={filters.department}
-              options={departments}
-              label="All departments"
-              onChange={(department) =>
-                setFilters((current) => ({ ...current, department }))
-              }
-            />
-            <Input
-              type="date"
-              value={filters.from}
-              onChange={(event) =>
-                setFilters((current) => ({
-                  ...current,
-                  from: event.target.value,
-                }))
-              }
-              className="border-slate-200 bg-white/90 text-slate-700 shadow-sm"
-            />
-            <Input
-              type="date"
-              value={filters.to}
-              onChange={(event) =>
-                setFilters((current) => ({
-                  ...current,
-                  to: event.target.value,
-                }))
-              }
-              className="border-slate-200 bg-white/90 text-slate-700 shadow-sm"
-            />
-          </div>
-      </CollapsibleFilterCard>
+      <FilterBar activeCount={activeFilterCount} onClear={() => setFilters(defaultFilters)}>
+        <FilterSelect
+          value={organizationId}
+          options={[organizationId]}
+          label={user?.organizationName || organizationId}
+          disabled
+          onChange={() => undefined}
+        />
+        <FilterSelect
+          value={filters.financialYear}
+          options={years}
+          label="Financial year"
+          onChange={(financialYear) =>
+            setFilters((current) => ({ ...current, financialYear }))
+          }
+        />
+        <FilterSelect
+          value={filters.branch}
+          options={branches}
+          label="All branches"
+          onChange={(branch) =>
+            setFilters((current) => ({ ...current, branch }))
+          }
+        />
+        <FilterSelect
+          value={filters.project}
+          options={projects}
+          label="All projects"
+          onChange={(project) =>
+            setFilters((current) => ({ ...current, project }))
+          }
+        />
+        <FilterSelect
+          value={filters.department}
+          options={departments}
+          label="All departments"
+          onChange={(department) =>
+            setFilters((current) => ({ ...current, department }))
+          }
+        />
+        <Input
+          type="date"
+          aria-label="From date"
+          value={filters.from}
+          onChange={(event) =>
+            setFilters((current) => ({
+              ...current,
+              from: event.target.value,
+            }))
+          }
+        />
+        <Input
+          type="date"
+          aria-label="To date"
+          value={filters.to}
+          onChange={(event) =>
+            setFilters((current) => ({
+              ...current,
+              to: event.target.value,
+            }))
+          }
+        />
+      </FilterBar>
 
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-5">
         {cards.map(({ label, items, icon: Icon, color, href }) => (
@@ -556,7 +545,7 @@ export default function ProfessionalRecurringDashboard() {
         />
       </div>
 
-      <div className="grid gap-4 xl:grid-cols-3">
+      <div className="grid grid-cols-1 gap-4 xl:grid-cols-3">
         <Card className={`${GLASS_CARD} xl:col-span-2`}>
           <CardHeader>
             <CardTitle>Monthly payment trend</CardTitle>
@@ -595,7 +584,7 @@ export default function ProfessionalRecurringDashboard() {
         </Card>
         <ChartCard title="Category-wise expense" data={categoryChart} />
       </div>
-      <div className="grid gap-4 lg:grid-cols-2">
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
         <ChartCard title="Status distribution" data={statusChart} />
         <Card className={GLASS_CARD}>
           <CardHeader>
@@ -641,7 +630,7 @@ function FilterSelect({
 }) {
   return (
     <Select value={value} onValueChange={onChange} disabled={disabled}>
-      <SelectTrigger className="border-slate-200 bg-white/90 text-slate-700 shadow-sm">
+      <SelectTrigger>
         <SelectValue placeholder={label} />
       </SelectTrigger>
       <SelectContent>

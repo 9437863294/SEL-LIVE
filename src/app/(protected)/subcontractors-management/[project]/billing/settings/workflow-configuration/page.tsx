@@ -15,6 +15,7 @@ import {
 import { Button } from '@/components/ui/button';
 import { PageHeader } from '@/components/shared/page-header';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { TableCard } from '@/components/shared/table-card';
 import { Input } from '@/components/ui/input';
 import { useToast } from '@/hooks/use-toast';
 import { db } from '@/lib/firebase';
@@ -583,8 +584,7 @@ export default function BillingWorkflowConfigurationPage() {
                       {isMapped(step) && (
                         <div className="space-y-2">
                           <Label>Assign Users</Label>
-                          <Card className="mt-2">
-                            <div className="overflow-x-auto">
+                          <TableCard scroll="natural" className="mt-2">
                               <Table className="min-w-[720px]">
                                 <TableHeader>
                                   <TableRow>
@@ -650,8 +650,7 @@ export default function BillingWorkflowConfigurationPage() {
                                   })}
                                 </TableBody>
                               </Table>
-                            </div>
-                          </Card>
+                          </TableCard>
                         </div>
                       )}
 

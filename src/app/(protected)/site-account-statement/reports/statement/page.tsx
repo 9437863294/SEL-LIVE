@@ -9,8 +9,10 @@ import { loadScopedLedger } from '@/lib/site-account-statement-queries';
 import { useAuthorization } from '@/hooks/useAuthorization';
 import { useAuth } from '@/components/auth/AuthProvider';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent } from '@/components/ui/card';
+import { Table, TableBody, TableCell, TableFooter, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { PageHeader } from '@/components/shared/page-header';
+import { TableCard } from '@/components/shared/table-card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -216,7 +218,7 @@ export default function AccountStatementPage() {
         <div className="space-y-1.5">
           <Label className="text-xs">Project <span className="text-destructive">*</span></Label>
           <Select value={selectedProject} onValueChange={setSelectedProject}>
-            <SelectTrigger className="h-9"><SelectValue placeholder="Select a project" /></SelectTrigger>
+            <SelectTrigger><SelectValue placeholder="Select a project" /></SelectTrigger>
             <SelectContent>
               {visibleProjects.map(p => <SelectItem key={p.id} value={p.id}>{p.projectName}</SelectItem>)}
             </SelectContent>
@@ -224,11 +226,11 @@ export default function AccountStatementPage() {
         </div>
         <div className="space-y-1.5">
           <Label className="text-xs">From Date</Label>
-          <Input type="date" value={filterFrom} onChange={e => setFilterFrom(e.target.value)} className="h-9 text-sm" />
+          <Input type="date" value={filterFrom} onChange={e => setFilterFrom(e.target.value)} />
         </div>
         <div className="space-y-1.5">
           <Label className="text-xs">To Date</Label>
-          <Input type="date" value={filterTo} onChange={e => setFilterTo(e.target.value)} className="h-9 text-sm" />
+          <Input type="date" value={filterTo} onChange={e => setFilterTo(e.target.value)} />
         </div>
       </div>
 
@@ -243,62 +245,55 @@ export default function AccountStatementPage() {
           <p className="text-sm text-muted-foreground">No transactions found for the selected project / date range.</p>
         </CardContent></Card>
       ) : (
-        <Card className="bg-white/80 backdrop-blur-sm">
-          <CardHeader className="pb-2 pt-3 px-4">
-            <CardTitle className="text-slate-700">{selectedProjectName}</CardTitle>
-          </CardHeader>
-          <CardContent className="p-0">
-            <div className="overflow-auto overflow-x-auto max-h-[60vh]">
-              <table className="w-full min-w-[600px] text-sm">
-                <thead className="sticky top-0 z-10">
-                  <tr className="border-b bg-slate-100">
-                    <th className="px-4 py-2.5 text-left font-medium w-[110px]">Date</th>
-                    <th className="px-4 py-2.5 text-left font-medium">Particulars</th>
-                    <th className="px-4 py-2.5 text-right font-medium">Receipt (₹)</th>
-                    <th className="px-4 py-2.5 text-right font-medium">Expense (₹)</th>
-                    <th className="px-4 py-2.5 text-right font-medium">Balance (₹)</th>
-                  </tr>
-                </thead>
-                <tbody>
+        <TableCard title={selectedProjectName} count={statement.length} noun="transaction">
+              <Table className="min-w-[600px]">
+                <TableHeader>
+                  <TableRow>
+                    <TableHead className="w-[110px]">Date</TableHead>
+                    <TableHead>Particulars</TableHead>
+                    <TableHead className="text-right">Receipt (₹)</TableHead>
+                    <TableHead className="text-right">Expense (₹)</TableHead>
+                    <TableHead className="text-right">Balance (₹)</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
                   {/* An opening row makes the carried-forward balance explicit, rather than leaving
                       the first row's balance looking like it appeared from nowhere. */}
                   {filterFrom && (
-                    <tr className="border-b bg-slate-50 font-medium">
-                      <td className="px-4 py-2 whitespace-nowrap text-muted-foreground">{filterFrom}</td>
-                      <td className="px-4 py-2 text-slate-600 italic">Opening balance brought forward</td>
-                      <td className="px-4 py-2 text-right text-muted-foreground">—</td>
-                      <td className="px-4 py-2 text-right text-muted-foreground">—</td>
-                      <td className={`px-4 py-2 text-right font-semibold ${openingBalance >= 0 ? 'text-emerald-700' : 'text-destructive'}`}>
+                    <TableRow className="bg-slate-50">
+                      <TableCell className="whitespace-nowrap">{filterFrom}</TableCell>
+                      <TableCell className="italic">Opening balance brought forward</TableCell>
+                      <TableCell className="text-right">—</TableCell>
+                      <TableCell className="text-right">—</TableCell>
+                      <TableCell className={cn('text-right whitespace-nowrap tabular-nums font-medium', openingBalance >= 0 ? 'text-emerald-700' : 'text-destructive')}>
                         {formatINR(openingBalance)}
-                      </td>
-                    </tr>
+                      </TableCell>
+                    </TableRow>
                   )}
                   {statement.map((line, i) => (
-                    <tr key={i} className="border-b hover:bg-muted/20">
-                      <td className="px-4 py-2 whitespace-nowrap text-muted-foreground">{line.date}</td>
-                      <td className="px-4 py-2">{line.particulars}</td>
-                      <td className="px-4 py-2 text-right text-blue-600">{line.receipt > 0 ? formatINR(line.receipt) : '—'}</td>
-                      <td className="px-4 py-2 text-right text-rose-600">{line.expense > 0 ? formatINR(line.expense) : '—'}</td>
-                      <td className={cn('px-4 py-2 text-right font-semibold', line.balance >= 0 ? 'text-emerald-700' : 'text-destructive')}>
+                    <TableRow key={i}>
+                      <TableCell className="whitespace-nowrap">{line.date}</TableCell>
+                      <TableCell>{line.particulars}</TableCell>
+                      <TableCell className="text-right whitespace-nowrap tabular-nums text-blue-600">{line.receipt > 0 ? formatINR(line.receipt) : '—'}</TableCell>
+                      <TableCell className="text-right whitespace-nowrap tabular-nums text-rose-600">{line.expense > 0 ? formatINR(line.expense) : '—'}</TableCell>
+                      <TableCell className={cn('text-right whitespace-nowrap tabular-nums font-medium', line.balance >= 0 ? 'text-emerald-700' : 'text-destructive')}>
                         {formatINR(line.balance)}
-                      </td>
-                    </tr>
+                      </TableCell>
+                    </TableRow>
                   ))}
-                </tbody>
-                <tfoot>
-                  <tr className="bg-muted/30 font-bold">
-                    <td className="px-4 py-2.5" colSpan={2}>Total</td>
-                    <td className="px-4 py-2.5 text-right text-blue-700">{formatINR(totals.receipt)}</td>
-                    <td className="px-4 py-2.5 text-right text-rose-700">{formatINR(totals.expense)}</td>
-                    <td className={cn('px-4 py-2.5 text-right', totals.balance >= 0 ? 'text-emerald-700' : 'text-destructive')}>
+                </TableBody>
+                <TableFooter>
+                  <TableRow>
+                    <TableCell colSpan={2}>Total</TableCell>
+                    <TableCell className="text-right whitespace-nowrap tabular-nums text-blue-700">{formatINR(totals.receipt)}</TableCell>
+                    <TableCell className="text-right whitespace-nowrap tabular-nums text-rose-700">{formatINR(totals.expense)}</TableCell>
+                    <TableCell className={cn('text-right whitespace-nowrap tabular-nums', totals.balance >= 0 ? 'text-emerald-700' : 'text-destructive')}>
                       {formatINR(totals.balance)}
-                    </td>
-                  </tr>
-                </tfoot>
-              </table>
-            </div>
-          </CardContent>
-        </Card>
+                    </TableCell>
+                  </TableRow>
+                </TableFooter>
+              </Table>
+        </TableCard>
       )}
     </div>
   );

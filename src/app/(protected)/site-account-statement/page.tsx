@@ -22,6 +22,9 @@ import { useAuth } from '@/components/auth/AuthProvider';
 import { useToast } from '@/hooks/use-toast';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { PageHeader, SectionHeader } from '@/components/shared/page-header';
+import { TableCard } from '@/components/shared/table-card';
+import { FilterBar } from '@/components/shared/filter-bar';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
@@ -35,7 +38,7 @@ import { cn } from '@/lib/utils';
 import Link from 'next/link';
 import {
   AlertTriangle, ArrowDownRight, ArrowUpRight, BarChart3,
-  BookOpen, Building2, File, FileText, Filter, Loader2, Paperclip, Plus, Receipt, Search, Target,
+  BookOpen, Building2, File, FileText, Loader2, Paperclip, Plus, Receipt, Target,
   TrendingDown, TrendingUp, Wallet, X,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
@@ -510,7 +513,7 @@ function MyProjectCard({
             <div className="min-w-0">
               <CardTitle className="truncate">{project.projectName}</CardTitle>
               {project.projectCode && (
-                <Badge variant="outline" className="mt-1 text-xs border-emerald-300 text-emerald-700">{project.projectCode}</Badge>
+                <Badge variant="outline" className="mt-1">{project.projectCode}</Badge>
               )}
             </div>
             <div className="text-right shrink-0">
@@ -889,7 +892,7 @@ export default function SiteAccountDashboardPage() {
           <SectionHeader
             icon={Wallet}
             title="My Projects"
-            badge={<Badge className="bg-emerald-100 text-emerald-700 text-xs">{myProjects.length}</Badge>}
+            badge={<Badge variant="neutral">{myProjects.length}</Badge>}
           />
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             {myProjects.map(proj => {
@@ -940,25 +943,19 @@ export default function SiteAccountDashboardPage() {
           </div>
 
           {/* Project-wise summary table */}
-          <Card className="bg-white/80 backdrop-blur-sm">
-            <CardHeader className="pb-2 flex flex-col gap-3">
-              <div className="flex items-center justify-between gap-2 flex-wrap">
-                <CardTitle>Project-Wise Summary</CardTitle>
-                <span className="text-xs text-muted-foreground">{filteredProjectStats.length} of {projectStats.length} project{projectStats.length !== 1 ? 's' : ''}</span>
-              </div>
-              {/* Filter bar */}
-              <div className="flex flex-wrap gap-2">
-                <div className="relative flex-1 min-w-[150px]">
-                  <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground pointer-events-none" />
-                  <Input
-                    className="pl-8 h-8 text-xs"
-                    placeholder="Search projects…"
-                    value={filterSearch}
-                    onChange={e => setFilterSearch(e.target.value)}
-                  />
-                </div>
+          <TableCard
+            title="Project-Wise Summary"
+            count={filteredProjectStats.length}
+            total={projectStats.length}
+            noun="project"
+            toolbar={
+              <FilterBar
+                search={{ value: filterSearch, onChange: setFilterSearch, placeholder: 'Search projects…' }}
+                activeCount={filterBudgetStatus !== 'all' ? 1 : 0}
+                onClear={() => { setFilterSearch(''); setFilterBudgetStatus('all'); }}
+              >
                 <Select value={filterFY} onValueChange={setFilterFY}>
-                  <SelectTrigger className="h-8 text-xs w-[110px]">
+                  <SelectTrigger aria-label="Financial year">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
@@ -973,7 +970,7 @@ export default function SiteAccountDashboardPage() {
                   onValueChange={v => setFilterMonth(v === '_all_' ? '' : v)}
                   disabled={filterFY === 'all'}
                 >
-                  <SelectTrigger className="h-8 text-xs w-[110px]">
+                  <SelectTrigger aria-label="Month">
                     <SelectValue placeholder="All Months" />
                   </SelectTrigger>
                   <SelectContent>
@@ -986,8 +983,7 @@ export default function SiteAccountDashboardPage() {
                   </SelectContent>
                 </Select>
                 <Select value={filterBudgetStatus} onValueChange={setFilterBudgetStatus}>
-                  <SelectTrigger className="h-8 text-xs w-[130px]">
-                    <Filter className="h-3 w-3 mr-1" />
+                  <SelectTrigger aria-label="Budget status">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
@@ -997,53 +993,40 @@ export default function SiteAccountDashboardPage() {
                     <SelectItem value="none">No Budget</SelectItem>
                   </SelectContent>
                 </Select>
-                {(filterSearch || filterBudgetStatus !== 'all') && (
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    className="h-8 px-2 text-xs"
-                    onClick={() => { setFilterSearch(''); setFilterBudgetStatus('all'); }}
-                  >
-                    <X className="h-3.5 w-3.5 mr-1" /> Clear filters
-                  </Button>
-                )}
-              </div>
-            </CardHeader>
-            <CardContent className="p-0">
+              </FilterBar>
+            }
+          >
               {projectStats.length === 0 ? (
                 <p className="px-4 py-8 text-center text-sm text-muted-foreground">
                   No enabled projects. Configure in Project Settings.
                 </p>
               ) : (
-                <div className="overflow-x-auto overflow-y-auto max-h-[60vh]">
-                  <table className="w-full min-w-[600px] text-sm">
-                    <thead className="sticky top-0 z-10">
-                      <tr className="border-b bg-slate-100">
-                        <th className="px-4 py-2 text-left font-medium">Project</th>
-                        <th className="px-4 py-2 text-right font-medium">Total Planned Budget</th>
-                        <th className="px-4 py-2 text-right font-medium">Cumulative Project Expense</th>
-                        <th className="px-4 py-2 text-right font-medium">Cumulative Project Used %</th>
-                        <th className="px-4 py-2 text-right font-medium">Balance Fund</th>
-                        <th className="px-4 py-2 text-right font-medium">Balance Fund %</th>
-                      </tr>
-                    </thead>
-                    <tbody>
+                  <Table className="min-w-[600px]">
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Project</TableHead>
+                        <TableHead className="text-right">Total Planned Budget</TableHead>
+                        <TableHead className="text-right">Cumulative Project Expense</TableHead>
+                        <TableHead className="text-right">Cumulative Project Used %</TableHead>
+                        <TableHead className="text-right">Balance Fund</TableHead>
+                        <TableHead className="text-right">Balance Fund %</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
                       {filteredProjectStats.map(stat => (
-                        <tr key={stat.id} className="border-b hover:bg-muted/20 transition-colors">
-                          <td className="px-4 py-2 font-medium">{stat.name}</td>
-                          <td className="px-4 py-2 text-right">{formatINR(stat.plannedBudget)}</td>
-                          <td className="px-4 py-2 text-right">{formatINR(stat.cumulativeExpenses)}</td>
-                          <td className="px-4 py-2 text-right">{stat.plannedBudget > 0 ? `${stat.cumulativeUsedPct.toFixed(2)}%` : '—'}</td>
-                          <td className="px-4 py-2 text-right">{formatINR(stat.balanceFund)}</td>
-                          <td className="px-4 py-2 text-right">{stat.plannedBudget > 0 ? `${stat.balanceFundPct.toFixed(2)}%` : '—'}</td>
-                        </tr>
+                        <TableRow key={stat.id}>
+                          <TableCell className="font-medium">{stat.name}</TableCell>
+                          <TableCell className="text-right tabular-nums whitespace-nowrap">{formatINR(stat.plannedBudget)}</TableCell>
+                          <TableCell className="text-right tabular-nums whitespace-nowrap">{formatINR(stat.cumulativeExpenses)}</TableCell>
+                          <TableCell className="text-right tabular-nums whitespace-nowrap">{stat.plannedBudget > 0 ? `${stat.cumulativeUsedPct.toFixed(2)}%` : '—'}</TableCell>
+                          <TableCell className="text-right tabular-nums whitespace-nowrap">{formatINR(stat.balanceFund)}</TableCell>
+                          <TableCell className="text-right tabular-nums whitespace-nowrap">{stat.plannedBudget > 0 ? `${stat.balanceFundPct.toFixed(2)}%` : '—'}</TableCell>
+                        </TableRow>
                       ))}
-                    </tbody>
-                  </table>
-                </div>
+                    </TableBody>
+                  </Table>
               )}
-            </CardContent>
-          </Card>
+          </TableCard>
         </section>
       )}
 

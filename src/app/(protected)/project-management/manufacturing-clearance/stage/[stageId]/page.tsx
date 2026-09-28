@@ -28,7 +28,6 @@ import {
   MC_CLEARANCE_APPROVAL_COLLECTION,
   MC_CLEARANCE_WORKFLOW_DOC_ID,
   canActOnMcApproval,
-  mcApprovalStatusStyles,
   mcApprovalsForStep,
   type McApprovalAction,
   type McClearanceApproval,
@@ -47,7 +46,6 @@ import {
   PmEmptyState,
   type PmListColumn,
 } from "@/components/project-management/pm-shell";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import {
@@ -63,6 +61,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
 import { PageHeader } from "@/components/shared/page-header";
+import { StatusBadge } from "@/components/shared/status-badge";
 
 const toDateSafe = (value: unknown): Date | null => {
   if (!value) return null;
@@ -305,9 +304,7 @@ export default function McClearanceStagePage() {
       header: "Status",
       mobile: "aside",
       cell: (approval) => (
-        <Badge variant="outline" className={mcApprovalStatusStyles[approval.status]}>
-          {approval.status}
-        </Badge>
+        <StatusBadge status={approval.status} />
       ),
     },
     {

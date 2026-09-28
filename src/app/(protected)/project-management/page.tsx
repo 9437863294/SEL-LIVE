@@ -22,14 +22,12 @@ import {
 import { collection, getDocs } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import {
-  projectLifecycleStyles,
   resolveLifecycle,
   type PmProjectTeam,
   type ProjectLifecycleState,
   type ProjectScope,
   type ProjectType,
 } from "@/lib/project-management-projects";
-import { Badge } from "@/components/ui/badge";
 import {
   Card,
   CardContent,
@@ -46,6 +44,7 @@ import {
 } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 import { PageHeader, SectionHeader } from "@/components/shared/page-header";
+import { StatusBadge } from "@/components/shared/status-badge";
 import { useAuthorization } from "@/hooks/useAuthorization";
 import { cn } from "@/lib/utils";
 
@@ -324,15 +323,7 @@ export default function ProjectManagementPage() {
         }
         badge={
           selectedProject ? (
-            <Badge
-              variant="outline"
-              className={cn(
-                "border-0 shrink-0",
-                projectLifecycleStyles[resolveLifecycle(selectedProject)],
-              )}
-            >
-              {resolveLifecycle(selectedProject)}
-            </Badge>
+            <StatusBadge status={resolveLifecycle(selectedProject)} className="shrink-0" />
           ) : undefined
         }
         meta={

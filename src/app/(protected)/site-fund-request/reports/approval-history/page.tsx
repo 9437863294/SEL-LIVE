@@ -10,10 +10,13 @@ import type { Requisition, Project } from '@/lib/types';
 import { useAuthorization } from '@/hooks/useAuthorization';
 import { useSFRProjectAccess } from '@/hooks/useSFRProjectAccess';
 import { Button } from '@/components/ui/button';
-import { Badge } from '@/components/ui/badge';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Skeleton } from '@/components/ui/skeleton';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { TableCard } from '@/components/shared/table-card';
+import { FilterBar } from '@/components/shared/filter-bar';
+import { StatusBadge, type StatusTone } from '@/components/shared/status-badge';
 
 // ─── helpers ─────────────────────────────────────────────────────────────────
 
@@ -56,10 +59,10 @@ const ACTION_TYPE_OPTIONS = [
   { value: 'Other', label: 'Other' },
 ] as const;
 
-const ACTION_BADGE: Record<'Approve' | 'Reject' | 'Other', string> = {
-  Approve: 'bg-green-100 text-green-700',
-  Reject: 'bg-red-100 text-red-700',
-  Other: 'bg-slate-100 text-slate-600',
+const ACTION_TONE: Record<'Approve' | 'Reject' | 'Other', StatusTone> = {
+  Approve: 'success',
+  Reject: 'danger',
+  Other: 'neutral',
 };
 
 // ─── types ────────────────────────────────────────────────────────────────────
@@ -259,120 +262,96 @@ export default function ApprovalHistoryPage() {
         }
       />
 
-      {/* Filters */}
-      <Card className="overflow-hidden bg-white/70 border border-white/70 rounded-2xl shadow-[0_20px_70px_-55px_rgba(2,6,23,0.55)] backdrop-blur">
-        <div className="h-1.5 w-full bg-gradient-to-r from-slate-400 via-gray-400 to-zinc-400 opacity-70" />
-        <CardContent className="p-4">
-          <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-            <div className="space-y-1">
-              <p className="text-xs font-medium text-slate-600">Financial Year</p>
-              <Select value={filterFY} onValueChange={setFilterFY}>
-                <SelectTrigger className="bg-white/80 border-white/70"><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All Years</SelectItem>
-                  {fyOptions.map(fy => <SelectItem key={fy} value={fy}>{fy}</SelectItem>)}
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="space-y-1">
-              <p className="text-xs font-medium text-slate-600">Month</p>
-              <Select value={filterMonth} onValueChange={setFilterMonth}>
-                <SelectTrigger className="bg-white/80 border-white/70"><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All Months</SelectItem>
-                  {MONTHS.map(m => <SelectItem key={m.value} value={m.value}>{m.label}</SelectItem>)}
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="space-y-1">
-              <p className="text-xs font-medium text-slate-600">Project</p>
-              <Select value={filterProject} onValueChange={setFilterProject}>
-                <SelectTrigger className="bg-white/80 border-white/70"><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All Projects</SelectItem>
-                  {projects.map(p => <SelectItem key={p.id} value={p.id}>{p.projectName}</SelectItem>)}
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="space-y-1">
-              <p className="text-xs font-medium text-slate-600">Action Type</p>
-              <Select value={filterActionType} onValueChange={setFilterActionType}>
-                <SelectTrigger className="bg-white/80 border-white/70"><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  {ACTION_TYPE_OPTIONS.map(o => (
-                    <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-          </div>
-        </CardContent>
-      </Card>
-
       {/* Table */}
-      <Card className="overflow-hidden rounded-2xl border border-white/70 bg-white/70 shadow-[0_20px_70px_-55px_rgba(2,6,23,0.55)] backdrop-blur">
-        <div className="h-1.5 w-full bg-gradient-to-r from-slate-400 via-gray-400 to-zinc-400 opacity-70" />
-        <CardHeader className="p-4 pb-2 flex-row items-center justify-between gap-3 flex-wrap">
-          <div>
-            <CardTitle>Action Log</CardTitle>
-            <CardDescription>Sorted by most recent action first.</CardDescription>
-          </div>
-          <Badge variant="secondary" className="text-sm px-3 py-1">
-            {filtered.length} {filtered.length === 1 ? 'entry' : 'entries'} found
-          </Badge>
-        </CardHeader>
-        <CardContent className="p-0">
+      <TableCard
+        title="Action Log"
+        description="Sorted by most recent action first."
+        count={filtered.length}
+        toolbar={
+          <FilterBar
+            activeCount={[filterFY, filterMonth, filterProject, filterActionType].filter(v => v !== 'all').length}
+            onClear={() => { setFilterFY('all'); setFilterMonth('all'); setFilterProject('all'); setFilterActionType('all'); }}
+          >
+            <Select value={filterFY} onValueChange={setFilterFY}>
+              <SelectTrigger aria-label="Financial Year"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Years</SelectItem>
+                {fyOptions.map(fy => <SelectItem key={fy} value={fy}>{fy}</SelectItem>)}
+              </SelectContent>
+            </Select>
+            <Select value={filterMonth} onValueChange={setFilterMonth}>
+              <SelectTrigger aria-label="Month"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Months</SelectItem>
+                {MONTHS.map(m => <SelectItem key={m.value} value={m.value}>{m.label}</SelectItem>)}
+              </SelectContent>
+            </Select>
+            <Select value={filterProject} onValueChange={setFilterProject}>
+              <SelectTrigger aria-label="Project"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Projects</SelectItem>
+                {projects.map(p => <SelectItem key={p.id} value={p.id}>{p.projectName}</SelectItem>)}
+              </SelectContent>
+            </Select>
+            <Select value={filterActionType} onValueChange={setFilterActionType}>
+              <SelectTrigger aria-label="Action Type"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                {ACTION_TYPE_OPTIONS.map(o => (
+                  <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </FilterBar>
+        }
+      >
           {filtered.length === 0 ? (
             <div className="flex flex-col items-center gap-3 px-6 py-12 text-center">
               <ScrollText className="h-10 w-10 text-muted-foreground/40" />
-              <p className="text-sm text-slate-500">No action log entries match the selected filters.</p>
+              <p className="text-sm text-muted-foreground">No action log entries match the selected filters.</p>
             </div>
           ) : (
-            <div className="overflow-auto rounded-b-2xl border-t border-white/70 bg-white/80 max-h-[calc(100vh-400px)]">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="border-b border-slate-200 bg-slate-50/90 sticky top-0 z-10">
+              <Table>
+                <TableHeader>
+                  <TableRow>
                     {['Request ID', 'Amount', 'Project', 'Step', 'Action', 'By', 'Comment', 'Date & Time'].map(h => (
-                      <th key={h} className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-500 whitespace-nowrap">
+                      <TableHead key={h} className={h === 'Amount' ? 'text-right' : undefined}>
                         {h}
-                      </th>
+                      </TableHead>
                     ))}
-                  </tr>
-                </thead>
-                <tbody>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
                   {filtered.map((e, idx) => (
-                    <tr key={`${e.reqId}-${e.timestamp.getTime()}-${idx}`} className="border-b border-slate-100 hover:bg-slate-50/70 transition-colors">
-                      <td className="px-4 py-3 font-mono text-xs font-medium text-slate-800 whitespace-nowrap">
+                    <TableRow key={`${e.reqId}-${e.timestamp.getTime()}-${idx}`}>
+                      <TableCell className="font-mono font-medium whitespace-nowrap">
                         {e.requisitionId}
-                      </td>
-                      <td className="px-4 py-3 text-right font-medium text-slate-900 whitespace-nowrap">
+                      </TableCell>
+                      <TableCell className="text-right tabular-nums whitespace-nowrap">
                         {formatCurrency(e.amount)}
-                      </td>
-                      <td className="px-4 py-3 text-slate-700">{e.projectName}</td>
-                      <td className="px-4 py-3 text-slate-600 whitespace-nowrap">{e.stepName}</td>
-                      <td className="px-4 py-3 whitespace-nowrap">
-                        <span className={`inline-flex rounded-full px-2.5 py-0.5 text-xs font-semibold ${ACTION_BADGE[e.actionType]}`}>
+                      </TableCell>
+                      <TableCell>{e.projectName}</TableCell>
+                      <TableCell className="whitespace-nowrap">{e.stepName}</TableCell>
+                      <TableCell className="whitespace-nowrap">
+                        <StatusBadge status={e.action} tone={ACTION_TONE[e.actionType]}>
                           {e.action}
-                        </span>
-                      </td>
-                      <td className="px-4 py-3 text-slate-700 whitespace-nowrap">{e.userName}</td>
-                      <td className="px-4 py-3 text-slate-600 max-w-xs truncate">
+                        </StatusBadge>
+                      </TableCell>
+                      <TableCell className="whitespace-nowrap">{e.userName}</TableCell>
+                      <TableCell className="max-w-xs truncate">
                         {e.comment || <span className="text-muted-foreground italic">—</span>}
-                      </td>
-                      <td className="px-4 py-3 text-slate-500 text-xs whitespace-nowrap">
+                      </TableCell>
+                      <TableCell className="whitespace-nowrap">
                         {e.timestamp.toLocaleString('en-IN', {
                           day: '2-digit', month: 'short', year: 'numeric',
                           hour: '2-digit', minute: '2-digit', hour12: true,
                         })}
-                      </td>
-                    </tr>
+                      </TableCell>
+                    </TableRow>
                   ))}
-                </tbody>
-              </table>
-            </div>
+                </TableBody>
+              </Table>
           )}
-        </CardContent>
-      </Card>
+      </TableCard>
     </div>
   );
 }

@@ -18,15 +18,16 @@
 
 import * as React from 'react';
 import { useMemo, useState } from 'react';
-import { Check, ChevronsUpDown, FolderKanban, KeyRound, Search, SlidersHorizontal, Users, X } from 'lucide-react';
+import { Check, ChevronsUpDown, FolderKanban, KeyRound, Users, X } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from '@/components/ui/command';
-import { Input } from '@/components/ui/input';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { FilterBar, SearchInput } from '@/components/shared/filter-bar';
+import { StatusBadge } from '@/components/shared/status-badge';
 import { HrDataList, type HrListColumn } from '@/components/hr/hr-ui';
 import { cn } from '@/lib/utils';
 import type { Department, Employee, Project, Role, User } from '@/lib/types';
@@ -172,8 +173,8 @@ export function UserFilterBar({
    */
   defaultFilter?: UserFilterState;
   /**
-   * Rendered on the search row, after the Filters button — the user picker puts its selection
-   * summary and "Select all" here, so everything above the list is one row.
+   * Rendered at the end of the bar (the `FilterBar`'s actions) — the user picker puts its selection
+   * summary and "Select all" here, so everything above the list is one bar.
    */
   trailing?: React.ReactNode;
   className?: string;
@@ -181,55 +182,28 @@ export function UserFilterBar({
   const set = <K extends keyof UserFilterState>(key: K, value: UserFilterState[K]) =>
     onChange({ ...filter, [key]: value });
 
-  // The six selects are optional and mostly unused, so at every width they fold behind a "Filters"
-  // button that carries the count of the ones in effect — open, they were two rows of controls
-  // between the search box and the first result. The search box is the filter people reach for
-  // first and stays out. Opened, they fill an auto-fill grid of ~12rem columns: one compact row
-  // where the bar is wide (the Users tab), two even rows of three where it is not (the Assign
-  // Access panel) — never an orphaned sixth control on its own line.
-  const [open, setOpen] = useState(false);
+  // Filters in effect, measured against the bar's resting state — the count on the phone
+  // "Filters (n)" toggle and what enables Clear. The search box is not counted.
   const activeCount = (Object.keys(filter) as Array<keyof UserFilterState>).filter(
     (key) => key !== 'term' && filter[key] !== defaultFilter[key],
   ).length;
 
   return (
-    <div className={cn('space-y-2', className)}>
-      <div className="flex flex-wrap items-center gap-2">
-        <div className="relative min-w-[12rem] flex-1">
-          <Search className="pointer-events-none absolute left-3 top-2.5 h-4 w-4 text-slate-400" />
-          <Input
-            value={filter.term}
-            onChange={(event) => set('term', event.target.value)}
-            placeholder="Name, employee ID, email, phone, department, designation…"
-            className="pl-9"
-          />
-          {filter.term && (
-            <button
-              type="button"
-              onClick={() => set('term', '')}
-              aria-label="Clear search"
-              className="hr-inline-action absolute right-1 top-1/2 inline-flex -translate-y-1/2 items-center justify-center rounded-full p-1 text-slate-400 hover:bg-slate-100"
-            >
-              <X className="h-3.5 w-3.5" />
-            </button>
-          )}
-        </div>
-        <Button
-          type="button"
-          variant={activeCount > 0 ? 'default' : 'outline'}
-          className="shrink-0 gap-1"
-          aria-expanded={open}
-          onClick={() => setOpen((flag) => !flag)}
-        >
-          <SlidersHorizontal className="h-4 w-4" />
-          Filters{activeCount > 0 ? ` (${activeCount})` : ''}
-        </Button>
-        {trailing}
-      </div>
-
-      <div className={cn('grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-[repeat(auto-fill,minmax(12rem,1fr))]', !open && 'hidden')}>
+    <FilterBar
+      className={className}
+      search={{
+        value: filter.term,
+        onChange: (value) => set('term', value),
+        placeholder: 'Name, employee ID, email, phone, department, designation…',
+        label: 'Search users',
+      }}
+      activeCount={activeCount}
+      // Back to the resting state, not to empty: the Users tab rests on all statuses.
+      onClear={() => onChange({ ...defaultFilter, term: '' })}
+      actions={trailing}
+    >
       <Select value={filter.status} onValueChange={(value) => set('status', value as UserFilterState['status'])}>
-        <SelectTrigger><SelectValue placeholder="Status" /></SelectTrigger>
+        <SelectTrigger aria-label="Status"><SelectValue placeholder="Status" /></SelectTrigger>
         <SelectContent>
           <SelectItem value="Active">Active only</SelectItem>
           <SelectItem value="Inactive">Inactive only</SelectItem>
@@ -238,7 +212,7 @@ export function UserFilterBar({
       </Select>
 
       <Select value={filter.departmentId} onValueChange={(value) => set('departmentId', value)}>
-        <SelectTrigger><SelectValue placeholder="Department" /></SelectTrigger>
+        <SelectTrigger aria-label="Department"><SelectValue placeholder="Department" /></SelectTrigger>
         <SelectContent>
           <SelectItem value="all">All departments</SelectItem>
           {context.departments.map((department) => (
@@ -248,7 +222,7 @@ export function UserFilterBar({
       </Select>
 
       <Select value={filter.designation} onValueChange={(value) => set('designation', value)}>
-        <SelectTrigger><SelectValue placeholder="Designation" /></SelectTrigger>
+        <SelectTrigger aria-label="Designation"><SelectValue placeholder="Designation" /></SelectTrigger>
         <SelectContent>
           <SelectItem value="all">All designations</SelectItem>
           {context.designations.map((designation) => (
@@ -258,7 +232,7 @@ export function UserFilterBar({
       </Select>
 
       <Select value={filter.roleName} onValueChange={(value) => set('roleName', value)}>
-        <SelectTrigger><SelectValue placeholder="Role" /></SelectTrigger>
+        <SelectTrigger aria-label="Role"><SelectValue placeholder="Role" /></SelectTrigger>
         <SelectContent>
           <SelectItem value="all">All roles</SelectItem>
           {context.roles.map((role) => (
@@ -268,7 +242,7 @@ export function UserFilterBar({
       </Select>
 
       <Select value={filter.projectId} onValueChange={(value) => set('projectId', value)}>
-        <SelectTrigger><SelectValue placeholder="Project / site" /></SelectTrigger>
+        <SelectTrigger aria-label="Project / site"><SelectValue placeholder="Project / site" /></SelectTrigger>
         <SelectContent>
           <SelectItem value="all">All projects</SelectItem>
           {context.projects.map((project) => (
@@ -286,8 +260,7 @@ export function UserFilterBar({
           onChange={(pair) => set('permissionPair', pair)}
         />
       )}
-      </div>
-    </div>
+    </FilterBar>
   );
 }
 
@@ -478,11 +451,7 @@ export function UserPicker({
                   {personSubtitle(user, employeeIndex)}
                 </span>
               )}
-              {(user.status ?? 'Active') !== 'Active' && (
-                <Badge variant="outline" className="border-slate-200 bg-white text-[10px] text-slate-500">
-                  Inactive
-                </Badge>
-              )}
+              {(user.status ?? 'Active') !== 'Active' && <StatusBadge status="Inactive" />}
               {access && (
                 <RiskBadges
                   privileges={detectPrivilegedAccess(access)}
@@ -503,7 +472,7 @@ export function UserPicker({
     {
       header: 'Contact',
       mobile: 'omit',
-      className: 'max-w-[16rem] truncate text-xs text-muted-foreground',
+      className: 'max-w-[16rem] truncate',
       cell: (user) => {
         const employee = employeeFactsFor(user, employeeIndex);
         return [user.email, employee?.employeeId, employee?.department, employee?.designation].filter(Boolean).join(' · ');
@@ -520,9 +489,7 @@ export function UserPicker({
               <RoleBadge key={assignment.roleId} name={assignment.roleName} kind="additional" />
             ))}
             {(grant?.additionalRoles?.length ?? 0) > 3 && (
-              <Badge variant="outline" className="text-[10px] text-muted-foreground">
-                +{(grant?.additionalRoles?.length ?? 0) - 3}
-              </Badge>
+              <Badge variant="neutral">+{(grant?.additionalRoles?.length ?? 0) - 3}</Badge>
             )}
           </div>
         );
@@ -531,7 +498,7 @@ export function UserPicker({
     {
       header: 'Permissions',
       align: 'right',
-      className: 'text-xs text-muted-foreground',
+      className: 'tabular-nums',
       cell: (user) => {
         const access = context.accessByUser[user.id];
         return access ? countPermissions(access.permissions) : '—';
@@ -539,12 +506,10 @@ export function UserPicker({
     },
   ];
 
-  /** "0 selected · 36 match the filter · Select all 36 filtered" — shares the search row. */
+  /** "0 selected · 36 match the filter · Select all 36 filtered" — shares the filter bar. */
   const selectionControls = (
     <>
-      <Badge variant="outline" className="border-indigo-200 bg-indigo-50 text-indigo-700">
-        {selectedIds.length} selected
-      </Badge>
+      <Badge variant="neutral">{selectedIds.length} selected</Badge>
       <span className="text-xs text-muted-foreground">
         {filtered.length} match the filter
         {filtered.length > windowed.length ? ` · showing first ${windowed.length}` : ''}
@@ -564,8 +529,9 @@ export function UserPicker({
         {allFilteredSelected ? 'Deselect' : 'Select all'} {filtered.length} filtered
       </Button>
       {selectedIds.length > 0 && (
+        // "selection", because the filter bar's own Clear (the filters) sits in the same row.
         <Button type="button" variant="ghost" onClick={() => onSelectionChange([])}>
-          Clear
+          Clear selection
         </Button>
       )}
     </>
@@ -585,22 +551,26 @@ export function UserPicker({
         <div className="flex flex-wrap items-center gap-2">{selectionControls}</div>
       )}
 
-      {/* A plain box, not a ScrollArea: the list scrolls itself so its header can stay put. */}
-      <div className="rounded-xl border border-white/70 bg-white/60">
+      {/*
+        A plain box, not a ScrollArea: the list scrolls itself so its header can stay put. The box is
+        the frame, so the list inside is frameless (no box in a box); its rows take the app's table
+        format and the user's density setting. The tint marks a selected row.
+      */}
+      <div className="overflow-hidden rounded-xl border border-white/70 bg-white/60">
         {windowed.length === 0 ? (
           <div className="flex flex-col items-center gap-2 py-14 text-center">
             <Users className="h-8 w-8 text-slate-300" />
             <p className="text-sm text-muted-foreground">No users match these filters.</p>
           </div>
         ) : (
-          <div className="p-2 sm:p-1.5">
+          <div className="p-2 sm:p-0">
             <HrDataList
               rows={windowed}
               columns={columns}
               onRowClick={(user) => toggle(user.id)}
               rowClassName={(user) => (selected.has(user.id) ? 'border-indigo-200 bg-indigo-50/70' : undefined)}
               maxHeightClassName={heightClassName}
-              dense
+              frameless
             />
           </div>
         )}
@@ -655,15 +625,12 @@ export function RolePicker({
 
   return (
     <div className="space-y-2.5">
-      <div className="relative">
-        <Search className="pointer-events-none absolute left-3 top-2.5 h-4 w-4 text-slate-400" />
-        <Input
-          value={term}
-          onChange={(event) => setTerm(event.target.value)}
-          placeholder="Search roles or the permissions they contain…"
-          className="pl-9"
-        />
-      </div>
+      <SearchInput
+        value={term}
+        onChange={setTerm}
+        placeholder="Search roles or the permissions they contain…"
+        label="Search roles"
+      />
 
       <ScrollArea className={cn('h-auto rounded-xl border border-white/70 bg-white/60', heightClassName)}>
         {filtered.length === 0 ? (
@@ -689,14 +656,8 @@ export function RolePicker({
                   <div className="min-w-0 flex-1">
                     <div className="flex flex-wrap items-center gap-1.5">
                       <span className="truncate text-sm font-semibold text-slate-800">{role.name}</span>
-                      {isProtectedRole(role.name) && (
-                        <Badge variant="outline" className="border-rose-200 bg-rose-50 text-[10px] text-rose-700">
-                          Protected
-                        </Badge>
-                      )}
-                      <Badge variant="outline" className="text-[10px] text-slate-500">
-                        {role.type === 'Custom' ? 'Custom' : 'System'}
-                      </Badge>
+                      {isProtectedRole(role.name) && <Badge variant="danger">Protected</Badge>}
+                      <Badge variant="outline">{role.type === 'Custom' ? 'Custom' : 'System'}</Badge>
                     </div>
                     {role.description && (
                       <p className="truncate text-xs text-muted-foreground">{role.description}</p>
@@ -811,18 +772,14 @@ export function ProjectPicker({
       {selectedProjects.length > 0 ? (
         <div className="flex flex-wrap gap-1.5 rounded-xl border border-white/70 bg-white/70 p-2">
           {selectedProjects.map((project) => (
-            <Badge
-              key={project.id}
-              variant="outline"
-              className="flex items-center gap-1 border-emerald-200 bg-emerald-50 py-1 pl-2 pr-1 text-xs text-emerald-700"
-            >
+            <Badge key={project.id} variant="neutral" className="gap-1 py-1 pl-2 pr-1">
               <FolderKanban className="h-3 w-3 shrink-0" />
               <span className="max-w-[14rem] truncate">{projectLabel(project)}</span>
               <button
                 type="button"
                 onClick={() => toggle(project.id)}
                 aria-label={`Remove ${projectLabel(project)}`}
-                className="hr-inline-action inline-flex items-center justify-center rounded-full p-0.5 hover:bg-emerald-100"
+                className="hr-inline-action inline-flex items-center justify-center rounded-full p-0.5 transition-colors hover:bg-black/10"
               >
                 <X className="h-3 w-3" />
               </button>

@@ -2,8 +2,8 @@
 
 /**
  * Shared chrome for the Tower Progress screens: the page shell, header, sub-navigation, the three
- * guard states every screen needs, and the two primitives that appear on nearly every one of them —
- * an activity status badge and a watermarked report photograph.
+ * guard states every screen needs, and the primitives that appear on nearly every one of them —
+ * the activity status tones and a watermarked report photograph.
  *
  * Collected here rather than repeated per page because there are ten screens plus a report engine,
  * and the guards in particular have to behave identically on all of them: a screen that renders an
@@ -33,15 +33,13 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
+import type { StatusTone } from "@/components/shared/status-badge";
 import {
-  activityStatusStyles,
   formatTowerDate,
   towerProgressHref,
-  verificationStateStyles,
   type TowerActivity,
   type TowerActivityStatus,
   type TowerGpsFix,
-  type TowerVerificationState,
 } from "@/lib/project-management-tower-progress";
 import {
   downloadWatermarkedPhoto,
@@ -117,9 +115,9 @@ export function TowerProgressNav() {
                 <item.icon className="mr-2 h-4 w-4" />
                 {item.label}
                 {item.sub === "verify" && pendingVerifications > 0 && (
-                  <span className="ml-2 rounded-full bg-amber-500 px-1.5 text-[10px] font-bold text-white">
+                  <Badge variant="warning" className="ml-2 px-1.5 py-0 tabular-nums">
                     {pendingVerifications}
-                  </span>
+                  </Badge>
                 )}
               </Link>
             </Button>
@@ -206,23 +204,13 @@ export function TowerProgressGuard({
 
 /* ── Small primitives ───────────────────────────────────────────────────────────────────────── */
 
-export function ActivityStatusBadge({
-  status,
-  className,
-}: {
-  status: TowerActivityStatus;
-  className?: string;
-}) {
-  return (
-    <Badge className={cn(activityStatusStyles[status], "whitespace-nowrap", className)}>
-      {status}
-    </Badge>
-  );
-}
-
-export function VerificationBadge({ state }: { state: TowerVerificationState }) {
-  return <Badge className={cn(verificationStateStyles[state], "whitespace-nowrap")}>{state}</Badge>;
-}
+/**
+ * The one activity status this module means more by than the word says: "Ready" is a tower whose
+ * predecessors are done and can start, not an idle one. Pass as `StatusBadge`'s `tone`.
+ */
+export const ACTIVITY_STATUS_TONE: Partial<Record<TowerActivityStatus, StatusTone>> = {
+  Ready: "info",
+};
 
 export function MetricCard({
   label,

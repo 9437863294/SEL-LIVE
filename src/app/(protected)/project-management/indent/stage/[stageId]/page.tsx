@@ -26,7 +26,6 @@ import {
   INDENT_COLLECTION,
   INDENT_WORKFLOW_DOC_ID,
   canActOnIndent,
-  indentStatusStyles,
   indentsForStep,
   type IndentAction,
   type IndentStatus,
@@ -46,7 +45,6 @@ import {
   PmEmptyState,
   type PmListColumn,
 } from "@/components/project-management/pm-shell";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import {
@@ -413,10 +411,11 @@ export default function IndentStagePage() {
     { header: "Raised By", cell: (indent) => indent.createdByName || "—" },
     {
       header: "Due",
+      className: "whitespace-nowrap",
       cell: (indent) => {
         const due = toDateSafe(indent.deadline);
         return (
-          <div className="text-xs text-muted-foreground">
+          <div>
             {due ? (
               <span className="flex items-center gap-1">
                 <Clock className="h-3 w-3" />

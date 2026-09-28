@@ -5,7 +5,7 @@ import { useState, useEffect } from 'react';
 import { View } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { PageHeader } from '@/components/shared/page-header';
-import { Card, CardContent } from '@/components/ui/card';
+import { TableCard } from '@/components/shared/table-card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { db } from '@/lib/firebase';
 import { collection, getDocs, orderBy, query } from 'firebase/firestore';
@@ -65,8 +65,7 @@ export default function BillLogPage() {
     <>
       <div className="w-full px-4 sm:px-6 lg:px-8">
         <PageHeader title="Billing Log" backHref={`/billing-recon/${projectSlug}/billing`} backLabel="Back to billing" />
-        <Card>
-          <CardContent className="p-0">
+        <TableCard title="Bills" count={isLoading ? undefined : bills.length}>
             <Table>
               <TableHeader>
                 <TableRow>
@@ -114,8 +113,7 @@ export default function BillLogPage() {
                 )}
               </TableBody>
             </Table>
-          </CardContent>
-        </Card>
+        </TableCard>
       </div>
 
       <ViewBillDialog

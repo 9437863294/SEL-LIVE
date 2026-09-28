@@ -59,10 +59,10 @@ import {
   OfficeHubLoader,
   PriorityBadge,
   TaskDueDate,
-  TaskStatusBadge,
   type OfficeHubListColumn,
 } from '@/components/office-hub/ui';
 import { PageHeader } from '@/components/shared/page-header';
+import { StatusBadge } from '@/components/shared/status-badge';
 
 export default function EmployeeProfilePage() {
   const params = useParams<{ employeeId: string }>();
@@ -180,7 +180,7 @@ export default function EmployeeProfilePage() {
     },
     { header: 'Due', mobile: 'aside', className: 'w-32', cell: (task) => <TaskDueDate task={task} today={today} /> },
     { header: 'Priority', mobile: 'detail', className: 'hidden sm:table-cell w-24', cell: (task) => <PriorityBadge priority={task.priority} /> },
-    { header: 'Status', mobile: 'detail', className: 'w-32', cell: (task) => <TaskStatusBadge status={task.status} /> },
+    { header: 'Status', mobile: 'detail', className: 'w-32', cell: (task) => <StatusBadge status={task.status} /> },
   ];
 
   const meetingColumns: OfficeHubListColumn<OfficeHubMeeting>[] = [
@@ -261,7 +261,7 @@ export default function EmployeeProfilePage() {
               <div className="flex flex-wrap gap-1">
                 {teams.map((team) => (
                   <Link key={team.id} href={`${OFFICE_HUB_BASE_PATH}/teams/${team.id}`}>
-                    <Badge variant="outline" className="border-slate-200 bg-slate-50 text-[11px] hover:bg-slate-100">
+                    <Badge variant="neutral" className="hover:bg-slate-100">
                       {team.leaderId === person.userId && <Crown className="mr-0.5 h-2.5 w-2.5 text-amber-500" />}
                       {team.name}
                     </Badge>

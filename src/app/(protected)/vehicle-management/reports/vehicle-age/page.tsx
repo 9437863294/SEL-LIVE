@@ -10,8 +10,10 @@ import { useAuthorization } from '@/hooks/useAuthorization';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { PageHeader } from '@/components/shared/page-header';
+import { TableCard } from '@/components/shared/table-card';
+import { StatusBadge, type StatusTone } from '@/components/shared/status-badge';
 import { Skeleton } from '@/components/ui/skeleton';
-import { TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
 
 const formatCurrency = (amount: number) =>
@@ -19,12 +21,12 @@ const formatCurrency = (amount: number) =>
 
 const BRACKETS = ['New (0-2 yrs)', 'Moderate (3-5 yrs)', 'Old (6-10 yrs)', 'Aging (10+ yrs)', 'Unknown'] as const;
 
-const bracketStyle: Record<string, { badge: string; card: string }> = {
-  'New (0-2 yrs)': { badge: 'bg-emerald-50 text-emerald-700', card: 'border-emerald-200 bg-emerald-50' },
-  'Moderate (3-5 yrs)': { badge: 'bg-sky-50 text-sky-700', card: 'border-sky-200 bg-sky-50' },
-  'Old (6-10 yrs)': { badge: 'bg-amber-50 text-amber-700', card: 'border-amber-200 bg-amber-50' },
-  'Aging (10+ yrs)': { badge: 'bg-rose-50 text-rose-700', card: 'border-rose-200 bg-rose-50' },
-  Unknown: { badge: 'bg-slate-100 text-slate-600', card: 'border-white/70 bg-white/80' },
+const bracketStyle: Record<string, { tone: StatusTone; card: string }> = {
+  'New (0-2 yrs)': { tone: 'success', card: 'border-emerald-200 bg-emerald-50' },
+  'Moderate (3-5 yrs)': { tone: 'info', card: 'border-sky-200 bg-sky-50' },
+  'Old (6-10 yrs)': { tone: 'warning', card: 'border-amber-200 bg-amber-50' },
+  'Aging (10+ yrs)': { tone: 'danger', card: 'border-rose-200 bg-rose-50' },
+  Unknown: { tone: 'neutral', card: 'border-white/70 bg-white/80' },
 };
 
 export default function VehicleAgeReportPage() {
@@ -238,57 +240,48 @@ export default function VehicleAgeReportPage() {
         ))}
       </div>
 
-      <Card className="vm-panel-strong">
-        <CardHeader>
-          <CardTitle>Fleet Age Details</CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-2 sm:hidden">
-          {rows.length === 0 ? (
-            <div className="rounded-lg border border-white/70 bg-white/80 px-3 py-6 text-center text-muted-foreground">
-              No vehicle data.
-            </div>
-          ) : (
-            rows.map((row) => (
-              <div key={row.vehicleNumber} className="rounded-xl border border-white/70 bg-white/85 p-3 shadow-sm">
-                <div className="mb-1.5 flex items-center justify-between gap-2">
-                  <span className="text-sm font-semibold">{row.vehicleNumber}</span>
-                  <Badge variant="outline" className={bracketStyle[row.bracket]?.badge || ''}>
-                    {row.age !== null ? `${row.age} yrs` : 'Unknown'}
-                  </Badge>
-                </div>
-                <div className="space-y-1 text-sm">
-                  <div className="flex justify-between">
-                    <span className="text-muted-foreground">Brand / Model</span>
-                    <span>{row.brand} {row.model}</span>
+      <TableCard title="Fleet Age Details" icon={Car} count={rows.length} noun="vehicle">
+        {rows.length === 0 ? (
+          <div className="px-4 py-10 text-center text-sm text-muted-foreground">
+            No vehicle data.
+          </div>
+        ) : (
+          <>
+            <div className="space-y-2 p-3 sm:hidden">
+              {rows.map((row) => (
+                <div key={row.vehicleNumber} className="rounded-xl border border-white/70 bg-white/85 p-3 shadow-sm">
+                  <div className="mb-1.5 flex items-center justify-between gap-2">
+                    <span className="text-sm font-semibold">{row.vehicleNumber}</span>
+                    <StatusBadge status={row.bracket} tone={bracketStyle[row.bracket]?.tone ?? 'neutral'}>
+                      {row.age !== null ? `${row.age} yrs` : 'Unknown'}
+                    </StatusBadge>
                   </div>
-                  <div className="flex justify-between">
-                    <span className="text-muted-foreground">Year / Type</span>
-                    <span>{row.yearOfManufacture ?? '-'} · {row.vehicleType}</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-muted-foreground">Project</span>
-                    <span>{row.assignedProject}</span>
-                  </div>
-                  {row.purchaseValue > 0 && (
+                  <div className="space-y-1 text-sm">
                     <div className="flex justify-between">
-                      <span className="text-muted-foreground">Purchase Value</span>
-                      <span>{formatCurrency(row.purchaseValue)}</span>
+                      <span className="text-muted-foreground">Brand / Model</span>
+                      <span>{row.brand} {row.model}</span>
                     </div>
-                  )}
+                    <div className="flex justify-between">
+                      <span className="text-muted-foreground">Year / Type</span>
+                      <span>{row.yearOfManufacture ?? '-'} · {row.vehicleType}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-muted-foreground">Project</span>
+                      <span>{row.assignedProject}</span>
+                    </div>
+                    {row.purchaseValue > 0 && (
+                      <div className="flex justify-between">
+                        <span className="text-muted-foreground">Purchase Value</span>
+                        <span>{formatCurrency(row.purchaseValue)}</span>
+                      </div>
+                    )}
+                  </div>
                 </div>
-              </div>
-            ))
-          )}
-        </CardContent>
-        <CardContent className="hidden sm:block p-0">
-          {rows.length === 0 ? (
-            <div className="rounded-lg border border-white/70 bg-white/80 px-4 py-10 text-center text-muted-foreground">
-              No vehicle data.
+              ))}
             </div>
-          ) : (
-            <div className="overflow-auto rounded-lg border border-white/70 bg-white/80 h-[calc(100vh-420px)]">
-              <table className="w-full caption-bottom text-sm">
-                <TableHeader className="sticky top-0 z-10 bg-slate-50 shadow-sm">
+            <div className="hidden sm:block">
+              <Table containerClassName="overflow-visible">
+                <TableHeader>
                   <TableRow>
                     <TableHead>Vehicle</TableHead>
                     <TableHead>Brand / Model</TableHead>
@@ -299,20 +292,20 @@ export default function VehicleAgeReportPage() {
                     <TableHead>Fuel</TableHead>
                     <TableHead>Status</TableHead>
                     <TableHead>Project</TableHead>
-                    <TableHead>Purchase Value</TableHead>
+                    <TableHead className="text-right">Purchase Value</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {rows.map((row) => (
-                    <TableRow key={row.vehicleNumber} className="hover:bg-pink-50/50 transition-colors">
+                    <TableRow key={row.vehicleNumber}>
                       <TableCell className="font-medium">{row.vehicleNumber}</TableCell>
                       <TableCell>{row.brand} {row.model}</TableCell>
-                      <TableCell>{row.yearOfManufacture ?? '-'}</TableCell>
-                      <TableCell>{row.age !== null ? `${row.age} yrs` : '-'}</TableCell>
+                      <TableCell className="tabular-nums">{row.yearOfManufacture ?? '-'}</TableCell>
+                      <TableCell className="whitespace-nowrap tabular-nums">{row.age !== null ? `${row.age} yrs` : '-'}</TableCell>
                       <TableCell>
-                        <Badge variant="outline" className={bracketStyle[row.bracket]?.badge || ''}>
+                        <StatusBadge status={row.bracket} tone={bracketStyle[row.bracket]?.tone ?? 'neutral'}>
                           {row.bracket}
-                        </Badge>
+                        </StatusBadge>
                       </TableCell>
                       <TableCell>{row.vehicleType}</TableCell>
                       <TableCell>{row.fuelType}</TableCell>
@@ -324,15 +317,15 @@ export default function VehicleAgeReportPage() {
                           row.assignedProject
                         )}
                       </TableCell>
-                      <TableCell>{row.purchaseValue > 0 ? formatCurrency(row.purchaseValue) : '-'}</TableCell>
+                      <TableCell className="text-right tabular-nums">{row.purchaseValue > 0 ? formatCurrency(row.purchaseValue) : '-'}</TableCell>
                     </TableRow>
                   ))}
                 </TableBody>
-              </table>
+              </Table>
             </div>
-          )}
-        </CardContent>
-      </Card>
+          </>
+        )}
+      </TableCard>
     </div>
   );
 }

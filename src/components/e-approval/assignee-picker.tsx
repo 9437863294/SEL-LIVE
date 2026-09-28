@@ -9,6 +9,7 @@ import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { HrDataList, type HrListColumn } from '@/components/hr/hr-ui';
+import { SearchInput } from '@/components/shared/filter-bar';
 import { cn } from '@/lib/utils';
 import {
   describeEApprovalAssignment,
@@ -412,9 +413,9 @@ export function AssigneePicker({
             </div>
           )}
 
-          <Input
+          <SearchInput
             value={search}
-            onChange={(event) => setSearch(event.target.value)}
+            onChange={setSearch}
             placeholder={
               kind === 'User'
                 ? 'Search people…'
@@ -424,7 +425,7 @@ export function AssigneePicker({
                     ? 'Search projects…'
                     : 'Search designations…'
             }
-            className="mt-2 h-8 text-xs"
+            className="mt-2"
           />
 
           {/*

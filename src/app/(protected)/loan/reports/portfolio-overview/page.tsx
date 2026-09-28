@@ -13,6 +13,10 @@ import {
   CardDescription,
 } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
+import { Badge } from '@/components/ui/badge';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { TableCard } from '@/components/shared/table-card';
+import { StatusBadge } from '@/components/shared/status-badge';
 import { useToast } from '@/hooks/use-toast';
 import { useAuthorization } from '@/hooks/useAuthorization';
 import { db } from '@/lib/firebase';
@@ -25,12 +29,6 @@ const fmt = (n: number) =>
     currency: 'INR',
     maximumFractionDigits: 0,
   }).format(n || 0);
-
-const statusStyle: Record<Loan['status'], string> = {
-  Active: 'bg-emerald-50 text-emerald-700 border-emerald-200',
-  Closed: 'bg-slate-50 text-slate-500 border-slate-200',
-  'Pre-closure Pending': 'bg-amber-50 text-amber-700 border-amber-200',
-};
 
 export default function PortfolioOverviewPage() {
   const { can, isLoading: authLoading } = useAuthorization();
@@ -270,59 +268,46 @@ export default function PortfolioOverviewPage() {
       </div>
 
       {/* ── By Loan Type ─────────────────────────────────────────────────── */}
-      <Card className="overflow-hidden border-border/60">
-        <CardHeader className="py-3 px-4 border-b">
-          <CardTitle>Breakdown by Loan Type</CardTitle>
-        </CardHeader>
-        <CardContent className="p-0">
+      <TableCard title="Breakdown by Loan Type" scroll="natural">
           {isLoading ? (
             <div className="space-y-2 p-4">
               <Skeleton className="h-10 w-full" />
               <Skeleton className="h-10 w-full" />
             </div>
           ) : (
-            <table className="w-full caption-bottom text-sm">
-              <thead>
-                <tr className="border-b bg-slate-50">
-                  <th className="py-2 px-4 text-left text-xs font-semibold text-muted-foreground">Type</th>
-                  <th className="py-2 px-4 text-center text-xs font-semibold text-muted-foreground">Count</th>
-                  <th className="py-2 px-4 text-right text-xs font-semibold text-muted-foreground">Total Principal</th>
-                  <th className="py-2 px-4 text-right text-xs font-semibold text-muted-foreground">Total Paid</th>
-                  <th className="py-2 px-4 text-right text-xs font-semibold text-muted-foreground">Outstanding</th>
-                </tr>
-              </thead>
-              <tbody>
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Type</TableHead>
+                  <TableHead className="text-center">Count</TableHead>
+                  <TableHead className="text-right">Total Principal</TableHead>
+                  <TableHead className="text-right">Total Paid</TableHead>
+                  <TableHead className="text-right">Outstanding</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
                 {byType.map((r) => (
-                  <tr key={r.type} className="border-b last:border-0 hover:bg-muted/30 transition-colors">
-                    <td className="py-2.5 px-4 text-xs font-medium">
-                      <span
-                        className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[10px] font-semibold ${
-                          r.type === 'Loan'
-                            ? 'bg-blue-50 text-blue-700 border-blue-200'
-                            : 'bg-violet-50 text-violet-700 border-violet-200'
-                        }`}
-                      >
-                        {r.type}
-                      </span>
-                    </td>
-                    <td className="py-2.5 px-4 text-center text-xs text-muted-foreground">{r.count}</td>
-                    <td className="py-2.5 px-4 text-right text-xs text-slate-700">{fmt(r.totalPrincipal)}</td>
-                    <td className="py-2.5 px-4 text-right text-xs text-emerald-700">{fmt(r.totalPaid)}</td>
-                    <td className="py-2.5 px-4 text-right text-xs text-amber-700">{fmt(r.totalOutstanding)}</td>
-                  </tr>
+                  <TableRow key={r.type}>
+                    <TableCell className="font-medium">
+                      <Badge variant="outline">{r.type}</Badge>
+                    </TableCell>
+                    <TableCell className="text-center tabular-nums">{r.count}</TableCell>
+                    <TableCell className="text-right whitespace-nowrap tabular-nums">{fmt(r.totalPrincipal)}</TableCell>
+                    <TableCell className="text-right whitespace-nowrap tabular-nums">{fmt(r.totalPaid)}</TableCell>
+                    <TableCell className="text-right whitespace-nowrap tabular-nums">{fmt(r.totalOutstanding)}</TableCell>
+                  </TableRow>
                 ))}
-              </tbody>
-            </table>
+              </TableBody>
+            </Table>
           )}
-        </CardContent>
-      </Card>
+      </TableCard>
 
-      {/* ── All Loans table (desktop) ─────────────────────────────────────── */}
-      <Card className="hidden overflow-hidden border-border/60 sm:block">
-        <CardHeader className="py-3 px-4 border-b">
-          <CardTitle>All Loans</CardTitle>
-        </CardHeader>
-        <CardContent className="p-0">
+      {/* ── All Loans (desktop table + mobile cards) ──────────────────────── */}
+      <TableCard
+        title="All Loans"
+        count={isLoading ? undefined : loans.length}
+        noun="loan"
+      >
           {isLoading ? (
             <div className="space-y-2 p-4">
               {[...Array(5)].map((_, i) => <Skeleton key={i} className="h-10 w-full" />)}
@@ -332,10 +317,10 @@ export default function PortfolioOverviewPage() {
               No loans found.
             </div>
           ) : (
-            <div className="overflow-auto h-[calc(100vh-560px)] min-h-[240px]">
-              <table className="w-full caption-bottom text-sm [&_th]:sticky [&_th]:top-0 [&_th]:z-10 [&_th]:bg-slate-50">
-                <thead>
-                  <tr className="border-b">
+            <>
+              <Table containerClassName="hidden sm:block">
+                <TableHeader>
+                  <TableRow>
                     {[
                       { label: 'Loan / Lender', align: 'text-left' },
                       { label: 'Principal', align: 'text-right' },
@@ -347,16 +332,13 @@ export default function PortfolioOverviewPage() {
                       { label: 'Progress', align: 'text-left' },
                       { label: 'Status', align: 'text-center' },
                     ].map((h) => (
-                      <th
-                        key={h.label}
-                        className={`py-2 px-3 ${h.align} text-xs font-semibold text-muted-foreground whitespace-nowrap border-b`}
-                      >
+                      <TableHead key={h.label} className={`${h.align} whitespace-nowrap`}>
                         {h.label}
-                      </th>
+                      </TableHead>
                     ))}
-                  </tr>
-                </thead>
-                <tbody>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
                   {loans.map((loan) => {
                     const outstanding = Math.max(0, loan.loanAmount - (loan.totalPaid ?? 0));
                     const progress =
@@ -364,33 +346,30 @@ export default function PortfolioOverviewPage() {
                         ? Math.min(100, Math.round(((loan.totalPaid ?? 0) / loan.loanAmount) * 100))
                         : 0;
                     return (
-                      <tr
-                        key={loan.id}
-                        className="border-b last:border-0 hover:bg-muted/30 transition-colors"
-                      >
-                        <td className="py-2.5 px-3">
-                          <div className="text-xs font-medium text-slate-800">{loan.accountNo}</div>
-                          <div className="text-[11px] text-muted-foreground">{loan.lenderName}</div>
-                        </td>
-                        <td className="py-2.5 px-3 text-right text-xs text-slate-700">
+                      <TableRow key={loan.id}>
+                        <TableCell>
+                          <div className="font-medium">{loan.accountNo}</div>
+                          <div className="text-xs text-muted-foreground">{loan.lenderName}</div>
+                        </TableCell>
+                        <TableCell className="text-right whitespace-nowrap tabular-nums">
                           {fmt(loan.loanAmount)}
-                        </td>
-                        <td className="py-2.5 px-3 text-right text-xs text-slate-600">
+                        </TableCell>
+                        <TableCell className="text-right whitespace-nowrap tabular-nums">
                           {fmt(loan.emiAmount)}
-                        </td>
-                        <td className="py-2.5 px-3 text-right text-xs text-slate-600">
+                        </TableCell>
+                        <TableCell className="text-right whitespace-nowrap tabular-nums">
                           {loan.interestRate}%
-                        </td>
-                        <td className="py-2.5 px-3 text-right text-xs text-slate-600">
+                        </TableCell>
+                        <TableCell className="text-right whitespace-nowrap tabular-nums">
                           {loan.tenure} mo
-                        </td>
-                        <td className="py-2.5 px-3 text-right text-xs text-emerald-700">
+                        </TableCell>
+                        <TableCell className="text-right whitespace-nowrap tabular-nums">
                           {fmt(loan.totalPaid ?? 0)}
-                        </td>
-                        <td className="py-2.5 px-3 text-right text-xs text-amber-700">
+                        </TableCell>
+                        <TableCell className="text-right whitespace-nowrap tabular-nums">
                           {fmt(outstanding)}
-                        </td>
-                        <td className="py-2.5 px-3 min-w-[120px]">
+                        </TableCell>
+                        <TableCell className="min-w-[120px]">
                           <div className="flex items-center gap-2">
                             <div className="flex-1 h-1.5 rounded-full bg-slate-100 overflow-hidden">
                               <div
@@ -402,34 +381,19 @@ export default function PortfolioOverviewPage() {
                               {progress}%
                             </span>
                           </div>
-                        </td>
-                        <td className="py-2.5 px-3 text-center">
-                          <span
-                            className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[10px] font-medium whitespace-nowrap ${statusStyle[loan.status]}`}
-                          >
-                            {loan.status}
-                          </span>
-                        </td>
-                      </tr>
+                        </TableCell>
+                        <TableCell className="text-center">
+                          <StatusBadge status={loan.status} />
+                        </TableCell>
+                      </TableRow>
                     );
                   })}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </CardContent>
-      </Card>
+                </TableBody>
+              </Table>
 
       {/* ── Mobile card list ──────────────────────────────────────────────── */}
-      <div className="space-y-3 sm:hidden">
-        {isLoading ? (
-          [...Array(3)].map((_, i) => <Skeleton key={i} className="h-36 w-full rounded-xl" />)
-        ) : loans.length === 0 ? (
-          <div className="flex h-32 items-center justify-center rounded-xl border text-sm text-muted-foreground">
-            No loans found.
-          </div>
-        ) : (
-          loans.map((loan) => {
+      <div className="space-y-3 p-3 sm:hidden">
+        {loans.map((loan) => {
             const outstanding = Math.max(0, loan.loanAmount - (loan.totalPaid ?? 0));
             const progress =
               loan.loanAmount > 0
@@ -444,11 +408,7 @@ export default function PortfolioOverviewPage() {
                       <div className="text-sm font-semibold text-slate-800">{loan.accountNo}</div>
                       <div className="text-xs text-muted-foreground">{loan.lenderName}</div>
                     </div>
-                    <span
-                      className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[10px] font-medium whitespace-nowrap ${statusStyle[loan.status]}`}
-                    >
-                      {loan.status}
-                    </span>
+                    <StatusBadge status={loan.status} className="shrink-0" />
                   </div>
 
                   {/* Key fields */}
@@ -495,9 +455,11 @@ export default function PortfolioOverviewPage() {
                 </CardContent>
               </Card>
             );
-          })
-        )}
+          })}
       </div>
+            </>
+          )}
+      </TableCard>
     </div>
   );
 }

@@ -15,10 +15,11 @@ import { useFieldControl } from '@/components/site-account-statement/use-field-c
 import { useAuth } from '@/components/auth/AuthProvider';
 import { useAuthorization } from '@/hooks/useAuthorization';
 import { useToast } from '@/hooks/use-toast';
-import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { PageHeader } from '@/components/shared/page-header';
+import { StatusBadge } from '@/components/shared/status-badge';
+import { TableCard } from '@/components/shared/table-card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
@@ -414,13 +415,13 @@ export default function BudgetAlertsPage() {
             </div>
             <div className="flex items-center gap-3 shrink-0">
               {moduleConfig?.enabled ? (
-                <Badge className="bg-emerald-100 text-emerald-700 gap-1 hover:bg-emerald-100">
+                <StatusBadge status="Active">
                   <Bell className="h-3 w-3" /> Active
-                </Badge>
+                </StatusBadge>
               ) : (
-                <Badge variant="secondary" className="gap-1 text-slate-500">
+                <StatusBadge status="Disabled">
                   <BellOff className="h-3 w-3" /> Disabled
-                </Badge>
+                </StatusBadge>
               )}
               {moduleConfig && (
                 <Button
@@ -472,8 +473,7 @@ export default function BudgetAlertsPage() {
       </Card>
 
       {/* ── Per-project table card ── */}
-      <Card className="bg-white/80 backdrop-blur-sm">
-        <CardContent className="p-0">
+      <TableCard title="Per-project alerts" icon={Bell} count={projects.length} noun="project">
           {projects.length === 0 ? (
             <div className="flex flex-col items-center gap-3 py-16 text-center">
               <Bell className="h-10 w-10 text-muted-foreground/30" />
@@ -482,15 +482,14 @@ export default function BudgetAlertsPage() {
               </p>
             </div>
           ) : (
-            <div className="overflow-x-auto overflow-y-auto max-h-[65vh]">
               <Table className="min-w-[680px]">
-                <TableHeader className="sticky top-0 z-10 bg-slate-100">
-                  <TableRow className="border-b hover:bg-transparent">
-                    <TableHead className="font-medium text-slate-700 w-[260px]">Project</TableHead>
-                    <TableHead className="font-medium text-slate-700 text-center">Alerts</TableHead>
-                    <TableHead className="font-medium text-slate-700">Thresholds</TableHead>
-                    <TableHead className="font-medium text-slate-700">Recipients</TableHead>
-                    <TableHead className="font-medium text-slate-700 text-right">Actions</TableHead>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead className="w-[260px]">Project</TableHead>
+                    <TableHead className="text-center">Alerts</TableHead>
+                    <TableHead>Thresholds</TableHead>
+                    <TableHead>Recipients</TableHead>
+                    <TableHead className="text-right">Actions</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -499,12 +498,12 @@ export default function BudgetAlertsPage() {
                     const isActive = cfg?.enabled === true;
 
                     return (
-                      <TableRow key={project.id} className="hover:bg-muted/20 transition-colors">
+                      <TableRow key={project.id}>
 
                         {/* Project name + code */}
                         <TableCell>
                           <div className="flex flex-col gap-0.5">
-                            <span className="font-medium text-slate-800 text-sm leading-tight">
+                            <span className="font-medium leading-tight">
                               {project.projectName}
                             </span>
                             {project.projectCode && (
@@ -518,28 +517,26 @@ export default function BudgetAlertsPage() {
                         {/* Alert enabled badge */}
                         <TableCell className="text-center">
                           {isActive ? (
-                            <Badge className="bg-emerald-100 text-emerald-700 hover:bg-emerald-100 gap-1">
+                            <StatusBadge status="Active">
                               <Bell className="h-3 w-3" />
                               Active
-                            </Badge>
+                            </StatusBadge>
                           ) : (
-                            <Badge variant="secondary" className="gap-1 text-slate-500">
+                            <StatusBadge status="Disabled">
                               <BellOff className="h-3 w-3" />
                               Disabled
-                            </Badge>
+                            </StatusBadge>
                           )}
                         </TableCell>
 
                         {/* Thresholds */}
                         <TableCell>
-                          <span className="text-sm text-slate-600">
-                            {formatThresholds(project.id)}
-                          </span>
+                          {formatThresholds(project.id)}
                         </TableCell>
 
                         {/* Recipients count */}
                         <TableCell>
-                          <div className="flex items-center gap-1.5 text-sm text-slate-600">
+                          <div className="flex items-center gap-1.5">
                             <Users className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
                             <span>{recipientCount(project.id)}</span>
                           </div>
@@ -580,10 +577,8 @@ export default function BudgetAlertsPage() {
                   })}
                 </TableBody>
               </Table>
-            </div>
           )}
-        </CardContent>
-      </Card>
+      </TableCard>
 
       {/* ── Configure Dialog ────────────────────────────────────────────────────── */}
       <Dialog open={dialog.open} onOpenChange={open => !open && closeDialog()}>
@@ -678,20 +673,20 @@ export default function BudgetAlertsPage() {
                 <div className="rounded-lg border border-slate-200 overflow-hidden">
                   <Table>
                     <TableHeader>
-                      <TableRow className="bg-slate-50 hover:bg-slate-50">
-                        <TableHead className="text-xs font-medium py-2 h-auto">Name</TableHead>
-                        <TableHead className="text-xs font-medium py-2 h-auto">Email</TableHead>
-                        <TableHead className="text-xs font-medium py-2 h-auto text-right w-[60px]">
+                      <TableRow>
+                        <TableHead>Name</TableHead>
+                        <TableHead>Email</TableHead>
+                        <TableHead className="text-right w-[60px]">
                           Remove
                         </TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
                       {dialog.recipients.map((r, idx) => (
-                        <TableRow key={idx} className="hover:bg-muted/10">
-                          <TableCell className="py-2 text-sm font-medium">{r.name}</TableCell>
-                          <TableCell className="py-2 text-sm text-muted-foreground">{r.email}</TableCell>
-                          <TableCell className="py-2 text-right">
+                        <TableRow key={idx}>
+                          <TableCell className="font-medium">{r.name}</TableCell>
+                          <TableCell>{r.email}</TableCell>
+                          <TableCell className="text-right">
                             <Button
                               variant="ghost"
                               size="icon"

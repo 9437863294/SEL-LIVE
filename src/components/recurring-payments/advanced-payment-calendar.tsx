@@ -56,8 +56,9 @@ import {
 } from "@/components/ui/table";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { PageHeader } from "@/components/shared/page-header";
-import CollapsibleFilterCard from "./collapsible-filter-card";
-import ModuleTableCard from "./module-table-card";
+import { FilterBar } from "@/components/shared/filter-bar";
+import { StatusBadge } from "@/components/shared/status-badge";
+import { TableCard } from "@/components/shared/table-card";
 import { useGlobalScopes } from "./use-global-scopes";
 const weekDays = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 const DEFAULT_FILTERS = {
@@ -198,88 +199,86 @@ export default function AdvancedPaymentCalendar() {
           </CardContent>
         </Card>
       </div>
-      <CollapsibleFilterCard activeCount={activeFilterCount} onClear={() => setFilters(DEFAULT_FILTERS)}>
-        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-          <Filter
-            value={filters.category}
-            label="All categories"
-            options={options("category")}
-            onChange={(category) =>
-              setFilters((current) => ({ ...current, category }))
-            }
-          />
-          <Filter
-            value={filters.vendor}
-            label="All vendors"
-            options={options("vendorName")}
-            onChange={(vendor) =>
-              setFilters((current) => ({ ...current, vendor }))
-            }
-          />
-          <Filter
-            value={filters.status}
-            label="All statuses"
-            options={options("status")}
-            onChange={(status) =>
-              setFilters((current) => ({ ...current, status }))
-            }
-          />
-          <Select
-            value={filters.owner}
-            onValueChange={(owner) =>
-              setFilters((current) => ({ ...current, owner }))
-            }
-          >
-            <SelectTrigger>
-              <SelectValue placeholder="All users" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">All users</SelectItem>
-              {users.map((item) => (
-                <SelectItem value={item.id} key={item.id}>
-                  {personOptionLabel(item)}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-          <Select
-            value={filters.project}
-            onValueChange={(project) =>
-              setFilters((current) => ({ ...current, project }))
-            }
-          >
-            <SelectTrigger>
-              <SelectValue placeholder="All projects" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">All global projects</SelectItem>
-              {activeProjects.map((project) => (
-                <SelectItem value={project.id} key={project.id}>
-                  {project.projectName}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-          <Select
-            value={filters.department}
-            onValueChange={(department) =>
-              setFilters((current) => ({ ...current, department }))
-            }
-          >
-            <SelectTrigger>
-              <SelectValue placeholder="All departments" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">All global departments</SelectItem>
-              {activeDepartments.map((department) => (
-                <SelectItem value={department.id} key={department.id}>
-                  {department.name}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
-      </CollapsibleFilterCard>
+      <FilterBar activeCount={activeFilterCount} onClear={() => setFilters(DEFAULT_FILTERS)}>
+        <Filter
+          value={filters.category}
+          label="All categories"
+          options={options("category")}
+          onChange={(category) =>
+            setFilters((current) => ({ ...current, category }))
+          }
+        />
+        <Filter
+          value={filters.vendor}
+          label="All vendors"
+          options={options("vendorName")}
+          onChange={(vendor) =>
+            setFilters((current) => ({ ...current, vendor }))
+          }
+        />
+        <Filter
+          value={filters.status}
+          label="All statuses"
+          options={options("status")}
+          onChange={(status) =>
+            setFilters((current) => ({ ...current, status }))
+          }
+        />
+        <Select
+          value={filters.owner}
+          onValueChange={(owner) =>
+            setFilters((current) => ({ ...current, owner }))
+          }
+        >
+          <SelectTrigger>
+            <SelectValue placeholder="All users" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All users</SelectItem>
+            {users.map((item) => (
+              <SelectItem value={item.id} key={item.id}>
+                {personOptionLabel(item)}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        <Select
+          value={filters.project}
+          onValueChange={(project) =>
+            setFilters((current) => ({ ...current, project }))
+          }
+        >
+          <SelectTrigger>
+            <SelectValue placeholder="All projects" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All global projects</SelectItem>
+            {activeProjects.map((project) => (
+              <SelectItem value={project.id} key={project.id}>
+                {project.projectName}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        <Select
+          value={filters.department}
+          onValueChange={(department) =>
+            setFilters((current) => ({ ...current, department }))
+          }
+        >
+          <SelectTrigger>
+            <SelectValue placeholder="All departments" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All global departments</SelectItem>
+            {activeDepartments.map((department) => (
+              <SelectItem value={department.id} key={department.id}>
+                {department.name}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </FilterBar>
       <Tabs defaultValue="month">
         <TabsList>
           <TabsTrigger value="month">Monthly</TabsTrigger>
@@ -392,7 +391,7 @@ export default function AdvancedPaymentCalendar() {
                               </button>
                             ))}
                             {due.length > 4 && (
-                              <Badge variant="secondary">
+                              <Badge variant="neutral">
                                 +{due.length - 4}
                               </Badge>
                             )}
@@ -448,7 +447,7 @@ export default function AdvancedPaymentCalendar() {
                             <p className="font-semibold">
                               {currency(item.billAmount || item.expectedAmount)}
                             </p>
-                            <Badge variant="outline">{item.status}</Badge>
+                            <StatusBadge status={item.status} />
                           </div>
                         </button>
                       ))}
@@ -484,11 +483,11 @@ function CalendarTable({
   onOpen: (item: PaymentObligation) => void;
 }) {
   return (
-    <ModuleTableCard
+    <TableCard
       title="Payments in this period"
       description="Ordered by due date"
       count={rows.length}
-      countNoun="payment"
+      noun="payment"
     >
         <Table>
           <TableHeader>
@@ -516,7 +515,7 @@ function CalendarTable({
                   {currency(item.billAmount || item.expectedAmount)}
                 </TableCell>
                 <TableCell>
-                  <Badge variant="outline">{item.status}</Badge>
+                  <StatusBadge status={item.status} />
                 </TableCell>
               </TableRow>
             ))}
@@ -532,7 +531,7 @@ function CalendarTable({
             )}
           </TableBody>
         </Table>
-    </ModuleTableCard>
+    </TableCard>
   );
 }
 function PaymentSummary({

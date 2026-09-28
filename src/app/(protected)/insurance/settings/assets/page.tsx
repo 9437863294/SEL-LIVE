@@ -19,8 +19,9 @@ import { useAuthorization } from '@/hooks/useAuthorization';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
-import { Badge } from '@/components/ui/badge';
 import { PageHeader } from '@/components/shared/page-header';
+import { TableCard } from '@/components/shared/table-card';
+import { StatusBadge } from '@/components/shared/status-badge';
 
 const initialFormState = {
   name: '',
@@ -189,8 +190,7 @@ export default function ManageAssetsPage() {
         actions={<Button onClick={() => openDialog('add')} disabled={!canAdd}><Plus className="mr-2 h-4 w-4"/> Add Asset</Button>}
       />
 
-      <Card>
-        <CardContent className="p-0">
+      <TableCard title="Assets" count={assets.length} noun="asset">
           <Table>
             <TableHeader>
               <TableRow>
@@ -208,9 +208,9 @@ export default function ManageAssetsPage() {
                     <TableCell>{asset.type}</TableCell>
                     <TableCell>{getAssetLocation(asset)}</TableCell>
                     <TableCell>
-                      <Badge variant={asset.status === 'Active' ? 'default' : 'secondary'}>{asset.status}</Badge>
+                      <StatusBadge status={asset.status} />
                     </TableCell>
-                    <TableCell className="text-right">
+                    <TableCell className="text-right whitespace-nowrap">
                        <Button variant="outline" size="sm" onClick={() => openDialog('edit', asset)} disabled={!canEdit}><Edit className="mr-2 h-4 w-4" />Edit</Button>
                         <AlertDialog>
                             <AlertDialogTrigger asChild>
@@ -232,9 +232,8 @@ export default function ManageAssetsPage() {
                 ))}
             </TableBody>
           </Table>
-        </CardContent>
-      </Card>
-      
+      </TableCard>
+
       <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
           <DialogContent className="sm:max-w-xl">
             <DialogHeader>

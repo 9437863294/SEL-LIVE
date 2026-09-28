@@ -36,7 +36,6 @@ import {
   PO_ISSUE_APPROVAL_COLLECTION,
   PO_ISSUE_WORKFLOW_DOC_ID,
   canActOnPoIssue,
-  poIssueStatusStyles,
   poIssuesForStep,
   type PoIssueAction,
   type PoIssueApproval,
@@ -59,7 +58,6 @@ import {
   type PmListColumn,
   type PmSidebarLink,
 } from "@/components/project-management/pm-shell";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import {
@@ -75,6 +73,8 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
 import { PageHeader } from "@/components/shared/page-header";
+import { StatusBadge } from "@/components/shared/status-badge";
+import { pmStatusTone } from "@/components/project-management/pm-status-tones";
 
 /** PO dates are plain yyyy-mm-dd strings, matching how the other PO screens render them. */
 const formatDate = (value?: string) => {
@@ -421,7 +421,6 @@ export default function PoIssueStagePage() {
     },
     {
       header: "Exceptions",
-      className: "text-xs",
       cell: (approval) => {
         const exceptionCount = approval.exceptions?.length ?? 0;
         return exceptionCount ? (
@@ -434,19 +433,15 @@ export default function PoIssueStagePage() {
         );
       },
     },
-    { header: "Requested By", className: "text-sm", cell: (approval) => approval.requestedByName || "—" },
+    { header: "Requested By", cell: (approval) => approval.requestedByName || "—" },
     {
       header: "Status",
       mobile: "aside",
-      cell: (approval) => (
-        <Badge variant="outline" className={poIssueStatusStyles[approval.status]}>
-          {approval.status}
-        </Badge>
-      ),
+      cell: (approval) => <StatusBadge status={approval.status} tone={pmStatusTone(approval.status)} />,
     },
     {
       header: "Due",
-      className: "text-xs text-muted-foreground",
+      className: "whitespace-nowrap",
       cell: (approval) => {
         const due = toDateSafe(approval.deadline);
         return due ? (

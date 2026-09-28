@@ -56,7 +56,6 @@ import {
 } from '@/components/jmc/jmc-page-shell';
 import { Skeleton } from '@/components/ui/skeleton';
 import ViewJmcEntryDialog from '@/components/billing-recon/ViewJmcEntryDialog';
-import { Badge } from '@/components/ui/badge';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -78,6 +77,7 @@ import { Calendar } from '@/components/ui/calendar';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { format, subDays } from 'date-fns';
 import { PageHeader } from '@/components/shared/page-header';
+import { StatusBadge } from '@/components/shared/status-badge';
 
 /* -------- helpers -------- */
 function toDateSafe(value: any): Date | null {
@@ -524,15 +524,7 @@ export default function StagePage() {
       mobile: 'aside',
       className: 'whitespace-nowrap',
       cell: (entry) => (
-        <Badge
-          variant={
-            entry.status === 'Completed'
-              ? 'default'
-              : 'secondary'
-          }
-        >
-          {entry.status}
-        </Badge>
+        <StatusBadge status={entry.status} />
       ),
     },
     {

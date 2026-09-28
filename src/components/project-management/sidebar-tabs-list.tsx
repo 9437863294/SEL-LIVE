@@ -7,9 +7,9 @@ import {
   ChevronRight,
   ChevronsUpDown,
   LayoutGrid,
-  Search,
   type LucideIcon,
 } from "lucide-react";
+import { SearchInput } from "@/components/shared/filter-bar";
 import { Badge } from "@/components/ui/badge";
 import {
   Sheet,
@@ -247,20 +247,13 @@ export function SectionsSheet({
           </SheetDescription>
         </SheetHeader>
         {searchable && (
-          <div className="relative mt-3">
-            <Search
-              className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground"
-              aria-hidden="true"
-            />
-            <input
-              type="search"
-              value={query}
-              onChange={(event) => setQuery(event.target.value)}
-              placeholder={`Search ${all.length} sections`}
-              aria-label={`Search ${title} sections`}
-              className="h-10 w-full rounded-xl border border-border/70 bg-muted/40 pl-9 pr-3 text-sm outline-none transition-colors placeholder:text-muted-foreground focus:border-primary/50 focus:bg-background focus-visible:ring-2 focus-visible:ring-ring"
-            />
-          </div>
+          <SearchInput
+            value={query}
+            onChange={setQuery}
+            placeholder={`Search ${all.length} sections`}
+            label={`Search ${title} sections`}
+            className="mt-3"
+          />
         )}
         {needle && shown.length === 0 && (
           <p className="mt-6 text-center text-sm text-muted-foreground">

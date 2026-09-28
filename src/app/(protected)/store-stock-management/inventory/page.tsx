@@ -3,18 +3,19 @@
 import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { collection, getDocs, query, where } from 'firebase/firestore';
-import { AlertTriangle, Boxes, IndianRupee, PackageCheck, PackageX, Search } from 'lucide-react';
+import { AlertTriangle, Boxes, IndianRupee, PackageCheck, PackageX } from 'lucide-react';
 import { db } from '@/lib/firebase';
 import { useAuth } from '@/components/auth/AuthProvider';
 import { useAuthorization } from '@/hooks/useAuthorization';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { FilterBar } from '@/components/shared/filter-bar';
 import { PageHeader } from '@/components/shared/page-header';
+import { StatusBadge } from '@/components/shared/status-badge';
+import { TableCard } from '@/components/shared/table-card';
 import type { InventoryBalance, InventoryItem, InventoryLocation } from '@/lib/inventory';
 
 type ItemRow = InventoryItem & { onHand: number; reserved: number; available: number; value: number; locations: number };
@@ -118,12 +119,11 @@ export default function InventoryDashboardPage() {
         <button className="text-left" onClick={() => setFilter(filter === 'out' ? 'all' : 'out')}><Metric title="Out of stock" value={out.toLocaleString()} icon={PackageX} active={filter === 'out'} /></button>
       </div>
 
-      <Card>
-        <CardHeader className="gap-4 sm:flex-row sm:items-center sm:justify-between">
-          <div><CardTitle>Item-wise network stock</CardTitle><CardDescription>Click an item to see availability at every authorized location.</CardDescription></div>
-          <div className="relative w-full sm:w-80"><Search className="absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" /><Input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search code, item, category…" className="pl-9" /></div>
-        </CardHeader>
-        <CardContent className="overflow-x-auto">
+      <TableCard
+        title="Item-wise network stock"
+        description="Click an item to see availability at every authorized location."
+        toolbar={<FilterBar search={{ value: search, onChange: setSearch, placeholder: 'Search code, item, category…' }} />}
+      >
           <Table>
             <TableHeader><TableRow><TableHead>Item</TableHead><TableHead>Category</TableHead><TableHead className="text-right">On hand</TableHead><TableHead className="text-right">Reserved</TableHead><TableHead className="text-right">Available</TableHead><TableHead>Locations</TableHead>{canViewCost && <TableHead className="text-right">Value</TableHead>}<TableHead>Status</TableHead></TableRow></TableHeader>
             <TableBody>
@@ -136,17 +136,16 @@ export default function InventoryDashboardPage() {
                     <TableCell className="text-right tabular-nums">{row.onHand.toLocaleString()}</TableCell>
                     <TableCell className="text-right tabular-nums">{row.reserved.toLocaleString()}</TableCell>
                     <TableCell className="text-right font-medium tabular-nums">{row.available.toLocaleString()}</TableCell>
-                    <TableCell>{row.locations}</TableCell>
-                    {canViewCost && <TableCell className="text-right tabular-nums">₹{row.value.toLocaleString('en-IN', { maximumFractionDigits: 2 })}</TableCell>}
-                    <TableCell><Badge variant={status === 'In stock' ? 'default' : 'destructive'}>{status}</Badge></TableCell>
+                    <TableCell className="tabular-nums">{row.locations}</TableCell>
+                    {canViewCost && <TableCell className="whitespace-nowrap text-right tabular-nums">₹{row.value.toLocaleString('en-IN', { maximumFractionDigits: 2 })}</TableCell>}
+                    <TableCell className="whitespace-nowrap"><StatusBadge status={status} /></TableCell>
                   </TableRow>
                 );
               })}
               {!filteredRows.length && <TableRow><TableCell colSpan={canViewCost ? 8 : 7} className="h-28 text-center text-muted-foreground">No items match this view. Add Item Master records and post opening stock to begin.</TableCell></TableRow>}
             </TableBody>
           </Table>
-        </CardContent>
-      </Card>
+      </TableCard>
 
       <Dialog open={Boolean(selected)} onOpenChange={(open) => !open && setSelected(null)}>
         <DialogContent className="max-w-3xl">

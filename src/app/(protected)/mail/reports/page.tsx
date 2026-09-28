@@ -27,6 +27,8 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { mailApi } from '@/lib/mail-hub/client';
 import { PageHeader } from '@/components/shared/page-header';
+import { FilterBar } from '@/components/shared/filter-bar';
+import { TableCard } from '@/components/shared/table-card';
 
 const VIZ_VARS = '[--mh-open:#2a78d6] [--mh-overdue:#d03b3b] dark:[--mh-open:#3987e5] dark:[--mh-overdue:#d03b3b]';
 
@@ -90,21 +92,20 @@ export default function MailReportsPage() {
       <PageHeader title="Reports" description="Shared-mailbox workload. Counts and response times only — never message content." />
 
       {/* Filters in one row, above everything they affect. */}
-      <div className="flex flex-wrap items-end gap-2">
-        <label className="space-y-1 text-xs text-muted-foreground">From<Input type="date" value={from} onChange={(event) => setFrom(event.target.value)} className="h-9 bg-white" /></label>
-        <label className="space-y-1 text-xs text-muted-foreground">To<Input type="date" value={to} onChange={(event) => setTo(event.target.value)} className="h-9 bg-white" /></label>
-        <div className="space-y-1 text-xs text-muted-foreground">
-          Mailbox
-          <Select value={mailbox} onValueChange={setMailbox}>
-            <SelectTrigger className="h-9 w-[220px] bg-white"><SelectValue /></SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">All shared mailboxes</SelectItem>
-              {(report?.mailboxes ?? []).map((entry) => <SelectItem key={entry.id} value={entry.id}>{entry.name}</SelectItem>)}
-            </SelectContent>
-          </Select>
-        </div>
-        {loading && <Loader2 className="mb-2.5 h-4 w-4 animate-spin text-slate-400" />}
-      </div>
+      <FilterBar
+        activeCount={mailbox !== 'all' ? 1 : 0}
+        summary={loading ? <Loader2 className="h-4 w-4 animate-spin text-slate-400" aria-label="Loading" /> : undefined}
+      >
+        <Input type="date" value={from} onChange={(event) => setFrom(event.target.value)} aria-label="From" title="From" />
+        <Input type="date" value={to} onChange={(event) => setTo(event.target.value)} aria-label="To" title="To" />
+        <Select value={mailbox} onValueChange={setMailbox}>
+          <SelectTrigger aria-label="Mailbox"><SelectValue /></SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All shared mailboxes</SelectItem>
+            {(report?.mailboxes ?? []).map((entry) => <SelectItem key={entry.id} value={entry.id}>{entry.name}</SelectItem>)}
+          </SelectContent>
+        </Select>
+      </FilterBar>
 
       {error && <ErrorNotice message={error} onRetry={reload} />}
 
@@ -117,15 +118,10 @@ export default function MailReportsPage() {
             <Tile label="Median first response" value={hours(report.medianResponseHours)} hint={`Average ${hours(report.averageResponseHours)}`} icon={<Timer className="h-3.5 w-3.5" />} />
           </div>
 
-          <section className="rounded-xl border bg-white p-3 dark:bg-slate-900">
-            <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
-              <h2 className="text-sm font-semibold">Workload by person</h2>
-              <Legend />
-            </div>
+          <TableCard title="Workload by person" actions={<Legend />}>
             {report.byAssignee.length === 0 ? (
-              <EmptyState title="No assigned conversations in this period" />
+              <div className="p-3"><EmptyState title="No assigned conversations in this period" /></div>
             ) : (
-              <div className="overflow-x-auto">
                 <Table className="min-w-[640px]">
                   <TableHeader>
                     <TableRow>
@@ -150,17 +146,11 @@ export default function MailReportsPage() {
                     ))}
                   </TableBody>
                 </Table>
-              </div>
             )}
-          </section>
+          </TableCard>
 
-          <div className="grid gap-4 xl:grid-cols-2">
-            <section className="rounded-xl border bg-white p-3 dark:bg-slate-900">
-              <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
-                <h2 className="text-sm font-semibold">By department</h2>
-                <Legend />
-              </div>
-              <div className="overflow-x-auto">
+          <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
+            <TableCard title="By department" actions={<Legend />}>
                 <Table className="min-w-[440px]">
                   <TableHeader>
                     <TableRow>
@@ -182,16 +172,13 @@ export default function MailReportsPage() {
                       </TableRow>
                     ))}
                     {report.byDepartment.length === 0 && (
-                      <TableRow><TableCell colSpan={5} className="text-center text-sm text-muted-foreground">No data in this period.</TableCell></TableRow>
+                      <TableRow><TableCell colSpan={5} className="text-center text-muted-foreground">No data in this period.</TableCell></TableRow>
                     )}
                   </TableBody>
                 </Table>
-              </div>
-            </section>
+            </TableCard>
 
-            <section className="rounded-xl border bg-white p-3 dark:bg-slate-900">
-              <h2 className="mb-2 text-sm font-semibold">By mailbox</h2>
-              <div className="overflow-x-auto">
+            <TableCard title="By mailbox">
                 <Table className="min-w-[440px]">
                   <TableHeader>
                     <TableRow>
@@ -217,8 +204,7 @@ export default function MailReportsPage() {
                     ))}
                   </TableBody>
                 </Table>
-              </div>
-            </section>
+            </TableCard>
           </div>
 
           <p className="text-xs text-muted-foreground">

@@ -76,7 +76,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { Badge } from '@/components/ui/badge';
+import { StatusBadge } from '@/components/shared/status-badge';
 import {
   Tooltip,
   TooltipProvider,
@@ -963,27 +963,10 @@ export default function ViewRequestDialog({
                                   }
                                 </TableCell>
                                 <TableCell>
-                                  <Badge
-                                    variant={
-                                      step.status ===
-                                      'Completed'
-                                        ? 'default'
-                                        : step.status ===
-                                          'Current'
-                                        ? 'secondary'
-                                        : 'outline'
-                                    }
-                                    className={
-                                      step.status ===
-                                      'Completed'
-                                        ? 'bg-green-500 hover:bg-green-600'
-                                        : ''
-                                    }
-                                  >
-                                    {
-                                      step.status
-                                    }
-                                  </Badge>
+                                  <StatusBadge
+                                    status={step.status}
+                                    tone={step.status === 'Current' ? 'progress' : undefined}
+                                  />
                                 </TableCell>
                               </TableRow>
                             )
@@ -994,7 +977,7 @@ export default function ViewRequestDialog({
                               colSpan={
                                 5
                               }
-                              className="text-center h-24"
+                              className="h-24 text-center"
                             >
                               {isLoading
                                 ? 'Loading workflow...'

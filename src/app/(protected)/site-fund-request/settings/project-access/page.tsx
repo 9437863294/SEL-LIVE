@@ -31,6 +31,8 @@ import {
 import { Loader2, Pencil, Plus, Trash2, User2, Users2 } from 'lucide-react';
 import Link from 'next/link';
 import { PageHeader } from '@/components/shared/page-header';
+import { FilterBar } from '@/components/shared/filter-bar';
+import { StatusBadge } from '@/components/shared/status-badge';
 
 const MODULE   = 'Site Fund Request';
 const RESOURCE = 'Settings';
@@ -278,25 +280,20 @@ export default function SFRProjectAccessPage() {
       />
 
       {/* Toolbar */}
-      <div className="flex flex-wrap items-center gap-3">
-        <Input
-          placeholder="Search by project name, code or person..."
-          value={search}
-          onChange={e => setSearch(e.target.value)}
-          className="max-w-sm"
-        />
-        {canAdd && (
+      <FilterBar
+        search={{ value: search, onChange: setSearch, placeholder: 'Search by project name, code or person...' }}
+        actions={canAdd && (
           <Button
             size="sm"
             onClick={openAdd}
             disabled={availableCentralProjects.length === 0}
-            className="ml-auto gap-2 bg-teal-600 hover:bg-teal-700 text-white"
+            className="gap-2 bg-teal-600 hover:bg-teal-700 text-white"
           >
             <Plus className="h-4 w-4" />
             Add Project
           </Button>
         )}
-      </div>
+      />
 
       {/* No projects in hub warning */}
       {canAdd && availableCentralProjects.length === 0 && rows.length === 0 && (
@@ -342,19 +339,11 @@ export default function SFRProjectAccessPage() {
                     </p>
                     <div className="mt-1 flex items-center gap-1.5 flex-wrap">
                       {row.projectCode && (
-                        <Badge variant="outline" className="text-[10px] font-mono px-1.5 py-0">
+                        <Badge variant="outline" className="font-mono">
                           {row.projectCode}
                         </Badge>
                       )}
-                      <Badge
-                        className={
-                          row.status === 'Active'
-                            ? 'bg-emerald-100 text-emerald-700 hover:bg-emerald-100 text-[10px] px-1.5 py-0'
-                            : 'bg-red-100 text-red-600 hover:bg-red-100 text-[10px] px-1.5 py-0'
-                        }
-                      >
-                        {row.status}
-                      </Badge>
+                      <StatusBadge status={row.status} />
                     </div>
                   </div>
 

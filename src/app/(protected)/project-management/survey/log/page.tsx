@@ -7,7 +7,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
-import { History, Search } from "lucide-react";
+import { History } from "lucide-react";
 import { collection, getDocs } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import { useAuthorization } from "@/hooks/useAuthorization";
@@ -23,18 +23,14 @@ import {
 import {
   SURVEY_ENTRY_COLLECTION,
   SURVEY_ENTRY_STATUSES,
-  surveyStatusStyles,
   type SurveyEntry,
   type SurveyEntryStatus,
 } from "@/lib/project-management-survey-workflow";
 import {
   PmDataList,
   PmEmptyState,
-  PmToolbar,
   type PmListColumn,
 } from "@/components/project-management/pm-shell";
-import { Badge } from "@/components/ui/badge";
-import { Input } from "@/components/ui/input";
 import {
   Select,
   SelectContent,
@@ -48,7 +44,9 @@ import {
   AccordionItem,
   AccordionTrigger,
 } from "@/components/ui/accordion";
+import { FilterBar } from "@/components/shared/filter-bar";
 import { PageHeader } from "@/components/shared/page-header";
+import { StatusBadge } from "@/components/shared/status-badge";
 
 const formatQuantity = (value: number) =>
   new Intl.NumberFormat("en-IN", { maximumFractionDigits: 3 }).format(value);
@@ -159,11 +157,7 @@ export default function SurveyLogPage() {
     {
       header: "Status",
       mobile: "aside",
-      cell: (entry) => (
-        <Badge variant="outline" className={surveyStatusStyles[entry.status]}>
-          {entry.status}
-        </Badge>
-      ),
+      cell: (entry) => <StatusBadge status={entry.status} />,
     },
     {
       header: "Trail",
@@ -234,18 +228,16 @@ export default function SurveyLogPage() {
       />
 
 
-      <PmToolbar>
-        <div className="relative w-full sm:max-w-xs">
-          <Search className="absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-          <Input
-            className="pl-8"
-            placeholder="Search BOQ SL No, description or surveyor..."
-            value={search}
-            onChange={(event) => setSearch(event.target.value)}
-          />
-        </div>
+      <FilterBar
+        search={{ value: search, onChange: setSearch, placeholder: "Search BOQ SL No, description or surveyor..." }}
+        activeCount={statusFilter !== "All" ? 1 : 0}
+        onClear={() => {
+          setSearch("");
+          setStatusFilter("All");
+        }}
+      >
         <Select value={statusFilter} onValueChange={(value: SurveyEntryStatus | "All") => setStatusFilter(value)}>
-          <SelectTrigger className="w-full sm:w-56">
+          <SelectTrigger>
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
@@ -257,7 +249,7 @@ export default function SurveyLogPage() {
             ))}
           </SelectContent>
         </Select>
-      </PmToolbar>
+      </FilterBar>
 
       <PmDataList
         rows={filtered}

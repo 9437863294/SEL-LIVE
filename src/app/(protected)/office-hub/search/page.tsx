@@ -24,8 +24,9 @@ import {
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
-import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { SearchInput } from '@/components/shared/filter-bar';
+import { StatusBadge } from '@/components/shared/status-badge';
 import { Skeleton } from '@/components/ui/skeleton';
 import { cn } from '@/lib/utils';
 import {
@@ -122,17 +123,13 @@ export default function SearchPage() {
       <Card>
         <CardContent className="p-3">
           <Label className="mb-1 block text-xs">Search term</Label>
-          <div className="relative">
-            <SearchIcon className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
-            <Input
-              value={term}
-              onChange={(event) => setTerm(event.target.value)}
-              placeholder='e.g. "Finance Review", "Project Manager", "TSK-2627-0041"'
-              className="bg-white pl-8"
-              autoFocus
-              aria-label="Search term"
-            />
-          </div>
+          <SearchInput
+            value={term}
+            onChange={setTerm}
+            placeholder='e.g. "Finance Review", "Project Manager", "TSK-2627-0041"'
+            label="Search term"
+            autoFocus
+          />
           <p className="mt-1.5 text-[11px] text-muted-foreground">
             An exact reference wins over a title match, so pasting a task or decision number takes
             you straight to it. Press <kbd className="rounded border bg-slate-50 px-1 font-mono">Ctrl K</kbd>{' '}
@@ -199,7 +196,7 @@ export default function SearchPage() {
                   <div className="flex items-center gap-2 border-b bg-slate-50/70 px-4 py-2">
                     <Icon className="h-4 w-4 text-slate-500" />
                     <p className="text-sm font-semibold text-slate-800">{group.label}</p>
-                    <Badge variant="outline" className="border-slate-200 bg-white text-[11px] tabular-nums">
+                    <Badge variant="neutral" className="tabular-nums">
                       {group.results.length}
                     </Badge>
                   </div>
@@ -222,11 +219,7 @@ export default function SearchPage() {
                           </div>
                           <div className="flex shrink-0 items-center gap-1.5">
                             {result.priority && <PriorityBadge priority={result.priority} />}
-                            {result.status && (
-                              <Badge variant="outline" className="border-slate-200 bg-slate-50 text-[11px]">
-                                {result.status}
-                              </Badge>
-                            )}
+                            {result.status && <StatusBadge status={result.status} />}
                           </div>
                         </Link>
                       </li>

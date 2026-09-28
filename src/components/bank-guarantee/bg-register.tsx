@@ -12,7 +12,6 @@ import {
   Loader2,
   RefreshCw,
   RotateCcw,
-  Search,
   ShieldAlert,
   X,
 } from "lucide-react";
@@ -25,7 +24,6 @@ import {
   BG_COLLECTIONS,
   BG_PERMISSION_MODULE,
   bgLabel,
-  bgStatusTone,
   daysToBgDate,
   formatBgCurrency,
   toBgDate,
@@ -33,9 +31,11 @@ import {
   type BGRequest,
   type BankGuarantee,
 } from "@/lib/bank-guarantee";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { PageHeader } from "@/components/shared/page-header";
+import { FilterBar } from "@/components/shared/filter-bar";
+import { StatusBadge } from "@/components/shared/status-badge";
+import { TableCard } from "@/components/shared/table-card";
 import {
   Card,
   CardContent,
@@ -51,7 +51,6 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { Input } from "@/components/ui/input";
 import {
   Select,
   SelectContent,
@@ -299,10 +298,48 @@ export default function BGRegister({
         </CardContent>
       </Card>
     );
+  const filters = (
+    <FilterBar
+      search={{
+        value: search,
+        onChange: setSearch,
+        placeholder: "Search BG, beneficiary, project, bank, contract…",
+      }}
+      activeCount={status !== "ALL" ? 1 : 0}
+      onClear={() => {
+        setSearch("");
+        setStatus("ALL");
+      }}
+    >
+      <Select value={status} onValueChange={setStatus}>
+        <SelectTrigger aria-label="Status">
+          <SelectValue />
+        </SelectTrigger>
+        <SelectContent>
+          <SelectItem value="ALL">All statuses</SelectItem>
+          {Array.from(
+            new Set([
+              ...requests.map((item) => item.status),
+              ...guarantees.map((item) => item.status),
+            ]),
+          )
+            .sort()
+            .map((item) => (
+              <SelectItem key={item} value={item}>
+                {bgLabel(item)}
+              </SelectItem>
+            ))}
+        </SelectContent>
+      </Select>
+    </FilterBar>
+  );
   const RequestTable = (
-    <Card>
-      <CardContent className="p-0">
-        <div className="overflow-x-auto">
+    <TableCard
+      title={mode === "approvals" ? "Pending BG requests" : "BG requests"}
+      count={visibleRequests.length}
+      noun="request"
+      toolbar={filters}
+    >
           <Table>
             <TableHeader>
               <TableRow>
@@ -352,13 +389,10 @@ export default function BGRegister({
                       Claim {toBgDateInput(item.proposedClaimExpiryDate)}
                     </p>
                   </TableCell>
-                  <TableCell>
-                    <Badge
-                      variant="outline"
-                      className={bgStatusTone(item.status)}
-                    >
+                  <TableCell className="whitespace-nowrap">
+                    <StatusBadge status={item.status}>
                       {bgLabel(item.status)}
-                    </Badge>
+                    </StatusBadge>
                   </TableCell>
                   <TableCell>
                     <div className="flex justify-end gap-1">
@@ -419,14 +453,15 @@ export default function BGRegister({
               )}
             </TableBody>
           </Table>
-        </div>
-      </CardContent>
-    </Card>
+    </TableCard>
   );
   const GuaranteeTable = (
-    <Card>
-      <CardContent className="p-0">
-        <div className="overflow-x-auto">
+    <TableCard
+      title="Issued BGs"
+      count={visibleGuarantees.length}
+      noun="BG"
+      toolbar={filters}
+    >
           <Table>
             <TableHeader>
               <TableRow>
@@ -476,13 +511,10 @@ export default function BGRegister({
                       Claim {toBgDateInput(item.currentClaimExpiryDate)}
                     </p>
                   </TableCell>
-                  <TableCell>
-                    <Badge
-                      variant="outline"
-                      className={bgStatusTone(item.status)}
-                    >
+                  <TableCell className="whitespace-nowrap">
+                    <StatusBadge status={item.status}>
                       {bgLabel(item.status)}
-                    </Badge>
+                    </StatusBadge>
                   </TableCell>
                   <TableCell>
                     <Button asChild variant="ghost" size="icon">
@@ -505,9 +537,7 @@ export default function BGRegister({
               )}
             </TableBody>
           </Table>
-        </div>
-      </CardContent>
-    </Card>
+    </TableCard>
   );
   return (
     <div className="space-y-4">
@@ -538,7 +568,7 @@ export default function BGRegister({
           </>
         }
       />
-      <div className="grid gap-3 sm:grid-cols-3">
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
         <Card>
           <CardContent className="p-4">
             <p className="text-xs text-muted-foreground">Requests</p>
@@ -566,39 +596,6 @@ export default function BGRegister({
           </CardContent>
         </Card>
       </div>
-      <Card>
-        <CardContent className="flex flex-col gap-2 p-3 sm:flex-row">
-          <div className="relative flex-1">
-            <Search className="absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
-            <Input
-              className="pl-9"
-              value={search}
-              onChange={(event) => setSearch(event.target.value)}
-              placeholder="Search BG, beneficiary, project, bank, contract…"
-            />
-          </div>
-          <Select value={status} onValueChange={setStatus}>
-            <SelectTrigger className="sm:w-60">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="ALL">All statuses</SelectItem>
-              {Array.from(
-                new Set([
-                  ...requests.map((item) => item.status),
-                  ...guarantees.map((item) => item.status),
-                ]),
-              )
-                .sort()
-                .map((item) => (
-                  <SelectItem key={item} value={item}>
-                    {bgLabel(item)}
-                  </SelectItem>
-                ))}
-            </SelectContent>
-          </Select>
-        </CardContent>
-      </Card>
       {mode === "approvals" ? (
         RequestTable
       ) : (

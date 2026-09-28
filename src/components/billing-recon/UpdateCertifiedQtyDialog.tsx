@@ -372,15 +372,14 @@ export function UpdateCertifiedQtyDialog({
         <div className="hidden flex-1 min-h-0 overflow-y-auto border rounded-md sm:block">
           <div className="overflow-x-auto">
             <Table className="w-full">
-              {/* sticky header */}
-              <TableHeader className="sticky top-0 z-20 bg-background shadow-sm">
+              <TableHeader>
                 <TableRow>
-                  <TableHead className="sticky top-0 z-20 bg-background text-center">BOQ Sl. No.</TableHead>
-                  <TableHead className="sticky top-0 z-20 bg-background">Description</TableHead>
-                  <TableHead className="sticky top-0 z-20 bg-background text-right whitespace-nowrap">
+                  <TableHead className="text-center">BOQ Sl. No.</TableHead>
+                  <TableHead>Description</TableHead>
+                  <TableHead className="text-right whitespace-nowrap">
                     Executed Qty
                   </TableHead>
-                  <TableHead className="sticky top-0 z-20 bg-background whitespace-nowrap">
+                  <TableHead className="whitespace-nowrap">
                     Certified Qty
                   </TableHead>
                 </TableRow>

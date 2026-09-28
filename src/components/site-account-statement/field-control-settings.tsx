@@ -22,7 +22,8 @@ import {
 import type { SASFieldSetting } from './use-field-control';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { TableCard } from '@/components/shared/table-card';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Switch } from '@/components/ui/switch';
@@ -226,18 +227,15 @@ export default function SiteAccountFieldControlSettings() {
         </div>
       )}
 
-      <Card>
-        <CardHeader className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <div>
-            <CardTitle className="flex items-center gap-2">
-              <SlidersHorizontal className="h-5 w-5 text-emerald-600" />
-              {formDef.title}
-            </CardTitle>
-            <CardDescription>{formDef.description}</CardDescription>
-          </div>
-          <div className="flex items-center gap-2">
+      <TableCard
+        icon={SlidersHorizontal}
+        title={formDef.title}
+        description={formDef.description}
+        scroll="natural"
+        actions={
+          <>
             <Select value={activeForm} onValueChange={(value) => setActiveForm(value as SASFormKey)}>
-              <SelectTrigger className="w-64">
+              <SelectTrigger className="w-full sm:w-auto sm:min-w-[16rem]" aria-label="Form">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -254,10 +252,9 @@ export default function SiteAccountFieldControlSettings() {
                 Reset
               </Button>
             )}
-          </div>
-        </CardHeader>
-        <CardContent className="p-0">
-          <div className="overflow-x-auto">
+          </>
+        }
+      >
             <Table>
               <TableHeader>
                 <TableRow>
@@ -297,10 +294,10 @@ export default function SiteAccountFieldControlSettings() {
                           onCheckedChange={(value) => update(activeForm, field.key, { visible: value })}
                         />
                       </TableCell>
-                      <TableCell className="whitespace-nowrap text-xs text-muted-foreground">
+                      <TableCell className="whitespace-nowrap font-mono">
                         {field.key}
                         {field.locked && (
-                          <Badge variant="outline" className="ml-2 gap-1 text-[10px]">
+                          <Badge variant="outline" className="ml-2 gap-1 font-sans">
                             <Lock className="h-2.5 w-2.5" /> Locked
                           </Badge>
                         )}
@@ -310,23 +307,19 @@ export default function SiteAccountFieldControlSettings() {
                 })}
               </TableBody>
             </Table>
-          </div>
-        </CardContent>
-      </Card>
+      </TableCard>
       {/* ── Sort Order ─────────────────────────────────────────────────────────── */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <ArrowDownAZ className="h-5 w-5 text-indigo-600" />
-            Sort Order
-          </CardTitle>
-          <CardDescription>
+      <TableCard
+        icon={ArrowDownAZ}
+        title="Sort Order"
+        description={
+          <>
             The order each list opens in. Anyone viewing a list can still re-sort it for themselves —
             this sets where it starts, for everyone.
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="p-0">
-          <div className="overflow-x-auto">
+          </>
+        }
+        scroll="natural"
+      >
             <Table>
               <TableHeader>
                 <TableRow>
@@ -397,9 +390,7 @@ export default function SiteAccountFieldControlSettings() {
                 })}
               </TableBody>
             </Table>
-          </div>
-        </CardContent>
-      </Card>
+      </TableCard>
 
       <p className="text-xs text-muted-foreground">
         Locked fields are required by the form&apos;s own logic — for example, a record&apos;s own project/date/amount, or an

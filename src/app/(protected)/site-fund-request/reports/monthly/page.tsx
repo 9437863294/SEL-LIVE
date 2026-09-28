@@ -25,6 +25,9 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { Skeleton } from '@/components/ui/skeleton';
+import { Badge } from '@/components/ui/badge';
+import { Table, TableBody, TableCell, TableFooter, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { TableCard } from '@/components/shared/table-card';
 
 // ─── helpers ────────────────────────────────────────────────────────────────
 
@@ -279,7 +282,7 @@ export default function MonthlyComparisonPage() {
             <div className="space-y-1">
               <p className="text-xs font-medium text-slate-600">Financial Year</p>
               <Select value={effectiveFY} onValueChange={setSelectedFY}>
-                <SelectTrigger className="bg-white/80 border-white/70">
+                <SelectTrigger>
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -319,19 +322,14 @@ export default function MonthlyComparisonPage() {
       </div>
 
       {/* Monthly table */}
-      <Card className="overflow-hidden rounded-2xl border border-white/70 bg-white/70 shadow-[0_20px_70px_-55px_rgba(2,6,23,0.55)] backdrop-blur">
-        <div className="h-1.5 w-full bg-gradient-to-r from-emerald-400 via-teal-400 to-green-400 opacity-70" />
-        <CardHeader className="p-4 pb-2">
-          <CardTitle>Month-by-Month Breakdown — FY {effectiveFY}</CardTitle>
-          <CardDescription>
-            All 12 months (Apr → Mar) · {totals.total} total request{totals.total !== 1 ? 's' : ''}
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="p-0">
-          <div className="overflow-auto rounded-b-2xl border-t border-white/70 bg-white/80">
-            <table className="w-full caption-bottom text-sm">
-              <thead>
-                <tr className="border-b border-slate-200 bg-slate-50/90 sticky top-0 z-10">
+      <TableCard
+        title={<>Month-by-Month Breakdown — FY {effectiveFY}</>}
+        description={<>All 12 months (Apr → Mar) · {totals.total} total request{totals.total !== 1 ? 's' : ''}</>}
+        scroll="natural"
+      >
+            <Table>
+              <TableHeader>
+                <TableRow>
                   {[
                     'Month',
                     'Total Requests',
@@ -341,73 +339,64 @@ export default function MonthlyComparisonPage() {
                     'Completed',
                     'Rejected',
                   ].map((h) => (
-                    <th
-                      key={h}
-                      className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-500 whitespace-nowrap"
-                    >
+                    <TableHead key={h} className={h === 'Month' ? undefined : 'text-right'}>
                       {h}
-                    </th>
+                    </TableHead>
                   ))}
-                </tr>
-              </thead>
-              <tbody>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
                 {rows.map((row) => {
                   const isCurrentMonth =
                     row.ym === new Date().toISOString().slice(0, 7);
                   return (
-                    <tr
+                    <TableRow
                       key={row.ym}
-                      className={`border-b border-slate-100 transition-colors ${
-                        isCurrentMonth
-                          ? 'bg-emerald-50/60 hover:bg-emerald-50/90'
-                          : 'hover:bg-slate-50/70'
-                      }`}
+                      className={isCurrentMonth ? 'bg-emerald-50/60' : undefined}
                     >
-                      <td className="px-4 py-3 font-medium text-slate-900">
+                      <TableCell className="font-medium whitespace-nowrap">
                         {row.label}
                         {isCurrentMonth && (
-                          <span className="ml-2 inline-flex rounded-full bg-emerald-100 px-1.5 py-0.5 text-[10px] font-semibold text-emerald-700">
+                          <Badge variant="success" className="ml-2">
                             current
-                          </span>
+                          </Badge>
                         )}
-                      </td>
-                      <td className="px-4 py-3 text-slate-700">
+                      </TableCell>
+                      <TableCell className="text-right tabular-nums">
                         {row.total > 0 ? row.total : <span className="text-slate-400">—</span>}
-                      </td>
-                      <td className="px-4 py-3 font-medium text-slate-900">
+                      </TableCell>
+                      <TableCell className="text-right tabular-nums whitespace-nowrap">
                         {row.totalAmount > 0 ? formatCurrency(row.totalAmount) : <span className="text-slate-400">—</span>}
-                      </td>
-                      <td className="px-4 py-3 text-amber-700">
+                      </TableCell>
+                      <TableCell className="text-right tabular-nums">
                         {row.pending > 0 ? row.pending : <span className="text-slate-400">—</span>}
-                      </td>
-                      <td className="px-4 py-3 text-blue-700">
+                      </TableCell>
+                      <TableCell className="text-right tabular-nums">
                         {row.inProgress > 0 ? row.inProgress : <span className="text-slate-400">—</span>}
-                      </td>
-                      <td className="px-4 py-3 text-emerald-700">
+                      </TableCell>
+                      <TableCell className="text-right tabular-nums">
                         {row.completed > 0 ? row.completed : <span className="text-slate-400">—</span>}
-                      </td>
-                      <td className="px-4 py-3 text-red-700">
+                      </TableCell>
+                      <TableCell className="text-right tabular-nums">
                         {row.rejected > 0 ? row.rejected : <span className="text-slate-400">—</span>}
-                      </td>
-                    </tr>
+                      </TableCell>
+                    </TableRow>
                   );
                 })}
-              </tbody>
-              <tfoot>
-                <tr className="border-t-2 border-slate-300 bg-slate-100/80 font-semibold">
-                  <td className="px-4 py-3 text-slate-900">Total</td>
-                  <td className="px-4 py-3 text-slate-900">{totals.total}</td>
-                  <td className="px-4 py-3 text-slate-900">{formatCurrency(totals.totalAmount)}</td>
-                  <td className="px-4 py-3 text-amber-700">{totals.pending}</td>
-                  <td className="px-4 py-3 text-blue-700">{totals.inProgress}</td>
-                  <td className="px-4 py-3 text-emerald-700">{totals.completed}</td>
-                  <td className="px-4 py-3 text-red-700">{totals.rejected}</td>
-                </tr>
-              </tfoot>
-            </table>
-          </div>
-        </CardContent>
-      </Card>
+              </TableBody>
+              <TableFooter>
+                <TableRow>
+                  <TableCell>Total</TableCell>
+                  <TableCell className="text-right tabular-nums">{totals.total}</TableCell>
+                  <TableCell className="text-right tabular-nums whitespace-nowrap">{formatCurrency(totals.totalAmount)}</TableCell>
+                  <TableCell className="text-right tabular-nums">{totals.pending}</TableCell>
+                  <TableCell className="text-right tabular-nums">{totals.inProgress}</TableCell>
+                  <TableCell className="text-right tabular-nums">{totals.completed}</TableCell>
+                  <TableCell className="text-right tabular-nums">{totals.rejected}</TableCell>
+                </TableRow>
+              </TableFooter>
+            </Table>
+      </TableCard>
     </div>
   );
 }

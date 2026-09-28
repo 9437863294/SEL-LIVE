@@ -43,7 +43,6 @@ import {
 } from '@/lib/office-hub-service';
 import { useOfficeHub, useOfficeHubAction, useOfficeHubQuery } from '@/components/office-hub/hooks';
 import {
-  DecisionStatusBadge,
   OfficeHubAccessDenied,
   OfficeHubCallout,
   OfficeHubEmptyState,
@@ -52,8 +51,8 @@ import {
   PersonChip,
   PriorityBadge,
   TaskDueDate,
-  TaskStatusBadge,
 } from '@/components/office-hub/ui';
+import { StatusBadge } from '@/components/shared/status-badge';
 import { DecisionDialog } from '@/components/office-hub/decision-forms';
 import { DocumentsPanel } from '@/components/office-hub/documents-panel';
 import { QuickCreateTaskDialog } from '@/components/office-hub/task-form';
@@ -176,19 +175,10 @@ export default function DecisionDetailPage() {
       />
 
       <div className="flex flex-wrap items-center gap-2">
-        <DecisionStatusBadge status={decision.status} />
+        <StatusBadge status={decision.status} />
         <PriorityBadge priority={decision.priority} />
-        {overdue && (
-          <Badge variant="outline" className="border-rose-200 bg-rose-50 text-[11px] text-rose-700">
-            <AlertTriangle className="mr-1 h-3 w-3" />
-            Overdue
-          </Badge>
-        )}
-        {decision.departmentName && (
-          <Badge variant="outline" className="border-slate-200 bg-slate-50 text-[11px]">
-            {decision.departmentName}
-          </Badge>
-        )}
+        {overdue && <StatusBadge status="Overdue" />}
+        {decision.departmentName && <Badge variant="neutral">{decision.departmentName}</Badge>}
       </div>
 
       {decision.meetingId && (
@@ -230,7 +220,7 @@ export default function DecisionDetailPage() {
             {decision.dueDate ? formatIsoDate(decision.dueDate) : 'No due date'}
           </OfficeHubField>
           <OfficeHubField label="Status">
-            <DecisionStatusBadge status={decision.status} />
+            <StatusBadge status={decision.status} />
           </OfficeHubField>
           <OfficeHubField label="Priority">
             <PriorityBadge priority={decision.priority} />
@@ -305,7 +295,7 @@ export default function DecisionDetailPage() {
                   </div>
                   <div className="flex shrink-0 items-center gap-2">
                     <TaskDueDate task={task} today={today} />
-                    <TaskStatusBadge status={task.status} />
+                    <StatusBadge status={task.status} />
                   </div>
                 </li>
               ))}

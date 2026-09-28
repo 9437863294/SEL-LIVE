@@ -14,7 +14,7 @@
  * under `sm` and a table above it from one column definition.
  */
 
-import { CalendarClock, Phone, PhoneOff, Search, Users } from 'lucide-react';
+import { CalendarClock, Phone, PhoneOff, Users } from 'lucide-react';
 
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -39,6 +39,9 @@ import {
 import { cn } from '@/lib/utils';
 import { WORK_CONTACT_TYPES, type WorkContact, type WorkContactType } from '@/lib/work-calls-model';
 import { PageHeader } from '@/components/shared/page-header';
+import { FilterBar } from '@/components/shared/filter-bar';
+import { StatusBadge } from '@/components/shared/status-badge';
+import { TableCard } from '@/components/shared/table-card';
 
 export const TYPE_LABELS: Record<WorkContactType, string> = {
   CLIENT: 'Client',
@@ -145,35 +148,26 @@ export function DirectoryCard({
   onCall: (contact: WorkContact) => void;
 }) {
   return (
-    <Card>
-      <CardHeader className="pb-3">
-        <CardTitle className="flex items-center gap-2 text-base">
-          <Users className="h-4 w-4 text-muted-foreground" aria-hidden />
-          Work directory
-        </CardTitle>
-        <CardDescription>
-          Clients, site managers, vendors and consultants. Search by name, company, or the number
-          itself.
-        </CardDescription>
-      </CardHeader>
-      <CardContent className="space-y-3">
-        <div className="relative">
-          <Search
-            className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground"
-            aria-hidden
-          />
-          <Input
-            value={query}
-            onChange={(event) => onQueryChange(event.target.value)}
-            placeholder="Name, company, or the number"
-            className="pl-9"
-            inputMode="search"
-            aria-label="Search the work directory"
-          />
-        </div>
-
+    <TableCard
+      title="Work directory"
+      icon={Users}
+      description="Clients, site managers, vendors and consultants. Search by name, company, or the number itself."
+      toolbar={
+        <FilterBar
+          search={{
+            value: query,
+            onChange: onQueryChange,
+            placeholder: 'Name, company, or the number',
+            label: 'Search the work directory',
+          }}
+          activeCount={type !== 'ALL' ? 1 : 0}
+          onClear={() => {
+            onQueryChange('');
+            onTypeChange('ALL');
+          }}
+        >
         {/* Scrolls sideways on a phone rather than wrapping to four rows of chips. */}
-        <div className="-mx-1 flex gap-1.5 overflow-x-auto px-1 pb-1">
+        <div className="-mx-1 flex min-w-0 gap-1.5 overflow-x-auto px-1 pb-1">
           {(['ALL', ...WORK_CONTACT_TYPES] as const).map((value) => {
             const selected = type === value;
             return (
@@ -194,10 +188,13 @@ export function DirectoryCard({
             );
           })}
         </div>
-
+        </FilterBar>
+      }
+    >
         {loading ? (
           <HrLoader label="Loading the directory" />
         ) : contacts.length === 0 ? (
+          <div className="p-3">
           <HrEmptyState
             icon={Users}
             title="No contacts match"
@@ -207,10 +204,13 @@ export function DirectoryCard({
                 : 'The work directory is empty. An administrator can add clients, site managers and vendors.'
             }
           />
+          </div>
         ) : (
+          <div className="p-3 sm:p-0">
           <HrDataList
             rows={contacts}
             dense
+            frameless
             columns={[
               {
                 header: 'Name',
@@ -228,9 +228,7 @@ export function DirectoryCard({
                 header: 'Type',
                 mobile: 'detail',
                 cell: (contact) => (
-                  <Badge variant="secondary" className="font-normal">
-                    {TYPE_LABELS[contact.contactType]}
-                  </Badge>
+                  <Badge variant="neutral">{TYPE_LABELS[contact.contactType]}</Badge>
                 ),
               },
               {
@@ -246,9 +244,9 @@ export function DirectoryCard({
               },
             ]}
           />
+          </div>
         )}
-      </CardContent>
-    </Card>
+    </TableCard>
   );
 }
 
@@ -301,9 +299,9 @@ export function TodayCard({ calls }: { calls: RecentCall[] }) {
                 call.state === 'COMPLETED' ? (
                   <span className="font-medium text-emerald-600">{formatDuration(call.durationSeconds)}</span>
                 ) : (
-                  <span className="text-xs text-muted-foreground">
+                  <StatusBadge tone="neutral">
                     {call.state === 'CANCELLED' ? 'Not connected' : 'Not counted'}
-                  </span>
+                  </StatusBadge>
                 ),
             },
           ]}

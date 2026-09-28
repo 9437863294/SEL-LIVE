@@ -6,6 +6,9 @@ import { useState, useEffect } from 'react';
 import { Plus, Building2, ShieldAlert } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { PageHeader } from '@/components/shared/page-header';
+import { DataList } from '@/components/shared/data-list';
+import { StatusBadge } from '@/components/shared/status-badge';
+import { TableCard } from '@/components/shared/table-card';
 import {
   Card,
   CardContent,
@@ -13,14 +16,6 @@ import {
   CardTitle as CardTitleShad,
   CardDescription as CardDescriptionShad,
 } from '@/components/ui/card';
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from '@/components/ui/table';
 import {
   Dialog,
   DialogContent,
@@ -312,98 +307,37 @@ export default function ManageDepartmentPage() {
         }
       />
 
-      {/* ── Mobile card list (visible below md) ── */}
-      <div className="md:hidden space-y-3">
-        {departments.length === 0 && !isLoading && (
-          <p className="text-center text-sm text-muted-foreground py-8">No departments found. Add your first department.</p>
-        )}
-        {isLoading
-          ? Array.from({ length: 3 }).map((_, i) => <Skeleton key={i} className="h-28 w-full rounded-xl" />)
-          : departments.map((dept) => (
-              <Card key={dept.id} className="overflow-hidden border-border/60">
-                <div className="h-0.5 w-full bg-gradient-to-r from-sky-400 to-blue-400" />
-                <CardContent className="p-4 space-y-3">
-                  <div className="flex items-center justify-between gap-2">
-                    <span className="font-semibold text-sm">{dept.name}</span>
-                    <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
-                      dept.status === 'Active'
-                        ? 'bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-400'
-                        : 'bg-muted text-muted-foreground'
-                    }`}>
-                      {dept.status}
-                    </span>
-                  </div>
-                  {dept.head && dept.head !== 'N/A' && (
-                    <p className="text-xs text-muted-foreground">Head: {dept.head}</p>
-                  )}
-                  <div className="grid grid-cols-2 gap-2">
-                    <Button variant="outline" className="h-10 rounded-lg text-sm" onClick={() => openEditDialog(dept)} disabled={!canEdit}>Edit</Button>
-                    <Button variant="destructive" className="h-10 rounded-lg text-sm" onClick={() => handleDeleteDepartment(dept.id)} disabled={!canDelete}>Delete</Button>
-                  </div>
-                </CardContent>
-              </Card>
-            ))}
-      </div>
-
-      {/* ── Desktop table (hidden below md) ── */}
-      <div className="hidden md:block">
-      <Card className="overflow-hidden border-border/60">
-        <div className="h-0.5 w-full bg-gradient-to-r from-sky-400 to-blue-400" />
-        <CardContent className="p-0">
-          <Table>
-            <TableHeader>
-              <TableRow className="bg-muted/30 hover:bg-muted/30">
-                <TableHead className="font-semibold">Department Name</TableHead>
-                <TableHead className="font-semibold">Head of Department</TableHead>
-                <TableHead className="font-semibold">Status</TableHead>
-                <TableHead className="text-right font-semibold">Actions</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {isLoading ? (
-                Array.from({ length: 5 }).map((_, i) => (
-                  <TableRow key={i}>
-                    <TableCell><Skeleton className="h-5 w-3/4" /></TableCell>
-                    <TableCell><Skeleton className="h-5 w-1/2" /></TableCell>
-                    <TableCell><Skeleton className="h-5 w-1/4" /></TableCell>
-                    <TableCell className="text-right space-x-2">
-                       <Skeleton className="h-8 w-16 inline-block" />
-                       <Skeleton className="h-8 w-16 inline-block" />
-                    </TableCell>
-                  </TableRow>
-                ))
-              ) : departments.length > 0 ? (
-                departments.map((dept) => (
-                  <TableRow key={dept.id} className="hover:bg-muted/20 transition-colors">
-                    <TableCell className="font-medium">{dept.name}</TableCell>
-                    <TableCell className="text-muted-foreground">{dept.head}</TableCell>
-                    <TableCell>
-                      <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
-                        dept.status === 'Active'
-                          ? 'bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-400'
-                          : 'bg-muted text-muted-foreground'
-                      }`}>
-                        {dept.status}
-                      </span>
-                    </TableCell>
-                    <TableCell className="text-right space-x-2">
+      <TableCard title="Departments" icon={Building2} count={departments.length} noun="department">
+        {isLoading ? (
+          <div className="space-y-2 p-4">
+            {Array.from({ length: 5 }).map((_, i) => <Skeleton key={i} className="h-10 w-full rounded-lg" />)}
+          </div>
+        ) : (
+          <div className="p-3 sm:p-0">
+            <DataList
+              frameless
+              rows={departments}
+              empty={<p className="py-8 text-center text-sm text-muted-foreground">No departments found. Add your first department.</p>}
+              columns={[
+                { header: 'Department Name', mobile: 'title', className: 'font-medium', cell: (dept) => dept.name },
+                { header: 'Head of Department', cell: (dept) => dept.head },
+                { header: 'Status', mobile: 'aside', cell: (dept) => <StatusBadge status={dept.status} /> },
+                {
+                  header: 'Actions',
+                  align: 'right',
+                  mobile: 'footer',
+                  cell: (dept) => (
+                    <div className="flex justify-end gap-2">
                       <Button variant="outline" size="sm" onClick={() => openEditDialog(dept)} disabled={!canEdit} className="rounded-lg">Edit</Button>
                       <Button variant="destructive" size="sm" onClick={() => handleDeleteDepartment(dept.id)} disabled={!canDelete} className="rounded-lg">Delete</Button>
-                    </TableCell>
-                  </TableRow>
-                ))
-              ) : (
-                <TableRow>
-                  <TableCell colSpan={4} className="text-center h-24 text-muted-foreground">
-                    No departments found. Add your first department.
-                  </TableCell>
-                </TableRow>
-              )}
-            </TableBody>
-          </Table>
-        </CardContent>
-      </Card>
-      </div>
+                    </div>
+                  ),
+                },
+              ]}
+            />
+          </div>
+        )}
+      </TableCard>
 
       {/* Edit Department Dialog */}
       <Dialog open={isEditDialogOpen} onOpenChange={setIsEditDialogOpen}>

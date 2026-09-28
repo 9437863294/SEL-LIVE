@@ -19,12 +19,14 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { chartChrome } from "@/components/ui/chart";
 import StatCard from "@/components/project-management/stat-card";
 import { PmDataList, type PmListColumn } from "@/components/project-management/pm-shell";
+import { pmStatusTone } from "@/components/project-management/pm-status-tones";
+import { StatusBadge } from "@/components/shared/status-badge";
+import { TableCard } from "@/components/shared/table-card";
 import { cn } from "@/lib/utils";
 import {
   PO_STATUSES,
   formatCurrency,
   isPoOverdue,
-  poStatusStyles,
   toNumber,
   type POStatus,
   type PurchaseOrder,
@@ -64,7 +66,6 @@ const formatDate = (value?: string) => {
  * brings its own cards there, and a card inside a card is just a thicker border.
  */
 const LIST_CARD_CLASS = "max-sm:border-0 max-sm:bg-transparent max-sm:shadow-none";
-const LIST_CARD_HEADER_CLASS = "pb-2 max-sm:px-0";
 /** The Card frames the list on a desktop, so the list drops its own. */
 const LIST_IN_CARD_CLASS = "sm:rounded-none sm:border-0 sm:shadow-none";
 
@@ -202,7 +203,7 @@ export default function PoReports({
   // own colour because a phone card's aside does not get the column's classes.
   const varianceColumns = (kind: "savings" | "overrun"): PmListColumn<VarianceLine>[] => [
     { header: "Item", className: "max-w-[180px] truncate", mobile: "title", cell: (line) => line.description },
-    { header: "PO", className: "whitespace-nowrap text-xs text-muted-foreground", cell: (line) => line.po.poNumber },
+    { header: "PO", className: "whitespace-nowrap", cell: (line) => line.po.poNumber },
     kind === "savings"
       ? {
           header: "Savings",
@@ -229,9 +230,7 @@ export default function PoReports({
     {
       header: "Status",
       mobile: "aside",
-      cell: (po) => (
-        <span className={cn("rounded-full px-2 py-0.5 text-xs font-medium", poStatusStyles[po.status])}>{po.status}</span>
-      ),
+      cell: (po) => <StatusBadge status={po.status} tone={pmStatusTone(po.status)} />,
     },
   ];
 
@@ -355,65 +354,63 @@ export default function PoReports({
       </Card>
 
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-        <Card className={topSavings.length ? LIST_CARD_CLASS : undefined}>
-          <CardHeader className={topSavings.length ? LIST_CARD_HEADER_CLASS : "pb-2"}>
-            <CardTitle className="text-base text-emerald-700">Top savings</CardTitle>
-            <CardDescription>Line items purchased below their BOQ budget price</CardDescription>
-          </CardHeader>
-          <CardContent className="p-0">
-            {topSavings.length ? (
-              <PmDataList
-                rows={toVarianceRows(topSavings)}
-                columns={varianceColumns("savings")}
-                onRowClick={(line) => onSelectPo(line.po.id)}
-                className={LIST_IN_CARD_CLASS}
-              />
-            ) : (
-              <p className="p-4 text-sm text-muted-foreground">No savings recorded yet.</p>
-            )}
-          </CardContent>
-        </Card>
-
-        <Card className={topOverruns.length ? LIST_CARD_CLASS : undefined}>
-          <CardHeader className={topOverruns.length ? LIST_CARD_HEADER_CLASS : "pb-2"}>
-            <CardTitle className="text-base text-red-700">Top overruns</CardTitle>
-            <CardDescription>Line items purchased above their BOQ budget price</CardDescription>
-          </CardHeader>
-          <CardContent className="p-0">
-            {topOverruns.length ? (
-              <PmDataList
-                rows={toVarianceRows(topOverruns)}
-                columns={varianceColumns("overrun")}
-                onRowClick={(line) => onSelectPo(line.po.id)}
-                className={LIST_IN_CARD_CLASS}
-              />
-            ) : (
-              <p className="p-4 text-sm text-muted-foreground">No overruns recorded yet.</p>
-            )}
-          </CardContent>
-        </Card>
-      </div>
-
-      <Card className={overdueOrders.length ? LIST_CARD_CLASS : undefined}>
-        <CardHeader className={overdueOrders.length ? LIST_CARD_HEADER_CLASS : "pb-2"}>
-          <CardTitle className="text-base">Overdue purchase orders ({overdueOrders.length})</CardTitle>
-          <CardDescription>Planned end date has passed without being received</CardDescription>
-        </CardHeader>
-        <CardContent className="p-0">
-          {overdueOrders.length ? (
+        <TableCard
+          title="Top savings"
+          description="Line items purchased below their BOQ budget price"
+          scroll="natural"
+          className={topSavings.length ? LIST_CARD_CLASS : undefined}
+        >
+          {topSavings.length ? (
             <PmDataList
-              rows={overdueOrders}
-              columns={overdueColumns}
-              onRowClick={(po) => onSelectPo(po.id)}
+              rows={toVarianceRows(topSavings)}
+              columns={varianceColumns("savings")}
+              onRowClick={(line) => onSelectPo(line.po.id)}
               className={LIST_IN_CARD_CLASS}
             />
           ) : (
-            <p className="p-4 text-sm text-muted-foreground flex items-center gap-2">
-              <AlertTriangle className="h-4 w-4 text-muted-foreground" /> Nothing overdue.
-            </p>
+            <p className="p-4 text-sm text-muted-foreground">No savings recorded yet.</p>
           )}
-        </CardContent>
-      </Card>
+        </TableCard>
+
+        <TableCard
+          title="Top overruns"
+          description="Line items purchased above their BOQ budget price"
+          scroll="natural"
+          className={topOverruns.length ? LIST_CARD_CLASS : undefined}
+        >
+          {topOverruns.length ? (
+            <PmDataList
+              rows={toVarianceRows(topOverruns)}
+              columns={varianceColumns("overrun")}
+              onRowClick={(line) => onSelectPo(line.po.id)}
+              className={LIST_IN_CARD_CLASS}
+            />
+          ) : (
+            <p className="p-4 text-sm text-muted-foreground">No overruns recorded yet.</p>
+          )}
+        </TableCard>
+      </div>
+
+      <TableCard
+        title="Overdue purchase orders"
+        description="Planned end date has passed without being received"
+        count={overdueOrders.length}
+        scroll="natural"
+        className={overdueOrders.length ? LIST_CARD_CLASS : undefined}
+      >
+        {overdueOrders.length ? (
+          <PmDataList
+            rows={overdueOrders}
+            columns={overdueColumns}
+            onRowClick={(po) => onSelectPo(po.id)}
+            className={LIST_IN_CARD_CLASS}
+          />
+        ) : (
+          <p className="p-4 text-sm text-muted-foreground flex items-center gap-2">
+            <AlertTriangle className="h-4 w-4 text-muted-foreground" /> Nothing overdue.
+          </p>
+        )}
+      </TableCard>
     </div>
   );
 }

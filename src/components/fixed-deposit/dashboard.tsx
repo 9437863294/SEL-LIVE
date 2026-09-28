@@ -21,10 +21,8 @@ import {
   Link2,
   Loader2,
   RefreshCw,
-  SearchCheck,
   ShieldCheck,
   WalletCards,
-  X,
   type LucideIcon,
 } from 'lucide-react';
 import { db } from '@/lib/firebase';
@@ -60,6 +58,8 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { useToast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
 import { PageHeader } from '@/components/shared/page-header';
+import { TableCard } from '@/components/shared/table-card';
+import { FilterBar } from '@/components/shared/filter-bar';
 
 type Option = { value: string; label: string };
 type Filters = {
@@ -114,7 +114,7 @@ function MultiFilter({ label, values, options, onChange }: {
   return (
     <Popover>
       <PopoverTrigger asChild>
-        <Button variant="outline" className={cn('h-9 justify-between bg-white/90 text-xs font-normal', values.length && 'border-cyan-300 bg-cyan-50/70 text-cyan-900')}>
+        <Button variant="outline" className={cn('justify-between font-normal', values.length && 'border-cyan-300 bg-cyan-50/70 text-cyan-900')}>
           <span className="max-w-32 truncate">{values.length ? `${label} (${values.length})` : label}</span>
           <ChevronDown className="ml-2 h-3.5 w-3.5 opacity-60" />
         </Button>
@@ -402,10 +402,10 @@ export default function FixedDepositDashboard() {
   };
 
   const summaryTable = (rows: ReturnType<typeof groupedSummary>, firstHeader: string) => (
-    <div className="overflow-x-auto"><Table><TableHeader><TableRow><TableHead>{firstHeader}</TableHead><TableHead className="text-right">Count</TableHead><TableHead className="text-right">Principal</TableHead><TableHead className="text-right">Eligible</TableHead><TableHead className="text-right">BG / LC</TableHead><TableHead className="text-right">Reserved</TableHead><TableHead className="text-right">Available</TableHead></TableRow></TableHeader><TableBody>
-      {rows.map((row) => <TableRow key={row.label}><TableCell className="font-medium">{row.label}</TableCell><TableCell className="text-right">{row.count}</TableCell><TableCell className="text-right">{formatFdCurrency(row.principal)}</TableCell><TableCell className="text-right">{formatFdCurrency(row.eligible)}</TableCell><TableCell className="text-right">{formatFdCurrency(row.bg)} / {formatFdCurrency(row.lc)}</TableCell><TableCell className="text-right">{formatFdCurrency(row.reserved)}</TableCell><TableCell className="text-right font-semibold text-emerald-700">{formatFdCurrency(row.available)}</TableCell></TableRow>)}
+    <Table><TableHeader><TableRow><TableHead>{firstHeader}</TableHead><TableHead className="text-right">Count</TableHead><TableHead className="text-right">Principal</TableHead><TableHead className="text-right">Eligible</TableHead><TableHead className="text-right">BG / LC</TableHead><TableHead className="text-right">Reserved</TableHead><TableHead className="text-right">Available</TableHead></TableRow></TableHeader><TableBody>
+      {rows.map((row) => <TableRow key={row.label}><TableCell className="font-medium">{row.label}</TableCell><TableCell className="text-right tabular-nums">{row.count}</TableCell><TableCell className="whitespace-nowrap text-right tabular-nums">{formatFdCurrency(row.principal)}</TableCell><TableCell className="whitespace-nowrap text-right tabular-nums">{formatFdCurrency(row.eligible)}</TableCell><TableCell className="whitespace-nowrap text-right tabular-nums">{formatFdCurrency(row.bg)} / {formatFdCurrency(row.lc)}</TableCell><TableCell className="whitespace-nowrap text-right tabular-nums">{formatFdCurrency(row.reserved)}</TableCell><TableCell className="whitespace-nowrap text-right tabular-nums text-emerald-700">{formatFdCurrency(row.available)}</TableCell></TableRow>)}
       {!rows.length && <TableRow><TableCell colSpan={7} className="h-24 text-center text-muted-foreground">No data for the selected filters.</TableCell></TableRow>}
-    </TableBody></Table></div>
+    </TableBody></Table>
   );
 
   if (loading) return <div className="space-y-4"><Skeleton className="h-36 w-full rounded-2xl" /><div className="grid grid-cols-2 gap-3 lg:grid-cols-4">{Array.from({ length: 8 }).map((_, index) => <Skeleton key={index} className="h-28 rounded-2xl" />)}</div></div>;
@@ -425,15 +425,16 @@ export default function FixedDepositDashboard() {
         }
       />
 
-      <Card className="border-white/80 bg-white/85 shadow-sm backdrop-blur">
+      <Card>
         <CardContent className="p-3 sm:p-4">
-          <div className="flex flex-wrap items-center gap-2">
-            <div className="mr-1 flex items-center gap-1.5 text-xs font-semibold text-slate-600"><SearchCheck className="h-4 w-4 text-cyan-600" />Filters</div>
+          <FilterBar
+            activeCount={Object.values(filters).filter((values) => values.length > 0).length}
+            onClear={() => setFilters(EMPTY_FILTERS)}
+            actions={<Button variant="ghost" size="icon" onClick={() => void load()} aria-label="Refresh dashboard"><RefreshCw className="h-4 w-4" /></Button>}
+          >
             {(Object.keys(EMPTY_FILTERS) as Array<keyof Filters>).map((key) => <MultiFilter key={key} label={({ organization: 'Organization', bank: 'Bank', holder: 'FD Holder', financialYear: 'Financial Year', status: 'Status', project: 'Project', linkage: 'Instrument Linkage', purpose: 'FD Purpose' } as Record<keyof Filters, string>)[key]} values={filters[key]} options={optionSets[key]} onChange={(values) => updateFilter(key, values)} />)}
-            <div className="flex items-center gap-2 rounded-md border bg-white px-2"><span className="text-[11px] text-muted-foreground">As on</span><Input type="date" value={asOn} onChange={(event) => setAsOn(event.target.value)} className="h-8 w-32 border-0 p-0 text-xs shadow-none focus-visible:ring-0" /></div>
-            {hasFilters && <Button variant="ghost" size="sm" className="h-9 text-xs text-rose-600" onClick={() => setFilters(EMPTY_FILTERS)}><X className="mr-1 h-3.5 w-3.5" />Reset</Button>}
-            <Button variant="ghost" size="icon" className="ml-auto h-9 w-9" onClick={() => void load()} aria-label="Refresh dashboard"><RefreshCw className="h-4 w-4" /></Button>
-          </div>
+            <label className="flex h-[var(--control-h,2.5rem)] items-center gap-2 rounded-md border border-input bg-background px-3"><span className="whitespace-nowrap text-xs text-muted-foreground">As on</span><Input type="date" value={asOn} onChange={(event) => setAsOn(event.target.value)} className="h-auto border-0 p-0 shadow-none focus-visible:ring-0 focus-visible:ring-offset-0" /></label>
+          </FilterBar>
         </CardContent>
       </Card>
 
@@ -461,11 +462,11 @@ export default function FixedDepositDashboard() {
 
       <Tabs defaultValue="bank" className="space-y-3">
         <TabsList className="h-auto justify-start bg-white/80 p-1"><TabsTrigger value="bank">Bank-wise</TabsTrigger><TabsTrigger value="holder">Holder-wise</TabsTrigger><TabsTrigger value="purpose">Purpose-wise</TabsTrigger><TabsTrigger value="maturity">Maturity Month-wise</TabsTrigger><TabsTrigger value="ageing">Maturity Ageing</TabsTrigger></TabsList>
-        <TabsContent value="bank"><Card><CardHeader><CardTitle>Bank-wise FD Principal and Utilisation</CardTitle><CardDescription>Active holdings and BG/LC allocation by issuing bank.</CardDescription></CardHeader><CardContent className="p-0"><div className="overflow-x-auto"><Table><TableHeader><TableRow><TableHead>Bank</TableHead><TableHead className="text-right">FDs</TableHead><TableHead className="text-right">Principal</TableHead><TableHead className="text-right">BG Utilised</TableHead><TableHead className="text-right">LC Utilised</TableHead><TableHead className="text-right">Available</TableHead><TableHead className="text-right">Maturing ≤30d</TableHead></TableRow></TableHeader><TableBody>{bankSummary.map((row) => <TableRow key={row.bank}><TableCell className="font-medium">{row.bank}</TableCell><TableCell className="text-right">{row.count}</TableCell><TableCell className="text-right">{formatFdCurrency(row.principal)}</TableCell><TableCell className="text-right">{formatFdCurrency(row.bg)}</TableCell><TableCell className="text-right">{formatFdCurrency(row.lc)}</TableCell><TableCell className="text-right font-semibold text-emerald-700">{formatFdCurrency(row.available)}</TableCell><TableCell className="text-right">{row.maturing30}</TableCell></TableRow>)}{!bankSummary.length && <TableRow><TableCell colSpan={7} className="h-24 text-center text-muted-foreground">No active FDs found.</TableCell></TableRow>}</TableBody></Table></div></CardContent></Card></TabsContent>
-        <TabsContent value="holder"><Card><CardHeader><CardTitle>FD Holder-wise Summary</CardTitle></CardHeader><CardContent className="p-0">{summaryTable(holderSummary, 'FD Holder')}</CardContent></Card></TabsContent>
-        <TabsContent value="purpose"><Card><CardHeader><CardTitle>FD Purpose-wise Summary</CardTitle></CardHeader><CardContent className="p-0">{summaryTable(purposeSummary, 'FD Purpose')}</CardContent></Card></TabsContent>
-        <TabsContent value="maturity"><Card><CardHeader><CardTitle>FD Maturity Month-wise</CardTitle></CardHeader><CardContent className="p-0"><Table><TableHeader><TableRow><TableHead>Month</TableHead><TableHead className="text-right">FD Count</TableHead><TableHead className="text-right">Principal Amount</TableHead></TableRow></TableHeader><TableBody>{maturityMonths.map((row) => <TableRow key={row.month}><TableCell className="font-medium">{row.month}</TableCell><TableCell className="text-right">{row.count}</TableCell><TableCell className="text-right">{formatFdCurrency(row.amount)}</TableCell></TableRow>)}{!maturityMonths.length && <TableRow><TableCell colSpan={3} className="h-24 text-center text-muted-foreground">No upcoming maturities.</TableCell></TableRow>}</TableBody></Table></CardContent></Card></TabsContent>
-        <TabsContent value="ageing"><Card><CardHeader><CardTitle>FD Maturity Ageing</CardTitle></CardHeader><CardContent className="p-0"><Table><TableHeader><TableRow><TableHead>Ageing Bucket</TableHead><TableHead className="text-right">FD Count</TableHead><TableHead className="text-right">Principal Amount</TableHead></TableRow></TableHeader><TableBody>{ageing.map((row) => <TableRow key={row.label}><TableCell className="font-medium">{row.label}</TableCell><TableCell className="text-right">{row.count}</TableCell><TableCell className="text-right">{formatFdCurrency(row.amount)}</TableCell></TableRow>)}</TableBody></Table></CardContent></Card></TabsContent>
+        <TabsContent value="bank"><TableCard title="Bank-wise FD Principal and Utilisation" description="Active holdings and BG/LC allocation by issuing bank."><Table><TableHeader><TableRow><TableHead>Bank</TableHead><TableHead className="text-right">FDs</TableHead><TableHead className="text-right">Principal</TableHead><TableHead className="text-right">BG Utilised</TableHead><TableHead className="text-right">LC Utilised</TableHead><TableHead className="text-right">Available</TableHead><TableHead className="text-right">Maturing ≤30d</TableHead></TableRow></TableHeader><TableBody>{bankSummary.map((row) => <TableRow key={row.bank}><TableCell className="font-medium">{row.bank}</TableCell><TableCell className="text-right tabular-nums">{row.count}</TableCell><TableCell className="whitespace-nowrap text-right tabular-nums">{formatFdCurrency(row.principal)}</TableCell><TableCell className="whitespace-nowrap text-right tabular-nums">{formatFdCurrency(row.bg)}</TableCell><TableCell className="whitespace-nowrap text-right tabular-nums">{formatFdCurrency(row.lc)}</TableCell><TableCell className="whitespace-nowrap text-right tabular-nums text-emerald-700">{formatFdCurrency(row.available)}</TableCell><TableCell className="text-right tabular-nums">{row.maturing30}</TableCell></TableRow>)}{!bankSummary.length && <TableRow><TableCell colSpan={7} className="h-24 text-center text-muted-foreground">No active FDs found.</TableCell></TableRow>}</TableBody></Table></TableCard></TabsContent>
+        <TabsContent value="holder"><TableCard title="FD Holder-wise Summary">{summaryTable(holderSummary, 'FD Holder')}</TableCard></TabsContent>
+        <TabsContent value="purpose"><TableCard title="FD Purpose-wise Summary">{summaryTable(purposeSummary, 'FD Purpose')}</TableCard></TabsContent>
+        <TabsContent value="maturity"><TableCard title="FD Maturity Month-wise"><Table><TableHeader><TableRow><TableHead>Month</TableHead><TableHead className="text-right">FD Count</TableHead><TableHead className="text-right">Principal Amount</TableHead></TableRow></TableHeader><TableBody>{maturityMonths.map((row) => <TableRow key={row.month}><TableCell className="font-medium">{row.month}</TableCell><TableCell className="text-right tabular-nums">{row.count}</TableCell><TableCell className="whitespace-nowrap text-right tabular-nums">{formatFdCurrency(row.amount)}</TableCell></TableRow>)}{!maturityMonths.length && <TableRow><TableCell colSpan={3} className="h-24 text-center text-muted-foreground">No upcoming maturities.</TableCell></TableRow>}</TableBody></Table></TableCard></TabsContent>
+        <TabsContent value="ageing"><TableCard title="FD Maturity Ageing" scroll="natural"><Table><TableHeader><TableRow><TableHead>Ageing Bucket</TableHead><TableHead className="text-right">FD Count</TableHead><TableHead className="text-right">Principal Amount</TableHead></TableRow></TableHeader><TableBody>{ageing.map((row) => <TableRow key={row.label}><TableCell className="font-medium">{row.label}</TableCell><TableCell className="text-right tabular-nums">{row.count}</TableCell><TableCell className="whitespace-nowrap text-right tabular-nums">{formatFdCurrency(row.amount)}</TableCell></TableRow>)}</TableBody></Table></TableCard></TabsContent>
       </Tabs>
 
       <Card><CardHeader><CardTitle>Dashboard Actions</CardTitle><CardDescription>Work with the current FD portfolio.</CardDescription></CardHeader><CardContent className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">

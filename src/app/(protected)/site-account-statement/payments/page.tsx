@@ -25,8 +25,11 @@ import { useAuthorization } from '@/hooks/useAuthorization';
 import { useActivityLogger } from '@/hooks/useActivityLogger';
 import { useToast } from '@/hooks/use-toast';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent } from '@/components/ui/card';
+import { Table, TableBody, TableCell, TableFooter, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { PageHeader } from '@/components/shared/page-header';
+import { TableCard } from '@/components/shared/table-card';
+import { FilterBar } from '@/components/shared/filter-bar';
+import { StatusBadge } from '@/components/shared/status-badge';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -45,7 +48,7 @@ import {
 } from '@/components/ui/alert-dialog';
 import {
   Camera, Calendar, ChevronDown, ChevronLeft, ChevronRight,
-  Download, ExternalLink, File, FileText, Filter, Image, Loader2,
+  Download, ExternalLink, File, FileText, Image, Loader2,
   Paperclip, Pencil, Plus, Receipt, TrendingDown, TrendingUp, Trash2, Upload, Wallet, X,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
@@ -168,7 +171,6 @@ export default function PaymentsPage() {
   const [filterFrom,    setFilterFrom]    = useState(() => getMonthRange().start);
   const [filterTo,      setFilterTo]      = useState(() => getMonthRange().end);
   const [search,        setSearch]        = useState('');
-  const [showFilters,   setShowFilters]   = useState(false);
 
   useEffect(() => {
     if (!isAuthLoading) void loadProjects();
@@ -844,42 +846,6 @@ export default function PaymentsPage() {
         </Button>
       </div>
 
-      {/* Mobile filter toggle */}
-      {(() => {
-        const activeCount = [filterProject, search].filter(Boolean).length;
-        return (
-          <div className="flex items-center gap-2 sm:hidden">
-            <Button variant="outline" size="sm" className="h-9 gap-2 flex-1 justify-center"
-              onClick={() => setShowFilters(s => !s)}>
-              <Filter className="h-3.5 w-3.5" />
-              {showFilters ? 'Hide Filters' : 'Filters'}
-              {activeCount > 0 && (
-                <span className="flex h-4 w-4 items-center justify-center rounded-full bg-emerald-600 text-[9px] font-bold text-white">
-                  {activeCount}
-                </span>
-              )}
-            </Button>
-          </div>
-        );
-      })()}
-
-      {/* Filters (collapsible on mobile, always visible on sm+) */}
-      <div className={cn('grid grid-cols-2 gap-2 sm:grid-cols-4', !showFilters && 'hidden sm:grid')}>
-        <Select value={filterProject || '_all_'} onValueChange={v => setFilterProject(v === '_all_' ? '' : v)}>
-          <SelectTrigger className="h-9 text-sm">
-            <SelectValue placeholder="All Projects" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="_all_">All Projects</SelectItem>
-            {visibleProjects.map(p => <SelectItem key={p.id} value={p.id}>{p.projectName}</SelectItem>)}
-          </SelectContent>
-        </Select>
-        <Input type="date" value={filterFrom} onChange={e => setFilterFrom(e.target.value)} className="h-9 text-sm" />
-        <Input type="date" value={filterTo}   onChange={e => setFilterTo(e.target.value)}   className="h-9 text-sm" />
-        <Input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search..." className="h-9 text-sm" />
-        <SortControl control={sortControl} />
-      </div>
-
       {/* Opening / Closing balance strip — scoped to the selected period only */}
       {openingBalance !== null && (
         <div className="space-y-1.5">
@@ -939,8 +905,45 @@ export default function PaymentsPage() {
       </div>
 
       {/* Table */}
-      <Card className="bg-white/80 backdrop-blur-sm">
-        <CardContent className="p-0">
+      <TableCard
+        title="Payments"
+        description={monthLabel}
+        count={filtered.length}
+        noun="payment"
+        toolbar={
+          <FilterBar
+            search={{ value: search, onChange: setSearch, placeholder: 'Search...' }}
+            activeCount={filterProject ? 1 : 0}
+            onClear={() => { setFilterProject(''); setSearch(''); }}
+          >
+            <Select value={filterProject || '_all_'} onValueChange={v => setFilterProject(v === '_all_' ? '' : v)}>
+              <SelectTrigger aria-label="Project">
+                <SelectValue placeholder="All Projects" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="_all_">All Projects</SelectItem>
+                {visibleProjects.map(p => <SelectItem key={p.id} value={p.id}>{p.projectName}</SelectItem>)}
+              </SelectContent>
+            </Select>
+            <Input type="date" value={filterFrom} onChange={e => setFilterFrom(e.target.value)} aria-label="From date" />
+            <Input type="date" value={filterTo}   onChange={e => setFilterTo(e.target.value)}   aria-label="To date" />
+            <SortControl control={sortControl} />
+          </FilterBar>
+        }
+        footer={pageCursor && !needsFullScope ? (
+          // Cursor pagination — one page of rows at a time; the totals above are server-side.
+          // Hidden while searching, since the search has already loaded the whole period.
+          <div className="flex items-center justify-center gap-3">
+            <span>
+              Showing {payments.length} of {periodReceiptCount} records
+            </span>
+            <Button variant="outline" size="sm" onClick={loadMore} disabled={loadingMore} className="gap-2">
+              {loadingMore ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <ChevronDown className="h-3.5 w-3.5" />}
+              Load {Math.min(SAS_PAGE_SIZE, periodReceiptCount - payments.length)} more
+            </Button>
+          </div>
+        ) : undefined}
+      >
           {filtered.length === 0 ? (
             <div className="flex flex-col items-center gap-3 py-12 text-center">
               <TrendingUp className="h-10 w-10 text-muted-foreground/40" />
@@ -949,34 +952,33 @@ export default function PaymentsPage() {
               </p>
             </div>
           ) : (
-            <div className="overflow-x-auto overflow-y-auto max-h-[60vh]">
-              <table className="w-full min-w-[700px] text-sm">
-                <thead className="sticky top-0 z-10">
-                  <tr className="border-b bg-slate-100">
-                    <th className="px-4 py-2.5 text-left font-medium">Project</th>
-                    <th className="px-4 py-2.5 text-left font-medium">Date</th>
-                    <th className="px-4 py-2.5 text-right font-medium">Amount</th>
-                    <th className="px-4 py-2.5 text-left font-medium">Mode</th>
-                    <th className="px-4 py-2.5 text-left font-medium">Reference No.</th>
-                    <th className="px-4 py-2.5 text-left font-medium">Received By</th>
-                    <th className="px-4 py-2.5 text-center font-medium">
-                      <Paperclip className="h-3.5 w-3.5 inline" />
-                    </th>
-                    <th className="px-4 py-2.5 text-left font-medium">Remarks</th>
-                    <th className="px-4 py-2.5 text-left font-medium whitespace-nowrap">Recorded At</th>
-                    {(effectiveCanEdit || canDelete) && <th className="px-4 py-2.5 text-right font-medium">Actions</th>}
-                  </tr>
-                </thead>
-                <tbody>
+              <Table className="min-w-[700px]">
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Project</TableHead>
+                    <TableHead>Date</TableHead>
+                    <TableHead className="text-right">Amount</TableHead>
+                    <TableHead>Mode</TableHead>
+                    <TableHead>Reference No.</TableHead>
+                    <TableHead>Received By</TableHead>
+                    <TableHead className="text-center">
+                      <Paperclip className="h-3.5 w-3.5 inline" aria-label="Attachments" />
+                    </TableHead>
+                    <TableHead>Remarks</TableHead>
+                    <TableHead>Recorded At</TableHead>
+                    {(effectiveCanEdit || canDelete) && <TableHead className="text-right">Actions</TableHead>}
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
                   {filtered.map(row => (
-                    <tr key={row.id} className="border-b hover:bg-muted/20 transition-colors cursor-pointer" onClick={() => setViewPayment(row)}>
-                      <td className="px-4 py-2.5 font-medium max-w-[160px] truncate">{row.projectName}</td>
-                      <td className="px-4 py-2.5 whitespace-nowrap">{row.receiptDate}</td>
-                      <td className="px-4 py-2.5 text-right font-semibold text-blue-700">{formatINR(row.receivedAmount)}</td>
-                      <td className="px-4 py-2.5"><Badge variant="secondary">{row.paymentMode}</Badge></td>
-                      <td className="px-4 py-2.5 text-muted-foreground">{row.referenceNo || '—'}</td>
-                      <td className="px-4 py-2.5">{row.receivedBy || '—'}</td>
-                      <td className="px-4 py-2.5 text-center">
+                    <TableRow key={row.id} className="cursor-pointer" onClick={() => setViewPayment(row)}>
+                      <TableCell className="font-medium max-w-[160px] truncate">{row.projectName}</TableCell>
+                      <TableCell className="whitespace-nowrap tabular-nums">{row.receiptDate}</TableCell>
+                      <TableCell className="text-right whitespace-nowrap tabular-nums font-medium text-blue-700">{formatINR(row.receivedAmount)}</TableCell>
+                      <TableCell><Badge variant="neutral">{row.paymentMode}</Badge></TableCell>
+                      <TableCell>{row.referenceNo || '—'}</TableCell>
+                      <TableCell>{row.receivedBy || '—'}</TableCell>
+                      <TableCell className="text-center">
                         {row.attachments && row.attachments.length > 0 ? (
                           <button
                             onClick={e => { e.stopPropagation(); setViewPayment(row); }}
@@ -988,11 +990,11 @@ export default function PaymentsPage() {
                         ) : (
                           <Paperclip className="h-3.5 w-3.5 text-muted-foreground/25 mx-auto" />
                         )}
-                      </td>
-                      <td className="px-4 py-2.5 text-muted-foreground max-w-[150px] truncate">{row.remarks || '—'}</td>
-                      <td className="px-4 py-2.5 text-xs text-muted-foreground whitespace-nowrap">{formatTimestamp(row.createdAt)}</td>
+                      </TableCell>
+                      <TableCell className="max-w-[150px] truncate">{row.remarks || '—'}</TableCell>
+                      <TableCell className="whitespace-nowrap tabular-nums">{formatTimestamp(row.createdAt)}</TableCell>
                       {(effectiveCanEdit || canDelete) && (
-                        <td className="px-4 py-2.5 text-right">
+                        <TableCell className="text-right">
                           <div className="flex justify-end gap-1" onClick={e => e.stopPropagation()}>
                             {effectiveCanEdit && (
                               <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => openEdit(row)}>
@@ -1021,48 +1023,32 @@ export default function PaymentsPage() {
                               </AlertDialog>
                             )}
                           </div>
-                        </td>
+                        </TableCell>
                       )}
-                    </tr>
+                    </TableRow>
                   ))}
-                </tbody>
-                <tfoot>
-                  <tr className="bg-muted/30 font-semibold">
-                    <td colSpan={2} className="px-4 py-2.5">
+                </TableBody>
+                <TableFooter>
+                  <TableRow>
+                    <TableCell colSpan={2}>
                       {refining ? `Filtered total (${filtered.length} of ${periodTotals?.count ?? filtered.length})`
                         : pageCursor ? 'Total (loaded so far)'
                         : 'Total'}
-                    </td>
-                    <td className="px-4 py-2.5 text-right text-blue-700">{formatINR(totalShown)}</td>
-                    <td colSpan={(effectiveCanEdit || canDelete) ? 7 : 6} />
-                  </tr>
+                    </TableCell>
+                    <TableCell className="text-right whitespace-nowrap tabular-nums text-blue-700">{formatINR(totalShown)}</TableCell>
+                    <TableCell colSpan={(effectiveCanEdit || canDelete) ? 7 : 6} />
+                  </TableRow>
                   {!needsFullScope && pageCursor && (
-                    <tr className="bg-muted/50 font-semibold">
-                      <td colSpan={2} className="px-4 py-2.5">Period total (all {periodReceiptCount})</td>
-                      <td className="px-4 py-2.5 text-right text-blue-800">{formatINR(periodReceiptTotal)}</td>
-                      <td colSpan={(effectiveCanEdit || canDelete) ? 7 : 6} />
-                    </tr>
+                    <TableRow>
+                      <TableCell colSpan={2}>Period total (all {periodReceiptCount})</TableCell>
+                      <TableCell className="text-right whitespace-nowrap tabular-nums text-blue-800">{formatINR(periodReceiptTotal)}</TableCell>
+                      <TableCell colSpan={(effectiveCanEdit || canDelete) ? 7 : 6} />
+                    </TableRow>
                   )}
-                </tfoot>
-              </table>
-            </div>
+                </TableFooter>
+              </Table>
           )}
-
-          {/* Cursor pagination — one page of rows at a time; the totals above are server-side.
-              Hidden while searching, since the search has already loaded the whole period. */}
-          {pageCursor && !needsFullScope && (
-            <div className="flex items-center justify-center gap-3 border-t px-4 py-3">
-              <span className="text-xs text-muted-foreground">
-                Showing {payments.length} of {periodReceiptCount} records
-              </span>
-              <Button variant="outline" size="sm" onClick={loadMore} disabled={loadingMore} className="gap-2">
-                {loadingMore ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <ChevronDown className="h-3.5 w-3.5" />}
-                Load {Math.min(SAS_PAGE_SIZE, periodReceiptCount - payments.length)} more
-              </Button>
-            </div>
-          )}
-        </CardContent>
-      </Card>
+      </TableCard>
 
       {/* Import Dialog */}
       <VehicleImportDialog
@@ -1089,7 +1075,7 @@ export default function PaymentsPage() {
               <div className="rounded-xl border bg-emerald-50 px-4 py-3 text-center">
                 <p className="text-xs font-medium uppercase tracking-wide text-emerald-500">Amount Received</p>
                 <p className="text-2xl font-bold text-emerald-700">{formatINR(viewPayment.receivedAmount)}</p>
-                <div className="text-xs text-muted-foreground mt-0.5">{viewPayment.receiptDate} &bull; <Badge variant="secondary" className="text-xs">{viewPayment.paymentMode}</Badge></div>
+                <div className="text-xs text-muted-foreground mt-0.5">{viewPayment.receiptDate} &bull; <Badge variant="neutral">{viewPayment.paymentMode}</Badge></div>
               </div>
 
               {/* Fields grid */}
@@ -1281,7 +1267,7 @@ export default function PaymentsPage() {
                   <AttachmentIcon type={file.type} />
                   <span className="flex-1 text-sm truncate">{file.name}</span>
                   <span className="text-xs text-muted-foreground shrink-0">{formatSize(file.size)}</span>
-                  <Badge variant="outline" className="text-xs text-blue-600 border-blue-300 shrink-0">Pending</Badge>
+                  <StatusBadge status="Pending" tone="info" className="shrink-0" />
                   <Button
                     type="button"
                     variant="ghost"

@@ -20,18 +20,19 @@ import {
   List,
   Loader2,
   RefreshCw,
-  Search,
   Upload,
-  X,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { PageHeader, SectionHeader } from '@/components/shared/page-header';
+import { TableCard } from '@/components/shared/table-card';
+import { SearchInput } from '@/components/shared/filter-bar';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import {
+  Table,
   TableBody,
   TableCell,
   TableHead,
@@ -67,7 +68,6 @@ import {
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useToast } from '@/hooks/use-toast';
 import { Skeleton } from '@/components/ui/skeleton';
-import { Badge } from '@/components/ui/badge';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import {
   Command,
@@ -1057,11 +1057,6 @@ export default function GenericCrudPage({
       <RegisterHeader
         title={title}
         description={description}
-        badge={
-          <Badge variant="outline" className="w-fit bg-white/70">
-            {filteredRows.length === rows.length ? `${rows.length} records` : `${filteredRows.length} of ${rows.length}`}
-          </Badge>
-        }
         className="mb-0 sm:mb-0"
         actions={
           <>
@@ -1102,30 +1097,18 @@ export default function GenericCrudPage({
           </>
         }
       />
-      <Card className="vm-panel-strong overflow-hidden">
-        <CardContent className="space-y-3 px-3 pb-4 pt-4 sm:px-6 sm:pb-6 sm:pt-6">
-          {loadError && (
-            <div className="flex flex-col gap-2 rounded-xl border border-rose-200 bg-rose-50 px-3 py-2.5 text-sm text-rose-700 sm:flex-row sm:items-center sm:justify-between">
-              <span className="flex items-center gap-2"><AlertTriangle className="h-4 w-4 shrink-0" />{loadError}</span>
-              <Button type="button" size="sm" variant="outline" onClick={loadRows} className="border-rose-200 bg-white text-rose-700">Try Again</Button>
-            </div>
-          )}
-          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-            <div className="relative w-full sm:max-w-sm">
-              <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-              <Input
-                aria-label={`Search ${itemName.toLowerCase()} records`}
-                placeholder={`Search all ${itemName.toLowerCase()} fields...`}
-                value={query}
-                onChange={(e) => setQuery(e.target.value)}
-                className="h-11 w-full border-slate-200 bg-white pl-9 pr-9 focus-visible:ring-emerald-400/40 sm:h-10"
-              />
-              {query && (
-                <button type="button" onClick={() => setQuery('')} aria-label="Clear search" className="absolute right-2 top-1/2 rounded-md p-1 text-muted-foreground hover:bg-slate-100 hover:text-slate-800 -translate-y-1/2">
-                  <X className="h-4 w-4" />
-                </button>
-              )}
-            </div>
+      {loadError && (
+        <div className="flex flex-col gap-2 rounded-xl border border-rose-200 bg-rose-50 px-3 py-2.5 text-sm text-rose-700 sm:flex-row sm:items-center sm:justify-between">
+          <span className="flex items-center gap-2"><AlertTriangle className="h-4 w-4 shrink-0" />{loadError}</span>
+          <Button type="button" size="sm" variant="outline" onClick={loadRows} className="border-rose-200 bg-white text-rose-700">Try Again</Button>
+        </div>
+      )}
+      <TableCard
+        title={`${itemName} Register`}
+        count={filteredRows.length}
+        total={rows.length}
+        noun="record"
+        actions={
             <div className="grid w-full grid-cols-2 items-center gap-1 rounded-lg border border-white/70 bg-white/50 p-1 shadow-sm sm:w-fit">
               <button
                 type="button"
@@ -1150,14 +1133,42 @@ export default function GenericCrudPage({
                 History <span className="text-[10px] opacity-70">{historyCount}</span>
               </button>
             </div>
-          </div>
-          <div className="space-y-2.5 sm:hidden">
+        }
+        toolbar={
+          <SearchInput
+            value={query}
+            onChange={setQuery}
+            placeholder={`Search all ${itemName.toLowerCase()} fields...`}
+            label={`Search ${itemName.toLowerCase()} records`}
+            className="sm:max-w-sm"
+          />
+        }
+        footer={
+          !isLoading && filteredRows.length > 0 ? (
+            <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+              <p>
+                Showing {(currentPage - 1) * DEFAULT_PAGE_SIZE + 1}–{Math.min(currentPage * DEFAULT_PAGE_SIZE, filteredRows.length)} of {filteredRows.length}
+              </p>
+              <div className="flex items-center justify-between gap-2 sm:justify-end">
+                <Button type="button" variant="outline" size="sm" onClick={() => setCurrentPage((page) => Math.max(1, page - 1))} disabled={currentPage === 1} className="h-8 bg-white">
+                  <ChevronLeft className="mr-1 h-4 w-4" />Previous
+                </Button>
+                <span className="min-w-16 text-center text-xs font-semibold text-slate-600">{currentPage} / {totalPages}</span>
+                <Button type="button" variant="outline" size="sm" onClick={() => setCurrentPage((page) => Math.min(totalPages, page + 1))} disabled={currentPage === totalPages} className="h-8 bg-white">
+                  Next<ChevronRight className="ml-1 h-4 w-4" />
+                </Button>
+              </div>
+            </div>
+          ) : undefined
+        }
+      >
+        {!isLoading && filteredRows.length === 0 ? (
+          <div className="px-4 py-10 text-center text-sm text-muted-foreground">{emptyMessage}</div>
+        ) : (
+          <>
+          <div className="space-y-2.5 p-3 sm:hidden">
             {isLoading ? (
               Array.from({ length: 3 }).map((_, idx) => <Skeleton key={idx} className="h-32 w-full rounded-xl" />)
-            ) : filteredRows.length === 0 ? (
-              <div className="rounded-xl border border-white/70 bg-white/85 px-3 py-8 text-center text-sm text-muted-foreground">
-                {emptyMessage}
-              </div>
             ) : (
               paginatedRows.map((row) => {
                 const rowId = String(row.id);
@@ -1207,14 +1218,8 @@ export default function GenericCrudPage({
             )}
           </div>
           <div className="hidden sm:block">
-            {!isLoading && filteredRows.length === 0 ? (
-              <div className="rounded-lg border border-white/70 bg-white/80 px-4 py-10 text-center text-muted-foreground">
-                {emptyMessage}
-              </div>
-            ) : (
-              <div className="overflow-auto rounded-lg border border-white/70 bg-white/80 h-[calc(100vh-230px)]">
-                <table className="w-full caption-bottom text-sm">
-                  <TableHeader className="sticky top-0 z-10 bg-slate-50 shadow-sm">
+                <Table containerClassName="overflow-visible">
+                  <TableHeader>
                     <TableRow>
                       {columns.map((column) => (
                         <TableHead key={column.key}>{column.label}</TableHead>
@@ -1234,7 +1239,7 @@ export default function GenericCrudPage({
                       ))
                     ) : (
                       paginatedRows.map((row) => (
-                        <TableRow key={row.id as string} className="transition-colors hover:bg-emerald-50/70">
+                        <TableRow key={row.id as string}>
                           {columns.map((column) => (
                             <TableCell key={column.key}>
                               {column.formatter
@@ -1265,28 +1270,11 @@ export default function GenericCrudPage({
                       ))
                     )}
                   </TableBody>
-                </table>
-              </div>
-            )}
+                </Table>
           </div>
-          {!isLoading && filteredRows.length > 0 && (
-            <div className="flex flex-col gap-2 rounded-lg border border-white/70 bg-white/60 px-3 py-2 sm:flex-row sm:items-center sm:justify-between">
-              <p className="text-xs text-muted-foreground">
-                Showing {(currentPage - 1) * DEFAULT_PAGE_SIZE + 1}–{Math.min(currentPage * DEFAULT_PAGE_SIZE, filteredRows.length)} of {filteredRows.length}
-              </p>
-              <div className="flex items-center justify-between gap-2 sm:justify-end">
-                <Button type="button" variant="outline" size="sm" onClick={() => setCurrentPage((page) => Math.max(1, page - 1))} disabled={currentPage === 1} className="h-8 bg-white">
-                  <ChevronLeft className="mr-1 h-4 w-4" />Previous
-                </Button>
-                <span className="min-w-16 text-center text-xs font-semibold text-slate-600">{currentPage} / {totalPages}</span>
-                <Button type="button" variant="outline" size="sm" onClick={() => setCurrentPage((page) => Math.min(totalPages, page + 1))} disabled={currentPage === totalPages} className="h-8 bg-white">
-                  Next<ChevronRight className="ml-1 h-4 w-4" />
-                </Button>
-              </div>
-            </div>
-          )}
-        </CardContent>
-      </Card>
+          </>
+        )}
+      </TableCard>
 
       <Dialog
         open={dialogOpen}

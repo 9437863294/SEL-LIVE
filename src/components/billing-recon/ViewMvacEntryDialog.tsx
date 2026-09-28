@@ -348,7 +348,7 @@ export default function ViewMvacEntryDialog({
             <TableCell className="text-right whitespace-nowrap align-top">
               {certQty || '-'}
             </TableCell>
-            <TableCell className="text-right whitespace-nowrap align-top font-semibold">
+            <TableCell className="text-right whitespace-nowrap align-top">
               {upToDateCertifiedQty || 0}
             </TableCell>
             <TableCell className="text-right whitespace-nowrap align-top">
@@ -481,39 +481,39 @@ export default function ViewMvacEntryDialog({
                   <col style={{ width: COLS.certAmt }} />
                 </colgroup>
 
-                <TableHeader className="sticky top-0 z-20 bg-background shadow-sm">
+                <TableHeader>
                   <TableRow>
-                    <TableHead className="text-center text-[11px] px-2">
+                    <TableHead className="text-center whitespace-normal">
                       BOQ Sl. No.
                     </TableHead>
-                    <TableHead className="text-center text-[11px] px-2">
+                    <TableHead className="text-center whitespace-normal">
                       Description
                     </TableHead>
-                    <TableHead className="text-center text-[11px] px-2">
+                    <TableHead className="text-center whitespace-normal">
                       Unit
                     </TableHead>
-                    <TableHead className="text-center text-[11px] px-2">
+                    <TableHead className="text-center whitespace-normal">
                       BOQ Qty
                     </TableHead>
-                    <TableHead className="text-center text-[11px] px-2">
+                    <TableHead className="text-center whitespace-normal">
                       Rate
                     </TableHead>
-                    <TableHead className="text-center text-[11px] px-2">
+                    <TableHead className="text-center whitespace-normal">
                       Prev. Certified
                     </TableHead>
-                    <TableHead className="text-center text-[11px] px-2">
+                    <TableHead className="text-center whitespace-normal">
                       Executed in this MVAC
                     </TableHead>
-                    <TableHead className="text-center text-[11px] px-2">
+                    <TableHead className="text-center whitespace-normal">
                       Certified in this MVAC
                     </TableHead>
-                    <TableHead className="text-center text-[11px] px-2">
+                    <TableHead className="text-center whitespace-normal">
                       Up to Date Certified Qty
                     </TableHead>
-                    <TableHead className="text-center text-[11px] px-2">
+                    <TableHead className="text-center whitespace-normal">
                       Amount Executed
                     </TableHead>
-                    <TableHead className="text-center text-[11px] px-2">
+                    <TableHead className="text-center whitespace-normal">
                       Amount Certified
                     </TableHead>
                   </TableRow>

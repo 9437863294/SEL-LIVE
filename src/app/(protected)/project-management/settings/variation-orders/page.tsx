@@ -32,7 +32,6 @@ import {
   VARIATION_PERMISSION_RESOURCE,
   type BoqVariation,
 } from "@/lib/project-management-variations";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -70,6 +69,8 @@ import {
   type PmListColumn,
 } from "@/components/project-management/pm-shell";
 import { PageHeader } from "@/components/shared/page-header";
+import { StatusBadge } from "@/components/shared/status-badge";
+import { pmStatusTone } from "@/components/project-management/pm-status-tones";
 import { cn } from "@/lib/utils";
 
 const PROJECTS_COLLECTION = "projectManagementProjects";
@@ -85,12 +86,6 @@ type ProjectMapping = {
 const formatDate = (value?: { toDate?: () => Date }) => {
   if (!value?.toDate) return "—";
   return value.toDate().toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" });
-};
-
-const statusStyles: Record<string, string> = {
-  Pending: "bg-amber-100 text-amber-700",
-  Approved: "bg-emerald-100 text-emerald-700",
-  Rejected: "bg-red-100 text-red-700",
 };
 
 export default function VariationOrdersPage() {
@@ -384,11 +379,7 @@ export default function VariationOrdersPage() {
     {
       header: "Status",
       mobile: "aside",
-      cell: (variation) => (
-        <Badge variant="outline" className={statusStyles[variation.status]}>
-          {variation.status}
-        </Badge>
-      ),
+      cell: (variation) => <StatusBadge status={variation.status} tone={pmStatusTone(variation.status)} />,
     },
     {
       header: "Actions",

@@ -44,7 +44,6 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
 import { useAuthorization } from "@/hooks/useAuthorization";
 import { getAssigneeForStep, calculateDeadline } from "@/lib/workflow-utils";
@@ -55,7 +54,6 @@ import {
   INDENT_STATUSES,
   INDENT_WORKFLOW_DOC_ID,
   indentReservesQuantity,
-  indentStatusStyles,
   isLegacyIndent,
   type IndentStatus,
   type IndentWorkflowFields,
@@ -80,6 +78,8 @@ import {
 } from "@/components/project-management/pm-shell";
 import type { WorkflowStep } from "@/lib/types";
 import { PageHeader } from "@/components/shared/page-header";
+import { StatusBadge } from "@/components/shared/status-badge";
+import { pmStatusTone } from "@/components/project-management/pm-status-tones";
 
 type ProjectMapping = {
   id: string;
@@ -581,9 +581,7 @@ export default function ProjectIndentRegisterPage() {
       mobile: "aside",
       cell: (indent) => (
         <div className="max-sm:text-right">
-          <Badge variant="outline" className={indentStatusStyles[indent.status] ?? ""}>
-            {indent.status}
-          </Badge>
+          <StatusBadge status={indent.status} tone={pmStatusTone(indent.status)} />
           <div className="mt-1 space-y-0.5">
             {indent.status === "Submitted" && indent.currentStepName && (
               <p className="text-xs text-muted-foreground">at {indent.currentStepName}</p>

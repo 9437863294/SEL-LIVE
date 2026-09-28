@@ -41,26 +41,25 @@ import {
 } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { FilterBar } from '@/components/shared/filter-bar';
+import { StatusBadge } from '@/components/shared/status-badge';
+import { TableCard } from '@/components/shared/table-card';
 import {
   HrAccessDenied,
   HrAlertNotice,
   HrDataList,
   HrEmptyState,
-  HrFilterCard,
   HrLoader,
   type HrListColumn,
 } from '@/components/hr/hr-ui';
-import { SwipeDays, statusTone } from '@/components/employee/swipe-days';
+import { SwipeDays, swipeDayTone } from '@/components/employee/swipe-days';
 import {
   EmployeeErrorBanner,
   EmployeeKpiCard,
   EmployeeListFooter,
   EmployeePageShell,
-  EmployeeStatusPill,
   EmployeeSubNav,
-  EMP_REGISTER_HEIGHT,
 } from '@/components/employee/employee-ui';
 import { useAuthorization } from '@/hooks/useAuthorization';
 import { useToast } from '@/hooks/use-toast';
@@ -411,11 +410,11 @@ export default function SwipeRegisterPage() {
         const flags = row.month.totals.lateIn + row.month.totals.earlyOut;
         if (!flags) return <span className="text-xs text-muted-foreground">—</span>;
         return (
-          <Badge variant="outline" className="border-amber-200 bg-amber-50 text-[10px] text-amber-800">
+          <StatusBadge tone="warning">
             {row.month.totals.lateIn > 0 && `${row.month.totals.lateIn} late`}
             {row.month.totals.lateIn > 0 && row.month.totals.earlyOut > 0 && ' · '}
             {row.month.totals.earlyOut > 0 && `${row.month.totals.earlyOut} early`}
-          </Badge>
+          </StatusBadge>
         );
       },
     },
@@ -440,13 +439,9 @@ export default function SwipeRegisterPage() {
       header: 'Status',
       mobile: 'aside',
       cell: (row) => (
-        <Badge
-          variant="outline"
-          className={cn('text-[10px] font-medium', statusTone(row.day.status))}
-          title={swipeStatusLabel(row.day.status)}
-        >
+        <StatusBadge status={row.day.status} tone={swipeDayTone(row.day.status)} title={swipeStatusLabel(row.day.status)}>
           {row.day.status || '—'}
-        </Badge>
+        </StatusBadge>
       ),
     },
     {
@@ -488,20 +483,12 @@ export default function SwipeRegisterPage() {
       cell: (row) => (
         <span className="flex flex-wrap gap-1">
           {row.day.exceptions.map((exception) => (
-            <Badge key={exception} variant="outline" className="border-amber-200 bg-amber-50 text-[10px] text-amber-800">
+            <StatusBadge key={exception} tone="warning">
               {exception}
-            </Badge>
+            </StatusBadge>
           ))}
-          {isSinglePunchDay(row.day) && (
-            <Badge variant="outline" className="border-amber-200 bg-amber-50 text-[10px] text-amber-800">
-              Single punch
-            </Badge>
-          )}
-          {row.day.onLeave && (
-            <Badge variant="outline" className="border-amber-200 bg-amber-50 text-[10px] text-amber-800">
-              On leave
-            </Badge>
-          )}
+          {isSinglePunchDay(row.day) && <StatusBadge status="Single punch" tone="warning" />}
+          {row.day.onLeave && <StatusBadge status="On leave" tone="warning" />}
           {!row.day.exceptions.length && !row.day.onLeave && !isSinglePunchDay(row.day) && (
             <span className="text-xs text-muted-foreground">—</span>
           )}
@@ -545,17 +532,20 @@ export default function SwipeRegisterPage() {
         backLabel="Back to Employee Management"
         badge={
           <>
-            <EmployeeStatusPill tone="violet" icon={CalendarDays}>
+            <Badge variant="neutral" className="gap-1.5">
+              <CalendarDays className="h-3 w-3" aria-hidden="true" />
               {monthLabel(month)}
-            </EmployeeStatusPill>
+            </Badge>
             {report?.syncedAt ? (
-              <EmployeeStatusPill tone="emerald" icon={Clock}>
+              <StatusBadge status="Stored" tone="success">
+                <Clock className="h-3 w-3" aria-hidden="true" />
                 Stored
-              </EmployeeStatusPill>
+              </StatusBadge>
             ) : (
-              <EmployeeStatusPill tone="amber" icon={Clock}>
+              <StatusBadge status="Not fetched yet" tone="warning">
+                <Clock className="h-3 w-3" aria-hidden="true" />
                 Not fetched yet
-              </EmployeeStatusPill>
+              </StatusBadge>
             )}
           </>
         }
@@ -635,25 +625,12 @@ export default function SwipeRegisterPage() {
             ))}
           </div>
 
+          {/* The day itself is picked in the register's filter bar. Only the days greytHR actually
+              answered for are offered — see `dates`. */}
           {view === 'date' && dates.length > 0 && (
-            <>
-              <Select value={date} onValueChange={setDate}>
-                <SelectTrigger className="w-[190px] bg-white/80">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {dates.map((value) => (
-                    <SelectItem key={value} value={value}>
-                      {fullDayLabel(value)}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              {/* Only the days greytHR actually answered for are offered — see `dates`. */}
-              <span className="text-[11px] text-muted-foreground">
-                {dates.length} day{dates.length === 1 ? '' : 's'} stored for {monthLabel(month)}
-              </span>
-            </>
+            <span className="text-[11px] text-muted-foreground">
+              {dates.length} day{dates.length === 1 ? '' : 's'} stored for {monthLabel(month)}
+            </span>
           )}
         </div>
       )}
@@ -777,41 +754,38 @@ export default function SwipeRegisterPage() {
           }
         />
       ) : (
-        <>
-          <HrFilterCard
-            summary={
-              filtersActive
-                ? `${filtered.length} of ${report?.count ?? 0} employees`
-                : `${report?.count ?? 0} employees · ${(totals?.daysRecorded ?? 0).toLocaleString()} days`
-            }
-            actions={
-              filtersActive ? (
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => {
-                    setSearch('');
-                    setDepartment('all');
-                    setOnlyFlagged(false);
-                  }}
-                >
-                  Clear
-                </Button>
-              ) : undefined
-            }
-          >
-            <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-3">
-              <div className="relative">
-                <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
-                <Input
-                  placeholder="Search name, employee no…"
-                  className="pl-8"
-                  value={search}
-                  onChange={(event) => setSearch(event.target.value)}
-                />
-              </div>
+        <TableCard
+          toolbar={
+            <FilterBar
+              search={{ value: search, onChange: setSearch, placeholder: 'Search name, employee no…' }}
+              activeCount={(department !== 'all' ? 1 : 0) + (onlyFlagged ? 1 : 0)}
+              onClear={() => {
+                setSearch('');
+                setDepartment('all');
+                setOnlyFlagged(false);
+              }}
+              summary={
+                filtersActive
+                  ? `${filtered.length} of ${report?.count ?? 0} employees`
+                  : `${report?.count ?? 0} employees · ${(totals?.daysRecorded ?? 0).toLocaleString()} days`
+              }
+            >
+              {view === 'date' && dates.length > 0 && (
+                <Select value={date} onValueChange={setDate}>
+                  <SelectTrigger aria-label="Date">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {dates.map((value) => (
+                      <SelectItem key={value} value={value}>
+                        {fullDayLabel(value)}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              )}
               <Select value={department} onValueChange={setDepartment}>
-                <SelectTrigger>
+                <SelectTrigger aria-label="Department">
                   <SelectValue placeholder="Department" />
                 </SelectTrigger>
                 <SelectContent>
@@ -824,7 +798,7 @@ export default function SwipeRegisterPage() {
                 </SelectContent>
               </Select>
               <Select value={onlyFlagged ? 'flagged' : 'all'} onValueChange={(value) => setOnlyFlagged(value === 'flagged')}>
-                <SelectTrigger>
+                <SelectTrigger aria-label="Flagged days">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -832,39 +806,40 @@ export default function SwipeRegisterPage() {
                   <SelectItem value="flagged">Only late or early days</SelectItem>
                 </SelectContent>
               </Select>
-            </div>
-          </HrFilterCard>
-
-          <div className="space-y-2.5">
+            </FilterBar>
+          }
+          footer={
+            view === 'month' && rows.length > 0 ? (
+              <EmployeeListFooter
+                shown={visibleRows.length}
+                total={rows.length}
+                noun="employee"
+                pageSize={PAGE_SIZE}
+                onMore={() => setVisibleCount((count) => count + PAGE_SIZE)}
+              />
+            ) : undefined
+          }
+        >
+          <div className="p-3 sm:p-0">
             {/* A row opens into its own month; `expandedId` keeps one open at a time, so the four
                 thousand cells a full month across everybody would need are never all in the DOM. */}
             {view === 'month' ? (
-              <>
-                <HrDataList
-                  rows={visibleRows}
-                  columns={columns}
-                  dense
-                  maxHeightClassName={EMP_REGISTER_HEIGHT}
-                  onRowClick={(row) => setOpenId((current) => (current === row.id ? null : row.id))}
-                  expandedId={openId}
-                  renderExpanded={(row) => <SwipeDays days={row.month.days} />}
-                  empty={
-                    <HrEmptyState
-                      icon={Search}
-                      title="No employees match these filters"
-                      description="Try a different name, department, or turn off the flagged-days filter."
-                    />
-                  }
-                />
-
-                <EmployeeListFooter
-                  shown={visibleRows.length}
-                  total={rows.length}
-                  noun="employee"
-                  pageSize={PAGE_SIZE}
-                  onMore={() => setVisibleCount((count) => count + PAGE_SIZE)}
-                />
-              </>
+              <HrDataList
+                rows={visibleRows}
+                columns={columns}
+                dense
+                frameless
+                onRowClick={(row) => setOpenId((current) => (current === row.id ? null : row.id))}
+                expandedId={openId}
+                renderExpanded={(row) => <SwipeDays days={row.month.days} />}
+                empty={
+                  <HrEmptyState
+                    icon={Search}
+                    title="No employees match these filters"
+                    description="Try a different name, department, or turn off the flagged-days filter."
+                  />
+                }
+              />
             ) : (
               /* One day, everybody. Ordered by first punch, so the column reads as the order people
                  actually arrived. No windowing: a single day is one row per employee. */
@@ -872,7 +847,7 @@ export default function SwipeRegisterPage() {
                 rows={dayRows}
                 columns={dayColumns}
                 dense
-                maxHeightClassName={EMP_REGISTER_HEIGHT}
+                frameless
                 empty={
                   <HrEmptyState
                     icon={Fingerprint}
@@ -887,7 +862,7 @@ export default function SwipeRegisterPage() {
               />
             )}
           </div>
-        </>
+        </TableCard>
       )}
     </EmployeePageShell>
   );

@@ -11,7 +11,9 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Skeleton } from '@/components/ui/skeleton';
-import { TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { FilterBar } from '@/components/shared/filter-bar';
+import { TableCard } from '@/components/shared/table-card';
 import type { DailyRequisitionEntry } from '@/lib/types';
 import {
   DailyMetricCard,
@@ -238,42 +240,29 @@ export default function FinancialBreakdownReportPage() {
       />
 
       {/* Date range filter */}
-      <Card className="mb-6 overflow-hidden rounded-2xl border border-white/70 bg-white/70 shadow-sm backdrop-blur">
-        <div className="h-1 w-full bg-gradient-to-r from-indigo-400 via-blue-400 to-cyan-400 opacity-70" />
-        <CardContent className="flex flex-wrap items-center gap-4 p-4">
-          <div className="flex items-center gap-2">
-            <span className="text-sm font-medium text-slate-600">From</span>
-            <Input
-              type="date"
-              value={dateFrom}
-              onChange={(e) => setDateFrom(e.target.value)}
-              className="w-40 bg-white/80 border-white/70"
-            />
-          </div>
-          <div className="flex items-center gap-2">
-            <span className="text-sm font-medium text-slate-600">To</span>
-            <Input
-              type="date"
-              value={dateTo}
-              onChange={(e) => setDateTo(e.target.value)}
-              className="w-40 bg-white/80 border-white/70"
-            />
-          </div>
-          {(dateFrom || dateTo) && (
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => { setDateFrom(''); setDateTo(''); }}
-              className="text-slate-500"
-            >
-              Clear
-            </Button>
-          )}
-          <span className="ml-auto text-xs text-slate-500">
-            {filtered.length} verified entr{filtered.length === 1 ? 'y' : 'ies'} in range
-          </span>
-        </CardContent>
-      </Card>
+      <FilterBar
+        className="mb-6"
+        activeCount={(dateFrom ? 1 : 0) + (dateTo ? 1 : 0)}
+        onClear={() => { setDateFrom(''); setDateTo(''); }}
+        summary={`${filtered.length} verified entr${filtered.length === 1 ? 'y' : 'ies'} in range`}
+      >
+        <label className="flex items-center gap-2">
+          <span className="text-sm text-muted-foreground">From</span>
+          <Input
+            type="date"
+            value={dateFrom}
+            onChange={(e) => setDateFrom(e.target.value)}
+          />
+        </label>
+        <label className="flex items-center gap-2">
+          <span className="text-sm text-muted-foreground">To</span>
+          <Input
+            type="date"
+            value={dateTo}
+            onChange={(e) => setDateTo(e.target.value)}
+          />
+        </label>
+      </FilterBar>
 
       {/* Stat cards */}
       <div className="mb-6 grid grid-cols-2 gap-4 sm:grid-cols-4">
@@ -317,23 +306,19 @@ export default function FinancialBreakdownReportPage() {
       </Card>
 
       {/* Full detail table */}
-      <Card className={dailySurfaceCardClass}>
-        <div className="h-1 w-full bg-gradient-to-r from-indigo-400 via-blue-400 to-cyan-400 opacity-70" />
-        <CardHeader className="pb-2">
-          <CardTitle className="text-base">Entry-level Detail</CardTitle>
-          <CardDescription>Full deduction breakdown per requisition entry.</CardDescription>
-        </CardHeader>
-        <CardContent className="p-0">
+      <TableCard
+        title="Entry-level Detail"
+        description="Full deduction breakdown per requisition entry."
+      >
           {filtered.length === 0 ? (
             <div className="px-6 py-12 text-center text-sm text-muted-foreground">
               No verified entries found for the selected date range.
             </div>
           ) : (
-            <div className="overflow-auto [&::-webkit-scrollbar]:h-1.5 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-slate-200 h-[calc(100vh-420px)]">
-              <table className="w-full caption-bottom text-sm">
-                <TableHeader className="[&_th]:sticky [&_th]:top-0 [&_th]:z-10 [&_th]:bg-slate-50 [&_th]:shadow-sm">
+              <Table>
+                <TableHeader>
                   <TableRow>
-                    <TableHead className="pl-4 min-w-[120px]">Reception No</TableHead>
+                    <TableHead className="min-w-[120px]">Reception No</TableHead>
                     <TableHead className="min-w-[160px]">Party</TableHead>
                     <TableHead className="text-right min-w-[110px]">Gross</TableHead>
                     <TableHead className="text-right min-w-[110px]">Net</TableHead>
@@ -342,27 +327,27 @@ export default function FinancialBreakdownReportPage() {
                     <TableHead className="text-right min-w-[90px]">SGST</TableHead>
                     <TableHead className="text-right min-w-[90px]">TDS</TableHead>
                     <TableHead className="text-right min-w-[100px]">Retention</TableHead>
-                    <TableHead className="text-right min-w-[90px] pr-4">Other</TableHead>
+                    <TableHead className="text-right min-w-[90px]">Other</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {filtered.map((e) => (
-                    <TableRow key={e.id} className="hover:bg-indigo-50/40 transition-colors">
-                      <TableCell className="pl-4 font-mono text-xs">{e.receptionNo}</TableCell>
+                    <TableRow key={e.id}>
+                      <TableCell className="whitespace-nowrap font-mono">{e.receptionNo}</TableCell>
                       <TableCell className="font-medium">{e.partyName}</TableCell>
-                      <TableCell className="text-right tabular-nums">{fmt(e.grossAmount || 0)}</TableCell>
-                      <TableCell className="text-right tabular-nums">{fmt(e.netAmount || 0)}</TableCell>
-                      <TableCell className="text-right tabular-nums text-slate-600">{fmt(e.igstAmount || 0)}</TableCell>
-                      <TableCell className="text-right tabular-nums text-slate-600">{fmt(e.cgstAmount || 0)}</TableCell>
-                      <TableCell className="text-right tabular-nums text-slate-600">{fmt(e.sgstAmount || 0)}</TableCell>
-                      <TableCell className="text-right tabular-nums text-slate-600">{fmt(e.tdsAmount || 0)}</TableCell>
-                      <TableCell className="text-right tabular-nums text-slate-600">{fmt(e.retentionAmount || 0)}</TableCell>
-                      <TableCell className="text-right tabular-nums text-slate-600 pr-4">{fmt(e.otherDeduction || 0)}</TableCell>
+                      <TableCell className="whitespace-nowrap text-right tabular-nums">{fmt(e.grossAmount || 0)}</TableCell>
+                      <TableCell className="whitespace-nowrap text-right tabular-nums">{fmt(e.netAmount || 0)}</TableCell>
+                      <TableCell className="whitespace-nowrap text-right tabular-nums">{fmt(e.igstAmount || 0)}</TableCell>
+                      <TableCell className="whitespace-nowrap text-right tabular-nums">{fmt(e.cgstAmount || 0)}</TableCell>
+                      <TableCell className="whitespace-nowrap text-right tabular-nums">{fmt(e.sgstAmount || 0)}</TableCell>
+                      <TableCell className="whitespace-nowrap text-right tabular-nums">{fmt(e.tdsAmount || 0)}</TableCell>
+                      <TableCell className="whitespace-nowrap text-right tabular-nums">{fmt(e.retentionAmount || 0)}</TableCell>
+                      <TableCell className="whitespace-nowrap text-right tabular-nums">{fmt(e.otherDeduction || 0)}</TableCell>
                     </TableRow>
                   ))}
                   {/* Totals row */}
-                  <TableRow className="border-t-2 border-slate-200 bg-slate-50/80 font-semibold">
-                    <TableCell className="pl-4" colSpan={2}>Total ({filtered.length} entries)</TableCell>
+                  <TableRow className="bg-muted/50 font-medium">
+                    <TableCell colSpan={2}>Total ({filtered.length} entries)</TableCell>
                     <TableCell className="text-right tabular-nums">{fmt(totals.gross)}</TableCell>
                     <TableCell className="text-right tabular-nums">{fmt(totals.net)}</TableCell>
                     <TableCell className="text-right tabular-nums">{fmt(totals.igst)}</TableCell>
@@ -370,14 +355,12 @@ export default function FinancialBreakdownReportPage() {
                     <TableCell className="text-right tabular-nums">{fmt(totals.sgst)}</TableCell>
                     <TableCell className="text-right tabular-nums">{fmt(totals.tds)}</TableCell>
                     <TableCell className="text-right tabular-nums">{fmt(totals.retention)}</TableCell>
-                    <TableCell className="text-right tabular-nums pr-4">{fmt(totals.other)}</TableCell>
+                    <TableCell className="text-right tabular-nums">{fmt(totals.other)}</TableCell>
                   </TableRow>
                 </TableBody>
-              </table>
-            </div>
+              </Table>
           )}
-        </CardContent>
-      </Card>
+      </TableCard>
     </div>
   );
 }

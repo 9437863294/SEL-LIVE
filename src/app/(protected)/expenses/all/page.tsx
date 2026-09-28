@@ -7,7 +7,7 @@ import { useState, useEffect, useRef, useMemo } from 'react';
 import Link from 'next/link';
 import {
   ShieldAlert, SlidersHorizontal,
-  Search, FileText, IndianRupee, Building2, TrendingUp, Filter,
+  FileText, IndianRupee, Building2, TrendingUp,
   Receipt, Layers,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -16,12 +16,13 @@ import { db } from '@/lib/firebase';
 import { collection, getDocs } from 'firebase/firestore';
 import type { Department, ExpenseRequest, Project } from '@/lib/types';
 import { useToast } from '@/hooks/use-toast';
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
+import { Card, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
+import { TableCard } from '@/components/shared/table-card';
+import { FilterBar, SearchInput } from '@/components/shared/filter-bar';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { useAuth } from '@/components/auth/AuthProvider';
 import { useAuthorization } from '@/hooks/useAuthorization';
-import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { cn } from '@/lib/utils';
 import {
@@ -78,6 +79,12 @@ export default function AllExpensesPage() {
   const handleFilterChange = (field: keyof typeof filters, value: string) => {
     setFilters(prev => ({ ...prev, [field]: value }));
   };
+
+  const activeFilterCount =
+    (filters.requestNo ? 1 : 0) +
+    (filters.partyName ? 1 : 0) +
+    (filters.projectName !== 'all' ? 1 : 0) +
+    (filters.departmentName !== 'all' ? 1 : 0);
 
   const filteredExpenses = useMemo(() => {
     return expenses.filter(exp => {
@@ -147,7 +154,7 @@ export default function AllExpensesPage() {
       case 'Project Name': return getProjectName(expense.projectId);
       case 'Amount':
         return (
-          <span className="font-semibold text-emerald-600 dark:text-emerald-400">
+          <span className="tabular-nums">
             {formatCurrency(expense.amount || 0)}
           </span>
         );
@@ -257,65 +264,45 @@ export default function AllExpensesPage() {
         </div>
       </div>
 
-      {/* Filter Panel */}
-      <Card className="border-border/60 bg-card/60 backdrop-blur-sm">
-        <CardContent className="p-4">
-          <div className="flex items-center gap-2 mb-3">
-            <Filter className="h-3.5 w-3.5 text-muted-foreground" />
-            <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Filters</span>
-          </div>
-          <div className="w-full grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
-            <div className="relative">
-              <Search className="absolute left-2.5 top-2.5 h-3.5 w-3.5 text-muted-foreground" />
-              <Input
-                placeholder="Search Request No..."
-                className="pl-8 h-9 text-sm"
-                value={filters.requestNo}
-                onChange={e => handleFilterChange('requestNo', e.target.value)}
-              />
-            </div>
-            <div className="relative">
-              <Search className="absolute left-2.5 top-2.5 h-3.5 w-3.5 text-muted-foreground" />
-              <Input
-                placeholder="Search Party Name..."
-                className="pl-8 h-9 text-sm"
-                value={filters.partyName}
-                onChange={e => handleFilterChange('partyName', e.target.value)}
-              />
-            </div>
+      {/* Data Table — TableCard owns the scroll container and the pinned header. */}
+      <TableCard
+        title="Expense requests"
+        count={filteredExpenses.length}
+        total={expenses.length}
+        noun="request"
+        toolbar={
+          <FilterBar
+            search={{ value: filters.requestNo, onChange: value => handleFilterChange('requestNo', value), placeholder: 'Search Request No...' }}
+            activeCount={activeFilterCount}
+            onClear={() => setFilters({ requestNo: '', projectName: 'all', departmentName: 'all', partyName: '' })}
+          >
+            <SearchInput
+              placeholder="Search Party Name..."
+              value={filters.partyName}
+              onChange={value => handleFilterChange('partyName', value)}
+            />
             <Select value={filters.projectName} onValueChange={value => handleFilterChange('projectName', value)}>
-              <SelectTrigger className="h-9 text-sm"><SelectValue placeholder="All Projects" /></SelectTrigger>
+              <SelectTrigger aria-label="Project"><SelectValue placeholder="All Projects" /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">All Projects</SelectItem>
                 {projects.map(p => <SelectItem key={p.id} value={p.projectName}>{p.projectName}</SelectItem>)}
               </SelectContent>
             </Select>
             <Select value={filters.departmentName} onValueChange={value => handleFilterChange('departmentName', value)}>
-              <SelectTrigger className="h-9 text-sm"><SelectValue placeholder="All Departments" /></SelectTrigger>
+              <SelectTrigger aria-label="Department"><SelectValue placeholder="All Departments" /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">All Departments</SelectItem>
                 {departments.map(d => <SelectItem key={d.id} value={d.name}>{d.name}</SelectItem>)}
               </SelectContent>
             </Select>
-          </div>
-        </CardContent>
-      </Card>
-
-      {/* Data Table.
-          One native scroll container — the Table's own wrapper — rather than a Radix ScrollArea.
-          The ScrollArea here never scrolled: its viewport wraps children in a display:table box
-          that sizes to content, so the 12 nowrap columns stretched it (and every ancestor) to
-          2000px instead of clipping, and the horizontal <ScrollBar> was passed as a *child*, which
-          this wrapper renders inside the viewport as content — so it was never a scrollbar at all.
-          Native overflow also means a visible scrollbar to drag and a thead that sticks to the
-          right box. max-h, not h, so a short register does not leave dead space under the card. */}
-      <Card className="border-border/60 bg-card/60 backdrop-blur-sm overflow-hidden">
-        <CardContent className="p-0">
-          <Table containerClassName="max-h-[calc(100vh-24rem)] overflow-auto">
-            <TableHeader className="sticky top-0 bg-background z-10">
-              <TableRow className="bg-muted/40 hover:bg-muted/40">
+          </FilterBar>
+        }
+      >
+          <Table>
+            <TableHeader>
+              <TableRow>
                 {visibleHeaders.map(header => (
-                  <TableHead key={header} className="whitespace-nowrap px-4 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                  <TableHead key={header} className="whitespace-nowrap">
                     {header}
                   </TableHead>
                 ))}
@@ -337,10 +324,10 @@ export default function AllExpensesPage() {
                   <TableRow
                     key={expense.id}
                     onClick={() => setDetailsExpense(expense)}
-                    className="cursor-pointer hover:bg-primary/5 transition-colors duration-150"
+                    className="cursor-pointer"
                   >
                     {visibleHeaders.map(header => (
-                      <TableCell key={header} className="whitespace-nowrap text-sm px-4">
+                      <TableCell key={header} className="whitespace-nowrap">
                         {getCellContent(header, expense)}
                       </TableCell>
                     ))}
@@ -359,8 +346,7 @@ export default function AllExpensesPage() {
               )}
             </TableBody>
           </Table>
-        </CardContent>
-      </Card>
+      </TableCard>
 
       <ExpenseDetailsDialog
         expense={detailsExpense}

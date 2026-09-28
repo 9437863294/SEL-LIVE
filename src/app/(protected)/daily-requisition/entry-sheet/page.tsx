@@ -11,7 +11,6 @@ import {
   MoreHorizontal,
   Calendar as CalendarIcon,
   Loader2,
-  Search,
   Eye,
   FileText,
   Edit,
@@ -26,6 +25,9 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Input } from '@/components/ui/input';
+import { Badge } from '@/components/ui/badge';
+import { FilterBar } from '@/components/shared/filter-bar';
+import { TableCard } from '@/components/shared/table-card';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Calendar } from '@/components/ui/calendar';
@@ -89,7 +91,6 @@ import {
   DailyMetricCard,
   dailyPageContainerClass,
   dailySurfaceCardClass,
-  dailyTableHeaderClass,
 } from '@/components/daily-requisition/module-shell';
 import { logUserActivity } from '@/lib/activity-logger';
 import { useForm } from 'react-hook-form';
@@ -648,12 +649,12 @@ function EntrySheetPageComponent() {
           description="Create new entries, bulk-print checklists, and keep the front door of the workflow organized."
           meta={
             <>
-              <span className="rounded-full border border-white/70 bg-white/70 px-3 py-1 text-xs text-slate-600 backdrop-blur">
+              <Badge variant="neutral">
                 Stage 1 of 4
-              </span>
-              <span className="rounded-full border border-emerald-200/80 bg-emerald-50 px-3 py-1 text-xs text-emerald-700">
+              </Badge>
+              <Badge variant="neutral">
                 {filteredEntries.length} visible entries
-              </span>
+              </Badge>
             </>
           }
           actions={
@@ -691,15 +692,20 @@ function EntrySheetPageComponent() {
           <DailyMetricCard label="Unassigned DEP" value={unassignedExpenseRequests.length} hint="Expense requests available to link" />
         </div>
 
-        <Card className="mb-6 rounded-2xl border border-white/70 bg-white/70 shadow-sm backdrop-blur">
-          <CardContent className="flex flex-col gap-3 p-4 sm:flex-row sm:items-center sm:justify-between sm:p-5">
-            <h2 className="text-lg font-semibold text-slate-900">Entries workspace</h2>
-            <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+        <TableCard
+          title="Entries workspace"
+          count={filteredEntries.length}
+          toolbar={
+            <FilterBar
+              search={{ value: filterText, onChange: setFilterText, placeholder: 'Filter entries...' }}
+              activeCount={dateFilter ? 1 : 0}
+              onClear={() => { setFilterText(''); setDateFilter(undefined); }}
+            >
               <Popover>
                 <PopoverTrigger asChild>
                   <Button
                     variant={'outline'}
-                    className={cn('w-full justify-start border-white/70 bg-white/80 text-left font-normal sm:w-[240px]', !dateFilter && 'text-muted-foreground')}
+                    className={cn('justify-start text-left font-normal', !dateFilter && 'text-muted-foreground')}
                   >
                     <CalendarIcon className="mr-2 h-4 w-4" />
                     {dateFilter ? format(dateFilter, 'PPP') : 'Filter by date'}
@@ -709,25 +715,36 @@ function EntrySheetPageComponent() {
                   <Calendar mode="single" selected={dateFilter} onSelect={setDateFilter} initialFocus />
                 </PopoverContent>
               </Popover>
-              <div className="relative">
-                <Search className="absolute left-3 top-3.5 h-4 w-4 text-slate-400" />
-                <Input
-                  placeholder="Filter entries..."
-                  className="w-full border-white/70 bg-white/80 pl-9 sm:w-64"
-                  value={filterText}
-                  onChange={(e) => setFilterText(e.target.value)}
-                />
+            </FilterBar>
+          }
+          footer={
+            <div className="flex items-center justify-between gap-2">
+              <p>
+                Page {currentPage} of {totalPages}
+              </p>
+              <div className="space-x-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+                  disabled={currentPage === 1}
+                >
+                  Previous
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
+                  disabled={currentPage === totalPages}
+                >
+                  Next
+                </Button>
               </div>
             </div>
-          </CardContent>
-        </Card>
-
-        <Card className={dailySurfaceCardClass}>
-          <div className="h-1 w-full bg-gradient-to-r from-slate-600 to-slate-800 opacity-60" />
-          <CardContent className="p-0">
-            <div className="overflow-x-auto">
+          }
+        >
               <Table>
-                <TableHeader className={dailyTableHeaderClass}>
+                <TableHeader>
                   <TableRow>
                     {isSelectionMode && (
                       <TableHead>
@@ -761,9 +778,9 @@ function EntrySheetPageComponent() {
                             />
                           </TableCell>
                         )}
-                        <TableCell>{entry.createdAtText}</TableCell>
-                        <TableCell>{entry.receptionNo}</TableCell>
-                        <TableCell>{entry.dateText}</TableCell>
+                        <TableCell className="whitespace-nowrap">{entry.createdAtText}</TableCell>
+                        <TableCell className="whitespace-nowrap font-medium">{entry.receptionNo}</TableCell>
+                        <TableCell className="whitespace-nowrap">{entry.dateText}</TableCell>
                         <TableCell>{projects.find((p) => p.id === entry.projectId)?.projectName || entry.projectId}</TableCell>
                         <TableCell>
                           {departments.find((d) => d.id === entry.departmentId)?.name || entry.departmentId}
@@ -779,8 +796,8 @@ function EntrySheetPageComponent() {
                             </TooltipContent>
                           </Tooltip>
                         </TableCell>
-                        <TableCell>{formatCurrency(entry.grossAmount)}</TableCell>
-                        <TableCell>{formatCurrency(entry.netAmount)}</TableCell>
+                        <TableCell className="whitespace-nowrap tabular-nums">{formatCurrency(entry.grossAmount)}</TableCell>
+                        <TableCell className="whitespace-nowrap tabular-nums">{formatCurrency(entry.netAmount)}</TableCell>
                         <TableCell>
                           <AlertDialog>
                             <DropdownMenu>
@@ -856,33 +873,7 @@ function EntrySheetPageComponent() {
                   </TooltipProvider>
                 </TableBody>
               </Table>
-            </div>
-          </CardContent>
-        </Card>
-
-        <div className="flex items-center justify-between space-x-2 py-4">
-          <p className="text-sm text-muted-foreground">
-            Page {currentPage} of {totalPages}
-          </p>
-          <div className="space-x-2">
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
-              disabled={currentPage === 1}
-            >
-              Previous
-            </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
-              disabled={currentPage === totalPages}
-            >
-              Next
-            </Button>
-          </div>
-        </div>
+        </TableCard>
       </div>
 
       <Dialog open={isAddDialogOpen} onOpenChange={setIsAddDialogOpen}>

@@ -4,17 +4,16 @@ import Link from 'next/link';
 import { useState } from 'react';
 import { Bar, BarChart, CartesianGrid, Cell, LabelList, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import { X } from 'lucide-react';
-import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent } from '@/components/ui/card';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { StatusBadge } from '@/components/shared/status-badge';
+import { TableCard } from '@/components/shared/table-card';
 import { exportRowsToExcel } from '@/lib/report-excel';
 import { E_APPROVAL_BASE_PATH } from '@/lib/e-approval';
 import { rollupEApprovals, summarizeEApprovalStatuses, type EApprovalDimension } from '@/lib/e-approval-analytics';
 import { ChartCard, eaTooltipStyle, EA_VIZ } from '@/components/e-approval/dashboard-parts';
 import { ReportShell } from '@/components/e-approval/reports/report-shell';
-import { EApprovalStatusBadge } from '@/components/e-approval/shared';
 import { formatEApprovalAmount, formatEApprovalDate } from '@/components/e-approval/hooks';
 
 const DIMENSIONS: Array<{ value: EApprovalDimension; label: string }> = [
@@ -98,20 +97,27 @@ export default function EApprovalStatusReportPage() {
             />
 
             {drill && (
-              <Card>
-                <CardContent className="px-2 py-3 sm:px-3">
-                  <div className="mb-2 flex flex-wrap items-center gap-2 px-1">
-                    <p className="text-sm font-semibold">
-                      <EApprovalStatusBadge status={drill} /> <span className="ml-1">{drilled.length} approvals</span>
-                    </p>
-                    <Button size="sm" variant="ghost" className="ml-auto h-7 gap-1 px-2 text-xs" onClick={() => setDrill(null)}>
-                      <X className="h-3.5 w-3.5" /> Close
-                    </Button>
-                  </div>
-                  <div className="overflow-x-auto rounded-lg border">
+              <TableCard
+                title="Approvals in status"
+                description={
+                  <StatusBadge status={drill}>{drill === 'Superseded' ? <s>Superseded</s> : undefined}</StatusBadge>
+                }
+                count={drilled.length}
+                noun="approval"
+                actions={
+                  <Button size="sm" variant="ghost" className="h-7 gap-1 px-2 text-xs" onClick={() => setDrill(null)}>
+                    <X className="h-3.5 w-3.5" /> Close
+                  </Button>
+                }
+                footer={
+                  drilled.length > 100
+                    ? `Showing the first 100 of ${drilled.length}. Narrow the filter above to see the rest.`
+                    : undefined
+                }
+              >
                     <Table>
                       <TableHeader>
-                        <TableRow className="bg-muted/40">
+                        <TableRow>
                           <TableHead>Reference</TableHead>
                           <TableHead>Subject</TableHead>
                           <TableHead>Requester</TableHead>
@@ -124,57 +130,48 @@ export default function EApprovalStatusReportPage() {
                       <TableBody>
                         {drilled.slice(0, 100).map((row) => (
                           <TableRow key={row.id}>
-                            <TableCell className="whitespace-nowrap font-mono text-[11px]">
+                            <TableCell className="whitespace-nowrap font-mono">
                               <Link href={`${E_APPROVAL_BASE_PATH}/${row.id}`} className="text-sky-700 hover:underline">
                                 {row.referenceNo || 'Draft'}
                               </Link>
                             </TableCell>
-                            <TableCell className="max-w-[240px] truncate text-xs">{row.subject}</TableCell>
-                            <TableCell className="text-xs">{row.requesterName || '—'}</TableCell>
-                            <TableCell className="text-xs">{row.departmentName || '—'}</TableCell>
-                            <TableCell className="max-w-[180px] truncate text-xs">{row.pendingLabel || '—'}</TableCell>
-                            <TableCell className="whitespace-nowrap text-right text-xs tabular-nums">
+                            <TableCell className="max-w-[240px] truncate">{row.subject}</TableCell>
+                            <TableCell>{row.requesterName || '—'}</TableCell>
+                            <TableCell>{row.departmentName || '—'}</TableCell>
+                            <TableCell className="max-w-[180px] truncate">{row.pendingLabel || '—'}</TableCell>
+                            <TableCell className="whitespace-nowrap text-right tabular-nums">
                               {row.amount == null ? '—' : formatEApprovalAmount(row.amount)}
                             </TableCell>
-                            <TableCell className="whitespace-nowrap text-xs">{formatEApprovalDate(row.submittedAt)}</TableCell>
+                            <TableCell className="whitespace-nowrap">{formatEApprovalDate(row.submittedAt)}</TableCell>
                           </TableRow>
                         ))}
                       </TableBody>
                     </Table>
-                  </div>
-                  {drilled.length > 100 && (
-                    <p className="mt-1.5 px-1 text-[11px] text-muted-foreground">
-                      Showing the first 100 of {drilled.length}. Narrow the filter above to see the rest.
-                    </p>
-                  )}
-                </CardContent>
-              </Card>
+              </TableCard>
             )}
 
-            <Card>
-              <CardContent className="px-2 py-3 sm:px-3">
-                <div className="mb-2 flex flex-wrap items-center gap-2 px-1">
-                  <p className="text-sm font-semibold">Breakdown</p>
-                  <Select value={dimension} onValueChange={(next) => setDimension(next as EApprovalDimension)}>
-                    <SelectTrigger className="h-8 w-[170px] text-xs">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {DIMENSIONS.map((option) => (
-                        <SelectItem key={option.value} value={option.value}>
-                          By {option.label.toLowerCase()}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                  <Badge variant="outline" className="text-[10px]">
-                    {rollup.length} groups
-                  </Badge>
-                </div>
-                <div className="overflow-x-auto rounded-lg border">
+            <TableCard
+              title="Breakdown"
+              count={rollup.length}
+              noun="group"
+              actions={
+                <Select value={dimension} onValueChange={(next) => setDimension(next as EApprovalDimension)}>
+                  <SelectTrigger className="w-[170px]" aria-label="Break down by">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {DIMENSIONS.map((option) => (
+                      <SelectItem key={option.value} value={option.value}>
+                        By {option.label.toLowerCase()}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              }
+            >
                   <Table>
                     <TableHeader>
-                      <TableRow className="bg-muted/40">
+                      <TableRow>
                         <TableHead>{DIMENSIONS.find((d) => d.value === dimension)?.label}</TableHead>
                         <TableHead className="text-right">Raised</TableHead>
                         <TableHead className="text-right">Pending</TableHead>
@@ -189,31 +186,29 @@ export default function EApprovalStatusReportPage() {
                     <TableBody>
                       {rollup.map((row) => (
                         <TableRow key={row.key}>
-                          <TableCell className="text-xs font-medium">{row.label}</TableCell>
-                          <TableCell className="text-right text-xs tabular-nums">{row.raised}</TableCell>
-                          <TableCell className="text-right text-xs tabular-nums">{row.pending}</TableCell>
-                          <TableCell className="text-right text-xs tabular-nums">{row.approved}</TableCell>
-                          <TableCell className="text-right text-xs tabular-nums">{row.rejected}</TableCell>
-                          <TableCell className="text-right text-xs tabular-nums">
+                          <TableCell className="font-medium">{row.label}</TableCell>
+                          <TableCell className="text-right tabular-nums">{row.raised}</TableCell>
+                          <TableCell className="text-right tabular-nums">{row.pending}</TableCell>
+                          <TableCell className="text-right tabular-nums">{row.approved}</TableCell>
+                          <TableCell className="text-right tabular-nums">{row.rejected}</TableCell>
+                          <TableCell className="text-right tabular-nums">
                             {row.overdue > 0 ? <span className="font-semibold text-rose-700">{row.overdue}</span> : '—'}
                           </TableCell>
                           {/* A dash, not 0% — no decisions yet is not a 0% approval rate. */}
-                          <TableCell className="text-right text-xs tabular-nums">
+                          <TableCell className="text-right tabular-nums">
                             {row.approvalRatePercent == null ? '—' : `${row.approvalRatePercent}%`}
                           </TableCell>
-                          <TableCell className="text-right text-xs tabular-nums">
+                          <TableCell className="text-right tabular-nums">
                             {row.cycleHours.count ? `${row.cycleHours.median}h` : '—'}
                           </TableCell>
-                          <TableCell className="whitespace-nowrap text-right text-xs tabular-nums">
+                          <TableCell className="whitespace-nowrap text-right tabular-nums">
                             {formatEApprovalAmount(row.valuePending)}
                           </TableCell>
                         </TableRow>
                       ))}
                     </TableBody>
                   </Table>
-                </div>
-              </CardContent>
-            </Card>
+            </TableCard>
           </>
         );
       }}

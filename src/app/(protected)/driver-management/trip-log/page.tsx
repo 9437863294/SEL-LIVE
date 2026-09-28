@@ -18,19 +18,13 @@ import {
 } from '@/lib/vehicle-management';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { PageHeader } from '@/components/shared/page-header';
-import { Badge } from '@/components/ui/badge';
+import { DataList } from '@/components/shared/data-list';
+import { FilterBar } from '@/components/shared/filter-bar';
+import { StatusBadge } from '@/components/shared/status-badge';
+import { TableCard } from '@/components/shared/table-card';
 import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Skeleton } from '@/components/ui/skeleton';
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from '@/components/ui/table';
 import {
   Dialog,
   DialogContent,
@@ -285,143 +279,39 @@ export default function DriverTripLogPage() {
         </CardContent>
       </Card>
 
-      <Card className="vm-panel">
-        <CardHeader>
-          <CardTitle>Filters</CardTitle>
-        </CardHeader>
-        <CardContent className="grid grid-cols-1 gap-3 md:grid-cols-3">
-          <div className="space-y-2">
-            <Label>Status</Label>
+      <TableCard
+        title="Trip Table"
+        count={filteredTrips.length}
+        total={trips.length}
+        noun="trip"
+        toolbar={
+          <FilterBar
+            activeCount={[statusFilter !== 'All', !!dateFrom, !!dateTo].filter(Boolean).length}
+            onClear={() => {
+              setStatusFilter('All');
+              setDateFrom('');
+              setDateTo('');
+            }}
+          >
             <Select value={statusFilter} onValueChange={(value) => setStatusFilter(value as TripStatusFilter)}>
-              <SelectTrigger className="bg-white/85">
+              <SelectTrigger aria-label="Status">
                 <SelectValue placeholder="Select status" />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="All">All</SelectItem>
+                <SelectItem value="All">All statuses</SelectItem>
                 <SelectItem value="In Progress">In Progress</SelectItem>
                 <SelectItem value="Completed">Completed</SelectItem>
                 <SelectItem value="Cancelled">Cancelled</SelectItem>
               </SelectContent>
             </Select>
-          </div>
-          <div className="space-y-2">
-            <Label>Date From</Label>
-            <Input type="date" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} className="bg-white/85" />
-          </div>
-          <div className="space-y-2">
-            <Label>Date To</Label>
-            <Input type="date" value={dateTo} onChange={(e) => setDateTo(e.target.value)} className="bg-white/85" />
-          </div>
-        </CardContent>
-      </Card>
-
-      <Card className="vm-panel">
-        <CardHeader>
-          <CardTitle>Trip Table</CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-0 p-0">
-          {isLoading ? (
-            <div className="space-y-2 p-4">
-              {Array.from({ length: 3 }).map((_, idx) => <Skeleton key={idx} className="h-20 w-full rounded-xl" />)}
-            </div>
-          ) : filteredTrips.length === 0 ? (
-            <div className="px-6 py-10 text-center text-sm text-muted-foreground">No trips found.</div>
-          ) : (
-            <>
-              {/* Mobile card view */}
-              <div className="space-y-2 p-4 sm:hidden">
-                {filteredTrips.map((trip) => (
-                  <div
-                    key={String(trip.id)}
-                    className="rounded-xl border border-white/70 bg-white/85 p-4 shadow-sm active:scale-[0.99] transition-transform cursor-pointer"
-                    onClick={() => {
-                      setSelectedTrip(trip);
-                      setTripDialogOpen(true);
-                      void hydrateTripDistance(trip);
-                    }}
-                  >
-                    <div className="mb-2 flex items-start justify-between gap-2">
-                      <Badge
-                        variant={String(trip.tripStatus) === 'In Progress' ? 'default' : 'outline'}
-                        className={String(trip.tripStatus) === 'In Progress' ? 'bg-emerald-600 text-white' : ''}
-                      >
-                        {trip.tripStatus || '-'}
-                      </Badge>
-                      <span className="text-sm font-semibold">{Number(trip.totalDistanceKm || 0).toFixed(2)} km</span>
-                    </div>
-                    <div className="space-y-1 text-xs text-muted-foreground">
-                      <div className="flex justify-between gap-2">
-                        <span>Start</span>
-                        <span className="font-medium text-slate-700">{formatDateTime(String(trip.startTimeIso || ''))}</span>
-                      </div>
-                      <div className="flex justify-between gap-2">
-                        <span>End</span>
-                        <span className="font-medium text-slate-700">{formatDateTime(String(trip.endTimeIso || ''))}</span>
-                      </div>
-                      {trip.startAddress && (
-                        <div className="flex justify-between gap-2">
-                          <span>From</span>
-                          <span className="max-w-[60%] truncate text-right">{String(trip.startAddress)}</span>
-                        </div>
-                      )}
-                      <div className="flex justify-between gap-2">
-                        <span>Points</span>
-                        <span>{Number(trip.totalPoints || 0)}</span>
-                      </div>
-                    </div>
-                    <p className="mt-2 text-right text-xs text-muted-foreground">Tap for details →</p>
-                  </div>
-                ))}
-              </div>
-
-              {/* Desktop table */}
-              <div className="hidden sm:block overflow-auto rounded-xl border border-white/70 bg-white/85 h-[calc(100vh-420px)]">
-                <table className="w-full caption-bottom text-sm">
-                  <TableHeader className="[&_th]:sticky [&_th]:top-0 [&_th]:z-10 [&_th]:bg-slate-50 [&_th]:shadow-sm">
-                    <TableRow>
-                      <TableHead>Status</TableHead>
-                      <TableHead>Start</TableHead>
-                      <TableHead>End</TableHead>
-                      <TableHead>Distance</TableHead>
-                      <TableHead>Points</TableHead>
-                      <TableHead>Start Address</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {filteredTrips.map((trip) => (
-                      <TableRow
-                        key={String(trip.id)}
-                        className="cursor-pointer hover:bg-cyan-50/70 transition-colors"
-                        onClick={() => {
-                          setSelectedTrip(trip);
-                          setTripDialogOpen(true);
-                          void hydrateTripDistance(trip);
-                        }}
-                      >
-                        <TableCell>
-                          <Badge
-                            variant={String(trip.tripStatus) === 'In Progress' ? 'default' : 'outline'}
-                            className={String(trip.tripStatus) === 'In Progress' ? 'bg-emerald-600 text-white' : ''}
-                          >
-                            {trip.tripStatus || '-'}
-                          </Badge>
-                        </TableCell>
-                        <TableCell>{formatDateTime(String(trip.startTimeIso || ''))}</TableCell>
-                        <TableCell>{formatDateTime(String(trip.endTimeIso || ''))}</TableCell>
-                        <TableCell>{Number(trip.totalDistanceKm || 0).toFixed(2)} km</TableCell>
-                        <TableCell>{Number(trip.totalPoints || 0)}</TableCell>
-                        <TableCell className="max-w-[280px] truncate">{String(trip.startAddress || '-')}</TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </table>
-              </div>
-            </>
-          )}
-          {/* Load More + count */}
-          {!isLoading && trips.length > 0 && (
-            <div className="flex flex-col items-center gap-2 px-4 pb-4 pt-2">
-              <p className="text-xs text-muted-foreground">
+            <Input type="date" aria-label="Date from" title="Date from" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} />
+            <Input type="date" aria-label="Date to" title="Date to" value={dateTo} onChange={(e) => setDateTo(e.target.value)} />
+          </FilterBar>
+        }
+        footer={
+          !isLoading && trips.length > 0 ? (
+            <div className="flex flex-col items-center gap-2">
+              <p>
                 Showing {trips.length} trip{trips.length !== 1 ? 's' : ''}
                 {hasMore ? ' · more available' : ' · all loaded'}
               </p>
@@ -432,9 +322,49 @@ export default function DriverTripLogPage() {
                 </Button>
               )}
             </div>
-          )}
-        </CardContent>
-      </Card>
+          ) : undefined
+        }
+      >
+        {isLoading ? (
+          <div className="space-y-2 p-4">
+            {Array.from({ length: 3 }).map((_, idx) => <Skeleton key={idx} className="h-20 w-full rounded-xl" />)}
+          </div>
+        ) : (
+          <div className="p-3 sm:p-0">
+            <DataList
+              frameless
+              rows={filteredTrips.map((trip): Record<string, any> & { id: string } => ({ ...trip, id: String(trip.id) }))}
+              empty={<div className="px-6 py-10 text-center text-sm text-muted-foreground">No trips found.</div>}
+              onRowClick={(trip) => {
+                setSelectedTrip(trip);
+                setTripDialogOpen(true);
+                void hydrateTripDistance(trip);
+              }}
+              columns={[
+                {
+                  header: 'Status',
+                  mobile: 'title',
+                  cell: (trip) => (
+                    <StatusBadge status={String(trip.tripStatus || '')} dot={String(trip.tripStatus) === 'In Progress'}>
+                      {trip.tripStatus || '-'}
+                    </StatusBadge>
+                  ),
+                },
+                { header: 'Start', className: 'whitespace-nowrap', cell: (trip) => formatDateTime(String(trip.startTimeIso || '')) },
+                { header: 'End', className: 'whitespace-nowrap', cell: (trip) => formatDateTime(String(trip.endTimeIso || '')) },
+                {
+                  header: 'Distance',
+                  mobile: 'aside',
+                  className: 'whitespace-nowrap tabular-nums',
+                  cell: (trip) => `${Number(trip.totalDistanceKm || 0).toFixed(2)} km`,
+                },
+                { header: 'Points', className: 'tabular-nums', cell: (trip) => Number(trip.totalPoints || 0) },
+                { header: 'Start Address', className: 'max-w-[280px] truncate', cell: (trip) => String(trip.startAddress || '-') },
+              ]}
+            />
+          </div>
+        )}
+      </TableCard>
 
       <Dialog
         open={tripDialogOpen}

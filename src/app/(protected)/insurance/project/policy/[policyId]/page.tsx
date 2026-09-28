@@ -13,9 +13,10 @@ import { collection, query, where, getDocs, doc, getDoc } from 'firebase/firesto
 import type { ProjectInsurancePolicy, InsuredAsset, Project } from '@/lib/types';
 import { format } from 'date-fns';
 import { useAuthorization } from '@/hooks/useAuthorization';
-import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { PageHeader } from '@/components/shared/page-header';
+import { TableCard } from '@/components/shared/table-card';
+import { StatusBadge } from '@/components/shared/status-badge';
 
 export default function AssetPoliciesPage() {
   const params = useParams();
@@ -116,11 +117,7 @@ export default function AssetPoliciesPage() {
         />
       </div>
       
-      <Card>
-        <CardHeader className="text-center">
-            <CardTitle>Project Name/Site : {assetName} {assetSite && ` / ${assetSite}`}</CardTitle>
-        </CardHeader>
-        <CardContent className="p-0">
+      <TableCard title={<>Project Name/Site : {assetName} {assetSite && ` / ${assetSite}`}</>} scroll="natural">
           <Table>
             <TableHeader>
               <TableRow>
@@ -145,15 +142,15 @@ export default function AssetPoliciesPage() {
                 policies.map(policy => (
                   <TableRow key={policy.id}>
                       <TableCell>{policy.policy_category}</TableCell>
-                      <TableCell>{policy.policy_no}</TableCell>
+                      <TableCell className="font-mono whitespace-nowrap">{policy.policy_no}</TableCell>
                       <TableCell>{policy.insurance_company}</TableCell>
-                      <TableCell>{formatCurrency(policy.premium)}</TableCell>
-                      <TableCell>{formatCurrency(policy.sum_insured)}</TableCell>
-                      <TableCell>{formatDate(policy.insurance_start_date)}</TableCell>
-                      <TableCell>{policy.tenure_years}</TableCell>
-                      <TableCell>{policy.tenure_months}</TableCell>
-                      <TableCell>{formatDate(policy.insured_until)}</TableCell>
-                      <TableCell>{policy.status}</TableCell>
+                      <TableCell className="whitespace-nowrap tabular-nums">{formatCurrency(policy.premium)}</TableCell>
+                      <TableCell className="whitespace-nowrap tabular-nums">{formatCurrency(policy.sum_insured)}</TableCell>
+                      <TableCell className="whitespace-nowrap">{formatDate(policy.insurance_start_date)}</TableCell>
+                      <TableCell className="tabular-nums">{policy.tenure_years}</TableCell>
+                      <TableCell className="tabular-nums">{policy.tenure_months}</TableCell>
+                      <TableCell className="whitespace-nowrap">{formatDate(policy.insured_until)}</TableCell>
+                      <TableCell><StatusBadge status={policy.status} /></TableCell>
                   </TableRow>
                 ))
               ) : (
@@ -165,8 +162,7 @@ export default function AssetPoliciesPage() {
               )}
             </TableBody>
           </Table>
-        </CardContent>
-      </Card>
+      </TableCard>
     </div>
   );
 }

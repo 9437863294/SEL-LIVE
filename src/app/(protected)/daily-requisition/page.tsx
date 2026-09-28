@@ -26,6 +26,7 @@ import {
 } from '@/components/daily-requisition/module-shell';
 import { Skeleton } from '@/components/ui/skeleton';
 import { PageHeader } from '@/components/shared/page-header';
+import { Badge } from '@/components/ui/badge';
 
 /* ─── helpers ─── */
 
@@ -186,12 +187,12 @@ export default function DailyRequisitionPage() {
         backHref="/"
         meta={
           <>
-            <span className="rounded-full border border-white/70 bg-white/70 px-3 py-1 text-xs text-slate-600 backdrop-blur">
+            <Badge variant="neutral">
               {stageCount} workflow stage{stageCount !== 1 ? 's' : ''}
-            </span>
-            <span className="rounded-full border border-emerald-200/80 bg-emerald-50 px-3 py-1 text-xs text-emerald-700">
+            </Badge>
+            <Badge variant="neutral">
               {enabledCount} accessible areas
-            </span>
+            </Badge>
           </>
         }
       />

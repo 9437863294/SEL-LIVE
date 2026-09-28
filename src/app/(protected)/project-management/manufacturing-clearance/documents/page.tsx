@@ -41,10 +41,7 @@ import { formatQuantity } from "@/lib/purchase-orders";
 import { MC_PERMISSION_RESOURCE } from "@/lib/supply-gates";
 import {
   buildMcRegisterRows,
-  mcHeaderStatusStyles,
-  mcItemStatusStyles,
   poLineKey,
-  type McHeaderStatus,
   type McItem,
 } from "@/lib/project-management-mc-quantity";
 import {
@@ -71,10 +68,10 @@ import {
   pmAccent,
   type PmListColumn,
 } from "@/components/project-management/pm-shell";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { PageHeader } from "@/components/shared/page-header";
+import { StatusBadge } from "@/components/shared/status-badge";
 
 /** Register views. `all` first, then one per status that a reviewer actually works from. */
 const VIEWS = [
@@ -320,7 +317,7 @@ export default function ManufacturingClearanceDocumentsPage() {
         ),
     },
     { header: "MC No.", className: "font-medium", mobile: "title", cell: (row) => row.mcNumber },
-    { header: "Date", className: "text-muted-foreground", cell: (row) => formatDate(row.mcDate) },
+    { header: "Date", className: "whitespace-nowrap", cell: (row) => formatDate(row.mcDate) },
     { header: "Vendor", mobile: "title", cell: (row) => row.vendorName },
     {
       header: "POs",
@@ -343,12 +340,7 @@ export default function ManufacturingClearanceDocumentsPage() {
       header: "Status",
       mobile: "aside",
       cell: (row) => (
-        <Badge
-          variant="outline"
-          className={`border-transparent ${mcHeaderStatusStyles[row.status as McHeaderStatus] ?? ""}`}
-        >
-          {row.status}
-        </Badge>
+        <StatusBadge status={row.status} />
       ),
     },
     {
@@ -463,12 +455,7 @@ export default function ManufacturingClearanceDocumentsPage() {
                 {ledger.clearedPct}% cleared
               </span>
             ) : null}
-            <Badge
-              variant="outline"
-              className={`ml-auto shrink-0 border-transparent text-[11px] ${mcItemStatusStyles[line.status] ?? ""}`}
-            >
-              {line.status}
-            </Badge>
+            <StatusBadge status={line.status} className="ml-auto shrink-0" />
           </li>
         );
       })}

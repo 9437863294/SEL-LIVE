@@ -6,7 +6,8 @@ import { ArrowLeftRight, ArrowUpDown, Calendar as CalendarIcon, Settings2, Shiel
 import { Button } from '@/components/ui/button';
 import { PageHeader } from '@/components/shared/page-header';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
-import { ScrollArea } from '@/components/ui/scroll-area';
+import { TableCard } from '@/components/shared/table-card';
+import { FilterBar } from '@/components/shared/filter-bar';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
@@ -21,7 +22,6 @@ import { DateRange } from 'react-day-picker';
 import { cn } from '@/lib/utils';
 import { getApplicableCcLimit } from '@/lib/bank-balance-limit';
 import { useAuthorization } from '@/hooks/useAuthorization';
-import { Badge } from '@/components/ui/badge';
 import { Switch } from '@/components/ui/switch';
 import {
   DATE_RANGE_PRESET_OPTIONS,
@@ -378,75 +378,21 @@ export default function DailyLogPage() {
         </div>
       </div>
 
-      <Card className="rounded-xl border-border/60 shadow-sm">
-        {/* Filters */}
-        <CardHeader className="border-b border-border/40 pb-4">
-          <div className="flex items-center gap-2 overflow-x-auto pb-1">
-            <Select value={datePreset} onValueChange={handleDatePresetChange}>
-              <SelectTrigger className="w-[180px] shrink-0 rounded-xl">
-                <SelectValue placeholder="Quick filter" />
-              </SelectTrigger>
-              <SelectContent>
-                {DATE_RANGE_PRESET_OPTIONS.map((option) => (
-                  <SelectItem key={option.value} value={option.value}>
-                    {option.label}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-
-            <Popover>
-              <PopoverTrigger asChild>
-                <Button id="date" variant="outline" className={cn('w-full sm:w-[280px] shrink-0 justify-start text-left font-normal rounded-xl', !dateRange && 'text-muted-foreground')}>
-                  <CalendarIcon className="mr-2 h-4 w-4" />
-                  {dateRange?.from ? (
-                    dateRange.to
-                      ? <>{format(dateRange.from, 'LLL dd, y')} – {format(dateRange.to, 'LLL dd, y')}</>
-                      : format(dateRange.from, 'LLL dd, y')
-                  ) : <span>Pick a date range</span>}
-                </Button>
-              </PopoverTrigger>
-              <PopoverContent className="w-auto p-0" align="start">
-                <Calendar
-                  initialFocus
-                  mode="range"
-                  defaultMonth={dateRange?.from}
-                  selected={dateRange}
-                  onSelect={(range) => {
-                    setDateRange(range);
-                    setDatePreset('custom');
-                  }}
-                  numberOfMonths={2}
-                />
-              </PopoverContent>
-            </Popover>
-
-            <Select value={bankFilter} onValueChange={setBankFilter}>
-              <SelectTrigger className="w-[200px] shrink-0 rounded-xl">
-                <SelectValue placeholder="All Banks" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All Banks</SelectItem>
-                {bankAccounts.filter((acc) => acc.status === 'Active').map(acc => (
-                  <SelectItem key={acc.id} value={acc.id}>{acc.shortName} – {acc.bankName}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-
+      <TableCard
+        title="Balance log"
+        count={filteredLogs.length}
+        noun="record"
+        toolbar={
+          <FilterBar
+            activeCount={(dateRange ? 1 : 0) + (bankFilter !== 'all' ? 1 : 0)}
+            onClear={() => {
+              setDateRange(undefined);
+              setDatePreset('custom');
+              setBankFilter('all');
+            }}
+            actions={
+              <>
             <Button
-              onClick={() => {
-                setDateRange(undefined);
-                setDatePreset('custom');
-                setBankFilter('all');
-              }}
-              variant="secondary"
-              className="shrink-0 rounded-xl"
-            >
-              Clear Filters
-            </Button>
-
-            <Button
-              className="shrink-0"
               variant="outline"
               size="icon"
               onClick={() => setViewMode((prev) => (prev === 'dateWise' ? 'current' : 'dateWise'))}
@@ -459,7 +405,7 @@ export default function DailyLogPage() {
           {viewMode === 'dateWise' && (
             <Popover open={sectionsPopoverOpen} onOpenChange={setSectionsPopoverOpen}>
               <PopoverTrigger asChild>
-                <Button variant="outline" className="shrink-0 rounded-xl">
+                <Button variant="outline">
                   <Settings2 className="mr-2 h-4 w-4" />
                   Sections
                 </Button>
@@ -493,41 +439,74 @@ export default function DailyLogPage() {
               </PopoverContent>
             </Popover>
           )}
+              </>
+            }
+          >
+            <Select value={datePreset} onValueChange={handleDatePresetChange}>
+              <SelectTrigger>
+                <SelectValue placeholder="Quick filter" />
+              </SelectTrigger>
+              <SelectContent>
+                {DATE_RANGE_PRESET_OPTIONS.map((option) => (
+                  <SelectItem key={option.value} value={option.value}>
+                    {option.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
 
-            {filteredLogs.length > 0 && (
-              <Badge variant="outline" className="shrink-0">
-                {filteredLogs.length} record{filteredLogs.length !== 1 ? 's' : ''}
-              </Badge>
-            )}
-          </div>
-        </CardHeader>
+            <Popover>
+              <PopoverTrigger asChild>
+                <Button id="date" variant="outline" className={cn('justify-start text-left font-normal', !dateRange && 'text-muted-foreground')}>
+                  <CalendarIcon className="mr-2 h-4 w-4" />
+                  {dateRange?.from ? (
+                    dateRange.to
+                      ? <>{format(dateRange.from, 'LLL dd, y')} – {format(dateRange.to, 'LLL dd, y')}</>
+                      : format(dateRange.from, 'LLL dd, y')
+                  ) : <span>Pick a date range</span>}
+                </Button>
+              </PopoverTrigger>
+              <PopoverContent className="w-auto p-0" align="start">
+                <Calendar
+                  initialFocus
+                  mode="range"
+                  defaultMonth={dateRange?.from}
+                  selected={dateRange}
+                  onSelect={(range) => {
+                    setDateRange(range);
+                    setDatePreset('custom');
+                  }}
+                  numberOfMonths={2}
+                />
+              </PopoverContent>
+            </Popover>
 
-        <CardContent className="p-0 overflow-hidden">
-          <div className="min-w-0 overflow-hidden rounded-2xl border border-border/60 bg-background">
-            <ScrollArea
-              className={cn(
-                'h-[calc(100vh-22rem)]',
-                viewMode === 'dateWise'
-                  ? '[&_[data-orientation=vertical]]:mt-[5.5rem] [&_[data-orientation=vertical]]:h-[calc(100%-5.5rem)]'
-                  : '[&_[data-orientation=vertical]]:mt-[2.75rem] [&_[data-orientation=vertical]]:h-[calc(100%-2.75rem)]'
-              )}
-              showHorizontalScrollbar
-            >
+            <Select value={bankFilter} onValueChange={setBankFilter}>
+              <SelectTrigger>
+                <SelectValue placeholder="All Banks" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Banks</SelectItem>
+                {bankAccounts.filter((acc) => acc.status === 'Active').map(acc => (
+                  <SelectItem key={acc.id} value={acc.id}>{acc.shortName} – {acc.bankName}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </FilterBar>
+        }
+      >
             {viewMode === 'current' ? (
-              <Table
-                containerClassName="w-full overflow-visible"
-                className="w-full min-w-[900px]"
-              >
-                <TableHeader className="sticky top-0 z-10 bg-background border-b border-border/60">
-                  <TableRow className="bg-muted/30 hover:bg-muted/30">
-                    <TableHead className="font-semibold">Date</TableHead>
-                    <TableHead className="font-semibold">Bank</TableHead>
-                    <TableHead className="font-semibold text-right">Opening</TableHead>
-                    <TableHead className="font-semibold text-right">Payments</TableHead>
-                    <TableHead className="font-semibold text-right">Receipts</TableHead>
-                    <TableHead className="font-semibold text-right">Contra</TableHead>
-                    <TableHead className="font-semibold text-right">Closing</TableHead>
-                    <TableHead className="font-semibold text-right">Available</TableHead>
+              <Table className="w-full min-w-[900px]">
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Date</TableHead>
+                    <TableHead>Bank</TableHead>
+                    <TableHead className="text-right">Opening</TableHead>
+                    <TableHead className="text-right">Payments</TableHead>
+                    <TableHead className="text-right">Receipts</TableHead>
+                    <TableHead className="text-right">Contra</TableHead>
+                    <TableHead className="text-right">Closing</TableHead>
+                    <TableHead className="text-right">Available</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -539,30 +518,30 @@ export default function DailyLogPage() {
                     ))
                     : filteredLogs.length > 0
                       ? filteredLogs.map(log => (
-                        <TableRow key={log.id} className="hover:bg-muted/20 transition-colors">
-                          <TableCell className="font-medium text-sm">
+                        <TableRow key={log.id}>
+                          <TableCell className="whitespace-nowrap font-medium">
                             {format(new Date(log.date), 'dd MMM, yyyy')}
                           </TableCell>
                           <TableCell>
-                            <span className="text-sm font-medium">{log.accountName}</span>
+                            {log.accountName}
                           </TableCell>
-                          <TableCell className="text-right text-sm">{formatCurrency(log.openingBalance)}</TableCell>
-                          <TableCell className="text-right">
-                            <span className={cn('text-sm font-medium', log.totalExpenses > 0 ? 'text-red-600 dark:text-red-400' : 'text-muted-foreground')}>
+                          <TableCell className="whitespace-nowrap text-right tabular-nums">{formatCurrency(log.openingBalance)}</TableCell>
+                          <TableCell className="whitespace-nowrap text-right tabular-nums">
+                            <span className={cn(log.totalExpenses > 0 ? 'text-red-600 dark:text-red-400' : 'text-muted-foreground')}>
                               {log.totalExpenses > 0 ? `−${formatCurrency(log.totalExpenses)}` : '—'}
                             </span>
                           </TableCell>
-                          <TableCell className="text-right">
-                            <span className={cn('text-sm font-medium', log.totalReceipts > 0 ? 'text-green-600 dark:text-green-400' : 'text-muted-foreground')}>
+                          <TableCell className="whitespace-nowrap text-right tabular-nums">
+                            <span className={cn(log.totalReceipts > 0 ? 'text-green-600 dark:text-green-400' : 'text-muted-foreground')}>
                               {log.totalReceipts > 0 ? `+${formatCurrency(log.totalReceipts)}` : '—'}
                             </span>
                           </TableCell>
-                          <TableCell className="text-right text-sm text-muted-foreground">
+                          <TableCell className="whitespace-nowrap text-right tabular-nums">
                             {log.totalContra !== 0 ? formatCurrency(log.totalContra) : '—'}
                           </TableCell>
-                          <TableCell className="text-right text-sm font-semibold">{formatCurrency(log.closingBalance)}</TableCell>
-                          <TableCell className="text-right">
-                            <span className={cn('text-sm font-bold', log.availableBalance < 0 ? 'text-red-600 dark:text-red-400' : 'text-primary')}>
+                          <TableCell className="whitespace-nowrap text-right tabular-nums">{formatCurrency(log.closingBalance)}</TableCell>
+                          <TableCell className="whitespace-nowrap text-right tabular-nums">
+                            <span className={cn('font-medium', log.availableBalance < 0 ? 'text-red-600 dark:text-red-400' : 'text-primary')}>
                               {formatCurrency(log.availableBalance)}
                             </span>
                           </TableCell>
@@ -582,13 +561,10 @@ export default function DailyLogPage() {
                 </TableBody>
               </Table>
             ) : (
-              <Table
-                containerClassName="w-max overflow-visible"
-                className="w-max min-w-[1200px]"
-              >
-                <TableHeader className="sticky top-0 z-10 bg-background border-b border-border/60">
-                  <TableRow className="bg-muted/30 hover:bg-muted/30">
-                    <TableHead rowSpan={2} className="sticky top-0 left-0 z-30 bg-muted/30 font-semibold border-r border-border/50 min-w-[140px]">
+              <Table className="w-max min-w-[1200px]">
+                <TableHeader>
+                  <TableRow>
+                    <TableHead rowSpan={2} className="sticky left-0 !z-30 min-w-[140px] border-r">
                       <div className="flex items-center gap-2">
                         <span>Date</span>
                         <Button
@@ -604,107 +580,107 @@ export default function DailyLogPage() {
                       </div>
                     </TableHead>
                     {sectionVisibility.utilised && (
-                      <TableHead colSpan={selectedAccounts.length + 1} className="font-semibold text-center border-r border-border/50">Utilised Balance in Bank</TableHead>
+                      <TableHead colSpan={selectedAccounts.length + 1} className="border-r text-center">Utilised Balance in Bank</TableHead>
                     )}
                     {sectionVisibility.interTransfer && (
-                      <TableHead colSpan={selectedAccounts.length + 1} className="font-semibold text-center border-r border-border/50">Inter Bank Transfer</TableHead>
+                      <TableHead colSpan={selectedAccounts.length + 1} className="border-r text-center">Inter Bank Transfer</TableHead>
                     )}
                     {sectionVisibility.expenses && (
-                      <TableHead colSpan={selectedAccounts.length + 1} className="font-semibold text-center border-r border-border/50">Expenses of the Day</TableHead>
+                      <TableHead colSpan={selectedAccounts.length + 1} className="border-r text-center">Expenses of the Day</TableHead>
                     )}
                     {sectionVisibility.receipts && (
-                      <TableHead colSpan={selectedAccounts.length + 1} className="font-semibold text-center border-r border-border/50">Receipt of the Day</TableHead>
+                      <TableHead colSpan={selectedAccounts.length + 1} className="border-r text-center">Receipt of the Day</TableHead>
                     )}
                     {sectionVisibility.dp && (
-                      <TableHead colSpan={selectedAccounts.length + 1} className="font-semibold text-center border-r border-border/50">DP / TOD Limit</TableHead>
+                      <TableHead colSpan={selectedAccounts.length + 1} className="border-r text-center">DP / TOD Limit</TableHead>
                     )}
                     {sectionVisibility.balanceToDraw && (
-                      <TableHead colSpan={selectedAccounts.length + 1} className="font-semibold text-center border-r border-border/50">Balance to Draw</TableHead>
+                      <TableHead colSpan={selectedAccounts.length + 1} className="border-r text-center">Balance to Draw</TableHead>
                     )}
                     {sectionVisibility.interest && (
-                      <TableHead colSpan={(selectedAccounts.length * 2) + 1} className="font-semibold text-center">Interest Calculation</TableHead>
+                      <TableHead colSpan={(selectedAccounts.length * 2) + 1} className="text-center">Interest Calculation</TableHead>
                     )}
                   </TableRow>
-                  <TableRow className="bg-muted/30 hover:bg-muted/30">
+                  <TableRow className="[&>th]:!top-[var(--table-head-h,2.5rem)]">
                     {sectionVisibility.utilised && (
                       <>
                         {selectedAccounts.map((acc) => (
-                          <TableHead key={`util-head-${acc.id}`} className="font-semibold text-right">
+                          <TableHead key={`util-head-${acc.id}`} className="text-right">
                             {acc.shortName}
                           </TableHead>
                         ))}
-                        <TableHead className="font-semibold text-right border-r border-border/50">Total</TableHead>
+                        <TableHead className="border-r text-right">Total</TableHead>
                       </>
                     )}
 
                     {sectionVisibility.interTransfer && (
                       <>
                         {selectedAccounts.map((acc) => (
-                          <TableHead key={`contra-head-${acc.id}`} className="font-semibold text-right">
+                          <TableHead key={`contra-head-${acc.id}`} className="text-right">
                             {acc.shortName}
                           </TableHead>
                         ))}
-                        <TableHead className="font-semibold text-right border-r border-border/50">Total</TableHead>
+                        <TableHead className="border-r text-right">Total</TableHead>
                       </>
                     )}
 
                     {sectionVisibility.expenses && (
                       <>
                         {selectedAccounts.map((acc) => (
-                          <TableHead key={`exp-head-${acc.id}`} className="font-semibold text-right">
+                          <TableHead key={`exp-head-${acc.id}`} className="text-right">
                             {acc.shortName}
                           </TableHead>
                         ))}
-                        <TableHead className="font-semibold text-right border-r border-border/50">Total</TableHead>
+                        <TableHead className="border-r text-right">Total</TableHead>
                       </>
                     )}
 
                     {sectionVisibility.receipts && (
                       <>
                         {selectedAccounts.map((acc) => (
-                          <TableHead key={`rec-head-${acc.id}`} className="font-semibold text-right">
+                          <TableHead key={`rec-head-${acc.id}`} className="text-right">
                             {acc.shortName}
                           </TableHead>
                         ))}
-                        <TableHead className="font-semibold text-right border-r border-border/50">Total</TableHead>
+                        <TableHead className="border-r text-right">Total</TableHead>
                       </>
                     )}
 
                     {sectionVisibility.dp && (
                       <>
                         {selectedAccounts.map((acc) => (
-                          <TableHead key={`dp-head-${acc.id}`} className="font-semibold text-right">
+                          <TableHead key={`dp-head-${acc.id}`} className="text-right">
                             {acc.shortName}
                           </TableHead>
                         ))}
-                        <TableHead className="font-semibold text-right border-r border-border/50">Total</TableHead>
+                        <TableHead className="border-r text-right">Total</TableHead>
                       </>
                     )}
 
                     {sectionVisibility.balanceToDraw && (
                       <>
                         {selectedAccounts.map((acc) => (
-                          <TableHead key={`btd-head-${acc.id}`} className="font-semibold text-right">
+                          <TableHead key={`btd-head-${acc.id}`} className="text-right">
                             {acc.shortName}
                           </TableHead>
                         ))}
-                        <TableHead className="font-semibold text-right border-r border-border/50">Total</TableHead>
+                        <TableHead className="border-r text-right">Total</TableHead>
                       </>
                     )}
 
                     {sectionVisibility.interest && (
                       <>
                         {selectedAccounts.map((acc) => (
-                          <TableHead key={`rate-head-${acc.id}`} className="font-semibold text-right">
+                          <TableHead key={`rate-head-${acc.id}`} className="text-right">
                             Rate {acc.shortName}
                           </TableHead>
                         ))}
                         {selectedAccounts.map((acc) => (
-                          <TableHead key={`int-head-${acc.id}`} className="font-semibold text-right">
+                          <TableHead key={`int-head-${acc.id}`} className="text-right">
                             Projected {acc.shortName}
                           </TableHead>
                         ))}
-                        <TableHead className="font-semibold text-right">Total (Projected)</TableHead>
+                        <TableHead className="text-right">Total (Projected)</TableHead>
                       </>
                     )}
                   </TableRow>
@@ -712,19 +688,19 @@ export default function DailyLogPage() {
                 <TableBody>
                   {dateWiseRows.length > 0 ? (
                     dateWiseRows.map((row) => (
-                      <TableRow key={row.date} className="hover:bg-muted/20 transition-colors">
-                        <TableCell className="sticky left-0 z-10 bg-background font-medium text-sm border-r border-border/50">
+                      <TableRow key={row.date}>
+                        <TableCell className="sticky left-0 z-[1] whitespace-nowrap border-r bg-background font-medium">
                           {format(new Date(row.date), 'dd MMM, yyyy')}
                         </TableCell>
 
                         {sectionVisibility.utilised && (
                           <>
                             {selectedAccounts.map((acc) => (
-                              <TableCell key={`${row.date}-util-${acc.id}`} className="text-right text-sm">
+                              <TableCell key={`${row.date}-util-${acc.id}`} className="whitespace-nowrap text-right tabular-nums">
                                 {row.utilisedByAccount[acc.id] ? formatCurrency(row.utilisedByAccount[acc.id]) : '—'}
                               </TableCell>
                             ))}
-                            <TableCell className="text-right text-sm font-semibold border-r border-border/50">
+                            <TableCell className="whitespace-nowrap border-r text-right font-medium tabular-nums">
                               {formatCurrency(selectedAccounts.reduce((s, acc) => s + row.utilisedByAccount[acc.id], 0))}
                             </TableCell>
                           </>
@@ -733,11 +709,11 @@ export default function DailyLogPage() {
                         {sectionVisibility.interTransfer && (
                           <>
                             {selectedAccounts.map((acc) => (
-                              <TableCell key={`${row.date}-contra-${acc.id}`} className="text-right text-sm">
+                              <TableCell key={`${row.date}-contra-${acc.id}`} className="whitespace-nowrap text-right tabular-nums">
                                 {row.interTransferByAccount[acc.id] ? formatCurrency(row.interTransferByAccount[acc.id]) : '—'}
                               </TableCell>
                             ))}
-                            <TableCell className="text-right text-sm font-semibold border-r border-border/50">
+                            <TableCell className="whitespace-nowrap border-r text-right font-medium tabular-nums">
                               {formatCurrency(selectedAccounts.reduce((s, acc) => s + row.interTransferByAccount[acc.id], 0))}
                             </TableCell>
                           </>
@@ -746,11 +722,11 @@ export default function DailyLogPage() {
                         {sectionVisibility.expenses && (
                           <>
                             {selectedAccounts.map((acc) => (
-                              <TableCell key={`${row.date}-exp-${acc.id}`} className="text-right text-sm">
+                              <TableCell key={`${row.date}-exp-${acc.id}`} className="whitespace-nowrap text-right tabular-nums">
                                 {row.expensesByAccount[acc.id] ? formatCurrency(row.expensesByAccount[acc.id]) : '—'}
                               </TableCell>
                             ))}
-                            <TableCell className="text-right text-sm font-semibold border-r border-border/50">
+                            <TableCell className="whitespace-nowrap border-r text-right font-medium tabular-nums">
                               {formatCurrency(selectedAccounts.reduce((s, acc) => s + row.expensesByAccount[acc.id], 0))}
                             </TableCell>
                           </>
@@ -759,11 +735,11 @@ export default function DailyLogPage() {
                         {sectionVisibility.receipts && (
                           <>
                             {selectedAccounts.map((acc) => (
-                              <TableCell key={`${row.date}-rec-${acc.id}`} className="text-right text-sm">
+                              <TableCell key={`${row.date}-rec-${acc.id}`} className="whitespace-nowrap text-right tabular-nums">
                                 {row.receiptsByAccount[acc.id] ? formatCurrency(row.receiptsByAccount[acc.id]) : '—'}
                               </TableCell>
                             ))}
-                            <TableCell className="text-right text-sm font-semibold border-r border-border/50">
+                            <TableCell className="whitespace-nowrap border-r text-right font-medium tabular-nums">
                               {formatCurrency(selectedAccounts.reduce((s, acc) => s + row.receiptsByAccount[acc.id], 0))}
                             </TableCell>
                           </>
@@ -772,11 +748,11 @@ export default function DailyLogPage() {
                         {sectionVisibility.dp && (
                           <>
                             {selectedAccounts.map((acc) => (
-                              <TableCell key={`${row.date}-dp-${acc.id}`} className="text-right text-sm">
+                              <TableCell key={`${row.date}-dp-${acc.id}`} className="whitespace-nowrap text-right tabular-nums">
                                 {row.dpByAccount[acc.id] ? formatCurrency(row.dpByAccount[acc.id]) : '—'}
                               </TableCell>
                             ))}
-                            <TableCell className="text-right text-sm font-semibold border-r border-border/50">
+                            <TableCell className="whitespace-nowrap border-r text-right font-medium tabular-nums">
                               {formatCurrency(selectedAccounts.reduce((s, acc) => s + row.dpByAccount[acc.id], 0))}
                             </TableCell>
                           </>
@@ -785,11 +761,11 @@ export default function DailyLogPage() {
                         {sectionVisibility.balanceToDraw && (
                           <>
                             {selectedAccounts.map((acc) => (
-                              <TableCell key={`${row.date}-btd-${acc.id}`} className="text-right text-sm">
+                              <TableCell key={`${row.date}-btd-${acc.id}`} className="whitespace-nowrap text-right tabular-nums">
                                 {row.balanceToDrawByAccount[acc.id] ? formatCurrency(row.balanceToDrawByAccount[acc.id]) : '—'}
                               </TableCell>
                             ))}
-                            <TableCell className="text-right text-sm font-semibold border-r border-border/50">
+                            <TableCell className="whitespace-nowrap border-r text-right font-medium tabular-nums">
                               {formatCurrency(selectedAccounts.reduce((s, acc) => s + row.balanceToDrawByAccount[acc.id], 0))}
                             </TableCell>
                           </>
@@ -798,16 +774,16 @@ export default function DailyLogPage() {
                         {sectionVisibility.interest && (
                           <>
                             {selectedAccounts.map((acc) => (
-                              <TableCell key={`${row.date}-rate-${acc.id}`} className="text-right text-sm">
+                              <TableCell key={`${row.date}-rate-${acc.id}`} className="whitespace-nowrap text-right tabular-nums">
                                 {row.interestRateByAccount[acc.id] > 0 ? `${row.interestRateByAccount[acc.id].toFixed(2)}%` : '—'}
                               </TableCell>
                             ))}
                             {selectedAccounts.map((acc) => (
-                              <TableCell key={`${row.date}-int-${acc.id}`} className="text-right text-sm">
+                              <TableCell key={`${row.date}-int-${acc.id}`} className="whitespace-nowrap text-right tabular-nums">
                                 {row.interestProjectedByAccount[acc.id] ? formatCurrency(row.interestProjectedByAccount[acc.id]) : '—'}
                               </TableCell>
                             ))}
-                            <TableCell className="text-right text-sm font-semibold">
+                            <TableCell className="whitespace-nowrap text-right font-medium tabular-nums">
                               {formatCurrency(selectedAccounts.reduce((s, acc) => s + row.interestProjectedByAccount[acc.id], 0))}
                             </TableCell>
                           </>
@@ -830,10 +806,7 @@ export default function DailyLogPage() {
                 </TableBody>
               </Table>
             )}
-            </ScrollArea>
-          </div>
-        </CardContent>
-      </Card>
+      </TableCard>
     </div>
     </>
   );

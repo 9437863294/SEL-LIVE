@@ -8,9 +8,9 @@ import { computeRenewalMeta, getVehicleComplianceRequirements, VEHICLE_COLLECTIO
 import { useAuthorization } from '@/hooks/useAuthorization';
 import { Card, CardContent } from '@/components/ui/card';
 import { PageHeader } from '@/components/shared/page-header';
-import { Badge } from '@/components/ui/badge';
+import { FilterBar } from '@/components/shared/filter-bar';
+import { StatusBadge } from '@/components/shared/status-badge';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
 import { Skeleton } from '@/components/ui/skeleton';
 import {
   Activity,
@@ -170,25 +170,25 @@ const kindFromDays = (days: number): ExpiryKind => {
 function KindBadge({ kind, daysLeft }: { kind: ExpiryKind; daysLeft: number }) {
   if (kind === 'expired') {
     return (
-      <Badge variant="destructive" className="gap-1 shadow-sm">
+      <StatusBadge status="Expired" tone="danger">
         <AlertTriangle className="h-3 w-3" />
         Expired {Math.abs(daysLeft)}d ago
-      </Badge>
+      </StatusBadge>
     );
   }
   if (kind === 'dueSoon') {
     return (
-      <Badge className="gap-1 bg-amber-500 text-white shadow-sm hover:bg-amber-600">
+      <StatusBadge status="Due Soon" tone="warning">
         <Timer className="h-3 w-3" />
         {daysLeft === 0 ? 'Due Today' : `${daysLeft}d left`}
-      </Badge>
+      </StatusBadge>
     );
   }
   return (
-    <Badge className="gap-1 bg-emerald-100 text-emerald-700 shadow-sm hover:bg-emerald-200">
+    <StatusBadge status="Valid" tone="success">
       <CheckCircle2 className="h-3 w-3" />
       Valid ({daysLeft}d)
-    </Badge>
+    </StatusBadge>
   );
 }
 
@@ -401,9 +401,7 @@ export default function RenewalsHubPage() {
       </div>
 
       {/* ── Filters ── */}
-      <Card className="vm-panel-strong overflow-hidden">
-        <div className="h-0.5 w-full bg-gradient-to-r from-rose-500 via-orange-400 to-amber-500" />
-        <CardContent className="flex flex-col gap-2 px-3 pb-4 pt-3 sm:px-6 sm:pb-6 sm:pt-4">
+      <Card className="space-y-2 p-3 sm:p-4">
           {/* Kind filter */}
           <div className="flex gap-1 overflow-x-auto pb-0.5">
             {(['all', 'expired', 'dueSoon'] as FilterTab[]).map((tab) => (
@@ -445,13 +443,11 @@ export default function RenewalsHubPage() {
           </div>
 
           {/* Search */}
-          <Input
-            placeholder="Search vehicle, driver, details..."
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            className="h-11 w-full border-white/70 bg-white/80 focus-visible:ring-rose-400/40 sm:ml-auto sm:h-10 sm:max-w-xs"
+          <FilterBar
+            search={{ value: query, onChange: setQuery, placeholder: 'Search vehicle, driver, details...' }}
+            activeCount={(filter !== 'all' ? 1 : 0) + (categoryFilter !== 'All' ? 1 : 0)}
+            onClear={() => { setQuery(''); setFilter('all'); setCategoryFilter('All'); }}
           />
-        </CardContent>
       </Card>
 
       {/* ── Items Grid ── */}

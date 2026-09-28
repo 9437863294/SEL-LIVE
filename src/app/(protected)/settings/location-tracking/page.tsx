@@ -10,7 +10,6 @@ import {
   MailCheck,
   MapPin,
   RefreshCw,
-  Search,
   ShieldAlert,
   ShieldCheck,
   Users,
@@ -23,6 +22,9 @@ import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { PageHeader } from '@/components/shared/page-header';
+import { SearchInput } from '@/components/shared/filter-bar';
+import { StatusBadge } from '@/components/shared/status-badge';
+import { TableCard } from '@/components/shared/table-card';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import {
   Dialog,
@@ -385,26 +387,20 @@ export default function LocationTrackingSettingsPage() {
         }
       />
 
-      <div className="grid gap-3 sm:grid-cols-3">
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
         <Metric icon={Users} label="Total users" value={rows.length} />
         <Metric icon={MapPin} label="Capture enabled" value={enabledCount} />
         <Metric icon={LocateFixed} label="Locations received" value={capturedCount} />
       </div>
 
-      <Card>
-        <CardHeader className="gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <div>
-            <CardTitle>User capture settings</CardTitle>
-            <CardDescription>
-              Android continues after normal app dismissal with the required ongoing location notification.
-            </CardDescription>
-          </div>
-          <div className="relative w-full sm:w-72">
-            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-            <Input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search users" className="pl-9" />
-          </div>
-        </CardHeader>
-        <CardContent className="p-0">
+      <TableCard
+        title="User capture settings"
+        description="Android continues after normal app dismissal with the required ongoing location notification."
+        count={filteredRows.length}
+        total={rows.length}
+        noun="user"
+        toolbar={<SearchInput value={search} onChange={setSearch} placeholder="Search users" className="sm:max-w-sm" />}
+      >
           {loadingRows ? <RowsSkeleton /> : (
             <Table>
               <TableHeader>
@@ -434,7 +430,7 @@ export default function LocationTrackingSettingsPage() {
                             <p className="truncate font-semibold group-hover:text-primary group-hover:underline">{row.name || 'Unnamed user'}</p>
                             <p className="truncate text-xs text-muted-foreground">{row.designation || row.role || row.email}</p>
                           </div>
-                          {row.status === 'Inactive' && <Badge variant="secondary">Inactive</Badge>}
+                          {row.status === 'Inactive' && <StatusBadge status={row.status} />}
                           <History className="ml-auto h-4 w-4 shrink-0 text-muted-foreground group-hover:text-primary" />
                         </button>
                       </TableCell>
@@ -473,7 +469,7 @@ export default function LocationTrackingSettingsPage() {
                             </a>
                             <p className="text-xs text-muted-foreground">{formatCapturedAt(row.location.updatedAtIso)}</p>
                           </div>
-                        ) : <span className="text-sm text-muted-foreground">Never captured</span>}
+                        ) : <span className="text-muted-foreground">Never captured</span>}
                       </TableCell>
                       <TableCell>
                         <Button
@@ -496,8 +492,7 @@ export default function LocationTrackingSettingsPage() {
               </TableBody>
             </Table>
           )}
-        </CardContent>
-      </Card>
+      </TableCard>
 
       <LocationHistoryDialog
         user={historyUser}
@@ -545,7 +540,7 @@ function LocationHistoryDialog({
             <RowsSkeleton />
           ) : records.length ? (
             <Table>
-              <TableHeader className="sticky top-0 z-10 bg-background">
+              <TableHeader>
                 <TableRow>
                   <TableHead>Captured at</TableHead>
                   <TableHead>Coordinates</TableHead>
@@ -560,7 +555,7 @@ function LocationHistoryDialog({
                     <TableCell>
                       <div className="space-y-1">
                         <p className="font-medium">{formatCapturedAt(record.capturedAtIso)}</p>
-                        {record.latestSnapshot && <Badge variant="secondary">Latest snapshot</Badge>}
+                        {record.latestSnapshot && <Badge variant="neutral">Latest snapshot</Badge>}
                       </div>
                     </TableCell>
                     <TableCell>
@@ -691,7 +686,7 @@ function AccessDenied() {
 }
 
 function LocationPageSkeleton() {
-  return <div className="space-y-4 p-6"><Skeleton className="h-12 w-72" /><div className="grid gap-3 sm:grid-cols-3"><Skeleton className="h-24" /><Skeleton className="h-24" /><Skeleton className="h-24" /></div><Skeleton className="h-96" /></div>;
+  return <div className="space-y-4 p-6"><Skeleton className="h-12 w-72" /><div className="grid grid-cols-1 gap-3 sm:grid-cols-3"><Skeleton className="h-24" /><Skeleton className="h-24" /><Skeleton className="h-24" /></div><Skeleton className="h-96" /></div>;
 }
 
 function RowsSkeleton() {

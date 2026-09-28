@@ -8,7 +8,6 @@ import {
   FileText,
   FolderOpen,
   Loader2,
-  Search,
   ShieldAlert,
   Trash2,
   Upload,
@@ -89,6 +88,7 @@ import {
   type PmListColumn,
 } from "@/components/project-management/pm-shell";
 import { PageHeader } from "@/components/shared/page-header";
+import { FilterBar } from "@/components/shared/filter-bar";
 import { cn } from "@/lib/utils";
 
 type ProjectMapping = {
@@ -99,15 +99,6 @@ type ProjectMapping = {
 };
 
 type IndentOption = { id: string; indentNumber: string };
-
-const categoryStyles: Record<DocumentCategory, string> = {
-  Drawing: "bg-slate-100 text-slate-700",
-  "QC Certificate": "bg-emerald-100 text-emerald-700",
-  "Inspection Report": "bg-blue-100 text-blue-700",
-  "Dispatch Document": "bg-amber-100 text-amber-700",
-  Approval: "bg-violet-100 text-violet-700",
-  Other: "bg-muted text-muted-foreground",
-};
 
 const formatFileSize = (bytes: number) => {
   if (!bytes) return "—";
@@ -348,9 +339,7 @@ export default function ProjectDocumentsPage() {
       header: "Category",
       mobile: "aside",
       cell: (item) => (
-        <Badge variant="outline" className={categoryStyles[item.category]}>
-          {item.category}
-        </Badge>
+        <Badge variant="outline">{item.category}</Badge>
       ),
     },
     {
@@ -588,18 +577,16 @@ export default function ProjectDocumentsPage() {
         }
       />
 
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
-        <div className="relative w-full sm:max-w-xs">
-          <Search className="absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-          <Input
-            className="pl-8"
-            placeholder="Search by file name or link..."
-            value={search}
-            onChange={(event) => setSearch(event.target.value)}
-          />
-        </div>
+      <FilterBar
+        search={{ value: search, onChange: setSearch, placeholder: "Search by file name or link..." }}
+        activeCount={categoryFilter !== "All" ? 1 : 0}
+        onClear={() => {
+          setSearch("");
+          setCategoryFilter("All");
+        }}
+      >
         <Select value={categoryFilter} onValueChange={(value: DocumentCategory | "All") => setCategoryFilter(value)}>
-          <SelectTrigger className="w-full sm:w-56">
+          <SelectTrigger>
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
@@ -611,7 +598,7 @@ export default function ProjectDocumentsPage() {
             ))}
           </SelectContent>
         </Select>
-      </div>
+      </FilterBar>
 
       <PmDataList
         rows={filteredDocuments}

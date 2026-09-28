@@ -2,13 +2,14 @@
 
 import Link from 'next/link';
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
-import { ArrowUpDown, CheckCircle2, FileSearch, Inbox, Loader2, Search } from 'lucide-react';
+import { ArrowUpDown, CheckCircle2, FileSearch, Inbox, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { cn } from '@/lib/utils';
+import { FilterBar } from '@/components/shared/filter-bar';
+import { StatusBadge } from '@/components/shared/status-badge';
+import { TableCard } from '@/components/shared/table-card';
 import {
   eApprovalAgeingBucket,
   E_APPROVAL_BASE_PATH,
@@ -21,8 +22,7 @@ import {
   EApprovalSourceBadge,
   EApprovalDueBadge,
   EApprovalEmptyState,
-  EApprovalPriorityBadge,
-  EApprovalStatusBadge,
+  eApprovalPriorityTone,
 } from './shared';
 import { formatEApprovalAmount, formatEApprovalDate } from './hooks';
 
@@ -122,73 +122,53 @@ export function EApprovalRequestTable({
     }
   };
 
-  if (isLoading) {
-    return (
-      <div className="space-y-2 p-3">
-        {[0, 1, 2, 3, 4].map((row) => (
-          <Skeleton key={row} className="h-10 w-full" />
-        ))}
-      </div>
-    );
-  }
-
   return (
-    <div className="space-y-2">
-      <div className="flex flex-wrap items-center gap-2 px-1">
-        <div className="relative min-w-0 flex-1 sm:max-w-xs">
-          <Search className="absolute left-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
-          <Input
-            value={search}
-            onChange={(event) => setSearch(event.target.value)}
-            placeholder="Search reference, subject, person…"
-            className="h-9 pl-7 text-xs"
-          />
+    // The card scrolls the rows under a pinned header, so the filters above stay reachable however
+    // many approvals are loaded.
+    <TableCard
+      title="Approvals"
+      count={isLoading ? undefined : filtered.length}
+      total={isLoading ? undefined : rows.length}
+      noun="approval"
+      toolbar={
+        <FilterBar
+          search={{ value: search, onChange: setSearch, placeholder: 'Search reference, subject, person…' }}
+          activeCount={status !== 'All' ? 1 : 0}
+          onClear={() => {
+            setSearch('');
+            setStatus('All');
+          }}
+        >
+          {showStatusFilter && (
+            <Select value={status} onValueChange={(next) => setStatus(next as 'All' | EApprovalStatus)}>
+              <SelectTrigger aria-label="Status">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="All">All statuses</SelectItem>
+                {E_APPROVAL_STATUSES.map((option) => (
+                  <SelectItem key={option} value={option}>
+                    {option}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          )}
+        </FilterBar>
+      }
+    >
+      {isLoading ? (
+        <div className="space-y-2 p-3">
+          {[0, 1, 2, 3, 4].map((row) => (
+            <Skeleton key={row} className="h-10 w-full" />
+          ))}
         </div>
-        {showStatusFilter && (
-          <Select value={status} onValueChange={(next) => setStatus(next as 'All' | EApprovalStatus)}>
-            <SelectTrigger className="h-9 w-[180px] text-xs">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="All">All statuses</SelectItem>
-              {E_APPROVAL_STATUSES.map((option) => (
-                <SelectItem key={option} value={option}>
-                  {option}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        )}
-        <span className="ml-auto text-xs text-muted-foreground">
-          {filtered.length} of {rows.length}
-        </span>
-      </div>
-
-      {filtered.length === 0 ? (
+      ) : filtered.length === 0 ? (
         <EApprovalEmptyState icon={rows.length ? FileSearch : Inbox} title={emptyTitle} description={emptyDescription} />
       ) : (
-        /*
-         * One scroll container, not two. `Table` already wraps itself in `overflow-auto`, so the
-         * usual wrapping div with `overflow-x-auto` nests a second scroller inside the first — they
-         * fight over the horizontal scroll, and `position: sticky` on the header resolves against
-         * the inner one, which is why a sticky header does nothing until this is collapsed into a
-         * single container via `containerClassName`.
-         *
-         * Bounding the height is what keeps the rows *inside* the table: the list scrolls within its
-         * own box instead of running down the page, so the header stays put and the filters above
-         * stay reachable however many approvals are loaded.
-         */
-        <Table containerClassName="max-h-[min(65vh,640px)] overflow-auto rounded-lg border">
+        <Table>
           <TableHeader>
-            {/*
-              Sticky goes on the `th` cells, not the `tr` — Tailwind's preflight sets
-              `border-collapse: collapse`, under which a sticky row is simply ignored in Chrome.
-
-              Opaque background, not `bg-muted/40`: rows scrolling underneath would otherwise show
-              through. The inset shadow stands in for the bottom border, which a collapsed border
-              model drops once the cell is taken out of flow.
-            */}
-            <TableRow className="[&_th]:sticky [&_th]:top-0 [&_th]:z-10 [&_th]:bg-slate-50 [&_th]:shadow-[inset_0_-1px_0_hsl(var(--border))] hover:bg-transparent">
+            <TableRow>
                 <TableHead className="whitespace-nowrap">
                   <button type="button" className="inline-flex items-center gap-1" onClick={() => toggleSort('reference')}>
                     Reference <ArrowUpDown className="h-3 w-3" />
@@ -215,18 +195,20 @@ export function EApprovalRequestTable({
             </TableHeader>
             <TableBody>
               {filtered.map((row) => (
-                <TableRow key={row.id} className="hover:bg-muted/30">
-                  <TableCell className="whitespace-nowrap font-mono text-[11px]">
+                <TableRow key={row.id}>
+                  <TableCell className="whitespace-nowrap font-mono">
                     <Link href={`${E_APPROVAL_BASE_PATH}/${row.id}`} className="text-sky-700 hover:underline">
                       {row.referenceNo || 'Draft'}
                     </Link>
                   </TableCell>
                   <TableCell className="min-w-[220px] max-w-[360px]">
                     <Link href={`${E_APPROVAL_BASE_PATH}/${row.id}`} className="block hover:underline">
-                      <span className="line-clamp-1 text-sm font-medium">{row.subject}</span>
+                      <span className="line-clamp-1 font-medium">{row.subject}</span>
                     </Link>
                     <span className="mt-0.5 flex flex-wrap items-center gap-1">
-                      <EApprovalPriorityBadge priority={row.priority} />
+                      {row.priority && row.priority !== 'Normal' && (
+                        <StatusBadge status={row.priority} tone={eApprovalPriorityTone[row.priority]} />
+                      )}
                       <EApprovalConfidentialBadge confidential={row.confidential} />
                       <EApprovalSourceBadge source={row.source} />
                       {(row.version ?? 1) > 1 && (
@@ -235,14 +217,14 @@ export function EApprovalRequestTable({
                     </span>
                   </TableCell>
                   {showRequester && (
-                    <TableCell className="whitespace-nowrap text-xs">{row.requesterName || '—'}</TableCell>
+                    <TableCell className="whitespace-nowrap">{row.requesterName || '—'}</TableCell>
                   )}
-                  <TableCell className="whitespace-nowrap text-xs">{row.departmentName || '—'}</TableCell>
-                  <TableCell className="whitespace-nowrap text-right text-xs font-medium tabular-nums">
+                  <TableCell className="whitespace-nowrap">{row.departmentName || '—'}</TableCell>
+                  <TableCell className="whitespace-nowrap text-right font-medium tabular-nums">
                     {row.amount == null ? '—' : formatEApprovalAmount(row.amount)}
                   </TableCell>
                   {showPendingWith && (
-                    <TableCell className="max-w-[200px] text-xs">
+                    <TableCell className="max-w-[200px]">
                       <span className="line-clamp-1">{row.pendingLabel || '—'}</span>
                       {row.currentStepName && (
                         <span className="block truncate text-[10px] text-muted-foreground">{row.currentStepName}</span>
@@ -250,19 +232,21 @@ export function EApprovalRequestTable({
                     </TableCell>
                   )}
                   {showAgeing && (
-                    <TableCell className="whitespace-nowrap text-xs text-muted-foreground">
+                    <TableCell className="whitespace-nowrap">
                       {eApprovalAgeingBucket(row.submittedAt)}
-                      <span className="block text-[10px]">{formatEApprovalDate(row.submittedAt)}</span>
+                      <span className="block text-[10px] text-muted-foreground">{formatEApprovalDate(row.submittedAt)}</span>
                     </TableCell>
                   )}
                   <TableCell className="whitespace-nowrap">
                     <EApprovalDueBadge dueAt={row.currentDueAt} />
                   </TableCell>
                   <TableCell className="whitespace-nowrap">
-                    <EApprovalStatusBadge status={row.status} />
+                    <StatusBadge status={row.status}>
+                      {row.status === 'Superseded' ? <s>Superseded</s> : undefined}
+                    </StatusBadge>
                   </TableCell>
                   {renderActions && (
-                    <TableCell className="whitespace-nowrap py-1 pl-0 pr-1 text-right">
+                    <TableCell className="whitespace-nowrap text-right">
                       {renderActions(row)}
                     </TableCell>
                   )}
@@ -271,7 +255,7 @@ export function EApprovalRequestTable({
             </TableBody>
           </Table>
       )}
-    </div>
+    </TableCard>
   );
 }
 
@@ -313,7 +297,9 @@ export function EApprovalActionList({
               <div className="min-w-0 flex-1">
                 <div className="flex flex-wrap items-center gap-1.5">
                   <span className="font-mono text-[11px] text-muted-foreground">{row.referenceNo}</span>
-                  <EApprovalPriorityBadge priority={row.priority} />
+                  {row.priority && row.priority !== 'Normal' && (
+                    <StatusBadge status={row.priority} tone={eApprovalPriorityTone[row.priority]} />
+                  )}
                   <EApprovalConfidentialBadge confidential={row.confidential} />
                   <EApprovalSourceBadge source={row.source} />
                 </div>

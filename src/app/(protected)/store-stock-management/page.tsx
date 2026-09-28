@@ -16,13 +16,13 @@ import { collection, getDocs, query, where } from 'firebase/firestore';
 import type { Project } from '@/lib/types';
 import { useAuthorization } from '@/hooks/useAuthorization';
 import { db } from '@/lib/firebase';
-import { cn } from '@/lib/utils';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { PageHeader } from '@/components/shared/page-header';
+import { StatusBadge } from '@/components/shared/status-badge';
 
 type PropertyRecord = {
   id: string;
@@ -154,7 +154,7 @@ export default function StoreStockManagementPage() {
                   <CardDescription className="mt-1">Items, stores, receipts, issues and transfers</CardDescription>
                 </div>
               </div>
-              <Badge variant="secondary" className="shrink-0 bg-white text-emerald-700">
+              <Badge variant="neutral" className="shrink-0">
                 {properties.length} {properties.length === 1 ? 'property' : 'properties'}
               </Badge>
             </div>
@@ -165,7 +165,7 @@ export default function StoreStockManagementPage() {
               {properties.length ? (
                 <div className="mt-2 flex flex-wrap gap-2">
                   {properties.map((property) => (
-                    <Badge key={property.id} variant="outline" className="bg-white font-normal">
+                    <Badge key={property.id} variant="outline" className="font-normal">
                       <MapPin className="mr-1 size-3" />{property.name}
                     </Badge>
                   ))}
@@ -194,7 +194,7 @@ export default function StoreStockManagementPage() {
                   <CardDescription className="mt-1">BOQ-based stock for each project</CardDescription>
                 </div>
               </div>
-              <Badge variant="secondary" className="shrink-0 bg-white text-sky-700">
+              <Badge variant="neutral" className="shrink-0">
                 {projects.length} {projects.length === 1 ? 'project' : 'projects'}
               </Badge>
             </div>
@@ -204,7 +204,6 @@ export default function StoreStockManagementPage() {
               <div className="space-y-2">
                 {projects.map((project) => {
                   const projectLocation = project.location || project.projectSite || project.projectDivision;
-                  const active = project.status === 'Active';
                   return (
                     <Link
                       key={project.id}
@@ -215,17 +214,7 @@ export default function StoreStockManagementPage() {
                       <div className="min-w-0 flex-1">
                         <div className="flex flex-wrap items-center gap-2">
                           <p className="truncate font-semibold text-slate-900">{project.projectName}</p>
-                          <Badge
-                            variant="outline"
-                            className={cn(
-                              'h-5 px-1.5 text-[10px]',
-                              active
-                                ? 'border-emerald-200 bg-emerald-50 text-emerald-700'
-                                : 'border-slate-200 text-slate-500',
-                            )}
-                          >
-                            {project.status || 'Configured'}
-                          </Badge>
+                          <StatusBadge status={project.status || 'Configured'} />
                         </div>
                         {(project.siteCode || projectLocation) && (
                           <p className="mt-1 truncate text-xs text-slate-500">

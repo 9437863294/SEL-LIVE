@@ -18,14 +18,12 @@ import {
   Pencil,
   Plus,
   RefreshCw,
-  Search,
   Trash2,
   Upload,
 } from "lucide-react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import {
   Select,
   SelectContent,
@@ -64,6 +62,7 @@ import {
   TowerProgressNav,
   TowerProgressShell,
 } from "@/components/project-management/tower-progress/tower-progress-ui";
+import { FilterBar } from "@/components/shared/filter-bar";
 import { PageHeader } from "@/components/shared/page-header";
 
 export default function TowerRegisterPage() {
@@ -400,43 +399,44 @@ function TowerRegister() {
                 : "Completion without photographs is allowed but flagged."}
             </p>
           </div>
-          {/* Search across a phone, the filters two to a row beneath it. */}
-          <div className="grid grid-cols-2 gap-2 sm:flex sm:flex-row sm:flex-wrap">
-            <div className="relative col-span-2 sm:w-56">
-              <Search className="absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
-              <Input
-                value={search}
-                onChange={(event) => setSearch(event.target.value)}
-                placeholder="Tower, location, contractor..."
-                className="pl-9"
-              />
-            </div>
-            <FilterSelect value={section} onChange={setSection} options={sections} label="sections" />
-            <FilterSelect value={towerType} onChange={setTowerType} options={towerTypes} label="types" />
-            <FilterSelect
-              value={contractor}
-              onChange={setContractor}
-              options={contractors}
-              label="contractors"
-            />
-            <Select
-              value={status}
-              onValueChange={(value) => setStatus(value as TowerActivityStatus | "All")}
-            >
-              <SelectTrigger className="sm:w-44">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="All">Any status</SelectItem>
-                {TOWER_ACTIVITY_STATUSES.map((entry) => (
-                  <SelectItem key={entry} value={entry}>
-                    Has {entry}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
         </div>
+
+        <FilterBar
+          search={{ value: search, onChange: setSearch, placeholder: "Tower, location, contractor..." }}
+          activeCount={[section, towerType, contractor, status].filter((value) => value !== "All").length}
+          onClear={() => {
+            setSearch("");
+            setSection("All");
+            setTowerType("All");
+            setContractor("All");
+            setStatus("All");
+          }}
+        >
+          <FilterSelect value={section} onChange={setSection} options={sections} label="sections" />
+          <FilterSelect value={towerType} onChange={setTowerType} options={towerTypes} label="types" />
+          <FilterSelect
+            value={contractor}
+            onChange={setContractor}
+            options={contractors}
+            label="contractors"
+          />
+          <Select
+            value={status}
+            onValueChange={(value) => setStatus(value as TowerActivityStatus | "All")}
+          >
+            <SelectTrigger>
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="All">Any status</SelectItem>
+              {TOWER_ACTIVITY_STATUSES.map((entry) => (
+                <SelectItem key={entry} value={entry}>
+                  Has {entry}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </FilterBar>
 
         <PmDataList
           rows={filtered}
@@ -506,7 +506,7 @@ function FilterSelect({
   if (!options.length) return null;
   return (
     <Select value={value} onValueChange={onChange}>
-      <SelectTrigger className="sm:w-40">
+      <SelectTrigger aria-label={`Filter by ${label}`}>
         <SelectValue />
       </SelectTrigger>
       <SelectContent>

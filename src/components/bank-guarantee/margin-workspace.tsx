@@ -12,7 +12,6 @@ import {
   BG_COLLECTIONS,
   BG_PERMISSION_MODULE,
   bgLabel,
-  bgStatusTone,
   formatBgCurrency,
   toBgDate,
   toBgDateInput,
@@ -26,9 +25,10 @@ import {
   type FDAssignment,
   type FixedDeposit,
 } from "@/lib/fixed-deposit";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { PageHeader } from "@/components/shared/page-header";
+import { StatusBadge } from "@/components/shared/status-badge";
+import { TableCard } from "@/components/shared/table-card";
 import {
   Card,
   CardContent,
@@ -284,7 +284,7 @@ export default function BGMarginWorkspace() {
           </>
         }
       />
-      <div className="grid gap-3 sm:grid-cols-4">
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-4">
         <Metric label="Available FDs" value={String(available.length)} />
         <Metric
           label="Eligible Available"
@@ -326,9 +326,11 @@ export default function BGMarginWorkspace() {
           )}
         />
       </div>
-      <Card>
-        <CardContent className="p-0">
-          <div className="overflow-x-auto">
+      <TableCard
+        title="BG FD assignments"
+        count={assignments.length}
+        noun="assignment"
+      >
             <Table>
               <TableHeader>
                 <TableRow>
@@ -372,13 +374,10 @@ export default function BGMarginWorkspace() {
                     <TableCell>
                       {toBgDateInput(item.obligationEndDate)}
                     </TableCell>
-                    <TableCell>
-                      <Badge
-                        variant="outline"
-                        className={bgStatusTone(item.status)}
-                      >
+                    <TableCell className="whitespace-nowrap">
+                      <StatusBadge status={item.status}>
                         {bgLabel(item.status)}
-                      </Badge>
+                      </StatusBadge>
                     </TableCell>
                   </TableRow>
                 ))}
@@ -394,9 +393,7 @@ export default function BGMarginWorkspace() {
                 )}
               </TableBody>
             </Table>
-          </div>
-        </CardContent>
-      </Card>
+      </TableCard>
       <Dialog open={open} onOpenChange={(value) => !saving && setOpen(value)}>
         <DialogContent className="max-h-[92vh] max-w-5xl overflow-y-auto">
           <DialogHeader>
@@ -431,7 +428,7 @@ export default function BGMarginWorkspace() {
             </div>
             {request && (
               <>
-                <div className="grid gap-3 sm:grid-cols-4">
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-4">
                   <Metric
                     label="Required FD"
                     value={formatBgCurrency(required)}
@@ -451,9 +448,11 @@ export default function BGMarginWorkspace() {
                     )}
                   />
                 </div>
-                <Card>
-                  <CardContent className="p-0">
-                    <div className="max-h-80 overflow-auto">
+                <TableCard
+                  title="Eligible FDs"
+                  count={available.length}
+                  noun="FD"
+                >
                       <Table>
                         <TableHeader>
                           <TableRow>
@@ -542,9 +541,7 @@ export default function BGMarginWorkspace() {
                           })}
                         </TableBody>
                       </Table>
-                    </div>
-                  </CardContent>
-                </Card>
+                </TableCard>
                 <div>
                   <Label className="text-xs">Remarks / exception reason</Label>
                   <Textarea

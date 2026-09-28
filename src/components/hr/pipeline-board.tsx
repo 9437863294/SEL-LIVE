@@ -9,7 +9,6 @@ import {
   MoreVertical,
   Phone,
   Plus,
-  Search,
   UserPlus,
 } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
@@ -53,9 +52,11 @@ import {
   moveApplicationStage,
   recordScreening,
 } from '@/lib/hr-requirement-service';
-import { HrEmptyState, HrLoader, HrStatusBadge, hrDialog } from './hr-ui';
+import { HrEmptyState, HrLoader, hrBadgeTone, hrDialog } from './hr-ui';
 import { useHrCollection, useHrConfig, useHrPermissions } from './use-hr-config';
 import { PageHeader } from '@/components/shared/page-header';
+import { FilterBar } from '@/components/shared/filter-bar';
+import { StatusBadge } from '@/components/shared/status-badge';
 
 /**
  * The recruitment pipeline of spec section 22.
@@ -211,7 +212,7 @@ export default function PipelineBoard({
               <p className="truncate text-[11px] font-semibold uppercase tracking-wide text-slate-600">
                 {hrStatusLabel(stage)}
               </p>
-              <Badge variant="secondary" className="shrink-0 tabular-nums">{rows.length}</Badge>
+              <Badge variant="neutral" className="shrink-0 tabular-nums">{rows.length}</Badge>
             </div>
 
             <div className="space-y-2">
@@ -280,12 +281,12 @@ export default function PipelineBoard({
                       </span>
                     )}
                     {application.latestInterviewScore ? (
-                      <Badge variant="outline" className="h-4 border-blue-200 bg-blue-50 px-1 text-[10px] text-blue-700">
+                      <Badge variant="neutral" className="h-4 px-1 text-[10px] tabular-nums">
                         {application.latestInterviewScore}/5
                       </Badge>
                     ) : null}
                     {application.isInternal && (
-                      <Badge variant="outline" className="h-4 border-cyan-200 bg-cyan-50 px-1 text-[10px] text-cyan-700">
+                      <Badge variant="outline" className="h-4 px-1 text-[10px]">
                         Internal
                       </Badge>
                     )}
@@ -320,36 +321,36 @@ export default function PipelineBoard({
         />
       )}
 
-      <div className="mb-3 flex flex-col gap-2 sm:flex-row sm:items-end">
+      <FilterBar
+        className="mb-3"
+        search={{ value: search, onChange: setSearch, placeholder: 'Candidate, mobile, requirement…' }}
+        activeCount={!requirementId && selectedRequirement !== 'all' ? 1 : 0}
+        onClear={() => {
+          setSearch('');
+          setSelectedRequirement(requirementId || 'all');
+        }}
+        actions={
+          embedded && permissions.can('Add Candidate', 'Pipeline') ? (
+            <Button className="gap-2" onClick={() => setAddOpen(true)}>
+              <Plus className="h-4 w-4" /> Add Candidate
+            </Button>
+          ) : undefined
+        }
+      >
         {!requirementId && (
-          <div className="sm:w-72">
-            <Label className="text-xs">Requirement</Label>
-            <Select value={selectedRequirement} onValueChange={setSelectedRequirement}>
-              <SelectTrigger><SelectValue /></SelectTrigger>
-              <SelectContent className="max-h-72">
-                <SelectItem value="all">All requirements</SelectItem>
-                {requirements.map(requirement => (
-                  <SelectItem key={requirement.id} value={requirement.id}>
-                    {requirement.requirementNumber} · {requirement.designation}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
+          <Select value={selectedRequirement} onValueChange={setSelectedRequirement}>
+            <SelectTrigger aria-label="Requirement"><SelectValue /></SelectTrigger>
+            <SelectContent className="max-h-72">
+              <SelectItem value="all">All requirements</SelectItem>
+              {requirements.map(requirement => (
+                <SelectItem key={requirement.id} value={requirement.id}>
+                  {requirement.requirementNumber} · {requirement.designation}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
         )}
-        <div className="flex-1">
-          <Label className="text-xs">Search</Label>
-          <div className="relative">
-            <Search className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-            <Input value={search} onChange={event => setSearch(event.target.value)} placeholder="Candidate, mobile, requirement…" className="pl-8" />
-          </div>
-        </div>
-        {embedded && permissions.can('Add Candidate', 'Pipeline') && (
-          <Button className="gap-2" onClick={() => setAddOpen(true)}>
-            <Plus className="h-4 w-4" /> Add Candidate
-          </Button>
-        )}
-      </div>
+      </FilterBar>
 
       {visible.length === 0 ? (
         <HrEmptyState
@@ -807,5 +808,9 @@ function ExitDialog({
 
 /** A compact stage badge, for the candidate detail and register screens. */
 export function ApplicationStageBadge({ stage }: { stage: ApplicationStage }) {
-  return <HrStatusBadge status={stage} />;
+  return (
+    <StatusBadge status={stage} tone={hrBadgeTone(stage)}>
+      {hrStatusLabel(stage)}
+    </StatusBadge>
+  );
 }

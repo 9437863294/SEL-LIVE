@@ -16,14 +16,8 @@ import {
 } from "@/lib/recurring-payments";
 import { exportWorkbook } from "@/lib/report-excel";
 import { Button } from "@/components/ui/button";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
-import CollapsibleFilterCard from "./collapsible-filter-card";
+import { FilterBar } from "@/components/shared/filter-bar";
+import { TableCard } from "@/components/shared/table-card";
 import { Input } from "@/components/ui/input";
 import {
   Select,
@@ -234,128 +228,123 @@ export default function PaymentModeReport() {
         <ReportMetricTile label="GST" value={currency(totalGst)} />
         <ReportMetricTile label="Other deductions / adjustments" value={currency(totalDeductions)} />
       </div>
-      <CollapsibleFilterCard activeCount={activeFilterCount} onClear={() => setFilters(DEFAULT_FILTERS)}>
-        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
-          <Input
-            type="date"
-            value={filters.from}
-            onChange={(event) =>
-              setFilters((current) => ({ ...current, from: event.target.value }))
-            }
-          />
-          <Input
-            type="date"
-            value={filters.to}
-            onChange={(event) =>
-              setFilters((current) => ({ ...current, to: event.target.value }))
-            }
-          />
-          <Select
-            value={filters.mode}
-            onValueChange={(mode) => setFilters((current) => ({ ...current, mode }))}
-          >
-            <SelectTrigger>
-              <SelectValue placeholder="All modes" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">All modes</SelectItem>
-              {(values("mode") as PaymentMode[]).map((mode) => (
-                <SelectItem value={mode} key={mode}>
-                  {mode}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-          <Select
-            value={filters.bankAccount}
-            onValueChange={(bankAccount) =>
-              setFilters((current) => ({ ...current, bankAccount }))
-            }
-          >
-            <SelectTrigger>
-              <SelectValue placeholder="All bank accounts" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">All bank accounts</SelectItem>
-              {values("bankAccount").map((account) => (
-                <SelectItem value={account} key={account}>
-                  {maskAccount(account)}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-          <Select
-            value={filters.paidBy}
-            onValueChange={(paidBy) => setFilters((current) => ({ ...current, paidBy }))}
-          >
-            <SelectTrigger>
-              <SelectValue placeholder="All recorded by" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">All recorded by</SelectItem>
-              {values("paidByName").map((name) => (
-                <SelectItem value={name} key={name}>
-                  {name}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
-      </CollapsibleFilterCard>
-      <div className="grid gap-4 lg:grid-cols-2">
+      <FilterBar className="print:hidden" activeCount={activeFilterCount} onClear={() => setFilters(DEFAULT_FILTERS)}>
+        <Input
+          type="date"
+          aria-label="From date"
+          value={filters.from}
+          onChange={(event) =>
+            setFilters((current) => ({ ...current, from: event.target.value }))
+          }
+        />
+        <Input
+          type="date"
+          aria-label="To date"
+          value={filters.to}
+          onChange={(event) =>
+            setFilters((current) => ({ ...current, to: event.target.value }))
+          }
+        />
+        <Select
+          value={filters.mode}
+          onValueChange={(mode) => setFilters((current) => ({ ...current, mode }))}
+        >
+          <SelectTrigger>
+            <SelectValue placeholder="All modes" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All modes</SelectItem>
+            {(values("mode") as PaymentMode[]).map((mode) => (
+              <SelectItem value={mode} key={mode}>
+                {mode}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        <Select
+          value={filters.bankAccount}
+          onValueChange={(bankAccount) =>
+            setFilters((current) => ({ ...current, bankAccount }))
+          }
+        >
+          <SelectTrigger>
+            <SelectValue placeholder="All bank accounts" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All bank accounts</SelectItem>
+            {values("bankAccount").map((account) => (
+              <SelectItem value={account} key={account}>
+                {maskAccount(account)}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        <Select
+          value={filters.paidBy}
+          onValueChange={(paidBy) => setFilters((current) => ({ ...current, paidBy }))}
+        >
+          <SelectTrigger>
+            <SelectValue placeholder="All recorded by" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All recorded by</SelectItem>
+            {values("paidByName").map((name) => (
+              <SelectItem value={name} key={name}>
+                {name}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </FilterBar>
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
         <ReportSummaryTable title="By payment mode" rows={byMode} countHeader="Transactions" />
         <ReportSummaryTable title="By bank account" rows={byBank} countHeader="Transactions" />
       </div>
-      <Card>
-        <CardHeader>
-          <CardTitle>{rows.length} transaction(s)</CardTitle>
-          <CardDescription>
-            Organization: {user?.organizationName || organizationId}
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="p-0">
-          <div className="overflow-x-auto">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Payment date</TableHead>
-                  <TableHead>Mode</TableHead>
-                  <TableHead>Bank account</TableHead>
-                  <TableHead>Reference</TableHead>
-                  <TableHead>Recorded by</TableHead>
-                  <TableHead className="text-right">Amount</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {rows.map((item) => (
-                  <TableRow key={item.id}>
-                    <TableCell>{item.paymentDate}</TableCell>
-                    <TableCell>{item.mode}</TableCell>
-                    <TableCell>{maskAccount(item.bankAccount) || "—"}</TableCell>
-                    <TableCell>
-                      {item.chequeNumber || item.transactionReference || "—"}
-                    </TableCell>
-                    <TableCell>{item.paidByName || "—"}</TableCell>
-                    <TableCell className="text-right font-semibold">
-                      {currency(item.amount)}
-                    </TableCell>
-                  </TableRow>
-                ))}
-                {!rows.length && (
-                  <TableRow>
-                    <TableCell
-                      colSpan={6}
-                      className="h-28 text-center text-muted-foreground"
-                    >
-                      No transactions match the report filters.
-                    </TableCell>
-                  </TableRow>
-                )}
-              </TableBody>
-            </Table>
-          </div>
-        </CardContent>
-      </Card>
+      <TableCard
+        title="Transactions"
+        count={rows.length}
+        noun="transaction"
+        description={<>Organization: {user?.organizationName || organizationId}</>}
+      >
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead>Payment date</TableHead>
+              <TableHead>Mode</TableHead>
+              <TableHead>Bank account</TableHead>
+              <TableHead>Reference</TableHead>
+              <TableHead>Recorded by</TableHead>
+              <TableHead className="text-right">Amount</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {rows.map((item) => (
+              <TableRow key={item.id}>
+                <TableCell>{item.paymentDate}</TableCell>
+                <TableCell>{item.mode}</TableCell>
+                <TableCell>{maskAccount(item.bankAccount) || "—"}</TableCell>
+                <TableCell>
+                  {item.chequeNumber || item.transactionReference || "—"}
+                </TableCell>
+                <TableCell>{item.paidByName || "—"}</TableCell>
+                <TableCell className="text-right">
+                  {currency(item.amount)}
+                </TableCell>
+              </TableRow>
+            ))}
+            {!rows.length && (
+              <TableRow>
+                <TableCell
+                  colSpan={6}
+                  className="h-28 text-center text-muted-foreground"
+                >
+                  No transactions match the report filters.
+                </TableCell>
+              </TableRow>
+            )}
+          </TableBody>
+        </Table>
+      </TableCard>
     </div>
   );
 }

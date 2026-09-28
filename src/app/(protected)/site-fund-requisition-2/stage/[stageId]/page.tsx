@@ -12,8 +12,9 @@ import {
   FilePlus,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent } from '@/components/ui/card';
 import { PageHeader } from '@/components/shared/page-header';
+import { TableCard } from '@/components/shared/table-card';
+import { StatusBadge } from '@/components/shared/status-badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import {
   Table,
@@ -49,7 +50,6 @@ import { useParams, useRouter } from 'next/navigation';
 import { useAuth } from '@/components/auth/AuthProvider';
 import { Skeleton } from '@/components/ui/skeleton';
 import { format } from 'date-fns';
-import { Badge } from '@/components/ui/badge';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -77,7 +77,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { cn } from '@/lib/utils';
 
 /* -------- helpers -------- */
 function toDateSafe(value: any): Date | null {
@@ -124,21 +123,6 @@ function formatINR(n?: number) {
     }).format(v);
   } catch {
     return `₹${v.toFixed(2)}`;
-  }
-}
-
-function statusBadgeClass(status?: string) {
-  switch (status) {
-    case 'Completed':
-      return 'border-emerald-200/80 bg-emerald-50 text-emerald-700';
-    case 'Rejected':
-      return 'border-rose-200/80 bg-rose-50 text-rose-700';
-    case 'In Progress':
-      return 'border-sky-200/80 bg-sky-50 text-sky-700';
-    case 'Pending':
-      return 'border-amber-200/80 bg-amber-50 text-amber-700';
-    default:
-      return 'border-slate-200/80 bg-slate-50 text-slate-700';
   }
 }
 
@@ -381,17 +365,15 @@ export default function StagePage() {
     data: Requisition[],
     type: 'pending' | 'completed'
   ) => (
-    <Card className="overflow-hidden rounded-2xl border border-white/70 bg-white/70 shadow-[0_20px_70px_-55px_rgba(2,6,23,0.55)] backdrop-blur">
-      <div className="h-1.5 w-full bg-gradient-to-r from-cyan-400 via-fuchsia-400 to-amber-300 opacity-70" />
-      <CardContent className="p-0">
+    <TableCard>
         <Table>
-          <TableHeader className="bg-white/80 border-b border-white/70">
+          <TableHeader>
             <TableRow>
-              <TableHead className="text-slate-700">Request ID</TableHead>
-              <TableHead className="text-slate-700">Date</TableHead>
-              <TableHead className="text-slate-700">Amount</TableHead>
-              <TableHead className="text-slate-700">Status</TableHead>
-              <TableHead className="text-right text-slate-700">Actions</TableHead>
+              <TableHead>Request ID</TableHead>
+              <TableHead>Date</TableHead>
+              <TableHead>Amount</TableHead>
+              <TableHead>Status</TableHead>
+              <TableHead className="text-right">Actions</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -423,7 +405,7 @@ export default function StagePage() {
                       setSelectedRequisition(task);
                       setIsViewOpen(true);
                     }}
-                    className="cursor-pointer hover:bg-slate-50/70"
+                    className="cursor-pointer"
                   >
                     <TableCell>
                       {task.requisitionId ?? '-'}
@@ -431,12 +413,9 @@ export default function StagePage() {
                     <TableCell>{humanDate(task.date)}</TableCell>
                     <TableCell>{formatINR(task.amount)}</TableCell>
                     <TableCell>
-                      <Badge
-                        variant="outline"
-                        className={cn('whitespace-nowrap', statusBadgeClass(task.status))}
-                      >
+                      <StatusBadge status={task.status}>
                         {task.status || '—'}
-                      </Badge>
+                      </StatusBadge>
                     </TableCell>
                     <TableCell className="text-right">
                       {isActionLoading === task.id ? (
@@ -518,8 +497,7 @@ export default function StagePage() {
             )}
           </TableBody>
         </Table>
-      </CardContent>
-    </Card>
+    </TableCard>
   );
 
   return (

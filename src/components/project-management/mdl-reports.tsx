@@ -19,6 +19,9 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { chartChrome } from "@/components/ui/chart";
 import StatCard from "@/components/project-management/stat-card";
 import { PmDataList, type PmListColumn } from "@/components/project-management/pm-shell";
+import { pmStatusTone } from "@/components/project-management/pm-status-tones";
+import { TableCard } from "@/components/shared/table-card";
+import { StatusBadge } from "@/components/shared/status-badge";
 import { cn } from "@/lib/utils";
 import {
   MDL_OVERALL_STATUSES,
@@ -27,7 +30,6 @@ import {
   getLatestRevisionAcrossItem,
   getMdlRollup,
   isMdlApproved,
-  mdlOverallStatusStyles,
   type MdlOverallStatus,
   type MdlRollup,
   type MdlRow,
@@ -163,16 +165,12 @@ export default function MdlReports({
     {
       header: "Status",
       mobile: "aside",
-      cell: ({ rollup }) => (
-        <span className={cn("whitespace-nowrap rounded-full px-2 py-0.5 text-xs font-medium", mdlOverallStatusStyles[rollup.status])}>
-          {rollup.status}
-        </span>
-      ),
+      cell: ({ rollup }) => <StatusBadge status={rollup.status} tone={pmStatusTone(rollup.status)} />,
     },
   ];
 
-  // The list sits inside the section's own Card, so its desktop frame is dropped (the Card is the
-  // frame) and on a phone the cards get the padding the Card's `p-0` content does not give them.
+  // The list sits inside the section's TableCard, so its desktop frame is dropped (the TableCard is
+  // the frame) and on a phone the cards get the padding the TableCard body does not give them.
   const DUE_LIST_CLASS = "max-sm:px-3 max-sm:pb-3 sm:rounded-none sm:border-0 sm:shadow-none";
 
   return (
@@ -262,42 +260,44 @@ export default function MdlReports({
       </Card>
 
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-base text-red-700">Overdue ({overdueRows.length})</CardTitle>
-            <CardDescription>Planned end date has passed without approval</CardDescription>
-          </CardHeader>
-          <CardContent className="p-0">
-            {overdueRows.length ? (
-              <PmDataList
-                rows={overdueRows}
-                columns={dueColumns(true)}
-                onRowClick={({ item }) => onSelectItem(item.id)}
-                className={DUE_LIST_CLASS}
-              />
-            ) : (
-              <p className="p-4 text-sm text-muted-foreground">Nothing overdue.</p>
-            )}
-          </CardContent>
-        </Card>
+        <TableCard
+          title="Overdue"
+          description="Planned end date has passed without approval"
+          icon={CalendarClock}
+          count={overdueRows.length}
+          noun="item"
+          scroll="natural"
+        >
+          {overdueRows.length ? (
+            <PmDataList
+              rows={overdueRows}
+              columns={dueColumns(true)}
+              onRowClick={({ item }) => onSelectItem(item.id)}
+              className={DUE_LIST_CLASS}
+            />
+          ) : (
+            <p className="p-4 text-sm text-muted-foreground">Nothing overdue.</p>
+          )}
+        </TableCard>
 
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-base">Due in the next {UPCOMING_WINDOW_DAYS} days ({upcomingRows.length})</CardTitle>
-          </CardHeader>
-          <CardContent className="p-0">
-            {upcomingRows.length ? (
-              <PmDataList
-                rows={upcomingRows}
-                columns={dueColumns(false)}
-                onRowClick={({ item }) => onSelectItem(item.id)}
-                className={DUE_LIST_CLASS}
-              />
-            ) : (
-              <p className="p-4 text-sm text-muted-foreground">Nothing due soon.</p>
-            )}
-          </CardContent>
-        </Card>
+        <TableCard
+          title={`Due in the next ${UPCOMING_WINDOW_DAYS} days`}
+          icon={Clock}
+          count={upcomingRows.length}
+          noun="item"
+          scroll="natural"
+        >
+          {upcomingRows.length ? (
+            <PmDataList
+              rows={upcomingRows}
+              columns={dueColumns(false)}
+              onRowClick={({ item }) => onSelectItem(item.id)}
+              className={DUE_LIST_CLASS}
+            />
+          ) : (
+            <p className="p-4 text-sm text-muted-foreground">Nothing due soon.</p>
+          )}
+        </TableCard>
       </div>
     </div>
   );

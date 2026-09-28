@@ -189,7 +189,7 @@ export default function InsuranceWorkflowSettingsPage() {
               <div className="flex items-start gap-3">
                 <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-violet-100 font-bold text-violet-700">{index + 1}</div>
                 <div className="min-w-0 flex-1"><CardTitle>{workflowStep.name}</CardTitle><CardDescription>{workflowStep.description || 'No instructions added.'}</CardDescription></div>
-                <Badge variant="outline" className="hidden bg-white sm:inline-flex">{workflowStep.tatHours}h TAT</Badge>
+                <Badge variant="outline" className="hidden sm:inline-flex">{workflowStep.tatHours}h TAT</Badge>
                 {canEdit && <div className="flex gap-1"><Button size="icon" variant="ghost" onClick={() => moveStep(index, -1)} disabled={index === 0}><ArrowUp className="h-4 w-4" /></Button><Button size="icon" variant="ghost" onClick={() => moveStep(index, 1)} disabled={index === config.steps.length - 1}><ArrowDown className="h-4 w-4" /></Button><Button size="icon" variant="ghost" className="text-rose-600" onClick={() => removeStep(workflowStep.id)}><Trash2 className="h-4 w-4" /></Button></div>}
               </div>
             </CardHeader>

@@ -10,13 +10,10 @@ import {
   FileSignature,
   History,
   MessageSquarePlus,
-  Search,
   ShieldCheck,
   XCircle,
 } from 'lucide-react';
-import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Skeleton } from '@/components/ui/skeleton';
 import { cn } from '@/lib/utils';
@@ -36,6 +33,9 @@ import { EApprovalSignaturePad } from '@/components/e-approval/signature-pad';
 import { StatTile } from '@/components/e-approval/dashboard-parts';
 import { formatEApprovalAmount, formatEApprovalDateTime, useEApprovalActor } from '@/components/e-approval/hooks';
 import { PageHeader } from '@/components/shared/page-header';
+import { FilterBar } from '@/components/shared/filter-bar';
+import { StatusBadge, type StatusTone } from '@/components/shared/status-badge';
+import { TableCard } from '@/components/shared/table-card';
 
 /**
  * "My Activity" — everything one person has done, across every approval (the user's own request:
@@ -72,6 +72,17 @@ const GROUP_TONE: Record<EApprovalActivityGroup, string> = {
   Rejected: 'border-rose-200 bg-rose-50 text-rose-800',
   Routed: 'border-sky-200 bg-sky-50 text-sky-800',
   Other: 'border-slate-200 bg-slate-50 text-slate-600',
+};
+
+/** The action badge's tone — the action label alone does not always read as the group it belongs to. */
+const GROUP_BADGE_TONE: Record<EApprovalActivityGroup, StatusTone> = {
+  Approved: 'success',
+  Verified: 'progress',
+  Clarified: 'warning',
+  Returned: 'warning',
+  Rejected: 'danger',
+  Routed: 'info',
+  Other: 'neutral',
 };
 
 const GROUP_ICON: Record<EApprovalActivityGroup, typeof CheckCircle2> = {
@@ -191,57 +202,57 @@ export default function EApprovalMyActivityPage() {
         <StatTile label="Rejected" value={summary.byGroup.Rejected} isLoading={showSkeletons} />
       </div>
 
-      {/* ── Filters ────────────────────────────────────────────────────────────────────────── */}
-      <div className="flex flex-wrap items-center gap-2">
-        <div className="relative min-w-0 flex-1 sm:max-w-xs">
-          <Search className="absolute left-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
-          <Input
-            value={search}
-            onChange={(event) => setSearch(event.target.value)}
-            placeholder="Search reference, subject…"
-            className="h-9 pl-7 text-xs"
-          />
-        </div>
-        <Select value={group} onValueChange={(value) => setGroup(value as EApprovalActivityGroup | 'All')}>
-          <SelectTrigger className="h-9 w-[200px] text-xs">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="All">{GROUP_LABEL.All}</SelectItem>
-            {E_APPROVAL_ACTIVITY_GROUPS.map((option) => (
-              <SelectItem key={option} value={option}>
-                {GROUP_LABEL[option]}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-        <Select value={period} onValueChange={(value) => setPeriod(value as typeof period)}>
-          <SelectTrigger className="h-9 w-[150px] text-xs">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            {PERIODS.map((option) => (
-              <SelectItem key={option.key} value={option.key}>
-                {option.label}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-        <span className="ml-auto text-xs text-muted-foreground">
-          {filtered.length} of {entries.length}
-        </span>
-      </div>
-
-      {truncated && !showSkeletons && (
-        <p className="text-[11px] text-muted-foreground">
-          Showing your {entries.length} most recent actions. Older ones are still on the record — this log just
-          does not reach back that far yet.
-        </p>
-      )}
-
-      {/* ── The log ────────────────────────────────────────────────────────────────────────── */}
-      <Card>
-        <CardContent className="px-3 py-2 sm:px-4">
+      {/* ── The log, with its filters ──────────────────────────────────────────────────────── */}
+      <TableCard
+        title="Activity log"
+        icon={History}
+        count={showSkeletons ? undefined : filtered.length}
+        total={showSkeletons ? undefined : entries.length}
+        noun="action"
+        toolbar={
+          <FilterBar
+            search={{ value: search, onChange: setSearch, placeholder: 'Search reference, subject…' }}
+            activeCount={(group !== 'All' ? 1 : 0) + (period !== 'all' ? 1 : 0)}
+            onClear={() => {
+              setSearch('');
+              setGroup('All');
+              setPeriod('all');
+            }}
+          >
+            <Select value={group} onValueChange={(value) => setGroup(value as EApprovalActivityGroup | 'All')}>
+              <SelectTrigger aria-label="Action">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="All">{GROUP_LABEL.All}</SelectItem>
+                {E_APPROVAL_ACTIVITY_GROUPS.map((option) => (
+                  <SelectItem key={option} value={option}>
+                    {GROUP_LABEL[option]}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <Select value={period} onValueChange={(value) => setPeriod(value as typeof period)}>
+              <SelectTrigger aria-label="Period">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {PERIODS.map((option) => (
+                  <SelectItem key={option.key} value={option.key}>
+                    {option.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </FilterBar>
+        }
+        footer={
+          truncated && !showSkeletons
+            ? `Showing your ${entries.length} most recent actions. Older ones are still on the record — this log just does not reach back that far yet.`
+            : undefined
+        }
+      >
+        <div className="px-3 py-2 sm:px-4">
           {showSkeletons ? (
             <div className="space-y-2 py-2">
               {[0, 1, 2, 3].map((row) => (
@@ -275,9 +286,7 @@ export default function EApprovalMyActivityPage() {
                     </span>
                     <div className="min-w-0 flex-1">
                       <div className="flex flex-wrap items-center gap-1.5">
-                        <Badge variant="outline" className={cn('text-[10px] font-medium', GROUP_TONE[entryGroup])}>
-                          {entryLabel(entry)}
-                        </Badge>
+                        <StatusBadge tone={GROUP_BADGE_TONE[entryGroup]}>{entryLabel(entry)}</StatusBadge>
                         {entry.stepName && (
                           <span className="text-[11px] text-muted-foreground">on “{entry.stepName}”</span>
                         )}
@@ -331,8 +340,8 @@ export default function EApprovalMyActivityPage() {
               })}
             </ol>
           )}
-        </CardContent>
-      </Card>
+        </div>
+      </TableCard>
     </div>
   );
 }

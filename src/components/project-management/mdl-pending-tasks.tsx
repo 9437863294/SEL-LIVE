@@ -10,10 +10,13 @@ import {
   ListTodo,
   ShoppingCart,
 } from "lucide-react";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { TableCard } from "@/components/shared/table-card";
+import { StatusBadge } from "@/components/shared/status-badge";
 import { PmDataList, type PmListColumn } from "@/components/project-management/pm-shell";
+import { pmStatusTone } from "@/components/project-management/pm-status-tones";
 import { cn } from "@/lib/utils";
 import {
   computeMdlCycleAgeDays,
@@ -25,9 +28,7 @@ import {
   isMdlApproved,
   isMdlOverdue,
   isMdlPendingTask,
-  mdlDrawingStageStyles,
   mdlOutlineNo,
-  mdlOverallStatusStyles,
   type MdlGroupablePo,
   type MdlRollup,
   type MdlRow,
@@ -131,11 +132,6 @@ export default function MdlPendingTasks({
   // tall and a column can be scanned down rather than re-read per row.
   const PENDING_COLUMN_COUNT = 10;
 
-  // Compacted here rather than in components/ui/table.tsx, which every other table in the app
-  // shares. `[&_td]` beats a cell's own `py-*`, so cells no longer set vertical padding at all.
-  const PENDING_TABLE_DENSITY =
-    "[&_th]:h-8 [&_th]:whitespace-nowrap [&_th]:px-2 [&_th]:text-xs [&_td]:px-2 [&_td]:py-1";
-
   const pendingHead = (
     <TableHeader>
       <TableRow>
@@ -189,31 +185,30 @@ export default function MdlPendingTasks({
             </TableCell>
             <TableCell className="whitespace-nowrap">
               {subDrawings.length > 0 ? (
-                <span className="whitespace-nowrap rounded-full bg-sky-100 px-1.5 py-0.5 text-[10px] font-semibold text-sky-700">
+                <Badge variant="neutral" className="whitespace-nowrap">
                   {rollup.subApproved}/{rollup.subTotal}
                   {rollup.subCollected > rollup.subApproved && ` · ${rollup.subCollected}c`}
-                </span>
+                </Badge>
               ) : (
                 <span className="text-muted-foreground">—</span>
               )}
             </TableCell>
             {/* Assignment is a property of a sub-drawing, not of the BOQ item's own record. */}
-            <TableCell className="text-muted-foreground">—</TableCell>
+            <TableCell>—</TableCell>
             <TableCell className="whitespace-nowrap">
               <span className={rollup.overdue ? "font-medium text-red-600" : ""}>
                 {formatMdlDate(rollup.plannedEndDate)}
               </span>
               {rollup.overdue && (
-                <span
-                  className="ml-1.5 rounded-full bg-red-100 px-1.5 py-0.5 text-[10px] font-semibold text-red-700"
+                <StatusBadge
+                  status="Overdue"
+                  className="ml-1.5"
                   title={
                     rollup.subTotal
                       ? "This item has a drawing past its planned end date — see the rows below"
                       : undefined
                   }
-                >
-                  Overdue
-                </span>
+                />
               )}
             </TableCell>
             <TableCell className="whitespace-nowrap">
@@ -222,10 +217,8 @@ export default function MdlPendingTasks({
               ) : "—"}
             </TableCell>
             <TableCell />
-            <TableCell>
-              <span className={cn("rounded-full px-2.5 py-1 text-xs font-medium", mdlOverallStatusStyles[rollup.status])}>
-                {rollup.status}
-              </span>
+            <TableCell className="whitespace-nowrap">
+              <StatusBadge status={rollup.status} tone={pmStatusTone(rollup.status)} />
             </TableCell>
             <TableCell onClick={(e) => e.stopPropagation()}>
               <Button variant="outline" size="sm" className="h-6 px-2 text-xs" onClick={() => onSelectItem(item.id)}>
@@ -244,9 +237,8 @@ export default function MdlPendingTasks({
                 className={cn("cursor-pointer border-b-0 last:border-b", subApproved && "text-muted-foreground")}
                 onClick={() => onSelectItem(item.id, sub.id)}
               >
-                <TableCell className="whitespace-nowrap text-xs tabular-nums text-muted-foreground">
-                  {/* Indent lives on an inner span: the table's `[&_td]:px-2` would override a
-                      `pl-*` set on the cell itself. */}
+                <TableCell className="whitespace-nowrap tabular-nums">
+                  {/* Indent lives on an inner span, so the cell keeps the table's own padding. */}
                   <span className="pl-3">{mdlOutlineNo(...prefix, index, subIndex)}.</span>
                 </TableCell>
                 <TableCell />
@@ -256,7 +248,7 @@ export default function MdlPendingTasks({
                     <span className="truncate text-sm">{sub.title || "Untitled drawing"}</span>
                   </div>
                 </TableCell>
-                <TableCell className="text-muted-foreground">—</TableCell>
+                <TableCell>—</TableCell>
                 <TableCell className="max-w-[140px] whitespace-nowrap">
                   <span className="flex items-center gap-1 truncate text-xs">
                     <span className={cn("truncate", !sub.assignedToName && "text-muted-foreground")}>
@@ -276,32 +268,24 @@ export default function MdlPendingTasks({
                     )}
                   </span>
                 </TableCell>
-                <TableCell className="whitespace-nowrap text-sm">
+                <TableCell className="whitespace-nowrap">
                   <span className={subOverdue ? "font-medium text-red-600" : ""}>
                     {formatMdlDate(sub.plannedEndDate)}
                   </span>
-                  {subOverdue && (
-                    <span className="ml-1.5 rounded-full bg-red-100 px-1.5 py-0.5 text-[10px] font-semibold text-red-700">
-                      Overdue
-                    </span>
-                  )}
+                  {subOverdue && <StatusBadge status="Overdue" className="ml-1.5" />}
                 </TableCell>
-                <TableCell className="whitespace-nowrap text-sm">
+                <TableCell className="whitespace-nowrap">
                   {subCycleAgeDays != null ? (
                     <span className={subCycleAgeDays > 30 ? "font-medium text-amber-600" : ""}>
                       {subCycleAgeDays}d
                     </span>
                   ) : "—"}
                 </TableCell>
-                <TableCell>
-                  <span className={cn("whitespace-nowrap rounded-full px-2 py-0.5 text-[11px] font-medium", mdlDrawingStageStyles[stage])}>
-                    {stage}
-                  </span>
+                <TableCell className="whitespace-nowrap">
+                  <StatusBadge status={stage} tone={pmStatusTone(stage)} />
                 </TableCell>
-                <TableCell>
-                  <span className={cn("rounded-full px-2 py-0.5 text-[11px] font-medium", mdlOverallStatusStyles[sub.status])}>
-                    {sub.status}
-                  </span>
+                <TableCell className="whitespace-nowrap">
+                  <StatusBadge status={sub.status} tone={pmStatusTone(sub.status)} />
                 </TableCell>
                 <TableCell onClick={(e) => e.stopPropagation()}>
                   <Button variant="ghost" size="sm" className="h-6 px-2 text-xs" onClick={() => onSelectItem(item.id, sub.id)}>
@@ -334,19 +318,12 @@ export default function MdlPendingTasks({
     {
       header: "Status",
       mobile: "aside",
-      cell: ({ rollup }) => (
-        <span className={cn("whitespace-nowrap rounded-full px-2.5 py-1 text-xs font-medium", mdlOverallStatusStyles[rollup.status])}>
-          {rollup.status}
-        </span>
-      ),
+      cell: ({ rollup }) => <StatusBadge status={rollup.status} tone={pmStatusTone(rollup.status)} />,
     },
     {
       header: "Overdue",
       mobile: "aside",
-      cell: ({ rollup }) =>
-        rollup.overdue ? (
-          <span className="rounded-full bg-red-100 px-1.5 py-0.5 text-[10px] font-semibold text-red-700">Overdue</span>
-        ) : null,
+      cell: ({ rollup }) => (rollup.overdue ? <StatusBadge status="Overdue" /> : null),
     },
     {
       header: "Planned End",
@@ -367,10 +344,10 @@ export default function MdlPendingTasks({
       header: "Drawings",
       cell: ({ drawing, rollup }) =>
         getMdlSubDrawings(drawing).length > 0 ? (
-          <span className="whitespace-nowrap rounded-full bg-sky-100 px-1.5 py-0.5 text-[10px] font-semibold text-sky-700">
+          <Badge variant="neutral" className="whitespace-nowrap">
             {rollup.subApproved}/{rollup.subTotal}
             {rollup.subCollected > rollup.subApproved && ` · ${rollup.subCollected}c`}
-          </span>
+          </Badge>
         ) : (
           <span className="text-muted-foreground">—</span>
         ),
@@ -407,12 +384,8 @@ export default function MdlPendingTasks({
         const stage = computeMdlDrawingStage(sub, hasPo);
         return (
           <span className="mt-0.5 flex flex-wrap items-center gap-1.5">
-            <span className={cn("whitespace-nowrap rounded-full px-2 py-0.5 text-[11px] font-medium", mdlDrawingStageStyles[stage])}>
-              {stage}
-            </span>
-            <span className={cn("whitespace-nowrap rounded-full px-2 py-0.5 text-[11px] font-medium", mdlOverallStatusStyles[sub.status])}>
-              {sub.status}
-            </span>
+            <StatusBadge status={stage} tone={pmStatusTone(stage)} />
+            <StatusBadge status={sub.status} tone={pmStatusTone(sub.status)} />
             <span className={cn(sub.assignedToName && "text-foreground")}>{sub.assignedToName || "Unassigned"}</span>
             {sub.collection?.fileUrl && (
               <a
@@ -437,11 +410,7 @@ export default function MdlPendingTasks({
         return (
           <>
             <span className={subOverdue ? "font-medium text-red-600" : ""}>{formatMdlDate(sub.plannedEndDate)}</span>
-            {subOverdue && (
-              <span className="ml-1.5 rounded-full bg-red-100 px-1.5 py-0.5 text-[10px] font-semibold text-red-700">
-                Overdue
-              </span>
-            )}
+            {subOverdue && <StatusBadge status="Overdue" className="ml-1.5" />}
           </>
         );
       },
@@ -513,36 +482,29 @@ export default function MdlPendingTasks({
 
   if (!total) {
     return (
-      <Card className="border-border/60">
-        <CardHeader className="pb-3">
-          <CardTitle className="flex items-center gap-2 text-base">
-            <ListTodo className="h-4 w-4" /> Pending Tasks
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="p-0">
-          <div className="flex flex-col items-center gap-3 p-8 text-center">
-            <ClipboardCheck className="h-10 w-10 text-muted-foreground" />
-            <p className="text-sm text-muted-foreground">
-              Nothing pending — every planned drawing, and every item with a purchase order placed, has already been
-              approved.
-            </p>
-          </div>
-        </CardContent>
-      </Card>
+      <TableCard title="Pending Tasks" icon={ListTodo} scroll="natural">
+        <div className="flex flex-col items-center gap-3 p-8 text-center">
+          <ClipboardCheck className="h-10 w-10 text-muted-foreground" />
+          <p className="text-sm text-muted-foreground">
+            Nothing pending — every planned drawing, and every item with a purchase order placed, has already been
+            approved.
+          </p>
+        </div>
+      </TableCard>
     );
   }
 
   const groupBadges = (outstanding: number, overdue: number) => (
     <div className="ml-auto flex items-center gap-2">
       {overdue > 0 && (
-        <span className="flex items-center gap-1 whitespace-nowrap rounded-full bg-red-100 px-2 py-0.5 text-[11px] font-semibold text-red-700">
+        <Badge variant="danger" className="gap-1 whitespace-nowrap">
           <AlertTriangle className="h-3 w-3" />
           {overdue} overdue
-        </span>
+        </Badge>
       )}
-      <span className="whitespace-nowrap rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-medium text-amber-800">
+      <Badge variant="neutral" className="whitespace-nowrap">
         {outstanding} outstanding
-      </span>
+      </Badge>
     </div>
   );
 
@@ -606,18 +568,20 @@ export default function MdlPendingTasks({
   };
 
   return (
-    <Card className="overflow-hidden border-border/60">
-      <div className="h-1 w-full bg-gradient-to-r from-rose-500 to-orange-600" />
-      {/* With every group closed by default there has to be a way to the full queue in one
-          action rather than N clicks. */}
-      <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 border-b border-border/60 px-4 py-2.5">
-        <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
-          <ListTodo className="h-3.5 w-3.5 shrink-0" />
+    <TableCard
+      title="Pending Tasks"
+      icon={ListTodo}
+      description={
+        <>
           {total} pending item{total === 1 ? "" : "s"} across {poGroups.length} purchase order
           {poGroups.length === 1 ? "" : "s"}
           {plannedOnlyRows.length ? " · plus items not yet ordered" : ""}
-        </p>
-        <div className="flex items-center gap-1">
+        </>
+      }
+      // With every group closed by default there has to be a way to the full queue in one
+      // action rather than N clicks.
+      actions={
+        <>
           <Button
             variant="ghost"
             size="sm"
@@ -638,11 +602,10 @@ export default function MdlPendingTasks({
           >
             Collapse all
           </Button>
-        </div>
-      </div>
-      <CardContent className="p-0">
-        <div className="hidden overflow-x-auto sm:block">
-          <Table className={PENDING_TABLE_DENSITY}>
+        </>
+      }
+    >
+          <Table containerClassName="hidden sm:block">
             {pendingHead}
             <TableBody>
               {poGroups.map((group, groupIndex) => {
@@ -652,7 +615,7 @@ export default function MdlPendingTasks({
                   <TableRow
                     key={key}
                     className={cn(
-                      "cursor-pointer bg-muted/40 hover:bg-muted/70",
+                      "cursor-pointer bg-muted/40",
                       isOpen && "border-b-0",
                     )}
                     onClick={() => toggleGroup(key)}
@@ -672,7 +635,7 @@ export default function MdlPendingTasks({
                     <TableRow
                       key={PLANNED_ONLY_KEY}
                       className={cn(
-                        "cursor-pointer bg-muted/40 hover:bg-muted/70",
+                        "cursor-pointer bg-muted/40",
                         isOpen && "border-b-0",
                       )}
                       onClick={() => toggleGroup(PLANNED_ONLY_KEY)}
@@ -686,7 +649,6 @@ export default function MdlPendingTasks({
                 })()}
             </TableBody>
           </Table>
-        </div>
 
         <div className="divide-y sm:hidden">
           {poGroups.map((group, groupIndex) => {
@@ -700,7 +662,6 @@ export default function MdlPendingTasks({
               phoneCards(plannedOnlyRows, [], false),
             )}
         </div>
-      </CardContent>
-    </Card>
+    </TableCard>
   );
 }

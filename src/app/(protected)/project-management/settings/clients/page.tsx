@@ -74,6 +74,7 @@ import {
   type PmListColumn,
 } from "@/components/project-management/pm-shell";
 import { PageHeader } from "@/components/shared/page-header";
+import { StatusBadge } from "@/components/shared/status-badge";
 import { cn } from "@/lib/utils";
 
 const COLLECTION_NAME = "clients";
@@ -339,15 +340,7 @@ export default function ClientMasterPage() {
     {
       header: "Status",
       mobile: "aside",
-      cell: (client) => (
-        <span
-          className={`rounded-full px-2.5 py-1 text-xs font-medium ${
-            client.status === "Active" ? "bg-emerald-100 text-emerald-700" : "bg-muted text-muted-foreground"
-          }`}
-        >
-          {client.status}
-        </span>
-      ),
+      cell: (client) => <StatusBadge status={client.status} />,
     },
     {
       header: "Actions",

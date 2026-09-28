@@ -22,8 +22,9 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
-import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { TableCard } from '@/components/shared/table-card';
+import { StatusBadge, type StatusTone } from '@/components/shared/status-badge';
 import ViewRequisitionDialog from '@/components/site-fund-requisition/ViewRequisitionDialog';
 
 /* ---------------- helpers ---------------- */
@@ -45,17 +46,16 @@ function formatDateSafe(v: unknown, fmt = 'dd MMM, yyyy HH:mm'): string {
   return d ? format(d, fmt) : '—';
 }
 
-type BadgeVariant = 'default' | 'secondary' | 'destructive';
-
-function getDeadlineBadgeVariant(deadline: unknown): BadgeVariant {
+/** Overdue → danger, due within two days → warning, otherwise neutral. */
+function getDeadlineTone(deadline: unknown): StatusTone {
   const d = toDateSafe(deadline);
-  if (!d) return 'secondary';
+  if (!d) return 'neutral';
   const now = new Date();
   const diffMs = d.getTime() - now.getTime();
   const diffDays = Math.ceil(diffMs / (1000 * 60 * 60 * 24));
-  if (diffMs < 0) return 'destructive';
-  if (diffDays <= 2) return 'default';
-  return 'secondary';
+  if (diffMs < 0) return 'danger';
+  if (diffDays <= 2) return 'warning';
+  return 'neutral';
 }
 
 function inr(amount: number | string | null | undefined): string {
@@ -173,10 +173,10 @@ export default function MyPendingTasksTab() {
 
   return (
     <>
-      <div className="border rounded-lg overflow-hidden">
+      <TableCard>
         <Table>
           <TableHeader>
-            <TableRow className="bg-muted/50">
+            <TableRow>
               <TableHead>Request ID</TableHead>
               <TableHead>Project</TableHead>
               <TableHead>Amount</TableHead>
@@ -221,9 +221,9 @@ export default function MyPendingTasksTab() {
 
                   <TableCell>
                     {(task as any).deadline ? (
-                      <Badge variant={getDeadlineBadgeVariant((task as any).deadline)}>
+                      <StatusBadge tone={getDeadlineTone((task as any).deadline)}>
                         {formatDateSafe((task as any).deadline)}
-                      </Badge>
+                      </StatusBadge>
                     ) : (
                       'N/A'
                     )}
@@ -249,7 +249,7 @@ export default function MyPendingTasksTab() {
             )}
           </TableBody>
         </Table>
-      </div>
+      </TableCard>
 
       {selectedRequisition && (
         <ViewRequisitionDialog

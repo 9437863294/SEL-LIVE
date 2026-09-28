@@ -37,13 +37,13 @@
 
 import * as React from 'react';
 import { useMemo, useState } from 'react';
-import { Loader2, Lock, Search, ShieldMinus, ShieldPlus, X } from 'lucide-react';
+import { Loader2, Lock, ShieldMinus, ShieldPlus } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
-import { Input } from '@/components/ui/input';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Textarea } from '@/components/ui/textarea';
+import { SearchInput } from '@/components/shared/filter-bar';
 import { cn } from '@/lib/utils';
 import {
   hasPermission,
@@ -138,25 +138,7 @@ export function AccessChecklist({ registry, access, pending, onToggle, canGrant,
 
   return (
     <div className="space-y-2.5">
-      <div className="relative">
-        <Search className="pointer-events-none absolute left-3 top-2.5 h-4 w-4 text-slate-400" />
-        <Input
-          value={term}
-          onChange={(event) => setTerm(event.target.value)}
-          placeholder="Search modules, pages or actions…"
-          className="pl-9"
-        />
-        {term && (
-          <button
-            type="button"
-            onClick={() => setTerm('')}
-            aria-label="Clear search"
-            className="hr-inline-action absolute right-1 top-1/2 inline-flex -translate-y-1/2 items-center justify-center rounded-full p-1 text-slate-400 hover:bg-slate-100"
-          >
-            <X className="h-3.5 w-3.5" />
-          </button>
-        )}
-      </div>
+      <SearchInput value={term} onChange={setTerm} placeholder="Search modules, pages or actions…" />
 
       {/* Every module, as a narrow single-line card, always visible — not a list where picking one
           pushes the rest down. Selecting one selects it; it does not reveal its content in place. */}
@@ -286,13 +268,13 @@ export function AccessChecklistSaveBar({
     <div className="hr-sticky-actions sticky bottom-0 -mx-1 space-y-2 rounded-xl border border-indigo-200 bg-white/95 p-3 shadow-lg backdrop-blur-sm">
       <div className="flex flex-wrap items-center gap-2 text-xs">
         {grants > 0 && (
-          <Badge variant="outline" className="gap-1 border-emerald-200 bg-emerald-50 text-emerald-700">
+          <Badge variant="success" className="gap-1">
             <ShieldPlus className="h-3 w-3" />
             {grants} to grant
           </Badge>
         )}
         {revokes > 0 && (
-          <Badge variant="outline" className="gap-1 border-destructive/30 bg-destructive/5 text-destructive">
+          <Badge variant="danger" className="gap-1">
             <ShieldMinus className="h-3 w-3" />
             {revokes} to revoke
           </Badge>

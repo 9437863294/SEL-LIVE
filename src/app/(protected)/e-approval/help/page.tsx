@@ -12,16 +12,15 @@ import {
   Inbox,
   Info,
   Printer,
-  Search,
   Settings,
   Sparkles,
   TriangleAlert,
-  X,
 } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { FilterBar } from '@/components/shared/filter-bar';
+import { TableCard } from '@/components/shared/table-card';
 import { cn } from '@/lib/utils';
 import { E_APPROVAL_BASE_PATH } from '@/lib/e-approval';
 import {
@@ -166,12 +165,12 @@ function BlockView({ block }: { block: ManualBlock }) {
 
     case 'table':
       return (
-        <div className="overflow-x-auto rounded-lg border">
+        <TableCard scroll="natural">
           <Table>
             <TableHeader>
-              <TableRow className="bg-muted/50 hover:bg-muted/50">
+              <TableRow>
                 {(block.headers ?? []).map((header, index) => (
-                  <TableHead key={`${header}-${index}`} className="h-9 whitespace-nowrap text-[11px] uppercase tracking-wide">
+                  <TableHead key={`${header}-${index}`} className="whitespace-nowrap">
                     {header}
                   </TableHead>
                 ))}
@@ -183,10 +182,7 @@ function BlockView({ block }: { block: ManualBlock }) {
                   {row.map((cell, index) => (
                     <TableCell
                       key={`${cell}-${index}`}
-                      className={cn(
-                        'py-2 align-top text-sm leading-relaxed',
-                        index === 0 && 'font-medium text-slate-900',
-                      )}
+                      className={cn('align-top leading-relaxed', index === 0 && 'font-medium')}
                     >
                       {cell}
                     </TableCell>
@@ -195,7 +191,7 @@ function BlockView({ block }: { block: ManualBlock }) {
               ))}
             </TableBody>
           </Table>
-        </div>
+        </TableCard>
       );
 
     default:
@@ -312,41 +308,29 @@ export default function EApprovalHelpPage() {
       </div>
 
       {/* Filter by who you are, and search the body text — see the note at the top of this file. */}
-      <div className="sticky top-0 z-10 -mx-1 flex flex-wrap items-center gap-2 border-b bg-background/95 px-1 py-2 backdrop-blur print:hidden">
-        <div className="flex min-w-0 flex-wrap gap-1">
-          {AUDIENCE_FILTERS.map((filter) => (
-            <Button
-              key={filter.key}
-              size="sm"
-              variant={audience === filter.key ? 'default' : 'outline'}
-              className="h-8 px-2.5 text-xs"
-              title={filter.hint}
-              onClick={() => setAudience(filter.key)}
-            >
-              {filter.label}
-            </Button>
-          ))}
-        </div>
-
-        <div className="relative min-w-0 flex-1 sm:max-w-xs sm:ml-auto">
-          <Search className="absolute left-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
-          <Input
-            value={search}
-            onChange={(event) => setSearch(event.target.value)}
-            placeholder="Search the handbook…"
-            className="h-8 pl-7 pr-7 text-xs"
-          />
-          {search && (
-            <button
-              type="button"
-              onClick={() => setSearch('')}
-              className="absolute right-1.5 top-1/2 -translate-y-1/2 rounded p-0.5 text-muted-foreground hover:bg-muted"
-              aria-label="Clear search"
-            >
-              <X className="h-3.5 w-3.5" />
-            </button>
-          )}
-        </div>
+      <div className="sticky top-0 z-10 -mx-1 border-b bg-background/95 px-1 py-2 backdrop-blur print:hidden">
+        <FilterBar
+          search={{ value: search, onChange: setSearch, placeholder: 'Search the handbook…' }}
+          activeCount={audience !== 'all' ? 1 : 0}
+          onClear={() => {
+            setSearch('');
+            setAudience('all');
+          }}
+        >
+          <div className="flex min-w-0 flex-wrap gap-1" role="group" aria-label="Audience">
+            {AUDIENCE_FILTERS.map((filter) => (
+              <Button
+                key={filter.key}
+                size="sm"
+                variant={audience === filter.key ? 'default' : 'outline'}
+                title={filter.hint}
+                onClick={() => setAudience(filter.key)}
+              >
+                {filter.label}
+              </Button>
+            ))}
+          </div>
+        </FilterBar>
       </div>
 
       {needle && (

@@ -48,6 +48,7 @@ import {
   TowerProgressShell,
 } from "@/components/project-management/tower-progress/tower-progress-ui";
 import { PageHeader } from "@/components/shared/page-header";
+import { TableCard } from "@/components/shared/table-card";
 
 export default function TowerProgressSettingsPage() {
   const { permissions } = useTowerProgress();
@@ -345,19 +346,14 @@ function SettingsScreen() {
       </Card>
 
       {/* ── Evidence requirements reference ──────────────────────────────────────────────── */}
-      <Card>
-        <CardHeader className="pb-3">
-          <CardTitle className="text-base">Minimum photographs per activity</CardTitle>
-          <CardDescription>
-            Fixed by the module, because these are the photographs that cannot be taken after the
-            fact. Foundation carries four: excavation, reinforcement and concreting all disappear once
-            the pit is backfilled.
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="p-0">
+      <TableCard
+        title="Minimum photographs per activity"
+        description="Fixed by the module, because these are the photographs that cannot be taken after the fact. Foundation carries four: excavation, reinforcement and concreting all disappear once the pit is backfilled."
+        scroll="natural"
+      >
           {/* A stacked list on a phone — two columns of badge lists do not fit beside the
               activity at 360px — and the table from `sm`. */}
-          <ul className="divide-y border-t sm:hidden">
+          <ul className="divide-y sm:hidden">
             {TOWER_ACTIVITY_LIST.map((definition) => (
               <li key={definition.key} className="space-y-2 px-4 py-3">
                 <p className="flex flex-wrap items-baseline justify-between gap-x-2">
@@ -379,7 +375,7 @@ function SettingsScreen() {
               </li>
             ))}
           </ul>
-          <div className="hidden overflow-x-auto sm:block">
+          <div className="hidden sm:block">
             <Table>
               <TableHeader>
                 <TableRow>
@@ -393,7 +389,7 @@ function SettingsScreen() {
                 {TOWER_ACTIVITY_LIST.map((definition) => (
                   <TableRow key={definition.key}>
                     <TableCell className="font-medium">{definition.label}</TableCell>
-                    <TableCell className="text-xs capitalize">{definition.measure}</TableCell>
+                    <TableCell className="capitalize">{definition.measure}</TableCell>
                     <TableCell>
                       <PhotoKindBadges kinds={definition.requiredPhotoKinds} required />
                     </TableCell>
@@ -405,8 +401,7 @@ function SettingsScreen() {
               </TableBody>
             </Table>
           </div>
-        </CardContent>
-      </Card>
+      </TableCard>
 
       {errors.length ? (
         <Alert variant="destructive">
@@ -445,14 +440,7 @@ function PhotoKindBadges({ kinds, required }: { kinds: TowerPhotoKind[]; require
   return (
     <div className="flex flex-wrap gap-1">
       {kinds.map((kind) => (
-        <Badge
-          key={kind}
-          variant="outline"
-          className={cn(
-            "text-[10px]",
-            required && "border-red-200 bg-red-50 text-red-700",
-          )}
-        >
+        <Badge key={kind} variant={required ? "danger" : "outline"}>
           {TOWER_PHOTO_KIND_LABELS[kind]}
         </Badge>
       ))}

@@ -58,6 +58,9 @@ import {
 } from '@/lib/windows-agent-service';
 import { useWindowsAgent, useWindowsAgentAction, useWindowsAgentQuery } from './hooks';
 import { CategoryBadge, ClockTime, categoryLabel } from './ui';
+import { SearchInput } from '@/components/shared/filter-bar';
+import { StatusBadge } from '@/components/shared/status-badge';
+import { TableCard } from '@/components/shared/table-card';
 import { PageHeader } from '@/components/shared/page-header';
 
 /* ════════════════════════════════════════════════════════════════════════════════════════════
@@ -173,24 +176,40 @@ function ApproversCard() {
   const carryingRoles = approvers.data?.carryingRoles ?? [];
 
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle className="flex items-center gap-2 text-base">
-          <KeyRound className="h-4 w-4 text-muted-foreground" aria-hidden />
-          Who can approve stopping the agent
-        </CardTitle>
-        <CardDescription>
+    <TableCard
+      title="Who can approve stopping the agent"
+      icon={KeyRound}
+      description={
+        <>
           Closing the agent, removing it, and stopping its Windows service all ask one of these
           people to sign in. They hold <strong>Windows Agent / Devices / Edit</strong>.
-        </CardDescription>
-      </CardHeader>
-      <CardContent className="space-y-3">
+        </>
+      }
+      count={approvers.loading || approvers.error ? undefined : rows.length}
+      noun="approver"
+      scroll="natural"
+      footer={
+        <p>
+          Add or remove people in <strong>Settings → Access Management</strong>.{' '}
+          {carryingRoles.length > 0 ? (
+            <>
+              Granting the <strong>{carryingRoles.join(' or ')}</strong> role is enough; so is
+              granting <strong>Windows Agent / Devices / Edit</strong> directly.
+            </>
+          ) : (
+            <>Grant <strong>Windows Agent / Devices / Edit</strong> to a role or to a person.</>
+          )}{' '}
+          It is the same permission that already covers blocking a device and forcing a
+          re-authentication, so anyone who can do those can approve this too.
+        </p>
+      }
+    >
         {approvers.loading ? (
           <HrLoader />
         ) : approvers.error ? (
-          <p className="text-sm text-rose-600">{approvers.error.message}</p>
+          <p className="p-4 text-sm text-rose-600">{approvers.error.message}</p>
         ) : rows.length === 0 ? (
-          <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
+          <div className="m-4 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
             <p className="font-medium">Nobody can approve it.</p>
             <p className="mt-1">
               Nobody active holds the permission, so an agent on any PC cannot be closed,
@@ -212,6 +231,7 @@ function ApproversCard() {
           <HrDataList
             rows={rows}
             dense
+            frameless
             columns={[
               {
                 header: 'Name',
@@ -230,7 +250,7 @@ function ApproversCard() {
                 cell: (row) => (
                   <span className="flex flex-wrap gap-1">
                     {row.via.map((source) => (
-                      <Badge key={source} variant="secondary" className="font-normal">
+                      <Badge key={source} variant="neutral" className="font-normal">
                         {source}
                       </Badge>
                     ))}
@@ -251,22 +271,7 @@ function ApproversCard() {
             ]}
           />
         )}
-
-        <p className="text-xs text-muted-foreground">
-          Add or remove people in <strong>Settings → Access Management</strong>.{' '}
-          {carryingRoles.length > 0 ? (
-            <>
-              Granting the <strong>{carryingRoles.join(' or ')}</strong> role is enough; so is
-              granting <strong>Windows Agent / Devices / Edit</strong> directly.
-            </>
-          ) : (
-            <>Grant <strong>Windows Agent / Devices / Edit</strong> to a role or to a person.</>
-          )}{' '}
-          It is the same permission that already covers blocking a device and forcing a
-          re-authentication, so anyone who can do those can approve this too.
-        </p>
-      </CardContent>
-    </Card>
+    </TableCard>
   );
 }
 
@@ -309,14 +314,14 @@ export function PoliciesPage() {
 
       <ApproversCard />
 
-      <Card>
-        <CardContent className="pt-6">
+      <TableCard title="Policy register" count={rows.length} noun="policy">
           {policies.loading ? (
             <HrLoader />
           ) : (
             <HrDataList
               rows={rows}
               dense
+              frameless
               onRowClick={canEdit ? (row) => setEditing(row) : undefined}
               columns={[
                 {
@@ -340,14 +345,7 @@ export function PoliciesPage() {
                 {
                   header: 'State',
                   mobile: 'aside',
-                  cell: (row) =>
-                    row.enabled ? (
-                      <Badge variant="outline" className="border-emerald-200 bg-emerald-50 text-emerald-700">
-                        Enabled
-                      </Badge>
-                    ) : (
-                      <Badge variant="outline">Disabled</Badge>
-                    ),
+                  cell: (row) => <StatusBadge status={row.enabled ? 'Enabled' : 'Disabled'} />,
                 },
                 {
                   header: '',
@@ -379,8 +377,7 @@ export function PoliciesPage() {
               }
             />
           )}
-        </CardContent>
-      </Card>
+      </TableCard>
 
       <ResolvedPreview policies={policies.data ?? []} />
 
@@ -459,8 +456,7 @@ function ResolvedPreview({ policies }: { policies: WindowsAgentPolicy[] }) {
                     {typeof value === 'boolean' ? (value ? 'On' : 'Off') : String(value)}
                   </span>
                   <Badge
-                    variant="outline"
-                    className={source === 'DEFAULT' ? 'text-[10px] text-muted-foreground' : 'text-[10px]'}
+                    variant={source === 'DEFAULT' ? 'outline' : 'neutral'}
                     title={describePolicySource(source)}
                   >
                     {source.toLowerCase()}
@@ -732,24 +728,20 @@ export function ApplicationCatalogPage() {
         </Card>
       ) : null}
 
-      <Card>
-        <CardHeader className="flex flex-row items-center justify-between gap-3 space-y-0">
-          <CardTitle className="text-base">{rows.length} {rows.length === 1 ? 'program' : 'programs'}</CardTitle>
-          <Input
-            value={search}
-            onChange={(event) => setSearch(event.target.value)}
-            placeholder="Filter by name or process"
-            className="max-w-xs"
-          />
-        </CardHeader>
-        <CardContent>
+      <TableCard
+        title="Application catalogue"
+        count={rows.length}
+        total={(catalog.data ?? []).length}
+        noun="program"
+        toolbar={<SearchInput value={search} onChange={setSearch} placeholder="Filter by name or process" className="sm:max-w-xs" />}
+      >
           {catalog.loading ? (
             <HrLoader />
           ) : (
             <HrDataList
               rows={rows}
               dense
-              maxHeightClassName="sm:max-h-[40rem]"
+              frameless
               columns={[
                 {
                   header: 'Application',
@@ -767,9 +759,7 @@ export function ApplicationCatalogPage() {
                   mobile: 'detail',
                   cell: (row) =>
                     row.autoDiscovered ? (
-                      <Badge variant="outline" className="border-amber-200 bg-amber-50 text-amber-700">
-                        Needs review
-                      </Badge>
+                      <StatusBadge status="Needs review" />
                     ) : row.isBuiltIn ? (
                       <span className="text-xs text-muted-foreground">Built in</span>
                     ) : (
@@ -816,8 +806,7 @@ export function ApplicationCatalogPage() {
               }
             />
           )}
-        </CardContent>
-      </Card>
+      </TableCard>
     </div>
   );
 }
@@ -869,32 +858,26 @@ export function AgentVersionsPage() {
         </CardContent>
       </Card>
 
-      <Card>
-        <CardContent className="pt-6">
+      <TableCard title="Published builds" count={versions.data?.length} noun="build">
           {versions.loading ? (
             <HrLoader />
           ) : (
             <HrDataList
               rows={versions.data ?? []}
               dense
+              frameless
               columns={[
                 { header: 'Version', mobile: 'title', cell: (row) => <span className="font-mono">{row.version}</span> },
                 {
                   header: 'Channel',
                   mobile: 'aside',
                   cell: (row) => (
-                    <Badge
-                      variant="outline"
-                      className={
-                        row.channel === 'STABLE'
-                          ? 'border-emerald-200 bg-emerald-50 text-emerald-700'
-                          : row.channel === 'WITHDRAWN'
-                            ? 'border-rose-200 bg-rose-50 text-rose-700'
-                            : ''
-                      }
+                    <StatusBadge
+                      status={row.channel}
+                      tone={row.channel === 'STABLE' ? 'success' : row.channel === 'WITHDRAWN' ? 'danger' : 'neutral'}
                     >
                       {row.channel.toLowerCase()}
-                    </Badge>
+                    </StatusBadge>
                   ),
                 },
                 { header: 'Rings', mobile: 'detail', cell: (row) => (row.rings ?? []).join(', ') || '—' },
@@ -933,8 +916,7 @@ export function AgentVersionsPage() {
               }
             />
           )}
-        </CardContent>
-      </Card>
+      </TableCard>
 
       {publishing ? (
         <PublishVersionDialog
@@ -1091,27 +1073,20 @@ export function AuditLogPage() {
         description="Every administrative action in this module. Append-only — nobody can edit or delete a row, including the people who write them."
       />
 
-      <Card>
-        <CardHeader className="flex flex-row items-center justify-between gap-3 space-y-0">
-          <CardTitle className="flex items-center gap-2 text-base">
-            <ScrollText className="h-4 w-4" aria-hidden />
-            {rows.length} {rows.length === 1 ? 'entry' : 'entries'}
-          </CardTitle>
-          <Input
-            value={search}
-            onChange={(event) => setSearch(event.target.value)}
-            placeholder="Filter by action, person or target"
-            className="max-w-xs"
-          />
-        </CardHeader>
-        <CardContent>
+      <TableCard
+        title="Audit entries"
+        icon={ScrollText}
+        count={rows.length}
+        total={(logs.data ?? []).length}
+        toolbar={<SearchInput value={search} onChange={setSearch} placeholder="Filter by action, person or target" className="sm:max-w-xs" />}
+      >
           {logs.loading ? (
             <HrLoader />
           ) : (
             <HrDataList
               rows={rows}
               dense
-              maxHeightClassName="sm:max-h-[40rem]"
+              frameless
               columns={[
                 { header: 'When', mobile: 'aside', cell: (row) => <ClockTime value={row.at} /> },
                 {
@@ -1136,8 +1111,7 @@ export function AuditLogPage() {
               empty={<HrEmptyState title="Nothing recorded yet" description="Administrative actions appear here as they happen." />}
             />
           )}
-        </CardContent>
-      </Card>
+      </TableCard>
     </div>
   );
 }

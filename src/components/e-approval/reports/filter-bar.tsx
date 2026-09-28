@@ -1,14 +1,12 @@
 'use client';
 
-import { useEffect, useMemo, useRef, useState } from 'react';
-import { CalendarRange, Filter, RotateCcw, X } from 'lucide-react';
-import { Badge } from '@/components/ui/badge';
+import { useEffect, useId, useMemo, useRef, useState } from 'react';
+import { CalendarRange } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { cn } from '@/lib/utils';
+import { FilterBar } from '@/components/shared/filter-bar';
 import { E_APPROVAL_PRIORITIES, E_APPROVAL_STATUSES, type EApprovalPriority } from '@/lib/e-approval';
 import type { EApprovalAnalyticsFilter } from '@/lib/e-approval-analytics';
 import { useEApprovalDirectory } from '../hooks';
@@ -30,9 +28,9 @@ const financialYearStart = (now = new Date()) =>
  * The single filter row that scopes every chart on a report page.
  *
  * One row above everything, never per-card: two charts on one screen answering the same question
- * from different slices is how a reader draws a false conclusion and blames the data. Collapsed to a
- * summary line on mobile, because six selects stacked vertically push the actual report below the
- * fold.
+ * from different slices is how a reader draws a false conclusion and blames the data. Built on the
+ * app's `FilterBar`, which folds the controls behind a "Filters" button on a phone, because six
+ * selects stacked vertically push the actual report below the fold.
  */
 export function EApprovalFilterBar({
   value,
@@ -44,7 +42,7 @@ export function EApprovalFilterBar({
   className?: string;
 }) {
   const { directory } = useEApprovalDirectory();
-  const [open, setOpen] = useState(false);
+  const fieldId = useId();
 
   const set = (patch: Partial<EApprovalAnalyticsFilter>) => onChange({ ...value, ...patch });
 
@@ -88,6 +86,7 @@ export function EApprovalFilterBar({
   const one = (list: string[] | undefined) => (list?.length === 1 ? list[0] : 'ALL');
   const pick = (next: string): string[] | undefined => (next === 'ALL' ? undefined : [next]);
 
+  /** Filters set, not counting the search — `FilterBar` counts that on its own. */
   const activeCount = useMemo(() => {
     let count = 0;
     if (value.from || value.to) count += 1;
@@ -97,7 +96,6 @@ export function EApprovalFilterBar({
     if (value.statuses?.length) count += 1;
     if (value.priorities?.length) count += 1;
     if (value.minAmount != null || value.maxAmount != null) count += 1;
-    if (value.search?.trim()) count += 1;
     return count;
   }, [value]);
 
@@ -108,222 +106,151 @@ export function EApprovalFilterBar({
   };
 
   return (
-    <Card className={cn('overflow-hidden', className)}>
-      <CardContent className="space-y-2 px-2.5 py-2.5 sm:px-3">
-        <div className="flex flex-wrap items-center gap-1.5">
-          <Button
-            type="button"
-            size="sm"
-            variant={open ? 'default' : 'outline'}
-            className="h-8 gap-1.5 text-xs"
-            onClick={() => setOpen((current) => !current)}
-          >
-            <Filter className="h-3.5 w-3.5" />
-            Filters
-            {activeCount > 0 && (
-              <Badge variant="secondary" className="ml-0.5 h-4 px-1 text-[10px]">
-                {activeCount}
-              </Badge>
-            )}
-          </Button>
-
-          {PRESETS.map((preset) => (
-            <Button
-              key={preset.label}
-              type="button"
-              size="sm"
-              variant="ghost"
-              className="h-8 px-2 text-xs"
-              onClick={() => applyPreset(preset.days)}
-            >
-              {preset.label}
-            </Button>
-          ))}
-
-          <span className="ml-auto flex items-center gap-1.5">
-            {(value.from || value.to) && (
-              <Badge variant="outline" className="gap-1 text-[10px]">
-                <CalendarRange className="h-3 w-3" />
-                {value.from || '…'} → {value.to || 'today'}
-              </Badge>
-            )}
-            {activeCount > 0 && (
-              <Button
-                type="button"
-                size="sm"
-                variant="ghost"
-                className="h-8 gap-1 px-2 text-xs text-muted-foreground"
-                onClick={() => onChange({})}
-              >
-                <RotateCcw className="h-3.5 w-3.5" /> Clear
-              </Button>
-            )}
+    <FilterBar
+      className={className}
+      search={{
+        value: searchDraft,
+        onChange: (next) => {
+          setSearchDraft(next);
+          // Clearing the box reports at once rather than after the typing pause.
+          if (!next) {
+            searchRef.current = '';
+            set({ search: '' });
+          }
+        },
+        placeholder: 'Reference, subject, requester, pending-with…',
+        label: 'Search approvals',
+      }}
+      activeCount={activeCount}
+      onClear={() => {
+        setSearchDraft('');
+        searchRef.current = '';
+        onChange({});
+      }}
+      summary={
+        value.from || value.to ? (
+          <span className="inline-flex items-center gap-1">
+            <CalendarRange className="h-3 w-3" aria-hidden="true" />
+            {value.from || '…'} → {value.to || 'today'}
           </span>
-        </div>
+        ) : undefined
+      }
+      actions={PRESETS.map((preset) => (
+        <Button key={preset.label} type="button" variant="ghost" onClick={() => applyPreset(preset.days)}>
+          {preset.label}
+        </Button>
+      ))}
+    >
+      <div className="flex items-center gap-1.5">
+        <Label htmlFor={`${fieldId}-from`} className="shrink-0 text-xs text-muted-foreground">From</Label>
+        <Input
+          id={`${fieldId}-from`}
+          type="date"
+          value={value.from ?? ''}
+          onChange={(event) => set({ from: event.target.value || null })}
+        />
+      </div>
+      <div className="flex items-center gap-1.5">
+        <Label htmlFor={`${fieldId}-to`} className="shrink-0 text-xs text-muted-foreground">To</Label>
+        <Input
+          id={`${fieldId}-to`}
+          type="date"
+          value={value.to ?? ''}
+          onChange={(event) => set({ to: event.target.value || null })}
+        />
+      </div>
 
-        {open && (
-          <div className="grid gap-2 border-t pt-2 sm:grid-cols-2 lg:grid-cols-4">
-            <div>
-              <Label className="text-[10px] uppercase tracking-wide text-muted-foreground">From</Label>
-              <Input
-                type="date"
-                value={value.from ?? ''}
-                onChange={(event) => set({ from: event.target.value || null })}
-                className="mt-1 h-8 text-xs"
-              />
-            </div>
-            <div>
-              <Label className="text-[10px] uppercase tracking-wide text-muted-foreground">To</Label>
-              <Input
-                type="date"
-                value={value.to ?? ''}
-                onChange={(event) => set({ to: event.target.value || null })}
-                className="mt-1 h-8 text-xs"
-              />
-            </div>
+      <Select value={one(value.departmentIds)} onValueChange={(next) => set({ departmentIds: pick(next) })}>
+        <SelectTrigger aria-label="Department">
+          <SelectValue />
+        </SelectTrigger>
+        <SelectContent>
+          <SelectItem value="ALL">All departments</SelectItem>
+          {directory.departments.map((row) => (
+            <SelectItem key={row.id} value={row.id}>
+              {row.name}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
 
-            <div>
-              <Label className="text-[10px] uppercase tracking-wide text-muted-foreground">Department</Label>
-              <Select value={one(value.departmentIds)} onValueChange={(next) => set({ departmentIds: pick(next) })}>
-                <SelectTrigger className="mt-1 h-8 text-xs">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="ALL">All departments</SelectItem>
-                  {directory.departments.map((row) => (
-                    <SelectItem key={row.id} value={row.id}>
-                      {row.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
+      <Select value={one(value.projectIds)} onValueChange={(next) => set({ projectIds: pick(next) })}>
+        <SelectTrigger aria-label="Project / site">
+          <SelectValue />
+        </SelectTrigger>
+        <SelectContent>
+          <SelectItem value="ALL">All projects</SelectItem>
+          {directory.projects.map((row) => (
+            <SelectItem key={row.id} value={row.id}>
+              {row.projectName}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
 
-            <div>
-              <Label className="text-[10px] uppercase tracking-wide text-muted-foreground">Project / site</Label>
-              <Select value={one(value.projectIds)} onValueChange={(next) => set({ projectIds: pick(next) })}>
-                <SelectTrigger className="mt-1 h-8 text-xs">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="ALL">All projects</SelectItem>
-                  {directory.projects.map((row) => (
-                    <SelectItem key={row.id} value={row.id}>
-                      {row.projectName}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
+      <Select value={one(value.approvalTypeIds)} onValueChange={(next) => set({ approvalTypeIds: pick(next) })}>
+        <SelectTrigger aria-label="Approval type">
+          <SelectValue />
+        </SelectTrigger>
+        <SelectContent>
+          <SelectItem value="ALL">All types</SelectItem>
+          {directory.types.map((row) => (
+            <SelectItem key={row.id} value={row.id}>
+              {row.name}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
 
-            <div>
-              <Label className="text-[10px] uppercase tracking-wide text-muted-foreground">Approval type</Label>
-              <Select
-                value={one(value.approvalTypeIds)}
-                onValueChange={(next) => set({ approvalTypeIds: pick(next) })}
-              >
-                <SelectTrigger className="mt-1 h-8 text-xs">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="ALL">All types</SelectItem>
-                  {directory.types.map((row) => (
-                    <SelectItem key={row.id} value={row.id}>
-                      {row.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
+      <Select value={one(value.statuses)} onValueChange={(next) => set({ statuses: pick(next) })}>
+        <SelectTrigger aria-label="Status">
+          <SelectValue />
+        </SelectTrigger>
+        <SelectContent>
+          <SelectItem value="ALL">All statuses</SelectItem>
+          {E_APPROVAL_STATUSES.map((row) => (
+            <SelectItem key={row} value={row}>
+              {row}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
 
-            <div>
-              <Label className="text-[10px] uppercase tracking-wide text-muted-foreground">Status</Label>
-              <Select value={one(value.statuses)} onValueChange={(next) => set({ statuses: pick(next) })}>
-                <SelectTrigger className="mt-1 h-8 text-xs">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="ALL">All statuses</SelectItem>
-                  {E_APPROVAL_STATUSES.map((row) => (
-                    <SelectItem key={row} value={row}>
-                      {row}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
+      <Select
+        value={value.priorities?.length === 1 ? value.priorities[0] : 'ALL'}
+        onValueChange={(next) => set({ priorities: next === 'ALL' ? undefined : [next as EApprovalPriority] })}
+      >
+        <SelectTrigger aria-label="Priority">
+          <SelectValue />
+        </SelectTrigger>
+        <SelectContent>
+          <SelectItem value="ALL">Any priority</SelectItem>
+          {E_APPROVAL_PRIORITIES.map((row) => (
+            <SelectItem key={row} value={row}>
+              {row}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
 
-            <div>
-              <Label className="text-[10px] uppercase tracking-wide text-muted-foreground">Priority</Label>
-              <Select
-                value={value.priorities?.length === 1 ? value.priorities[0] : 'ALL'}
-                onValueChange={(next) =>
-                  set({ priorities: next === 'ALL' ? undefined : [next as EApprovalPriority] })
-                }
-              >
-                <SelectTrigger className="mt-1 h-8 text-xs">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="ALL">Any priority</SelectItem>
-                  {E_APPROVAL_PRIORITIES.map((row) => (
-                    <SelectItem key={row} value={row}>
-                      {row}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-
-            <div className="grid grid-cols-2 gap-2">
-              <div>
-                <Label className="text-[10px] uppercase tracking-wide text-muted-foreground">Min ₹</Label>
-                <Input
-                  type="number"
-                  value={value.minAmount ?? ''}
-                  onChange={(event) => set({ minAmount: event.target.value === '' ? null : Number(event.target.value) })}
-                  className="mt-1 h-8 text-xs"
-                />
-              </div>
-              <div>
-                <Label className="text-[10px] uppercase tracking-wide text-muted-foreground">Max ₹</Label>
-                <Input
-                  type="number"
-                  value={value.maxAmount ?? ''}
-                  onChange={(event) => set({ maxAmount: event.target.value === '' ? null : Number(event.target.value) })}
-                  className="mt-1 h-8 text-xs"
-                />
-              </div>
-            </div>
-
-            <div className="sm:col-span-2 lg:col-span-4">
-              <Label className="text-[10px] uppercase tracking-wide text-muted-foreground">Search</Label>
-              <div className="relative mt-1">
-                <Input
-                  value={searchDraft}
-                  onChange={(event) => setSearchDraft(event.target.value)}
-                  placeholder="Reference, subject, requester, pending-with…"
-                  className="h-8 pr-7 text-xs"
-                />
-                {searchDraft && (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setSearchDraft('');
-                      searchRef.current = '';
-                      set({ search: '' });
-                    }}
-                    className="absolute right-1.5 top-1/2 -translate-y-1/2 rounded p-0.5 text-muted-foreground hover:bg-muted"
-                    aria-label="Clear search"
-                  >
-                    <X className="h-3.5 w-3.5" />
-                  </button>
-                )}
-              </div>
-            </div>
-          </div>
-        )}
-      </CardContent>
-    </Card>
+      <div className="flex items-center gap-1.5">
+        <Label htmlFor={`${fieldId}-min`} className="shrink-0 text-xs text-muted-foreground">Min ₹</Label>
+        <Input
+          id={`${fieldId}-min`}
+          type="number"
+          value={value.minAmount ?? ''}
+          onChange={(event) => set({ minAmount: event.target.value === '' ? null : Number(event.target.value) })}
+        />
+      </div>
+      <div className="flex items-center gap-1.5">
+        <Label htmlFor={`${fieldId}-max`} className="shrink-0 text-xs text-muted-foreground">Max ₹</Label>
+        <Input
+          id={`${fieldId}-max`}
+          type="number"
+          value={value.maxAmount ?? ''}
+          onChange={(event) => set({ maxAmount: event.target.value === '' ? null : Number(event.target.value) })}
+        />
+      </div>
+    </FilterBar>
   );
 }

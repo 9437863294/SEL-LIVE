@@ -32,13 +32,11 @@ import {
   Upload,
   X,
 } from 'lucide-react';
-import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Label } from '@/components/ui/label';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Textarea } from '@/components/ui/textarea';
-import { cn } from '@/lib/utils';
 import {
   EMPLOYEE_IMPORT_COLUMNS,
   buildEmployeeImportPreview,
@@ -63,12 +61,14 @@ import {
   type OfficeHubListColumn,
 } from '@/components/office-hub/ui';
 import { PageHeader } from '@/components/shared/page-header';
+import { StatusBadge, type StatusTone } from '@/components/shared/status-badge';
+import { TableCard } from '@/components/shared/table-card';
 
-const OUTCOME_TONE: Record<EmployeeImportOutcome, string> = {
-  create: 'border-emerald-200 bg-emerald-50 text-emerald-700',
-  update: 'border-sky-200 bg-sky-50 text-sky-700',
-  match: 'border-slate-200 bg-slate-50 text-slate-500',
-  error: 'border-rose-200 bg-rose-50 text-rose-700',
+const OUTCOME_TONE: Record<EmployeeImportOutcome, StatusTone> = {
+  create: 'success',
+  update: 'info',
+  match: 'neutral',
+  error: 'danger',
 };
 
 const OUTCOME_LABEL: Record<EmployeeImportOutcome, string> = {
@@ -222,9 +222,9 @@ export default function ImportEmployeesPage() {
       mobile: 'detail',
       className: 'w-32',
       cell: (row) => (
-        <Badge variant="outline" className={cn('border text-[11px] font-medium', OUTCOME_TONE[row.outcome])}>
+        <StatusBadge status={row.outcome} tone={OUTCOME_TONE[row.outcome]}>
           {OUTCOME_LABEL[row.outcome]}
-        </Badge>
+        </StatusBadge>
       ),
     },
     {
@@ -426,7 +426,30 @@ export default function ImportEmployeesPage() {
             </p>
           )}
 
-          <div className="flex flex-wrap items-center justify-between gap-2">
+          <TableCard
+            title="Import preview"
+            count={filtered.length}
+            total={preview.summary.total}
+            noun="row"
+            actions={
+              (preview.summary.error > 0 || preview.rows.some((row) => row.warnings.length)) && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="gap-2"
+                  onClick={() =>
+                    download(
+                      'office-hub-import-errors.csv',
+                      errorReportToCsv(buildImportErrorReport(preview)),
+                    )
+                  }
+                >
+                  <Download className="h-4 w-4" />
+                  Download error report
+                </Button>
+              )
+            }
+            toolbar={
             <Tabs value={filter} onValueChange={(next) => setFilter(next as Filter)}>
               <TabsList className="h-auto">
                 <TabsTrigger value="all" className="text-xs">
@@ -446,34 +469,18 @@ export default function ImportEmployeesPage() {
                 </TabsTrigger>
               </TabsList>
             </Tabs>
-
-            {(preview.summary.error > 0 || preview.rows.some((row) => row.warnings.length)) && (
-              <Button
-                variant="outline"
-                size="sm"
-                className="gap-2"
-                onClick={() =>
-                  download(
-                    'office-hub-import-errors.csv',
-                    errorReportToCsv(buildImportErrorReport(preview)),
-                  )
-                }
-              >
-                <Download className="h-4 w-4" />
-                Download error report
-              </Button>
-            )}
-          </div>
-
-          <OfficeHubDataList
-            rows={filtered}
-            columns={columns}
-            maxHeightClassName="sm:max-h-[36rem]"
-            rowClassName={(row) =>
-              row.outcome === 'error' ? 'bg-rose-50/60' : row.outcome === 'match' ? 'opacity-70' : undefined
             }
-            empty={<OfficeHubEmptyState icon={Upload} title="No rows in this view." />}
-          />
+          >
+            <OfficeHubDataList
+              rows={filtered}
+              columns={columns}
+              frameless
+              rowClassName={(row) =>
+                row.outcome === 'error' ? 'bg-rose-50/60' : row.outcome === 'match' ? 'opacity-70' : undefined
+              }
+              empty={<OfficeHubEmptyState icon={Upload} title="No rows in this view." />}
+            />
+          </TableCard>
 
           <div className="sticky bottom-0 -mx-1 flex flex-wrap items-center gap-2 border-t bg-white/95 px-1 py-3 backdrop-blur">
             <Button onClick={() => void commit()} disabled={isBusy || ready.length === 0} className="gap-2">

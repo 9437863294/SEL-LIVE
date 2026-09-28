@@ -44,6 +44,7 @@ import {
 import { Skeleton } from "@/components/ui/skeleton";
 import { PmDataList, type PmListColumn } from "@/components/project-management/pm-shell";
 import { PageHeader } from "@/components/shared/page-header";
+import { TableCard } from "@/components/shared/table-card";
 import { useAuthorization } from "@/hooks/useAuthorization";
 import { useToast } from "@/hooks/use-toast";
 import {
@@ -483,26 +484,19 @@ export default function ProjectManagementBoqSettingsPage() {
         </CardContent>
       </Card>
 
-      {/* On a phone the card drops its frame: the header reads as a section heading and the
-          column cards stand on the page, rather than sitting as cards inside a card. */}
-      <Card className="max-sm:border-0 max-sm:bg-transparent max-sm:shadow-none">
-        <CardHeader className="max-sm:px-0 max-sm:pt-0">
-          <CardTitle className="flex items-center gap-2">
-            <ClipboardList className="h-5 w-5 text-primary" />
-            BOQ Columns
-          </CardTitle>
-          <CardDescription>
-            Data types are applied during BOQ import validation. Imported headers stay hidden until enabled.
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="p-0">
+      <TableCard
+        title="BOQ Columns"
+        icon={ClipboardList}
+        description="Data types are applied during BOQ import validation. Imported headers stay hidden until enabled."
+      >
+        <div className="p-3 sm:p-0">
           <PmDataList
             rows={columns.map((column, index) => ({ id: column.key, column, index }))}
             columns={listColumns}
             className="sm:rounded-none sm:border-0 sm:shadow-none"
           />
-        </CardContent>
-      </Card>
+        </div>
+      </TableCard>
     </main>
   );
 }

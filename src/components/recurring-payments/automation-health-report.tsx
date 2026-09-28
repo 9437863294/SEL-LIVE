@@ -18,15 +18,9 @@ import {
   visibleObligations,
 } from "@/lib/recurring-payments";
 import { exportWorkbook } from "@/lib/report-excel";
-import { Badge } from "@/components/ui/badge";
+import { StatusBadge } from "@/components/shared/status-badge";
 import { Button } from "@/components/ui/button";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
+import { TableCard } from "@/components/shared/table-card";
 import {
   Table,
   TableBody,
@@ -266,160 +260,151 @@ export default function AutomationHealthReport() {
           tone={stuckNeedingAttention.length ? "warning" : "good"}
         />
       </div>
-      <Card>
-        <CardHeader>
-          <CardTitle>Recent automation runs</CardTitle>
-          <CardDescription>Last {recentRuns.length} run(s) of the daily generation job</CardDescription>
-        </CardHeader>
-        <CardContent className="p-0">
-          <div className="overflow-x-auto">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Started</TableHead>
-                  <TableHead>Job</TableHead>
-                  <TableHead className="text-right">Checked</TableHead>
-                  <TableHead className="text-right">Generated</TableHead>
-                  <TableHead className="text-right">Workflow triggered</TableHead>
-                  <TableHead className="text-right">Assignee missing</TableHead>
-                  <TableHead className="text-right">Reminders queued</TableHead>
-                  <TableHead>Status</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {recentRuns.map((run) => (
-                  <TableRow key={run.id}>
-                    <TableCell>{formatTimestamp(run.startedAt)}</TableCell>
-                    <TableCell>{run.jobName}</TableCell>
-                    <TableCell className="text-right">{run.result?.checked ?? "—"}</TableCell>
-                    <TableCell className="text-right">{run.result?.generated ?? "—"}</TableCell>
-                    <TableCell className="text-right">{run.result?.workflowTriggered ?? "—"}</TableCell>
-                    <TableCell className="text-right">
-                      {run.result?.assigneeMissing ? (
-                        <Badge variant="destructive">{run.result.assigneeMissing}</Badge>
-                      ) : (
-                        run.result?.assigneeMissing ?? 0
-                      )}
-                    </TableCell>
-                    <TableCell className="text-right">{run.result?.remindersQueued ?? "—"}</TableCell>
-                    <TableCell>
-                      <Badge variant="outline">{run.status}</Badge>
-                    </TableCell>
-                  </TableRow>
-                ))}
-                {!recentRuns.length && (
-                  <TableRow>
-                    <TableCell colSpan={8} className="h-20 text-center text-muted-foreground">
-                      No automation runs recorded yet.
-                    </TableCell>
-                  </TableRow>
-                )}
-              </TableBody>
-            </Table>
-          </div>
-        </CardContent>
-      </Card>
-      <Card>
-        <CardHeader>
-          <CardTitle>Obligations stuck at &quot;Scheduled&quot;</CardTitle>
-          <CardDescription>
+      <TableCard
+        title="Recent automation runs"
+        description={<>Last {recentRuns.length} run(s) of the daily generation job</>}
+      >
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead>Started</TableHead>
+              <TableHead>Job</TableHead>
+              <TableHead className="text-right">Checked</TableHead>
+              <TableHead className="text-right">Generated</TableHead>
+              <TableHead className="text-right">Workflow triggered</TableHead>
+              <TableHead className="text-right">Assignee missing</TableHead>
+              <TableHead className="text-right">Reminders queued</TableHead>
+              <TableHead>Status</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {recentRuns.map((run) => (
+              <TableRow key={run.id}>
+                <TableCell>{formatTimestamp(run.startedAt)}</TableCell>
+                <TableCell>{run.jobName}</TableCell>
+                <TableCell className="text-right">{run.result?.checked ?? "—"}</TableCell>
+                <TableCell className="text-right">{run.result?.generated ?? "—"}</TableCell>
+                <TableCell className="text-right">{run.result?.workflowTriggered ?? "—"}</TableCell>
+                <TableCell className="text-right">
+                  {run.result?.assigneeMissing ? (
+                    <StatusBadge tone="danger">{run.result.assigneeMissing}</StatusBadge>
+                  ) : (
+                    run.result?.assigneeMissing ?? 0
+                  )}
+                </TableCell>
+                <TableCell className="text-right">{run.result?.remindersQueued ?? "—"}</TableCell>
+                <TableCell>
+                  <StatusBadge status={run.status} />
+                </TableCell>
+              </TableRow>
+            ))}
+            {!recentRuns.length && (
+              <TableRow>
+                <TableCell colSpan={8} className="h-20 text-center text-muted-foreground">
+                  No automation runs recorded yet.
+                </TableCell>
+              </TableRow>
+            )}
+          </TableBody>
+        </Table>
+      </TableCard>
+      <TableCard
+        title={<>Obligations stuck at &quot;Scheduled&quot;</>}
+        count={stuck.length}
+        noun="obligation"
+        description={
+          <>
             Generated, but never entered a workflow step — diagnosed against the org&apos;s
             current activation window ({activationDays} day(s) before due)
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="p-0">
-          <div className="overflow-x-auto">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Due date</TableHead>
-                  <TableHead>Payment</TableHead>
-                  <TableHead>Vendor</TableHead>
-                  <TableHead>Owner</TableHead>
-                  <TableHead className="text-right">Amount</TableHead>
-                  <TableHead>Diagnosis</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {stuck.map(({ item, diagnosis }) => (
-                  <TableRow key={item.id}>
-                    <TableCell className="whitespace-nowrap">{item.dueDate || "—"}</TableCell>
-                    <TableCell className="whitespace-nowrap font-medium">{item.title}</TableCell>
-                    <TableCell className="whitespace-nowrap">{item.vendorName}</TableCell>
-                    <TableCell className="whitespace-nowrap">
-                      {users.find((entry) => entry.id === item.assignedTo)?.name || (
-                        <span className="text-amber-600">Unassigned</span>
-                      )}
-                    </TableCell>
-                    <TableCell className="whitespace-nowrap text-right">
-                      {currency(item.billAmount || item.expectedAmount || 0)}
-                    </TableCell>
-                    <TableCell className="whitespace-nowrap">
-                      <Badge variant={diagnosis.actionable ? "destructive" : "outline"}>
-                        {diagnosis.label}
-                      </Badge>
-                    </TableCell>
-                  </TableRow>
-                ))}
-                {!stuck.length && (
-                  <TableRow>
-                    <TableCell colSpan={6} className="h-20 text-center text-muted-foreground">
-                      Nothing is stuck — every generated obligation has entered its workflow.
-                    </TableCell>
-                  </TableRow>
-                )}
-              </TableBody>
-            </Table>
-          </div>
-        </CardContent>
-      </Card>
-      <Card>
-        <CardHeader>
-          <CardTitle>Masters not currently generating</CardTitle>
-          <CardDescription>Draft, paused, inactive, or with auto-generation turned off</CardDescription>
-        </CardHeader>
-        <CardContent className="p-0">
-          <div className="overflow-x-auto">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Master</TableHead>
-                  <TableHead>Category</TableHead>
-                  <TableHead>Vendor</TableHead>
-                  <TableHead>Status</TableHead>
-                  <TableHead>Auto-generation</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {inactiveMasters.map((item) => (
-                  <TableRow key={item.id}>
-                    <TableCell className="whitespace-nowrap">{item.title}</TableCell>
-                    <TableCell className="whitespace-nowrap">{item.category}</TableCell>
-                    <TableCell className="whitespace-nowrap">{item.vendorName}</TableCell>
-                    <TableCell className="whitespace-nowrap">
-                      <Badge variant="outline">{item.status}</Badge>
-                    </TableCell>
-                    <TableCell className="whitespace-nowrap">
-                      {item.autoGenerationEnabled === false ? (
-                        <Badge variant="destructive">Disabled</Badge>
-                      ) : (
-                        "Enabled"
-                      )}
-                    </TableCell>
-                  </TableRow>
-                ))}
-                {!inactiveMasters.length && (
-                  <TableRow>
-                    <TableCell colSpan={5} className="h-20 text-center text-muted-foreground">
-                      Every master is active and auto-generating.
-                    </TableCell>
-                  </TableRow>
-                )}
-              </TableBody>
-            </Table>
-          </div>
-        </CardContent>
-      </Card>
+          </>
+        }
+      >
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead>Due date</TableHead>
+              <TableHead>Payment</TableHead>
+              <TableHead>Vendor</TableHead>
+              <TableHead>Owner</TableHead>
+              <TableHead className="text-right">Amount</TableHead>
+              <TableHead>Diagnosis</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {stuck.map(({ item, diagnosis }) => (
+              <TableRow key={item.id}>
+                <TableCell className="whitespace-nowrap">{item.dueDate || "—"}</TableCell>
+                <TableCell className="whitespace-nowrap font-medium">{item.title}</TableCell>
+                <TableCell className="whitespace-nowrap">{item.vendorName}</TableCell>
+                <TableCell className="whitespace-nowrap">
+                  {users.find((entry) => entry.id === item.assignedTo)?.name || (
+                    <StatusBadge tone="warning">Unassigned</StatusBadge>
+                  )}
+                </TableCell>
+                <TableCell className="whitespace-nowrap text-right">
+                  {currency(item.billAmount || item.expectedAmount || 0)}
+                </TableCell>
+                <TableCell className="whitespace-nowrap">
+                  <StatusBadge tone={diagnosis.actionable ? "danger" : "neutral"}>
+                    {diagnosis.label}
+                  </StatusBadge>
+                </TableCell>
+              </TableRow>
+            ))}
+            {!stuck.length && (
+              <TableRow>
+                <TableCell colSpan={6} className="h-20 text-center text-muted-foreground">
+                  Nothing is stuck — every generated obligation has entered its workflow.
+                </TableCell>
+              </TableRow>
+            )}
+          </TableBody>
+        </Table>
+      </TableCard>
+      <TableCard
+        title="Masters not currently generating"
+        count={inactiveMasters.length}
+        noun="master"
+        description="Draft, paused, inactive, or with auto-generation turned off"
+      >
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead>Master</TableHead>
+              <TableHead>Category</TableHead>
+              <TableHead>Vendor</TableHead>
+              <TableHead>Status</TableHead>
+              <TableHead>Auto-generation</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {inactiveMasters.map((item) => (
+              <TableRow key={item.id}>
+                <TableCell className="whitespace-nowrap">{item.title}</TableCell>
+                <TableCell className="whitespace-nowrap">{item.category}</TableCell>
+                <TableCell className="whitespace-nowrap">{item.vendorName}</TableCell>
+                <TableCell className="whitespace-nowrap">
+                  <StatusBadge status={item.status} />
+                </TableCell>
+                <TableCell className="whitespace-nowrap">
+                  {item.autoGenerationEnabled === false ? (
+                    <StatusBadge tone="danger">Disabled</StatusBadge>
+                  ) : (
+                    "Enabled"
+                  )}
+                </TableCell>
+              </TableRow>
+            ))}
+            {!inactiveMasters.length && (
+              <TableRow>
+                <TableCell colSpan={5} className="h-20 text-center text-muted-foreground">
+                  Every master is active and auto-generating.
+                </TableCell>
+              </TableRow>
+            )}
+          </TableBody>
+        </Table>
+      </TableCard>
     </div>
   );
 }

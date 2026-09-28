@@ -9,9 +9,7 @@ import {
   MoreHorizontal,
   RefreshCw,
   RotateCw,
-  Search,
   ShieldAlert,
-  X,
   XCircle,
 } from 'lucide-react';
 import { addDays, format, isPast, isWithinInterval } from 'date-fns';
@@ -33,7 +31,6 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from '@/components/ui/alert-dialog';
-import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import {
@@ -42,10 +39,12 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import { Input } from '@/components/ui/input';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { PageHeader } from '@/components/shared/page-header';
+import { TableCard } from '@/components/shared/table-card';
+import { SearchInput } from '@/components/shared/filter-bar';
+import { StatusBadge, type StatusTone } from '@/components/shared/status-badge';
 import { cn } from '@/lib/utils';
 
 // ─── helpers ─────────────────────────────────────────────────────────────────
@@ -60,10 +59,11 @@ function getProjStatus(insuredUntil: any): ProjStatus {
   return 'active';
 }
 
-const STATUS_CFG: Record<ProjStatus, { label: string; badgeCls: string; rowCls: string; dot: string }> = {
-  expired:  { label: 'Expired',      badgeCls: 'bg-red-100 text-red-700 border-red-200',    rowCls: 'hover:bg-red-50/30',    dot: 'bg-red-500' },
-  expiring: { label: 'Expires Soon', badgeCls: 'bg-amber-100 text-amber-700 border-amber-200', rowCls: 'hover:bg-amber-50/30', dot: 'bg-amber-400' },
-  active:   { label: 'Active',       badgeCls: 'bg-emerald-100 text-emerald-700 border-emerald-200', rowCls: 'hover:bg-muted/20',   dot: 'bg-emerald-400' },
+// The module's labels; "Expires Soon" is not in the shared vocabulary, so its tone is given.
+const STATUS_BADGE: Record<ProjStatus, { label: string; tone?: StatusTone }> = {
+  expired:  { label: 'Expired' },
+  expiring: { label: 'Expires Soon', tone: 'warning' },
+  active:   { label: 'Active' },
 };
 
 const fmtCur = (n: number) =>
@@ -177,23 +177,17 @@ export default function ProjectPremiumDuePage() {
         </CardContent>
       </Card>
 
-      {/* Search */}
-      <div className="flex items-center gap-2">
-        <div className="relative flex-1 max-w-sm">
-          <Search className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
-          <Input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search asset, policy no., company…" className="pl-8 h-9 text-sm" />
-          {search && <button onClick={() => setSearch('')} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"><X className="h-3.5 w-3.5" /></button>}
-        </div>
-        <span className="text-xs text-muted-foreground">{filtered.length} policies</span>
-      </div>
-
       {/* Table */}
-      <Card className="overflow-hidden border-border/60">
-        <div className="overflow-x-auto">
+      <TableCard
+        title="Active project policies"
+        icon={CalendarClock}
+        count={filtered.length}
+        total={enriched.length}
+        toolbar={<SearchInput value={search} onChange={setSearch} placeholder="Search asset, policy no., company…" className="sm:max-w-sm" />}
+      >
           <Table>
             <TableHeader>
-              <TableRow className="bg-muted/40 hover:bg-muted/40">
-                <TableHead className="w-6" />
+              <TableRow>
                 <TableHead>Asset Name</TableHead>
                 <TableHead>Policy No.</TableHead>
                 <TableHead>Category</TableHead>
@@ -207,7 +201,7 @@ export default function ProjectPremiumDuePage() {
             <TableBody>
               {filtered.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={9} className="h-32 text-center">
+                  <TableCell colSpan={8} className="h-32 text-center">
                     <div className="flex flex-col items-center gap-2 text-muted-foreground">
                       <CheckCircle2 className="h-8 w-8 text-emerald-400" />
                       <span className="text-sm">No active policies with upcoming due dates.</span>
@@ -215,27 +209,26 @@ export default function ProjectPremiumDuePage() {
                   </TableCell>
                 </TableRow>
               ) : filtered.map((policy) => {
-                const cfg = STATUS_CFG[policy._status];
+                const badge = STATUS_BADGE[policy._status];
                 const canAct = policy._status === 'expired' || policy._status === 'expiring';
                 const expiryDate = policy.insured_until?.toDate?.() ?? null;
                 const daysLeft = expiryDate ? Math.ceil((expiryDate.getTime() - Date.now()) / 86400000) : null;
                 return (
-                  <TableRow key={policy.id} onClick={() => router.push(`/insurance/project/${policy.assetId}`)} className={cn('cursor-pointer transition-colors', cfg.rowCls)}>
-                    <TableCell className="pr-0"><div className={cn('h-2 w-2 rounded-full mx-auto', cfg.dot)} /></TableCell>
+                  <TableRow key={policy.id} onClick={() => router.push(`/insurance/project/${policy.assetId}`)} className="cursor-pointer">
                     <TableCell className="font-medium">{policy.assetName}</TableCell>
-                    <TableCell className="font-mono text-xs">{policy.policy_no}</TableCell>
+                    <TableCell className="font-mono whitespace-nowrap">{policy.policy_no}</TableCell>
                     <TableCell>{policy.policy_category}</TableCell>
                     <TableCell>{policy.insurance_company}</TableCell>
-                    <TableCell className="font-semibold">{fmtCur(policy.premium)}</TableCell>
-                    <TableCell>
+                    <TableCell className="whitespace-nowrap tabular-nums">{fmtCur(policy.premium)}</TableCell>
+                    <TableCell className="whitespace-nowrap">
                       <div className="space-y-0.5">
-                        <p className={cn('text-sm font-medium', policy._status === 'expired' ? 'text-red-600' : policy._status === 'expiring' ? 'text-amber-600' : '')}>{fmtDate(policy.insured_until)}</p>
+                        <p className={cn('font-medium', policy._status === 'expired' ? 'text-red-600' : policy._status === 'expiring' ? 'text-amber-600' : '')}>{fmtDate(policy.insured_until)}</p>
                         {daysLeft !== null && Math.abs(daysLeft) <= 30 && (
                           <p className="text-[11px] text-muted-foreground">{daysLeft < 0 ? `${Math.abs(daysLeft)}d ago` : `${daysLeft}d left`}</p>
                         )}
                       </div>
                     </TableCell>
-                    <TableCell><Badge variant="outline" className={cn('text-[10px]', cfg.badgeCls)}>{cfg.label}</Badge></TableCell>
+                    <TableCell><StatusBadge status={badge.label} tone={badge.tone} /></TableCell>
                     <TableCell className="text-right" onClick={(e) => e.stopPropagation()}>
                       <AlertDialog>
                         <DropdownMenu>
@@ -270,8 +263,7 @@ export default function ProjectPremiumDuePage() {
               })}
             </TableBody>
           </Table>
-        </div>
-      </Card>
+      </TableCard>
 
       {renewPolicy && (
         <ProjectRenewalDialog isOpen={!!renewPolicy} onOpenChange={(open) => { if (!open) setRenewPolicy(null); }} policy={renewPolicy} onSuccess={() => { setRenewPolicy(null); fetchPolicies(); }} />

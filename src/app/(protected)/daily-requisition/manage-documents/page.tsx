@@ -22,10 +22,12 @@ import {
   DailyMetricCard,
   dailyPageContainerClass,
   dailySurfaceCardClass,
-  dailyTableHeaderClass,
   dailyTabsListClass,
 } from '@/components/daily-requisition/module-shell';
 import { PageHeader } from '@/components/shared/page-header';
+import { Badge } from '@/components/ui/badge';
+import { StatusBadge } from '@/components/shared/status-badge';
+import { TableCard } from '@/components/shared/table-card';
 
 type EnrichedDailyRequisitionEntry = DailyRequisitionEntry & {
   id: string;
@@ -159,11 +161,9 @@ export default function ManageDocumentsPage() {
     const usersMap = new Map(users.map((u) => [u.id, u.name]));
 
     return (
-      <Card className={dailySurfaceCardClass}>
-        <div className="h-1.5 w-full bg-gradient-to-r from-cyan-400 via-fuchsia-400 to-amber-300 opacity-70" />
-        <CardContent className="p-0">
+      <TableCard>
           <Table>
-            <TableHeader className={dailyTableHeaderClass}>
+            <TableHeader>
               <TableRow>
                 <TableHead>Reception No.</TableHead>
                 <TableHead>Party Name</TableHead>
@@ -186,17 +186,21 @@ export default function ManageDocumentsPage() {
                 ))
               ) : data.length > 0 ? (
                 data.map((req) => (
-                  <TableRow key={req.id} className="hover:bg-slate-50/70">
-                    <TableCell className="font-medium" onClick={() => openDialog(req)}>
+                  <TableRow key={req.id}>
+                    <TableCell className="whitespace-nowrap font-medium" onClick={() => openDialog(req)}>
                       {req.receptionNo}
                     </TableCell>
                     <TableCell onClick={() => openDialog(req)}>{req.partyName}</TableCell>
-                    <TableCell onClick={() => openDialog(req)}>{req.dateText}</TableCell>
-                    {type === 'uploaded' && <TableCell onClick={() => openDialog(req)}>{req.attachments?.length || 0}</TableCell>}
+                    <TableCell className="whitespace-nowrap" onClick={() => openDialog(req)}>{req.dateText}</TableCell>
+                    {type === 'uploaded' && <TableCell className="tabular-nums" onClick={() => openDialog(req)}>{req.attachments?.length || 0}</TableCell>}
                     {(type === 'missing' || type === 'uploaded') && (
-                      <TableCell onClick={() => openDialog(req)}>{req.documentStatusUpdatedAtText ?? 'N/A'}</TableCell>
+                      <TableCell className="whitespace-nowrap" onClick={() => openDialog(req)}>{req.documentStatusUpdatedAtText ?? 'N/A'}</TableCell>
                     )}
-                    {type === 'missing' && <TableCell onClick={() => openDialog(req)}>{req.documentStatus}</TableCell>}
+                    {type === 'missing' && (
+                      <TableCell className="whitespace-nowrap" onClick={() => openDialog(req)}>
+                        {req.documentStatus ? <StatusBadge status={req.documentStatus}>{req.documentStatus}</StatusBadge> : null}
+                      </TableCell>
+                    )}
                     {type === 'missing' && (
                       <TableCell onClick={() => openDialog(req)}>
                         {req.documentStatusUpdatedById ? usersMap.get(req.documentStatusUpdatedById) : 'N/A'}
@@ -278,8 +282,7 @@ export default function ManageDocumentsPage() {
               )}
             </TableBody>
           </Table>
-        </CardContent>
-      </Card>
+      </TableCard>
     );
   };
 
@@ -325,12 +328,12 @@ export default function ManageDocumentsPage() {
           description="Keep attachments organized, highlight missing paperwork, and move resolved items back into the normal flow."
           meta={
             <>
-              <span className="rounded-full border border-white/70 bg-white/70 px-3 py-1 text-xs text-slate-600 backdrop-blur">
+              <Badge variant="neutral">
                 Support workflow
-              </span>
-              <span className="rounded-full border border-emerald-200/80 bg-emerald-50 px-3 py-1 text-xs text-emerald-700">
+              </Badge>
+              <Badge variant="neutral">
                 {uploadedList.length} uploaded entries
-              </span>
+              </Badge>
             </>
           }
         />

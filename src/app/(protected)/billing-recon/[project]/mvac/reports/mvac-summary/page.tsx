@@ -5,6 +5,8 @@ export const dynamic = 'force-dynamic';
 import { useState, useEffect, useMemo, useCallback } from 'react';
 import { Home, Loader2, ShieldAlert, Users, CheckCircle, BarChart, Activity, XCircle } from 'lucide-react';
 import { PageHeader, SectionHeader } from '@/components/shared/page-header';
+import { TableCard } from '@/components/shared/table-card';
+import { FilterBar } from '@/components/shared/filter-bar';
 import {
   Card,
   CardContent,
@@ -321,9 +323,11 @@ export default function MvacSummaryPage() {
     <div className="w-full pr-14">
       <PageHeader title="MVAC Summary" backHref={`/billing-recon/${projectSlug}/mvac/reports`} backLabel="Back to MVAC reports" />
 
-      <Card className="mb-6">
-        <CardContent className="p-4 flex flex-col md:flex-row items-center gap-4">
-          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4 w-full">
+      <FilterBar
+        className="mb-6"
+        activeCount={Object.values(filters).filter((v) => v !== 'all').length}
+        onClear={() => setFilters({ year: 'all', month: 'all', applicant: 'all' })}
+      >
             <Select value={filters.year} onValueChange={(val) => handleFilterChange('year', val)}>
               <SelectTrigger><SelectValue placeholder="All Years" /></SelectTrigger>
               <SelectContent>
@@ -351,9 +355,7 @@ export default function MvacSummaryPage() {
                 ))}
               </SelectContent>
             </Select>
-          </div>
-        </CardContent>
-      </Card>
+      </FilterBar>
 
       <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-6 mb-8">
         {isLoading ? (
@@ -389,11 +391,7 @@ export default function MvacSummaryPage() {
                 return null; 
               }
               return (
-              <Card key={step.id}>
-                <CardHeader className="p-4 bg-muted/50">
-                  <CardTitle className="text-center">{step.name}</CardTitle>
-                </CardHeader>
-                <CardContent className="p-0">
+              <TableCard key={step.id} title={step.name} scroll="natural">
                   <Table>
                     <TableHeader>
                       <TableRow>
@@ -417,8 +415,7 @@ export default function MvacSummaryPage() {
                      })}
                     </TableBody>
                   </Table>
-                </CardContent>
-              </Card>
+              </TableCard>
             )})
         )}
       </div>

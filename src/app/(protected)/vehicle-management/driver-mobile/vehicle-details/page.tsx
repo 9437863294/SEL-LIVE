@@ -8,7 +8,7 @@ import { useCurrentDriverProfile } from '@/components/vehicle-management/hooks';
 import { computeRenewalMeta, VEHICLE_COLLECTIONS } from '@/lib/vehicle-management';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { PageHeader } from '@/components/shared/page-header';
-import { Badge } from '@/components/ui/badge';
+import { StatusBadge } from '@/components/shared/status-badge';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 
@@ -315,12 +315,9 @@ export default function DriverVehicleDetailsPage() {
               <div key={item.label} className="rounded-xl border border-white/70 bg-white/85 p-3 shadow-sm">
                 <div className="mb-2 flex items-center justify-between">
                   <span className="font-semibold">{item.label}</span>
-                  <Badge
-                    variant={String(status) === 'Expired' ? 'destructive' : 'outline'}
-                    className={String(status) !== 'Expired' ? 'bg-amber-50 text-amber-700' : ''}
-                  >
+                  <StatusBadge status={String(alert)} tone={String(status) === 'Expired' ? 'danger' : 'warning'}>
                     {alert}
-                  </Badge>
+                  </StatusBadge>
                 </div>
                 {item.record ? (
                   <div className="space-y-1 text-sm">
@@ -407,9 +404,9 @@ export default function DriverVehicleDetailsPage() {
               <div key={`${row.documentType}-${row.id}`} className="rounded-xl border border-white/70 bg-white/85 p-3 text-sm shadow-sm">
                 <div className="mb-1 flex items-center justify-between">
                   <span className="font-semibold">{row.documentType || 'Document'}</span>
-                  <Badge variant="outline" className="bg-slate-50">
+                  <StatusBadge status={String(row.status || '')}>
                     {row.status || 'N/A'}
-                  </Badge>
+                  </StatusBadge>
                 </div>
                 <div className="grid grid-cols-2 gap-2">
                   <div>Number: {row.documentNumber || '-'}</div>

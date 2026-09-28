@@ -7,6 +7,7 @@ import Link from 'next/link';
 import { ArrowLeft } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { TableCard } from '@/components/shared/table-card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { db } from '@/lib/firebase';
 import { collection, doc, getDoc, getDocs, query, collectionGroup } from 'firebase/firestore';
@@ -282,12 +283,7 @@ export default function WorkOrderDetailsPage() {
         </Card>
       </div>
 
-      <Card>
-        <CardHeader>
-          <CardTitle>Work Order Items</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="overflow-x-auto">
+      <TableCard title="Work Order Items" count={enrichedItems.length} noun="item">
             <Table className="table-fixed">
               <TableHeader>
                 <TableRow>
@@ -328,10 +324,10 @@ export default function WorkOrderDetailsPage() {
                         {boqRateDisplay}
                       </TableCell>
                       <TableCell>{item.orderQty}</TableCell>
-                      <TableCell className="font-medium text-blue-600">
+                      <TableCell>
                         {item.totalJmcCertifiedQty}
                       </TableCell>
-                      <TableCell className="font-medium text-green-600">
+                      <TableCell>
                         {item.totalBilledQty}
                       </TableCell>
                       <TableCell className="truncate">
@@ -345,9 +341,7 @@ export default function WorkOrderDetailsPage() {
                 })}
               </TableBody>
             </Table>
-          </div>
-        </CardContent>
-      </Card>
+      </TableCard>
       </PmContent>
     </>
   );

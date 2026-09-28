@@ -17,7 +17,6 @@ const REPORTS = [
     color: 'from-cyan-500 to-sky-500',
     iconBg: 'bg-cyan-50 text-cyan-600',
     scope: 'Monthly',
-    scopeColor: 'bg-sky-50 text-sky-700',
   },
   {
     href: '/vehicle-management/reports/project-fuel-cost',
@@ -27,7 +26,6 @@ const REPORTS = [
     color: 'from-emerald-500 to-teal-500',
     iconBg: 'bg-emerald-50 text-emerald-600',
     scope: 'Monthly',
-    scopeColor: 'bg-sky-50 text-sky-700',
   },
   {
     href: '/vehicle-management/reports/monthly-trends',
@@ -38,7 +36,6 @@ const REPORTS = [
     color: 'from-violet-500 to-purple-600',
     iconBg: 'bg-violet-50 text-violet-600',
     scope: '6 Months',
-    scopeColor: 'bg-violet-50 text-violet-700',
   },
   {
     href: '/vehicle-management/reports/maintenance-cost',
@@ -49,7 +46,6 @@ const REPORTS = [
     color: 'from-amber-500 to-orange-500',
     iconBg: 'bg-amber-50 text-amber-600',
     scope: 'Monthly',
-    scopeColor: 'bg-sky-50 text-sky-700',
   },
   {
     href: '/vehicle-management/reports/expiry-alerts',
@@ -60,7 +56,6 @@ const REPORTS = [
     color: 'from-rose-500 to-red-600',
     iconBg: 'bg-rose-50 text-rose-600',
     scope: 'Month / Year',
-    scopeColor: 'bg-slate-100 text-slate-600',
   },
   {
     href: '/vehicle-management/reports/vehicle-age',
@@ -71,7 +66,6 @@ const REPORTS = [
     color: 'from-pink-500 to-rose-500',
     iconBg: 'bg-pink-50 text-pink-600',
     scope: 'Fleet-wide',
-    scopeColor: 'bg-slate-100 text-slate-600',
   },
   {
     href: '/vehicle-management/reports/project-vehicles',
@@ -82,7 +76,6 @@ const REPORTS = [
     color: 'from-fuchsia-500 to-violet-500',
     iconBg: 'bg-fuchsia-50 text-fuchsia-600',
     scope: 'Fleet-wide',
-    scopeColor: 'bg-slate-100 text-slate-600',
   },
 ];
 
@@ -121,7 +114,7 @@ export default function VehicleReportsHubPage() {
                     <div className={`flex h-7 w-7 items-center justify-center rounded-md ${report.iconBg}`}>
                       <Icon className="h-3.5 w-3.5" />
                     </div>
-                    <Badge variant="outline" className={`px-1.5 py-0 text-[10px] ${report.scopeColor}`}>
+                    <Badge variant="outline" className="shrink-0">
                       {report.scope}
                     </Badge>
                   </div>

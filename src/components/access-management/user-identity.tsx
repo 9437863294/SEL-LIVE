@@ -155,7 +155,7 @@ export function UserIdentityCard({
           <div className="flex items-center gap-2">
             <CardTitle className="text-sm">Account</CardTitle>
             {isSelf && (
-              <Badge variant="outline" className="border-sky-200 bg-sky-50 text-xs text-sky-700">
+              <Badge variant="neutral">
                 This is you
               </Badge>
             )}

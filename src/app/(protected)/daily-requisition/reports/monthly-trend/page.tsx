@@ -11,7 +11,9 @@ import { useAuthorization } from '@/hooks/useAuthorization';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
-import { TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { Badge } from '@/components/ui/badge';
+import { TableCard } from '@/components/shared/table-card';
 import { dailyPageContainerClass } from '@/components/daily-requisition/module-shell';
 import { PageHeader } from '@/components/shared/page-header';
 
@@ -279,20 +281,18 @@ export default function MonthlyTrendReportPage() {
       </Card>
 
       {/* Summary table */}
-      <Card className="overflow-hidden border border-white/70 bg-white/70 backdrop-blur shadow-sm">
-        <CardHeader>
-          <CardTitle className="text-base">Month-by-Month Summary</CardTitle>
-          <CardDescription>Gross, net, and average net per entry for the last 6 months.</CardDescription>
-        </CardHeader>
-        <CardContent className="p-0">
+      <TableCard
+        title="Month-by-Month Summary"
+        description="Gross, net, and average net per entry for the last 6 months."
+        scroll="natural"
+      >
           {trends.every((r) => r.count === 0) ? (
-            <div className="rounded-lg border border-white/70 bg-white/80 px-4 py-10 text-center text-muted-foreground">
+            <div className="px-4 py-10 text-center text-muted-foreground">
               No requisition data found for the last 6 months.
             </div>
           ) : (
-            <div className="overflow-auto h-[calc(100vh-420px)] rounded-lg border border-white/70 bg-white/80">
-              <table className="w-full caption-bottom text-sm">
-                <TableHeader className="[&_th]:sticky [&_th]:top-0 [&_th]:z-10 [&_th]:bg-slate-50 [&_th]:shadow-sm">
+              <Table>
+                <TableHeader>
                   <TableRow>
                     <TableHead>Month</TableHead>
                     <TableHead className="text-right">Count</TableHead>
@@ -305,29 +305,19 @@ export default function MonthlyTrendReportPage() {
                   {trends.map((row) => (
                     <TableRow
                       key={row.month}
-                      className={`transition-colors ${
-                        row.month === currentMonth
-                          ? 'bg-violet-50/60 hover:bg-violet-50/90'
-                          : 'hover:bg-slate-50/70'
-                      }`}
+                      className={row.month === currentMonth ? 'bg-violet-50/60' : undefined}
                     >
-                      <TableCell>
-                        <span
-                          className={`font-medium ${
-                            row.month === currentMonth ? 'text-violet-700' : ''
-                          }`}
-                        >
-                          {formatMonthLabel(row.month)}
-                          {row.month === currentMonth && (
-                            <span className="ml-2 rounded-full bg-violet-100 px-1.5 py-0.5 text-[10px] font-semibold text-violet-600">
-                              current
-                            </span>
-                          )}
-                        </span>
+                      <TableCell className="whitespace-nowrap font-medium">
+                        {formatMonthLabel(row.month)}
+                        {row.month === currentMonth && (
+                          <Badge variant="info" className="ml-2">
+                            current
+                          </Badge>
+                        )}
                       </TableCell>
-                      <TableCell className="text-right">{row.count}</TableCell>
-                      <TableCell className="text-right">{formatCurrency(row.totalGross)}</TableCell>
-                      <TableCell className="text-right font-medium">
+                      <TableCell className="text-right tabular-nums">{row.count}</TableCell>
+                      <TableCell className="whitespace-nowrap text-right tabular-nums">{formatCurrency(row.totalGross)}</TableCell>
+                      <TableCell className="whitespace-nowrap text-right font-medium tabular-nums">
                         <div className="space-y-1">
                           <div>{formatCurrency(row.totalNet)}</div>
                           <div className="h-1.5 w-28 rounded-full bg-slate-100 ml-auto">
@@ -338,17 +328,15 @@ export default function MonthlyTrendReportPage() {
                           </div>
                         </div>
                       </TableCell>
-                      <TableCell className="text-right text-muted-foreground">
+                      <TableCell className="whitespace-nowrap text-right tabular-nums">
                         {row.count > 0 ? formatCurrency(row.avgNet) : '—'}
                       </TableCell>
                     </TableRow>
                   ))}
                 </TableBody>
-              </table>
-            </div>
+              </Table>
           )}
-        </CardContent>
-      </Card>
+      </TableCard>
 
       <p className="mt-3 text-center text-xs text-muted-foreground">
         <Link

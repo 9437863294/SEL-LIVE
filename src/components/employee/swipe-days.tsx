@@ -13,7 +13,8 @@
  * by the host's offset. See the timezone note in `@/lib/greythr`.
  */
 
-import { Badge } from '@/components/ui/badge';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { StatusBadge, type StatusTone } from '@/components/shared/status-badge';
 import { cn } from '@/lib/utils';
 import { isSinglePunchDay, swipeStatusLabel, type EmployeeSwipeDay } from '@/lib/greythr';
 
@@ -24,18 +25,21 @@ const dayLabel = (date: string): string => {
   return parsed.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', weekday: 'short' });
 };
 
-/** Present green, absent rose, everything else neutral — the statuses a reader scans for. */
-export const STATUS_TONE: Record<string, string> = {
-  P: 'border-emerald-200 bg-emerald-50 text-emerald-700',
-  A: 'border-rose-200 bg-rose-50 text-rose-700',
-  WO: 'border-slate-200 bg-slate-50 text-slate-500',
-  H: 'border-violet-200 bg-violet-50 text-violet-700',
-  L: 'border-amber-200 bg-amber-50 text-amber-800',
-  OD: 'border-blue-200 bg-blue-50 text-blue-700',
+/**
+ * greytHR's day codes on the app's status tones — present green, absent rose, leave amber, on duty
+ * blue, and the days nobody was expected to work (weekly off, holiday) neutral. The codes are
+ * passed as `tone` because the shared vocabulary reads words, not "P" and "WO".
+ */
+export const SWIPE_DAY_TONE: Record<string, StatusTone> = {
+  P: 'success',
+  A: 'danger',
+  WO: 'neutral',
+  H: 'neutral',
+  L: 'warning',
+  OD: 'info',
 };
 
-export const statusTone = (status: string): string =>
-  STATUS_TONE[status] ?? 'border-slate-200 bg-white text-slate-600';
+export const swipeDayTone = (status: string): StatusTone => SWIPE_DAY_TONE[status] ?? 'neutral';
 
 /** The day grid for one employee, rendered only when their row is open. */
 export function SwipeDays({ days }: { days: EmployeeSwipeDay[] }) {
@@ -44,96 +48,76 @@ export function SwipeDays({ days }: { days: EmployeeSwipeDay[] }) {
   }
 
   return (
-    <div className="overflow-x-auto px-3 py-3">
-      <table className="w-full min-w-[34rem] sm:min-w-[46rem] text-xs">
-        <thead>
-          <tr className="text-left text-[10px] font-semibold uppercase tracking-wide text-slate-500">
-            <th className="px-2 py-1.5">Date</th>
-            <th className="px-2 py-1.5">Status</th>
+    <div className="px-3 py-3">
+      <Table className="min-w-[34rem] sm:min-w-[46rem]">
+        <TableHeader>
+          <TableRow>
+            <TableHead>Date</TableHead>
+            <TableHead>Status</TableHead>
             {/* The widest column and the least urgent: on a phone it pushed First in and Last out
                 — the two anybody opens this grid for — off the visible area. */}
-            <th className="hidden px-2 py-1.5 sm:table-cell">Shift</th>
-            <th className="px-2 py-1.5 text-right">First in</th>
-            <th className="px-2 py-1.5 text-right">Last out</th>
-            <th className="px-2 py-1.5 text-right">Worked</th>
-            <th className="px-2 py-1.5 text-right">Shortfall</th>
-            <th className="px-2 py-1.5">Flags</th>
-          </tr>
-        </thead>
-        <tbody className="divide-y divide-slate-100">
+            <TableHead className="hidden sm:table-cell">Shift</TableHead>
+            <TableHead className="text-right">First in</TableHead>
+            <TableHead className="text-right">Last out</TableHead>
+            <TableHead className="text-right">Worked</TableHead>
+            <TableHead className="text-right">Shortfall</TableHead>
+            <TableHead>Flags</TableHead>
+          </TableRow>
+        </TableHeader>
+        <TableBody>
           {days.map((day) => (
-            <tr key={day.date} className={cn(day.exceptions.length > 0 && 'bg-amber-50/40')}>
-              <td className="whitespace-nowrap px-2 py-1.5 font-medium text-slate-700">{dayLabel(day.date)}</td>
-              <td className="px-2 py-1.5">
-                <Badge
-                  variant="outline"
-                  className={cn('text-[10px] font-medium', statusTone(day.status))}
-                  title={swipeStatusLabel(day.status)}
-                >
+            <TableRow key={day.date} className={cn(day.exceptions.length > 0 && 'bg-amber-50/40')}>
+              <TableCell className="whitespace-nowrap font-medium">{dayLabel(day.date)}</TableCell>
+              <TableCell>
+                <StatusBadge status={day.status} tone={swipeDayTone(day.status)} title={swipeStatusLabel(day.status)}>
                   {day.status || '—'}
-                </Badge>
-              </td>
-              <td className="hidden max-w-[12rem] truncate px-2 py-1.5 text-muted-foreground sm:table-cell" title={day.shift}>
+                </StatusBadge>
+              </TableCell>
+              <TableCell className="hidden max-w-[12rem] truncate sm:table-cell" title={day.shift}>
                 {day.shift || '—'}
-              </td>
+              </TableCell>
               {/* Wall-clock, exactly as greytHR sent it — never re-parsed through a Date, which would
                   shift every punch by the server's offset. */}
-              <td className="whitespace-nowrap px-2 py-1.5 text-right tabular-nums text-slate-800">
+              <TableCell className="whitespace-nowrap text-right tabular-nums">
                 {day.firstIn ?? '—'}
-              </td>
+              </TableCell>
               {/* A single punch is not a departure at the same minute as the arrival — see
                   `isSinglePunchDay`. Printing the pair would assert a zero-length working day. */}
-              <td className="whitespace-nowrap px-2 py-1.5 text-right tabular-nums text-slate-800">
+              <TableCell className="whitespace-nowrap text-right tabular-nums">
                 {isSinglePunchDay(day) ? <span className="text-muted-foreground">—</span> : (day.lastOut ?? '—')}
-              </td>
-              <td className="whitespace-nowrap px-2 py-1.5 text-right tabular-nums font-medium text-slate-800">
+              </TableCell>
+              <TableCell className="whitespace-nowrap text-right tabular-nums font-medium">
                 {day.workHrs ?? '—'}
-              </td>
+              </TableCell>
               {/* Rose only when there *is* a shortfall. A rose em dash on a weekly off reads as a
                   warning about a day nobody was expected to work. */}
-              <td
+              <TableCell
                 className={cn(
-                  'whitespace-nowrap px-2 py-1.5 text-right tabular-nums',
+                  'whitespace-nowrap text-right tabular-nums',
                   day.shortfallHrs ? 'text-rose-700' : 'text-muted-foreground',
                 )}
               >
                 {day.shortfallHrs ?? '—'}
-              </td>
-              <td className="px-2 py-1.5">
+              </TableCell>
+              <TableCell>
                 <span className="flex flex-wrap gap-1">
                   {day.exceptions.map((exception) => (
-                    <Badge
-                      key={exception}
-                      variant="outline"
-                      className="border-amber-200 bg-amber-50 text-[10px] text-amber-800"
-                    >
+                    <StatusBadge key={exception} tone="warning">
                       {exception}
-                    </Badge>
+                    </StatusBadge>
                   ))}
-                  {isSinglePunchDay(day) && (
-                    <Badge variant="outline" className="border-amber-200 bg-amber-50 text-[10px] text-amber-800">
-                      Single punch
-                    </Badge>
-                  )}
-                  {day.regularized && (
-                    <Badge variant="outline" className="border-blue-200 bg-blue-50 text-[10px] text-blue-700">
-                      Regularised
-                    </Badge>
-                  )}
-                  {day.onLeave && (
-                    <Badge variant="outline" className="border-amber-200 bg-amber-50 text-[10px] text-amber-800">
-                      On leave
-                    </Badge>
-                  )}
+                  {isSinglePunchDay(day) && <StatusBadge status="Single punch" tone="warning" />}
+                  {day.regularized && <StatusBadge status="Regularised" tone="info" />}
+                  {day.onLeave && <StatusBadge status="On leave" tone="warning" />}
                   {day.absentReason && !day.exceptions.length && (
                     <span className="text-[10px] text-muted-foreground">{day.absentReason}</span>
                   )}
                 </span>
-              </td>
-            </tr>
+              </TableCell>
+            </TableRow>
           ))}
-        </tbody>
-      </table>
+        </TableBody>
+      </Table>
     </div>
   );
 }

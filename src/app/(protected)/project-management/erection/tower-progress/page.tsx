@@ -32,7 +32,7 @@ import {
 import { buildLatestPhotoRows } from "@/lib/project-management-tower-reports";
 import { useTowerProgress } from "@/components/project-management/tower-progress/tower-progress-provider";
 import {
-  ActivityStatusBadge,
+  ACTIVITY_STATUS_TONE,
   EmptyState,
   MetricCard,
   TowerProgressGuard,
@@ -41,6 +41,8 @@ import {
   TowerReportPhoto,
 } from "@/components/project-management/tower-progress/tower-progress-ui";
 import { PageHeader } from "@/components/shared/page-header";
+import { StatusBadge } from "@/components/shared/status-badge";
+import { TableCard } from "@/components/shared/table-card";
 
 export default function TowerProgressDashboardPage() {
   return (
@@ -203,92 +205,85 @@ function Dashboard() {
           </Card>
 
           {/* ── Tower status summary ───────────────────────────────────────────────────────── */}
-          <Card>
-            <CardHeader className="pb-3">
-              <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-                <div>
-                  <CardTitle className="text-base">Tower status summary</CardTitle>
-                  <CardDescription>
-                    Where every activity stands across the line, and what is stuck.
-                  </CardDescription>
-                </div>
-                {permissions.viewReports ? (
-                  <Button variant="outline" size="sm" asChild>
-                    <Link href={towerProgressHref(mappingId, "reports/tower-status")}>
-                      Open tower status report
-                    </Link>
-                  </Button>
-                ) : null}
-              </div>
-            </CardHeader>
-            <CardContent className="p-0">
-              {/* A cross-tab — the columns are the point — so it scrolls sideways on a phone with
-                  the activity pinned, rather than becoming seven cards of seven numbers. */}
-              <p className="px-4 pb-2 text-xs text-muted-foreground sm:hidden">
-                Swipe sideways to see all columns
-              </p>
-              <div className="overflow-x-auto">
-                <Table className="min-w-[720px]">
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead className="sticky left-0 z-10 bg-card">Activity</TableHead>
-                      <TableHead className="text-right">Total</TableHead>
-                      <TableHead className="text-right">Completed</TableHead>
-                      <TableHead className="text-right">In Progress</TableHead>
-                      <TableHead className="text-right">Pending</TableHead>
-                      <TableHead className="text-right">Blocked</TableHead>
-                      <TableHead className="text-right">On Hold</TableHead>
-                      <TableHead className="text-right">No evidence</TableHead>
-                      <TableHead className="text-right">%</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {summary.activities.map((activity) => (
-                      <TableRow key={activity.activity}>
-                        <TableCell className="sticky left-0 z-10 bg-card font-medium">
-                          {activity.label}
-                          {activity.measure === "span" ? (
-                            <span className="ml-1 text-xs text-muted-foreground">(spans)</span>
-                          ) : null}
-                        </TableCell>
-                        <TableCell className="text-right tabular-nums">{activity.total}</TableCell>
-                        <TableCell className="text-right tabular-nums">{activity.completed}</TableCell>
-                        <TableCell className="text-right tabular-nums">{activity.inProgress}</TableCell>
-                        <TableCell className="text-right tabular-nums">{activity.pending}</TableCell>
-                        <TableCell
-                          className={cn(
-                            "text-right tabular-nums",
-                            activity.blocked > 0 && "font-semibold text-red-700",
-                          )}
-                        >
-                          {activity.blocked}
-                        </TableCell>
-                        <TableCell
-                          className={cn(
-                            "text-right tabular-nums",
-                            activity.hold > 0 && "font-semibold text-orange-700",
-                          )}
-                        >
-                          {activity.hold}
-                        </TableCell>
-                        <TableCell
-                          className={cn(
-                            "text-right tabular-nums",
-                            activity.missingEvidence > 0 && "font-semibold text-amber-700",
-                          )}
-                        >
-                          {activity.missingEvidence}
-                        </TableCell>
-                        <TableCell className="text-right font-semibold tabular-nums">
-                          {activity.completionPct}%
-                        </TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              </div>
-            </CardContent>
-          </Card>
+          <TableCard
+            title="Tower status summary"
+            description="Where every activity stands across the line, and what is stuck."
+            scroll="natural"
+            actions={
+              permissions.viewReports ? (
+                <Button variant="outline" size="sm" asChild>
+                  <Link href={towerProgressHref(mappingId, "reports/tower-status")}>
+                    Open tower status report
+                  </Link>
+                </Button>
+              ) : undefined
+            }
+          >
+            {/* A cross-tab — the columns are the point — so it scrolls sideways on a phone with
+                the activity pinned, rather than becoming seven cards of seven numbers. */}
+            <p className="px-4 py-2 text-xs text-muted-foreground sm:hidden">
+              Swipe sideways to see all columns
+            </p>
+            <Table className="min-w-[720px]">
+              <TableHeader>
+                <TableRow>
+                  {/* Pinned cells need an opaque fill, or the scrolled columns show through. */}
+                  <TableHead className="sticky left-0 z-10 bg-slate-100">Activity</TableHead>
+                  <TableHead className="text-right">Total</TableHead>
+                  <TableHead className="text-right">Completed</TableHead>
+                  <TableHead className="text-right">In Progress</TableHead>
+                  <TableHead className="text-right">Pending</TableHead>
+                  <TableHead className="text-right">Blocked</TableHead>
+                  <TableHead className="text-right">On Hold</TableHead>
+                  <TableHead className="text-right">No evidence</TableHead>
+                  <TableHead className="text-right">%</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {summary.activities.map((activity) => (
+                  <TableRow key={activity.activity}>
+                    <TableCell className="sticky left-0 z-10 bg-card font-medium">
+                      {activity.label}
+                      {activity.measure === "span" ? (
+                        <span className="ml-1 text-xs text-muted-foreground">(spans)</span>
+                      ) : null}
+                    </TableCell>
+                    <TableCell className="text-right tabular-nums">{activity.total}</TableCell>
+                    <TableCell className="text-right tabular-nums">{activity.completed}</TableCell>
+                    <TableCell className="text-right tabular-nums">{activity.inProgress}</TableCell>
+                    <TableCell className="text-right tabular-nums">{activity.pending}</TableCell>
+                    <TableCell
+                      className={cn(
+                        "text-right tabular-nums",
+                        activity.blocked > 0 && "font-semibold text-red-700",
+                      )}
+                    >
+                      {activity.blocked}
+                    </TableCell>
+                    <TableCell
+                      className={cn(
+                        "text-right tabular-nums",
+                        activity.hold > 0 && "font-semibold text-orange-700",
+                      )}
+                    >
+                      {activity.hold}
+                    </TableCell>
+                    <TableCell
+                      className={cn(
+                        "text-right tabular-nums",
+                        activity.missingEvidence > 0 && "font-semibold text-amber-700",
+                      )}
+                    >
+                      {activity.missingEvidence}
+                    </TableCell>
+                    <TableCell className="text-right font-semibold tabular-nums">
+                      {activity.completionPct}%
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </TableCard>
 
           {/* ── Latest site photographs ────────────────────────────────────────────────────── */}
           {latestPhotos.length ? (
@@ -323,7 +318,7 @@ function Dashboard() {
                         >
                           {row.towerNo}
                         </Link>
-                        <ActivityStatusBadge status={row.status} className="text-[10px]" />
+                        <StatusBadge status={row.status} tone={ACTIVITY_STATUS_TONE[row.status]} />
                       </div>
                       <TowerReportPhoto
                         url={row.photo.url}

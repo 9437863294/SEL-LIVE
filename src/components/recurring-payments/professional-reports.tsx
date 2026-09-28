@@ -10,11 +10,9 @@ import { PaymentObligation, RP_COLLECTIONS, currency, effectiveStatus, matchesSc
 import { exportWorkbook } from '@/lib/report-excel';
 import { useToast } from '@/hooks/use-toast';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import CollapsibleFilterCard from './collapsible-filter-card';
-import { TableScrollArea } from './module-table-card';
-import { Label } from '@/components/ui/label';
+import { FilterBar } from '@/components/shared/filter-bar';
+import { TableCard } from '@/components/shared/table-card';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useGlobalScopes } from './use-global-scopes';
 import {
@@ -188,30 +186,22 @@ export default function RecurringPaymentReports() {
 
       {loadError && <ReportErrorBanner />}
 
-      <CollapsibleFilterCard activeCount={activeFilterCount} onClear={() => setFilters(DEFAULT_FILTERS)}>
-        <div className="grid gap-3 sm:grid-cols-2">
-          <div className="space-y-1">
-            <Label className="text-xs font-medium text-muted-foreground">Project</Label>
-            <Select value={filters.project} onValueChange={project => setFilters(current => ({ ...current, project }))}>
-              <SelectTrigger className="h-8 text-sm"><SelectValue placeholder="All global projects" /></SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All global projects</SelectItem>
-                {activeProjects.map(project => <SelectItem value={project.id} key={project.id}>{project.projectName}</SelectItem>)}
-              </SelectContent>
-            </Select>
-          </div>
-          <div className="space-y-1">
-            <Label className="text-xs font-medium text-muted-foreground">Department</Label>
-            <Select value={filters.department} onValueChange={department => setFilters(current => ({ ...current, department }))}>
-              <SelectTrigger className="h-8 text-sm"><SelectValue placeholder="All global departments" /></SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All global departments</SelectItem>
-                {activeDepartments.map(department => <SelectItem value={department.id} key={department.id}>{department.name}</SelectItem>)}
-              </SelectContent>
-            </Select>
-          </div>
-        </div>
-      </CollapsibleFilterCard>
+      <FilterBar className="print:hidden" activeCount={activeFilterCount} onClear={() => setFilters(DEFAULT_FILTERS)}>
+        <Select value={filters.project} onValueChange={project => setFilters(current => ({ ...current, project }))}>
+          <SelectTrigger aria-label="Project"><SelectValue placeholder="All global projects" /></SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All global projects</SelectItem>
+            {activeProjects.map(project => <SelectItem value={project.id} key={project.id}>{project.projectName}</SelectItem>)}
+          </SelectContent>
+        </Select>
+        <Select value={filters.department} onValueChange={department => setFilters(current => ({ ...current, department }))}>
+          <SelectTrigger aria-label="Department"><SelectValue placeholder="All global departments" /></SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All global departments</SelectItem>
+            {activeDepartments.map(department => <SelectItem value={department.id} key={department.id}>{department.name}</SelectItem>)}
+          </SelectContent>
+        </Select>
+      </FilterBar>
 
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-5">
         {[7, 15, 30, 60, 90].map(days => (
@@ -219,74 +209,68 @@ export default function RecurringPaymentReports() {
         ))}
       </div>
 
-      <div className="grid gap-4 lg:grid-cols-2">
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
         <ReportSummaryTable title="Category-wise expense" description="Total billed (or expected, where no bill exists yet) value, by category — excludes cancelled/waived" icon={Tags} rows={byCategory} />
         <ReportSummaryTable title="Vendor-wise expense" description="Top 12 vendors by total value — excludes cancelled/waived" icon={Store} rows={byVendor.slice(0, 12)} />
       </div>
 
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2"><TrendingUp className="h-5 w-5 text-emerald-600" />Six-month comparison</CardTitle>
-          <CardDescription>Expected vs. billed vs. paid, over the trailing 6 months — excludes cancelled/waived</CardDescription>
-        </CardHeader>
-        <CardContent className="p-0">
-          <TableScrollArea>
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Month</TableHead>
-                <TableHead className="text-right">Expected</TableHead>
-                <TableHead className="text-right">Actual bills</TableHead>
-                <TableHead className="text-right">Paid</TableHead>
-                <TableHead className="text-right">Variance</TableHead>
+      <TableCard
+        title="Six-month comparison"
+        icon={TrendingUp}
+        description="Expected vs. billed vs. paid, over the trailing 6 months — excludes cancelled/waived"
+        scroll="natural"
+      >
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead>Month</TableHead>
+              <TableHead className="text-right">Expected</TableHead>
+              <TableHead className="text-right">Actual bills</TableHead>
+              <TableHead className="text-right">Paid</TableHead>
+              <TableHead className="text-right">Variance</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {monthly.map(row => (
+              <TableRow key={row.month}>
+                <TableCell>{row.month}</TableCell>
+                <TableCell className="text-right">{currency(row.expected)}</TableCell>
+                <TableCell className="text-right">{currency(row.actual)}</TableCell>
+                <TableCell className="text-right">{currency(row.paid)}</TableCell>
+                <TableCell className={`text-right ${row.actual > row.expected ? 'text-red-600' : 'text-emerald-600'}`}>
+                  {row.expected ? `${(((row.actual - row.expected) / row.expected) * 100).toFixed(1)}%` : '—'}
+                </TableCell>
               </TableRow>
-            </TableHeader>
-            <TableBody>
-              {monthly.map(row => (
-                <TableRow key={row.month}>
-                  <TableCell>{row.month}</TableCell>
-                  <TableCell className="text-right">{currency(row.expected)}</TableCell>
-                  <TableCell className="text-right">{currency(row.actual)}</TableCell>
-                  <TableCell className="text-right">{currency(row.paid)}</TableCell>
-                  <TableCell className={`text-right ${row.actual > row.expected ? 'text-red-600' : 'text-emerald-600'}`}>
-                    {row.expected ? `${(((row.actual - row.expected) / row.expected) * 100).toFixed(1)}%` : '—'}
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-          </TableScrollArea>
-        </CardContent>
-      </Card>
+            ))}
+          </TableBody>
+        </Table>
+      </TableCard>
 
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2"><BarChart3 className="h-5 w-5 text-red-600" />Overdue ageing</CardTitle>
-          <CardDescription>Outstanding obligations grouped by days past due</CardDescription>
-        </CardHeader>
-        <CardContent className="p-0">
-          <TableScrollArea>
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Ageing bucket</TableHead>
-                <TableHead className="text-right">Payments</TableHead>
-                <TableHead className="text-right">Outstanding</TableHead>
+      <TableCard
+        title="Overdue ageing"
+        icon={BarChart3}
+        description="Outstanding obligations grouped by days past due"
+        scroll="natural"
+      >
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead>Ageing bucket</TableHead>
+              <TableHead className="text-right">Payments</TableHead>
+              <TableHead className="text-right">Outstanding</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {ageing.map(row => (
+              <TableRow key={row.label}>
+                <TableCell>{row.label}</TableCell>
+                <TableCell className="text-right">{row.count}</TableCell>
+                <TableCell className="text-right">{currency(row.amount)}</TableCell>
               </TableRow>
-            </TableHeader>
-            <TableBody>
-              {ageing.map(row => (
-                <TableRow key={row.label}>
-                  <TableCell>{row.label}</TableCell>
-                  <TableCell className="text-right">{row.count}</TableCell>
-                  <TableCell className="text-right font-semibold">{currency(row.amount)}</TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-          </TableScrollArea>
-        </CardContent>
-      </Card>
+            ))}
+          </TableBody>
+        </Table>
+      </TableCard>
     </div>
   );
 }

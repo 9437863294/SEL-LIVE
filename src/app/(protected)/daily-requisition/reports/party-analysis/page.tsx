@@ -11,7 +11,9 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Skeleton } from '@/components/ui/skeleton';
-import { TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { FilterBar } from '@/components/shared/filter-bar';
+import { TableCard } from '@/components/shared/table-card';
 import type { DailyRequisitionEntry } from '@/lib/types';
 import {
   DailyMetricCard,
@@ -202,42 +204,29 @@ export default function PartyAnalysisReportPage() {
       />
 
       {/* Date range filter */}
-      <Card className="mb-6 overflow-hidden rounded-2xl border border-white/70 bg-white/70 shadow-sm backdrop-blur">
-        <div className="h-1 w-full bg-gradient-to-r from-rose-400 via-pink-400 to-fuchsia-400 opacity-70" />
-        <CardContent className="flex flex-wrap items-center gap-4 p-4">
-          <div className="flex items-center gap-2">
-            <span className="text-sm font-medium text-slate-600">From</span>
-            <Input
-              type="date"
-              value={dateFrom}
-              onChange={(e) => setDateFrom(e.target.value)}
-              className="w-40 bg-white/80 border-white/70"
-            />
-          </div>
-          <div className="flex items-center gap-2">
-            <span className="text-sm font-medium text-slate-600">To</span>
-            <Input
-              type="date"
-              value={dateTo}
-              onChange={(e) => setDateTo(e.target.value)}
-              className="w-40 bg-white/80 border-white/70"
-            />
-          </div>
-          {(dateFrom || dateTo) && (
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => { setDateFrom(''); setDateTo(''); }}
-              className="text-slate-500"
-            >
-              Clear
-            </Button>
-          )}
-          <span className="ml-auto text-xs text-slate-500">
-            {filtered.length} entr{filtered.length === 1 ? 'y' : 'ies'} in range
-          </span>
-        </CardContent>
-      </Card>
+      <FilterBar
+        className="mb-6"
+        activeCount={(dateFrom ? 1 : 0) + (dateTo ? 1 : 0)}
+        onClear={() => { setDateFrom(''); setDateTo(''); }}
+        summary={`${filtered.length} entr${filtered.length === 1 ? 'y' : 'ies'} in range`}
+      >
+        <label className="flex items-center gap-2">
+          <span className="text-sm text-muted-foreground">From</span>
+          <Input
+            type="date"
+            value={dateFrom}
+            onChange={(e) => setDateFrom(e.target.value)}
+          />
+        </label>
+        <label className="flex items-center gap-2">
+          <span className="text-sm text-muted-foreground">To</span>
+          <Input
+            type="date"
+            value={dateTo}
+            onChange={(e) => setDateTo(e.target.value)}
+          />
+        </label>
+      </FilterBar>
 
       {/* Stat cards */}
       <div className="mb-6 grid grid-cols-2 gap-4 sm:grid-cols-4">
@@ -248,38 +237,35 @@ export default function PartyAnalysisReportPage() {
       </div>
 
       {/* Table */}
-      <Card className={`${dailySurfaceCardClass}`}>
-        <div className="h-1 w-full bg-gradient-to-r from-rose-400 via-pink-400 to-fuchsia-400 opacity-70" />
-        <CardHeader className="pb-2">
-          <CardTitle className="text-base">Party Breakdown</CardTitle>
-          <CardDescription>Sorted by total net amount descending. Bar shows proportion of max.</CardDescription>
-        </CardHeader>
-        <CardContent className="p-0">
+      <TableCard
+        title="Party Breakdown"
+        description="Sorted by total net amount descending. Bar shows proportion of max."
+        count={rows.length}
+      >
           {rows.length === 0 ? (
             <div className="px-6 py-12 text-center text-sm text-muted-foreground">
               No entries found for the selected date range.
             </div>
           ) : (
-            <div className="overflow-auto [&::-webkit-scrollbar]:h-1.5 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-slate-200 h-[calc(100vh-420px)]">
-              <table className="w-full caption-bottom text-sm">
-                <TableHeader className="[&_th]:sticky [&_th]:top-0 [&_th]:z-10 [&_th]:bg-slate-50 [&_th]:shadow-sm">
+              <Table>
+                <TableHeader>
                   <TableRow>
-                    <TableHead className="pl-4">Party Name</TableHead>
+                    <TableHead>Party Name</TableHead>
                     <TableHead className="text-right">Count</TableHead>
                     <TableHead className="text-right">Total Gross</TableHead>
                     <TableHead className="min-w-[180px]">Total Net</TableHead>
                     <TableHead className="text-right">Paid</TableHead>
-                    <TableHead className="text-right pr-4">Avg Net</TableHead>
+                    <TableHead className="text-right">Avg Net</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {rows.map((row) => {
                     const pct = maxNet > 0 ? (row.totalNet / maxNet) * 100 : 0;
                     return (
-                      <TableRow key={row.partyName} className="hover:bg-rose-50/40 transition-colors">
-                        <TableCell className="pl-4 font-medium">{row.partyName}</TableCell>
+                      <TableRow key={row.partyName}>
+                        <TableCell className="font-medium">{row.partyName}</TableCell>
                         <TableCell className="text-right tabular-nums">{row.count}</TableCell>
-                        <TableCell className="text-right tabular-nums">{fmt(row.totalGross)}</TableCell>
+                        <TableCell className="whitespace-nowrap text-right tabular-nums">{fmt(row.totalGross)}</TableCell>
                         <TableCell>
                           <div className="space-y-1">
                             <span className="tabular-nums">{fmt(row.totalNet)}</span>
@@ -292,27 +278,25 @@ export default function PartyAnalysisReportPage() {
                           </div>
                         </TableCell>
                         <TableCell className="text-right tabular-nums">{row.paidCount}</TableCell>
-                        <TableCell className="text-right tabular-nums pr-4">{fmt(row.avgNet)}</TableCell>
+                        <TableCell className="whitespace-nowrap text-right tabular-nums">{fmt(row.avgNet)}</TableCell>
                       </TableRow>
                     );
                   })}
                   {/* Totals row */}
-                  <TableRow className="border-t-2 border-slate-200 bg-slate-50/80 font-semibold">
-                    <TableCell className="pl-4">Total</TableCell>
+                  <TableRow className="bg-muted/50 font-medium">
+                    <TableCell>Total</TableCell>
                     <TableCell className="text-right tabular-nums">{filtered.length}</TableCell>
-                    <TableCell className="text-right tabular-nums">{fmt(totalGross)}</TableCell>
-                    <TableCell className="tabular-nums">{fmt(totalNet)}</TableCell>
+                    <TableCell className="whitespace-nowrap text-right tabular-nums">{fmt(totalGross)}</TableCell>
+                    <TableCell className="whitespace-nowrap tabular-nums">{fmt(totalNet)}</TableCell>
                     <TableCell className="text-right tabular-nums">
                       {rows.reduce((s, r) => s + r.paidCount, 0)}
                     </TableCell>
-                    <TableCell className="text-right tabular-nums pr-4">—</TableCell>
+                    <TableCell className="text-right tabular-nums">—</TableCell>
                   </TableRow>
                 </TableBody>
-              </table>
-            </div>
+              </Table>
           )}
-        </CardContent>
-      </Card>
+      </TableCard>
     </div>
   );
 }

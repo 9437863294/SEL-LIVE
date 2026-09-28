@@ -14,11 +14,9 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
-import { AlertTriangle, Download, Gavel, Plus, Search, X } from 'lucide-react';
+import { AlertTriangle, Download, Gavel, Plus } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import {
@@ -40,20 +38,20 @@ import { listDecisions } from '@/lib/office-hub-service';
 import { useDebouncedValue, useOfficeHub, useOfficeHubQuery } from '@/components/office-hub/hooks';
 import {
   HrCellLink,
-  DecisionStatusBadge,
   OfficeHubAccessDenied,
   OfficeHubDataList,
   OfficeHubEmptyState,
-  OfficeHubFilterCard,
   OfficeHubKpiCard,
   PersonChip,
   PriorityBadge,
-  ResultCount,
   type OfficeHubListColumn,
 } from '@/components/office-hub/ui';
 import { DateRangePicker, MultiSelect } from '@/components/office-hub/selectors';
 import { DecisionDialog, decisionDraftFor } from '@/components/office-hub/decision-forms';
+import { FilterBar } from '@/components/shared/filter-bar';
 import { PageHeader } from '@/components/shared/page-header';
+import { StatusBadge } from '@/components/shared/status-badge';
+import { TableCard } from '@/components/shared/table-card';
 
 type View = 'open' | 'overdue' | 'all' | 'mine';
 
@@ -207,7 +205,7 @@ export default function DecisionsPage() {
       header: 'Status',
       mobile: 'detail',
       className: 'w-32',
-      cell: (decision) => <DecisionStatusBadge status={decision.status} />,
+      cell: (decision) => <StatusBadge status={decision.status} />,
     },
   ];
 
@@ -264,129 +262,106 @@ export default function DecisionsPage() {
         </TabsList>
       </Tabs>
 
-      <OfficeHubFilterCard
-        summary={
-          hasActiveFilters(effectiveFilters)
-            ? `${activeFilterCount(effectiveFilters)} filter(s) active`
-            : capabilities.canViewAllDecisions
-              ? 'All decisions you can see'
-              : 'Decisions you own'
-        }
-        actions={
-          hasActiveFilters(effectiveFilters) ? (
-            <Button size="sm" variant="ghost" onClick={clearFilters} className="h-7 gap-1 px-2 text-[11px]">
-              <X className="h-3 w-3" />
-              Clear
-            </Button>
-          ) : undefined
+      <TableCard
+        title="Decisions"
+        description={capabilities.canViewAllDecisions ? 'All decisions you can see' : 'Decisions you own'}
+        icon={Gavel}
+        count={filtered.length}
+        total={all.length}
+        noun="decision"
+        toolbar={
+          <FilterBar
+            search={{ value: search, onChange: setSearch, placeholder: 'Reference, decision, owner' }}
+            activeCount={activeFilterCount(filters)}
+            onClear={clearFilters}
+          >
+            <DateRangePicker
+              inline
+              label="Taken between"
+              from={filters.fromDate}
+              to={filters.toDate}
+              onChange={(range) => setFilters((current) => ({ ...current, fromDate: range.from, toDate: range.to }))}
+            />
+
+            <MultiSelect
+              placeholder="Any status"
+              options={DECISION_STATUSES.map((status) => ({ value: status, label: status }))}
+              value={filters.statuses ?? []}
+              onChange={(next) => setFilters((current) => ({ ...current, statuses: next as DecisionStatus[] }))}
+            />
+
+            <MultiSelect
+              placeholder="Any owner"
+              options={directory.people.map((person) => ({ value: person.userId, label: person.name }))}
+              value={filters.ownerIds ?? []}
+              onChange={(next) => setFilters((current) => ({ ...current, ownerIds: next }))}
+            />
+
+            <MultiSelect
+              placeholder="Any department"
+              options={directory.departments.map((department) => ({ value: department.id, label: department.name }))}
+              value={filters.departmentIds ?? []}
+              onChange={(next) => setFilters((current) => ({ ...current, departmentIds: next }))}
+            />
+
+            <MultiSelect
+              placeholder="Any priority"
+              options={OFFICE_HUB_PRIORITIES.map((priority) => ({ value: priority, label: priority }))}
+              value={filters.priorities ?? []}
+              onChange={(next) => setFilters((current) => ({ ...current, priorities: next as OfficeHubPriority[] }))}
+            />
+
+            <MultiSelect
+              placeholder="Any project"
+              options={directory.projects.map((project) => ({ value: project.id, label: project.name }))}
+              value={filters.projectIds ?? []}
+              onChange={(next) => setFilters((current) => ({ ...current, projectIds: next }))}
+            />
+          </FilterBar>
         }
       >
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
-          <div className="sm:col-span-2">
-            <Label className="mb-1 block text-xs">Search</Label>
-            <div className="relative">
-              <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
-              <Input
-                value={search}
-                onChange={(event) => setSearch(event.target.value)}
-                placeholder="Reference, decision, owner"
-                className="bg-white pl-8"
+        {decisionsQuery.isLoading ? (
+          <Skeleton className="h-96 w-full rounded-xl" />
+        ) : (
+          <OfficeHubDataList
+            rows={filtered}
+            columns={columns}
+            cardHref={(decision) => `${OFFICE_HUB_BASE_PATH}/decisions/${decision.id}`}
+            frameless
+            rowClassName={(decision) => (isDecisionOverdue(decision, today) ? 'bg-rose-50/60' : undefined)}
+            empty={
+              <OfficeHubEmptyState
+                icon={Gavel}
+                title={
+                  view === 'overdue'
+                    ? 'No overdue decisions.'
+                    : hasActiveFilters(effectiveFilters)
+                      ? 'No decisions found.'
+                      : 'No decisions recorded yet.'
+                }
+                description={
+                  view === 'overdue'
+                    ? 'Everything with a follow-up date is on time.'
+                    : hasActiveFilters(effectiveFilters)
+                      ? 'Clear a filter or widen the date range.'
+                      : 'Decisions recorded during a meeting appear here with their own reference number.'
+                }
+                action={
+                  hasActiveFilters(effectiveFilters) ? (
+                    <Button size="sm" variant="outline" onClick={clearFilters}>
+                      Clear filters
+                    </Button>
+                  ) : capabilities.canCreateDecision ? (
+                    <Button size="sm" onClick={() => setCreating(true)}>
+                      Record a decision
+                    </Button>
+                  ) : undefined
+                }
               />
-            </div>
-          </div>
-
-          <DateRangePicker
-            label="Taken between"
-            from={filters.fromDate}
-            to={filters.toDate}
-            onChange={(range) => setFilters((current) => ({ ...current, fromDate: range.from, toDate: range.to }))}
+            }
           />
-
-          <MultiSelect
-            label="Status"
-            placeholder="Any status"
-            options={DECISION_STATUSES.map((status) => ({ value: status, label: status }))}
-            value={filters.statuses ?? []}
-            onChange={(next) => setFilters((current) => ({ ...current, statuses: next as DecisionStatus[] }))}
-          />
-
-          <MultiSelect
-            label="Owner"
-            placeholder="Anyone"
-            options={directory.people.map((person) => ({ value: person.userId, label: person.name }))}
-            value={filters.ownerIds ?? []}
-            onChange={(next) => setFilters((current) => ({ ...current, ownerIds: next }))}
-          />
-
-          <MultiSelect
-            label="Department"
-            placeholder="Any department"
-            options={directory.departments.map((department) => ({ value: department.id, label: department.name }))}
-            value={filters.departmentIds ?? []}
-            onChange={(next) => setFilters((current) => ({ ...current, departmentIds: next }))}
-          />
-
-          <MultiSelect
-            label="Priority"
-            placeholder="Any priority"
-            options={OFFICE_HUB_PRIORITIES.map((priority) => ({ value: priority, label: priority }))}
-            value={filters.priorities ?? []}
-            onChange={(next) => setFilters((current) => ({ ...current, priorities: next as OfficeHubPriority[] }))}
-          />
-
-          <MultiSelect
-            label="Project"
-            placeholder="Any project"
-            options={directory.projects.map((project) => ({ value: project.id, label: project.name }))}
-            value={filters.projectIds ?? []}
-            onChange={(next) => setFilters((current) => ({ ...current, projectIds: next }))}
-          />
-        </div>
-      </OfficeHubFilterCard>
-
-      <ResultCount shown={filtered.length} total={all.length} noun="decision" />
-
-      {decisionsQuery.isLoading ? (
-        <Skeleton className="h-96 w-full rounded-xl" />
-      ) : (
-        <OfficeHubDataList
-          rows={filtered}
-          columns={columns}
-          cardHref={(decision) => `${OFFICE_HUB_BASE_PATH}/decisions/${decision.id}`}
-          maxHeightClassName="sm:max-h-[42rem]"
-          rowClassName={(decision) => (isDecisionOverdue(decision, today) ? 'bg-rose-50/60' : undefined)}
-          empty={
-            <OfficeHubEmptyState
-              icon={Gavel}
-              title={
-                view === 'overdue'
-                  ? 'No overdue decisions.'
-                  : hasActiveFilters(effectiveFilters)
-                    ? 'No decisions found.'
-                    : 'No decisions recorded yet.'
-              }
-              description={
-                view === 'overdue'
-                  ? 'Everything with a follow-up date is on time.'
-                  : hasActiveFilters(effectiveFilters)
-                    ? 'Clear a filter or widen the date range.'
-                    : 'Decisions recorded during a meeting appear here with their own reference number.'
-              }
-              action={
-                hasActiveFilters(effectiveFilters) ? (
-                  <Button size="sm" variant="outline" onClick={clearFilters}>
-                    Clear filters
-                  </Button>
-                ) : capabilities.canCreateDecision ? (
-                  <Button size="sm" onClick={() => setCreating(true)}>
-                    Record a decision
-                  </Button>
-                ) : undefined
-              }
-            />
-          }
-        />
-      )}
+        )}
+      </TableCard>
 
       {report.ageing.some((row) => row.count > 0) && (
         <div className="flex flex-wrap items-center gap-2">
@@ -396,7 +371,7 @@ export default function DecisionsPage() {
           {report.ageing
             .filter((row) => row.count > 0)
             .map((row) => (
-              <Badge key={row.label} variant="outline" className="border-slate-200 bg-white text-[11px]">
+              <Badge key={row.label} variant="neutral">
                 {row.label}: <span className="ml-1 font-semibold tabular-nums">{row.count}</span>
               </Badge>
             ))}

@@ -217,7 +217,7 @@ export default function DriverMobileHubPage() {
         description="Quick mobile workflow for fuel updates and daily running status."
         meta={
           <>
-            <Badge className="bg-emerald-600 text-white">{driverName}</Badge>
+            <Badge variant="neutral">{driverName}</Badge>
             <Badge variant="outline">Mobile: {driver.mobileNumber || '-'}</Badge>
             <Badge variant="outline">Assigned Vehicle: {driver.assignedVehicleNumber || 'Not assigned'}</Badge>
           </>

@@ -13,6 +13,7 @@ import {
   Undo2,
   Wallet,
 } from 'lucide-react';
+import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { useAuth } from '@/components/auth/AuthProvider';
 import { useAuthorization } from '@/hooks/useAuthorization';
@@ -22,6 +23,7 @@ import {
   parseTravelDateTime,
   roundMoney,
   summarizeAdvanceAgeing,
+  travelStatusLabel,
   type TravelAdvance,
   type TravelClaim,
   type TravelPayment,
@@ -36,10 +38,11 @@ import {
   TravelKpiCard,
   TravelLoader,
   TravelSection,
-  TravelStatusBadge,
-  TravelDataList,
 } from './travel-ui';
 import { PageHeader } from '@/components/shared/page-header';
+import { CellLink, DataList } from '@/components/shared/data-list';
+import { StatusBadge } from '@/components/shared/status-badge';
+import { TableCard } from '@/components/shared/table-card';
 
 const today = () => {
   const now = new Date();
@@ -315,36 +318,39 @@ export default function TourTravelDashboard() {
         </div>
       )}
 
-      <TravelSection title="Upcoming Travel" description="The next journeys scheduled across the organization.">
-        <TravelDataList
-          rows={stats.upcoming.slice(0, 10)}
-          cardHref={request => `/tour-travel/requests/${request.id}`}
-          empty={<TravelEmptyState title="No upcoming travel" description="Approved tours with a future departure date appear here." icon={Plane} />}
-          columns={[
-            {
-              header: 'Employee',
-              mobile: 'title',
-              cell: request => (
-                <>
-                  <Link href={`/tour-travel/requests/${request.id}`} className="font-medium hover:underline">
-                    {request.employeeName}
-                  </Link>
-                  <p className="text-[11px] text-muted-foreground">{request.referenceNumber}</p>
-                </>
-              ),
-            },
-            { header: 'Status', mobile: 'aside', cell: request => <TravelStatusBadge status={request.status} /> },
-            { header: 'Project', cell: request => request.projectName || request.tourType },
-            {
-              header: 'From → To',
-              className: 'hidden md:table-cell',
-              cell: request => `${request.itinerary?.[0]?.fromCity || '—'} → ${request.itinerary?.[0]?.toCity || '—'}`,
-            },
-            { header: 'Departure', cell: request => <span className="tabular-nums">{request.departureDate}</span> },
-            { header: 'Return', cell: request => <span className="tabular-nums">{request.returnDate}</span> },
-          ]}
-        />
-      </TravelSection>
+      <TableCard title="Upcoming Travel" description="The next journeys scheduled across the organization." scroll="natural">
+        <div className="p-3 sm:p-0">
+          <DataList
+            frameless
+            rows={stats.upcoming.slice(0, 10)}
+            cardHref={request => `/tour-travel/requests/${request.id}`}
+            empty={<TravelEmptyState title="No upcoming travel" description="Approved tours with a future departure date appear here." icon={Plane} />}
+            columns={[
+              {
+                header: 'Employee',
+                mobile: 'title',
+                cell: request => (
+                  <>
+                    <CellLink href={`/tour-travel/requests/${request.id}`} className="font-medium hover:underline">
+                      {request.employeeName}
+                    </CellLink>
+                    <p className="text-[11px] text-muted-foreground">{request.referenceNumber}</p>
+                  </>
+                ),
+              },
+              { header: 'Status', mobile: 'aside', cell: request => <StatusBadge status={request.status}>{travelStatusLabel(request.status)}</StatusBadge> },
+              { header: 'Project', cell: request => request.projectName || request.tourType },
+              {
+                header: 'From → To',
+                className: 'hidden md:table-cell',
+                cell: request => `${request.itinerary?.[0]?.fromCity || '—'} → ${request.itinerary?.[0]?.toCity || '—'}`,
+              },
+              { header: 'Departure', cell: request => <span className="tabular-nums">{request.departureDate}</span> },
+              { header: 'Return', cell: request => <span className="tabular-nums">{request.returnDate}</span> },
+            ]}
+          />
+        </div>
+      </TableCard>
     </div>
   );
 }
@@ -374,9 +380,9 @@ function ActionTile({
     >
       <Icon className={tone === 'rose' ? 'h-4 w-4 shrink-0 text-rose-600' : 'h-4 w-4 shrink-0 text-sky-600'} />
       <span className="min-w-0 flex-1 truncate text-sm font-medium text-slate-700">{label}</span>
-      <span className={tone === 'rose' ? 'shrink-0 rounded-full bg-rose-600 px-2 py-0.5 text-xs font-semibold text-white' : 'shrink-0 rounded-full bg-sky-600 px-2 py-0.5 text-xs font-semibold text-white'}>
+      <Badge variant={tone === 'rose' ? 'danger' : 'info'} className="shrink-0">
         {count}
-      </span>
+      </Badge>
     </Link>
   );
 }

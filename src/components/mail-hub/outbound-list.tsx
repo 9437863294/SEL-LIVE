@@ -3,6 +3,7 @@
 import { CalendarClock, FileText, Loader2, Undo2 } from 'lucide-react';
 import { useState } from 'react';
 
+import { StatusBadge } from '@/components/shared/status-badge';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { useToast } from '@/hooks/use-toast';
@@ -30,8 +31,8 @@ export function OutboundList({ statuses, emptyTitle, emptyBody }: { statuses: st
           <button type="button" className="min-w-0 flex-1 text-left" onClick={() => openComposer({ mode: row.mode, outboundId: row.id, accountId: row.sourceAccountId ?? row.accountId, sourceMessageId: row.sourceMessageId })}>
             <div className="flex items-center gap-2">
               <span className="truncate text-sm font-medium">{row.subject || '(no subject)'}</span>
-              {row.status === 'failed' && <Badge variant="outline" className="border-rose-200 bg-rose-50 text-[10px] text-rose-700">Not sent</Badge>}
-              {row.sharedMailboxId && <Badge variant="outline" className="text-[10px]">{row.fromAddress}</Badge>}
+              {row.status === 'failed' && <StatusBadge status={row.status}>Not sent</StatusBadge>}
+              {row.sharedMailboxId && <Badge variant="outline">{row.fromAddress}</Badge>}
             </div>
             <p className="truncate text-xs text-muted-foreground">
               To {row.to.map(formatAddress).join(', ') || '—'}

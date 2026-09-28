@@ -35,6 +35,7 @@ import {
   currency,
 } from "@/lib/recurring-payments";
 import { Badge } from "@/components/ui/badge";
+import { StatusBadge } from "@/components/shared/status-badge";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -226,9 +227,7 @@ export default function RecurringPaymentSettingsPanel({
                     <div className="flex flex-wrap items-center gap-2">
                       <p className="font-semibold">{rule.name}</p>
                       <Badge variant="outline">{rule.mode}</Badge>
-                      <Badge variant={rule.active ? "default" : "secondary"}>
-                        {rule.active ? "Active" : "Inactive"}
-                      </Badge>
+                      <StatusBadge status={rule.active ? "Active" : "Inactive"} />
                     </div>
                     <p className="mt-1 text-sm text-muted-foreground">
                       {currency(rule.minAmount)} to{" "}

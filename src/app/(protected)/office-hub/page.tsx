@@ -77,11 +77,12 @@ import {
   ResponseSummaryChip,
   TaskDueDate,
   TaskProgressBar,
-  TaskStatusBadge,
   useTickingNow,
   type OfficeHubListColumn,
 } from '@/components/office-hub/ui';
 import { PageHeader } from '@/components/shared/page-header';
+import { StatusBadge } from '@/components/shared/status-badge';
+import { TableCard } from '@/components/shared/table-card';
 
 export default function OfficeHubDashboardPage() {
   const { actor, viewer, capabilities, today, periods, meetingScope, isLoading } = useOfficeHub();
@@ -313,7 +314,7 @@ export default function OfficeHubDashboardPage() {
       header: 'Status',
       mobile: 'detail',
       className: 'hidden md:table-cell w-32',
-      cell: (task) => <TaskStatusBadge status={task.status} />,
+      cell: (task) => <StatusBadge status={task.status} />,
     },
     {
       header: 'Progress',
@@ -419,7 +420,14 @@ export default function OfficeHubDashboardPage() {
         <OfficeHubKpiCard label="Awaiting my reply" value={meetingStats.awaitingMyResponse} icon={ClipboardList} tone={meetingStats.awaitingMyResponse ? 'amber' : 'slate'} />
       </div>
 
-      <OfficeHubSection title="Today's meetings" description="Everything on your calendar for today.">
+      <TableCard
+        title="Today's meetings"
+        description="Everything on your calendar for today."
+        icon={CalendarDays}
+        count={meetingsQuery.isLoading ? undefined : todaysMeetings.length}
+        noun="meeting"
+        scroll="natural"
+      >
         {meetingsQuery.isLoading ? (
           <Skeleton className="h-32 w-full" />
         ) : (
@@ -427,6 +435,7 @@ export default function OfficeHubDashboardPage() {
             rows={todaysMeetings}
             columns={meetingColumns}
             cardHref={(meeting) => `${OFFICE_HUB_BASE_PATH}/meetings/${meeting.id}`}
+            frameless
             empty={
               <OfficeHubEmptyState
                 icon={CalendarDays}
@@ -443,12 +452,14 @@ export default function OfficeHubDashboardPage() {
             }
           />
         )}
-      </OfficeHubSection>
+      </TableCard>
 
       <div className="grid grid-cols-1 gap-3 xl:grid-cols-2">
-        <OfficeHubSection
+        <TableCard
           title="My tasks"
           description="Late first, then due today, then the week ahead."
+          icon={ListTodo}
+          scroll="natural"
           actions={
             <Button size="sm" variant="ghost" asChild>
               <Link href={`${OFFICE_HUB_BASE_PATH}/tasks`}>All tasks</Link>
@@ -462,6 +473,7 @@ export default function OfficeHubDashboardPage() {
               rows={[...overdue, ...dueToday, ...upcomingTasks].slice(0, 10)}
               columns={taskColumns}
               cardHref={(task) => `${OFFICE_HUB_BASE_PATH}/tasks/${task.id}`}
+              frameless
               rowClassName={(task) => (isTaskOverdue(task, today) ? 'bg-rose-50/60' : undefined)}
               empty={
                 <OfficeHubEmptyState
@@ -472,7 +484,7 @@ export default function OfficeHubDashboardPage() {
               }
             />
           )}
-        </OfficeHubSection>
+        </TableCard>
 
         <OfficeHubSection
           title="Upcoming meetings"

@@ -13,6 +13,7 @@ import {
   Trash2,
 } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
+import { StatusBadge } from '@/components/shared/status-badge';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
@@ -243,9 +244,7 @@ function StageOverridesEditor({
                 {scope}
               </Badge>
               {eApprovalConditionSpecificity(override) === 0 && (
-                <Badge variant="outline" className="border-amber-300 bg-amber-50 text-[10px] text-amber-800">
-                  Matches everything — it would replace the stage on every request
-                </Badge>
+                <StatusBadge tone="warning">Matches everything — it would replace the stage on every request</StatusBadge>
               )}
               <label className="flex items-center gap-1.5 text-[11px]">
                 <Checkbox
@@ -529,13 +528,11 @@ export function WorkflowStepEditor({
         <div className="mb-1.5 flex flex-wrap items-center gap-1.5">
           <FlaskConical className="h-3.5 w-3.5 shrink-0 text-sky-600" />
           <span className="text-[11px] font-semibold text-sky-900">Previewing this chain for</span>
-          <Badge variant="outline" className="border-sky-300 bg-white text-[10px]">
+          <Badge variant="neutral" className="text-[10px]">
             {expanded.steps.length} stage{expanded.steps.length === 1 ? '' : 's'} produced
           </Badge>
           {expanded.notes.some((note) => note.severity === 'warning') && (
-            <Badge variant="outline" className="border-amber-300 bg-amber-50 text-[10px] text-amber-800">
-              needs attention
-            </Badge>
+            <StatusBadge tone="warning">needs attention</StatusBadge>
           )}
         </div>
         <div className="grid gap-1.5 sm:grid-cols-3 lg:grid-cols-5">
@@ -927,9 +924,9 @@ export function WorkflowStepEditor({
       {steps.length > 2 && addButtons}
 
       {steps.length === 0 && (
-        <Badge variant="outline" className="ml-2 text-[10px] text-amber-700">
+        <StatusBadge tone="warning" className="ml-2">
           A workflow with no stages approves nothing
-        </Badge>
+        </StatusBadge>
       )}
     </div>
   );

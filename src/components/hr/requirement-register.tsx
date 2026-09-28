@@ -2,10 +2,8 @@
 
 import { useMemo, useState } from 'react';
 import Link from 'next/link';
-import { ClipboardList, Download, Plus, Search } from 'lucide-react';
+import { ClipboardList, Download, Plus } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import {
   HR_COLLECTIONS,
@@ -14,6 +12,7 @@ import {
   REQUIREMENT_TYPES,
   dayDifference,
   evaluateRequirementSla,
+  hrStatusLabel,
   isOpenRequirementStatus,
   summarizeRequirementFill,
   type HrRequirement,
@@ -24,15 +23,17 @@ import {
   HrDataList,
   HrEmptyState,
   HrFillBar,
-  HrFilterCard,
   HrLoader,
-  HrPriorityBadge,
-  HrSlaBadge,
-  HrStatusBadge,
+  hrBadgeTone,
+  hrPriorityBadgeTone,
+  hrSlaLabel,
   type HrListColumn,
 } from './hr-ui';
 import { useHrCollection, useHrConfig, useHrPermissions } from './use-hr-config';
 import { PageHeader } from '@/components/shared/page-header';
+import { FilterBar } from '@/components/shared/filter-bar';
+import { StatusBadge } from '@/components/shared/status-badge';
+import { TableCard } from '@/components/shared/table-card';
 
 /**
  * The requirement register of spec section 54 — every requisition, with the columns the spec lists
@@ -239,7 +240,15 @@ export default function RequirementRegister({
         <HrFillBar required={row.fill.effectiveRequired} joined={row.fill.joined} accepted={row.fill.offerAccepted} compact />
       ),
     },
-    { header: 'Priority', mobile: 'aside', cell: row => <HrPriorityBadge priority={row.priority} /> },
+    {
+      header: 'Priority',
+      mobile: 'aside',
+      cell: row => (
+        <StatusBadge status={row.priority} tone={hrPriorityBadgeTone(row.priority)}>
+          {row.priority}
+        </StatusBadge>
+      ),
+    },
     {
       header: 'Recruiter',
       className: 'hidden lg:table-cell',
@@ -249,10 +258,26 @@ export default function RequirementRegister({
     { header: 'Age', align: 'right', className: 'hidden md:table-cell', cell: row => `${row.ageDays}d` },
     {
       header: 'SLA',
-      cell: row => <HrSlaBadge state={row.sla.state} consumedPercent={row.sla.consumedPercent} overdueDays={row.sla.overdueDays} />,
+      cell: row => (
+        <StatusBadge status={row.sla.state}>
+          {hrSlaLabel(row.sla.state, row.sla.consumedPercent, row.sla.overdueDays)}
+        </StatusBadge>
+      ),
     },
-    { header: 'Status', mobile: 'aside', cell: row => <HrStatusBadge status={row.status} /> },
+    {
+      header: 'Status',
+      mobile: 'aside',
+      cell: row => (
+        <StatusBadge status={row.status} tone={hrBadgeTone(row.status)}>
+          {hrStatusLabel(row.status)}
+        </StatusBadge>
+      ),
+    },
   ];
+
+  const activeFilterCount = [departmentId, projectId, statusFilter, priority, requirementType, recruiterId].filter(
+    value => value !== 'all',
+  ).length;
 
   const handleExport = () => {
     exportRowsToExcel(
@@ -308,25 +333,27 @@ export default function RequirementRegister({
         }
       />
 
-      <HrFilterCard summary={`${filtered.length} of ${decorated.length} requirements`}>
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
-          <div className="sm:col-span-2">
-            <Label className="text-xs">Search</Label>
-            <div className="relative">
-              <Search className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-              <Input
-                value={search}
-                onChange={event => setSearch(event.target.value)}
-                placeholder="Requirement ID, designation, project, recruiter…"
-                className="pl-8"
-              />
-            </div>
-          </div>
-
-          <div>
-            <Label className="text-xs">Department</Label>
+      <TableCard
+        title="Requirements"
+        count={filtered.length}
+        total={decorated.length}
+        noun="requirement"
+        toolbar={
+          <FilterBar
+            search={{ value: search, onChange: setSearch, placeholder: 'Requirement ID, designation, project, recruiter…' }}
+            activeCount={activeFilterCount}
+            onClear={() => {
+              setSearch('');
+              setDepartmentId('all');
+              setProjectId('all');
+              setStatusFilter('all');
+              setPriority('all');
+              setRequirementType('all');
+              setRecruiterId('all');
+            }}
+          >
             <Select value={departmentId} onValueChange={setDepartmentId}>
-              <SelectTrigger><SelectValue /></SelectTrigger>
+              <SelectTrigger aria-label="Department"><SelectValue /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">All departments</SelectItem>
                 {departments.map(department => (
@@ -334,12 +361,9 @@ export default function RequirementRegister({
                 ))}
               </SelectContent>
             </Select>
-          </div>
 
-          <div>
-            <Label className="text-xs">Project</Label>
             <Select value={projectId} onValueChange={setProjectId}>
-              <SelectTrigger><SelectValue /></SelectTrigger>
+              <SelectTrigger aria-label="Project"><SelectValue /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">All projects</SelectItem>
                 {projects.map(project => (
@@ -347,12 +371,9 @@ export default function RequirementRegister({
                 ))}
               </SelectContent>
             </Select>
-          </div>
 
-          <div>
-            <Label className="text-xs">Status</Label>
             <Select value={statusFilter} onValueChange={setStatusFilter}>
-              <SelectTrigger><SelectValue /></SelectTrigger>
+              <SelectTrigger aria-label="Status"><SelectValue /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">All statuses</SelectItem>
                 {Object.keys(STATUS_GROUPS).map(group => (
@@ -363,12 +384,9 @@ export default function RequirementRegister({
                 ))}
               </SelectContent>
             </Select>
-          </div>
 
-          <div>
-            <Label className="text-xs">Priority</Label>
             <Select value={priority} onValueChange={setPriority}>
-              <SelectTrigger><SelectValue /></SelectTrigger>
+              <SelectTrigger aria-label="Priority"><SelectValue /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">All priorities</SelectItem>
                 {REQUIREMENT_PRIORITIES.map(value => (
@@ -376,12 +394,9 @@ export default function RequirementRegister({
                 ))}
               </SelectContent>
             </Select>
-          </div>
 
-          <div>
-            <Label className="text-xs">Requirement type</Label>
             <Select value={requirementType} onValueChange={setRequirementType}>
-              <SelectTrigger><SelectValue /></SelectTrigger>
+              <SelectTrigger aria-label="Requirement type"><SelectValue /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">All types</SelectItem>
                 {REQUIREMENT_TYPES.map(value => (
@@ -389,12 +404,9 @@ export default function RequirementRegister({
                 ))}
               </SelectContent>
             </Select>
-          </div>
 
-          <div>
-            <Label className="text-xs">Recruiter</Label>
             <Select value={recruiterId} onValueChange={setRecruiterId}>
-              <SelectTrigger><SelectValue /></SelectTrigger>
+              <SelectTrigger aria-label="Recruiter"><SelectValue /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">All recruiters</SelectItem>
                 {recruiters.map(recruiter => (
@@ -402,32 +414,35 @@ export default function RequirementRegister({
                 ))}
               </SelectContent>
             </Select>
-          </div>
-        </div>
-      </HrFilterCard>
-
-      <HrDataList
-        rows={filtered}
-        columns={columns}
-        cardHref={row => `/hr/requirements/${row.id}`}
-        rowClassName={row => (row.sla.state === 'Overdue' ? 'bg-rose-50/40' : undefined)}
-        empty={
-          <HrEmptyState
-            icon={ClipboardList}
-            title="No requirements match these filters"
-            description="Adjust the filters, or raise a new manpower requirement."
-            action={
-              permissions.can('Add', 'Requirements') ? (
-                <Button asChild size="sm" className="gap-2">
-                  <Link href="/hr/requirements/new">
-                    <Plus className="h-4 w-4" /> New Requirement
-                  </Link>
-                </Button>
-              ) : undefined
+          </FilterBar>
+        }
+      >
+        <div className="p-3 sm:p-0">
+          <HrDataList
+            frameless
+            rows={filtered}
+            columns={columns}
+            cardHref={row => `/hr/requirements/${row.id}`}
+            rowClassName={row => (row.sla.state === 'Overdue' ? 'bg-rose-50/40' : undefined)}
+            empty={
+              <HrEmptyState
+                icon={ClipboardList}
+                title="No requirements match these filters"
+                description="Adjust the filters, or raise a new manpower requirement."
+                action={
+                  permissions.can('Add', 'Requirements') ? (
+                    <Button asChild size="sm" className="gap-2">
+                      <Link href="/hr/requirements/new">
+                        <Plus className="h-4 w-4" /> New Requirement
+                      </Link>
+                    </Button>
+                  ) : undefined
+                }
+              />
             }
           />
-        }
-      />
+        </div>
+      </TableCard>
     </div>
   );
 }

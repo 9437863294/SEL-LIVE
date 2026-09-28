@@ -2,10 +2,9 @@
 
 import { useMemo, useState } from 'react';
 import Link from 'next/link';
-import { Plane, PlaneTakeoff, Search } from 'lucide-react';
+import { Plane, PlaneTakeoff } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useAuth } from '@/components/auth/AuthProvider';
 import { useAuthorization } from '@/hooks/useAuthorization';
@@ -15,13 +14,18 @@ import {
   TT_COLLECTIONS,
   matchesTravelScope,
   roundMoney,
+  travelStatusLabel,
   type TravelRequest,
 } from '@/lib/tour-travel';
 import { TT_PERMISSION_MODULE } from './module-layout-shell';
 import { useTravelCollection } from './use-travel-config';
 import { useGlobalScopes } from '@/components/recurring-payments/use-global-scopes';
-import { Money, TravelDataList, TravelEmptyState, TravelFilterCard, TravelLoader, TravelStatusBadge } from './travel-ui';
+import { Money, TravelEmptyState, TravelLoader } from './travel-ui';
 import { PageHeader } from '@/components/shared/page-header';
+import { CellLink, DataList } from '@/components/shared/data-list';
+import { FilterBar } from '@/components/shared/filter-bar';
+import { StatusBadge } from '@/components/shared/status-badge';
+import { TableCard } from '@/components/shared/table-card';
 
 /**
  * The organization-wide tour register.
@@ -96,120 +100,120 @@ export default function TourRequestRegister() {
         }
       />
 
-      <TravelFilterCard summary={`${totals.count} tour(s) · estimated ${totals.estimate.toLocaleString('en-IN')}`}>
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
-          <div className="lg:col-span-2">
-            <Label className="text-xs">Search</Label>
-            <div className="relative">
-              <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
-              <Input className="pl-8" value={search} onChange={event => setSearch(event.target.value)} placeholder="Reference, employee, project, purpose" />
-            </div>
-          </div>
-          <div>
-            <Label className="text-xs">Status</Label>
+      <TableCard
+        title="Tours"
+        icon={Plane}
+        count={totals.count}
+        total={visible.length}
+        noun="tour"
+        toolbar={
+          <FilterBar
+            search={{ value: search, onChange: setSearch, placeholder: 'Reference, employee, project, purpose' }}
+            activeCount={
+              [status !== 'all', tourType !== 'all', projectFilter !== 'all', departmentFilter !== 'all', !!fromDate, !!toDate].filter(Boolean).length
+            }
+            onClear={() => {
+              setSearch('');
+              setStatus('all');
+              setTourType('all');
+              setProjectFilter('all');
+              setDepartmentFilter('all');
+              setFromDate('');
+              setToDate('');
+            }}
+            summary={`Estimated ${totals.estimate.toLocaleString('en-IN')}`}
+          >
             <Select value={status} onValueChange={setStatus}>
-              <SelectTrigger><SelectValue /></SelectTrigger>
+              <SelectTrigger aria-label="Status"><SelectValue /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">All statuses</SelectItem>
                 {TOUR_STATUSES.map(value => <SelectItem key={value} value={value}>{value.replace(/_/g, ' ')}</SelectItem>)}
               </SelectContent>
             </Select>
-          </div>
-          <div>
-            <Label className="text-xs">Tour type</Label>
             <Select value={tourType} onValueChange={setTourType}>
-              <SelectTrigger><SelectValue /></SelectTrigger>
+              <SelectTrigger aria-label="Tour type"><SelectValue /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">All types</SelectItem>
                 {TOUR_TYPES.map(value => <SelectItem key={value} value={value}>{value}</SelectItem>)}
               </SelectContent>
             </Select>
-          </div>
-          <div>
-            <Label className="text-xs">Project</Label>
             <Select value={projectFilter} onValueChange={setProjectFilter}>
-              <SelectTrigger><SelectValue /></SelectTrigger>
+              <SelectTrigger aria-label="Project"><SelectValue /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">All projects</SelectItem>
                 {activeProjects.map(project => <SelectItem key={project.id} value={project.id}>{project.projectName}</SelectItem>)}
               </SelectContent>
             </Select>
-          </div>
-          <div>
-            <Label className="text-xs">Department</Label>
             <Select value={departmentFilter} onValueChange={setDepartmentFilter}>
-              <SelectTrigger><SelectValue /></SelectTrigger>
+              <SelectTrigger aria-label="Department"><SelectValue /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">All departments</SelectItem>
                 {departments.map(department => <SelectItem key={department.id} value={department.id}>{department.name}</SelectItem>)}
               </SelectContent>
             </Select>
-          </div>
-          <div>
-            <Label className="text-xs">Departure from</Label>
-            <Input type="date" value={fromDate} onChange={event => setFromDate(event.target.value)} />
-          </div>
-          <div>
-            <Label className="text-xs">Departure to</Label>
-            <Input type="date" value={toDate} onChange={event => setToDate(event.target.value)} />
-          </div>
-        </div>
-      </TravelFilterCard>
-
-      <TravelDataList
-        rows={filtered}
-        cardHref={request => `/tour-travel/requests/${request.id}`}
-        empty={
-          <TravelEmptyState
-            title="No tour requests match"
-            description="Adjust the filters, or raise a new tour request."
-            icon={Plane}
-            action={
-              <Button asChild size="sm">
-                <Link href="/tour-travel/requests/new">New Tour Request</Link>
-              </Button>
-            }
-          />
+            <Input type="date" aria-label="Departure from" title="Departure from" value={fromDate} onChange={event => setFromDate(event.target.value)} />
+            <Input type="date" aria-label="Departure to" title="Departure to" value={toDate} onChange={event => setToDate(event.target.value)} />
+          </FilterBar>
         }
-        columns={[
-          {
-            header: 'Reference',
-            mobile: 'title',
-            cell: request => (
-              <>
-                <Link href={`/tour-travel/requests/${request.id}`} className="font-medium text-sky-700 hover:underline">
-                  {request.referenceNumber}
-                </Link>
-                {request.isEmergency && <p className="text-[11px] font-medium text-amber-700">Emergency</p>}
-              </>
-            ),
-          },
-          {
-            header: 'Employee',
-            mobile: 'title',
-            cell: request => (
-              <>
-                {request.employeeName}
-                {request.designation && <span className="text-muted-foreground"> · {request.designation}</span>}
-              </>
-            ),
-          },
-          { header: 'Status', mobile: 'aside', cell: request => <TravelStatusBadge status={request.status} /> },
-          {
-            header: 'Type / Project',
-            className: 'hidden md:table-cell',
-            cell: request => (
-              <>
-                {request.tourType}
-                {request.projectName && <p className="text-[11px] text-muted-foreground">{request.projectName}</p>}
-              </>
-            ),
-          },
-          { header: 'Departure', cell: request => <span className="tabular-nums">{request.departureDate}</span> },
-          { header: 'Return', className: 'hidden lg:table-cell', cell: request => <span className="tabular-nums">{request.returnDate}</span> },
-          { header: 'Estimate', align: 'right', cell: request => <Money value={request.estimate?.total || 0} /> },
-        ]}
-      />
+      >
+        <div className="p-3 sm:p-0">
+          <DataList
+            frameless
+            rows={filtered}
+            cardHref={request => `/tour-travel/requests/${request.id}`}
+            empty={
+              <TravelEmptyState
+                title="No tour requests match"
+                description="Adjust the filters, or raise a new tour request."
+                icon={Plane}
+                action={
+                  <Button asChild size="sm">
+                    <Link href="/tour-travel/requests/new">New Tour Request</Link>
+                  </Button>
+                }
+              />
+            }
+            columns={[
+              {
+                header: 'Reference',
+                mobile: 'title',
+                cell: request => (
+                  <>
+                    <CellLink href={`/tour-travel/requests/${request.id}`} className="font-medium text-sky-700 hover:underline">
+                      {request.referenceNumber}
+                    </CellLink>
+                    {request.isEmergency && <p className="text-[11px] font-medium text-amber-700">Emergency</p>}
+                  </>
+                ),
+              },
+              {
+                header: 'Employee',
+                mobile: 'title',
+                cell: request => (
+                  <>
+                    {request.employeeName}
+                    {request.designation && <span className="text-muted-foreground"> · {request.designation}</span>}
+                  </>
+                ),
+              },
+              { header: 'Status', mobile: 'aside', cell: request => <StatusBadge status={request.status}>{travelStatusLabel(request.status)}</StatusBadge> },
+              {
+                header: 'Type / Project',
+                className: 'hidden md:table-cell',
+                cell: request => (
+                  <>
+                    {request.tourType}
+                    {request.projectName && <p className="text-[11px] text-muted-foreground">{request.projectName}</p>}
+                  </>
+                ),
+              },
+              { header: 'Departure', cell: request => <span className="tabular-nums">{request.departureDate}</span> },
+              { header: 'Return', className: 'hidden lg:table-cell', cell: request => <span className="tabular-nums">{request.returnDate}</span> },
+              { header: 'Estimate', align: 'right', cell: request => <Money value={request.estimate?.total || 0} /> },
+            ]}
+          />
+        </div>
+      </TableCard>
     </div>
   );
 }

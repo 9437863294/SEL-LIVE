@@ -665,14 +665,14 @@ export function DailyRequisitionImportDialog({
 
               {/* Counts */}
               <section className="flex flex-wrap items-center gap-2 border-t pt-3">
-                <Badge className="bg-emerald-600 hover:bg-emerald-600">{result.rows.length} will import</Badge>
+                <Badge variant="success">{result.rows.length} will import</Badge>
                 {result.issues.length > 0 && (
-                  <Badge variant="outline" className="border-destructive/40 text-destructive">
+                  <Badge variant="danger">
                     {result.issues.length} rejected
                   </Badge>
                 )}
                 {result.duplicates.length > 0 && (
-                  <Badge variant="outline" className="border-amber-300 bg-amber-50 text-amber-800">
+                  <Badge variant="warning">
                     {result.duplicates.length} already recorded
                   </Badge>
                 )}
@@ -691,7 +691,7 @@ export function DailyRequisitionImportDialog({
                 <section className="overflow-x-auto rounded-md border">
                   <Table>
                     <TableHeader>
-                      <TableRow className="bg-muted/40">
+                      <TableRow>
                         <TableHead className="whitespace-nowrap">Row</TableHead>
                         <TableHead className="whitespace-nowrap">Reception</TableHead>
                         <TableHead className="whitespace-nowrap">Dep No</TableHead>
@@ -706,15 +706,15 @@ export function DailyRequisitionImportDialog({
                     <TableBody>
                       {result.rows.map((row) => (
                         <TableRow key={row.row}>
-                          <TableCell className="text-[11px] text-muted-foreground">{row.row}</TableCell>
-                          <TableCell className="whitespace-nowrap font-mono text-[11px]">
+                          <TableCell className="tabular-nums">{row.row}</TableCell>
+                          <TableCell className="whitespace-nowrap font-mono">
                             {row.draft.receptionNo || <span className="text-muted-foreground">allocated</span>}
                           </TableCell>
-                          <TableCell className="whitespace-nowrap text-[11px]">{row.draft.depNo || '—'}</TableCell>
-                          <TableCell className="whitespace-nowrap text-[11px]">
+                          <TableCell className="whitespace-nowrap">{row.draft.depNo || '—'}</TableCell>
+                          <TableCell className="whitespace-nowrap">
                             {new Date(row.draft.date).toLocaleDateString('en-IN')}
                           </TableCell>
-                          <TableCell className="max-w-[240px] text-[11px]">
+                          <TableCell className="max-w-[240px]">
                             <span className="line-clamp-1">{row.draft.description}</span>
                             {row.warnings.map((warning) => (
                               <span key={warning} className="block text-[10px] text-amber-700">
@@ -722,12 +722,12 @@ export function DailyRequisitionImportDialog({
                               </span>
                             ))}
                           </TableCell>
-                          <TableCell className="whitespace-nowrap text-[11px]">{row.draft.projectName}</TableCell>
-                          <TableCell className="whitespace-nowrap text-[11px]">{row.draft.departmentName}</TableCell>
-                          <TableCell className="whitespace-nowrap text-right text-[11px] tabular-nums">
+                          <TableCell className="whitespace-nowrap">{row.draft.projectName}</TableCell>
+                          <TableCell className="whitespace-nowrap">{row.draft.departmentName}</TableCell>
+                          <TableCell className="whitespace-nowrap text-right tabular-nums">
                             {money(row.draft.grossAmount)}
                           </TableCell>
-                          <TableCell className="whitespace-nowrap text-right text-[11px] tabular-nums">
+                          <TableCell className="whitespace-nowrap text-right tabular-nums">
                             {money(row.draft.netAmount)}
                           </TableCell>
                         </TableRow>

@@ -8,6 +8,8 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { FilterBar } from '@/components/shared/filter-bar';
+import { TableCard } from '@/components/shared/table-card';
 import {
   HrAccessDenied,
   HrBarList,
@@ -325,30 +327,28 @@ export function AttendanceReport() {
       <PageHeader
         title="Attendance"
         description="Built from what the agents recorded. Not a substitute for the HR attendance system."
-        actions={
-          <>
-            <RangePicker {...range} />
-            {canExportReports(viewer) ? (
-              <Button variant="outline" size="sm" onClick={exportCsv} disabled={!rows.length}>
-                <Download className="mr-2 h-4 w-4" aria-hidden />
-                Export
-              </Button>
-            ) : null}
-          </>
-        }
       />
 
-      <Card>
-        <CardHeader className="flex flex-row items-center justify-between gap-3 space-y-0">
-          <CardTitle className="text-base">{rows.length} {rows.length === 1 ? 'row' : 'rows'}</CardTitle>
-          <Input
-            value={search}
-            onChange={(event) => setSearch(event.target.value)}
-            placeholder="Filter by name or department"
-            className="max-w-xs"
-          />
-        </CardHeader>
-        <CardContent>
+      <TableCard
+        title="Attendance register"
+        count={rows.length}
+        noun="row"
+        toolbar={
+          <FilterBar
+            search={{ value: search, onChange: setSearch, placeholder: 'Filter by name or department' }}
+            actions={
+              canExportReports(viewer) ? (
+                <Button variant="outline" size="sm" onClick={exportCsv} disabled={!rows.length}>
+                  <Download className="mr-2 h-4 w-4" aria-hidden />
+                  Export
+                </Button>
+              ) : null
+            }
+          >
+            <RangePicker {...range} />
+          </FilterBar>
+        }
+      >
           {days.loading ? (
             <HrLoader />
           ) : (
@@ -356,12 +356,11 @@ export function AttendanceReport() {
               rows={rows}
               columns={columns}
               dense
-              maxHeightClassName="sm:max-h-[40rem]"
+              frameless
               empty={<HrEmptyState title="Nothing recorded in this range" />}
             />
           )}
-        </CardContent>
-      </Card>
+      </TableCard>
 
       <MeasurementNotice />
     </div>
@@ -485,36 +484,39 @@ export function ApplicationsReport() {
       />
 
       <div className="grid gap-4 lg:grid-cols-3">
-        <Card className="lg:col-span-2">
-          <CardHeader className="flex flex-row items-center justify-between gap-3 space-y-0">
-            <div>
-              <CardTitle className="text-base">Applications</CardTitle>
-              <CardDescription>{formatSeconds(summary.total)} of tracked foreground time.</CardDescription>
-            </div>
-            <Select value={categoryFilter} onValueChange={setCategoryFilter}>
-              <SelectTrigger className="w-44">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All categories</SelectItem>
-                {(['ERP', 'OFFICE', 'COMMUNICATION', 'DEVELOPMENT', 'REFERENCE', 'WORK', 'SYSTEM', 'UNCLASSIFIED'] as AppCategory[]).map(
-                  (category) => (
-                    <SelectItem key={category} value={category}>
-                      {categoryLabel(category)}
-                    </SelectItem>
-                  ),
-                )}
-              </SelectContent>
-            </Select>
-          </CardHeader>
-          <CardContent>
+        <TableCard
+          className="lg:col-span-2"
+          title="Applications"
+          description={`${formatSeconds(summary.total)} of tracked foreground time.`}
+          count={summary.rows.length}
+          noun="program"
+          toolbar={
+            <FilterBar activeCount={categoryFilter !== 'all' ? 1 : 0} onClear={() => setCategoryFilter('all')}>
+              <Select value={categoryFilter} onValueChange={setCategoryFilter}>
+                <SelectTrigger aria-label="Category">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All categories</SelectItem>
+                  {(['ERP', 'OFFICE', 'COMMUNICATION', 'DEVELOPMENT', 'REFERENCE', 'WORK', 'SYSTEM', 'UNCLASSIFIED'] as AppCategory[]).map(
+                    (category) => (
+                      <SelectItem key={category} value={category}>
+                        {categoryLabel(category)}
+                      </SelectItem>
+                    ),
+                  )}
+                </SelectContent>
+              </Select>
+            </FilterBar>
+          }
+        >
             {data.loading ? (
               <HrLoader />
             ) : (
               <HrDataList<Row>
                 rows={summary.rows}
                 dense
-                maxHeightClassName="sm:max-h-[32rem]"
+                frameless
                 columns={[
                   {
                     header: 'Application',
@@ -546,8 +548,7 @@ export function ApplicationsReport() {
                 empty={<HrEmptyState title="No application time in this range" />}
               />
             )}
-          </CardContent>
-        </Card>
+        </TableCard>
 
         <Card>
           <CardHeader>
@@ -780,16 +781,12 @@ export function DepartmentReport() {
         <HrKpiCard label="Logged in" value={formatSeconds(totals.session)} tone="slate" />
       </div>
 
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-base">By department</CardTitle>
-          <CardDescription>
-            Listed alphabetically, deliberately. Sorting departments by hours turns a measurement
-            into a league table, and computer time is not a measure of a department’s output —
-            site teams and estimators spend their days very differently.
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
+      <TableCard
+        title="By department"
+        count={rows.length}
+        noun="department"
+        description="Listed alphabetically, deliberately. Sorting departments by hours turns a measurement into a league table, and computer time is not a measure of a department’s output — site teams and estimators spend their days very differently."
+      >
           {days.loading ? (
             <HrLoader />
           ) : (
@@ -797,11 +794,11 @@ export function DepartmentReport() {
               rows={rows}
               columns={columns}
               dense
+              frameless
               empty={<HrEmptyState title="Nothing recorded in this range" />}
             />
           )}
-        </CardContent>
-      </Card>
+      </TableCard>
 
       <MeasurementNotice />
     </div>

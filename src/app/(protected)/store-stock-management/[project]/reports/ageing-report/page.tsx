@@ -3,13 +3,8 @@
 
 import { useState, useEffect, useMemo, Fragment } from 'react';
 import { PageHeader } from '@/components/shared/page-header';
-import {
-  Card,
-  CardContent,
-  CardHeader,
-  CardTitle,
-  CardDescription,
-} from '@/components/ui/card';
+import { FilterBar } from '@/components/shared/filter-bar';
+import { TableCard } from '@/components/shared/table-card';
 import {
   Table,
   TableBody,
@@ -25,7 +20,6 @@ import { collection, getDocs, query, where } from 'firebase/firestore';
 import type { InventoryLog, Project } from '@/lib/types';
 import { Skeleton } from '@/components/ui/skeleton';
 import { differenceInDays } from 'date-fns';
-import { Label } from '@/components/ui/label';
 import { useParams } from 'next/navigation';
 import { cn } from '@/lib/utils';
 import { projectMatchesSlug } from '@/lib/project-slug';
@@ -169,38 +163,36 @@ export default function AgeingReportPage() {
                 backLabel="Back to Reports"
             />
 
-            <Card>
-                <CardHeader>
-                    <div className="flex justify-between items-center">
-                        <div>
-                            <CardTitle>Ageing Summary</CardTitle>
-                            <CardDescription>Breakdown of inventory stock by age. Select a preset to change the view.</CardDescription>
-                        </div>
-                        <div className="flex items-center gap-2">
-                            <Label>Report Presets</Label>
-                            <Select value={activePreset} onValueChange={(value) => setActivePreset(value as Preset)}>
-                                <SelectTrigger className="w-[180px]">
-                                    <SelectValue placeholder="Select a preset" />
-                                </SelectTrigger>
-                                <SelectContent>
-                                    <SelectItem value="monthly">Monthly</SelectItem>
-                                    <SelectItem value="quarterly">Quarterly</SelectItem>
-                                    <SelectItem value="yearly">Yearly</SelectItem>
-                                </SelectContent>
-                            </Select>
-                        </div>
-                    </div>
-                </CardHeader>
-                <CardContent>
+            <TableCard
+                title="Ageing Summary"
+                description="Breakdown of inventory stock by age. Select a preset to change the view."
+                count={isLoading ? undefined : ageingReportData.length}
+                noun="item"
+                scroll="natural"
+                toolbar={
+                    <FilterBar>
+                        <Select value={activePreset} onValueChange={(value) => setActivePreset(value as Preset)}>
+                            <SelectTrigger aria-label="Report preset">
+                                <SelectValue placeholder="Select a preset" />
+                            </SelectTrigger>
+                            <SelectContent>
+                                <SelectItem value="monthly">Monthly</SelectItem>
+                                <SelectItem value="quarterly">Quarterly</SelectItem>
+                                <SelectItem value="yearly">Yearly</SelectItem>
+                            </SelectContent>
+                        </Select>
+                    </FilterBar>
+                }
+            >
                     <Table>
                         <TableHeader>
                             <TableRow>
                                 <TableHead rowSpan={2} className="align-bottom">Item Name</TableHead>
                                 <TableHead rowSpan={2} className="align-bottom">Unit</TableHead>
                                 {currentBuckets.map(bucket => (
-                                    <TableHead key={bucket.label} colSpan={2} className={cn("text-center border-l", bucket.color)}>{bucket.label}{activePreset !== 'yearly' && ' days'}</TableHead>
+                                    <TableHead key={bucket.label} colSpan={2} className={cn("whitespace-nowrap text-center border-l", bucket.color)}>{bucket.label}{activePreset !== 'yearly' && ' days'}</TableHead>
                                 ))}
-                                <TableHead colSpan={2} className="text-center font-bold border-l">Total Balance</TableHead>
+                                <TableHead colSpan={2} className="whitespace-nowrap text-center border-l">Total Balance</TableHead>
                             </TableRow>
                             <TableRow>
                                 {currentBuckets.map(bucket => (
@@ -223,16 +215,16 @@ export default function AgeingReportPage() {
                             ) : ageingReportData.length > 0 ? (
                                 ageingReportData.map((item, i) => (
                                     <TableRow key={i}>
-                                        <TableCell>{item.itemName}</TableCell>
+                                        <TableCell className="font-medium">{item.itemName}</TableCell>
                                         <TableCell>{item.unit}</TableCell>
                                         {currentBuckets.map(bucket => (
                                             <Fragment key={bucket.label}>
-                                                <TableCell className={cn("text-right border-l", bucket.color)}>{formatValue(item.buckets[bucket.label].quantity)}</TableCell>
-                                                <TableCell className={cn("text-right", bucket.color)}>{formatCurrency(item.buckets[bucket.label].value)}</TableCell>
+                                                <TableCell className={cn("text-right tabular-nums border-l", bucket.color)}>{formatValue(item.buckets[bucket.label].quantity)}</TableCell>
+                                                <TableCell className={cn("whitespace-nowrap text-right tabular-nums", bucket.color)}>{formatCurrency(item.buckets[bucket.label].value)}</TableCell>
                                             </Fragment>
                                         ))}
-                                        <TableCell className="text-right font-bold border-l">{formatValue(item.totalQuantity)}</TableCell>
-                                        <TableCell className="text-right font-bold">{formatCurrency(item.totalValue)}</TableCell>
+                                        <TableCell className="text-right font-medium tabular-nums border-l">{formatValue(item.totalQuantity)}</TableCell>
+                                        <TableCell className="whitespace-nowrap text-right font-medium tabular-nums">{formatCurrency(item.totalValue)}</TableCell>
                                     </TableRow>
                                 ))
                             ) : (
@@ -242,8 +234,7 @@ export default function AgeingReportPage() {
                             )}
                         </TableBody>
                     </Table>
-                </CardContent>
-            </Card>
+            </TableCard>
         </div>
     );
 }

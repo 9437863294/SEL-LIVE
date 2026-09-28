@@ -2,16 +2,16 @@
 
 import Link from 'next/link';
 import { Bar, BarChart, CartesianGrid, Cell, LabelList, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
-import { Badge } from '@/components/ui/badge';
-import { Card, CardContent } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { StatusBadge } from '@/components/shared/status-badge';
+import { TableCard } from '@/components/shared/table-card';
 import { cn } from '@/lib/utils';
 import { exportRowsToExcel } from '@/lib/report-excel';
 import { E_APPROVAL_BASE_PATH } from '@/lib/e-approval';
 import { oldestPendingEApprovals, summarizeEApprovalAging } from '@/lib/e-approval-analytics';
 import { ChartCard, eaTooltipStyle, EA_VIZ } from '@/components/e-approval/dashboard-parts';
 import { ReportShell } from '@/components/e-approval/reports/report-shell';
-import { EApprovalPriorityBadge } from '@/components/e-approval/shared';
+import { eApprovalPriorityTone } from '@/components/e-approval/shared';
 import { formatEApprovalAmount, formatEApprovalDate } from '@/components/e-approval/hooks';
 
 /** Older is darker — the validated ordinal ramp, extended across nine ordered bands. */
@@ -125,13 +125,10 @@ export default function EApprovalAgingReportPage() {
               }
             />
 
-            <Card>
-              <CardContent className="px-2 py-3 sm:px-3">
-                <p className="mb-2 px-1 text-sm font-semibold">Oldest pending approvals</p>
-                <div className="overflow-x-auto rounded-lg border">
+            <TableCard title="Oldest pending approvals" count={oldest.length} noun="approval">
                   <Table>
                     <TableHeader>
-                      <TableRow className="bg-muted/40">
+                      <TableRow>
                         <TableHead>Reference</TableHead>
                         <TableHead>Subject</TableHead>
                         <TableHead>Requester</TableHead>
@@ -155,53 +152,47 @@ export default function EApprovalAgingReportPage() {
                             row.ageHours <= 720 && row.overdue && 'bg-amber-50/60',
                           )}
                         >
-                          <TableCell className="whitespace-nowrap font-mono text-[11px]">
+                          <TableCell className="whitespace-nowrap font-mono">
                             <Link href={`${E_APPROVAL_BASE_PATH}/${row.id}`} className="text-sky-700 hover:underline">
                               {row.referenceNo || 'Draft'}
                             </Link>
                           </TableCell>
-                          <TableCell className="max-w-[220px] truncate text-xs">{row.subject}</TableCell>
-                          <TableCell className="whitespace-nowrap text-xs">{row.requesterName || '—'}</TableCell>
-                          <TableCell className="whitespace-nowrap text-xs">{row.departmentName || '—'}</TableCell>
-                          <TableCell className="max-w-[170px] truncate text-xs">{row.pendingWith || '—'}</TableCell>
-                          <TableCell className="max-w-[130px] truncate text-xs">{row.currentStepName || '—'}</TableCell>
-                          <TableCell className="whitespace-nowrap text-xs">{formatEApprovalDate(row.pendingSince)}</TableCell>
-                          <TableCell className="whitespace-nowrap text-right text-xs font-semibold tabular-nums">
+                          <TableCell className="max-w-[220px] truncate">{row.subject}</TableCell>
+                          <TableCell className="whitespace-nowrap">{row.requesterName || '—'}</TableCell>
+                          <TableCell className="whitespace-nowrap">{row.departmentName || '—'}</TableCell>
+                          <TableCell className="max-w-[170px] truncate">{row.pendingWith || '—'}</TableCell>
+                          <TableCell className="max-w-[130px] truncate">{row.currentStepName || '—'}</TableCell>
+                          <TableCell className="whitespace-nowrap">{formatEApprovalDate(row.pendingSince)}</TableCell>
+                          <TableCell className="whitespace-nowrap text-right tabular-nums">
                             {ageLabel(row.ageHours)}
                           </TableCell>
-                          <TableCell className="whitespace-nowrap text-right text-xs tabular-nums">
+                          <TableCell className="whitespace-nowrap text-right tabular-nums">
                             {row.amount == null ? '—' : formatEApprovalAmount(row.amount)}
                           </TableCell>
                           <TableCell>
-                            <EApprovalPriorityBadge priority={row.priority} />
+                            {row.priority && row.priority !== 'Normal' && (
+                              <StatusBadge status={row.priority} tone={eApprovalPriorityTone[row.priority]} />
+                            )}
                           </TableCell>
                           <TableCell>
                             {row.overdue ? (
-                              <Badge variant="outline" className="border-rose-200 bg-rose-50 text-[10px] text-rose-700">
-                                Breached
-                              </Badge>
+                              <StatusBadge status="Breached" tone="danger" />
                             ) : (
-                              <Badge variant="outline" className="border-emerald-200 bg-emerald-50 text-[10px] text-emerald-700">
-                                Within
-                              </Badge>
+                              <StatusBadge status="Within" tone="success" />
                             )}
                           </TableCell>
                           <TableCell>
                             {row.escalationLevel ? (
-                              <Badge variant="outline" className="border-amber-200 bg-amber-50 text-[10px] text-amber-800">
-                                {row.escalationLevel}
-                              </Badge>
+                              <StatusBadge status={row.escalationLevel} tone="warning" />
                             ) : (
-                              <span className="text-xs text-muted-foreground">—</span>
+                              <span className="text-muted-foreground">—</span>
                             )}
                           </TableCell>
                         </TableRow>
                       ))}
                     </TableBody>
                   </Table>
-                </div>
-              </CardContent>
-            </Card>
+            </TableCard>
           </>
         );
       }}

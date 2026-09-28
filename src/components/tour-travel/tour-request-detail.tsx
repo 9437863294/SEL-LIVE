@@ -24,12 +24,12 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
-import { Badge } from '@/components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import {
   TT_COLLECTIONS,
   roundMoney,
+  travelStatusLabel,
   type TravelAdvance,
   type TravelClaim,
   type TravelRequest,
@@ -53,11 +53,12 @@ import {
   TravelField,
   TravelLoader,
   TravelSection,
-  TravelStatusBadge,
-  TravelDataList,
   travelDialog,
 } from './travel-ui';
 import { PageHeader } from '@/components/shared/page-header';
+import { DataList } from '@/components/shared/data-list';
+import { StatusBadge } from '@/components/shared/status-badge';
+import { TableCard } from '@/components/shared/table-card';
 
 /**
  * Tour detail and action surface.
@@ -270,11 +271,11 @@ export default function TourRequestDetail({ requestId }: { requestId: string }) 
         description={`${request.tourType} · ${request.employeeName} · ${request.departureDate} → ${request.returnDate}`}
         actions={
           <div className="flex flex-wrap items-center gap-2">
-            <TravelStatusBadge status={request.status} />
+            <StatusBadge status={request.status}>{travelStatusLabel(request.status)}</StatusBadge>
             {request.status === 'CLOSED' && (
-              <Badge variant="outline" className="gap-1 border-slate-300 text-slate-600">
+              <StatusBadge status="Locked" tone="neutral">
                 <Lock className="h-3 w-3" /> Locked
-              </Badge>
+              </StatusBadge>
             )}
           </div>
         }
@@ -429,65 +430,71 @@ export default function TourRequestDetail({ requestId }: { requestId: string }) 
         </TravelSection>
       </div>
 
-      <TravelSection title="Journey Itinerary">
-        <TravelDataList
-          rows={request.itinerary || []}
-          columns={[
-            {
-              header: 'Journey',
-              mobile: 'title',
-              cell: leg => (
-                <>
-                  {leg.fromCity || '—'} → {leg.toCity || '—'}
-                  <span className="ml-1.5 text-xs font-normal tabular-nums text-muted-foreground">{leg.date}</span>
-                </>
-              ),
-            },
-            {
-              header: 'Est. cost',
-              align: 'right',
-              mobile: 'aside',
-              cell: leg => <span className="font-semibold"><Money value={leg.estimatedCost || 0} /></span>,
-            },
-            { header: 'Date', className: 'hidden lg:table-cell', mobile: 'omit', cell: leg => <span className="tabular-nums">{leg.date}</span> },
-            { header: 'From', className: 'hidden sm:table-cell', mobile: 'omit', cell: leg => leg.fromCity },
-            { header: 'To', className: 'hidden sm:table-cell', mobile: 'omit', cell: leg => leg.toCity },
-            { header: 'Mode', cell: leg => leg.mode },
-            { header: 'Class', cell: leg => leg.travelClass || '—' },
-            { header: 'Departure', cell: leg => leg.departureTime || '—' },
-          ]}
-        />
-      </TravelSection>
-
-      {(request.accommodation?.length || 0) > 0 && (
-        <TravelSection title="Accommodation Plan">
-          <TravelDataList
-            rows={request.accommodation!}
+      <TableCard title="Journey Itinerary" scroll="natural">
+        <div className="p-3 sm:p-0">
+          <DataList
+            frameless
+            rows={request.itinerary || []}
             columns={[
               {
-                header: 'City',
+                header: 'Journey',
                 mobile: 'title',
-                cell: stay => (
+                cell: leg => (
                   <>
-                    {stay.city || '—'}
-                    {stay.cityClass && <span className="ml-1.5 text-xs font-normal text-muted-foreground">{stay.cityClass}</span>}
+                    {leg.fromCity || '—'} → {leg.toCity || '—'}
+                    <span className="ml-1.5 text-xs font-normal tabular-nums text-muted-foreground">{leg.date}</span>
                   </>
                 ),
               },
               {
-                header: 'Tariff / night',
+                header: 'Est. cost',
                 align: 'right',
                 mobile: 'aside',
-                cell: stay => <span className="font-semibold"><Money value={stay.estimatedTariffPerNight || 0} /></span>,
+                cell: leg => <span className="font-semibold"><Money value={leg.estimatedCost || 0} /></span>,
               },
-              { header: 'Class', className: 'hidden lg:table-cell', mobile: 'omit', cell: stay => stay.cityClass },
-              { header: 'Check-in', cell: stay => <span className="tabular-nums">{stay.checkIn}</span> },
-              { header: 'Check-out', cell: stay => <span className="tabular-nums">{stay.checkOut}</span> },
-              { header: 'Nights', cell: stay => <span className="tabular-nums">{stay.nights}</span> },
-              { header: 'Arranged by', cell: stay => stay.arrangement },
+              { header: 'Date', className: 'hidden lg:table-cell', mobile: 'omit', cell: leg => <span className="tabular-nums">{leg.date}</span> },
+              { header: 'From', className: 'hidden sm:table-cell', mobile: 'omit', cell: leg => leg.fromCity },
+              { header: 'To', className: 'hidden sm:table-cell', mobile: 'omit', cell: leg => leg.toCity },
+              { header: 'Mode', cell: leg => leg.mode },
+              { header: 'Class', cell: leg => leg.travelClass || '—' },
+              { header: 'Departure', cell: leg => leg.departureTime || '—' },
             ]}
           />
-        </TravelSection>
+        </div>
+      </TableCard>
+
+      {(request.accommodation?.length || 0) > 0 && (
+        <TableCard title="Accommodation Plan" scroll="natural">
+          <div className="p-3 sm:p-0">
+            <DataList
+              frameless
+              rows={request.accommodation!}
+              columns={[
+                {
+                  header: 'City',
+                  mobile: 'title',
+                  cell: stay => (
+                    <>
+                      {stay.city || '—'}
+                      {stay.cityClass && <span className="ml-1.5 text-xs font-normal text-muted-foreground">{stay.cityClass}</span>}
+                    </>
+                  ),
+                },
+                {
+                  header: 'Tariff / night',
+                  align: 'right',
+                  mobile: 'aside',
+                  cell: stay => <span className="font-semibold"><Money value={stay.estimatedTariffPerNight || 0} /></span>,
+                },
+                { header: 'Class', className: 'hidden lg:table-cell', mobile: 'omit', cell: stay => stay.cityClass },
+                { header: 'Check-in', cell: stay => <span className="tabular-nums">{stay.checkIn}</span> },
+                { header: 'Check-out', cell: stay => <span className="tabular-nums">{stay.checkOut}</span> },
+                { header: 'Nights', cell: stay => <span className="tabular-nums">{stay.nights}</span> },
+                { header: 'Arranged by', cell: stay => stay.arrangement },
+              ]}
+            />
+          </div>
+        </TableCard>
       )}
 
       <TravelSection title="Approval Trail" description="Every decision is appended, never overwritten.">
@@ -529,19 +536,9 @@ export default function TourRequestDetail({ requestId }: { requestId: string }) 
               const done = index < (request.currentStageIndex || 0) || ['APPROVED', 'CLOSED', 'SETTLEMENT_PENDING', 'COMPLETED'].includes(request.status);
               const active = index === (request.currentStageIndex || 0) && request.status === 'UNDER_APPROVAL';
               return (
-                <Badge
-                  key={stage.id}
-                  variant="outline"
-                  className={
-                    active
-                      ? 'border-amber-300 bg-amber-50 text-amber-800'
-                      : done
-                        ? 'border-emerald-200 bg-emerald-50 text-emerald-700'
-                        : 'border-slate-200 text-slate-500'
-                  }
-                >
+                <StatusBadge key={stage.id} tone={active ? 'warning' : done ? 'success' : 'neutral'}>
                   {index + 1}. {stage.name}
-                </Badge>
+                </StatusBadge>
               );
             })}
           </div>
@@ -549,32 +546,36 @@ export default function TourRequestDetail({ requestId }: { requestId: string }) 
       </TravelSection>
 
       {advances.length > 0 && (
-        <TravelSection
+        <TableCard
           title="Travel Advances"
+          scroll="natural"
           actions={
             <Button asChild variant="ghost" size="sm">
               <Link href="/tour-travel/advances">Open register</Link>
             </Button>
           }
         >
-          <TravelDataList
-            rows={advances}
-            columns={[
-              { header: 'Reference', mobile: 'title', cell: advance => <span className="font-medium">{advance.referenceNumber}</span> },
-              { header: 'Status', mobile: 'aside', cell: advance => <TravelStatusBadge status={advance.status} /> },
-              { header: 'Requested', align: 'right', cell: advance => <Money value={advance.requestedAmount} /> },
-              { header: 'Approved', align: 'right', cell: advance => <Money value={advance.approvedAmount} /> },
-              { header: 'Paid', align: 'right', cell: advance => <Money value={advance.paidAmount} /> },
-              {
-                header: 'Outstanding',
-                align: 'right',
-                cell: advance => (
-                  <Money value={Math.max(0, roundMoney(advance.paidAmount - (advance.settledAmount || 0)))} />
-                ),
-              },
-            ]}
-          />
-        </TravelSection>
+          <div className="p-3 sm:p-0">
+            <DataList
+              frameless
+              rows={advances}
+              columns={[
+                { header: 'Reference', mobile: 'title', cell: advance => <span className="font-medium">{advance.referenceNumber}</span> },
+                { header: 'Status', mobile: 'aside', cell: advance => <StatusBadge status={advance.status}>{travelStatusLabel(advance.status)}</StatusBadge> },
+                { header: 'Requested', align: 'right', cell: advance => <Money value={advance.requestedAmount} /> },
+                { header: 'Approved', align: 'right', cell: advance => <Money value={advance.approvedAmount} /> },
+                { header: 'Paid', align: 'right', cell: advance => <Money value={advance.paidAmount} /> },
+                {
+                  header: 'Outstanding',
+                  align: 'right',
+                  cell: advance => (
+                    <Money value={Math.max(0, roundMoney(advance.paidAmount - (advance.settledAmount || 0)))} />
+                  ),
+                },
+              ]}
+            />
+          </div>
+        </TableCard>
       )}
 
       {/* ── Dialogs ──────────────────────────────────────────────────────────────────────────── */}

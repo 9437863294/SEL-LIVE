@@ -6,6 +6,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { TableCard } from '@/components/shared/table-card';
 import { cn } from '@/lib/utils';
 import { exportRowsToExcel } from '@/lib/report-excel';
 import { summarizeEApprovalApprovers, type ApproverPerformance } from '@/lib/e-approval-analytics';
@@ -158,12 +159,10 @@ export default function EApprovalApproverReportPage() {
               </Card>
             </div>
 
-            <Card>
-              <CardContent className="px-2 py-3 sm:px-3">
-                <div className="overflow-x-auto rounded-lg border">
+            <TableCard title="Approver performance" count={sorted.length} noun="approver">
                   <Table>
                     <TableHeader>
-                      <TableRow className="bg-muted/40">
+                      <TableRow>
                         <TableHead>Approver</TableHead>
                         {COLUMNS.map((column) => (
                           <TableHead key={column.key} className="whitespace-nowrap text-right" title={column.hint}>
@@ -182,7 +181,7 @@ export default function EApprovalApproverReportPage() {
                     <TableBody>
                       {sorted.map((row) => (
                         <TableRow key={row.userId}>
-                          <TableCell className="whitespace-nowrap text-xs font-medium">
+                          <TableCell className="whitespace-nowrap font-medium">
                             {row.name}
                             {row.onBehalfOf > 0 && (
                               <Badge variant="outline" className="ml-1.5 text-[9px]" title="Acted under a delegation">
@@ -190,15 +189,15 @@ export default function EApprovalApproverReportPage() {
                               </Badge>
                             )}
                           </TableCell>
-                          <TableCell className="text-right text-xs tabular-nums">{row.assigned}</TableCell>
-                          <TableCell className="text-right text-xs tabular-nums">{row.pending || '—'}</TableCell>
-                          <TableCell className="text-right text-xs tabular-nums">
+                          <TableCell className="text-right tabular-nums">{row.assigned}</TableCell>
+                          <TableCell className="text-right tabular-nums">{row.pending || '—'}</TableCell>
+                          <TableCell className="text-right tabular-nums">
                             {row.overdue > 0 ? <span className="font-semibold text-rose-700">{row.overdue}</span> : '—'}
                           </TableCell>
-                          <TableCell className="whitespace-nowrap text-right text-xs font-semibold tabular-nums">
+                          <TableCell className="whitespace-nowrap text-right tabular-nums">
                             {row.response.count ? hours(row.response.median) : '—'}
                           </TableCell>
-                          <TableCell className="text-right text-xs tabular-nums">
+                          <TableCell className="text-right tabular-nums">
                             <span
                               className={cn(
                                 row.slaBreachPercent != null && row.slaBreachPercent > 25 && 'font-semibold text-rose-700',
@@ -207,25 +206,23 @@ export default function EApprovalApproverReportPage() {
                               {row.slaBreachPercent == null ? '—' : `${row.slaBreachPercent}%`}
                             </span>
                           </TableCell>
-                          <TableCell className="text-right text-xs tabular-nums">
+                          <TableCell className="text-right tabular-nums">
                             {row.returnRatePercent == null ? '—' : `${row.returnRatePercent}%`}
                           </TableCell>
-                          <TableCell className="text-right text-xs tabular-nums">{row.approved || '—'}</TableCell>
-                          <TableCell className="text-right text-xs tabular-nums">{row.returned || '—'}</TableCell>
-                          <TableCell className="text-right text-xs tabular-nums">{row.verified || '—'}</TableCell>
-                          <TableCell className="whitespace-nowrap text-right text-xs tabular-nums">
+                          <TableCell className="text-right tabular-nums">{row.approved || '—'}</TableCell>
+                          <TableCell className="text-right tabular-nums">{row.returned || '—'}</TableCell>
+                          <TableCell className="text-right tabular-nums">{row.verified || '—'}</TableCell>
+                          <TableCell className="whitespace-nowrap text-right tabular-nums">
                             {row.response.count ? hours(row.response.min) : '—'}
                           </TableCell>
-                          <TableCell className="whitespace-nowrap text-right text-xs tabular-nums">
+                          <TableCell className="whitespace-nowrap text-right tabular-nums">
                             {row.response.count ? hours(row.response.max) : '—'}
                           </TableCell>
                         </TableRow>
                       ))}
                     </TableBody>
                   </Table>
-                </div>
-              </CardContent>
-            </Card>
+            </TableCard>
           </>
         );
       }}

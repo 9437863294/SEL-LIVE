@@ -12,9 +12,12 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Input } from '@/components/ui/input';
-import { TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { dailyPageContainerClass } from '@/components/daily-requisition/module-shell';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { DAILY_STATUS_TONE, dailyPageContainerClass } from '@/components/daily-requisition/module-shell';
 import { PageHeader } from '@/components/shared/page-header';
+import { FilterBar } from '@/components/shared/filter-bar';
+import { StatusBadge } from '@/components/shared/status-badge';
+import { TableCard } from '@/components/shared/table-card';
 
 const formatCurrency = (n: number) =>
   new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 0 }).format(n || 0);
@@ -29,15 +32,6 @@ const STATUS_LIST = [
   'Cancelled',
 ] as const;
 
-const STATUS_COLOR: Record<string, string> = {
-  Paid: 'bg-emerald-50 text-emerald-700 ring-emerald-200',
-  Verified: 'bg-cyan-50 text-cyan-700 ring-cyan-200',
-  'Received for Payment': 'bg-sky-50 text-sky-700 ring-sky-200',
-  Received: 'bg-blue-50 text-blue-700 ring-blue-200',
-  Pending: 'bg-amber-50 text-amber-700 ring-amber-200',
-  'Needs Review': 'bg-orange-50 text-orange-700 ring-orange-200',
-  Cancelled: 'bg-rose-50 text-rose-700 ring-rose-200',
-};
 
 const STATUS_GRADIENT: Record<string, string> = {
   Paid: 'from-emerald-500 to-teal-500',
@@ -226,39 +220,29 @@ export default function StatusOverviewReportPage() {
       />
 
       {/* Date range filter */}
-      <div className="mb-5 flex flex-wrap items-center gap-3">
-        <div className="flex items-center gap-2">
+      <FilterBar
+        className="mb-5"
+        activeCount={(dateFrom ? 1 : 0) + (dateTo ? 1 : 0)}
+        onClear={() => { setDateFrom(''); setDateTo(''); }}
+        summary={`${filtered.length} of ${entries.length} entries`}
+      >
+        <label className="flex items-center gap-2">
           <span className="text-sm text-muted-foreground">From</span>
           <Input
             type="date"
             value={dateFrom}
             onChange={(e) => setDateFrom(e.target.value)}
-            className="w-40 bg-white/80 border-white/70"
           />
-        </div>
-        <div className="flex items-center gap-2">
+        </label>
+        <label className="flex items-center gap-2">
           <span className="text-sm text-muted-foreground">To</span>
           <Input
             type="date"
             value={dateTo}
             onChange={(e) => setDateTo(e.target.value)}
-            className="w-40 bg-white/80 border-white/70"
           />
-        </div>
-        {(dateFrom || dateTo) && (
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() => { setDateFrom(''); setDateTo(''); }}
-            className="text-muted-foreground hover:text-slate-900"
-          >
-            Clear
-          </Button>
-        )}
-        <span className="ml-auto text-xs text-muted-foreground">
-          {filtered.length} of {entries.length} entries
-        </span>
-      </div>
+        </label>
+      </FilterBar>
 
       {/* Stat cards — one per status */}
       <div className="mb-5 grid grid-cols-2 gap-3 sm:grid-cols-4 xl:grid-cols-7">
@@ -269,9 +253,7 @@ export default function StatusOverviewReportPage() {
               <div className={`h-1 w-full bg-gradient-to-r ${STATUS_GRADIENT[s]}`} />
               <CardHeader className="pb-1 pt-3 px-3">
                 <CardDescription className="text-[11px]">
-                  <span className={`inline-block rounded-full px-2 py-0.5 text-[10px] font-semibold ring-1 ring-inset ${STATUS_COLOR[s]}`}>
-                    {s}
-                  </span>
+                  <StatusBadge status={s} tone={DAILY_STATUS_TONE[s]}>{s}</StatusBadge>
                 </CardDescription>
                 <CardTitle className="mt-1 text-xl leading-none">{count}</CardTitle>
               </CardHeader>
@@ -284,25 +266,19 @@ export default function StatusOverviewReportPage() {
       </div>
 
       {/* Summary table */}
-      <Card className="overflow-hidden border border-white/70 bg-white/70 backdrop-blur shadow-sm">
-        <CardHeader className="pb-3">
-          <div className="flex items-center gap-2">
-            <BarChart3 className="h-4 w-4 text-cyan-500" />
-            <CardTitle className="text-base">Summary by Status</CardTitle>
-          </div>
-          <CardDescription>
-            {grandCount} total entries · {formatCurrency(grandTotal)} total net amount
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="p-0">
+      <TableCard
+        icon={BarChart3}
+        title="Summary by Status"
+        description={<>{grandCount} total entries · {formatCurrency(grandTotal)} total net amount</>}
+        scroll="natural"
+      >
           {grandCount === 0 ? (
-            <div className="rounded-lg border border-white/70 bg-white/80 px-4 py-10 text-center text-muted-foreground">
+            <div className="px-4 py-10 text-center text-muted-foreground">
               No data found for selected date range.
             </div>
           ) : (
-            <div className="overflow-auto h-[calc(100vh-420px)] rounded-lg border border-white/70 bg-white/80">
-              <table className="w-full caption-bottom text-sm">
-                <TableHeader className="[&_th]:sticky [&_th]:top-0 [&_th]:z-10 [&_th]:bg-slate-50 [&_th]:shadow-sm">
+              <Table>
+                <TableHeader>
                   <TableRow>
                     <TableHead className="w-48">Status</TableHead>
                     <TableHead className="text-right">Count</TableHead>
@@ -316,17 +292,13 @@ export default function StatusOverviewReportPage() {
                     const { count, totalNet } = stats[s];
                     const pct = grandTotal > 0 ? (totalNet / grandTotal) * 100 : 0;
                     return (
-                      <TableRow key={s} className="hover:bg-slate-50/70 transition-colors">
-                        <TableCell>
-                          <span
-                            className={`inline-block rounded-full px-2.5 py-0.5 text-xs font-semibold ring-1 ring-inset ${STATUS_COLOR[s]}`}
-                          >
-                            {s}
-                          </span>
+                      <TableRow key={s}>
+                        <TableCell className="whitespace-nowrap">
+                          <StatusBadge status={s} tone={DAILY_STATUS_TONE[s]}>{s}</StatusBadge>
                         </TableCell>
-                        <TableCell className="text-right font-medium">{count}</TableCell>
-                        <TableCell className="text-right">{formatCurrency(totalNet)}</TableCell>
-                        <TableCell className="text-right text-muted-foreground">
+                        <TableCell className="text-right font-medium tabular-nums">{count}</TableCell>
+                        <TableCell className="whitespace-nowrap text-right tabular-nums">{formatCurrency(totalNet)}</TableCell>
+                        <TableCell className="text-right tabular-nums">
                           {pct.toFixed(1)}%
                         </TableCell>
                         <TableCell>
@@ -341,19 +313,17 @@ export default function StatusOverviewReportPage() {
                     );
                   })}
                   {/* Totals row */}
-                  <TableRow className="border-t-2 border-slate-200 bg-slate-50/80 font-semibold">
+                  <TableRow className="bg-muted/50 font-medium">
                     <TableCell>Total</TableCell>
-                    <TableCell className="text-right">{grandCount}</TableCell>
-                    <TableCell className="text-right">{formatCurrency(grandTotal)}</TableCell>
-                    <TableCell className="text-right">100%</TableCell>
+                    <TableCell className="text-right tabular-nums">{grandCount}</TableCell>
+                    <TableCell className="whitespace-nowrap text-right tabular-nums">{formatCurrency(grandTotal)}</TableCell>
+                    <TableCell className="text-right tabular-nums">100%</TableCell>
                     <TableCell />
                   </TableRow>
                 </TableBody>
-              </table>
-            </div>
+              </Table>
           )}
-        </CardContent>
-      </Card>
+      </TableCard>
 
       <p className="mt-3 text-center text-xs text-muted-foreground">
         <Link

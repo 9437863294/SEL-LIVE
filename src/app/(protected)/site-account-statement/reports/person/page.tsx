@@ -9,13 +9,15 @@ import { useAuthorization } from '@/hooks/useAuthorization';
 import { useAuth } from '@/components/auth/AuthProvider';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent } from '@/components/ui/card';
+import { Table, TableBody, TableCell, TableFooter, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { PageHeader } from '@/components/shared/page-header';
+import { TableCard } from '@/components/shared/table-card';
+import { FilterBar } from '@/components/shared/filter-bar';
 import { Input } from '@/components/ui/input';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { cn } from '@/lib/utils';
-import { ChevronDown, ChevronRight, Download, Filter, Loader2, Paperclip, Users } from 'lucide-react';
+import { ChevronDown, ChevronRight, Download, Loader2, Paperclip, Users } from 'lucide-react';
 import ExcelJS from 'exceljs';
 
 const MODULE = 'Site Account Statement';
@@ -36,7 +38,6 @@ export default function PersonExpensePage() {
   const [filterFrom,    setFilterFrom]    = useState('');
   const [filterTo,      setFilterTo]      = useState('');
   const [search,        setSearch]        = useState('');
-  const [showFilters,   setShowFilters]   = useState(false);
   const [expandedCats,  setExpandedCats]  = useState<Set<string>>(new Set());
 
   function toggleCat(key: string) {
@@ -179,29 +180,22 @@ export default function PersonExpensePage() {
         ) : undefined}
       />
 
-      {/* Mobile filter toggle */}
-      {(() => { const c = [filterProject, search].filter(Boolean).length; return (
-        <div className="flex sm:hidden">
-          <Button variant="outline" size="sm" className="h-9 gap-2 flex-1 justify-center"
-            onClick={() => setShowFilters(s => !s)}>
-            <Filter className="h-3.5 w-3.5" />{showFilters ? 'Hide Filters' : 'Filters'}
-            {c > 0 && <span className="flex h-4 w-4 items-center justify-center rounded-full bg-rose-600 text-[9px] font-bold text-white">{c}</span>}
-          </Button>
-        </div>
-      ); })()}
       {/* Filters */}
-      <div className={cn('grid grid-cols-2 gap-2 sm:grid-cols-4', !showFilters && 'hidden sm:grid')}>
+      <FilterBar
+        search={{ value: search, onChange: setSearch, placeholder: 'Search person...' }}
+        activeCount={[filterProject, filterFrom, filterTo].filter(Boolean).length}
+        onClear={() => { setFilterProject(''); setFilterFrom(''); setFilterTo(''); setSearch(''); }}
+      >
         <Select value={filterProject || '_all_'} onValueChange={v => setFilterProject(v === '_all_' ? '' : v)}>
-          <SelectTrigger className="h-9 text-sm"><SelectValue placeholder="All Projects" /></SelectTrigger>
+          <SelectTrigger aria-label="Project"><SelectValue placeholder="All Projects" /></SelectTrigger>
           <SelectContent>
             <SelectItem value="_all_">All Projects</SelectItem>
             {visibleProjects.map(p => <SelectItem key={p.id} value={p.id}>{p.projectName}</SelectItem>)}
           </SelectContent>
         </Select>
-        <Input type="date" value={filterFrom} onChange={e => setFilterFrom(e.target.value)} className="h-9 text-sm" />
-        <Input type="date" value={filterTo}   onChange={e => setFilterTo(e.target.value)}   className="h-9 text-sm" />
-        <Input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search person..." className="h-9 text-sm" />
-      </div>
+        <Input type="date" value={filterFrom} onChange={e => setFilterFrom(e.target.value)} aria-label="From date" />
+        <Input type="date" value={filterTo}   onChange={e => setFilterTo(e.target.value)}   aria-label="To date" />
+      </FilterBar>
 
       {/* Grand total */}
       <div className="rounded-lg border bg-rose-50 px-4 py-2.5 text-sm text-rose-700 font-medium">
@@ -217,55 +211,55 @@ export default function PersonExpensePage() {
         </Card>
       ) : (
         personGroups.map(person => (
-          <Card key={person.name} className="bg-white/80 backdrop-blur-sm">
-            <CardHeader className="pb-2 pt-3 px-4">
-              <CardTitle className="text-slate-700 flex items-center justify-between flex-wrap gap-2">
-                <div className="flex items-center gap-2">
-                  <span>{person.name}</span>
-                  <Badge variant="secondary" className="text-xs">{person.count} entries</Badge>
-                </div>
-                <div className="flex flex-wrap items-center gap-3 text-sm">
-                  <span className="text-muted-foreground">{person.pct.toFixed(1)}% of total</span>
-                  <span className="font-bold text-rose-700">{formatINR(person.total)}</span>
-                </div>
-              </CardTitle>
-              {/* Distribution bar */}
+          <TableCard
+            key={person.name}
+            title={person.name}
+            // Natural height: an expanded category nests its own table, whose header must not pin.
+            scroll="natural"
+            description={
+              /* Distribution bar */
               <div className="mt-1.5 bg-rose-100 rounded-full h-1.5 overflow-hidden">
                 <div className="h-full bg-rose-500 rounded-full transition-all" style={{ width: `${person.pct}%` }} />
               </div>
-            </CardHeader>
-            <CardContent className="p-0">
-              <div className="overflow-x-auto overflow-y-auto max-h-[400px]">
-                <table className="min-w-[450px] w-full text-sm">
-                  <thead className="sticky top-0 z-10">
-                    <tr className="border-b bg-slate-100">
-                      <th className="px-4 py-2 text-left font-medium">Category</th>
-                      <th className="px-4 py-2 text-right font-medium">Entries</th>
-                      <th className="px-4 py-2 text-right font-medium">Amount</th>
-                      <th className="px-4 py-2 text-left font-medium w-[140px]">Share</th>
-                    </tr>
-                  </thead>
-                  <tbody>
+            }
+            actions={
+                <div className="flex flex-wrap items-center gap-3 text-sm">
+                  <Badge variant="neutral">{person.count} entries</Badge>
+                  <span className="text-muted-foreground">{person.pct.toFixed(1)}% of total</span>
+                  <span className="font-bold tabular-nums text-rose-700">{formatINR(person.total)}</span>
+                </div>
+            }
+          >
+                <Table className="min-w-[450px]">
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Category</TableHead>
+                      <TableHead className="text-right">Entries</TableHead>
+                      <TableHead className="text-right">Amount</TableHead>
+                      <TableHead className="w-[140px]">Share</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
                     {person.categories.map(cat => {
                       const catKey = `${person.name}:${cat.name}`;
                       const isExpanded = expandedCats.has(catKey);
                       return (
                         <Fragment key={cat.name}>
-                          <tr
-                            className="border-b hover:bg-muted/20 cursor-pointer"
+                          <TableRow
+                            className="cursor-pointer"
                             onClick={() => toggleCat(catKey)}
                           >
-                            <td className="px-4 py-2">
+                            <TableCell>
                               <div className="flex items-center gap-1.5">
                                 {isExpanded
                                   ? <ChevronDown  className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
                                   : <ChevronRight className="h-3.5 w-3.5 text-muted-foreground shrink-0" />}
-                                <Badge variant="outline" className="text-xs">{cat.name}</Badge>
+                                <Badge variant="outline">{cat.name}</Badge>
                               </div>
-                            </td>
-                            <td className="px-4 py-2 text-right text-muted-foreground">{cat.count}</td>
-                            <td className="px-4 py-2 text-right font-medium text-rose-700">{formatINR(cat.total)}</td>
-                            <td className="px-4 py-2">
+                            </TableCell>
+                            <TableCell className="text-right tabular-nums">{cat.count}</TableCell>
+                            <TableCell className="text-right whitespace-nowrap tabular-nums font-medium text-rose-700">{formatINR(cat.total)}</TableCell>
+                            <TableCell>
                               <div className="flex items-center gap-2">
                                 <div className="flex-1 bg-rose-100 rounded-full h-1.5 overflow-hidden">
                                   <div className="h-full bg-rose-400 rounded-full" style={{ width: `${person.total > 0 ? (cat.total / person.total) * 100 : 0}%` }} />
@@ -274,41 +268,41 @@ export default function PersonExpensePage() {
                                   {person.total > 0 ? ((cat.total / person.total) * 100).toFixed(0) : 0}%
                                 </span>
                               </div>
-                            </td>
-                          </tr>
+                            </TableCell>
+                          </TableRow>
 
                           {isExpanded && (
-                            <tr className="bg-slate-50/50">
-                              <td colSpan={4} className="px-4 py-2.5">
-                                <div className="overflow-x-auto rounded-lg border bg-white">
-                                  <table className="w-full text-xs min-w-[760px]">
-                                    <thead>
-                                      <tr className="border-b bg-slate-50">
-                                        <th className="px-3 py-1.5 text-left font-medium whitespace-nowrap">Date</th>
-                                        <th className="px-3 py-1.5 text-left font-medium">Project</th>
-                                        <th className="px-3 py-1.5 text-left font-medium">Sub-Category</th>
-                                        <th className="px-3 py-1.5 text-left font-medium">Narration</th>
-                                        <th className="px-3 py-1.5 text-left font-medium">Vendor / Party</th>
-                                        <th className="px-3 py-1.5 text-left font-medium">Bill No.</th>
-                                        <th className="px-3 py-1.5 text-left font-medium">Mode</th>
-                                        <th className="px-3 py-1.5 text-left font-medium">Remarks</th>
-                                        <th className="px-3 py-1.5 text-right font-medium">Amount</th>
-                                        <th className="px-3 py-1.5 text-center font-medium">Docs</th>
-                                      </tr>
-                                    </thead>
-                                    <tbody>
+                            <TableRow className="bg-slate-50/50">
+                              <TableCell colSpan={4}>
+                                <div className="rounded-lg border bg-white">
+                                  <Table className="min-w-[760px]">
+                                    <TableHeader>
+                                      <TableRow>
+                                        <TableHead className="whitespace-nowrap">Date</TableHead>
+                                        <TableHead>Project</TableHead>
+                                        <TableHead>Sub-Category</TableHead>
+                                        <TableHead>Narration</TableHead>
+                                        <TableHead>Vendor / Party</TableHead>
+                                        <TableHead>Bill No.</TableHead>
+                                        <TableHead>Mode</TableHead>
+                                        <TableHead>Remarks</TableHead>
+                                        <TableHead className="text-right">Amount</TableHead>
+                                        <TableHead className="text-center">Docs</TableHead>
+                                      </TableRow>
+                                    </TableHeader>
+                                    <TableBody>
                                       {cat.rows.map(e => (
-                                        <tr key={e.id} className="border-b last:border-0 hover:bg-muted/20">
-                                          <td className="px-3 py-1.5 whitespace-nowrap text-slate-600">{e.expenseDate}</td>
-                                          <td className="px-3 py-1.5 max-w-[140px] truncate" title={e.projectName}>{e.projectName}</td>
-                                          <td className="px-3 py-1.5 text-muted-foreground">{e.expenseSubCategory || '—'}</td>
-                                          <td className="px-3 py-1.5 max-w-[160px] truncate text-muted-foreground" title={e.narration || ''}>{e.narration || '—'}</td>
-                                          <td className="px-3 py-1.5 max-w-[130px] truncate" title={e.vendorPartyName || ''}>{e.vendorPartyName || '—'}</td>
-                                          <td className="px-3 py-1.5 text-muted-foreground">{e.billNo || '—'}</td>
-                                          <td className="px-3 py-1.5"><Badge variant="secondary" className="text-[10px]">{e.paymentMode}</Badge></td>
-                                          <td className="px-3 py-1.5 max-w-[180px] truncate text-muted-foreground" title={e.remarks || ''}>{e.remarks || '—'}</td>
-                                          <td className="px-3 py-1.5 text-right font-medium text-rose-700 whitespace-nowrap">{formatINR(e.expenseAmount)}</td>
-                                          <td className="px-3 py-1.5 text-center">
+                                        <TableRow key={e.id}>
+                                          <TableCell className="whitespace-nowrap">{e.expenseDate}</TableCell>
+                                          <TableCell className="max-w-[140px] truncate" title={e.projectName}>{e.projectName}</TableCell>
+                                          <TableCell>{e.expenseSubCategory || '—'}</TableCell>
+                                          <TableCell className="max-w-[160px] truncate" title={e.narration || ''}>{e.narration || '—'}</TableCell>
+                                          <TableCell className="max-w-[130px] truncate" title={e.vendorPartyName || ''}>{e.vendorPartyName || '—'}</TableCell>
+                                          <TableCell className="font-mono whitespace-nowrap">{e.billNo || '—'}</TableCell>
+                                          <TableCell><Badge variant="neutral">{e.paymentMode}</Badge></TableCell>
+                                          <TableCell className="max-w-[180px] truncate" title={e.remarks || ''}>{e.remarks || '—'}</TableCell>
+                                          <TableCell className="text-right whitespace-nowrap tabular-nums font-medium text-rose-700">{formatINR(e.expenseAmount)}</TableCell>
+                                          <TableCell className="text-center">
                                             {e.attachments && e.attachments.length > 0 ? (
                                               <div className="flex items-center justify-center gap-1">
                                                 {e.attachments.map((att, i) => (
@@ -326,38 +320,36 @@ export default function PersonExpensePage() {
                                                 ))}
                                               </div>
                                             ) : <span className="text-muted-foreground">—</span>}
-                                          </td>
-                                        </tr>
+                                          </TableCell>
+                                        </TableRow>
                                       ))}
-                                    </tbody>
-                                    <tfoot>
-                                      <tr className="bg-muted/20 font-semibold">
-                                        <td colSpan={8} className="px-3 py-1.5 text-right">Subtotal</td>
-                                        <td className="px-3 py-1.5 text-right text-rose-700 whitespace-nowrap">{formatINR(cat.total)}</td>
-                                        <td />
-                                      </tr>
-                                    </tfoot>
-                                  </table>
+                                    </TableBody>
+                                    <TableFooter>
+                                      <TableRow>
+                                        <TableCell colSpan={8} className="text-right">Subtotal</TableCell>
+                                        <TableCell className="text-right whitespace-nowrap tabular-nums text-rose-700">{formatINR(cat.total)}</TableCell>
+                                        <TableCell />
+                                      </TableRow>
+                                    </TableFooter>
+                                  </Table>
                                 </div>
-                              </td>
-                            </tr>
+                              </TableCell>
+                            </TableRow>
                           )}
                         </Fragment>
                       );
                     })}
-                  </tbody>
-                  <tfoot>
-                    <tr className="bg-muted/30 font-semibold">
-                      <td className="px-4 py-2">Total</td>
-                      <td className="px-4 py-2 text-right">{person.count}</td>
-                      <td className="px-4 py-2 text-right text-rose-700">{formatINR(person.total)}</td>
-                      <td />
-                    </tr>
-                  </tfoot>
-                </table>
-              </div>
-            </CardContent>
-          </Card>
+                  </TableBody>
+                  <TableFooter>
+                    <TableRow>
+                      <TableCell>Total</TableCell>
+                      <TableCell className="text-right tabular-nums">{person.count}</TableCell>
+                      <TableCell className="text-right whitespace-nowrap tabular-nums text-rose-700">{formatINR(person.total)}</TableCell>
+                      <TableCell />
+                    </TableRow>
+                  </TableFooter>
+                </Table>
+          </TableCard>
         ))
       )}
     </div>

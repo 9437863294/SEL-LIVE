@@ -29,7 +29,6 @@ import {
   Plus,
   Power,
   RefreshCw,
-  Search,
 } from "lucide-react";
 import { db } from "@/lib/firebase";
 import { personOptionLabel } from '@/lib/people-directory';
@@ -55,11 +54,12 @@ import {
   RP_COLLECTIONS,
 } from "@/lib/recurring-payments";
 import { addBusinessHours, makeIsWorkingDay } from "@/lib/working-hours";
-import { Badge } from "@/components/ui/badge";
+import { StatusBadge } from "@/components/shared/status-badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { PageHeader } from "@/components/shared/page-header";
-import CollapsibleFilterCard from "./collapsible-filter-card";
+import { FilterBar } from "@/components/shared/filter-bar";
+import { TableCard } from "@/components/shared/table-card";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -67,7 +67,6 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { Input } from "@/components/ui/input";
 import {
   Select,
   SelectContent,
@@ -663,227 +662,206 @@ export default function RecurringMasterRegister() {
           }
         />
       </div>
-      <CollapsibleFilterCard
-        title="Search & filters"
-        activeCount={activeFilterCount}
-        onClear={() => { setSearch(""); setFilters(DEFAULT_MASTER_FILTERS); }}
-      >
-        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
-          <div className="relative">
-            <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
-            <Input
-              className="pl-8"
-              placeholder="Search masters…"
-              value={search}
-              onChange={(event) => setSearch(event.target.value)}
-            />
-          </div>
-          <Filter
-            value={filters.status}
-            label="All statuses"
-            options={unique(rows.map((item) => item.status))}
-            onChange={(status) =>
-              setFilters((current) => ({ ...current, status }))
-            }
-          />
-          <Filter
-            value={filters.category}
-            label="All categories"
-            options={unique(rows.map((item) => item.category))}
-            onChange={(category) =>
-              setFilters((current) => ({ ...current, category }))
-            }
-          />
-          <Filter
-            value={filters.frequency}
-            label="All frequencies"
-            options={unique(rows.map((item) => item.frequency))}
-            onChange={(frequency) =>
-              setFilters((current) => ({ ...current, frequency }))
-            }
-          />
-          <Select
-            value={filters.owner}
-            onValueChange={(owner) =>
-              setFilters((current) => ({ ...current, owner }))
-            }
-          >
-            <SelectTrigger>
-              <SelectValue placeholder="All owners" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value={ALL}>All owners</SelectItem>
-              {users.map((item) => (
-                <SelectItem value={item.id} key={item.id}>
-                  {personOptionLabel(item)}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
-      </CollapsibleFilterCard>
-      {/* No card header here: the page banner above already names this list, so a "Master register"
+      {/* No title here: the page banner above already names this list, so a "Master register"
           title plus a count restated the same thing twice in a row. */}
-      <Card>
-        <CardContent className="space-y-4 pt-6">
-          <div className="overflow-x-auto">
-            {/* Compact rows: this register is thirteen columns of single-line values, so the
-                default 1rem cell padding and 3rem header just spent vertical space on nothing.
-                Halving it fits roughly twice as many masters in the table's frame. */}
-            <Table className="[&_td]:py-2 [&_th]:h-9">
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Master</TableHead>
-                  <TableHead>Category</TableHead>
-                  <TableHead>Scope</TableHead>
-                  <TableHead>Department</TableHead>
-                  <TableHead>Vendor</TableHead>
-                  <TableHead>Account</TableHead>
-                  <TableHead>Frequency</TableHead>
-                  <TableHead>Next Due</TableHead>
-                  <TableHead className="text-right">Expected Amount</TableHead>
-                  <TableHead>Amount Type</TableHead>
-                  <TableHead>Owner</TableHead>
-                  <TableHead>Status</TableHead>
-                  <TableHead />
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {visible.map((master) => {
-                  // The cycle actually awaiting payment, which for arrears-billed masters is the
-                  // closed period whose bill has arrived — not the period today sits inside.
-                  const cycle = actionableRecurringCycle(master, new Date());
-                  return (
-                    <TableRow key={master.id}>
-                      <TableCell className="whitespace-nowrap">
-                        <Link
-                          className="font-medium text-indigo-700 hover:underline"
-                          href={`/recurring-payments/masters/${master.id}`}
-                        >
-                          {master.title}
-                        </Link>
-                      </TableCell>
-                      <TableCell className="whitespace-nowrap">
-                        {master.category}
-                      </TableCell>
-                      <TableCell className="whitespace-nowrap">
-                        {master.projectName ||
-                          master.branchName ||
-                          "Organization-wide"}
-                      </TableCell>
-                      <TableCell className="whitespace-nowrap">
-                        {master.department || master.costCentre || "General"}
-                      </TableCell>
-                      <TableCell className="whitespace-nowrap">
-                        {master.vendorName}
-                      </TableCell>
-                      <TableCell className="whitespace-nowrap">
-                        {maskAccount(master.accountNumber) || "No account"}
-                      </TableCell>
-                      <TableCell className="whitespace-nowrap">
-                        {master.frequency}
-                      </TableCell>
-                      <TableCell className="whitespace-nowrap">
-                        {cycle ? `Due ${cycle.dueDate}` : "Outside active dates"}
-                      </TableCell>
-                      <TableCell className="whitespace-nowrap text-right font-semibold">
-                        {currency(master.amount)}
-                      </TableCell>
-                      <TableCell className="whitespace-nowrap">
-                        {master.amountType}
-                      </TableCell>
-                      <TableCell className="whitespace-nowrap">
-                        {master.assignedToName ||
-                          users.find((item) => item.id === master.assignedTo)
-                            ?.name ||
-                          "Unassigned"}
-                      </TableCell>
-                      <TableCell className="whitespace-nowrap">
-                        <Badge
-                          variant={
-                            master.status === "Active" ? "default" : "secondary"
-                          }
-                        >
-                          {master.status}
-                        </Badge>
-                      </TableCell>
-                      <TableCell>
-                        <DropdownMenu>
-                          <DropdownMenuTrigger asChild>
-                            {/* The default icon button is 2.5rem tall and was setting the row
-                                height on its own, so trimming cell padding alone changed little. */}
-                            <Button size="icon" variant="ghost" className="h-7 w-7">
-                              <MoreHorizontal className="h-4 w-4" />
-                            </Button>
-                          </DropdownMenuTrigger>
-                          <DropdownMenuContent align="end">
+      <TableCard
+        toolbar={
+          <FilterBar
+            search={{ value: search, onChange: setSearch, placeholder: "Search masters…" }}
+            activeCount={activeFilterCount - (search.trim() ? 1 : 0)}
+            onClear={() => { setSearch(""); setFilters(DEFAULT_MASTER_FILTERS); }}
+          >
+            <Filter
+              value={filters.status}
+              label="All statuses"
+              options={unique(rows.map((item) => item.status))}
+              onChange={(status) =>
+                setFilters((current) => ({ ...current, status }))
+              }
+            />
+            <Filter
+              value={filters.category}
+              label="All categories"
+              options={unique(rows.map((item) => item.category))}
+              onChange={(category) =>
+                setFilters((current) => ({ ...current, category }))
+              }
+            />
+            <Filter
+              value={filters.frequency}
+              label="All frequencies"
+              options={unique(rows.map((item) => item.frequency))}
+              onChange={(frequency) =>
+                setFilters((current) => ({ ...current, frequency }))
+              }
+            />
+            <Select
+              value={filters.owner}
+              onValueChange={(owner) =>
+                setFilters((current) => ({ ...current, owner }))
+              }
+            >
+              <SelectTrigger>
+                <SelectValue placeholder="All owners" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value={ALL}>All owners</SelectItem>
+                {users.map((item) => (
+                  <SelectItem value={item.id} key={item.id}>
+                    {personOptionLabel(item)}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </FilterBar>
+        }
+      >
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead>Master</TableHead>
+              <TableHead>Category</TableHead>
+              <TableHead>Scope</TableHead>
+              <TableHead>Department</TableHead>
+              <TableHead>Vendor</TableHead>
+              <TableHead>Account</TableHead>
+              <TableHead>Frequency</TableHead>
+              <TableHead>Next Due</TableHead>
+              <TableHead className="text-right">Expected Amount</TableHead>
+              <TableHead>Amount Type</TableHead>
+              <TableHead>Owner</TableHead>
+              <TableHead>Status</TableHead>
+              <TableHead />
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {visible.map((master) => {
+              // The cycle actually awaiting payment, which for arrears-billed masters is the
+              // closed period whose bill has arrived — not the period today sits inside.
+              const cycle = actionableRecurringCycle(master, new Date());
+              return (
+                <TableRow key={master.id}>
+                  <TableCell className="whitespace-nowrap">
+                    <Link
+                      className="font-medium text-indigo-700 hover:underline"
+                      href={`/recurring-payments/masters/${master.id}`}
+                    >
+                      {master.title}
+                    </Link>
+                  </TableCell>
+                  <TableCell className="whitespace-nowrap">
+                    {master.category}
+                  </TableCell>
+                  <TableCell className="whitespace-nowrap">
+                    {master.projectName ||
+                      master.branchName ||
+                      "Organization-wide"}
+                  </TableCell>
+                  <TableCell className="whitespace-nowrap">
+                    {master.department || master.costCentre || "General"}
+                  </TableCell>
+                  <TableCell className="whitespace-nowrap">
+                    {master.vendorName}
+                  </TableCell>
+                  <TableCell className="whitespace-nowrap">
+                    {maskAccount(master.accountNumber) || "No account"}
+                  </TableCell>
+                  <TableCell className="whitespace-nowrap">
+                    {master.frequency}
+                  </TableCell>
+                  <TableCell className="whitespace-nowrap">
+                    {cycle ? `Due ${cycle.dueDate}` : "Outside active dates"}
+                  </TableCell>
+                  <TableCell className="whitespace-nowrap text-right tabular-nums">
+                    {currency(master.amount)}
+                  </TableCell>
+                  <TableCell className="whitespace-nowrap">
+                    {master.amountType}
+                  </TableCell>
+                  <TableCell className="whitespace-nowrap">
+                    {master.assignedToName ||
+                      users.find((item) => item.id === master.assignedTo)
+                        ?.name ||
+                      "Unassigned"}
+                  </TableCell>
+                  <TableCell className="whitespace-nowrap">
+                    <StatusBadge status={master.status} />
+                  </TableCell>
+                  <TableCell>
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        {/* The default icon button is 2.5rem tall and was setting the row
+                            height on its own, so trimming cell padding alone changed little. */}
+                        <Button size="icon" variant="ghost" className="h-7 w-7">
+                          <MoreHorizontal className="h-4 w-4" />
+                        </Button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="end">
+                        <DropdownMenuItem asChild>
+                          <Link
+                            href={`/recurring-payments/masters/${master.id}`}
+                          >
+                            <Eye className="mr-2 h-4 w-4" />
+                            View & generate
+                          </Link>
+                        </DropdownMenuItem>
+                        {canEdit && (
+                          <>
                             <DropdownMenuItem asChild>
                               <Link
-                                href={`/recurring-payments/masters/${master.id}`}
+                                href={`/recurring-payments/masters/${master.id}/edit`}
                               >
-                                <Eye className="mr-2 h-4 w-4" />
-                                View & generate
+                                <Pencil className="mr-2 h-4 w-4" />
+                                Edit master
                               </Link>
                             </DropdownMenuItem>
-                            {canEdit && (
-                              <>
-                                <DropdownMenuItem asChild>
-                                  <Link
-                                    href={`/recurring-payments/masters/${master.id}/edit`}
-                                  >
-                                    <Pencil className="mr-2 h-4 w-4" />
-                                    Edit master
-                                  </Link>
-                                </DropdownMenuItem>
-                                <DropdownMenuItem
-                                  onSelect={() => changeStatus(master)}
-                                >
-                                  <Power className="mr-2 h-4 w-4" />
-                                  {master.status === "Active"
-                                    ? "Pause"
-                                    : "Activate"}
-                                </DropdownMenuItem>
-                                <DropdownMenuItem
-                                  onSelect={() => duplicate(master)}
-                                >
-                                  <Copy className="mr-2 h-4 w-4" />
-                                  Duplicate as draft
-                                </DropdownMenuItem>
-                              </>
-                            )}
-                            {canDelete && (
-                              <>
-                                <DropdownMenuSeparator />
-                                <DropdownMenuItem
-                                  className="text-destructive"
-                                  onSelect={() => archive(master)}
-                                >
-                                  <Archive className="mr-2 h-4 w-4" />
-                                  Archive
-                                </DropdownMenuItem>
-                              </>
-                            )}
-                          </DropdownMenuContent>
-                        </DropdownMenu>
-                      </TableCell>
-                    </TableRow>
-                  );
-                })}
-                {!visible.length && (
-                  <TableRow>
-                    <TableCell
-                      colSpan={13}
-                      className="h-36 text-center text-muted-foreground"
-                    >
-                      No recurring masters match these filters.
-                    </TableCell>
-                  </TableRow>
-                )}
-              </TableBody>
-            </Table>
-          </div>
-        </CardContent>
-      </Card>
+                            <DropdownMenuItem
+                              onSelect={() => changeStatus(master)}
+                            >
+                              <Power className="mr-2 h-4 w-4" />
+                              {master.status === "Active"
+                                ? "Pause"
+                                : "Activate"}
+                            </DropdownMenuItem>
+                            <DropdownMenuItem
+                              onSelect={() => duplicate(master)}
+                            >
+                              <Copy className="mr-2 h-4 w-4" />
+                              Duplicate as draft
+                            </DropdownMenuItem>
+                          </>
+                        )}
+                        {canDelete && (
+                          <>
+                            <DropdownMenuSeparator />
+                            <DropdownMenuItem
+                              className="text-destructive"
+                              onSelect={() => archive(master)}
+                            >
+                              <Archive className="mr-2 h-4 w-4" />
+                              Archive
+                            </DropdownMenuItem>
+                          </>
+                        )}
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+                  </TableCell>
+                </TableRow>
+              );
+            })}
+            {!visible.length && (
+              <TableRow>
+                <TableCell
+                  colSpan={13}
+                  className="h-36 text-center text-muted-foreground"
+                >
+                  No recurring masters match these filters.
+                </TableCell>
+              </TableRow>
+            )}
+          </TableBody>
+        </Table>
+      </TableCard>
     </div>
   );
 }

@@ -59,7 +59,7 @@ export default function MailTemplatesPage() {
             <button type="button" className="min-w-0 flex-1 text-left" disabled={!template.editable} onClick={() => setEditing(template)}>
               <div className="flex items-center gap-2">
                 <span className="truncate font-medium">{template.name}</span>
-                <Badge variant="outline" className="text-[10px] capitalize">{template.scope === 'department' ? template.departmentName ?? 'Department' : template.scope}</Badge>
+                <Badge variant="outline" className="capitalize">{template.scope === 'department' ? template.departmentName ?? 'Department' : template.scope}</Badge>
               </div>
               <p className="truncate text-xs text-muted-foreground">{template.subject || 'No subject'}</p>
             </button>

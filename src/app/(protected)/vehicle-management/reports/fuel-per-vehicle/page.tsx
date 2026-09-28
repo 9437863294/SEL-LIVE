@@ -10,8 +10,9 @@ import { useAuthorization } from '@/hooks/useAuthorization';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { PageHeader } from '@/components/shared/page-header';
+import { TableCard } from '@/components/shared/table-card';
 import { Skeleton } from '@/components/ui/skeleton';
-import { TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Input } from '@/components/ui/input';
 
 const formatCurrency = (amount: number) =>
@@ -170,7 +171,7 @@ export default function FuelPerVehicleReportPage() {
                 type="month"
                 value={month}
                 onChange={(e) => setMonth(e.target.value)}
-                className="w-full bg-white/80 border-white/70 sm:w-44"
+                className="w-full sm:w-auto"
               />
             </div>
             {canExport && (
@@ -225,87 +226,78 @@ export default function FuelPerVehicleReportPage() {
         </Card>
       </div>
 
-      <Card className="vm-panel-strong">
-        <CardHeader>
-          <CardTitle>Fuel Breakdown by Vehicle</CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-2 sm:hidden">
-          {rows.length === 0 ? (
-            <div className="rounded-lg border border-white/70 bg-white/80 px-3 py-6 text-center text-muted-foreground">
-              No fuel data for selected month.
-            </div>
-          ) : (
-            rows.map((row) => (
-              <div key={row.vehicleNumber} className="rounded-xl border border-white/70 bg-white/85 p-3 shadow-sm">
-                <div className="mb-1.5 flex items-center justify-between">
-                  <span className="text-sm font-semibold">{row.vehicleNumber}</span>
-                  <span className="text-sm font-medium">{formatCurrency(row.totalFuelCost)}</span>
-                </div>
-                <div className="mb-2 h-1.5 w-full rounded-full bg-slate-100">
-                  <div
-                    className="h-1.5 rounded-full bg-gradient-to-r from-cyan-500 to-blue-600"
-                    style={{ width: `${maxFuelCost > 0 ? (row.totalFuelCost / maxFuelCost) * 100 : 0}%` }}
-                  />
-                </div>
-                <div className="grid grid-cols-2 gap-1 text-xs text-muted-foreground">
-                  <span>Liters: {row.totalLiters.toFixed(2)}</span>
-                  <span>Distance: {new Intl.NumberFormat('en-IN').format(row.totalDistance)} km</span>
-                  <span>Mileage: {row.mileage !== null ? `${row.mileage} km/l` : 'N/A'}</span>
-                  <span>Cost/KM: {row.costPerKm !== null ? formatCurrency(row.costPerKm) : 'N/A'}</span>
-                </div>
-              </div>
-            ))
-          )}
-        </CardContent>
-      <CardContent className="hidden sm:block p-0">
+      <TableCard title="Fuel Breakdown by Vehicle" icon={Fuel} count={rows.length} noun="vehicle">
         {rows.length === 0 ? (
-          <div className="rounded-lg border border-white/70 bg-white/80 px-4 py-10 text-center text-muted-foreground">
+          <div className="px-4 py-10 text-center text-sm text-muted-foreground">
             No fuel data for selected month.
           </div>
         ) : (
-          <div className="overflow-auto rounded-lg border border-white/70 bg-white/80 h-[calc(100vh-420px)]">
-            <table className="w-full caption-bottom text-sm">
-              <TableHeader className="sticky top-0 z-10 bg-slate-50 shadow-sm">
-                <TableRow>
-                  <TableHead>Vehicle</TableHead>
-                  <TableHead>Type</TableHead>
-                  <TableHead>Fuel Type</TableHead>
-                  <TableHead>Liters</TableHead>
-                  <TableHead>Total Cost</TableHead>
-                  <TableHead>Distance (KM)</TableHead>
-                  <TableHead>Mileage (KM/L)</TableHead>
-                  <TableHead>Cost Per KM</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {rows.map((row) => (
-                  <TableRow key={row.vehicleNumber} className="hover:bg-cyan-50/70 transition-colors">
-                    <TableCell className="font-medium">{row.vehicleNumber}</TableCell>
-                    <TableCell>{row.vehicleType}</TableCell>
-                    <TableCell>{row.fuelType}</TableCell>
-                    <TableCell>{row.totalLiters.toFixed(2)}</TableCell>
-                    <TableCell>
-                      <div className="space-y-1">
-                        <div>{formatCurrency(row.totalFuelCost)}</div>
-                        <div className="h-1.5 w-32 rounded-full bg-slate-100">
-                          <div
-                            className="h-1.5 rounded-full bg-gradient-to-r from-cyan-500 to-blue-600 transition-all"
-                            style={{ width: `${maxFuelCost > 0 ? (row.totalFuelCost / maxFuelCost) * 100 : 0}%` }}
-                          />
-                        </div>
-                      </div>
-                    </TableCell>
-                    <TableCell>{new Intl.NumberFormat('en-IN').format(row.totalDistance)}</TableCell>
-                    <TableCell>{row.mileage !== null ? row.mileage.toFixed(2) : 'N/A'}</TableCell>
-                    <TableCell>{row.costPerKm !== null ? formatCurrency(row.costPerKm) : 'N/A'}</TableCell>
+          <>
+            <div className="space-y-2 p-3 sm:hidden">
+              {rows.map((row) => (
+                <div key={row.vehicleNumber} className="rounded-xl border border-white/70 bg-white/85 p-3 shadow-sm">
+                  <div className="mb-1.5 flex items-center justify-between">
+                    <span className="text-sm font-semibold">{row.vehicleNumber}</span>
+                    <span className="text-sm font-medium">{formatCurrency(row.totalFuelCost)}</span>
+                  </div>
+                  <div className="mb-2 h-1.5 w-full rounded-full bg-slate-100">
+                    <div
+                      className="h-1.5 rounded-full bg-gradient-to-r from-cyan-500 to-blue-600"
+                      style={{ width: `${maxFuelCost > 0 ? (row.totalFuelCost / maxFuelCost) * 100 : 0}%` }}
+                    />
+                  </div>
+                  <div className="grid grid-cols-2 gap-1 text-xs text-muted-foreground">
+                    <span>Liters: {row.totalLiters.toFixed(2)}</span>
+                    <span>Distance: {new Intl.NumberFormat('en-IN').format(row.totalDistance)} km</span>
+                    <span>Mileage: {row.mileage !== null ? `${row.mileage} km/l` : 'N/A'}</span>
+                    <span>Cost/KM: {row.costPerKm !== null ? formatCurrency(row.costPerKm) : 'N/A'}</span>
+                  </div>
+                </div>
+              ))}
+            </div>
+            <div className="hidden sm:block">
+              <Table containerClassName="overflow-visible">
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Vehicle</TableHead>
+                    <TableHead>Type</TableHead>
+                    <TableHead>Fuel Type</TableHead>
+                    <TableHead className="text-right">Liters</TableHead>
+                    <TableHead>Total Cost</TableHead>
+                    <TableHead className="text-right">Distance (KM)</TableHead>
+                    <TableHead className="text-right">Mileage (KM/L)</TableHead>
+                    <TableHead className="text-right">Cost Per KM</TableHead>
                   </TableRow>
-                ))}
-              </TableBody>
-            </table>
-          </div>
+                </TableHeader>
+                <TableBody>
+                  {rows.map((row) => (
+                    <TableRow key={row.vehicleNumber}>
+                      <TableCell className="font-medium">{row.vehicleNumber}</TableCell>
+                      <TableCell>{row.vehicleType}</TableCell>
+                      <TableCell>{row.fuelType}</TableCell>
+                      <TableCell className="text-right tabular-nums">{row.totalLiters.toFixed(2)}</TableCell>
+                      <TableCell className="tabular-nums">
+                        <div className="space-y-1">
+                          <div>{formatCurrency(row.totalFuelCost)}</div>
+                          <div className="h-1.5 w-32 rounded-full bg-slate-100">
+                            <div
+                              className="h-1.5 rounded-full bg-gradient-to-r from-cyan-500 to-blue-600 transition-all"
+                              style={{ width: `${maxFuelCost > 0 ? (row.totalFuelCost / maxFuelCost) * 100 : 0}%` }}
+                            />
+                          </div>
+                        </div>
+                      </TableCell>
+                      <TableCell className="text-right tabular-nums">{new Intl.NumberFormat('en-IN').format(row.totalDistance)}</TableCell>
+                      <TableCell className="text-right tabular-nums">{row.mileage !== null ? row.mileage.toFixed(2) : 'N/A'}</TableCell>
+                      <TableCell className="text-right tabular-nums">{row.costPerKm !== null ? formatCurrency(row.costPerKm) : 'N/A'}</TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
+          </>
         )}
-      </CardContent>
-      </Card>
+      </TableCard>
     </div>
   );
 }

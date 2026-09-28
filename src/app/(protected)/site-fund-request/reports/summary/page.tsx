@@ -25,6 +25,10 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { Skeleton } from '@/components/ui/skeleton';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { TableCard } from '@/components/shared/table-card';
+import { FilterBar } from '@/components/shared/filter-bar';
+import { StatusBadge } from '@/components/shared/status-badge';
 
 // ─── helpers ────────────────────────────────────────────────────────────────
 
@@ -48,14 +52,6 @@ function currentFY(): string {
   if (m >= 4) return `${y}-${String(y + 1).slice(-2)}`;
   return `${y - 1}-${String(y).slice(-2)}`;
 }
-
-const STATUS_BADGE: Record<string, string> = {
-  Pending: 'bg-amber-100 text-amber-700',
-  'In Progress': 'bg-blue-100 text-blue-700',
-  Completed: 'bg-green-100 text-green-700',
-  Rejected: 'bg-red-100 text-red-700',
-  'Needs Review': 'bg-orange-100 text-orange-700',
-};
 
 const ALL_STATUSES: Requisition['status'][] = [
   'Pending',
@@ -273,89 +269,67 @@ export default function SummaryReportPage() {
         }
       />
 
-      {/* Filters */}
-      <Card className="overflow-hidden bg-white/70 border border-white/70 rounded-2xl shadow-[0_20px_70px_-55px_rgba(2,6,23,0.55)] backdrop-blur">
-        <div className="h-1.5 w-full bg-gradient-to-r from-indigo-400 via-violet-400 to-blue-400 opacity-70" />
-        <CardContent className="p-4">
-          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
-            {/* FY */}
-            <div className="space-y-1">
-              <p className="text-xs font-medium text-slate-600">Financial Year</p>
-              <Select value={filters.fy} onValueChange={(v) => setFilters((f) => ({ ...f, fy: v }))}>
-                <SelectTrigger className="bg-white/80 border-white/70">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All Years</SelectItem>
-                  {fyOptions.map((fy) => (
-                    <SelectItem key={fy} value={fy}>{fy}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            {/* Month */}
-            <div className="space-y-1">
-              <p className="text-xs font-medium text-slate-600">Month</p>
-              <Select value={filters.month} onValueChange={(v) => setFilters((f) => ({ ...f, month: v }))}>
-                <SelectTrigger className="bg-white/80 border-white/70">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All Months</SelectItem>
-                  {MONTHS.map((m) => (
-                    <SelectItem key={m.value} value={m.value}>{m.label}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            {/* Project */}
-            <div className="space-y-1">
-              <p className="text-xs font-medium text-slate-600">Project</p>
-              <Select value={filters.project} onValueChange={(v) => setFilters((f) => ({ ...f, project: v }))}>
-                <SelectTrigger className="bg-white/80 border-white/70">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All Projects</SelectItem>
-                  {projects.map((p) => (
-                    <SelectItem key={p.id} value={p.id}>{p.projectName}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            {/* Department */}
-            <div className="space-y-1">
-              <p className="text-xs font-medium text-slate-600">Department</p>
-              <Select value={filters.department} onValueChange={(v) => setFilters((f) => ({ ...f, department: v }))}>
-                <SelectTrigger className="bg-white/80 border-white/70">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All Departments</SelectItem>
-                  {departments.map((d) => (
-                    <SelectItem key={d.id} value={d.id}>{d.name}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            {/* Status */}
-            <div className="space-y-1">
-              <p className="text-xs font-medium text-slate-600">Status</p>
-              <Select value={filters.status} onValueChange={(v) => setFilters((f) => ({ ...f, status: v }))}>
-                <SelectTrigger className="bg-white/80 border-white/70">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All Statuses</SelectItem>
-                  {ALL_STATUSES.map((s) => (
-                    <SelectItem key={s} value={s}>{s}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-          </div>
-        </CardContent>
-      </Card>
+      {/* Filters — they drive the stats and the table */}
+      <FilterBar
+        activeCount={Object.values(filters).filter((v) => v !== 'all').length}
+        onClear={() => setFilters({ fy: 'all', month: 'all', project: 'all', department: 'all', status: 'all' })}
+      >
+        <Select value={filters.fy} onValueChange={(v) => setFilters((f) => ({ ...f, fy: v }))}>
+          <SelectTrigger aria-label="Financial Year">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All Years</SelectItem>
+            {fyOptions.map((fy) => (
+              <SelectItem key={fy} value={fy}>{fy}</SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        <Select value={filters.month} onValueChange={(v) => setFilters((f) => ({ ...f, month: v }))}>
+          <SelectTrigger aria-label="Month">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All Months</SelectItem>
+            {MONTHS.map((m) => (
+              <SelectItem key={m.value} value={m.value}>{m.label}</SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        <Select value={filters.project} onValueChange={(v) => setFilters((f) => ({ ...f, project: v }))}>
+          <SelectTrigger aria-label="Project">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All Projects</SelectItem>
+            {projects.map((p) => (
+              <SelectItem key={p.id} value={p.id}>{p.projectName}</SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        <Select value={filters.department} onValueChange={(v) => setFilters((f) => ({ ...f, department: v }))}>
+          <SelectTrigger aria-label="Department">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All Departments</SelectItem>
+            {departments.map((d) => (
+              <SelectItem key={d.id} value={d.id}>{d.name}</SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        <Select value={filters.status} onValueChange={(v) => setFilters((f) => ({ ...f, status: v }))}>
+          <SelectTrigger aria-label="Status">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All Statuses</SelectItem>
+            {ALL_STATUSES.map((s) => (
+              <SelectItem key={s} value={s}>{s}</SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </FilterBar>
 
       {/* Stats row */}
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
@@ -385,24 +359,18 @@ export default function SummaryReportPage() {
       </div>
 
       {/* Table */}
-      <Card className="overflow-hidden rounded-2xl border border-white/70 bg-white/70 shadow-[0_20px_70px_-55px_rgba(2,6,23,0.55)] backdrop-blur">
-        <div className="h-1.5 w-full bg-gradient-to-r from-indigo-400 via-violet-400 to-blue-400 opacity-70" />
-        <CardHeader className="p-4 pb-2">
-          <CardTitle>Fund Requests</CardTitle>
-          <CardDescription>
-            {filtered.length} record{filtered.length !== 1 ? 's' : ''} found
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="p-0">
+      <TableCard
+        title="Fund Requests"
+        description={<>{filtered.length} record{filtered.length !== 1 ? 's' : ''} found</>}
+      >
           {filtered.length === 0 ? (
-            <div className="px-6 py-12 text-center text-sm text-slate-500">
+            <div className="px-6 py-12 text-center text-sm text-muted-foreground">
               No records match the selected filters.
             </div>
           ) : (
-            <div className="overflow-auto rounded-b-2xl border-t border-white/70 bg-white/80 max-h-[calc(100vh-420px)]">
-              <table className="w-full caption-bottom text-sm">
-                <thead>
-                  <tr className="border-b border-slate-200 bg-slate-50/90 sticky top-0 z-10">
+              <Table>
+                <TableHeader>
+                  <TableRow>
                     {[
                       'Request ID',
                       'Date',
@@ -413,51 +381,39 @@ export default function SummaryReportPage() {
                       'Status',
                       'Raised By',
                     ].map((h) => (
-                      <th
-                        key={h}
-                        className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-500 whitespace-nowrap"
-                      >
+                      <TableHead key={h} className={h === 'Amount' ? 'text-right' : undefined}>
                         {h}
-                      </th>
+                      </TableHead>
                     ))}
-                  </tr>
-                </thead>
-                <tbody>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
                   {filtered.map((r) => (
-                    <tr
-                      key={r.id}
-                      className="border-b border-slate-100 hover:bg-slate-50/70 transition-colors"
-                    >
-                      <td className="px-4 py-3 font-mono text-xs font-medium text-slate-800">
+                    <TableRow key={r.id}>
+                      <TableCell className="font-mono font-medium whitespace-nowrap">
                         {r.requisitionId}
-                      </td>
-                      <td className="px-4 py-3 text-slate-700 whitespace-nowrap">{r.date}</td>
-                      <td className="px-4 py-3 text-slate-700">
+                      </TableCell>
+                      <TableCell className="whitespace-nowrap">{r.date}</TableCell>
+                      <TableCell>
                         {projectMap[r.projectId] || r.projectId}
-                      </td>
-                      <td className="px-4 py-3 text-slate-700">
+                      </TableCell>
+                      <TableCell>
                         {deptMap[r.departmentId] || r.departmentId}
-                      </td>
-                      <td className="px-4 py-3 text-slate-700">{r.partyName}</td>
-                      <td className="px-4 py-3 text-right font-medium text-slate-900">
+                      </TableCell>
+                      <TableCell>{r.partyName}</TableCell>
+                      <TableCell className="text-right tabular-nums whitespace-nowrap">
                         {formatCurrency(r.amount)}
-                      </td>
-                      <td className="px-4 py-3">
-                        <span
-                          className={`inline-flex rounded-full px-2.5 py-0.5 text-xs font-semibold ${STATUS_BADGE[r.status] ?? 'bg-slate-100 text-slate-700'}`}
-                        >
-                          {r.status}
-                        </span>
-                      </td>
-                      <td className="px-4 py-3 text-slate-700">{r.raisedBy}</td>
-                    </tr>
+                      </TableCell>
+                      <TableCell className="whitespace-nowrap">
+                        <StatusBadge status={r.status}>{r.status}</StatusBadge>
+                      </TableCell>
+                      <TableCell>{r.raisedBy}</TableCell>
+                    </TableRow>
                   ))}
-                </tbody>
-              </table>
-            </div>
+                </TableBody>
+              </Table>
           )}
-        </CardContent>
-      </Card>
+      </TableCard>
     </div>
   );
 }

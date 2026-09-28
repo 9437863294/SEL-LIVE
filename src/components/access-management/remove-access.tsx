@@ -38,9 +38,9 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
-import { Input } from '@/components/ui/input';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { hrDialog, HrEmptyState } from '@/components/hr/hr-ui';
+import { SearchInput } from '@/components/shared/filter-bar';
 import { cn } from '@/lib/utils';
 import type { User } from '@/lib/types';
 import {
@@ -204,24 +204,16 @@ export function RemoveAccessDialog({
 
         <div className={hrDialog.bodyScroll}>
           <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-            <Badge variant="outline" className="gap-1 border-indigo-200 bg-indigo-50 text-indigo-700">
+            <Badge variant="neutral" className="gap-1">
               <Users className="h-3 w-3" />
               {users.length} user{users.length === 1 ? '' : 's'}
             </Badge>
             <span>{removables.length} removable grant(s) between them</span>
-            {ticked.length > 0 && (
-              <Badge variant="outline" className="border-destructive/40 bg-destructive/10 text-destructive">
-                {ticked.length} selected
-              </Badge>
-            )}
+            {ticked.length > 0 && <Badge variant="danger">{ticked.length} selected</Badge>}
           </div>
 
           {removables.length > 8 && (
-            <Input
-              value={term}
-              onChange={(event) => setTerm(event.target.value)}
-              placeholder="Filter roles, permissions and projects…"
-            />
+            <SearchInput value={term} onChange={setTerm} placeholder="Filter roles, permissions and projects…" />
           )}
 
           {removables.length === 0 ? (
@@ -263,7 +255,7 @@ export function RemoveAccessDialog({
                       </span>
                       {/* Only meaningful for a multi-user removal, and misleading for one. */}
                       {users.length > 1 && (
-                        <Badge variant="outline" className="shrink-0 text-[10px] text-slate-500">
+                        <Badge variant="outline" className="shrink-0">
                           {item.userCount} of {users.length}
                         </Badge>
                       )}

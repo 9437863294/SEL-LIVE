@@ -32,7 +32,6 @@ import {
   Lock,
   Pencil,
   Plus,
-  Search,
   ShieldCheck,
   ShieldOff,
   UserCheck,
@@ -41,11 +40,12 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { CardContent } from '@/components/ui/card';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
 import { hrDialog, HrEmptyState } from '@/components/hr/hr-ui';
+import { FilterBar } from '@/components/shared/filter-bar';
+import { StatusBadge } from '@/components/shared/status-badge';
 import { useToast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
 import type { Role } from '@/lib/types';
@@ -151,42 +151,51 @@ export function RoleLibrary({
       {/* Pinned under the tab strip — filtering 28 roles from halfway down the list should not mean
           scrolling back to the top. The count line comes along because it is the readout for these
           controls, and reads as stale if it scrolls away while they stay. */}
-      <div className={cn(ACCESS_STICKY_TOOLBAR_CLASS, 'space-y-1.5')}>
-      {/*
-        Two rows on a phone, one from `lg` up.
-
-        It used to stack: search, then two filters, then a full-width module filter, then a
-        full-width New role — four rows, which together with the page header and the tab picker
-        filled a phone screen before a single role card. The grid puts search and New role on one
-        row and the three filters on the next; `lg:order-last` keeps New role at the end of the
-        desktop row without a second copy of the button.
-      */}
-      <div className="grid grid-cols-[1fr_auto] gap-2 rounded-xl border border-white/70 bg-white/80 p-2.5 shadow-sm backdrop-blur lg:flex lg:items-center lg:p-3">
-        <div className="relative lg:flex-1">
-          <Search className="pointer-events-none absolute left-3 top-2.5 h-4 w-4 text-slate-400" />
-          <Input
-            value={term}
-            onChange={(event) => setTerm(event.target.value)}
-            placeholder="Search roles, descriptions or the permissions they contain…"
-            className="pl-9"
-          />
-        </div>
-        {canManage && (
-          <Button asChild className="shrink-0 lg:order-last">
-            <Link href={builderHref()}>
-              <Plus className="h-4 w-4" />
-              {/* "New role" is worth the width on a desktop row; beside a search box on a phone the
-                  noun is already obvious from the screen you are on. The spacing is the Button's
-                  own `gap`, so there are no margins here to double it. */}
-              <span>
-                New<span className="hidden lg:inline">&nbsp;role</span>
+      <div className={ACCESS_STICKY_TOOLBAR_CLASS}>
+        <FilterBar
+          search={{
+            value: term,
+            onChange: setTerm,
+            placeholder: 'Search roles, descriptions or the permissions they contain…',
+          }}
+          activeCount={
+            [statusFilter !== 'Active', typeFilter !== 'all', moduleFilter !== 'all'].filter(Boolean).length
+          }
+          onClear={() => {
+            setTerm('');
+            setStatusFilter('Active');
+            setTypeFilter('all');
+            setModuleFilter('all');
+          }}
+          summary={
+            <>
+              {filtered.length} of {directory.roles.length} roles
+              {/* The registry totals are context, not the answer to "did my filter work" — they wrap to a
+                  second line on a phone, so they wait for the width to say them. */}
+              <span className="hidden sm:inline">
+                {' '}
+                · the registry offers {registryTotal} grantable permissions across {modules.length} modules
               </span>
-            </Link>
-          </Button>
-        )}
-        <div className="col-span-2 grid grid-cols-3 gap-2 lg:col-span-1 lg:flex lg:w-auto">
+            </>
+          }
+          actions={
+            canManage && (
+              <Button asChild className="shrink-0">
+                <Link href={builderHref()}>
+                  <Plus className="h-4 w-4" />
+                  {/* "New role" is worth the width on a desktop row; on a phone the noun is already
+                      obvious from the screen you are on. The spacing is the Button's own `gap`, so
+                      there are no margins here to double it. */}
+                  <span>
+                    New<span className="hidden lg:inline">&nbsp;role</span>
+                  </span>
+                </Link>
+              </Button>
+            )
+          }
+        >
           <Select value={statusFilter} onValueChange={(value) => setStatusFilter(value as typeof statusFilter)}>
-            <SelectTrigger><SelectValue /></SelectTrigger>
+            <SelectTrigger aria-label="Status"><SelectValue /></SelectTrigger>
             <SelectContent>
               <SelectItem value="Active">Active</SelectItem>
               <SelectItem value="Inactive">Disabled</SelectItem>
@@ -194,7 +203,7 @@ export function RoleLibrary({
             </SelectContent>
           </Select>
           <Select value={typeFilter} onValueChange={(value) => setTypeFilter(value as typeof typeFilter)}>
-            <SelectTrigger><SelectValue /></SelectTrigger>
+            <SelectTrigger aria-label="Role type"><SelectValue /></SelectTrigger>
             <SelectContent>
               <SelectItem value="all">All types</SelectItem>
               <SelectItem value="System">System</SelectItem>
@@ -202,7 +211,7 @@ export function RoleLibrary({
             </SelectContent>
           </Select>
           <Select value={moduleFilter} onValueChange={setModuleFilter}>
-            <SelectTrigger><SelectValue placeholder="Module" /></SelectTrigger>
+            <SelectTrigger aria-label="Module"><SelectValue placeholder="Module" /></SelectTrigger>
             <SelectContent>
               <SelectItem value="all">Any module</SelectItem>
               {modules.map((moduleName) => (
@@ -210,18 +219,7 @@ export function RoleLibrary({
               ))}
             </SelectContent>
           </Select>
-        </div>
-      </div>
-
-      <p className="px-1 text-xs text-muted-foreground">
-        {filtered.length} of {directory.roles.length} roles
-        {/* The registry totals are context, not the answer to "did my filter work" — they wrap to a
-            second line on a phone, so they wait for the width to say them. */}
-        <span className="hidden sm:inline">
-          {' '}
-          · the registry offers {registryTotal} grantable permissions across {modules.length} modules
-        </span>
-      </p>
+        </FilterBar>
       </div>
 
       {filtered.length === 0 ? (
@@ -237,7 +235,7 @@ export function RoleLibrary({
         // Four across from `2xl` (1536px). Not from `xl` (1280px): four cards there are ~300px
         // wide, which is under what the four action buttons and the two-column module grid need
         // without truncating both.
-        <div className="grid auto-rows-fr gap-2.5 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
+        <div className="grid auto-rows-fr grid-cols-1 gap-2.5 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
           {filtered.map((role) => {
             const usage = roleUsage[role.name];
             const disabled = role.status === 'Inactive' || role.status === 'Disabled';
@@ -264,32 +262,21 @@ export function RoleLibrary({
                       </p>
                     </div>
                     <div className="flex shrink-0 flex-col items-end gap-1">
-                      <Badge variant="outline" className="text-[10px] text-slate-500">
-                        {role.type === 'Custom' ? 'Custom' : 'System'}
-                      </Badge>
-                      {disabled && (
-                        <Badge variant="outline" className="border-slate-300 bg-slate-100 text-[10px] text-slate-600">
-                          Disabled
-                        </Badge>
-                      )}
-                      {isProtectedRole(role.name) && (
-                        <Badge variant="outline" className="border-rose-200 bg-rose-50 text-[10px] text-rose-700">
-                          Protected
-                        </Badge>
-                      )}
+                      <Badge variant="outline">{role.type === 'Custom' ? 'Custom' : 'System'}</Badge>
+                      {disabled && <StatusBadge status="Disabled" />}
+                      {/* Not a word the shared vocabulary knows; it is the role that cannot be switched off. */}
+                      {isProtectedRole(role.name) && <StatusBadge status="Protected" tone="danger" />}
                     </div>
                   </div>
 
                   <div className="flex flex-wrap items-center gap-1.5 text-xs">
-                    <Badge variant="outline" className="border-indigo-200 bg-indigo-50 text-indigo-700">
-                      {countPermissions(role.permissions)} permissions
-                    </Badge>
-                    <Badge variant="outline" className="gap-1 border-slate-200 bg-white text-slate-600">
+                    <Badge variant="neutral">{countPermissions(role.permissions)} permissions</Badge>
+                    <Badge variant="outline" className="gap-1">
                       <UserCheck className="h-3 w-3" />
                       {usage?.total ?? 0} user{(usage?.total ?? 0) === 1 ? '' : 's'}
                     </Badge>
                     {usage && usage.additional > 0 && (
-                      <Badge variant="outline" className="text-[10px] text-muted-foreground">
+                      <Badge variant="outline">
                         {usage.base} base · {usage.additional} additional
                       </Badge>
                     )}

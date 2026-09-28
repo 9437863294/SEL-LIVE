@@ -26,6 +26,8 @@ import {
   PopoverTrigger,
 } from '@/components/ui/popover';
 import { Calendar } from '@/components/ui/calendar';
+import { TableCard } from '@/components/shared/table-card';
+import { FilterBar } from '@/components/shared/filter-bar';
 import { cn } from '@/lib/utils';
 import { format, compareDesc, startOfDay, endOfDay } from 'date-fns';
 import { useToast } from '@/hooks/use-toast';
@@ -600,11 +602,24 @@ export default function InternalTransactionPage() {
         }
       />
 
-      {/* ── Filter Card ── */}
-      <div className="mb-4 rounded-xl border border-border/50 bg-background/80 backdrop-blur-sm p-4 shadow-sm">
-        <div className="flex flex-wrap gap-3 mb-3">
+      <TableCard
+        title="Transfers"
+        count={filteredLogEntries.length}
+        noun="transfer"
+        actions={
+          <>
+            <Button size="sm" variant={viewMode === 'current' ? 'default' : 'outline'} onClick={() => setViewMode('current')}>
+              Current View
+            </Button>
+            <Button size="sm" variant={viewMode === 'dateWise' ? 'default' : 'outline'} onClick={() => setViewMode('dateWise')}>
+              Date-wise View
+            </Button>
+          </>
+        }
+        toolbar={
+          <FilterBar activeCount={dateRange ? 1 : 0} onClear={clearFilters}>
             <Select value={datePreset} onValueChange={handleDatePresetChange}>
-              <SelectTrigger className="w-[190px]">
+              <SelectTrigger>
                 <SelectValue placeholder="Quick filter" />
               </SelectTrigger>
               <SelectContent>
@@ -622,7 +637,7 @@ export default function InternalTransactionPage() {
                   id="date"
                   variant="outline"
                   className={cn(
-                    'w-full sm:w-[300px] justify-start text-left font-normal',
+                    'justify-start text-left font-normal',
                     !dateRange && 'text-muted-foreground'
                   )}
                 >
@@ -668,22 +683,9 @@ export default function InternalTransactionPage() {
                 />
               </PopoverContent>
             </Popover>
-            <Button onClick={clearFilters} variant="secondary" className="rounded-lg">Clear Filter</Button>
-          </div>
-
-          <div className="flex items-center gap-2">
-            <Button size="sm" variant={viewMode === 'current' ? 'default' : 'outline'} onClick={() => setViewMode('current')} className="rounded-full">
-              Current View
-            </Button>
-            <Button size="sm" variant={viewMode === 'dateWise' ? 'default' : 'outline'} onClick={() => setViewMode('dateWise')} className="rounded-full">
-              Date-wise View
-            </Button>
-          </div>
-        </div>
-
-        {/* ── Table ── */}
-        <div className="rounded-xl border border-border/50 bg-background/80 backdrop-blur-sm overflow-hidden shadow-sm">
-
+          </FilterBar>
+        }
+      >
           {viewMode === 'current' ? (
             <Table>
             <TableHeader>
@@ -811,11 +813,11 @@ export default function InternalTransactionPage() {
                     <TableRow key={row.date}>
                       <TableCell>{format(new Date(row.date), 'dd MMM, yyyy')}</TableCell>
                       {transferColumns.map((column) => (
-                        <TableCell key={`${row.date}-${column}`} className="text-right">
+                        <TableCell key={`${row.date}-${column}`} className="whitespace-nowrap text-right tabular-nums">
                           {row.transferTotals[column] ? formatCurrency(row.transferTotals[column]) : '-'}
                         </TableCell>
                       ))}
-                      <TableCell className="text-right font-semibold">{formatCurrency(row.total)}</TableCell>
+                      <TableCell className="whitespace-nowrap text-right font-medium tabular-nums">{formatCurrency(row.total)}</TableCell>
                     </TableRow>
                   ))
                 ) : (
@@ -831,7 +833,7 @@ export default function InternalTransactionPage() {
               </TableBody>
             </Table>
           )}
-        </div>
+      </TableCard>
       </div>
 
       <Dialog

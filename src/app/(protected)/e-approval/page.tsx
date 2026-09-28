@@ -30,6 +30,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { TableCard } from '@/components/shared/table-card';
 import { useToast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
 import {
@@ -503,16 +504,12 @@ export default function EApprovalDashboardPage() {
       />
 
       {/* ── Bottlenecks ────────────────────────────────────────────────────────────────────── */}
-      <Card>
-        <CardHeader className="px-3 py-2.5 sm:px-4">
-          <CardTitle className="flex items-center gap-1.5 text-sm">
-            <Users className="h-4 w-4" /> Who has the files you raised
-          </CardTitle>
-          <CardDescription className="text-xs">
-            Where your own requests are sitting, oldest first — so chasing goes to the right desk.
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="px-2 pb-3 sm:px-3">
+      <TableCard
+        title="Who has the files you raised"
+        icon={Users}
+        description="Where your own requests are sitting, oldest first — so chasing goes to the right desk."
+        scroll="natural"
+      >
           {showSkeletons ? (
             <Skeleton className="h-28 w-full" />
           ) : holders.length === 0 ? (
@@ -520,10 +517,9 @@ export default function EApprovalDashboardPage() {
               None of your requests are open. {permissions.canCreate && 'Raise one from Create Approval.'}
             </p>
           ) : (
-            <div className="overflow-x-auto rounded-lg border">
               <Table>
                 <TableHeader>
-                  <TableRow className="bg-muted/40">
+                  <TableRow>
                     <TableHead>Pending with</TableHead>
                     <TableHead className="text-right">Files</TableHead>
                     <TableHead className="text-right">Value</TableHead>
@@ -534,13 +530,13 @@ export default function EApprovalDashboardPage() {
                 <TableBody>
                   {holders.slice(0, 8).map((entry) => (
                     <TableRow key={entry.holder}>
-                      <TableCell className="text-xs font-medium">{entry.holder}</TableCell>
-                      <TableCell className="text-right text-xs tabular-nums">{entry.count}</TableCell>
-                      <TableCell className="text-right text-xs tabular-nums">{compactRupees(entry.value)}</TableCell>
-                      <TableCell className="text-right text-xs tabular-nums">
+                      <TableCell className="font-medium">{entry.holder}</TableCell>
+                      <TableCell className="text-right tabular-nums">{entry.count}</TableCell>
+                      <TableCell className="text-right tabular-nums">{compactRupees(entry.value)}</TableCell>
+                      <TableCell className="text-right tabular-nums">
                         {entry.oldestDays} {entry.oldestDays === 1 ? 'day' : 'days'}
                       </TableCell>
-                      <TableCell className="text-right text-xs tabular-nums">
+                      <TableCell className="text-right tabular-nums">
                         {entry.overdue > 0 ? (
                           <span className="font-semibold text-rose-700">{entry.overdue}</span>
                         ) : (
@@ -551,10 +547,8 @@ export default function EApprovalDashboardPage() {
                   ))}
                 </TableBody>
               </Table>
-            </div>
           )}
-        </CardContent>
-      </Card>
+      </TableCard>
 
       {/* ── Shortcuts ──────────────────────────────────────────────────────────────────────── */}
       <Card>

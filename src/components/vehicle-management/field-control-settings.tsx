@@ -12,8 +12,9 @@ import { VM_FORM_KEYS, VM_FORM_REGISTRY, type VMFormKey } from '@/lib/vehicle-ma
 import { VEHICLE_FIELD_CONTROL_DOC_ID, type VMFieldSetting } from './use-field-control';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { PageHeader } from '@/components/shared/page-header';
+import { TableCard } from '@/components/shared/table-card';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Switch } from '@/components/ui/switch';
@@ -157,18 +158,17 @@ export default function VehicleFieldControlSettings() {
         </div>
       )}
 
-      <Card>
-        <CardHeader className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <div>
-            <CardTitle className="flex items-center gap-2">
-              <SlidersHorizontal className="h-5 w-5 text-emerald-600" />
-              {formDef.title}
-            </CardTitle>
-            <CardDescription>{formDef.description}</CardDescription>
-          </div>
-          <div className="flex items-center gap-2">
+      <TableCard
+        title={formDef.title}
+        description={formDef.description}
+        icon={SlidersHorizontal}
+        count={fields.length}
+        noun="field"
+        scroll="natural"
+        actions={
+          <div className="flex w-full items-center gap-2 sm:w-auto">
             <Select value={activeForm} onValueChange={(value) => setActiveForm(value as VMFormKey)}>
-              <SelectTrigger className="w-64">
+              <SelectTrigger className="w-full sm:w-64">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -186,9 +186,8 @@ export default function VehicleFieldControlSettings() {
               </Button>
             )}
           </div>
-        </CardHeader>
-        <CardContent className="p-0">
-          <div className="overflow-x-auto">
+        }
+      >
             <Table>
               <TableHeader>
                 <TableRow>
@@ -228,10 +227,10 @@ export default function VehicleFieldControlSettings() {
                           onCheckedChange={(value) => update(activeForm, field.key, { visible: value })}
                         />
                       </TableCell>
-                      <TableCell className="whitespace-nowrap text-xs text-muted-foreground">
+                      <TableCell className="whitespace-nowrap font-mono">
                         {field.key}
                         {field.locked && (
-                          <Badge variant="outline" className="ml-2 gap-1 text-[10px]">
+                          <Badge variant="outline" className="ml-2 gap-1 font-sans">
                             <Lock className="h-2.5 w-2.5" /> Locked
                           </Badge>
                         )}
@@ -241,9 +240,7 @@ export default function VehicleFieldControlSettings() {
                 })}
               </TableBody>
             </Table>
-          </div>
-        </CardContent>
-      </Card>
+      </TableCard>
       <p className="text-xs text-muted-foreground">
         Locked fields are required by the form's own logic — for example, the vehicle a compliance record belongs
         to, or a workflow step's own upload rule — so they can't be hidden or made optional here, but their label

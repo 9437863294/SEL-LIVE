@@ -7,6 +7,7 @@ import { db } from '@/lib/firebase';
 import { personOptionLabel } from '@/lib/people-directory';
 import { useAuthorization } from '@/hooks/useAuthorization';
 import { useToast } from '@/hooks/use-toast';
+import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -35,6 +36,7 @@ import { TT_PERMISSION_MODULE } from './module-layout-shell';
 import { useTravelCollection, useTravelConfig, useTravelOrganization } from './use-travel-config';
 import { TravelAccessDenied, TravelEmptyState, TravelLoader, TravelSection } from './travel-ui';
 import { PageHeader } from '@/components/shared/page-header';
+import { TableCard } from '@/components/shared/table-card';
 
 const FLIGHT_CLASSES: FlightClass[] = ['None', 'Economy', 'Premium Economy', 'Business'];
 const TRAIN_CLASSES: TrainClass[] = ['None', 'SL', 'CC', '3A', 'EC', '2A', '1A'];
@@ -407,7 +409,7 @@ function EntitlementsTab({ organizationId, canEdit }: { organizationId: string; 
   if (loading) return <TravelLoader />;
 
   return (
-    <TravelSection
+    <TableCard
       title="Grade Entitlements"
       description="What each grade may spend, per city class. A row with city class 'Any' is the grade's baseline."
       actions={
@@ -426,95 +428,95 @@ function EntitlementsTab({ organizationId, canEdit }: { organizationId: string; 
       }
     >
       {records.length === 0 ? (
-        <TravelEmptyState
-          title="No entitlements configured"
-          description="Without an entitlement row, every expense for that grade needs an exception. Load the default grid to start."
-        />
-      ) : (
-        <div className="overflow-x-auto">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Grade</TableHead>
-                <TableHead>City class</TableHead>
-                <TableHead>Flight</TableHead>
-                <TableHead>Train</TableHead>
-                <TableHead>Hotel / night</TableHead>
-                <TableHead>DA / day</TableHead>
-                <TableHead>Local / day</TableHead>
-                <TableHead>Bike ₹/km</TableHead>
-                <TableHead>Car ₹/km</TableHead>
-                <TableHead>Active</TableHead>
-                {canEdit && <TableHead />}
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {records
-                .slice()
-                .sort((a, b) => a.grade.localeCompare(b.grade) || a.cityClass.localeCompare(b.cityClass))
-                .map(row => (
-                  <TableRow key={row.id}>
-                    <TableCell>
-                      <Input className="h-8 w-28" defaultValue={row.grade} disabled={!canEdit} onBlur={event => update(row.id, { grade: event.target.value })} />
-                    </TableCell>
-                    <TableCell>
-                      <Select value={row.cityClass} disabled={!canEdit} onValueChange={value => update(row.id, { cityClass: value })}>
-                        <SelectTrigger className="h-8 w-36"><SelectValue /></SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="Any">Any</SelectItem>
-                          {CITY_CLASSES.map(option => <SelectItem key={option} value={option}>{option}</SelectItem>)}
-                        </SelectContent>
-                      </Select>
-                    </TableCell>
-                    <TableCell>
-                      <Select value={row.flightClass} disabled={!canEdit} onValueChange={value => update(row.id, { flightClass: value })}>
-                        <SelectTrigger className="h-8 w-32"><SelectValue /></SelectTrigger>
-                        <SelectContent>
-                          {FLIGHT_CLASSES.map(option => <SelectItem key={option} value={option}>{option}</SelectItem>)}
-                        </SelectContent>
-                      </Select>
-                    </TableCell>
-                    <TableCell>
-                      <Select value={row.trainClass} disabled={!canEdit} onValueChange={value => update(row.id, { trainClass: value })}>
-                        <SelectTrigger className="h-8 w-20"><SelectValue /></SelectTrigger>
-                        <SelectContent>
-                          {TRAIN_CLASSES.map(option => <SelectItem key={option} value={option}>{option}</SelectItem>)}
-                        </SelectContent>
-                      </Select>
-                    </TableCell>
-                    <TableCell>
-                      <Input type="number" inputMode="decimal" className="h-8 w-24" defaultValue={row.hotelLimitPerNight} disabled={!canEdit} onBlur={event => update(row.id, { hotelLimitPerNight: Number(event.target.value) })} />
-                    </TableCell>
-                    <TableCell>
-                      <Input type="number" inputMode="decimal" className="h-8 w-24" defaultValue={row.daPerDay} disabled={!canEdit} onBlur={event => update(row.id, { daPerDay: Number(event.target.value) })} />
-                    </TableCell>
-                    <TableCell>
-                      <Input type="number" inputMode="decimal" className="h-8 w-24" defaultValue={row.localConveyancePerDay} disabled={!canEdit} onBlur={event => update(row.id, { localConveyancePerDay: Number(event.target.value) })} />
-                      <p className="text-[10px] text-muted-foreground">0 = uncapped</p>
-                    </TableCell>
-                    <TableCell>
-                      <Input type="number" inputMode="decimal" className="h-8 w-20" defaultValue={row.mileage?.bike || 0} disabled={!canEdit} onBlur={event => update(row.id, { mileage: { ...row.mileage, bike: Number(event.target.value) } })} />
-                    </TableCell>
-                    <TableCell>
-                      <Input type="number" inputMode="decimal" className="h-8 w-20" defaultValue={row.mileage?.car || 0} disabled={!canEdit} onBlur={event => update(row.id, { mileage: { ...row.mileage, car: Number(event.target.value) } })} />
-                    </TableCell>
-                    <TableCell>
-                      <Switch checked={row.active !== false} disabled={!canEdit} onCheckedChange={value => update(row.id, { active: value })} />
-                    </TableCell>
-                    {canEdit && (
-                      <TableCell>
-                        <Button variant="ghost" size="sm" className="text-rose-600" onClick={() => deleteDoc(doc(db, TT_COLLECTIONS.entitlements, row.id))}>
-                          <Trash2 className="h-3.5 w-3.5" />
-                        </Button>
-                      </TableCell>
-                    )}
-                  </TableRow>
-                ))}
-            </TableBody>
-          </Table>
+        <div className="p-4">
+          <TravelEmptyState
+            title="No entitlements configured"
+            description="Without an entitlement row, every expense for that grade needs an exception. Load the default grid to start."
+          />
         </div>
+      ) : (
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead>Grade</TableHead>
+              <TableHead>City class</TableHead>
+              <TableHead>Flight</TableHead>
+              <TableHead>Train</TableHead>
+              <TableHead>Hotel / night</TableHead>
+              <TableHead>DA / day</TableHead>
+              <TableHead>Local / day</TableHead>
+              <TableHead>Bike ₹/km</TableHead>
+              <TableHead>Car ₹/km</TableHead>
+              <TableHead>Active</TableHead>
+              {canEdit && <TableHead />}
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {records
+              .slice()
+              .sort((a, b) => a.grade.localeCompare(b.grade) || a.cityClass.localeCompare(b.cityClass))
+              .map(row => (
+                <TableRow key={row.id}>
+                  <TableCell>
+                    <Input className="h-8 w-28" defaultValue={row.grade} disabled={!canEdit} onBlur={event => update(row.id, { grade: event.target.value })} />
+                  </TableCell>
+                  <TableCell>
+                    <Select value={row.cityClass} disabled={!canEdit} onValueChange={value => update(row.id, { cityClass: value })}>
+                      <SelectTrigger className="h-8 w-36"><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="Any">Any</SelectItem>
+                        {CITY_CLASSES.map(option => <SelectItem key={option} value={option}>{option}</SelectItem>)}
+                      </SelectContent>
+                    </Select>
+                  </TableCell>
+                  <TableCell>
+                    <Select value={row.flightClass} disabled={!canEdit} onValueChange={value => update(row.id, { flightClass: value })}>
+                      <SelectTrigger className="h-8 w-32"><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        {FLIGHT_CLASSES.map(option => <SelectItem key={option} value={option}>{option}</SelectItem>)}
+                      </SelectContent>
+                    </Select>
+                  </TableCell>
+                  <TableCell>
+                    <Select value={row.trainClass} disabled={!canEdit} onValueChange={value => update(row.id, { trainClass: value })}>
+                      <SelectTrigger className="h-8 w-20"><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        {TRAIN_CLASSES.map(option => <SelectItem key={option} value={option}>{option}</SelectItem>)}
+                      </SelectContent>
+                    </Select>
+                  </TableCell>
+                  <TableCell>
+                    <Input type="number" inputMode="decimal" className="h-8 w-24" defaultValue={row.hotelLimitPerNight} disabled={!canEdit} onBlur={event => update(row.id, { hotelLimitPerNight: Number(event.target.value) })} />
+                  </TableCell>
+                  <TableCell>
+                    <Input type="number" inputMode="decimal" className="h-8 w-24" defaultValue={row.daPerDay} disabled={!canEdit} onBlur={event => update(row.id, { daPerDay: Number(event.target.value) })} />
+                  </TableCell>
+                  <TableCell>
+                    <Input type="number" inputMode="decimal" className="h-8 w-24" defaultValue={row.localConveyancePerDay} disabled={!canEdit} onBlur={event => update(row.id, { localConveyancePerDay: Number(event.target.value) })} />
+                    <p className="text-[10px] text-muted-foreground">0 = uncapped</p>
+                  </TableCell>
+                  <TableCell>
+                    <Input type="number" inputMode="decimal" className="h-8 w-20" defaultValue={row.mileage?.bike || 0} disabled={!canEdit} onBlur={event => update(row.id, { mileage: { ...row.mileage, bike: Number(event.target.value) } })} />
+                  </TableCell>
+                  <TableCell>
+                    <Input type="number" inputMode="decimal" className="h-8 w-20" defaultValue={row.mileage?.car || 0} disabled={!canEdit} onBlur={event => update(row.id, { mileage: { ...row.mileage, car: Number(event.target.value) } })} />
+                  </TableCell>
+                  <TableCell>
+                    <Switch checked={row.active !== false} disabled={!canEdit} onCheckedChange={value => update(row.id, { active: value })} />
+                  </TableCell>
+                  {canEdit && (
+                    <TableCell>
+                      <Button variant="ghost" size="sm" className="text-rose-600" onClick={() => deleteDoc(doc(db, TT_COLLECTIONS.entitlements, row.id))}>
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </Button>
+                    </TableCell>
+                  )}
+                </TableRow>
+              ))}
+          </TableBody>
+        </Table>
       )}
-    </TravelSection>
+    </TableCard>
   );
 }
 
@@ -530,7 +532,7 @@ function GradesTab({ organizationId, canEdit }: { organizationId: string; canEdi
   if (loading) return <TravelLoader />;
 
   return (
-    <TravelSection
+    <TableCard
       title="Designation → Grade"
       description="The Employee Master has no grade field, so travel grade is derived from designation. Add an Employee ID to override one person."
       actions={
@@ -547,12 +549,13 @@ function GradesTab({ organizationId, canEdit }: { organizationId: string; canEdi
       }
     >
       {records.length === 0 ? (
-        <TravelEmptyState
-          title="No grade mappings"
-          description="Until a designation is mapped, every employee resolves to the default grade set under General."
-        />
+        <div className="p-4">
+          <TravelEmptyState
+            title="No grade mappings"
+            description="Until a designation is mapped, every employee resolves to the default grade set under General."
+          />
+        </div>
       ) : (
-        <div className="overflow-x-auto">
         <Table>
           <TableHeader>
             <TableRow>
@@ -585,9 +588,8 @@ function GradesTab({ organizationId, canEdit }: { organizationId: string; canEdi
             ))}
           </TableBody>
         </Table>
-        </div>
       )}
-    </TravelSection>
+    </TableCard>
   );
 }
 
@@ -603,7 +605,7 @@ function CitiesTab({ organizationId, canEdit }: { organizationId: string; canEdi
   if (loading) return <TravelLoader />;
 
   return (
-    <TravelSection
+    <TableCard
       title="City Classification"
       description="Hotel and DA caps follow the city, not just the grade. An unlisted city falls back to the default class under General — never to a higher one."
       actions={
@@ -620,9 +622,10 @@ function CitiesTab({ organizationId, canEdit }: { organizationId: string; canEdi
       }
     >
       {records.length === 0 ? (
-        <TravelEmptyState title="No cities classified" description="Add the cities and project sites your employees travel to." />
+        <div className="p-4">
+          <TravelEmptyState title="No cities classified" description="Add the cities and project sites your employees travel to." />
+        </div>
       ) : (
-        <div className="overflow-x-auto">
         <Table>
           <TableHeader>
             <TableRow>
@@ -667,9 +670,8 @@ function CitiesTab({ organizationId, canEdit }: { organizationId: string; canEdi
               ))}
           </TableBody>
         </Table>
-        </div>
       )}
-    </TravelSection>
+    </TableCard>
   );
 }
 
@@ -773,9 +775,9 @@ function ApprovalMatrixTab({ organizationId, canEdit }: { organizationId: string
                   <div className="flex flex-wrap items-center gap-2 border-t border-slate-100 px-3 py-2">
                     <span className="text-xs text-muted-foreground">Chain:</span>
                     {(rule.stages || []).map((stage, index) => (
-                      <span key={stage.id} className="rounded border border-slate-200 bg-slate-50 px-1.5 py-0.5 text-xs">
-                        {index + 1}. {stage.name} <span className="text-muted-foreground">({stage.assignmentType})</span>
-                      </span>
+                      <Badge key={stage.id} variant="neutral">
+                        {index + 1}. {stage.name} <span className="ml-1 font-normal text-muted-foreground">({stage.assignmentType})</span>
+                      </Badge>
                     ))}
                     <div className="ml-auto flex gap-1">
                       <Button variant="ghost" size="sm" className="h-7 text-xs" onClick={() => setExpanded(expanded === rule.id ? null : rule.id)}>
@@ -918,7 +920,7 @@ function ApprovalMatrixTab({ organizationId, canEdit }: { organizationId: string
       <TravelSection title="Tour Type Reference" description="Rules can be narrowed to specific tour types; leave empty to apply to all.">
         <div className="flex flex-wrap gap-1.5">
           {TOUR_TYPES.map(type => (
-            <span key={type} className="rounded border border-slate-200 bg-slate-50 px-2 py-0.5 text-xs text-slate-600">{type}</span>
+            <Badge key={type} variant="neutral">{type}</Badge>
           ))}
         </div>
       </TravelSection>

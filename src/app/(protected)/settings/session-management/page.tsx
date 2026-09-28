@@ -27,7 +27,6 @@ import {
   Navigation,
   RefreshCw,
   Save,
-  Search,
   Settings2,
   Shield,
   ShieldAlert,
@@ -36,7 +35,6 @@ import {
   Tablet,
   UserX,
   Users,
-  X,
 } from 'lucide-react';
 import { db } from '@/lib/firebase';
 import { useAuth } from '@/components/auth/AuthProvider';
@@ -83,6 +81,9 @@ import {
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
 import { DataList, type ListColumn } from '@/components/shared/data-list';
+import { FilterBar } from '@/components/shared/filter-bar';
+import { StatusBadge } from '@/components/shared/status-badge';
+import { TableCard } from '@/components/shared/table-card';
 import {
   distanceKm,
   loadUserGpsFixes,
@@ -162,10 +163,11 @@ function avatarGradient(name: string): string {
   return AVATAR_PALETTE[code % AVATAR_PALETTE.length];
 }
 
-const PRESENCE_META: Record<SessionPresence, { label: string; dot: string; chip: string }> = {
-  online: { label: 'Active now', dot: 'bg-emerald-500', chip: 'border-emerald-200 bg-emerald-50 text-emerald-700' },
-  idle: { label: 'Idle', dot: 'bg-amber-400', chip: 'border-amber-200 bg-amber-50 text-amber-700' },
-  stale: { label: 'Stale', dot: 'bg-slate-400', chip: 'border-slate-200 bg-slate-100 text-slate-600' },
+// The status word ('online' / 'idle' / 'stale') picks the badge tone; this is only its label.
+const PRESENCE_META: Record<SessionPresence, { label: string }> = {
+  online: { label: 'Active now' },
+  idle: { label: 'Idle' },
+  stale: { label: 'Stale' },
 };
 
 const REASON_LABEL: Record<string, string> = {
@@ -226,16 +228,6 @@ function CopyButton({ text }: { text: string }) {
   );
 }
 
-function PresenceChip({ presence }: { presence: SessionPresence }) {
-  const meta = PRESENCE_META[presence];
-  return (
-    <span className={cn('inline-flex items-center gap-1 rounded-full border px-1.5 py-0 text-[10px] font-semibold', meta.chip)}>
-      <span className={cn('h-1.5 w-1.5 rounded-full', meta.dot, presence === 'online' && 'animate-pulse')} />
-      {meta.label}
-    </span>
-  );
-}
-
 // ─── table columns ───────────────────────────────────────────────────────────
 
 const cellNowrap = 'whitespace-nowrap';
@@ -267,7 +259,7 @@ function GpsCell({
       <a
         href="/settings/location-tracking"
         title="GPS is protected by an email OTP. Unlock it in Location Tracking, then refresh this page."
-        className="inline-flex items-center gap-1 text-xs text-slate-500 hover:text-indigo-600 hover:underline"
+        className="inline-flex items-center gap-1 text-slate-500 hover:text-indigo-600 hover:underline"
       >
         <Lock className="h-3 w-3" /> Unlock
       </a>
@@ -280,7 +272,7 @@ function GpsCell({
     hasFix && ipLat != null && ipLon != null ? distanceKm(ipLat, ipLon, fix.latitude!, fix.longitude!) : 0;
 
   return (
-    <span className="inline-flex items-center gap-1.5 text-xs">
+    <span className="inline-flex items-center gap-1.5">
       {hasFix ? (
         <a
           href={`https://www.google.com/maps?q=${fix.latitude},${fix.longitude}`}
@@ -297,13 +289,12 @@ function GpsCell({
         <span className="text-slate-400">{fix?.enabled ? 'No fix yet' : 'Tracking off'}</span>
       )}
       {mismatchKm > IP_GPS_MISMATCH_KM && (
-        <Badge
-          variant="outline"
+        <StatusBadge
+          tone="warning"
           title="The IP address geolocates far from the device's GPS — a VPN, proxy, or carrier routing. Worth a look, not proof of anything."
-          className="border-amber-200 bg-amber-50 px-1.5 py-0 text-[10px] text-amber-700"
         >
           IP ≠ GPS · {Math.round(mismatchKm).toLocaleString()} km
-        </Badge>
+        </StatusBadge>
       )}
       {ctx.canLocate && fix?.enabled && (
         <button
@@ -331,7 +322,7 @@ function UserCell({ name, badge }: { name: string; badge?: React.ReactNode }) {
       >
         {getInitials(name)}
       </div>
-      <span className="font-semibold text-slate-800">{name || 'Unknown User'}</span>
+      <span className="font-medium">{name || 'Unknown User'}</span>
       {badge}
     </div>
   );
@@ -416,11 +407,11 @@ function sessionColumns({
       mobile: 'title',
       className: cellNowrap,
       cell: (s) => (
-        <span className="inline-flex items-center gap-1.5 font-medium text-slate-700">
+        <span className="inline-flex items-center gap-1.5 font-medium">
           <DeviceIcon type={s.deviceType} size="sm" />
           {s.deviceLabel}
           {s.id === currentSessionId && (
-            <Badge className="border-indigo-200 bg-indigo-100 px-1.5 py-0 text-[10px] font-semibold text-indigo-700">
+            <Badge variant="neutral" className="shrink-0">
               This device
             </Badge>
           )}
@@ -434,17 +425,11 @@ function sessionColumns({
       cell: (s) =>
         s.isActive ? (
           <span className="inline-flex items-center gap-1">
-            <PresenceChip presence={presenceOf(s)} />
-            {isOverAge(s) && (
-              <Badge variant="outline" className="border-rose-200 bg-rose-50 px-1.5 py-0 text-[10px] text-rose-600">
-                Over max age
-              </Badge>
-            )}
+            <StatusBadge status={presenceOf(s)} dot>{PRESENCE_META[presenceOf(s)].label}</StatusBadge>
+            {isOverAge(s) && <StatusBadge tone="danger">Over max age</StatusBadge>}
           </span>
         ) : (
-          <Badge variant="outline" className="px-1.5 py-0 text-[10px] font-semibold text-slate-500">
-            {REASON_LABEL[s.terminatedBy ?? ''] ?? 'Ended'}
-          </Badge>
+          <StatusBadge status={REASON_LABEL[s.terminatedBy ?? ''] ?? 'Ended'} />
         ),
     },
     {
@@ -452,7 +437,7 @@ function sessionColumns({
       className: cellNowrap,
       cell: (s) =>
         canSeeNetwork(s) && s.ipAddress ? (
-          <span className="inline-flex items-center font-mono text-xs text-slate-600">
+          <span className="inline-flex items-center font-mono">
             {s.ipAddress}
             <CopyButton text={s.ipAddress} />
           </span>
@@ -467,7 +452,7 @@ function sessionColumns({
         const flag = countryFlag(s.countryCode ?? '');
         const mapsUrl = s.lat && s.lon ? `https://www.google.com/maps?q=${s.lat},${s.lon}` : null;
         return (
-          <span className="inline-flex items-center gap-1 text-xs text-slate-600" title={[s.city, s.region, s.country].filter(Boolean).join(', ')}>
+          <span className="inline-flex items-center gap-1" title={[s.city, s.region, s.country].filter(Boolean).join(', ')}>
             {flag && <span>{flag}</span>}
             {loc}
             {mapsUrl && (
@@ -482,28 +467,28 @@ function sessionColumns({
     {
       header: 'ISP',
       className: `${cellNowrap} hidden lg:table-cell`,
-      cell: (s) => (canSeeNetwork(s) && s.isp ? <span className="text-xs text-slate-600">{s.isp}</span> : '—'),
+      cell: (s) => (canSeeNetwork(s) && s.isp ? s.isp : '—'),
     },
     {
       header: 'Started',
       className: cellNowrap,
-      cell: (s) => <span className="text-xs text-slate-600" title={localDateTime(s.startedAt)}>{timeAgo(s.startedAt)}</span>,
+      cell: (s) => <span title={localDateTime(s.startedAt)}>{timeAgo(s.startedAt)}</span>,
     },
     tab === 'active'
       ? {
           header: 'Last Active',
           className: cellNowrap,
-          cell: (s) => <span className="text-xs text-slate-600" title={localDateTime(s.lastActiveAt)}>{timeAgo(s.lastActiveAt)}</span>,
+          cell: (s) => <span title={localDateTime(s.lastActiveAt)}>{timeAgo(s.lastActiveAt)}</span>,
         }
       : {
           header: 'Ended',
           className: cellNowrap,
-          cell: (s) => <span className="text-xs text-slate-600">{localDateTime(s.terminatedAt)}</span>,
+          cell: (s) => localDateTime(s.terminatedAt),
         },
     {
       header: 'Duration',
-      className: cellNowrap,
-      cell: (s) => <span className="text-xs tabular-nums text-slate-600">{sessionDuration(s.startedAt, s.terminatedAt, s.isActive)}</span>,
+      className: `${cellNowrap} tabular-nums`,
+      cell: (s) => sessionDuration(s.startedAt, s.terminatedAt, s.isActive),
     },
   );
 
@@ -513,11 +498,11 @@ function sessionColumns({
       className: cellNowrap,
       cell: (s) =>
         s.terminatedByUserName ? (
-          <span className="inline-flex items-center gap-1 text-xs text-rose-600">
+          <span className="inline-flex items-center gap-1 text-rose-600">
             <AlertTriangle className="h-3 w-3" /> {s.terminatedByUserName}
           </span>
         ) : (
-          <span className="text-xs capitalize text-muted-foreground">{s.terminatedBy ?? '—'}</span>
+          <span className="capitalize text-muted-foreground">{s.terminatedBy ?? '—'}</span>
         ),
     });
   } else {
@@ -640,7 +625,7 @@ function userGroupColumns({
           <UserCell
             name={g.userName}
             badge={g.userId === currentUserId && (
-              <Badge className="border-indigo-200 bg-indigo-100 px-1.5 py-0 text-[10px] font-semibold text-indigo-700">You</Badge>
+              <Badge variant="neutral" className="shrink-0">You</Badge>
             )}
           />
         </span>
@@ -655,12 +640,17 @@ function userGroupColumns({
     {
       header: 'Role',
       className: cellNowrap,
-      cell: (g) => (g.userRole ? <Badge variant="outline" className="py-0 text-[10px] text-slate-500">{g.userRole}</Badge> : '—'),
+      cell: (g) => (g.userRole ? <Badge variant="outline">{g.userRole}</Badge> : '—'),
     },
   );
 
   if (tab === 'active') {
-    columns.push({ header: 'Status', mobile: 'aside', className: cellNowrap, cell: (g) => <PresenceChip presence={g.presence} /> });
+    columns.push({
+      header: 'Status',
+      mobile: 'aside',
+      className: cellNowrap,
+      cell: (g) => <StatusBadge status={g.presence} dot>{PRESENCE_META[g.presence].label}</StatusBadge>,
+    });
     if (gps) {
       columns.push({
         header: 'GPS',
@@ -713,9 +703,9 @@ function userGroupColumns({
         return (
           <span className="inline-flex items-center gap-1.5">
             {Object.entries(devices).map(([type, n]) => (
-              <span key={type} className="inline-flex items-center gap-1 rounded-md bg-slate-100 px-1.5 py-0.5 text-xs text-slate-600">
+              <Badge key={type} variant="neutral" className="gap-1">
                 <DeviceIcon type={type} size="sm" /> {n}
-              </span>
+              </Badge>
             ))}
           </span>
         );
@@ -725,7 +715,7 @@ function userGroupColumns({
       header: tab === 'active' ? 'Last Active' : 'Last Ended',
       className: cellNowrap,
       cell: (g) => (
-        <span className="text-xs text-slate-600" title={g.latestMs ? new Date(g.latestMs).toLocaleString() : undefined}>
+        <span title={g.latestMs ? new Date(g.latestMs).toLocaleString() : undefined}>
           {g.latestMs ? timeAgo({ seconds: g.latestMs / 1000 }) : '—'}
         </span>
       ),
@@ -1437,7 +1427,7 @@ export default function SessionManagementPage() {
         </CardContent>
       </Card>
 
-      {/* ── Tab + Search bar ────────────────────────────────────────────── */}
+      {/* ── Tabs ─────────────────────────────────────────────────────────── */}
       <div className="flex flex-wrap items-center gap-2">
         <div className="flex items-center gap-1 rounded-xl border bg-white/70 p-1 shadow-sm">
           {tabs.filter((t) => t.show).map((t) => (
@@ -1455,201 +1445,204 @@ export default function SessionManagementPage() {
             </button>
           ))}
         </div>
-
-        {tab !== 'policy' && (
-          <>
-            <div className="relative flex-1 min-w-[220px] max-w-md">
-              <Search className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
-              <Input
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                placeholder={isAdmin ? 'Search user, IP, location, device…' : 'Search device, location…'}
-                className="pl-8 bg-white/85 h-9 text-sm"
-              />
-              {search && (
-                <button onClick={() => setSearch('')} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground">
-                  <X className="h-3.5 w-3.5" />
-                </button>
-              )}
-            </div>
-
-            {tab === 'active' && (
-              <Select value={presenceFilter} onValueChange={(v) => setPresenceFilter(v as PresenceFilter)}>
-                <SelectTrigger className="h-9 w-[140px] bg-white/85 text-xs"><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All states</SelectItem>
-                  <SelectItem value="online">Active now</SelectItem>
-                  <SelectItem value="idle">Idle</SelectItem>
-                  <SelectItem value="stale">Stale</SelectItem>
-                </SelectContent>
-              </Select>
-            )}
-            {tab === 'history' && (
-              <Select value={reasonFilter} onValueChange={setReasonFilter}>
-                <SelectTrigger className="h-9 w-[150px] bg-white/85 text-xs"><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All endings</SelectItem>
-                  <SelectItem value="user">Signed out</SelectItem>
-                  <SelectItem value="admin">Terminated</SelectItem>
-                  <SelectItem value="timeout">Expired</SelectItem>
-                  <SelectItem value="policy">Ended by policy</SelectItem>
-                </SelectContent>
-              </Select>
-            )}
-            {(
-              <Select value={deviceFilter} onValueChange={(v) => setDeviceFilter(v as DeviceFilter)}>
-                <SelectTrigger className="h-9 w-[130px] bg-white/85 text-xs"><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All devices</SelectItem>
-                  <SelectItem value="Desktop">Desktop</SelectItem>
-                  <SelectItem value="Mobile">Mobile</SelectItem>
-                  <SelectItem value="Tablet">Tablet</SelectItem>
-                </SelectContent>
-              </Select>
-            )}
-
-            {displayRows.length > 0 && (
-              <Button
-                variant="outline"
-                size="sm"
-                className="h-9 gap-1.5 bg-white/85 text-xs"
-                onClick={() => downloadCsv(`sessions-${tab}-${new Date().toISOString().slice(0, 10)}.csv`, displayRows, nowMs, policy)}
-              >
-                <Download className="h-3.5 w-3.5" /> Export
-              </Button>
-            )}
-
-            {search && (
-              <span className="text-xs text-muted-foreground">
-                {displayRows.length} result{displayRows.length !== 1 ? 's' : ''}
-              </span>
-            )}
-          </>
-        )}
       </div>
-
-      {/* ── Admin control bar ───────────────────────────────────────────── */}
-      {tab === 'active' && !isLoading && (selectableRows.length > 0 || (canTerminate && activeSessions.length > 0)) && (
-        <div className="flex flex-wrap items-center gap-2 rounded-xl border border-indigo-100 bg-indigo-50/60 px-3 py-2 text-xs text-indigo-800">
-          {selectableRows.length > 0 && (
-            <label className="flex cursor-pointer items-center gap-2 font-medium">
-              <Checkbox checked={allVisibleSelected} onCheckedChange={toggleSelectAll} aria-label="Select all" />
-              {selected.size > 0 ? `${selected.size} selected` : 'Select all'}
-            </label>
-          )}
-          {selected.size > 0 && (
-            <>
-              <Button
-                size="sm"
-                onClick={() => setPending({ kind: 'terminate', sessions: selectedSessions })}
-                className="h-7 gap-1.5 bg-rose-600 text-xs text-white hover:bg-rose-700"
-              >
-                <LogOut className="h-3.5 w-3.5" /> Sign out selected
-              </Button>
-              <Button size="sm" variant="ghost" onClick={() => setSelected(new Set())} className="h-7 text-xs">
-                Clear
-              </Button>
-            </>
-          )}
-          {canTerminate && (
-            <div className="ml-auto flex flex-wrap gap-2">
-              <Button
-                size="sm"
-                variant="outline"
-                disabled={summary.sweepable.length === 0}
-                onClick={() => setPending({ kind: 'sweep', sessions: summary.sweepable })}
-                className="h-7 gap-1.5 bg-white text-xs"
-              >
-                <Sparkles className="h-3.5 w-3.5 text-amber-500" /> Clean up stale ({summary.sweepable.length})
-              </Button>
-              <Button
-                size="sm"
-                variant="outline"
-                disabled={activeSessions.filter((s) => s.id !== currentSessionId).length === 0}
-                onClick={() => setPending({ kind: 'terminate-all', sessions: activeSessions.filter((s) => s.id !== currentSessionId) })}
-                className="h-7 gap-1.5 border-rose-200 bg-white text-xs text-rose-600 hover:bg-rose-50 hover:text-rose-700"
-              >
-                <ShieldAlert className="h-3.5 w-3.5" /> Sign out everyone
-              </Button>
-            </div>
-          )}
-        </div>
-      )}
 
       {/* ── Body ────────────────────────────────────────────────────────── */}
       {tab === 'policy' ? (
         <PolicyPanel policy={policy} canEdit={canEditPolicy} onSave={savePolicy} />
-      ) : isLoading ? (
-        <div className="space-y-3">
-          {[1, 2, 3].map((i) => <Skeleton key={i} className="h-36 w-full rounded-xl" />)}
-        </div>
-      ) : userGroups.length === 0 ? (
-        <EmptyState
-          icon={tab === 'active'
-            ? <Globe className="h-12 w-12 text-muted-foreground/30" />
-            : <History className="h-12 w-12 text-muted-foreground/30" />}
-          title={tab === 'active' ? 'No active sessions' : 'No session history'}
-          body={tab === 'active'
-            ? (search || presenceFilter !== 'all' || deviceFilter !== 'all' ? 'No sessions match these filters.' : 'There are currently no active login sessions.')
-            : 'Ended sessions will appear here.'}
-        />
       ) : (
-        <div className="space-y-3">
-          <div className="flex items-center justify-between gap-2 px-1 text-xs text-muted-foreground">
-            <span>
-              {userGroups.length} user{userGroups.length !== 1 ? 's' : ''} · {displayRows.length} session{displayRows.length !== 1 ? 's' : ''} — click a user to see their sessions
-            </span>
-            <button
-              type="button"
-              onClick={() => setExpandedUsers(allExpanded ? new Set() : new Set(userGroups.map((g) => g.id)))}
-              className="font-medium text-indigo-600 hover:underline"
-            >
-              {allExpanded ? 'Collapse all' : 'Expand all'}
-            </button>
-          </div>
-          <div className="rounded-xl border bg-white/90 shadow-sm">
-            <DataList
-              dense
-              rows={userGroups}
-              columns={userColumns}
-              maxHeightClassName="sm:max-h-[75vh]"
-              onRowClick={toggleExpand}
-              expandedIds={expandedUsers}
-              rowClassName={(g) =>
-                g.sessions.some((s) => selected.has(s.id))
-                  ? 'bg-rose-50/70'
-                  : g.userId === user.id
-                    ? 'bg-indigo-50/60'
-                    : undefined
-              }
-              renderExpanded={(g) => (
-                <div className="rounded-lg border border-indigo-100 bg-indigo-50/30 p-2 sm:ml-6">
-                  <DataList
-                    dense
-                    rows={g.sessions}
-                    columns={columns}
-                    rowClassName={(s) =>
-                      selected.has(s.id)
-                        ? 'bg-rose-50/70'
-                        : s.id === currentSessionId
-                          ? 'bg-indigo-50/60'
-                          : !s.isActive
-                            ? 'text-slate-500'
-                            : undefined
-                    }
-                  />
+        <TableCard
+          title={tab === 'active' ? 'Active sessions' : 'Session history'}
+          count={isLoading ? undefined : userGroups.length}
+          noun="user"
+          description={
+            !isLoading && userGroups.length > 0
+              ? `${displayRows.length} session${displayRows.length !== 1 ? 's' : ''} — click a user to see their sessions`
+              : undefined
+          }
+          actions={
+            !isLoading && userGroups.length > 0 ? (
+              <button
+                type="button"
+                onClick={() => setExpandedUsers(allExpanded ? new Set() : new Set(userGroups.map((g) => g.id)))}
+                className="text-xs font-medium text-indigo-600 hover:underline"
+              >
+                {allExpanded ? 'Collapse all' : 'Expand all'}
+              </button>
+            ) : undefined
+          }
+          toolbar={
+            <div className="space-y-2">
+              <FilterBar
+                search={{
+                  value: search,
+                  onChange: setSearch,
+                  placeholder: isAdmin ? 'Search user, IP, location, device…' : 'Search device, location…',
+                }}
+                activeCount={
+                  (tab === 'active' && presenceFilter !== 'all' ? 1 : 0) +
+                  (tab === 'history' && reasonFilter !== 'all' ? 1 : 0) +
+                  (deviceFilter !== 'all' ? 1 : 0)
+                }
+                onClear={() => { setSearch(''); setPresenceFilter('all'); setReasonFilter('all'); setDeviceFilter('all'); }}
+                summary={search ? `${displayRows.length} result${displayRows.length !== 1 ? 's' : ''}` : undefined}
+                actions={
+                  displayRows.length > 0 ? (
+                    <Button
+                      variant="outline"
+                      className="gap-1.5"
+                      onClick={() => downloadCsv(`sessions-${tab}-${new Date().toISOString().slice(0, 10)}.csv`, displayRows, nowMs, policy)}
+                    >
+                      <Download className="h-3.5 w-3.5" /> Export
+                    </Button>
+                  ) : undefined
+                }
+              >
+                {tab === 'active' && (
+                  <Select value={presenceFilter} onValueChange={(v) => setPresenceFilter(v as PresenceFilter)}>
+                    <SelectTrigger aria-label="Status"><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">All states</SelectItem>
+                      <SelectItem value="online">Active now</SelectItem>
+                      <SelectItem value="idle">Idle</SelectItem>
+                      <SelectItem value="stale">Stale</SelectItem>
+                    </SelectContent>
+                  </Select>
+                )}
+                {tab === 'history' && (
+                  <Select value={reasonFilter} onValueChange={setReasonFilter}>
+                    <SelectTrigger aria-label="Ending"><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">All endings</SelectItem>
+                      <SelectItem value="user">Signed out</SelectItem>
+                      <SelectItem value="admin">Terminated</SelectItem>
+                      <SelectItem value="timeout">Expired</SelectItem>
+                      <SelectItem value="policy">Ended by policy</SelectItem>
+                    </SelectContent>
+                  </Select>
+                )}
+                <Select value={deviceFilter} onValueChange={(v) => setDeviceFilter(v as DeviceFilter)}>
+                  <SelectTrigger aria-label="Device"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All devices</SelectItem>
+                    <SelectItem value="Desktop">Desktop</SelectItem>
+                    <SelectItem value="Mobile">Mobile</SelectItem>
+                    <SelectItem value="Tablet">Tablet</SelectItem>
+                  </SelectContent>
+                </Select>
+              </FilterBar>
+
+              {/* ── Admin control bar ─────────────────────────────────────── */}
+              {tab === 'active' && !isLoading && (selectableRows.length > 0 || (canTerminate && activeSessions.length > 0)) && (
+                <div className="flex flex-wrap items-center gap-2 rounded-xl border border-indigo-100 bg-indigo-50/60 px-3 py-2 text-xs text-indigo-800">
+                  {selectableRows.length > 0 && (
+                    <label className="flex cursor-pointer items-center gap-2 font-medium">
+                      <Checkbox checked={allVisibleSelected} onCheckedChange={toggleSelectAll} aria-label="Select all" />
+                      {selected.size > 0 ? `${selected.size} selected` : 'Select all'}
+                    </label>
+                  )}
+                  {selected.size > 0 && (
+                    <>
+                      <Button
+                        size="sm"
+                        onClick={() => setPending({ kind: 'terminate', sessions: selectedSessions })}
+                        className="h-7 gap-1.5 bg-rose-600 text-xs text-white hover:bg-rose-700"
+                      >
+                        <LogOut className="h-3.5 w-3.5" /> Sign out selected
+                      </Button>
+                      <Button size="sm" variant="ghost" onClick={() => setSelected(new Set())} className="h-7 text-xs">
+                        Clear
+                      </Button>
+                    </>
+                  )}
+                  {canTerminate && (
+                    <div className="ml-auto flex flex-wrap gap-2">
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        disabled={summary.sweepable.length === 0}
+                        onClick={() => setPending({ kind: 'sweep', sessions: summary.sweepable })}
+                        className="h-7 gap-1.5 bg-white text-xs"
+                      >
+                        <Sparkles className="h-3.5 w-3.5 text-amber-500" /> Clean up stale ({summary.sweepable.length})
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        disabled={activeSessions.filter((s) => s.id !== currentSessionId).length === 0}
+                        onClick={() => setPending({ kind: 'terminate-all', sessions: activeSessions.filter((s) => s.id !== currentSessionId) })}
+                        className="h-7 gap-1.5 border-rose-200 bg-white text-xs text-rose-600 hover:bg-rose-50 hover:text-rose-700"
+                      >
+                        <ShieldAlert className="h-3.5 w-3.5" /> Sign out everyone
+                      </Button>
+                    </div>
+                  )}
                 </div>
               )}
+            </div>
+          }
+          footer={
+            !isLoading && userGroups.length > 0 && tab === 'history' && historySessions.length >= historyLimit ? (
+              <div className="flex justify-center">
+                <Button variant="outline" size="sm" className="bg-white" onClick={() => setHistoryLimit((n) => n + HISTORY_PAGE)}>
+                  Load more history
+                </Button>
+              </div>
+            ) : undefined
+          }
+        >
+          {isLoading ? (
+            <div className="space-y-3 p-4">
+              {[1, 2, 3].map((i) => <Skeleton key={i} className="h-36 w-full rounded-xl" />)}
+            </div>
+          ) : userGroups.length === 0 ? (
+            <EmptyState
+              icon={tab === 'active'
+                ? <Globe className="h-12 w-12 text-muted-foreground/30" />
+                : <History className="h-12 w-12 text-muted-foreground/30" />}
+              title={tab === 'active' ? 'No active sessions' : 'No session history'}
+              body={tab === 'active'
+                ? (search || presenceFilter !== 'all' || deviceFilter !== 'all' ? 'No sessions match these filters.' : 'There are currently no active login sessions.')
+                : 'Ended sessions will appear here.'}
             />
-          </div>
-          {tab === 'history' && historySessions.length >= historyLimit && (
-            <div className="flex justify-center pt-1">
-              <Button variant="outline" size="sm" className="bg-white" onClick={() => setHistoryLimit((n) => n + HISTORY_PAGE)}>
-                Load more history
-              </Button>
+          ) : (
+            <div className="p-3 sm:p-0">
+              <DataList
+                dense
+                frameless
+                rows={userGroups}
+                columns={userColumns}
+                onRowClick={toggleExpand}
+                expandedIds={expandedUsers}
+                rowClassName={(g) =>
+                  g.sessions.some((s) => selected.has(s.id))
+                    ? 'bg-rose-50/70'
+                    : g.userId === user.id
+                      ? 'bg-indigo-50/60'
+                      : undefined
+                }
+                renderExpanded={(g) => (
+                  <div className="rounded-lg border border-indigo-100 bg-indigo-50/30 p-2 sm:ml-6">
+                    <DataList
+                      dense
+                      rows={g.sessions}
+                      columns={columns}
+                      rowClassName={(s) =>
+                        selected.has(s.id)
+                          ? 'bg-rose-50/70'
+                          : s.id === currentSessionId
+                            ? 'bg-indigo-50/60'
+                            : !s.isActive
+                              ? 'text-slate-500'
+                              : undefined
+                      }
+                    />
+                  </div>
+                )}
+              />
             </div>
           )}
-        </div>
+        </TableCard>
       )}
 
       {/* ── Confirm dialog ─────────────────────────────────────────────── */}
@@ -1712,12 +1705,10 @@ export default function SessionManagementPage() {
 
 function EmptyState({ icon, title, body }: { icon: React.ReactNode; title: string; body: string }) {
   return (
-    <Card>
-      <CardContent className="flex flex-col items-center justify-center gap-3 py-20 text-center">
-        {icon}
-        <p className="text-sm font-medium text-slate-600">{title}</p>
-        <p className="text-xs text-muted-foreground">{body}</p>
-      </CardContent>
-    </Card>
+    <div className="flex flex-col items-center justify-center gap-3 py-20 text-center">
+      {icon}
+      <p className="text-sm font-medium text-slate-600">{title}</p>
+      <p className="text-xs text-muted-foreground">{body}</p>
+    </div>
   );
 }

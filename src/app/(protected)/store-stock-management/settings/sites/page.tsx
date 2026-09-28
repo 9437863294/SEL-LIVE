@@ -30,7 +30,7 @@ import {
 } from '@/components/ui/alert-dialog';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent } from '@/components/ui/card';
 import {
   Dialog,
   DialogClose,
@@ -43,7 +43,10 @@ import {
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { FilterBar } from '@/components/shared/filter-bar';
 import { PageHeader } from '@/components/shared/page-header';
+import { StatusBadge } from '@/components/shared/status-badge';
+import { TableCard } from '@/components/shared/table-card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 
@@ -230,26 +233,21 @@ export default function ManageSitesPage() {
         </Alert>
       )}
 
-      <Card className="border-slate-200/80 shadow-sm">
-        <CardHeader className="gap-4 lg:flex-row lg:items-center lg:justify-between">
-          <div>
-            <CardTitle>Sites by project</CardTitle>
-            <CardDescription>Review, add, edit, or remove sites without leaving the project group.</CardDescription>
-          </div>
-          <div className="relative w-full lg:w-80">
-            <Search className="absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
-            <Input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search project, site, or location…" className="pl-9" />
-          </div>
-        </CardHeader>
-        <CardContent className="space-y-4">
+      <TableCard
+        title="Sites by project"
+        description="Review, add, edit, or remove sites without leaving the project group."
+        toolbar={<FilterBar search={{ value: search, onChange: setSearch, placeholder: 'Search project, site, or location…' }} />}
+        scroll="natural"
+      >
+        <div className="space-y-4 p-4 sm:p-5">
           {isLoading ? <SitesSkeleton /> : filteredGroups.map((group) => (
             <section key={group.project.id} className="overflow-hidden rounded-xl border border-slate-200/80">
               <div className="flex flex-col gap-3 bg-slate-50/80 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
                 <div className="min-w-0">
                   <div className="flex flex-wrap items-center gap-2">
                     <h3 className="truncate text-[15px] font-semibold leading-snug tracking-tight text-slate-900 sm:text-base">{group.project.projectName || 'Unnamed project'}</h3>
-                    <Badge variant={group.project.status === 'Active' ? 'default' : 'secondary'}>{group.project.status || 'Unknown'}</Badge>
-                    <Badge variant="outline">{group.sites.length} site{group.sites.length === 1 ? '' : 's'}</Badge>
+                    <StatusBadge status={group.project.status || 'Unknown'} />
+                    <Badge variant="neutral">{group.sites.length} site{group.sites.length === 1 ? '' : 's'}</Badge>
                   </div>
                   <p className="mt-1 text-xs text-muted-foreground">{[group.project.siteCode, group.project.location].filter(Boolean).join(' · ') || 'No project code or location'}</p>
                 </div>
@@ -259,7 +257,6 @@ export default function ManageSitesPage() {
               </div>
 
               {group.sites.length ? (
-                <div className="overflow-x-auto">
                   <Table>
                     <TableHeader><TableRow><TableHead>Site Name</TableHead><TableHead>Location</TableHead><TableHead className="w-48 text-right">Actions</TableHead></TableRow></TableHeader>
                     <TableBody>{group.sites.map((site) => {
@@ -296,7 +293,6 @@ export default function ManageSitesPage() {
                       );
                     })}</TableBody>
                   </Table>
-                </div>
               ) : (
                 <div className="flex flex-col items-center justify-center px-4 py-8 text-center">
                   <MapPin className="mb-2 h-8 w-8 text-slate-300" />
@@ -313,8 +309,8 @@ export default function ManageSitesPage() {
           {!isLoading && groups.length > 0 && !filteredGroups.length && (
             <div className="py-14 text-center"><Search className="mx-auto mb-3 h-10 w-10 text-slate-300" /><p className="font-medium">No matching sites</p><p className="mt-1 text-sm text-muted-foreground">Try a different project, site, or location.</p></div>
           )}
-        </CardContent>
-      </Card>
+        </div>
+      </TableCard>
 
       <Dialog open={isSiteDialogOpen} onOpenChange={handleDialogChange}>
         <DialogContent className="sm:max-w-lg">

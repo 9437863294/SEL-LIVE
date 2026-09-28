@@ -34,12 +34,12 @@
 
 import * as React from 'react';
 import { useEffect, useMemo, useState } from 'react';
-import { Lock, Search, SquareCheck, SquareMinus, X } from 'lucide-react';
+import { Lock, SquareCheck, SquareMinus } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
-import { Input } from '@/components/ui/input';
 import { ScrollArea } from '@/components/ui/scroll-area';
+import { SearchInput } from '@/components/shared/filter-bar';
 import { cn } from '@/lib/utils';
 import {
   countPermissions,
@@ -195,25 +195,12 @@ export function PermissionTree({
     <div className="space-y-2.5">
       {/* Toolbar */}
       <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
-        <div className="relative flex-1">
-          <Search className="pointer-events-none absolute left-3 top-2.5 h-4 w-4 text-slate-400" />
-          <Input
-            value={term}
-            onChange={(event) => setTerm(event.target.value)}
-            placeholder="Search modules, pages or actions…"
-            className="pl-9"
-          />
-          {term && (
-            <button
-              type="button"
-              onClick={() => setTerm('')}
-              aria-label="Clear search"
-              className="hr-inline-action absolute right-1 top-1/2 inline-flex -translate-y-1/2 items-center justify-center rounded-full p-1 text-slate-400 hover:bg-slate-100"
-            >
-              <X className="h-3.5 w-3.5" />
-            </button>
-          )}
-        </div>
+        <SearchInput
+          value={term}
+          onChange={setTerm}
+          placeholder="Search modules, pages or actions…"
+          className="flex-1"
+        />
         <div className="flex flex-wrap items-center gap-2 [&>*]:flex-1 sm:[&>*]:flex-none">
           <Button
             type="button"
@@ -281,11 +268,9 @@ export function PermissionTree({
       </div>
 
       <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-        <Badge variant="outline" className="border-indigo-200 bg-indigo-50 text-indigo-700">
-          Selected: {selectedCount} permissions
-        </Badge>
+        <Badge variant="neutral">Selected: {selectedCount} permissions</Badge>
         {inheritedCount > 0 && (
-          <Badge variant="outline" className="border-slate-200 bg-slate-50 text-slate-600">
+          <Badge variant="outline">
             {inheritedCount} already held ({inheritedLabel})
           </Badge>
         )}
@@ -445,16 +430,16 @@ export function PermissionMapSummary({
           variant="outline"
           // The name is truncated to hold the column, so the full text has to stay reachable.
           title={`${moduleName} · ${count}`}
-          className="flex w-full min-w-0 items-center justify-between gap-1.5 text-[10px] font-normal text-slate-600"
+          className="flex w-full min-w-0 items-center justify-between gap-1.5"
         >
           <span className="truncate">{moduleName}</span>
-          <span className="shrink-0 font-semibold tabular-nums text-slate-500">{count}</span>
+          <span className="shrink-0 tabular-nums text-muted-foreground">{count}</span>
         </Badge>
       ))}
       {byModule.length > shown.length && (
         <Badge
           variant="outline"
-          className="col-span-2 flex w-full justify-center text-[10px] font-normal text-muted-foreground"
+          className="col-span-2 flex w-full justify-center"
         >
           +{byModule.length - shown.length} more modules
         </Badge>

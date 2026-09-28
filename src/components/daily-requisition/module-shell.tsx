@@ -5,14 +5,25 @@ import Link from 'next/link';
 import type { LucideIcon } from 'lucide-react';
 
 import { Card, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import type { StatusTone } from '@/components/shared/status-badge';
 import { cn } from '@/lib/utils';
+
+/**
+ * Tone overrides for `StatusBadge` on requisition statuses. The workflow's intermediate stages
+ * (Received, Verified, Received for Payment) read as stages in flight, not as done — only Paid is.
+ * Every other status takes the shared vocabulary's tone.
+ */
+export const DAILY_STATUS_TONE: Partial<Record<string, StatusTone>> = {
+  Received: 'info',
+  Verified: 'info',
+  'Received for Payment': 'progress',
+};
 
 export const dailyPageContainerClass = 'w-full px-3 py-4 sm:px-4 lg:px-6 xl:px-8';
 export const dailySurfaceCardClass =
   'overflow-hidden rounded-2xl border border-white/70 bg-white/70 shadow-[0_20px_70px_-55px_rgba(2,6,23,0.55)] backdrop-blur';
 export const dailyTabsListClass =
   'grid w-full rounded-2xl border border-white/70 bg-white/70 p-1 backdrop-blur';
-export const dailyTableHeaderClass = 'bg-white/80 border-b border-white/70';
 
 interface DailyWorkflowCardProps {
   item: {

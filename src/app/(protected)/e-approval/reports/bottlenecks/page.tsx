@@ -5,6 +5,7 @@ import { Info } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { TableCard } from '@/components/shared/table-card';
 import { exportRowsToExcel } from '@/lib/report-excel';
 import {
   rollupEApprovals,
@@ -102,16 +103,15 @@ export default function EApprovalBottlenecksReportPage() {
               }
             />
 
-            <Card>
-              <CardContent className="px-2 py-3 sm:px-3">
-                <p className="mb-1 px-1 text-sm font-semibold">Holders</p>
-                <p className="mb-2 px-1 text-[11px] text-muted-foreground">
-                  Completed and average-held are shown so a busy desk is not mistaken for a slow one.
-                </p>
-                <div className="overflow-x-auto rounded-lg border">
+            <TableCard
+              title="Holders"
+              description="Completed and average-held are shown so a busy desk is not mistaken for a slow one."
+              count={approvers.length}
+              noun="holder"
+            >
                   <Table>
                     <TableHeader>
-                      <TableRow className="bg-muted/40">
+                      <TableRow>
                         <TableHead>Holder</TableHead>
                         <TableHead>Department</TableHead>
                         <TableHead className="text-right">Pending</TableHead>
@@ -127,41 +127,36 @@ export default function EApprovalBottlenecksReportPage() {
                     <TableBody>
                       {approvers.map((row) => (
                         <TableRow key={row.key}>
-                          <TableCell className="whitespace-nowrap text-xs font-medium">{row.name}</TableCell>
-                          <TableCell className="whitespace-nowrap text-xs">{row.departmentName || '—'}</TableCell>
-                          <TableCell className="text-right text-xs tabular-nums">{row.pending}</TableCell>
-                          <TableCell className="text-right text-xs tabular-nums">
+                          <TableCell className="whitespace-nowrap font-medium">{row.name}</TableCell>
+                          <TableCell className="whitespace-nowrap">{row.departmentName || '—'}</TableCell>
+                          <TableCell className="text-right tabular-nums">{row.pending}</TableCell>
+                          <TableCell className="text-right tabular-nums">
                             {row.overdue > 0 ? <span className="font-semibold text-rose-700">{row.overdue}</span> : '—'}
                           </TableCell>
-                          <TableCell className="whitespace-nowrap text-right text-xs tabular-nums">
+                          <TableCell className="whitespace-nowrap text-right tabular-nums">
                             {row.pending ? hours(row.oldestPendingHours) : '—'}
                           </TableCell>
-                          <TableCell className="whitespace-nowrap text-right text-xs tabular-nums">
+                          <TableCell className="whitespace-nowrap text-right tabular-nums">
                             {row.pending ? hours(row.averagePendingHours) : '—'}
                           </TableCell>
-                          <TableCell className="text-right text-xs tabular-nums">{row.slaBreaches || '—'}</TableCell>
-                          <TableCell className="whitespace-nowrap text-right text-xs tabular-nums">
+                          <TableCell className="text-right tabular-nums">{row.slaBreaches || '—'}</TableCell>
+                          <TableCell className="whitespace-nowrap text-right tabular-nums">
                             {row.pendingValue ? formatEApprovalAmount(row.pendingValue) : '—'}
                           </TableCell>
-                          <TableCell className="text-right text-xs tabular-nums">{row.completed}</TableCell>
-                          <TableCell className="whitespace-nowrap text-right text-xs tabular-nums">
+                          <TableCell className="text-right tabular-nums">{row.completed}</TableCell>
+                          <TableCell className="whitespace-nowrap text-right tabular-nums">
                             {row.completed ? hours(row.averageHeldHours) : '—'}
                           </TableCell>
                         </TableRow>
                       ))}
                     </TableBody>
                   </Table>
-                </div>
-              </CardContent>
-            </Card>
+            </TableCard>
 
-            <Card>
-              <CardContent className="px-2 py-3 sm:px-3">
-                <p className="mb-2 px-1 text-sm font-semibold">Workflow stages</p>
-                <div className="overflow-x-auto rounded-lg border">
+            <TableCard title="Workflow stages" count={stages.length} noun="stage">
                   <Table>
                     <TableHeader>
-                      <TableRow className="bg-muted/40">
+                      <TableRow>
                         <TableHead>Stage</TableHead>
                         <TableHead className="text-right">Cases</TableHead>
                         <TableHead className="text-right">Median</TableHead>
@@ -175,41 +170,36 @@ export default function EApprovalBottlenecksReportPage() {
                     <TableBody>
                       {stages.map((row) => (
                         <TableRow key={row.workflowStep}>
-                          <TableCell className="whitespace-nowrap text-xs font-medium">{row.workflowStep}</TableCell>
-                          <TableCell className="text-right text-xs tabular-nums">{row.cases}</TableCell>
-                          <TableCell className="whitespace-nowrap text-right text-xs font-semibold tabular-nums">
+                          <TableCell className="whitespace-nowrap font-medium">{row.workflowStep}</TableCell>
+                          <TableCell className="text-right tabular-nums">{row.cases}</TableCell>
+                          <TableCell className="whitespace-nowrap text-right tabular-nums">
                             {row.processing.count ? hours(row.processing.median) : '—'}
                           </TableCell>
-                          <TableCell className="whitespace-nowrap text-right text-xs tabular-nums">
+                          <TableCell className="whitespace-nowrap text-right tabular-nums">
                             {row.processing.count ? hours(row.processing.mean) : '—'}
                           </TableCell>
-                          <TableCell className="whitespace-nowrap text-right text-xs tabular-nums">
+                          <TableCell className="whitespace-nowrap text-right tabular-nums">
                             {row.processing.count ? hours(row.processing.p90) : '—'}
                           </TableCell>
-                          <TableCell className="text-right text-xs tabular-nums">
+                          <TableCell className="text-right tabular-nums">
                             {row.slaBreachPercent == null ? '—' : `${row.slaBreachPercent}%`}
                           </TableCell>
-                          <TableCell className="text-right text-xs tabular-nums">
+                          <TableCell className="text-right tabular-nums">
                             {row.returnPercent == null ? '—' : `${row.returnPercent}%`}
                           </TableCell>
-                          <TableCell className="text-right text-xs tabular-nums">
+                          <TableCell className="text-right tabular-nums">
                             {row.reopenedPercent == null ? '—' : `${row.reopenedPercent}%`}
                           </TableCell>
                         </TableRow>
                       ))}
                     </TableBody>
                   </Table>
-                </div>
-              </CardContent>
-            </Card>
+            </TableCard>
 
-            <Card>
-              <CardContent className="px-2 py-3 sm:px-3">
-                <p className="mb-2 px-1 text-sm font-semibold">Departments with work outstanding</p>
-                <div className="overflow-x-auto rounded-lg border">
+            <TableCard title="Departments with work outstanding" count={departments.length} noun="department">
                   <Table>
                     <TableHeader>
-                      <TableRow className="bg-muted/40">
+                      <TableRow>
                         <TableHead>Department</TableHead>
                         <TableHead className="text-right">Pending</TableHead>
                         <TableHead className="text-right">Overdue</TableHead>
@@ -220,24 +210,22 @@ export default function EApprovalBottlenecksReportPage() {
                     <TableBody>
                       {departments.map((row) => (
                         <TableRow key={row.key}>
-                          <TableCell className="text-xs font-medium">{row.label}</TableCell>
-                          <TableCell className="text-right text-xs tabular-nums">{row.pending}</TableCell>
-                          <TableCell className="text-right text-xs tabular-nums">
+                          <TableCell className="font-medium">{row.label}</TableCell>
+                          <TableCell className="text-right tabular-nums">{row.pending}</TableCell>
+                          <TableCell className="text-right tabular-nums">
                             {row.overdue > 0 ? <span className="font-semibold text-rose-700">{row.overdue}</span> : '—'}
                           </TableCell>
-                          <TableCell className="whitespace-nowrap text-right text-xs tabular-nums">
+                          <TableCell className="whitespace-nowrap text-right tabular-nums">
                             {formatEApprovalAmount(row.valuePending)}
                           </TableCell>
-                          <TableCell className="whitespace-nowrap text-right text-xs tabular-nums">
+                          <TableCell className="whitespace-nowrap text-right tabular-nums">
                             {row.cycleHours.count ? hours(row.cycleHours.median) : '—'}
                           </TableCell>
                         </TableRow>
                       ))}
                     </TableBody>
                   </Table>
-                </div>
-              </CardContent>
-            </Card>
+            </TableCard>
 
             <Card>
               <CardContent className="flex flex-wrap items-center gap-x-6 gap-y-2 px-3 py-3 sm:px-4">

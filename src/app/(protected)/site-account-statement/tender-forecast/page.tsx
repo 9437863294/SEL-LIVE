@@ -12,6 +12,8 @@ import { useAuth } from '@/components/auth/AuthProvider';
 import { useAuthorization } from '@/hooks/useAuthorization';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent } from '@/components/ui/card';
+import { Table, TableBody, TableCell, TableFooter, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { StatusBadge } from '@/components/shared/status-badge';
 import { PageHeader } from '@/components/shared/page-header';
 import { Progress } from '@/components/ui/progress';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -186,89 +188,86 @@ function ProjectForecast({ project, tb, expenses, budgets }: ProjectForecastProp
       )}
 
       {/* Monthly breakdown table */}
-      <div className="overflow-x-auto rounded-lg border">
-        <table className="w-full text-xs min-w-[640px]">
-          <thead>
-            <tr className="border-b bg-muted/40">
-              <th className="px-3 py-2 text-left font-semibold text-slate-600">Month</th>
-              <th className="px-3 py-2 text-right font-semibold text-slate-600">Planned (₹)</th>
-              <th className="px-3 py-2 text-right font-semibold text-slate-600">Set Budget (₹)</th>
-              <th className="px-3 py-2 text-right font-semibold text-slate-600">Actual Spent (₹)</th>
-              <th className="px-3 py-2 text-right font-semibold text-slate-600">Plan Variance (₹)</th>
-              <th className="px-3 py-2 text-right font-semibold text-slate-600">Cum. Balance (₹)</th>
-              <th className="px-3 py-2 text-right font-semibold text-blue-700">Revised Budget/Mo (₹)</th>
-            </tr>
-          </thead>
-          <tbody>
+      <div className="rounded-lg border">
+        <Table className="min-w-[640px]">
+          <TableHeader>
+            <TableRow>
+              <TableHead>Month</TableHead>
+              <TableHead className="text-right">Planned (₹)</TableHead>
+              <TableHead className="text-right">Set Budget (₹)</TableHead>
+              <TableHead className="text-right">Actual Spent (₹)</TableHead>
+              <TableHead className="text-right">Plan Variance (₹)</TableHead>
+              <TableHead className="text-right">Cum. Balance (₹)</TableHead>
+              <TableHead className="text-right">Revised Budget/Mo (₹)</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
             {rows.map((row, idx) => {
               const isLast = idx === rows.length - 1;
               return (
-                <tr
+                <TableRow
                   key={row.m}
-                  className={cn(
-                    'border-b last:border-0 transition-colors',
-                    row.isCurrent ? 'bg-blue-50/60' : row.isFuture ? 'bg-slate-50/40' : 'hover:bg-muted/20',
-                  )}
+                  className={cn(row.isCurrent ? 'bg-blue-50/60' : row.isFuture && 'bg-slate-50/40')}
                 >
-                  <td className="px-3 py-2 font-medium text-slate-700">
+                  <TableCell className="font-medium whitespace-nowrap">
                     <span>{monthLabel(row.m, true)}</span>
-                    {row.isCurrent && <Badge className="ml-1.5 text-[9px] px-1 py-0 bg-blue-100 text-blue-700 hover:bg-blue-100">Current</Badge>}
+                    {row.isCurrent && <Badge variant="info" className="ml-1.5">Current</Badge>}
                     {row.isFuture && <span className="ml-1 text-[10px] text-slate-400">forecast</span>}
-                  </td>
-                  <td className="px-3 py-2 text-right text-slate-600">{formatINR(Math.round(row.perMonth))}</td>
-                  <td className="px-3 py-2 text-right">
+                  </TableCell>
+                  <TableCell className="text-right whitespace-nowrap tabular-nums">{formatINR(Math.round(row.perMonth))}</TableCell>
+                  <TableCell className="text-right whitespace-nowrap tabular-nums">
                     {row.setBudget != null
                       ? <span className="text-violet-700 font-medium">{formatINR(row.setBudget)}</span>
                       : <span className="text-slate-400">—</span>}
-                  </td>
-                  <td className="px-3 py-2 text-right">
+                  </TableCell>
+                  <TableCell className="text-right whitespace-nowrap tabular-nums">
                     {row.isFuture
                       ? <span className="text-slate-400">—</span>
                       : <span className={cn('font-medium', row.actual > 0 ? 'text-rose-700' : 'text-slate-500')}>{formatINR(row.actual)}</span>}
-                  </td>
-                  <td className="px-3 py-2 text-right">
+                  </TableCell>
+                  <TableCell className="text-right whitespace-nowrap tabular-nums">
                     {row.planVariance == null
                       ? <span className="text-slate-400">—</span>
                       : <span className={cn('font-medium', row.planVariance < 0 ? 'text-red-600' : 'text-emerald-700')}>
                           {row.planVariance < 0 ? `−${formatINR(Math.abs(row.planVariance))}` : formatINR(row.planVariance)}
                         </span>}
-                  </td>
-                  <td className="px-3 py-2 text-right">
+                  </TableCell>
+                  <TableCell className="text-right whitespace-nowrap tabular-nums">
                     {row.cumBalance == null
                       ? <span className="text-slate-400">—</span>
                       : <span className={cn('font-semibold', row.cumBalance < 0 ? 'text-red-600' : 'text-emerald-700')}>
                           {row.cumBalance < 0 ? `−${formatINR(Math.abs(row.cumBalance))}` : formatINR(row.cumBalance)}
                         </span>}
-                  </td>
-                  <td className="px-3 py-2 text-right">
+                  </TableCell>
+                  <TableCell className="text-right whitespace-nowrap tabular-nums">
                     {row.revisedMonthly == null
                       ? <span className="text-slate-400 text-[10px]">{isLast ? 'End' : '—'}</span>
                       : <span className={cn('font-semibold', row.isFuture ? 'text-slate-400' : 'text-blue-700')}>
                           {formatINR(Math.round(row.revisedMonthly))}
                         </span>}
-                  </td>
-                </tr>
+                  </TableCell>
+                </TableRow>
               );
             })}
-          </tbody>
-          <tfoot>
-            <tr className="border-t bg-slate-50 font-semibold">
-              <td className="px-3 py-2 text-slate-700">Total</td>
-              <td className="px-3 py-2 text-right text-slate-700">{formatINR(tb.tenderAmount)}</td>
-              <td className="px-3 py-2 text-right text-slate-500">—</td>
-              <td className="px-3 py-2 text-right text-rose-700">{formatINR(totalSpent)}</td>
-              <td className="px-3 py-2 text-right">
+          </TableBody>
+          <TableFooter>
+            <TableRow>
+              <TableCell>Total</TableCell>
+              <TableCell className="text-right whitespace-nowrap tabular-nums">{formatINR(tb.tenderAmount)}</TableCell>
+              <TableCell className="text-right">—</TableCell>
+              <TableCell className="text-right whitespace-nowrap tabular-nums text-rose-700">{formatINR(totalSpent)}</TableCell>
+              <TableCell className="text-right whitespace-nowrap tabular-nums">
                 <span className={cn('font-bold', (tb.tenderAmount - totalSpent) < 0 ? 'text-red-600' : 'text-emerald-700')}>
                   {(tb.tenderAmount - totalSpent) < 0
                     ? `−${formatINR(Math.abs(tb.tenderAmount - totalSpent))}`
                     : formatINR(tb.tenderAmount - totalSpent)}
                 </span>
-              </td>
-              <td className="px-3 py-2 text-right text-slate-500">—</td>
-              <td className="px-3 py-2 text-right text-slate-500">—</td>
-            </tr>
-          </tfoot>
-        </table>
+              </TableCell>
+              <TableCell className="text-right">—</TableCell>
+              <TableCell className="text-right">—</TableCell>
+            </TableRow>
+          </TableFooter>
+        </Table>
       </div>
     </div>
   );
@@ -367,7 +366,7 @@ export default function TenderForecastPage() {
         actions={
           <>
             <Select value={filterStatus} onValueChange={v => setFilterStatus(v as typeof filterStatus)}>
-              <SelectTrigger className="w-[130px] h-8 text-xs"><SelectValue /></SelectTrigger>
+              <SelectTrigger className="w-auto min-w-[130px]" aria-label="Project status"><SelectValue /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="active">Active Projects</SelectItem>
                 <SelectItem value="ended">Ended Projects</SelectItem>
@@ -420,10 +419,10 @@ export default function TenderForecastPage() {
                     <div className="flex items-center gap-2 flex-wrap">
                       <span className="font-semibold text-slate-800 text-sm truncate">{project.projectName}</span>
                       {project.projectCode && (
-                        <Badge variant="outline" className="text-[10px] px-1.5 py-0 border-slate-200 text-slate-500">{project.projectCode}</Badge>
+                        <Badge variant="outline" className="font-mono">{project.projectCode}</Badge>
                       )}
-                      {isActive && <Badge className="text-[9px] px-1.5 py-0 bg-emerald-100 text-emerald-700 hover:bg-emerald-100">Active</Badge>}
-                      {isEnded  && <Badge className="text-[9px] px-1.5 py-0 bg-slate-100 text-slate-500 hover:bg-slate-100">Ended</Badge>}
+                      {isActive && <StatusBadge status="Active" />}
+                      {isEnded  && <StatusBadge status="Ended" tone="neutral" />}
                     </div>
                     <div className="flex items-center gap-3 mt-1 text-[11px] text-muted-foreground flex-wrap">
                       <span>{formatINR(tb.tenderAmount)}</span>

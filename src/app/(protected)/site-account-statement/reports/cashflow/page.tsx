@@ -9,7 +9,10 @@ import { useAuthorization } from '@/hooks/useAuthorization';
 import { useAuth } from '@/components/auth/AuthProvider';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
+import { Table, TableBody, TableCell, TableFooter, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { PageHeader } from '@/components/shared/page-header';
+import { TableCard } from '@/components/shared/table-card';
+import { FilterBar } from '@/components/shared/filter-bar';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { cn } from '@/lib/utils';
@@ -159,21 +162,24 @@ export default function CashFlowPage() {
       />
 
       {/* Filters */}
-      <div className="flex gap-2 flex-wrap">
+      <FilterBar
+        activeCount={(filterProject ? 1 : 0) + (filterYear !== String(currentYear) ? 1 : 0)}
+        onClear={() => { setFilterProject(''); setFilterYear(String(currentYear)); }}
+      >
         <Select value={filterProject || '_all_'} onValueChange={v => setFilterProject(v === '_all_' ? '' : v)}>
-          <SelectTrigger className="h-9 text-sm w-full sm:w-auto sm:min-w-[200px]"><SelectValue placeholder="All Projects" /></SelectTrigger>
+          <SelectTrigger aria-label="Project"><SelectValue placeholder="All Projects" /></SelectTrigger>
           <SelectContent>
             <SelectItem value="_all_">All Projects</SelectItem>
             {visibleProjects.map(p => <SelectItem key={p.id} value={p.id}>{p.projectName}</SelectItem>)}
           </SelectContent>
         </Select>
         <Select value={filterYear} onValueChange={setFilterYear}>
-          <SelectTrigger className="h-9 text-sm w-full sm:w-auto sm:min-w-[110px]"><SelectValue /></SelectTrigger>
+          <SelectTrigger aria-label="Year"><SelectValue /></SelectTrigger>
           <SelectContent>
             {availableYears.map(y => <SelectItem key={y} value={y}>{y}</SelectItem>)}
           </SelectContent>
         </Select>
-      </div>
+      </FilterBar>
 
       {/* Summary tiles */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
@@ -199,34 +205,32 @@ export default function CashFlowPage() {
           </CardContent>
         </Card>
       ) : (
-        <Card className="bg-white/80 backdrop-blur-sm">
-          <CardContent className="p-0">
-            <div className="overflow-x-auto overflow-y-auto max-h-[60vh]">
-              <table className="min-w-[600px] w-full text-sm">
-                <thead className="sticky top-0 z-10">
-                  <tr className="border-b bg-slate-100">
-                    <th className="px-4 py-2.5 text-left font-medium">Month</th>
-                    <th className="px-4 py-2.5 text-right font-medium">Receipts (₹)</th>
-                    <th className="px-4 py-2.5 text-right font-medium">Expenses (₹)</th>
-                    <th className="px-4 py-2.5 text-right font-medium">Net (₹)</th>
-                    <th className="px-4 py-2.5 text-right font-medium">Running Balance</th>
-                    <th className="px-4 py-2.5 text-left font-medium w-[130px]">Flow</th>
-                  </tr>
-                </thead>
-                <tbody>
+        <TableCard title={`Cash flow ${filterYear}`}>
+              <Table className="min-w-[600px]">
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Month</TableHead>
+                    <TableHead className="text-right">Receipts (₹)</TableHead>
+                    <TableHead className="text-right">Expenses (₹)</TableHead>
+                    <TableHead className="text-right">Net (₹)</TableHead>
+                    <TableHead className="text-right">Running Balance</TableHead>
+                    <TableHead className="w-[130px]">Flow</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
                   {monthlyData.map(m => (
-                    <tr key={m.month} className={cn('border-b hover:bg-muted/20 transition-colors', m.receipts === 0 && m.expenses === 0 && 'opacity-40')}>
-                      <td className="px-4 py-2.5 font-medium">{m.label}</td>
-                      <td className="px-4 py-2.5 text-right text-blue-600">{m.receipts > 0 ? formatINR(m.receipts) : '—'}</td>
-                      <td className="px-4 py-2.5 text-right text-rose-600">{m.expenses > 0 ? formatINR(m.expenses) : '—'}</td>
-                      <td className={cn('px-4 py-2.5 text-right font-semibold',
+                    <TableRow key={m.month} className={cn(m.receipts === 0 && m.expenses === 0 && 'opacity-40')}>
+                      <TableCell className="font-medium">{m.label}</TableCell>
+                      <TableCell className="text-right whitespace-nowrap tabular-nums text-blue-600">{m.receipts > 0 ? formatINR(m.receipts) : '—'}</TableCell>
+                      <TableCell className="text-right whitespace-nowrap tabular-nums text-rose-600">{m.expenses > 0 ? formatINR(m.expenses) : '—'}</TableCell>
+                      <TableCell className={cn('text-right whitespace-nowrap tabular-nums font-medium',
                         m.net > 0 ? 'text-emerald-600' : m.net < 0 ? 'text-destructive' : 'text-muted-foreground')}>
                         {m.net !== 0 ? formatINR(m.net) : '—'}
-                      </td>
-                      <td className={cn('px-4 py-2.5 text-right font-semibold', m.balance >= 0 ? 'text-emerald-700' : 'text-destructive')}>
+                      </TableCell>
+                      <TableCell className={cn('text-right whitespace-nowrap tabular-nums font-medium', m.balance >= 0 ? 'text-emerald-700' : 'text-destructive')}>
                         {formatINR(m.balance)}
-                      </td>
-                      <td className="px-4 py-2.5">
+                      </TableCell>
+                      <TableCell>
                         <div className="space-y-1">
                           <div className="flex items-center gap-1.5">
                             <span className="text-[10px] text-blue-500 w-2">R</span>
@@ -241,23 +245,21 @@ export default function CashFlowPage() {
                             </div>
                           </div>
                         </div>
-                      </td>
-                    </tr>
+                      </TableCell>
+                    </TableRow>
                   ))}
-                </tbody>
-                <tfoot>
-                  <tr className="bg-muted/30 font-bold">
-                    <td className="px-4 py-2.5">Total ({filterYear})</td>
-                    <td className="px-4 py-2.5 text-right text-blue-700">{formatINR(totals.receipts)}</td>
-                    <td className="px-4 py-2.5 text-right text-rose-700">{formatINR(totals.expenses)}</td>
-                    <td className={cn('px-4 py-2.5 text-right', totals.net >= 0 ? 'text-emerald-700' : 'text-destructive')}>{formatINR(totals.net)}</td>
-                    <td colSpan={2} />
-                  </tr>
-                </tfoot>
-              </table>
-            </div>
-          </CardContent>
-        </Card>
+                </TableBody>
+                <TableFooter>
+                  <TableRow>
+                    <TableCell>Total ({filterYear})</TableCell>
+                    <TableCell className="text-right whitespace-nowrap tabular-nums text-blue-700">{formatINR(totals.receipts)}</TableCell>
+                    <TableCell className="text-right whitespace-nowrap tabular-nums text-rose-700">{formatINR(totals.expenses)}</TableCell>
+                    <TableCell className={cn('text-right whitespace-nowrap tabular-nums', totals.net >= 0 ? 'text-emerald-700' : 'text-destructive')}>{formatINR(totals.net)}</TableCell>
+                    <TableCell colSpan={2} />
+                  </TableRow>
+                </TableFooter>
+              </Table>
+        </TableCard>
       )}
     </div>
   );

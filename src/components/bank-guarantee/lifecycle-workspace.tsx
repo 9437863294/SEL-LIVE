@@ -26,14 +26,13 @@ import {
   BG_COLLECTIONS,
   BG_PERMISSION_MODULE,
   bgLabel,
-  bgStatusTone,
   formatBgCurrency,
   toBgDateInput,
   type BankGuarantee,
 } from "@/lib/bank-guarantee";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { PageHeader } from "@/components/shared/page-header";
+import { TableCard } from "@/components/shared/table-card";
 import {
   Card,
   CardContent,
@@ -390,9 +389,23 @@ export default function BGLifecycleWorkspace({ kind }: { kind: Kind }) {
           </>
         }
       />
-      <Card>
-        <CardContent className="p-0">
-          <div className="overflow-x-auto">
+      <TableCard
+        title={
+          kind === "extensions"
+            ? "Extensions"
+            : kind === "invocations"
+              ? "Invocations"
+              : "Cancellations"
+        }
+        count={rows.length}
+        noun={
+          kind === "extensions"
+            ? "extension"
+            : kind === "invocations"
+              ? "invocation"
+              : "cancellation"
+        }
+      >
             <Table>
               <TableHeader>
                 <TableRow>
@@ -568,9 +581,7 @@ export default function BGLifecycleWorkspace({ kind }: { kind: Kind }) {
                 )}
               </TableBody>
             </Table>
-          </div>
-        </CardContent>
-      </Card>
+      </TableCard>
       <Dialog open={open} onOpenChange={(value) => !working && setOpen(value)}>
         <DialogContent className="max-h-[92vh] max-w-3xl overflow-y-auto">
           <DialogHeader>
@@ -586,7 +597,7 @@ export default function BGLifecycleWorkspace({ kind }: { kind: Kind }) {
               All actions are organization-scoped and audited.
             </DialogDescription>
           </DialogHeader>
-          <div className="grid gap-4 sm:grid-cols-2">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <Field label="Bank Guarantee">
               <Select value={bgId} onValueChange={setBgId}>
                 <SelectTrigger>
@@ -890,7 +901,7 @@ export default function BGLifecycleWorkspace({ kind }: { kind: Kind }) {
             <DialogDescription>{completeRow?.bgNumber}</DialogDescription>
           </DialogHeader>
           {kind === "cancellations" ? (
-            <div className="grid gap-4 sm:grid-cols-2">
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
               <Field label="Bank Confirmation Date">
                 <Input
                   type="date"
@@ -931,7 +942,7 @@ export default function BGLifecycleWorkspace({ kind }: { kind: Kind }) {
               </label>
             </div>
           ) : kind === "invocations" ? (
-            <div className="grid gap-4 sm:grid-cols-2">
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
               <Field label="Settlement Amount">
                 <Input
                   type="number"

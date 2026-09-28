@@ -41,6 +41,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { TableCard } from '@/components/shared/table-card';
 import { useAuthorization } from '@/hooks/useAuthorization';
 import { useAuth } from '@/components/auth/AuthProvider';
 import { logUserActivity } from '@/lib/activity-logger';
@@ -580,11 +581,9 @@ export default function WorkflowConfigurationPage() {
                       {isMapped(step) && (
                         <div className="space-y-2">
                           <Label>Assign Users</Label>
-                          <Card className="mt-2 overflow-hidden rounded-2xl border border-white/70 bg-white/70 shadow-sm backdrop-blur">
-                            <div className="h-1 w-full bg-gradient-to-r from-cyan-300 via-fuchsia-300 to-amber-200 opacity-70" />
-                            <div className="overflow-x-auto">
+                          <TableCard scroll="natural" className="mt-2">
                               <Table className="min-w-[720px]">
-                                <TableHeader className="bg-white/80 border-b border-white/70">
+                                <TableHeader>
                                   <TableRow>
                                     <TableHead className="whitespace-nowrap">
                                       {step.assignmentType === 'Project-based' ? 'Project' : 'Department'}
@@ -610,7 +609,7 @@ export default function WorkflowConfigurationPage() {
                                             }
                                             disabled={!canEditPage}
                                           >
-                                            <SelectTrigger className="bg-white/80 border-white/70">
+                                            <SelectTrigger>
                                               <SelectValue placeholder="Select primary user" />
                                             </SelectTrigger>
                                             <SelectContent>
@@ -630,7 +629,7 @@ export default function WorkflowConfigurationPage() {
                                             }
                                             disabled={!canEditPage}
                                           >
-                                            <SelectTrigger className="bg-white/80 border-white/70">
+                                            <SelectTrigger>
                                               <SelectValue placeholder="Select alternative user" />
                                             </SelectTrigger>
                                             <SelectContent>
@@ -648,8 +647,7 @@ export default function WorkflowConfigurationPage() {
                                   })}
                                 </TableBody>
                               </Table>
-                            </div>
-                          </Card>
+                          </TableCard>
                         </div>
                       )}
 

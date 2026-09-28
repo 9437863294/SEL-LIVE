@@ -16,7 +16,8 @@ import { Label } from '@/components/ui/label';
 import { Checkbox } from '@/components/ui/checkbox';
 import { useToast } from '@/hooks/use-toast';
 import type { BoqItem, WorkOrderItem } from '@/lib/types';
-import { Search, ArrowUpDown } from 'lucide-react';
+import { ArrowUpDown } from 'lucide-react';
+import { SearchInput } from '@/components/shared/filter-bar';
 import { ScrollArea } from '../ui/scroll-area';
 import { Separator } from '../ui/separator';
 import {
@@ -256,15 +257,12 @@ export function CustomAssemblyDialog({
 
           <div>
             <Label>Select Sub-Items from BOQ</Label>
-            <div className="relative mt-2">
-              <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
-              <Input
-                placeholder="Search BOQ items..."
-                value={searchTerm}
-                onChange={e => setSearchTerm(e.target.value)}
-                className="pl-8"
-              />
-            </div>
+            <SearchInput
+              className="mt-2"
+              placeholder="Search BOQ items..."
+              value={searchTerm}
+              onChange={setSearchTerm}
+            />
 
             <ScrollArea className="mt-2 h-64 border rounded-md">
               <Table className="table-fixed">

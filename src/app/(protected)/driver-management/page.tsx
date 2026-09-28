@@ -148,7 +148,7 @@ export default function DriverManagementOverviewPage() {
         description="Dedicated module for driver operations and trip execution."
         meta={
           <>
-            <Badge className="bg-cyan-600 text-white">
+            <Badge variant="neutral">
               {driver?.driverName || 'User'}
             </Badge>
             <Badge variant="outline">

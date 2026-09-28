@@ -78,8 +78,9 @@ import {
   CollapsibleContent,
   CollapsibleTrigger,
 } from '@/components/ui/collapsible';
-import { ScrollArea } from '@/components/ui/scroll-area';
 import { Badge } from '@/components/ui/badge';
+import { TableCard } from '@/components/shared/table-card';
+import { FilterBar } from '@/components/shared/filter-bar';
 import {
   DATE_RANGE_PRESET_OPTIONS,
   type DateRangePreset,
@@ -885,11 +886,23 @@ export default function InterestRatePage() {
 
         {/* Daily Log */}
         <TabsContent value="daily-log">
-          <Card>
-            <CardHeader>
-              <div className="flex flex-wrap items-center gap-4">
+          <TableCard
+            title="Daily interest log"
+            description={
+              <>
+                Total projected daily interest for selection:{' '}
+                <span className="font-semibold text-foreground">{formatCurrency(dailyLogStats.totalInterest)}</span>
+              </>
+            }
+            count={dailyLogMatrix.length}
+            noun="day"
+            toolbar={
+              <FilterBar
+                activeCount={(dateRange ? 1 : 0) + (bankFilter !== 'all' ? 1 : 0)}
+                onClear={clearLogFilters}
+              >
                 <Select value={datePreset} onValueChange={handleDatePresetChange}>
-                  <SelectTrigger className="w-[190px]">
+                  <SelectTrigger>
                     <SelectValue placeholder="Quick filter" />
                   </SelectTrigger>
                   <SelectContent>
@@ -907,7 +920,7 @@ export default function InterestRatePage() {
                       id="date"
                       variant="outline"
                       className={cn(
-                        'w-full sm:w-[300px] justify-start text-left font-normal',
+                        'justify-start text-left font-normal',
                         !dateRange &&
                           'text-muted-foreground'
                       )}
@@ -959,7 +972,7 @@ export default function InterestRatePage() {
                   value={bankFilter}
                   onValueChange={setBankFilter}
                 >
-                  <SelectTrigger className="w-[240px]">
+                  <SelectTrigger>
                     <SelectValue placeholder="All Banks" />
                   </SelectTrigger>
                   <SelectContent>
@@ -976,30 +989,13 @@ export default function InterestRatePage() {
                     ))}
                   </SelectContent>
                 </Select>
-
-                <Button
-                  onClick={clearLogFilters}
-                  variant="secondary"
-                >
-                  Clear Filters
-                </Button>
-                <Badge variant="outline" className="ml-auto">
-                  {dailyLogMatrix.length} day{dailyLogMatrix.length !== 1 ? 's' : ''}
-                </Badge>
-              </div>
-              <CardDescription>
-                Total projected daily interest for selection:{' '}
-                <span className="font-semibold text-foreground">{formatCurrency(dailyLogStats.totalInterest)}</span>
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="p-0 overflow-hidden">
-              <div className="min-w-0 overflow-hidden rounded-2xl border border-border/60 bg-background">
-                <ScrollArea className="h-[calc(100vh-24rem)]" showHorizontalScrollbar>
-                  <div className="min-w-[1100px]">
-                    <Table containerClassName="w-full overflow-visible" className="w-full">
-                      <TableHeader className="sticky top-0 z-10 bg-background border-b border-border/60">
+              </FilterBar>
+            }
+          >
+                    <Table className="w-full min-w-[1100px]">
+                      <TableHeader>
                         <TableRow>
-                          <TableHead rowSpan={2} className="min-w-[130px] border-r bg-background align-middle">
+                          <TableHead rowSpan={2} className="min-w-[130px] border-r">
                             Date
                           </TableHead>
                           {visibleLogAccounts.map((acc) => (
@@ -1011,11 +1007,11 @@ export default function InterestRatePage() {
                               {acc.shortName}
                             </TableHead>
                           ))}
-                          <TableHead rowSpan={2} className="min-w-[140px] text-right align-middle">
+                          <TableHead rowSpan={2} className="min-w-[140px] text-right">
                             Total Interest
                           </TableHead>
                         </TableRow>
-                        <TableRow>
+                        <TableRow className="[&>th]:!top-[var(--table-head-h,2.5rem)]">
                           {visibleLogAccounts.map((acc) => (
                             <Fragment key={`${acc.id}-cols`}>
                               <TableHead className="text-right whitespace-nowrap">
@@ -1043,26 +1039,26 @@ export default function InterestRatePage() {
                         ) : dailyLogMatrix.length > 0 ? (
                           dailyLogMatrix.map((row) => (
                             <TableRow key={row.date}>
-                              <TableCell className="font-medium border-r">
+                              <TableCell className="whitespace-nowrap font-medium border-r">
                                 {format(new Date(row.date), 'dd MMM, yyyy')}
                               </TableCell>
                               {visibleLogAccounts.map((acc) => {
                                 const item = row.byBank[acc.id];
                                 return (
                                   <Fragment key={`${row.date}-${acc.id}`}>
-                                    <TableCell className="text-right whitespace-nowrap">
+                                    <TableCell className="text-right whitespace-nowrap tabular-nums">
                                       {item ? formatCurrency(item.closingUtilization) : '—'}
                                     </TableCell>
-                                    <TableCell className="text-right whitespace-nowrap">
+                                    <TableCell className="text-right whitespace-nowrap tabular-nums">
                                       {item ? `${item.rate.toFixed(2)}%` : '—'}
                                     </TableCell>
-                                    <TableCell className="text-right whitespace-nowrap border-r font-medium">
+                                    <TableCell className="text-right whitespace-nowrap border-r font-medium tabular-nums">
                                       {item ? formatCurrency(item.dailyInterest) : '—'}
                                     </TableCell>
                                   </Fragment>
                                 );
                               })}
-                              <TableCell className="text-right font-semibold whitespace-nowrap">
+                              <TableCell className="text-right font-medium whitespace-nowrap tabular-nums">
                                 {formatCurrency(row.totalDailyInterest)}
                               </TableCell>
                             </TableRow>
@@ -1079,39 +1075,25 @@ export default function InterestRatePage() {
                         )}
                       </TableBody>
                     </Table>
-                  </div>
-                </ScrollArea>
-              </div>
-            </CardContent>
-          </Card>
+          </TableCard>
         </TabsContent>
 
         {/* Monthly Summary */}
         <TabsContent value="monthly-summary">
-          <Card>
-            <CardHeader>
-              <div className="flex flex-wrap items-center justify-between gap-3">
-                <div>
-                  <CardTitle>
-                    Monthly Interest Summary
-                  </CardTitle>
-                  <CardDescription>
-                    Total interest accrued per bank for each month.
-                  </CardDescription>
-                </div>
-                <div className="flex items-center gap-2">
-                  <Badge variant="outline">Months: {monthlySummaryStats.totalMonths}</Badge>
-                  <Badge variant="outline">Rows: {monthlySummaryStats.totalRows}</Badge>
-                  <Badge variant="outline">Projected: {formatCurrency(monthlySummaryStats.totalProjected)}</Badge>
-                  <Badge variant="outline">Actual: {formatCurrency(monthlySummaryStats.totalActual)}</Badge>
-                </div>
-              </div>
-            </CardHeader>
-            <CardContent className="p-0 overflow-hidden">
-              <div className="min-w-0 overflow-hidden rounded-2xl border border-border/60 bg-background">
-                <ScrollArea className="h-[calc(100vh-24rem)]" showHorizontalScrollbar>
-              <Table containerClassName="w-max overflow-visible" className="w-max min-w-[980px]">
-                <TableHeader className="sticky top-0 z-10 bg-background border-b border-border/60">
+          <TableCard
+            title="Monthly Interest Summary"
+            description="Total interest accrued per bank for each month."
+            actions={
+              <>
+                <Badge variant="neutral">Months: {monthlySummaryStats.totalMonths}</Badge>
+                <Badge variant="neutral">Rows: {monthlySummaryStats.totalRows}</Badge>
+                <Badge variant="neutral">Projected: {formatCurrency(monthlySummaryStats.totalProjected)}</Badge>
+                <Badge variant="neutral">Actual: {formatCurrency(monthlySummaryStats.totalActual)}</Badge>
+              </>
+            }
+          >
+              <Table className="w-max min-w-[980px]">
+                <TableHeader>
                   <TableRow>
                     <TableHead rowSpan={2} className="min-w-[140px]">Month</TableHead>
                     {accounts.map((acc) => (
@@ -1121,7 +1103,7 @@ export default function InterestRatePage() {
                     ))}
                     <TableHead colSpan={3} className="text-center">Total</TableHead>
                   </TableRow>
-                  <TableRow>
+                  <TableRow className="[&>th]:!top-[var(--table-head-h,2.5rem)]">
                     {accounts.map((acc) => (
                       <Fragment key={`cols-${acc.id}`}>
                         <TableHead key={`proj-${acc.id}`} className="text-right">Projected</TableHead>
@@ -1144,19 +1126,19 @@ export default function InterestRatePage() {
                   ) : monthlySummary.length > 0 ? (
                     monthlySummary.map((summary) => (
                       <TableRow key={summary.monthKey}>
-                        <TableCell className="font-medium">{summary.monthLabel}</TableCell>
+                        <TableCell className="whitespace-nowrap font-medium">{summary.monthLabel}</TableCell>
                         {summary.banks.map((bank) => (
                           <Fragment key={`${summary.monthKey}-${bank.accountId}`}>
-                            <TableCell key={`${summary.monthKey}-${bank.accountId}-p`} className="text-right">
+                            <TableCell key={`${summary.monthKey}-${bank.accountId}-p`} className="whitespace-nowrap text-right tabular-nums">
                               {formatCurrency(bank.projected)}
                             </TableCell>
-                            <TableCell key={`${summary.monthKey}-${bank.accountId}-a`} className="text-right">
+                            <TableCell key={`${summary.monthKey}-${bank.accountId}-a`} className="whitespace-nowrap text-right tabular-nums">
                               {formatCurrency(bank.actual)}
                             </TableCell>
                             <TableCell
                               key={`${summary.monthKey}-${bank.accountId}-d`}
                               className={cn(
-                                'text-right',
+                                'whitespace-nowrap text-right tabular-nums',
                                 bank.diff > 0 ? 'text-red-600 dark:text-red-400' : bank.diff < 0 ? 'text-green-600 dark:text-green-400' : ''
                               )}
                             >
@@ -1164,11 +1146,11 @@ export default function InterestRatePage() {
                             </TableCell>
                           </Fragment>
                         ))}
-                        <TableCell className="text-right font-semibold">{formatCurrency(summary.totalProjected)}</TableCell>
-                        <TableCell className="text-right font-semibold">{formatCurrency(summary.totalActual)}</TableCell>
+                        <TableCell className="whitespace-nowrap text-right font-medium tabular-nums">{formatCurrency(summary.totalProjected)}</TableCell>
+                        <TableCell className="whitespace-nowrap text-right font-medium tabular-nums">{formatCurrency(summary.totalActual)}</TableCell>
                         <TableCell
                           className={cn(
-                            'text-right font-semibold',
+                            'whitespace-nowrap text-right font-medium tabular-nums',
                             summary.totalDiff > 0 ? 'text-red-600 dark:text-red-400' : summary.totalDiff < 0 ? 'text-green-600 dark:text-green-400' : ''
                           )}
                         >
@@ -1188,10 +1170,7 @@ export default function InterestRatePage() {
                   )}
                 </TableBody>
               </Table>
-                </ScrollArea>
-              </div>
-            </CardContent>
-          </Card>
+          </TableCard>
         </TabsContent>
       </Tabs>
     </div>

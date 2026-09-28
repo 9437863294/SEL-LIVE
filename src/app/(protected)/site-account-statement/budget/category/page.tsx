@@ -20,8 +20,13 @@ import { useAuthorization } from '@/hooks/useAuthorization';
 import { useAuth } from '@/components/auth/AuthProvider';
 import { useToast } from '@/hooks/use-toast';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent } from '@/components/ui/card';
+import { Card } from '@/components/ui/card';
+import { Badge } from '@/components/ui/badge';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { PageHeader } from '@/components/shared/page-header';
+import { TableCard } from '@/components/shared/table-card';
+import { FilterBar } from '@/components/shared/filter-bar';
+import { StatusBadge } from '@/components/shared/status-badge';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -313,89 +318,84 @@ export default function CategoryBudgetPage() {
         }
       />
 
-      {/* Controls */}
-      <div className="flex flex-wrap items-center gap-3">
-        <div className="flex items-center gap-2">
-          <Label className="text-sm font-medium shrink-0">Project</Label>
-          <Select value={selectedProjectId} onValueChange={setSelectedProjectId}>
-            <SelectTrigger className="h-9 text-sm w-full sm:w-[220px] min-w-[160px]">
-              <SelectValue placeholder="Select project..." />
-            </SelectTrigger>
-            <SelectContent>
-              {visibleProjects.map(p => (
-                <SelectItem key={p.id} value={p.id}>{p.projectName}</SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
+      <TableCard
+        title="Category budgets"
+        description={selectedProject ? `${selectedProject.projectName} · ${monthLabel(prevM)} vs ${monthLabel(currentMonth)}` : undefined}
+        scroll="natural"
+        toolbar={
+          <FilterBar activeCount={currentMonth !== todayMonth ? 1 : 0}>
+            <Select value={selectedProjectId} onValueChange={setSelectedProjectId}>
+              <SelectTrigger aria-label="Project">
+                <SelectValue placeholder="Select project..." />
+              </SelectTrigger>
+              <SelectContent>
+                {visibleProjects.map(p => (
+                  <SelectItem key={p.id} value={p.id}>{p.projectName}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
 
-        {/* Month navigator */}
-        <div className="flex items-center gap-1 ml-auto">
-          <Button
-            variant="outline" size="icon" className="h-8 w-8"
-            onClick={() => setCurrentMonth(m => shiftMonth(m, -1))}
-          >
-            <ChevronLeft className="h-4 w-4" />
-          </Button>
-          <div className="px-3 py-1 rounded-md bg-slate-100 text-sm font-medium min-w-[155px] text-center flex items-center justify-center gap-1.5">
-            {monthLabel(currentMonth)}
-            {currentMonth === todayMonth && (
-              <span className="text-[10px] bg-emerald-100 text-emerald-700 px-1.5 py-0.5 rounded-full leading-none">
-                Current
-              </span>
-            )}
-          </div>
-          <Button
-            variant="outline" size="icon" className="h-8 w-8"
-            onClick={() => setCurrentMonth(m => shiftMonth(m, 1))}
-          >
-            <ChevronRight className="h-4 w-4" />
-          </Button>
-        </div>
-      </div>
-
+            {/* Month navigator */}
+            <div className="flex items-center gap-1">
+              <Button
+                variant="outline" size="icon" className="shrink-0"
+                aria-label="Previous month"
+                onClick={() => setCurrentMonth(m => shiftMonth(m, -1))}
+              >
+                <ChevronLeft className="h-4 w-4" />
+              </Button>
+              <div className="flex-1 px-3 py-1 rounded-md bg-slate-100 text-sm font-medium min-w-[155px] text-center flex items-center justify-center gap-1.5">
+                {monthLabel(currentMonth)}
+                {currentMonth === todayMonth && <Badge variant="success">Current</Badge>}
+              </div>
+              <Button
+                variant="outline" size="icon" className="shrink-0"
+                aria-label="Next month"
+                onClick={() => setCurrentMonth(m => shiftMonth(m, 1))}
+              >
+                <ChevronRight className="h-4 w-4" />
+              </Button>
+            </div>
+          </FilterBar>
+        }
+      >
       {!selectedProjectId ? (
-        <Card className="bg-white/80">
-          <CardContent className="flex flex-col items-center gap-3 py-12">
-            <Target className="h-10 w-10 text-muted-foreground/40" />
-            <p className="text-sm text-muted-foreground">Select a project to view category budgets.</p>
-          </CardContent>
-        </Card>
+        <div className="flex flex-col items-center gap-3 py-12">
+          <Target className="h-10 w-10 text-muted-foreground/40" />
+          <p className="text-sm text-muted-foreground">Select a project to view category budgets.</p>
+        </div>
       ) : (
-        <Card className="bg-white/80 backdrop-blur-sm">
-          <CardContent className="p-0">
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm min-w-[700px]">
-                <thead>
-                  <tr className="border-b">
-                    <th className="px-4 py-2 text-left font-medium text-xs bg-slate-50" rowSpan={2}>
+              <Table className="min-w-[700px]">
+                <TableHeader>
+                  <TableRow>
+                    <TableHead rowSpan={2}>
                       Category
-                    </th>
-                    <th colSpan={2} className="px-4 py-2 text-center font-medium text-xs bg-slate-100/80 border-l border-r text-slate-500">
+                    </TableHead>
+                    <TableHead colSpan={2} className="text-center border-l border-r">
                       {monthLabel(prevM)} — Previous
-                    </th>
-                    <th colSpan={2} className="px-4 py-2 text-center font-medium text-xs bg-emerald-50/80 border-r text-emerald-700">
+                    </TableHead>
+                    <TableHead colSpan={2} className="text-center border-r">
                       {monthLabel(currentMonth)} — Current
-                    </th>
-                    <th className="px-4 py-2 text-center font-medium text-xs bg-slate-50" rowSpan={2}>Status</th>
+                    </TableHead>
+                    <TableHead className="text-center" rowSpan={2}>Status</TableHead>
                     {canEdit && (
-                      <th className="px-4 py-2 text-center font-medium text-xs bg-slate-50" rowSpan={2}>Actions</th>
+                      <TableHead className="text-center" rowSpan={2}>Actions</TableHead>
                     )}
-                  </tr>
-                  <tr className="border-b">
-                    <th className="px-4 py-2 text-right font-medium text-xs bg-slate-100/60 border-l text-slate-500">Budget</th>
-                    <th className="px-4 py-2 text-right font-medium text-xs bg-slate-100/60 border-r text-slate-500">Actual</th>
-                    <th className="px-4 py-2 text-right font-medium text-xs bg-emerald-50/60 text-emerald-700">Budget</th>
-                    <th className="px-4 py-2 text-right font-medium text-xs bg-emerald-50/60 border-r text-emerald-700">Actual</th>
-                  </tr>
-                </thead>
-                <tbody>
+                  </TableRow>
+                  <TableRow>
+                    <TableHead className="text-right border-l">Budget</TableHead>
+                    <TableHead className="text-right border-r">Actual</TableHead>
+                    <TableHead className="text-right">Budget</TableHead>
+                    <TableHead className="text-right border-r">Actual</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
                   {categoryRows.length === 0 ? (
-                    <tr>
-                      <td colSpan={canEdit ? 7 : 6} className="px-4 py-10 text-center text-sm text-muted-foreground">
+                    <TableRow>
+                      <TableCell colSpan={canEdit ? 7 : 6} className="py-10 text-center text-muted-foreground">
                         No categories found for this project in the selected period.
-                      </td>
-                    </tr>
+                      </TableCell>
+                    </TableRow>
                   ) : categoryRows.map(cat => {
                     const prevBudget = getBudget(cat, prevM);
                     const currBudget = getBudget(cat, currentMonth);
@@ -407,54 +407,51 @@ export default function CategoryBudgetPage() {
                     const isNear = pct !== null && pct >= 80 && pct < 100;
 
                     return (
-                      <tr key={cat} className="border-b hover:bg-muted/20 transition-colors">
-                        <td className="px-4 py-2.5 font-medium text-slate-800">{cat}</td>
+                      <TableRow key={cat}>
+                        <TableCell className="font-medium">{cat}</TableCell>
 
                         {/* Prev budget */}
-                        <td className="px-4 py-2.5 text-right border-l text-muted-foreground">
+                        <TableCell className="text-right tabular-nums border-l">
                           {prevBudget
                             ? <span className="font-medium">{formatINR(prevBudget.budgetAmount)}</span>
-                            : <span className="text-slate-400 text-xs">—</span>}
-                        </td>
+                            : <span className="text-muted-foreground">—</span>}
+                        </TableCell>
 
                         {/* Prev actual */}
-                        <td className={cn('px-4 py-2.5 text-right border-r',
-                          prevActual > 0 ? 'text-rose-600' : 'text-slate-400 text-xs')}>
+                        <TableCell className={cn('text-right tabular-nums border-r',
+                          prevActual > 0 ? 'text-rose-600' : 'text-muted-foreground')}>
                           {prevActual > 0 ? formatINR(prevActual) : '—'}
-                        </td>
+                        </TableCell>
 
                         {/* Curr budget */}
-                        <td className={cn('px-4 py-2.5 text-right',
-                          currBudget ? 'text-emerald-700 font-semibold' : 'text-slate-400 text-xs')}>
+                        <TableCell className={cn('text-right tabular-nums',
+                          currBudget ? 'text-emerald-700 font-semibold' : 'text-muted-foreground')}>
                           {currBudget ? formatINR(currBudget.budgetAmount) : '—'}
-                        </td>
+                        </TableCell>
 
                         {/* Curr actual */}
-                        <td className={cn('px-4 py-2.5 text-right border-r font-medium',
-                          isOver ? 'text-destructive' : isNear ? 'text-amber-600' : currActual > 0 ? 'text-rose-600' : 'text-slate-400 text-xs font-normal')}>
+                        <TableCell className={cn('text-right tabular-nums border-r font-medium',
+                          isOver ? 'text-destructive' : isNear ? 'text-amber-600' : currActual > 0 ? 'text-rose-600' : 'text-muted-foreground font-normal')}>
                           {currActual > 0 ? formatINR(currActual) : '—'}
-                        </td>
+                        </TableCell>
 
                         {/* Status */}
-                        <td className="px-4 py-2.5 text-center">
+                        <TableCell className="text-center">
                           {pct !== null ? (
                             <div className="flex flex-col items-center gap-0.5">
-                              <span className={cn('text-xs font-semibold',
-                                isOver ? 'text-destructive' : isNear ? 'text-amber-600' : 'text-emerald-600')}>
-                                {isOver ? 'Over Budget' : isNear ? 'Near Limit' : 'On Track'}
-                              </span>
+                              <StatusBadge status={isOver ? 'Over Budget' : isNear ? 'Near Limit' : 'On Track'} />
                               <span className="text-[10px] text-muted-foreground">
                                 {pct.toFixed(0)}% used
                               </span>
                             </div>
                           ) : (
-                            <span className="text-xs text-slate-400">No Budget</span>
+                            <StatusBadge status="No Budget" />
                           )}
-                        </td>
+                        </TableCell>
 
                         {/* Actions */}
                         {canEdit && (
-                          <td className="px-4 py-2.5 text-center">
+                          <TableCell className="text-center">
                             <div className="flex items-center justify-center gap-1">
                               {currBudget ? (
                                 <>
@@ -484,17 +481,15 @@ export default function CategoryBudgetPage() {
                                 </Button>
                               )}
                             </div>
-                          </td>
+                          </TableCell>
                         )}
-                      </tr>
+                      </TableRow>
                     );
                   })}
-                </tbody>
-              </table>
-            </div>
-          </CardContent>
-        </Card>
+                </TableBody>
+              </Table>
       )}
+      </TableCard>
 
       {/* Set / Edit dialog */}
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>

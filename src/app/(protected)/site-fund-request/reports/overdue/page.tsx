@@ -14,6 +14,11 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Skeleton } from '@/components/ui/skeleton';
+import { Badge } from '@/components/ui/badge';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { TableCard } from '@/components/shared/table-card';
+import { FilterBar } from '@/components/shared/filter-bar';
+import { StatusBadge, type StatusTone } from '@/components/shared/status-badge';
 
 // ─── helpers ─────────────────────────────────────────────────────────────────
 
@@ -24,16 +29,9 @@ function daysOverdue(deadlineDate: Date, now: Date): number {
   return Math.ceil((now.getTime() - deadlineDate.getTime()) / 86_400_000);
 }
 
-function overdueColorClass(days: number): string {
-  if (days > 30) return 'text-red-600 font-bold';
-  if (days > 7) return 'text-orange-600 font-semibold';
-  return 'text-amber-600 font-semibold';
-}
-
-function overdueBadgeClass(days: number): string {
-  if (days > 30) return 'bg-red-100 text-red-700';
-  if (days > 7) return 'bg-orange-100 text-orange-700';
-  return 'bg-amber-100 text-amber-700';
+/** Over a month late reads as danger; anything less is a warning. */
+function overdueTone(days: number): StatusTone {
+  return days > 30 ? 'danger' : 'warning';
 }
 
 // ─── component ───────────────────────────────────────────────────────────────
@@ -241,44 +239,33 @@ export default function OverdueRequestsPage() {
         }
       />
 
-      {/* Filters */}
-      <Card className="overflow-hidden bg-white/70 border border-white/70 rounded-2xl shadow-[0_20px_70px_-55px_rgba(2,6,23,0.55)] backdrop-blur">
-        <div className="h-1.5 w-full bg-gradient-to-r from-rose-400 via-red-400 to-orange-400 opacity-70" />
-        <CardContent className="p-4">
-          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
-            <div className="space-y-1">
-              <p className="text-xs font-medium text-slate-600">Project</p>
-              <Select value={filterProject} onValueChange={setFilterProject}>
-                <SelectTrigger className="bg-white/80 border-white/70"><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All Projects</SelectItem>
-                  {projects.map(p => <SelectItem key={p.id} value={p.id}>{p.projectName}</SelectItem>)}
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="space-y-1">
-              <p className="text-xs font-medium text-slate-600">Department</p>
-              <Select value={filterDept} onValueChange={setFilterDept}>
-                <SelectTrigger className="bg-white/80 border-white/70"><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All Departments</SelectItem>
-                  {departments.map(d => <SelectItem key={d.id} value={d.id}>{d.name}</SelectItem>)}
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="space-y-1">
-              <p className="text-xs font-medium text-slate-600">Stage</p>
-              <Select value={filterStage} onValueChange={setFilterStage}>
-                <SelectTrigger className="bg-white/80 border-white/70"><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All Stages</SelectItem>
-                  {stageOptions.map(s => <SelectItem key={s} value={s}>{s}</SelectItem>)}
-                </SelectContent>
-              </Select>
-            </div>
-          </div>
-        </CardContent>
-      </Card>
+      {/* Filters — they drive the stats and the table */}
+      <FilterBar
+        activeCount={[filterProject, filterDept, filterStage].filter(v => v !== 'all').length}
+        onClear={() => { setFilterProject('all'); setFilterDept('all'); setFilterStage('all'); }}
+      >
+        <Select value={filterProject} onValueChange={setFilterProject}>
+          <SelectTrigger aria-label="Project"><SelectValue /></SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All Projects</SelectItem>
+            {projects.map(p => <SelectItem key={p.id} value={p.id}>{p.projectName}</SelectItem>)}
+          </SelectContent>
+        </Select>
+        <Select value={filterDept} onValueChange={setFilterDept}>
+          <SelectTrigger aria-label="Department"><SelectValue /></SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All Departments</SelectItem>
+            {departments.map(d => <SelectItem key={d.id} value={d.id}>{d.name}</SelectItem>)}
+          </SelectContent>
+        </Select>
+        <Select value={filterStage} onValueChange={setFilterStage}>
+          <SelectTrigger aria-label="Stage"><SelectValue /></SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All Stages</SelectItem>
+            {stageOptions.map(s => <SelectItem key={s} value={s}>{s}</SelectItem>)}
+          </SelectContent>
+        </Select>
+      </FilterBar>
 
       {/* Stats */}
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
@@ -303,74 +290,64 @@ export default function OverdueRequestsPage() {
       </div>
 
       {/* Table */}
-      <Card className="overflow-hidden rounded-2xl border border-white/70 bg-white/70 shadow-[0_20px_70px_-55px_rgba(2,6,23,0.55)] backdrop-blur">
-        <div className="h-1.5 w-full bg-gradient-to-r from-rose-400 via-red-400 to-orange-400 opacity-70" />
-        <CardHeader className="p-4 pb-2">
-          <CardTitle>Overdue Requests</CardTitle>
-          <CardDescription>{filtered.length} record{filtered.length !== 1 ? 's' : ''} found</CardDescription>
-        </CardHeader>
-        <CardContent className="p-0">
+      <TableCard
+        title="Overdue Requests"
+        description={<>{filtered.length} record{filtered.length !== 1 ? 's' : ''} found</>}
+      >
           {filtered.length === 0 ? (
             <div className="flex flex-col items-center gap-3 px-6 py-12 text-center">
               <AlertTriangle className="h-10 w-10 text-muted-foreground/40" />
-              <p className="text-sm text-slate-500">No overdue requests for the selected filters.</p>
+              <p className="text-sm text-muted-foreground">No overdue requests for the selected filters.</p>
             </div>
           ) : (
-            <div className="overflow-auto rounded-b-2xl border-t border-white/70 bg-white/80 max-h-[calc(100vh-440px)]">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="border-b border-slate-200 bg-slate-50/90 sticky top-0 z-10">
+              <Table>
+                <TableHeader>
+                  <TableRow>
                     {[
                       'Request ID', 'Date', 'Project', 'Department', 'Party Name',
                       'Amount', 'Stage', 'Assigned To', 'Deadline', 'Days Overdue',
                     ].map(h => (
-                      <th key={h} className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-500 whitespace-nowrap">
+                      <TableHead key={h} className={h === 'Amount' ? 'text-right' : undefined}>
                         {h}
-                      </th>
+                      </TableHead>
                     ))}
-                  </tr>
-                </thead>
-                <tbody>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
                   {filtered.map(r => {
                     const deadlineDate = r.deadline!.toDate();
                     const days = daysOverdue(deadlineDate, now);
                     return (
-                      <tr key={r.id} className="border-b border-slate-100 hover:bg-slate-50/70 transition-colors">
-                        <td className="px-4 py-3 font-mono text-xs font-medium text-slate-800 whitespace-nowrap">
+                      <TableRow key={r.id}>
+                        <TableCell className="font-mono font-medium whitespace-nowrap">
                           {r.requisitionId}
-                        </td>
-                        <td className="px-4 py-3 text-slate-700 whitespace-nowrap">{r.date}</td>
-                        <td className="px-4 py-3 text-slate-700">{projectMap[r.projectId] || r.projectId}</td>
-                        <td className="px-4 py-3 text-slate-700">{deptMap[r.departmentId] || r.departmentId}</td>
-                        <td className="px-4 py-3 text-slate-700">{r.partyName}</td>
-                        <td className="px-4 py-3 text-right font-medium text-slate-900">
+                        </TableCell>
+                        <TableCell className="whitespace-nowrap">{r.date}</TableCell>
+                        <TableCell>{projectMap[r.projectId] || r.projectId}</TableCell>
+                        <TableCell>{deptMap[r.departmentId] || r.departmentId}</TableCell>
+                        <TableCell>{r.partyName}</TableCell>
+                        <TableCell className="text-right tabular-nums whitespace-nowrap">
                           {formatCurrency(r.amount)}
-                        </td>
-                        <td className="px-4 py-3 whitespace-nowrap">
-                          <span className="inline-flex rounded-full bg-slate-100 px-2.5 py-0.5 text-xs font-medium text-slate-700">
-                            {r.stage}
-                          </span>
-                        </td>
-                        <td className="px-4 py-3 text-slate-700">
+                        </TableCell>
+                        <TableCell className="whitespace-nowrap">
+                          <Badge variant="neutral">{r.stage}</Badge>
+                        </TableCell>
+                        <TableCell>
                           {(r.assignees || []).map(id => userMap[id] || id).join(', ') || '—'}
-                        </td>
-                        <td className="px-4 py-3 text-slate-700 whitespace-nowrap">
+                        </TableCell>
+                        <TableCell className="whitespace-nowrap">
                           {deadlineDate.toLocaleDateString('en-IN')}
-                        </td>
-                        <td className="px-4 py-3 whitespace-nowrap">
-                          <span className={`inline-flex rounded-full px-2.5 py-0.5 text-xs ${overdueBadgeClass(days)}`}>
-                            <span className={overdueColorClass(days)}>{days}d</span>
-                          </span>
-                        </td>
-                      </tr>
+                        </TableCell>
+                        <TableCell className="whitespace-nowrap">
+                          <StatusBadge status="Overdue" tone={overdueTone(days)}>{days}d</StatusBadge>
+                        </TableCell>
+                      </TableRow>
                     );
                   })}
-                </tbody>
-              </table>
-            </div>
+                </TableBody>
+              </Table>
           )}
-        </CardContent>
-      </Card>
+      </TableCard>
     </div>
   );
 }

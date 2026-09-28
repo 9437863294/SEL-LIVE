@@ -17,7 +17,6 @@ import {
   HrAccessDenied,
   HrBarList,
   HrEmptyState,
-  HrFilterCard,
   HrLoader,
   HrSection,
 } from '@/components/hr/hr-ui';
@@ -25,9 +24,10 @@ import {
   EmployeeErrorBanner,
   EmployeeKpiCard,
   EmployeePageShell,
-  EmployeeStatusPill,
   EmployeeSubNav,
 } from '@/components/employee/employee-ui';
+import { FilterBar } from '@/components/shared/filter-bar';
+import { StatusBadge } from '@/components/shared/status-badge';
 import { useAuthorization } from '@/hooks/useAuthorization';
 import { isWorkingState } from '@/lib/greythr';
 import { fetchEmployeeRoster, type EmployeeRosterResponse, type RosterEmployeeRow } from '@/lib/greythr-sync-client';
@@ -186,13 +186,14 @@ export default function EmployeeReportsPage() {
         badge={
           rows.length > 0 ? (
             report?.liveRoster ? (
-              <EmployeeStatusPill tone="emerald" pulse>
+              <StatusBadge tone="success" dot>
                 Verified against greytHR
-              </EmployeeStatusPill>
+              </StatusBadge>
             ) : (
-              <EmployeeStatusPill tone="amber" icon={CloudOff}>
+              <StatusBadge tone="warning">
+                <CloudOff className="h-3 w-3" aria-hidden="true" />
                 Stored mirror only
-              </EmployeeStatusPill>
+              </StatusBadge>
             )
           ) : undefined
         }
@@ -222,40 +223,35 @@ export default function EmployeeReportsPage() {
         />
       ) : rows.length > 0 ? (
         <>
-          <HrFilterCard
-            title="Scope"
+          <FilterBar
+            className="mb-3"
+            activeCount={(scopeDepartment !== 'all' ? 1 : 0) + (scopeLocation !== 'all' ? 1 : 0)}
+            onClear={clearScope}
             summary={
               scopeActive
                 ? `${scoped.length} of ${rows.length} records in scope`
                 : `All ${rows.length} records`
             }
-            actions={
-              scopeActive ? (
-                <Button variant="ghost" size="sm" onClick={clearScope}>Clear</Button>
-              ) : undefined
-            }
           >
-            <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2">
-              <Select value={scopeDepartment} onValueChange={setScopeDepartment}>
-                <SelectTrigger><SelectValue placeholder="Department" /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All departments</SelectItem>
-                  {departmentOptions.map((value) => (
-                    <SelectItem key={value} value={value}>{value}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              <Select value={scopeLocation} onValueChange={setScopeLocation}>
-                <SelectTrigger><SelectValue placeholder="Location" /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All locations</SelectItem>
-                  {locationOptions.map((value) => (
-                    <SelectItem key={value} value={value}>{value}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-          </HrFilterCard>
+            <Select value={scopeDepartment} onValueChange={setScopeDepartment}>
+              <SelectTrigger aria-label="Department"><SelectValue placeholder="Department" /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All departments</SelectItem>
+                {departmentOptions.map((value) => (
+                  <SelectItem key={value} value={value}>{value}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <Select value={scopeLocation} onValueChange={setScopeLocation}>
+              <SelectTrigger aria-label="Location"><SelectValue placeholder="Location" /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All locations</SelectItem>
+                {locationOptions.map((value) => (
+                  <SelectItem key={value} value={value}>{value}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </FilterBar>
 
           {scoped.length === 0 ? (
             <HrEmptyState

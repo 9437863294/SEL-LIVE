@@ -5,7 +5,8 @@ import { useState, useEffect, useMemo, useCallback } from 'react';
 import Link from 'next/link';
 import { ArrowLeft, Save, Loader2, Library, Plus, Trash2, ShieldAlert } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { TableCard } from '@/components/shared/table-card';
 import { Input } from '@/components/ui/input';
 import { useToast } from '@/hooks/use-toast';
 import { db } from '@/lib/firebase';
@@ -471,13 +472,10 @@ export default function CreateProformaPage() {
           </CardContent>
         </Card>
 
-        <Card>
-          <CardHeader>
-            <div className="flex items-center justify-between">
-              <div>
-                <CardTitle>Items</CardTitle>
-                <CardDescription>Add items from the selected Work Order.</CardDescription>
-              </div>
+        <TableCard
+          title="Items"
+          description="Add items from the selected Work Order."
+          actions={
               <Button
                 variant="outline"
                 type="button"
@@ -486,10 +484,8 @@ export default function CreateProformaPage() {
               >
                 <Library className="mr-2 h-4 w-4" /> Add Items from Work Order
               </Button>
-            </div>
-          </CardHeader>
-          <CardContent>
-            <div className="overflow-x-auto">
+          }
+        >
               <Table>
                 <TableHeader>
                   <TableRow>
@@ -515,7 +511,7 @@ export default function CreateProformaPage() {
                       {/* Description – neatly clamped to 2 lines, full text on hover */}
                       <TableCell className="max-w-xs">
                         <div
-                          className="line-clamp-2 text-sm leading-snug break-words"
+                          className="line-clamp-2 leading-snug break-words"
                           title={item.description}
                         >
                           {item.description}
@@ -527,7 +523,7 @@ export default function CreateProformaPage() {
                       <TableCell>{item.orderQty}</TableCell>
                       <TableCell>{item.jmcCertifiedQty}</TableCell>
                       <TableCell>{item.alreadyBilledQty}</TableCell>
-                      <TableCell className="font-semibold">
+                      <TableCell>
                         {item.orderQty - item.alreadyBilledQty}
                       </TableCell>
                       <TableCell>{formatCurrency(item.rate as any)}</TableCell>
@@ -550,9 +546,7 @@ export default function CreateProformaPage() {
                   ))}
                 </TableBody>
               </Table>
-            </div>
-          </CardContent>
-        </Card>
+        </TableCard>
 
         <Card className="mt-6">
           <CardHeader>

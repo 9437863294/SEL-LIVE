@@ -28,6 +28,8 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { Badge } from '@/components/ui/badge';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { TableCard } from '@/components/shared/table-card';
 import { cn } from '@/lib/utils';
 
 /* ------------------------------------------------------------------ */
@@ -409,16 +411,7 @@ export function VehicleImportDialog({
                 </div>
                 <div className="flex flex-wrap gap-1.5">
                   {fields.map((f) => (
-                    <Badge
-                      key={f.key}
-                      variant="outline"
-                      className={cn(
-                        'text-xs',
-                        f.required
-                          ? 'border-rose-200 bg-rose-50 text-rose-700'
-                          : 'border-slate-200 bg-white text-slate-600'
-                      )}
-                    >
+                    <Badge key={f.key} variant="outline">
                       {f.label}
                       {f.required && <span className="ml-0.5 text-rose-500">*</span>}
                     </Badge>
@@ -515,87 +508,86 @@ export function VehicleImportDialog({
           {/* ─── STEP 3: Preview & Validate ─── */}
           {step === 'preview' && (
             <div className="space-y-4 p-3 sm:p-6">
-              {/* Summary bar */}
-              <div className="flex flex-wrap items-center justify-between gap-3">
-                <div className="flex flex-wrap items-center gap-2">
-                  <Badge className="gap-1 bg-emerald-100 text-emerald-700 border-emerald-200 hover:bg-emerald-100">
-                    <CheckCircle2 className="h-3.5 w-3.5" /> {validCount} valid
-                  </Badge>
-                  {invalidCount > 0 && (
-                    <Badge className="gap-1 bg-rose-100 text-rose-700 border-rose-200 hover:bg-rose-100">
-                      <XCircle className="h-3.5 w-3.5" /> {invalidCount} invalid
-                    </Badge>
-                  )}
-                  <Badge variant="outline" className="text-slate-500">
-                    {parsedRows.length} total rows
-                  </Badge>
-                </div>
-                {/* Filter pills */}
-                <div className="flex items-center gap-1 rounded-full border border-slate-200 bg-slate-50 p-0.5">
-                  {(['all', 'valid', 'invalid'] as FilterMode[]).map((f) => (
-                    <button
-                      key={f}
-                      onClick={() => setFilter(f)}
-                      className={cn(
-                        'rounded-full px-3 py-1 text-xs font-medium capitalize transition-all',
-                        filter === f
-                          ? 'bg-white text-slate-800 shadow-sm'
-                          : 'text-slate-500 hover:text-slate-700'
+              {/* Summary bar + data table */}
+              <TableCard
+                toolbar={
+                  <div className="flex flex-wrap items-center justify-between gap-3">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <Badge variant="success" className="gap-1">
+                        <CheckCircle2 className="h-3.5 w-3.5" /> {validCount} valid
+                      </Badge>
+                      {invalidCount > 0 && (
+                        <Badge variant="danger" className="gap-1">
+                          <XCircle className="h-3.5 w-3.5" /> {invalidCount} invalid
+                        </Badge>
                       )}
-                    >
-                      {f}
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              {/* Data table */}
-              <div className="overflow-auto rounded-xl border border-slate-200 bg-white/80" style={{ maxHeight: '420px' }}>
-                <table className="w-full text-sm">
-                  <thead className="sticky top-0 z-10 border-b border-slate-200 bg-slate-50">
-                    <tr>
-                      {fields.map((f) => (
-                        <th key={f.key} className="whitespace-nowrap px-3 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wide text-slate-400">
-                          {f.label}
-                        </th>
+                      <Badge variant="neutral">
+                        {parsedRows.length} total rows
+                      </Badge>
+                    </div>
+                    {/* Filter pills */}
+                    <div className="flex items-center gap-1 rounded-full border border-slate-200 bg-slate-50 p-0.5">
+                      {(['all', 'valid', 'invalid'] as FilterMode[]).map((f) => (
+                        <button
+                          key={f}
+                          onClick={() => setFilter(f)}
+                          className={cn(
+                            'rounded-full px-3 py-1 text-xs font-medium capitalize transition-all',
+                            filter === f
+                              ? 'bg-white text-slate-800 shadow-sm'
+                              : 'text-slate-500 hover:text-slate-700'
+                          )}
+                        >
+                          {f}
+                        </button>
                       ))}
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-100">
+                    </div>
+                  </div>
+                }
+              >
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      {fields.map((f) => (
+                        <TableHead key={f.key} className="whitespace-nowrap">
+                          {f.label}
+                        </TableHead>
+                      ))}
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
                     {filteredRows.length === 0 ? (
-                      <tr>
-                        <td colSpan={fields.length} className="py-10 text-center text-sm text-slate-400">
+                      <TableRow>
+                        <TableCell colSpan={fields.length} className="py-10 text-center text-muted-foreground">
                           No rows match the current filter.
-                        </td>
-                      </tr>
+                        </TableCell>
+                      </TableRow>
                     ) : (
                       filteredRows.map((row) => (
                         <Fragment key={row.rowNumber}>
-                          <tr className={cn('transition-colors', row.valid ? 'hover:bg-emerald-50/30' : 'bg-rose-50/20')}>
+                          <TableRow className={cn(!row.valid && 'bg-rose-50/20')}>
                             {fields.map((f) => {
                               const hasError = row.errors.some((e) => e.includes(`"${f.label}"`));
                               const val = row.mapped[f.key];
                               return (
-                                <td
+                                <TableCell
                                   key={f.key}
                                   className={cn(
-                                    'max-w-[140px] truncate px-3 py-2 text-xs',
+                                    'max-w-[140px] truncate',
                                     hasError
                                       ? 'font-semibold text-rose-600'
-                                      : val
-                                      ? 'text-slate-700'
-                                      : 'italic text-slate-300'
+                                      : !val && 'italic text-slate-300'
                                   )}
                                   title={val || ''}
                                 >
                                   {val || 'empty'}
-                                </td>
+                                </TableCell>
                               );
                             })}
-                          </tr>
+                          </TableRow>
                           {!row.valid && (
-                            <tr className="bg-rose-50/40 border-b border-rose-100">
-                              <td colSpan={fields.length} className="px-3 pb-2 pt-0">
+                            <TableRow className="bg-rose-50/40 hover:bg-rose-50/40">
+                              <TableCell colSpan={fields.length} className="pt-0">
                                 <div className="flex flex-wrap gap-x-5 gap-y-0.5">
                                   {row.errors.map((e, i) => {
                                     const colon = e.indexOf(':');
@@ -610,15 +602,15 @@ export function VehicleImportDialog({
                                     );
                                   })}
                                 </div>
-                              </td>
-                            </tr>
+                              </TableCell>
+                            </TableRow>
                           )}
                         </Fragment>
                       ))
                     )}
-                  </tbody>
-                </table>
-              </div>
+                  </TableBody>
+                </Table>
+              </TableCard>
 
               {invalidCount > 0 && validCount > 0 && (
                 <p className="text-xs text-slate-500">

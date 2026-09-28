@@ -51,6 +51,7 @@ import {
 } from '@/components/office-hub/ui';
 import { CategoryBarChart, HeroFigure } from '@/components/office-hub/charts';
 import { PageHeader } from '@/components/shared/page-header';
+import { TableCard } from '@/components/shared/table-card';
 
 export default function ManagementOverviewPage() {
   const { viewer, capabilities, today, periods, isLoading } = useOfficeHub();
@@ -264,14 +265,17 @@ export default function ManagementOverviewPage() {
             limit={10}
           />
 
-          <OfficeHubSection
+          <TableCard
             title="Upcoming deadlines"
             description="The next fortnight across tasks, decisions and action items — overdue first."
+            icon={CalendarCheck}
+            count={overview.upcomingDeadlines.length}
+            noun="deadline"
           >
             <OfficeHubDataList
               rows={overview.upcomingDeadlines.map((row) => ({ ...row }))}
               columns={deadlineColumns}
-              maxHeightClassName="sm:max-h-[32rem]"
+              frameless
               rowClassName={(row) => (row.overdue ? 'bg-rose-50/60' : undefined)}
               empty={
                 <OfficeHubEmptyState
@@ -281,7 +285,7 @@ export default function ManagementOverviewPage() {
                 />
               }
             />
-          </OfficeHubSection>
+          </TableCard>
 
           <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-4">
             <QuickLink

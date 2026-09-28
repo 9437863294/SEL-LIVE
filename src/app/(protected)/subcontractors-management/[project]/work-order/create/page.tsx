@@ -14,7 +14,6 @@ import {
   Component,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { useToast } from '@/hooks/use-toast';
 import { db } from '@/lib/firebase';
@@ -51,7 +50,8 @@ import { cn } from '@/lib/utils';
 import { CustomAssemblyDialog } from '@/components/subcontractors-management/CustomAssemblyDialog';
 import { projectMatchesSlug } from '@/lib/project-slug';
 import { readErpSlNo, sortBoqItemsByErpSlNo, sortByErpSlNo } from '@/lib/civil-execution';
-import { PM_TABLE_CLASS, PmContent, PmSectionHead } from '@/components/project-management/pm-shell';
+import { PmContent } from '@/components/project-management/pm-shell';
+import { TableCard } from '@/components/shared/table-card';
 import { PageHeader } from '@/components/shared/page-header';
 
 // UI-level WorkOrderItem — extends backend type with UI-only fields
@@ -579,15 +579,16 @@ export default function CreateWorkOrderPage() {
           </div>
         </div>
 
-        <PmSectionHead
+        <TableCard
           title="Work order items"
-          stats={[
-            { label: items.length === 1 ? 'line' : 'lines', value: String(items.length) },
-            {
-              label: 'order value',
-              value: formatCurrency(items.reduce((sum, item) => sum + (item.totalAmount || 0), 0)),
-            },
-          ]}
+          count={items.length}
+          noun="line"
+          description={`Order value ${formatCurrency(items.reduce((sum, item) => sum + (item.totalAmount || 0), 0))}`}
+          footer={
+              <Button variant="outline" size="sm" onClick={addItem}>
+                <Plus className="mr-1.5 h-4 w-4" /> Add Item
+              </Button>
+          }
           actions={
             <>
               <Button
@@ -608,11 +609,8 @@ export default function CreateWorkOrderPage() {
               </Button>
             </>
           }
-        />
-        <Card className="border-border/60">
-          <CardContent className="p-0">
-            <div className="overflow-x-auto">
-              <Table className={PM_TABLE_CLASS}>
+        >
+              <Table>
                 <TableHeader>
                   <TableRow>
                     <TableHead className="w-12" />
@@ -742,7 +740,7 @@ export default function CreateWorkOrderPage() {
                         </TableRow>
 
                         {isExpanded && item.isBreakdown && (
-                          <TableRow className="bg-muted/30 hover:bg-muted/30">
+                          <TableRow className="bg-muted/30">
                             <TableCell colSpan={12} className="p-0">
                               <div className="space-y-2 p-4">
                                 <h4 className="text-sm font-semibold">
@@ -875,15 +873,7 @@ export default function CreateWorkOrderPage() {
                   })}
                 </TableBody>
               </Table>
-            </div>
-            {/* CardContent is p-0 so the table meets the card edges; the footer supplies its own. */}
-            <div className="border-t border-border/60 p-3">
-              <Button variant="outline" size="sm" onClick={addItem}>
-                <Plus className="mr-1.5 h-4 w-4" /> Add Item
-              </Button>
-            </div>
-          </CardContent>
-        </Card>
+        </TableCard>
       </PmContent>
 
       <BoqMultiSelectDialog

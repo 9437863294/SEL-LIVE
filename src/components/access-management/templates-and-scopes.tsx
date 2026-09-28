@@ -39,6 +39,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Switch } from '@/components/ui/switch';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { hrDialog, HrEmptyState } from '@/components/hr/hr-ui';
+import { StatusBadge } from '@/components/shared/status-badge';
 import {
   ACCESS_ACTION_CLASS,
   ACCESS_ACTION_ICON,
@@ -185,7 +186,7 @@ function TemplateManager({
           }
         />
       ) : (
-        <div className="grid auto-rows-fr gap-2.5 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
+        <div className="grid auto-rows-fr grid-cols-1 gap-2.5 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
           {templates.map((template) => (
             <AccessCard key={template.id} className="flex h-full flex-col transition-all duration-200 hover:-translate-y-0.5 hover:shadow-md">
               <CardContent className="flex flex-1 flex-col gap-2.5 p-3.5">
@@ -200,13 +201,13 @@ function TemplateManager({
                   {(template.roleIds ?? []).map((roleId) => {
                     const role = directory.roles.find((entry) => entry.id === roleId);
                     return (
-                      <Badge key={roleId} variant="outline" className="border-indigo-200 bg-indigo-50 text-[10px] text-indigo-700">
+                      <Badge key={roleId} variant="outline">
                         {role?.name ?? roleId}
                       </Badge>
                     );
                   })}
                   {(template.projectIds ?? []).map((projectId) => (
-                    <Badge key={projectId} variant="outline" className="border-emerald-200 bg-emerald-50 text-[10px] text-emerald-700">
+                    <Badge key={projectId} variant="outline">
                       {projects.find((project) => project.id === projectId)?.projectName ?? projectId}
                     </Badge>
                   ))}
@@ -382,25 +383,19 @@ function ScopeGrantManager({
                       <div className="min-w-0">
                         <div className="flex flex-wrap items-center gap-1.5 text-sm font-medium text-slate-800">
                           {scopeLabel(grant)}
-                          {grant.active === false && (
-                            <Badge variant="outline" className="border-slate-300 bg-slate-100 text-[10px] text-slate-600">
-                              Inactive
-                            </Badge>
-                          )}
+                          {grant.active === false && <StatusBadge status="Inactive" />}
                         </div>
                         <div className="mt-1 flex flex-wrap gap-1">
                           {(grant.roleIds ?? []).map((roleId) => {
                             const role = directory.roles.find((entry) => entry.id === roleId);
                             return (
-                              <Badge key={roleId} variant="outline" className="border-indigo-200 bg-indigo-50 text-[10px] text-indigo-700">
+                              <Badge key={roleId} variant="outline">
                                 {role?.name ?? roleId}
                               </Badge>
                             );
                           })}
                           {countPermissions(grant.permissions) > 0 && (
-                            <Badge variant="outline" className="border-violet-200 bg-violet-50 text-[10px] text-violet-700">
-                              {countPermissions(grant.permissions)} direct
-                            </Badge>
+                            <Badge variant="neutral">{countPermissions(grant.permissions)} direct</Badge>
                           )}
                         </div>
                       </div>
@@ -507,7 +502,7 @@ function ScopeGrantEditor({
         </DialogHeader>
 
         <div className={hrDialog.body}>
-          <div className="grid gap-3 sm:grid-cols-2">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <div className="space-y-1.5">
               <Label>Scope type</Label>
               <Select

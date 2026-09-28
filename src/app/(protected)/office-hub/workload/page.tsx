@@ -43,12 +43,13 @@ import {
   OfficeHubKpiCard,
   PersonChip,
   PriorityBadge,
-  ResultCount,
   type OfficeHubListColumn,
 } from '@/components/office-hub/ui';
 import { CategoryBarChart } from '@/components/office-hub/charts';
 import { MultiSelect } from '@/components/office-hub/selectors';
+import { FilterBar } from '@/components/shared/filter-bar';
 import { PageHeader } from '@/components/shared/page-header';
+import { TableCard } from '@/components/shared/table-card';
 
 type SortKey = 'name' | 'activeTasks' | 'overdueTasks' | 'upcomingTasks' | 'completedTasks' | 'meetings' | 'actionItems';
 
@@ -286,23 +287,6 @@ export default function WorkloadPage() {
         <OfficeHubKpiCard label="Open action items" value={totals.actionItems} icon={CheckSquare} tone="teal" />
       </div>
 
-      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-        <MultiSelect
-          label="Department"
-          placeholder="All departments"
-          options={directory.departments.map((department) => ({ value: department.id, label: department.name }))}
-          value={departmentIds}
-          onChange={setDepartmentIds}
-        />
-        <MultiSelect
-          label="Team"
-          placeholder="All teams"
-          options={directory.teams.map((team) => ({ value: team.id, label: team.name }))}
-          value={teamIds}
-          onChange={setTeamIds}
-        />
-      </div>
-
       {unassigned.length > 0 && (
         <Card className="border-amber-200 bg-amber-50/70">
           <CardContent className="flex flex-wrap items-center justify-between gap-2 px-4 py-3">
@@ -321,53 +305,83 @@ export default function WorkloadPage() {
         </Card>
       )}
 
-      <div className="flex flex-wrap items-center gap-2">
-        <span className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">Sort by</span>
-        {headers.map(([key, label]) => (
-          <button
-            key={key}
-            type="button"
-            aria-pressed={sort.key === key}
-            className={cn(
-              'inline-flex items-center gap-0.5 rounded-full border px-2 py-0.5 text-[11px] transition-colors',
-              sort.key === key
-                ? 'border-indigo-300 bg-indigo-50 font-medium text-indigo-800'
-                : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50',
-            )}
-            onClick={() =>
-              setSort((current) =>
-                current.key === key
-                  ? { key, direction: current.direction === 'asc' ? 'desc' : 'asc' }
-                  : { key, direction: key === 'name' ? 'asc' : 'desc' },
-              )
+      <TableCard
+        title="Workload by person"
+        icon={Users}
+        count={sorted.length}
+        total={directory.people.length}
+        noun="employee"
+        toolbar={
+          <div className="space-y-2">
+            <FilterBar
+              activeCount={(departmentIds.length ? 1 : 0) + (teamIds.length ? 1 : 0)}
+              onClear={() => {
+                setDepartmentIds([]);
+                setTeamIds([]);
+              }}
+            >
+              <MultiSelect
+                placeholder="All departments"
+                options={directory.departments.map((department) => ({ value: department.id, label: department.name }))}
+                value={departmentIds}
+                onChange={setDepartmentIds}
+              />
+              <MultiSelect
+                placeholder="All teams"
+                options={directory.teams.map((team) => ({ value: team.id, label: team.name }))}
+                value={teamIds}
+                onChange={setTeamIds}
+              />
+            </FilterBar>
+
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">Sort by</span>
+              {headers.map(([key, label]) => (
+                <button
+                  key={key}
+                  type="button"
+                  aria-pressed={sort.key === key}
+                  className={cn(
+                    'inline-flex items-center gap-0.5 rounded-full border px-2 py-0.5 text-[11px] transition-colors',
+                    sort.key === key
+                      ? 'border-indigo-300 bg-indigo-50 font-medium text-indigo-800'
+                      : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50',
+                  )}
+                  onClick={() =>
+                    setSort((current) =>
+                      current.key === key
+                        ? { key, direction: current.direction === 'asc' ? 'desc' : 'asc' }
+                        : { key, direction: key === 'name' ? 'asc' : 'desc' },
+                    )
+                  }
+                >
+                  {label}
+                  {sort.key === key &&
+                    (sort.direction === 'asc' ? <ArrowUp className="h-3 w-3" /> : <ArrowDown className="h-3 w-3" />)}
+                </button>
+              ))}
+            </div>
+          </div>
+        }
+      >
+        {dataQuery.isLoading ? (
+          <Skeleton className="h-96 w-full rounded-xl" />
+        ) : (
+          <OfficeHubDataList
+            rows={sorted.map((row) => ({ ...row, id: row.userId }))}
+            columns={columns}
+            frameless
+            rowClassName={(row) => (row.overdueTasks > 0 ? 'bg-rose-50/50' : undefined)}
+            empty={
+              <OfficeHubEmptyState
+                icon={Users}
+                title="Nobody in scope."
+                description="Clear the department or team filter."
+              />
             }
-          >
-            {label}
-            {sort.key === key &&
-              (sort.direction === 'asc' ? <ArrowUp className="h-3 w-3" /> : <ArrowDown className="h-3 w-3" />)}
-          </button>
-        ))}
-      </div>
-
-      <ResultCount shown={sorted.length} total={directory.people.length} noun="employee" />
-
-      {dataQuery.isLoading ? (
-        <Skeleton className="h-96 w-full rounded-xl" />
-      ) : (
-        <OfficeHubDataList
-          rows={sorted.map((row) => ({ ...row, id: row.userId }))}
-          columns={columns}
-          maxHeightClassName="sm:max-h-[40rem]"
-          rowClassName={(row) => (row.overdueTasks > 0 ? 'bg-rose-50/50' : undefined)}
-          empty={
-            <OfficeHubEmptyState
-              icon={Users}
-              title="Nobody in scope."
-              description="Clear the department or team filter."
-            />
-          }
-        />
-      )}
+          />
+        )}
+      </TableCard>
 
       <CategoryBarChart
         rows={byDepartment}

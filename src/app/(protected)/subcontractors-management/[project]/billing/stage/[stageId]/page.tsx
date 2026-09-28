@@ -5,7 +5,7 @@ import { useState, useEffect, useMemo, useCallback } from 'react';
 import Link from 'next/link';
 import { ArrowLeft, Check, Clock, Loader2, MoreHorizontal, Eye, Edit } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent } from '@/components/ui/card';
+import { TableCard } from '@/components/shared/table-card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { db } from '@/lib/firebase';
@@ -34,7 +34,7 @@ import { useParams, useRouter } from 'next/navigation';
 import { useAuth } from '@/components/auth/AuthProvider';
 import { Skeleton } from '@/components/ui/skeleton';
 import ViewBillDialog from '@/components/subcontractors-management/ViewBillDialog';
-import { Badge } from '@/components/ui/badge';
+import { StatusBadge } from '@/components/shared/status-badge';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -254,8 +254,7 @@ export default function BillStagePage() {
   };
 
   const renderTable = (data: Bill[], type: 'pending' | 'completed') => (
-    <Card>
-      <CardContent className="p-0">
+    <TableCard>
         <Table>
           <TableHeader>
             <TableRow>
@@ -282,7 +281,7 @@ export default function BillStagePage() {
                     <TableCell>{humanDate(task.billDate)}</TableCell>
                     <TableCell>{task.subcontractorName}</TableCell>
                     <TableCell>{formatINR(task.netPayable)}</TableCell>
-                    <TableCell><Badge>{task.status}</Badge></TableCell>
+                    <TableCell><StatusBadge status={task.status} /></TableCell>
                     <TableCell className="text-right">
                       {isActionLoading === task.id ? <Loader2 className="h-4 w-4 animate-spin ml-auto" /> : (
                         <DropdownMenu>
@@ -320,8 +319,7 @@ export default function BillStagePage() {
             )}
           </TableBody>
         </Table>
-      </CardContent>
-    </Card>
+    </TableCard>
   );
 
   return (

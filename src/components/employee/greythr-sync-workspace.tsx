@@ -45,9 +45,10 @@ import {
   EmployeeErrorBanner,
   EmployeeKpiCard,
   EmployeePageShell,
-  EmployeeStatusPill,
   EmployeeSubNav,
+  employmentStateTone,
 } from '@/components/employee/employee-ui';
+import { StatusBadge } from '@/components/shared/status-badge';
 import { useAuthorization } from '@/hooks/useAuthorization';
 import { useToast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
@@ -56,7 +57,6 @@ import {
   EXIT_ACCESS_POLICIES,
   SYNC_FREQUENCIES,
   describeSchedule,
-  type EmploymentState,
   type ExitAccessPolicy,
   type GreytHRSyncRun,
   type GreytHRSyncSettings,
@@ -73,16 +73,6 @@ import {
 import { PageHeader } from '@/components/shared/page-header';
 
 const DAY_NAMES = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
-
-const STATE_TONE: Record<EmploymentState, string> = {
-  Active: 'border-emerald-200 bg-emerald-50 text-emerald-700',
-  'Notice Period': 'border-amber-200 bg-amber-50 text-amber-800',
-  Relieved: 'border-rose-200 bg-rose-50 text-rose-700',
-  Retired: 'border-slate-200 bg-slate-100 text-slate-600',
-  Settled: 'border-slate-200 bg-slate-100 text-slate-600',
-  Left: 'border-rose-200 bg-rose-50 text-rose-700',
-  Unknown: 'border-slate-300 bg-white text-slate-500',
-};
 
 export function GreytHRSyncWorkspace() {
   const { toast } = useToast();
@@ -299,17 +289,20 @@ export function GreytHRSyncWorkspace() {
                set — saying they are missing would be a guess, and a misleading one: the usual reason
                the report failed is the Admin SDK, which has nothing to do with greytHR. */
             !report ? (
-              <EmployeeStatusPill tone="slate" icon={PlugZap}>
+              <StatusBadge tone="neutral">
+                <PlugZap className="h-3 w-3" aria-hidden="true" />
                 Credential status unknown
-              </EmployeeStatusPill>
+              </StatusBadge>
             ) : report.configured ? (
-              <EmployeeStatusPill tone="emerald" icon={PlugZap}>
+              <StatusBadge tone="success">
+                <PlugZap className="h-3 w-3" aria-hidden="true" />
                 Credentials configured
-              </EmployeeStatusPill>
+              </StatusBadge>
             ) : (
-              <EmployeeStatusPill tone="rose" icon={ShieldAlert}>
+              <StatusBadge tone="danger">
+                <ShieldAlert className="h-3 w-3" aria-hidden="true" />
                 Credentials not configured
-              </EmployeeStatusPill>
+              </StatusBadge>
             )
           }
           actions={
@@ -385,7 +378,7 @@ export function GreytHRSyncWorkspace() {
             <TabsTrigger value="review" className="flex-1 text-xs">
               Review
               {(shownRun?.flaggedForReview ?? 0) > 0 && (
-                <Badge variant="outline" className="ml-1.5 border-amber-200 bg-amber-50 text-[10px] text-amber-800">
+                <Badge variant="warning" className="ml-1.5">
                   {shownRun?.flaggedForReview}
                 </Badge>
               )}
@@ -431,29 +424,15 @@ export function GreytHRSyncWorkspace() {
                   <CardTitle className="flex flex-wrap items-center gap-1.5 text-sm">
                     <Users className="h-4 w-4 text-indigo-600" />
                     Employee mirror
-                    <Badge variant="outline" className="text-[10px] text-slate-600">
+                    <Badge variant="neutral">
                       {report.mirror.employees} record{report.mirror.employees === 1 ? '' : 's'}
                     </Badge>
-                    <Badge
-                      variant="outline"
-                      className={cn(
-                        'text-[10px]',
-                        report.mirror.working > 0 && !mirrorIncomplete
-                          ? 'border-emerald-200 bg-emerald-50 text-emerald-700'
-                          : 'border-rose-200 bg-rose-50 text-rose-700',
-                      )}
-                    >
+                    <Badge variant={report.mirror.working > 0 && !mirrorIncomplete ? 'success' : 'danger'}>
                       {report.mirror.working} still working
                     </Badge>
-                    {rosterCount > 0 && (
-                      <Badge variant="outline" className="border-blue-200 bg-blue-50 text-[10px] text-blue-700">
-                        greytHR: {rosterCount} current
-                      </Badge>
-                    )}
+                    {rosterCount > 0 && <Badge variant="neutral">greytHR: {rosterCount} current</Badge>}
                     {report.mirror.salaryRows > 0 && (
-                      <Badge variant="outline" className="text-[10px] text-slate-500">
-                        + {report.mirror.salaryRows} salary rows
-                      </Badge>
+                      <Badge variant="outline">+ {report.mirror.salaryRows} salary rows</Badge>
                     )}
                   </CardTitle>
                   <CardDescription className="text-xs">
@@ -468,13 +447,9 @@ export function GreytHRSyncWorkspace() {
                     {Object.entries(report.mirror.byState)
                       .sort((a, b) => b[1] - a[1])
                       .map(([state, count]) => (
-                        <Badge
-                          key={state}
-                          variant="outline"
-                          className={cn('font-normal', STATE_TONE[state as EmploymentState] ?? STATE_TONE.Unknown)}
-                        >
+                        <StatusBadge key={state} status={state} tone={employmentStateTone(state)}>
                           {state}: {count}
-                        </Badge>
+                        </StatusBadge>
                       ))}
                   </div>
 
@@ -884,10 +859,7 @@ export function GreytHRSyncWorkspace() {
                               <div className="flex flex-wrap items-center gap-1.5 text-sm font-medium text-slate-800">
                                 {spec.label}
                                 {sensitive && (
-                                  <Badge
-                                    variant="outline"
-                                    className="gap-1 border-amber-300 bg-white/70 text-[10px] text-amber-800"
-                                  >
+                                  <Badge variant="warning" className="gap-1">
                                     <Lock className="h-3 w-3" />
                                     Restricted
                                   </Badge>
@@ -1122,11 +1094,11 @@ function OutcomeRow({
 }) {
   const actionBadge =
     outcome.accessAction === 'deactivate'
-      ? { label: 'Login disabled', className: 'border-rose-200 bg-rose-50 text-rose-700', icon: UserX }
+      ? { label: 'Login disabled', tone: 'danger' as const, icon: UserX }
       : outcome.accessAction === 'reactivate'
-        ? { label: 'Login restored', className: 'border-emerald-200 bg-emerald-50 text-emerald-700', icon: UserCheck }
+        ? { label: 'Login restored', tone: 'success' as const, icon: UserCheck }
         : outcome.flagged
-          ? { label: 'Needs review', className: 'border-amber-200 bg-amber-50 text-amber-800', icon: AlertTriangle }
+          ? { label: 'Needs review', tone: 'warning' as const, icon: AlertTriangle }
           : null;
 
   return (
@@ -1136,22 +1108,22 @@ function OutcomeRow({
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-1.5">
             <span className="truncate text-sm font-medium text-slate-800">{outcome.name || outcome.employeeNo || outcome.employeeId}</span>
-            <Badge variant="outline" className={cn('text-[10px]', STATE_TONE[outcome.employmentState])}>
+            <StatusBadge status={outcome.employmentState} tone={employmentStateTone(outcome.employmentState)}>
               {outcome.employmentState}
-            </Badge>
+            </StatusBadge>
             {actionBadge && (
-              <Badge variant="outline" className={cn('gap-1 text-[10px]', actionBadge.className)}>
-                <actionBadge.icon className="h-3 w-3" />
+              <StatusBadge tone={actionBadge.tone}>
+                <actionBadge.icon className="h-3 w-3" aria-hidden="true" />
                 {actionBadge.label}
-              </Badge>
+              </StatusBadge>
             )}
             {outcome.changes.length > 0 && (
-              <Badge variant="outline" className="border-indigo-200 bg-indigo-50 text-[10px] text-indigo-700">
+              <Badge variant="neutral">
                 {outcome.changes.length} field{outcome.changes.length === 1 ? '' : 's'} changed
               </Badge>
             )}
             {!outcome.userId && (
-              <Badge variant="outline" className="gap-1 border-slate-200 bg-white text-[10px] text-slate-500">
+              <Badge variant="outline" className="gap-1">
                 <CircleSlash className="h-3 w-3" />
                 No platform login
               </Badge>
@@ -1236,22 +1208,9 @@ function RunHistory({ runs }: { runs: GreytHRSyncRun[] }) {
                 {/* A `<div>`, not a `<p>` — see the detail-group row above: these badges are divs. */}
                 <div className="flex flex-wrap items-center gap-1.5 text-sm font-semibold text-slate-800">
                   {formatWhen(run.startedAt)}
-                  <Badge variant="outline" className="text-[10px] capitalize text-slate-600">{run.trigger}</Badge>
-                  {run.fullResync && (
-                    <Badge variant="outline" className="border-sky-200 bg-sky-50 text-[10px] text-sky-700">
-                      Full refresh
-                    </Badge>
-                  )}
-                  <Badge
-                    variant="outline"
-                    className={
-                      run.ok
-                        ? 'border-emerald-200 bg-emerald-50 text-[10px] text-emerald-700'
-                        : 'border-destructive/40 bg-destructive/10 text-[10px] text-destructive'
-                    }
-                  >
-                    {run.ok ? 'Succeeded' : 'Failed'}
-                  </Badge>
+                  <Badge variant="outline" className="capitalize">{run.trigger}</Badge>
+                  {run.fullResync && <Badge variant="outline">Full refresh</Badge>}
+                  <StatusBadge status={run.ok ? 'Succeeded' : 'Failed'} tone={run.ok ? 'success' : 'danger'} />
                 </div>
                 <p className="mt-0.5 text-xs text-muted-foreground">
                   {run.triggeredByName ? `by ${run.triggeredByName} · ` : ''}
@@ -1261,29 +1220,13 @@ function RunHistory({ runs }: { runs: GreytHRSyncRun[] }) {
               </div>
             </div>
 
-            <div className="flex flex-wrap gap-1.5 text-[11px]">
-              <Badge variant="outline" className="text-slate-600">{run.employeesFetched} fetched</Badge>
-              <Badge variant="outline" className="border-emerald-200 bg-emerald-50 text-emerald-700">
-                {run.employeesCreated} added
-              </Badge>
-              <Badge variant="outline" className="border-indigo-200 bg-indigo-50 text-indigo-700">
-                {run.employeesUpdated} updated
-              </Badge>
-              {run.usersDeactivated > 0 && (
-                <Badge variant="outline" className="border-rose-200 bg-rose-50 text-rose-700">
-                  {run.usersDeactivated} logins disabled
-                </Badge>
-              )}
-              {run.usersReactivated > 0 && (
-                <Badge variant="outline" className="border-emerald-200 bg-emerald-50 text-emerald-700">
-                  {run.usersReactivated} logins restored
-                </Badge>
-              )}
-              {run.flaggedForReview > 0 && (
-                <Badge variant="outline" className="border-amber-200 bg-amber-50 text-amber-800">
-                  {run.flaggedForReview} flagged
-                </Badge>
-              )}
+            <div className="flex flex-wrap gap-1.5">
+              <Badge variant="outline">{run.employeesFetched} fetched</Badge>
+              <Badge variant="neutral">{run.employeesCreated} added</Badge>
+              <Badge variant="neutral">{run.employeesUpdated} updated</Badge>
+              {run.usersDeactivated > 0 && <Badge variant="danger">{run.usersDeactivated} logins disabled</Badge>}
+              {run.usersReactivated > 0 && <Badge variant="success">{run.usersReactivated} logins restored</Badge>}
+              {run.flaggedForReview > 0 && <Badge variant="warning">{run.flaggedForReview} flagged</Badge>}
             </div>
 
             {run.error && <p className="text-xs text-destructive">{run.error}</p>}

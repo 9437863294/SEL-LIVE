@@ -5,10 +5,9 @@ import Link from 'next/link';
 import { Building2, ChevronRight, Download, Users } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent } from '@/components/ui/card';
-import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { cn } from '@/lib/utils';
+import { FilterBar } from '@/components/shared/filter-bar';
+import { TableCard } from '@/components/shared/table-card';
 import {
   HR_COLLECTIONS,
   isOpenRequirementStatus,
@@ -225,7 +224,7 @@ export default function ProjectManpower() {
       mobile: 'aside',
       cell: row =>
         row.position.criticalShortage > 0 ? (
-          <Badge variant="outline" className="border-rose-200 bg-rose-50 tabular-nums text-rose-800">
+          <Badge variant="danger" className="tabular-nums">
             {row.position.criticalShortage}
           </Badge>
         ) : (
@@ -294,10 +293,10 @@ export default function ProjectManpower() {
         }
       />
 
-      <div className="mb-3 sm:w-80">
-        <Label className="text-xs">Project</Label>
+      {/* The project scopes the whole page — the figures, the rollup and the register. */}
+      <FilterBar className="mb-3" activeCount={projectId !== 'all' ? 1 : 0} onClear={() => setProjectId('all')}>
         <Select value={projectId} onValueChange={setProjectId}>
-          <SelectTrigger><SelectValue /></SelectTrigger>
+          <SelectTrigger aria-label="Project"><SelectValue /></SelectTrigger>
           <SelectContent className="max-h-72">
             <SelectItem value="all">All projects</SelectItem>
             {byProject.map(entry => (
@@ -308,7 +307,7 @@ export default function ProjectManpower() {
             ))}
           </SelectContent>
         </Select>
-      </div>
+      </FilterBar>
 
       {/* The header figures of the spec's sketch. */}
       <div className="mb-4 grid grid-cols-2 gap-3 sm:grid-cols-4 lg:grid-cols-7">
@@ -347,7 +346,7 @@ export default function ProjectManpower() {
                   </div>
                   <div className="flex shrink-0 items-center gap-1.5">
                     {entry.position.criticalShortage > 0 && (
-                      <Badge variant="outline" className="border-rose-200 bg-rose-50 tabular-nums text-rose-800">
+                      <Badge variant="danger" className="tabular-nums">
                         {entry.position.criticalShortage} critical
                       </Badge>
                     )}
@@ -363,11 +362,13 @@ export default function ProjectManpower() {
         </HrSection>
       )}
 
-      <HrSection
+      <TableCard
         title={selected ? `${selected.projectName} — by designation` : 'All designations'}
         description="Spec section 61 — drill down to the role that is actually short."
       >
+        <div className="p-3 sm:p-0">
         <HrDataList
+          frameless
           rows={detailRows}
           columns={columns}
           rowClassName={row => (row.position.criticalShortage > 0 ? 'bg-rose-50/40' : undefined)}
@@ -384,7 +385,8 @@ export default function ProjectManpower() {
             />
           }
         />
-      </HrSection>
+        </div>
+      </TableCard>
     </div>
   );
 }

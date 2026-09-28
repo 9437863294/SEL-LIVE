@@ -26,6 +26,7 @@ import { HrControlError, saveHrSettings } from '@/lib/hr-requirement-service';
 import { HrAccessDenied, HrAlertNotice, HrLoader, HrSection } from './hr-ui';
 import { useHrConfig, useHrPermissions } from './use-hr-config';
 import { PageHeader } from '@/components/shared/page-header';
+import { StatusBadge } from '@/components/shared/status-badge';
 
 /**
  * HR settings, spec section 58.
@@ -1012,11 +1013,9 @@ function RuleEditor({
               <div className="flex flex-wrap items-center gap-2">
                 <p className="truncate text-sm font-medium text-slate-800">{rule.name}</p>
                 {rule.fastTrack && (
-                  <Badge variant="outline" className="border-rose-200 bg-rose-50 text-[10px] text-rose-700">fast track</Badge>
+                  <Badge variant="danger">fast track</Badge>
                 )}
-                {rule.active === false && (
-                  <Badge variant="outline" className="border-slate-200 bg-slate-50 text-[10px]">inactive</Badge>
-                )}
+                {rule.active === false && <StatusBadge status="inactive" tone="neutral">inactive</StatusBadge>}
               </div>
               <p className="mt-0.5 text-[11px] text-muted-foreground">When: {conditionSummary(rule)}</p>
               <p className="mt-0.5 text-[11px] text-slate-600">

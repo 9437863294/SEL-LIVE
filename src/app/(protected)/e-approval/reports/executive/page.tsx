@@ -4,10 +4,11 @@ import Link from 'next/link';
 import { useMemo, useState } from 'react';
 import { Bar, BarChart, CartesianGrid, Legend, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import { ArrowDownRight, ArrowRight, ArrowUpRight } from 'lucide-react';
-import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { StatusBadge } from '@/components/shared/status-badge';
+import { TableCard } from '@/components/shared/table-card';
 import { cn } from '@/lib/utils';
 import { exportRowsToExcel } from '@/lib/report-excel';
 import { E_APPROVAL_BASE_PATH } from '@/lib/e-approval';
@@ -243,13 +244,10 @@ export default function EApprovalExecutiveReportPage() {
               }
             />
 
-            <Card>
-              <CardContent className="px-2 py-3 sm:px-3">
-                <p className="mb-2 px-1 text-sm font-semibold">Oldest pending approvals</p>
-                <div className="overflow-x-auto rounded-lg border">
+            <TableCard title="Oldest pending approvals" count={oldest.length} noun="approval" scroll="natural">
                   <Table>
                     <TableHeader>
-                      <TableRow className="bg-muted/40">
+                      <TableRow>
                         <TableHead>Reference</TableHead>
                         <TableHead>Subject</TableHead>
                         <TableHead>Pending with</TableHead>
@@ -261,35 +259,31 @@ export default function EApprovalExecutiveReportPage() {
                     <TableBody>
                       {oldest.map((row) => (
                         <TableRow key={row.id} className={row.overdue ? 'bg-rose-50/60' : undefined}>
-                          <TableCell className="whitespace-nowrap font-mono text-[11px]">
+                          <TableCell className="whitespace-nowrap font-mono">
                             <Link href={`${E_APPROVAL_BASE_PATH}/${row.id}`} className="text-sky-700 hover:underline">
                               {row.referenceNo || 'Draft'}
                             </Link>
                           </TableCell>
-                          <TableCell className="max-w-[260px] truncate text-xs">{row.subject}</TableCell>
-                          <TableCell className="text-xs">{row.pendingWith || '—'}</TableCell>
-                          <TableCell className="whitespace-nowrap text-right text-xs tabular-nums">
+                          <TableCell className="max-w-[260px] truncate">{row.subject}</TableCell>
+                          <TableCell>{row.pendingWith || '—'}</TableCell>
+                          <TableCell className="whitespace-nowrap text-right tabular-nums">
                             {Math.round(row.ageHours / 24)}d
                           </TableCell>
-                          <TableCell className="whitespace-nowrap text-right text-xs tabular-nums">
+                          <TableCell className="whitespace-nowrap text-right tabular-nums">
                             {row.amount == null ? '—' : formatEApprovalAmount(row.amount)}
                           </TableCell>
                           <TableCell>
                             {row.escalationLevel ? (
-                              <Badge variant="outline" className="border-rose-200 bg-rose-50 text-[10px] text-rose-700">
-                                {row.escalationLevel}
-                              </Badge>
+                              <StatusBadge status={row.escalationLevel} tone="danger" />
                             ) : (
-                              <span className="text-xs text-muted-foreground">—</span>
+                              <span className="text-muted-foreground">—</span>
                             )}
                           </TableCell>
                         </TableRow>
                       ))}
                     </TableBody>
                   </Table>
-                </div>
-              </CardContent>
-            </Card>
+            </TableCard>
           </>
         );
       }}

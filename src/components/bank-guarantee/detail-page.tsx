@@ -16,7 +16,6 @@ import { useAuth } from "@/components/auth/AuthProvider";
 import {
   BG_COLLECTIONS,
   bgLabel,
-  bgStatusTone,
   daysToBgDate,
   formatBgCurrency,
   toBgDateInput,
@@ -24,9 +23,10 @@ import {
   type BankGuarantee,
 } from "@/lib/bank-guarantee";
 import { FD_COLLECTIONS } from "@/lib/fixed-deposit";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { PageHeader } from "@/components/shared/page-header";
+import { StatusBadge } from "@/components/shared/status-badge";
+import { TableCard } from "@/components/shared/table-card";
 import {
   Card,
   CardContent,
@@ -190,9 +190,7 @@ export default function BGDetailPage({ id }: { id: string }) {
         backLabel="Back to BG register"
         title={title}
         badge={
-          <Badge variant="outline" className={bgStatusTone(status)}>
-            {bgLabel(status)}
-          </Badge>
+          <StatusBadge status={status}>{bgLabel(status)}</StatusBadge>
         }
         description={
           <>
@@ -228,7 +226,7 @@ export default function BGDetailPage({ id }: { id: string }) {
         }
       />
       {bg && (
-        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-5">
           <Metric
             label="Current Amount"
             value={formatBgCurrency(bg.currentAmount, bg.currency)}
@@ -337,7 +335,7 @@ export default function BGDetailPage({ id }: { id: string }) {
             ["assignmentAmount", "Assigned", money],
             ["activeAmount", "Active", money],
             ["obligationEndDate", "Claim End", dateText],
-            ["status", "Status", labelText],
+            ["status", "Status", statusText],
           ])}
         </TabsContent>
         <TabsContent value="commission">
@@ -347,7 +345,7 @@ export default function BGDetailPage({ id }: { id: string }) {
             ["bankChargedCommission", "Bank", money],
             ["gstAmount", "GST", money],
             ["differenceAmount", "Difference", money],
-            ["reconciliationStatus", "Status", labelText],
+            ["reconciliationStatus", "Status", statusText],
           ])}
         </TabsContent>
         <TabsContent value="extensions">
@@ -356,14 +354,14 @@ export default function BGDetailPage({ id }: { id: string }) {
             ["previousExpiryDate", "Previous", dateText],
             ["proposedExpiryDate", "Proposed", dateText],
             ["additionalCommission", "Commission", money],
-            ["status", "Status", labelText],
+            ["status", "Status", statusText],
           ])}
           {table(BG_COLLECTIONS.amendments, [
             ["amendmentNumber", "Amendment"],
             ["amendmentType", "Type", labelText],
             ["existingValue", "Existing"],
             ["proposedValue", "Proposed"],
-            ["status", "Status", labelText],
+            ["status", "Status", statusText],
           ])}
         </TabsContent>
         <TabsContent value="movement">
@@ -379,7 +377,7 @@ export default function BGDetailPage({ id }: { id: string }) {
             ["acknowledgementNumber", "Acknowledgement"],
             ["deliveryDate", "Delivery", dateText],
             ["receivedBy", "Received By"],
-            ["status", "Status", labelText],
+            ["status", "Status", statusText],
           ])}
         </TabsContent>
         <TabsContent value="invocation">
@@ -389,7 +387,7 @@ export default function BGDetailPage({ id }: { id: string }) {
             ["claimedAmount", "Claimed", money],
             ["claimReason", "Reason"],
             ["settlementAmount", "Settlement", money],
-            ["status", "Status", labelText],
+            ["status", "Status", statusText],
           ])}
         </TabsContent>
         <TabsContent value="cancellation">
@@ -399,7 +397,7 @@ export default function BGDetailPage({ id }: { id: string }) {
             ["bankReference", "Bank Ref"],
             ["bankConfirmationDate", "Confirmation", dateText],
             ["fdReleaseAmount", "FD Release", money],
-            ["status", "Status", labelText],
+            ["status", "Status", statusText],
           ])}
         </TabsContent>
         <TabsContent value="documents">
@@ -408,7 +406,7 @@ export default function BGDetailPage({ id }: { id: string }) {
             ["fileName", "File"],
             ["version", "Version"],
             ["referenceNumber", "Reference"],
-            ["status", "Status", labelText],
+            ["status", "Status", statusText],
           ])}
         </TabsContent>
         <TabsContent value="approvals">
@@ -416,7 +414,7 @@ export default function BGDetailPage({ id }: { id: string }) {
             ["recordType", "Record"],
             ["stage", "Stage", labelText],
             ["requiredRole", "Required Role"],
-            ["status", "Status", labelText],
+            ["status", "Status", statusText],
             ["decidedByName", "Decided By"],
             ["comments", "Comments"],
           ])}
@@ -436,7 +434,13 @@ export default function BGDetailPage({ id }: { id: string }) {
 }
 const money = (value: any) => formatBgCurrency(Number(value || 0)),
   dateText = (value: any) => toBgDateInput(value),
-  labelText = (value: any) => bgLabel(value);
+  labelText = (value: any) => bgLabel(value),
+  statusText = (value: any) =>
+    value ? (
+      <StatusBadge status={String(value)}>{bgLabel(value)}</StatusBadge>
+    ) : (
+      "-"
+    );
 function Metric({ label, value }: { label: string; value: string }) {
   return (
     <Card>
@@ -450,7 +454,7 @@ function Metric({ label, value }: { label: string; value: string }) {
 function Info({ items }: { items: Record<string, unknown> }) {
   return (
     <Card>
-      <CardContent className="grid gap-4 p-5 sm:grid-cols-2 lg:grid-cols-3">
+      <CardContent className="grid grid-cols-1 gap-4 p-5 sm:grid-cols-2 lg:grid-cols-3">
         {Object.entries(items).map(([key, value]) => (
           <div key={key}>
             <p className="text-xs text-muted-foreground">{key}</p>
@@ -469,9 +473,7 @@ function SimpleTable({
   columns: Array<[string, string, ((value: any) => React.ReactNode)?]>;
 }) {
   return (
-    <Card className="mb-4">
-      <CardContent className="p-0">
-        <div className="overflow-x-auto">
+    <TableCard className="mb-4" count={rows.length} noun="record" scroll="natural">
           <Table>
             <TableHeader>
               <TableRow>
@@ -504,8 +506,6 @@ function SimpleTable({
               )}
             </TableBody>
           </Table>
-        </div>
-      </CardContent>
-    </Card>
+    </TableCard>
   );
 }

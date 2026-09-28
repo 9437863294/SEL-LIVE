@@ -24,14 +24,15 @@ import {
   UserMinus,
   UserSearch,
   Users,
+  type LucideIcon,
 } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { ScrollArea } from '@/components/ui/scroll-area';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { StatusBadge, type StatusTone } from '@/components/shared/status-badge';
+import { TableCard } from '@/components/shared/table-card';
 import { HrDataList, HrEmptyState, type HrListColumn } from '@/components/hr/hr-ui';
 import { useToast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
@@ -47,7 +48,7 @@ import {
 } from '@/lib/access-control';
 import { listAccessAuditEntries } from '@/lib/access-control-service';
 import type { AccessDirectoryState } from '@/hooks/useAccessDirectory';
-import { AccessCard, RiskBadges, RoleBadge } from './access-ui';
+import { RiskBadges, RoleBadge } from './access-ui';
 
 export type ReportId =
   | 'user-access'
@@ -59,7 +60,7 @@ export type ReportId =
   | 'changes'
   | 'inactive';
 
-const REPORTS: Array<{ id: ReportId; label: string; description: string; icon: React.ElementType }> = [
+const REPORTS: Array<{ id: ReportId; label: string; description: string; icon: LucideIcon }> = [
   { id: 'user-access', label: 'User access', description: 'Who has access to what.', icon: Users },
   { id: 'role-usage', label: 'Role usage', description: 'Which users hold each role.', icon: Layers },
   { id: 'permission-usage', label: 'Permission usage', description: 'Who holds a particular permission.', icon: KeyRound },
@@ -129,24 +130,40 @@ export function AccessReports({
         })}
       </div>
 
-      {/* Each report's table runs to the bottom of the screen rather than stopping at a fixed height
-          with a blank band beneath — the viewport less the chrome above it. */}
-      <AccessCard>
-        <CardHeader className="px-4 py-3">
-          <CardTitle className="text-sm">{report.label}</CardTitle>
-          <CardDescription className="text-xs">{report.description}</CardDescription>
-        </CardHeader>
-        <CardContent className="px-4 pb-4">
-          {selected === 'user-access' && <UserAccessReport state={state} />}
-          {selected === 'role-usage' && <RoleUsageReport state={state} />}
-          {selected === 'permission-usage' && <PermissionUsageReport state={state} />}
-          {selected === 'privileged' && <PrivilegedUsersReport state={state} />}
-          {selected === 'project-access' && <ProjectAccessReport state={state} />}
-          {selected === 'temporary' && <TemporaryAccessReport state={state} />}
-          {selected === 'changes' && <AccessChangeReport state={state} />}
-          {selected === 'inactive' && <InactiveUsersReport state={state} />}
-        </CardContent>
-      </AccessCard>
+      {/* Each report is its own register frame (`TableCard`): the report's name and description as
+          the title, its Export among the actions, its parameters in the toolbar, and the rows
+          scrolling inside the card under a pinned header. */}
+      {selected === 'user-access' && <UserAccessReport state={state} meta={report} />}
+      {selected === 'role-usage' && <RoleUsageReport state={state} meta={report} />}
+      {selected === 'permission-usage' && <PermissionUsageReport state={state} meta={report} />}
+      {selected === 'privileged' && <PrivilegedUsersReport state={state} meta={report} />}
+      {selected === 'project-access' && <ProjectAccessReport state={state} meta={report} />}
+      {selected === 'temporary' && <TemporaryAccessReport state={state} meta={report} />}
+      {selected === 'changes' && <AccessChangeReport state={state} meta={report} />}
+      {selected === 'inactive' && <InactiveUsersReport state={state} meta={report} />}
+    </div>
+  );
+}
+
+type ReportMeta = (typeof REPORTS)[number];
+
+/**
+ * A report's rows inside its frame: the phone cards inset from the card's edge, the desktop table
+ * flush with it, and the empty state inset like the cards.
+ */
+function ReportList<T extends { id: string }>({
+  rows,
+  columns,
+  empty,
+}: {
+  rows: T[];
+  columns: Array<HrListColumn<T>>;
+  empty: React.ReactNode;
+}) {
+  if (!rows.length) return <div className="p-3">{empty}</div>;
+  return (
+    <div className="p-3 sm:p-0">
+      <HrDataList rows={rows} columns={columns} frameless />
     </div>
   );
 }
@@ -192,7 +209,7 @@ function ExportButton({
  * 1. User access
  * ---------------------------------------------------------------------------------------------- */
 
-function UserAccessReport({ state }: { state: AccessDirectoryState }) {
+function UserAccessReport({ state, meta }: { state: AccessDirectoryState; meta: ReportMeta }) {
   const { directory, accessByUser, projects } = state;
 
   const rows = useMemo(
@@ -253,12 +270,16 @@ function UserAccessReport({ state }: { state: AccessDirectoryState }) {
   }));
 
   return (
-    <div className="space-y-2.5">
-      <div className="flex justify-end">
-        <ExportButton title="User access report" rows={exportRows} filename="user-access-report.xlsx" />
-      </div>
-      <HrDataList rows={rows} columns={columns} empty={<HrEmptyState title="No users" />} maxHeightClassName="sm:max-h-[max(16rem,calc(100dvh-30rem))]" dense />
-    </div>
+    <TableCard
+      title={meta.label}
+      description={meta.description}
+      icon={meta.icon}
+      count={rows.length}
+      noun="user"
+      actions={<ExportButton title="User access report" rows={exportRows} filename="user-access-report.xlsx" />}
+    >
+      <ReportList rows={rows} columns={columns} empty={<HrEmptyState title="No users" />} />
+    </TableCard>
   );
 }
 
@@ -266,7 +287,7 @@ function UserAccessReport({ state }: { state: AccessDirectoryState }) {
  * 2. Role usage
  * ---------------------------------------------------------------------------------------------- */
 
-function RoleUsageReport({ state }: { state: AccessDirectoryState }) {
+function RoleUsageReport({ state, meta }: { state: AccessDirectoryState; meta: ReportMeta }) {
   const { directory, accessByUser, roleUsage } = state;
 
   const rows = useMemo(
@@ -320,12 +341,16 @@ function RoleUsageReport({ state }: { state: AccessDirectoryState }) {
   );
 
   return (
-    <div className="space-y-2.5">
-      <div className="flex justify-end">
-        <ExportButton title="Role usage report" rows={exportRows} filename="role-usage-report.xlsx" />
-      </div>
-      <HrDataList rows={rows} columns={columns} empty={<HrEmptyState title="No roles" />} maxHeightClassName="sm:max-h-[max(16rem,calc(100dvh-30rem))]" dense />
-    </div>
+    <TableCard
+      title={meta.label}
+      description={meta.description}
+      icon={meta.icon}
+      count={rows.length}
+      noun="role"
+      actions={<ExportButton title="Role usage report" rows={exportRows} filename="role-usage-report.xlsx" />}
+    >
+      <ReportList rows={rows} columns={columns} empty={<HrEmptyState title="No roles" />} />
+    </TableCard>
   );
 }
 
@@ -333,7 +358,7 @@ function RoleUsageReport({ state }: { state: AccessDirectoryState }) {
  * 3. Permission usage
  * ---------------------------------------------------------------------------------------------- */
 
-function PermissionUsageReport({ state }: { state: AccessDirectoryState }) {
+function PermissionUsageReport({ state, meta }: { state: AccessDirectoryState; meta: ReportMeta }) {
   const { directory, accessByUser, registry } = state;
   const [resource, setResource] = useState('');
   const [action, setAction] = useState('');
@@ -375,61 +400,67 @@ function PermissionUsageReport({ state }: { state: AccessDirectoryState }) {
     'Granted through': row.sources.map((source) => `${source.label} (${source.kind})`).join('; '),
   }));
 
-  return (
-    <div className="space-y-2.5">
-      <div className="grid gap-2 sm:grid-cols-3">
-        <div className="space-y-1.5 sm:col-span-2">
-          <Label className="text-xs">Permission</Label>
-          <Select
-            value={resource}
-            onValueChange={(value) => {
-              setResource(value);
-              setAction('');
-            }}
-          >
-            <SelectTrigger><SelectValue placeholder="Module › page" /></SelectTrigger>
-            <SelectContent className="max-h-72 max-w-[calc(100vw-2rem)]">
-              {registry.map((entry) => (
-                <SelectItem key={entry.resource} value={entry.resource}>
-                  <span className="block truncate">{entry.resource.split('.').join(' › ')}</span>
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
-        <div className="space-y-1.5">
-          <Label className="text-xs">Action</Label>
-          <Select value={action} onValueChange={setAction} disabled={!node}>
-            <SelectTrigger><SelectValue placeholder="Action" /></SelectTrigger>
-            <SelectContent>
-              {(node?.actions ?? []).map((entry) => (
-                <SelectItem key={entry} value={entry}>{entry}</SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
-      </div>
+  const picked = Boolean(resource && action);
 
-      {!resource || !action ? (
-        <HrEmptyState icon={KeyRound} title="Pick a permission" description="You'll see everybody who holds it and which grant gives it to them." />
-      ) : (
-        <>
-          <div className="flex flex-wrap items-center justify-between gap-2">
-            <Badge variant="outline" className="whitespace-normal border-indigo-200 bg-indigo-50 text-indigo-700">
+  return (
+    <TableCard
+      title={meta.label}
+      description={meta.description}
+      icon={meta.icon}
+      actions={
+        picked ? (
+          <>
+            <Badge variant="neutral" className="whitespace-normal">
               {holders.length} user(s) hold {resource} · {action}
             </Badge>
             <ExportButton title="Permission usage report" rows={exportRows} filename="permission-usage-report.xlsx" />
+          </>
+        ) : undefined
+      }
+      // The report's parameters — a labelled form that drives the report, not a list filter.
+      toolbar={
+        <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
+          <div className="space-y-1.5 sm:col-span-2">
+            <Label className="text-xs">Permission</Label>
+            <Select
+              value={resource}
+              onValueChange={(value) => {
+                setResource(value);
+                setAction('');
+              }}
+            >
+              <SelectTrigger><SelectValue placeholder="Module › page" /></SelectTrigger>
+              <SelectContent className="max-h-72 max-w-[calc(100vw-2rem)]">
+                {registry.map((entry) => (
+                  <SelectItem key={entry.resource} value={entry.resource}>
+                    <span className="block truncate">{entry.resource.split('.').join(' › ')}</span>
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </div>
-          <HrDataList
-            rows={holders}
-            columns={columns}
-            empty={<HrEmptyState title="Nobody holds this permission" />}
-            maxHeightClassName="sm:max-h-[max(16rem,calc(100dvh-36rem))]"
-            dense
-          />
-        </>
+          <div className="space-y-1.5">
+            <Label className="text-xs">Action</Label>
+            <Select value={action} onValueChange={setAction} disabled={!node}>
+              <SelectTrigger><SelectValue placeholder="Action" /></SelectTrigger>
+              <SelectContent>
+                {(node?.actions ?? []).map((entry) => (
+                  <SelectItem key={entry} value={entry}>{entry}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+        </div>
+      }
+    >
+      {!picked ? (
+        <div className="p-3">
+          <HrEmptyState icon={KeyRound} title="Pick a permission" description="You'll see everybody who holds it and which grant gives it to them." />
+        </div>
+      ) : (
+        <ReportList rows={holders} columns={columns} empty={<HrEmptyState title="Nobody holds this permission" />} />
       )}
-    </div>
+    </TableCard>
   );
 }
 
@@ -437,7 +468,7 @@ function PermissionUsageReport({ state }: { state: AccessDirectoryState }) {
  * 4. Privileged users
  * ---------------------------------------------------------------------------------------------- */
 
-function PrivilegedUsersReport({ state }: { state: AccessDirectoryState }) {
+function PrivilegedUsersReport({ state, meta }: { state: AccessDirectoryState; meta: ReportMeta }) {
   const { directory, accessByUser } = state;
 
   const rows = useMemo(
@@ -490,22 +521,25 @@ function PrivilegedUsersReport({ state }: { state: AccessDirectoryState }) {
   }));
 
   return (
-    <div className="space-y-2.5">
-      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-        <p className="text-xs text-muted-foreground">
-          Detected from what these users can actually do, not from role names — a custom role that
-          happens to grant user management shows up here.
-        </p>
-        <ExportButton title="Privileged user report" rows={exportRows} filename="privileged-user-report.xlsx" />
-      </div>
-      <HrDataList
+    <TableCard
+      title={meta.label}
+      description={
+        <>
+          {meta.description} Detected from what these users can actually do, not from role names — a
+          custom role that happens to grant user management shows up here.
+        </>
+      }
+      icon={meta.icon}
+      count={rows.length}
+      noun="user"
+      actions={<ExportButton title="Privileged user report" rows={exportRows} filename="privileged-user-report.xlsx" />}
+    >
+      <ReportList
         rows={rows}
         columns={columns}
         empty={<HrEmptyState title="No privileged users detected" description="Nobody currently holds a high-risk capability or a segregation-of-duties conflict." />}
-        maxHeightClassName="sm:max-h-[max(16rem,calc(100dvh-30rem))]"
-        dense
       />
-    </div>
+    </TableCard>
   );
 }
 
@@ -513,7 +547,7 @@ function PrivilegedUsersReport({ state }: { state: AccessDirectoryState }) {
  * 5. Project access
  * ---------------------------------------------------------------------------------------------- */
 
-function ProjectAccessReport({ state }: { state: AccessDirectoryState }) {
+function ProjectAccessReport({ state, meta }: { state: AccessDirectoryState; meta: ReportMeta }) {
   const { directory, accessByUser, projects } = state;
 
   const rows = useMemo(
@@ -560,16 +594,21 @@ function ProjectAccessReport({ state }: { state: AccessDirectoryState }) {
   );
 
   return (
-    <div className="space-y-2.5">
-      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-        <p className="text-xs text-muted-foreground">
-          Users with an explicit project grant. A user with no project restriction can reach every
-          project and is not listed here.
-        </p>
-        <ExportButton title="Project access report" rows={exportRows} filename="project-access-report.xlsx" />
-      </div>
-      <HrDataList rows={rows} columns={columns} empty={<HrEmptyState title="No projects" />} maxHeightClassName="sm:max-h-[max(16rem,calc(100dvh-30rem))]" dense />
-    </div>
+    <TableCard
+      title={meta.label}
+      description={
+        <>
+          {meta.description} Users with an explicit project grant. A user with no project restriction
+          can reach every project and is not listed here.
+        </>
+      }
+      icon={meta.icon}
+      count={rows.length}
+      noun="project"
+      actions={<ExportButton title="Project access report" rows={exportRows} filename="project-access-report.xlsx" />}
+    >
+      <ReportList rows={rows} columns={columns} empty={<HrEmptyState title="No projects" />} />
+    </TableCard>
   );
 }
 
@@ -577,7 +616,17 @@ function ProjectAccessReport({ state }: { state: AccessDirectoryState }) {
  * 6. Temporary access
  * ---------------------------------------------------------------------------------------------- */
 
-function TemporaryAccessReport({ state }: { state: AccessDirectoryState }) {
+/**
+ * A temporary grant's state in this module's terms. "Active" means a lapsing grant is in force,
+ * which the module flags as a caution (warning), not a success; "Expired" is kept for the audit
+ * trail, not an alarm (neutral) — so neither is left to the shared vocabulary.
+ */
+const TEMPORARY_STATE_TONE: Record<string, StatusTone> = {
+  Active: 'warning',
+  Upcoming: 'info',
+};
+
+function TemporaryAccessReport({ state, meta }: { state: AccessDirectoryState; meta: ReportMeta }) {
   const { directory } = state;
 
   const rows = useMemo(() => {
@@ -632,18 +681,9 @@ function TemporaryAccessReport({ state }: { state: AccessDirectoryState }) {
       header: 'State',
       mobile: 'aside',
       cell: (row) => (
-        <Badge
-          variant="outline"
-          className={
-            row.grantState === 'Active'
-              ? 'border-amber-200 bg-amber-50 text-amber-800'
-              : row.grantState === 'Upcoming'
-                ? 'border-sky-200 bg-sky-50 text-sky-700'
-                : 'border-slate-200 bg-white text-slate-500'
-          }
-        >
+        <StatusBadge status={row.grantState} tone={TEMPORARY_STATE_TONE[row.grantState] ?? 'neutral'}>
           {row.grantState}
-        </Badge>
+        </StatusBadge>
       ),
     },
     { header: 'From', mobile: 'detail', cell: (row) => formatGrantDate(row.startAt) },
@@ -678,29 +718,30 @@ function TemporaryAccessReport({ state }: { state: AccessDirectoryState }) {
   }));
 
   return (
-    <div className="space-y-2.5">
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <div className="flex flex-wrap gap-2">
-          <Badge variant="outline" className="border-amber-200 bg-amber-50 text-amber-800">
-            {rows.filter((row) => row.grantState === 'Active').length} active
-          </Badge>
-          <Badge variant="outline" className="border-rose-200 bg-rose-50 text-rose-700">
-            {expiringSoon} expiring within 7 days
-          </Badge>
-          <Badge variant="outline" className="text-slate-500">
+    <TableCard
+      title={meta.label}
+      description={meta.description}
+      icon={meta.icon}
+      count={rows.length}
+      noun="grant"
+      actions={
+        <>
+          {/* Summary counts, toned like the State column they total. */}
+          <Badge variant="warning">{rows.filter((row) => row.grantState === 'Active').length} active</Badge>
+          <Badge variant="danger">{expiringSoon} expiring within 7 days</Badge>
+          <Badge variant="outline">
             {rows.filter((row) => row.grantState === 'Expired').length} expired (kept for audit)
           </Badge>
-        </div>
-        <ExportButton title="Temporary access report" rows={exportRows} filename="temporary-access-report.xlsx" />
-      </div>
-      <HrDataList
+          <ExportButton title="Temporary access report" rows={exportRows} filename="temporary-access-report.xlsx" />
+        </>
+      }
+    >
+      <ReportList
         rows={rows}
         columns={columns}
         empty={<HrEmptyState title="No temporary access granted" description="Temporary grants lapse on their own and stay listed here afterwards for the audit trail." />}
-        maxHeightClassName="sm:max-h-[max(16rem,calc(100dvh-30rem))]"
-        dense
       />
-    </div>
+    </TableCard>
   );
 }
 
@@ -708,7 +749,7 @@ function TemporaryAccessReport({ state }: { state: AccessDirectoryState }) {
  * 7. Access changes
  * ---------------------------------------------------------------------------------------------- */
 
-function AccessChangeReport({ state }: { state: AccessDirectoryState }) {
+function AccessChangeReport({ state, meta }: { state: AccessDirectoryState; meta: ReportMeta }) {
   const { toast } = useToast();
   const [from, setFrom] = useState(() => {
     const date = new Date();
@@ -753,52 +794,59 @@ function AccessChangeReport({ state }: { state: AccessDirectoryState }) {
   };
 
   return (
-    <div className="space-y-2.5">
-      <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-        <div className="space-y-1.5">
-          <Label className="text-xs">From</Label>
-          <Input type="date" value={from} onChange={(event) => setFrom(event.target.value)} />
-        </div>
-        <div className="space-y-1.5">
-          <Label className="text-xs">To</Label>
-          <Input type="date" value={to} onChange={(event) => setTo(event.target.value)} />
-        </div>
-        <div className="flex items-end [&>*]:flex-1 sm:[&>*]:flex-none">
-          <Button size="sm" onClick={() => void run()} disabled={loading}>
-            {loading ? 'Building…' : 'Build report'}
-          </Button>
-        </div>
-        <div className="flex items-end justify-end [&>*]:flex-1 sm:[&>*]:flex-none">
-          <ExportButton title="Access change report" rows={rows} filename="access-change-report.xlsx" />
-        </div>
-      </div>
-
-      {rows.length === 0 ? (
-        <HrEmptyState
-          icon={FileSpreadsheet}
-          title="No changes in this range"
-          description="Pick a date range and build the report. Every grant and removal is included."
-        />
-      ) : (
-        <ScrollArea className="h-auto sm:h-[max(16rem,calc(100dvh-36rem))] rounded-xl border border-white/70 bg-white/60">
-          <div className="divide-y divide-slate-100 text-xs">
-            {rows.map((row, index) => (
-              <div key={index} className="px-3 py-2">
-                <p className="font-medium text-slate-800">
-                  {String(row['Affected user'])} — {String(row.Action)}
-                  {row.Roles ? `: ${String(row.Roles)}` : ''}
-                </p>
-                <p className="text-muted-foreground">
-                  {formatGrantDate(String(row.When))} · by {String(row['Changed by'])} · +
-                  {String(row['Permissions added'])} / −{String(row['Permissions removed'])}
-                  {row.Batch ? ` · ${String(row.Batch)}` : ''}
-                </p>
-              </div>
-            ))}
+    <TableCard
+      title={meta.label}
+      description={meta.description}
+      icon={meta.icon}
+      count={rows.length}
+      noun="change"
+      actions={<ExportButton title="Access change report" rows={rows} filename="access-change-report.xlsx" />}
+      // The report's parameters — a date range and the button that builds it, not a list filter.
+      toolbar={
+        <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+          <div className="space-y-1.5">
+            <Label className="text-xs">From</Label>
+            <Input type="date" value={from} onChange={(event) => setFrom(event.target.value)} />
           </div>
-        </ScrollArea>
+          <div className="space-y-1.5">
+            <Label className="text-xs">To</Label>
+            <Input type="date" value={to} onChange={(event) => setTo(event.target.value)} />
+          </div>
+          <div className="col-span-2 flex items-end sm:col-span-1 [&>*]:flex-1 sm:[&>*]:flex-none">
+            <Button size="sm" onClick={() => void run()} disabled={loading}>
+              {loading ? 'Building…' : 'Build report'}
+            </Button>
+          </div>
+        </div>
+      }
+    >
+      {rows.length === 0 ? (
+        <div className="p-3">
+          <HrEmptyState
+            icon={FileSpreadsheet}
+            title="No changes in this range"
+            description="Pick a date range and build the report. Every grant and removal is included."
+          />
+        </div>
+      ) : (
+        // A plain list, not a ScrollArea: the card scrolls it.
+        <div className="divide-y divide-slate-100 text-xs">
+          {rows.map((row, index) => (
+            <div key={index} className="px-4 py-2 sm:px-5">
+              <p className="font-medium text-slate-800">
+                {String(row['Affected user'])} — {String(row.Action)}
+                {row.Roles ? `: ${String(row.Roles)}` : ''}
+              </p>
+              <p className="text-muted-foreground">
+                {formatGrantDate(String(row.When))} · by {String(row['Changed by'])} · +
+                {String(row['Permissions added'])} / −{String(row['Permissions removed'])}
+                {row.Batch ? ` · ${String(row.Batch)}` : ''}
+              </p>
+            </div>
+          ))}
+        </div>
       )}
-    </div>
+    </TableCard>
   );
 }
 
@@ -806,7 +854,7 @@ function AccessChangeReport({ state }: { state: AccessDirectoryState }) {
  * 8. Inactive users still holding access
  * ---------------------------------------------------------------------------------------------- */
 
-function InactiveUsersReport({ state }: { state: AccessDirectoryState }) {
+function InactiveUsersReport({ state, meta }: { state: AccessDirectoryState; meta: ReportMeta }) {
   const { directory, accessByUser } = state;
 
   const rows = useMemo(
@@ -856,22 +904,25 @@ function InactiveUsersReport({ state }: { state: AccessDirectoryState }) {
   }));
 
   return (
-    <div className="space-y-2.5">
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <p className="max-w-2xl text-xs text-muted-foreground">
-          These accounts are deactivated, so they cannot sign in — but the permission grants are still
-          attached to them, and reactivating the account restores everything. Worth reviewing when
-          somebody has left for good.
-        </p>
-        <ExportButton title="Inactive user access report" rows={exportRows} filename="inactive-user-access-report.xlsx" />
-      </div>
-      <HrDataList
+    <TableCard
+      title={meta.label}
+      description={
+        <>
+          {meta.description} These accounts are deactivated, so they cannot sign in — but the permission
+          grants are still attached to them, and reactivating the account restores everything. Worth
+          reviewing when somebody has left for good.
+        </>
+      }
+      icon={meta.icon}
+      count={rows.length}
+      noun="user"
+      actions={<ExportButton title="Inactive user access report" rows={exportRows} filename="inactive-user-access-report.xlsx" />}
+    >
+      <ReportList
         rows={rows}
         columns={columns}
         empty={<HrEmptyState title="No inactive users hold access" description="Every deactivated account has no permissions attached." />}
-        maxHeightClassName="sm:max-h-[max(16rem,calc(100dvh-30rem))]"
-        dense
       />
-    </div>
+    </TableCard>
   );
 }

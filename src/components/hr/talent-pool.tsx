@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from 'react';
 import Link from 'next/link';
-import { Download, Loader2, Plus, Search, Sparkles } from 'lucide-react';
+import { Download, Loader2, Plus, Sparkles } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
@@ -24,7 +24,6 @@ import { exportRowsToExcel } from '@/lib/report-excel';
 import {
   HrDataList,
   HrEmptyState,
-  HrFilterCard,
   HrLoader,
   HrSection,
   hrDialog,
@@ -32,6 +31,8 @@ import {
 } from './hr-ui';
 import { useHrCollection, useHrConfig, useHrPermissions } from './use-hr-config';
 import { PageHeader } from '@/components/shared/page-header';
+import { FilterBar } from '@/components/shared/filter-bar';
+import { TableCard } from '@/components/shared/table-card';
 
 /**
  * The talent pool of spec section 48 — good candidates who were not hired, kept findable.
@@ -133,7 +134,7 @@ export default function TalentPool() {
         </Link>
       ),
     },
-    { header: 'Category', mobile: 'aside', cell: row => <Badge variant="outline" className="border-cyan-200 bg-cyan-50 text-cyan-800">{row.category}</Badge> },
+    { header: 'Category', mobile: 'aside', cell: row => <Badge variant="outline">{row.category}</Badge> },
     { header: 'Designation', cell: row => row.designation || '—' },
     {
       header: 'Experience',
@@ -147,7 +148,7 @@ export default function TalentPool() {
       cell: row => (
         <div className="flex flex-wrap gap-1">
           {(row.skills || []).slice(0, 4).map(skill => (
-            <Badge key={skill} variant="secondary" className="text-[10px]">{skill}</Badge>
+            <Badge key={skill} variant="neutral">{skill}</Badge>
           ))}
           {(row.skills || []).length > 4 && <span className="text-[10px] text-muted-foreground">+{(row.skills || []).length - 4}</span>}
         </div>
@@ -245,9 +246,7 @@ export default function TalentPool() {
                           >
                             {match.candidate.candidateName}
                           </Link>
-                          <Badge variant="outline" className="border-cyan-200 bg-cyan-50 text-[10px] text-cyan-700">
-                            {match.score}% match
-                          </Badge>
+                          <Badge variant="neutral" className="shrink-0 tabular-nums">{match.score}% match</Badge>
                         </div>
                         <p className="truncate text-[11px] text-muted-foreground">
                           {match.reasons.join(' · ') || match.candidate.category}
@@ -278,19 +277,22 @@ export default function TalentPool() {
         )}
       </HrSection>
 
-      <HrFilterCard summary={`${filtered.length} candidates`}>
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-          <div className="sm:col-span-2">
-            <Label className="text-xs">Search</Label>
-            <div className="relative">
-              <Search className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-              <Input value={search} onChange={event => setSearch(event.target.value)} placeholder="Name, designation, skill, location" className="pl-8" />
-            </div>
-          </div>
-          <div>
-            <Label className="text-xs">Category</Label>
+      <TableCard
+        title="Pool candidates"
+        count={filtered.length}
+        total={active.length}
+        noun="candidate"
+        toolbar={
+          <FilterBar
+            search={{ value: search, onChange: setSearch, placeholder: 'Name, designation, skill, location' }}
+            activeCount={category !== 'all' ? 1 : 0}
+            onClear={() => {
+              setSearch('');
+              setCategory('all');
+            }}
+          >
             <Select value={category} onValueChange={setCategory}>
-              <SelectTrigger><SelectValue /></SelectTrigger>
+              <SelectTrigger aria-label="Category"><SelectValue /></SelectTrigger>
               <SelectContent className="max-h-64">
                 <SelectItem value="all">All categories</SelectItem>
                 {categories.map(value => (
@@ -298,22 +300,25 @@ export default function TalentPool() {
                 ))}
               </SelectContent>
             </Select>
-          </div>
-        </div>
-      </HrFilterCard>
-
-      <HrDataList
-        rows={filtered}
-        columns={columns}
-        cardHref={row => `/hr/candidates/${row.candidateId}`}
-        empty={
-          <HrEmptyState
-            icon={Sparkles}
-            title="The talent pool is empty"
-            description="Candidates moved to the talent pool from a pipeline land here, and can be added to a future requirement in one click."
-          />
+          </FilterBar>
         }
-      />
+      >
+        <div className="p-3 sm:p-0">
+          <HrDataList
+            frameless
+            rows={filtered}
+            columns={columns}
+            cardHref={row => `/hr/candidates/${row.candidateId}`}
+            empty={
+              <HrEmptyState
+                icon={Sparkles}
+                title="The talent pool is empty"
+                description="Candidates moved to the talent pool from a pipeline land here, and can be added to a future requirement in one click."
+              />
+            }
+          />
+        </div>
+      </TableCard>
 
       <AddToPoolDialog open={addOpen} onOpenChange={setAddOpen} candidates={candidates} categories={categories} />
     </div>

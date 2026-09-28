@@ -18,17 +18,10 @@ import {
   visibleObligations,
 } from "@/lib/recurring-payments";
 import { exportWorkbook } from "@/lib/report-excel";
-import { Badge } from "@/components/ui/badge";
+import { StatusBadge } from "@/components/shared/status-badge";
 import { Button } from "@/components/ui/button";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
-import CollapsibleFilterCard from "./collapsible-filter-card";
-import { Label } from "@/components/ui/label";
+import { FilterBar } from "@/components/shared/filter-bar";
+import { TableCard } from "@/components/shared/table-card";
 import {
   Select,
   SelectContent,
@@ -289,109 +282,89 @@ export default function PendingWorkReport() {
         <ReportMetricTile label="Oldest item" value={summary.total ? formatAge(summary.oldestHours) : "—"} tone={summary.oldestHours > 48 ? "warning" : "neutral"} />
         <ReportMetricTile label="Value awaiting action" value={currency(summary.value)} tone="neutral" />
       </div>
-      <CollapsibleFilterCard activeCount={activeFilterCount} onClear={() => setFilters(DEFAULT_FILTERS)}>
-        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
-          <Field label="Step">
+      <TableCard
+        title="Pending items"
+        description="Sorted by longest-waiting first"
+        count={filtered.length}
+        total={pending.length}
+        noun="item"
+        toolbar={
+          <FilterBar activeCount={activeFilterCount} onClear={() => setFilters(DEFAULT_FILTERS)}>
             <Select value={filters.step} onValueChange={(step) => setFilters((current) => ({ ...current, step }))}>
-              <SelectTrigger className="h-8 text-sm"><SelectValue placeholder="All steps" /></SelectTrigger>
+              <SelectTrigger aria-label="Step"><SelectValue placeholder="All steps" /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">All steps</SelectItem>
                 {stepNames.map((step) => <SelectItem value={step} key={step}>{step}</SelectItem>)}
               </SelectContent>
             </Select>
-          </Field>
-          <Field label="Category">
             <Select value={filters.category} onValueChange={(category) => setFilters((current) => ({ ...current, category }))}>
-              <SelectTrigger className="h-8 text-sm"><SelectValue placeholder="All categories" /></SelectTrigger>
+              <SelectTrigger aria-label="Category"><SelectValue placeholder="All categories" /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">All categories</SelectItem>
                 {categories.map((category) => <SelectItem value={category} key={category}>{category}</SelectItem>)}
               </SelectContent>
             </Select>
-          </Field>
-          <Field label="Project">
             <Select value={filters.project} onValueChange={(project) => setFilters((current) => ({ ...current, project }))}>
-              <SelectTrigger className="h-8 text-sm"><SelectValue placeholder="All global projects" /></SelectTrigger>
+              <SelectTrigger aria-label="Project"><SelectValue placeholder="All global projects" /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">All global projects</SelectItem>
                 {activeProjects.map((project) => <SelectItem value={project.id} key={project.id}>{project.projectName}</SelectItem>)}
               </SelectContent>
             </Select>
-          </Field>
-          <Field label="Department">
             <Select value={filters.department} onValueChange={(department) => setFilters((current) => ({ ...current, department }))}>
-              <SelectTrigger className="h-8 text-sm"><SelectValue placeholder="All global departments" /></SelectTrigger>
+              <SelectTrigger aria-label="Department"><SelectValue placeholder="All global departments" /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">All global departments</SelectItem>
                 {activeDepartments.map((department) => <SelectItem value={department.id} key={department.id}>{department.name}</SelectItem>)}
               </SelectContent>
             </Select>
-          </Field>
-          <Field label="Owner">
             <Select value={filters.owner} onValueChange={(owner) => setFilters((current) => ({ ...current, owner }))}>
-              <SelectTrigger className="h-8 text-sm"><SelectValue placeholder="All owners" /></SelectTrigger>
+              <SelectTrigger aria-label="Owner"><SelectValue placeholder="All owners" /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">All owners</SelectItem>
                 {users.map((entry) => <SelectItem value={entry.id} key={entry.id}>{personOptionLabel(entry)}</SelectItem>)}
               </SelectContent>
             </Select>
-          </Field>
-        </div>
-      </CollapsibleFilterCard>
-      <Card>
-        <CardHeader>
-          <CardTitle>{filtered.length} item(s) pending</CardTitle>
-          <CardDescription>Sorted by longest-waiting first</CardDescription>
-        </CardHeader>
-        <CardContent className="p-0">
-          <div className="overflow-x-auto">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Payment</TableHead>
-                  <TableHead>Vendor</TableHead>
-                  <TableHead>Step</TableHead>
-                  <TableHead>Assigned to</TableHead>
-                  <TableHead className="text-right">Amount</TableHead>
-                  <TableHead>Age</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {filtered.map((row) => (
-                  <TableRow key={row.id}>
-                    <TableCell className="whitespace-nowrap font-medium">{row.title}</TableCell>
-                    <TableCell className="whitespace-nowrap">{row.vendorName}</TableCell>
-                    <TableCell className="whitespace-nowrap">{row.stepName}</TableCell>
-                    <TableCell className="whitespace-nowrap">
-                      {row.assigneeNames.length ? row.assigneeNames.join(", ") : <span className="text-amber-600">Unassigned</span>}
-                    </TableCell>
-                    <TableCell className="whitespace-nowrap text-right">{currency(row.amount)}</TableCell>
-                    <TableCell className="whitespace-nowrap">
-                      <Badge variant={row.tatBreached ? "destructive" : "outline"}>{formatAge(row.ageHours)}</Badge>
-                    </TableCell>
-                  </TableRow>
-                ))}
-                {!filtered.length && (
-                  <TableRow>
-                    <TableCell colSpan={6} className="h-28 text-center text-muted-foreground">
-                      Nothing is currently pending in the workflow for the selected filters.
-                    </TableCell>
-                  </TableRow>
-                )}
-              </TableBody>
-            </Table>
-          </div>
-        </CardContent>
-      </Card>
+          </FilterBar>
+        }
+      >
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead>Payment</TableHead>
+              <TableHead>Vendor</TableHead>
+              <TableHead>Step</TableHead>
+              <TableHead>Assigned to</TableHead>
+              <TableHead className="text-right">Amount</TableHead>
+              <TableHead>Age</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {filtered.map((row) => (
+              <TableRow key={row.id}>
+                <TableCell className="whitespace-nowrap font-medium">{row.title}</TableCell>
+                <TableCell className="whitespace-nowrap">{row.vendorName}</TableCell>
+                <TableCell className="whitespace-nowrap">{row.stepName}</TableCell>
+                <TableCell className="whitespace-nowrap">
+                  {row.assigneeNames.length ? row.assigneeNames.join(", ") : <StatusBadge tone="warning">Unassigned</StatusBadge>}
+                </TableCell>
+                <TableCell className="whitespace-nowrap text-right">{currency(row.amount)}</TableCell>
+                <TableCell className="whitespace-nowrap">
+                  <StatusBadge tone={row.tatBreached ? "danger" : "neutral"}>{formatAge(row.ageHours)}</StatusBadge>
+                </TableCell>
+              </TableRow>
+            ))}
+            {!filtered.length && (
+              <TableRow>
+                <TableCell colSpan={6} className="h-28 text-center text-muted-foreground">
+                  Nothing is currently pending in the workflow for the selected filters.
+                </TableCell>
+              </TableRow>
+            )}
+          </TableBody>
+        </Table>
+      </TableCard>
     </div>
   );
 }
 
-function Field({ label, children }: { label: string; children: React.ReactNode }) {
-  return (
-    <div className="space-y-1">
-      <Label className="text-xs font-medium text-muted-foreground">{label}</Label>
-      {children}
-    </div>
-  );
-}

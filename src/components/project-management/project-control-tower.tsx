@@ -46,6 +46,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
 import { Skeleton } from "@/components/ui/skeleton";
+import { StatusBadge } from "@/components/shared/status-badge";
 import { cn } from "@/lib/utils";
 
 type ProjectControlTowerProps = {
@@ -233,19 +234,12 @@ export default function ProjectControlTower({ mapping }: ProjectControlTowerProp
         </div>
         <div className="flex flex-wrap items-center gap-2">
           {summary.schedule.daysRemaining != null && (
-            <span
-              className={cn(
-                "inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-medium",
-                summary.schedule.daysRemaining < 0
-                  ? "border-red-200 bg-red-50 text-red-700"
-                  : "border-border bg-muted/40 text-muted-foreground",
-              )}
-            >
+            <StatusBadge tone={summary.schedule.daysRemaining < 0 ? "danger" : "neutral"}>
               <CalendarClock className="h-3.5 w-3.5" />
               {summary.schedule.daysRemaining < 0
                 ? `${-summary.schedule.daysRemaining} day${summary.schedule.daysRemaining === -1 ? "" : "s"} past planned completion`
                 : `${summary.schedule.daysRemaining} day${summary.schedule.daysRemaining === 1 ? "" : "s"} to planned completion`}
-            </span>
+            </StatusBadge>
           )}
           <Button size="sm" variant="outline" onClick={() => void loadSummary()}>
             <RefreshCw className="mr-2 h-4 w-4" />
@@ -450,9 +444,9 @@ export default function ProjectControlTower({ mapping }: ProjectControlTowerProp
                     href={`/project-management/${targetPath[gate.target]}?project=${encodeURIComponent(mapping.id)}`}
                     className="group flex items-center gap-3 rounded-lg border p-3 no-underline transition-shadow hover:shadow-sm"
                   >
-                    <span className="flex h-7 min-w-7 items-center justify-center rounded-full bg-amber-100 text-sm font-bold text-amber-700">
+                    <Badge variant="warning" className="shrink-0 tabular-nums">
                       {gate.count}
-                    </span>
+                    </Badge>
                     <span className="min-w-0 flex-1">
                       <span className="block text-sm font-semibold">{gate.label}</span>
                       <span className="block text-xs text-muted-foreground">
@@ -523,7 +517,7 @@ export default function ProjectControlTower({ mapping }: ProjectControlTowerProp
               <CardTitle className="text-base">Management attention</CardTitle>
               <CardDescription>Exceptions that can delay delivery, dispatch, acceptance, or billing.</CardDescription>
             </div>
-            <Badge variant={summary.attention.length ? "destructive" : "secondary"}>
+            <Badge variant={summary.attention.length ? "danger" : "neutral"}>
               {summary.attention.length} control{summary.attention.length === 1 ? "" : "s"}
             </Badge>
           </div>

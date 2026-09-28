@@ -2,68 +2,53 @@
 
 import { AlertTriangle, Clock, Lock, PanelsTopLeft, PauseCircle } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
+import { StatusBadge, type StatusTone } from '@/components/shared/status-badge';
 import { cn } from '@/lib/utils';
 import {
   describeEApprovalAssignment,
   describeEApprovalSource,
   isMirroredEApproval,
   type EApprovalSourceLink,
-  eApprovalOutcomeStyles,
   eApprovalSlaState,
-  eApprovalStatusStyles,
   formatEApprovalDuration,
   type EApprovalAssignment,
   type EApprovalOutcome,
   type EApprovalPriority,
-  type EApprovalStatus,
   type EApprovalStepRecord,
 } from '@/lib/e-approval';
 
-/** Status pill. Uses the palette the policy module owns, so every screen agrees on the colours. */
-export function EApprovalStatusBadge({
-  status,
-  className,
-}: {
-  status: EApprovalStatus | string;
-  className?: string;
-}) {
-  const style = eApprovalStatusStyles[status as EApprovalStatus] ?? 'bg-muted text-muted-foreground';
-  return (
-    <Badge variant="outline" className={cn('whitespace-nowrap border font-medium', style, className)}>
-      {status}
-    </Badge>
-  );
-}
-
-export function EApprovalOutcomeBadge({ outcome }: { outcome: EApprovalOutcome | null | undefined }) {
-  if (!outcome) return null;
-  return (
-    <Badge variant="outline" className={cn('whitespace-nowrap border font-medium', eApprovalOutcomeStyles[outcome])}>
-      {outcome}
-    </Badge>
-  );
-}
-
-const priorityStyles: Record<EApprovalPriority, string> = {
-  Low: 'bg-slate-100 text-slate-600 border-slate-200',
-  Normal: 'bg-sky-50 text-sky-700 border-sky-200',
-  High: 'bg-amber-100 text-amber-800 border-amber-200',
-  Urgent: 'bg-rose-100 text-rose-800 border-rose-200',
+/** Priority tones for `StatusBadge` — the words themselves carry no status meaning. */
+export const eApprovalPriorityTone: Record<EApprovalPriority, StatusTone> = {
+  Low: 'neutral',
+  Normal: 'info',
+  High: 'warning',
+  Urgent: 'danger',
 };
 
-export function EApprovalPriorityBadge({ priority }: { priority: EApprovalPriority | undefined }) {
-  if (!priority || priority === 'Normal') return null;
-  return (
-    <Badge variant="outline" className={cn('whitespace-nowrap border text-[10px]', priorityStyles[priority])}>
-      {priority}
-    </Badge>
-  );
-}
+/**
+ * Step outcome tones for `StatusBadge`, where the module means more than the word alone reads as
+ * ("Not Verified" is a refusal, "Escalated" a warning sign, "Clarified" an answer).
+ */
+export const eApprovalOutcomeTone: Record<EApprovalOutcome, StatusTone> = {
+  Approved: 'success',
+  Rejected: 'danger',
+  Verified: 'success',
+  'Verified With Observation': 'warning',
+  'Not Verified': 'danger',
+  Clarified: 'info',
+  Returned: 'warning',
+  Forwarded: 'info',
+  Delegated: 'progress',
+  Escalated: 'danger',
+  Skipped: 'neutral',
+  Cancelled: 'neutral',
+  Superseded: 'neutral',
+};
 
 export function EApprovalConfidentialBadge({ confidential }: { confidential?: boolean }) {
   if (!confidential) return null;
   return (
-    <Badge variant="outline" className="gap-1 border-stone-300 bg-stone-100 text-[10px] text-stone-700">
+    <Badge variant="neutral" className="gap-1">
       <Lock className="h-3 w-3" /> Confidential
     </Badge>
   );
@@ -81,11 +66,8 @@ export function EApprovalSourceBadge({ source }: { source?: EApprovalSourceLink 
   const live = isMirroredEApproval(source);
   return (
     <Badge
-      variant="outline"
-      className={cn(
-        'gap-1 text-[10px]',
-        live ? 'border-sky-300 bg-sky-50 text-sky-700' : 'border-dashed text-muted-foreground',
-      )}
+      variant={live ? 'info' : 'outline'}
+      className={cn('gap-1', !live && 'border-dashed')}
       title={live ? describeEApprovalSource(source) : `Unlinked from ${source.module}`}
     >
       <PanelsTopLeft className="h-3 w-3" /> {source.module}
@@ -112,45 +94,32 @@ export function EApprovalSlaBadge({
   if (sla.dueAt == null) return null;
   if (sla.paused) {
     return (
-      <Badge variant="outline" className={cn('gap-1 border-zinc-200 bg-zinc-100 text-[10px] text-zinc-600', className)}>
+      <StatusBadge tone="neutral" className={className}>
         <PauseCircle className="h-3 w-3" /> Clock paused
-      </Badge>
+      </StatusBadge>
     );
   }
   return (
-    <Badge
-      variant="outline"
-      className={cn(
-        'gap-1 text-[10px]',
-        sla.overdue
-          ? 'border-rose-200 bg-rose-100 text-rose-800'
-          : (sla.elapsedPct ?? 0) >= 80
-            ? 'border-amber-200 bg-amber-100 text-amber-800'
-            : 'border-emerald-200 bg-emerald-50 text-emerald-700',
-        className,
-      )}
+    <StatusBadge
+      tone={sla.overdue ? 'danger' : (sla.elapsedPct ?? 0) >= 80 ? 'warning' : 'success'}
+      className={className}
     >
       {sla.overdue ? <AlertTriangle className="h-3 w-3" /> : <Clock className="h-3 w-3" />}
       {sla.label}
-    </Badge>
+    </StatusBadge>
   );
 }
 
-/** Due-in text for a register row, where there is no step object to hand. */
+/** Due-in badge for a register row, where there is no step object to hand. */
 export function EApprovalDueBadge({ dueAt, now }: { dueAt?: string | null; now?: Date }) {
-  if (!dueAt) return <span className="text-xs text-muted-foreground">—</span>;
+  if (!dueAt) return <span className="text-muted-foreground">—</span>;
   const due = new Date(dueAt).getTime();
-  if (Number.isNaN(due)) return <span className="text-xs text-muted-foreground">—</span>;
+  if (Number.isNaN(due)) return <span className="text-muted-foreground">—</span>;
   const remaining = due - (now ?? new Date()).getTime();
   return (
-    <span
-      className={cn(
-        'whitespace-nowrap text-xs font-medium',
-        remaining < 0 ? 'text-rose-600' : remaining < 8 * 3_600_000 ? 'text-amber-600' : 'text-muted-foreground',
-      )}
-    >
+    <StatusBadge tone={remaining < 0 ? 'danger' : remaining < 8 * 3_600_000 ? 'warning' : 'neutral'}>
       {remaining < 0 ? `${formatEApprovalDuration(remaining)} overdue` : `${formatEApprovalDuration(remaining)} left`}
-    </span>
+    </StatusBadge>
   );
 }
 

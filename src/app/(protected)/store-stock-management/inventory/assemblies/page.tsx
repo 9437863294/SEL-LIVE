@@ -36,6 +36,8 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Textarea } from '@/components/ui/textarea';
 import { PageHeader } from '@/components/shared/page-header';
+import { StatusBadge } from '@/components/shared/status-badge';
+import { TableCard } from '@/components/shared/table-card';
 
 type PackAssemblyDocument = InventoryDocument & {
   unbuildQuantity?: number;
@@ -347,7 +349,7 @@ export default function PackAssemblyPage() {
               </div>
             )}
 
-            <div className="overflow-x-auto rounded-xl border">
+            <div className="overflow-hidden rounded-xl border">
               <Table>
                 <TableHeader><TableRow>
                   <TableHead>Sub-item</TableHead>
@@ -368,16 +370,16 @@ export default function PackAssemblyPage() {
                           <div className="text-xs text-muted-foreground">{component?.itemCode || requirement.itemCode} · {component?.unit || requirement.unit}</div>
                         </TableCell>
                         <TableCell className="text-right tabular-nums">{formatQuantity(requirement.quantity)}</TableCell>
-                        <TableCell className="text-right font-semibold tabular-nums">{formatQuantity(requirement.requiredQuantity)}</TableCell>
+                        <TableCell className="text-right font-medium tabular-nums">{formatQuantity(requirement.requiredQuantity)}</TableCell>
                         <TableCell className="text-right tabular-nums">{locationId ? formatQuantity(available) : '—'}</TableCell>
-                        <TableCell>
+                        <TableCell className="whitespace-nowrap">
                           {!locationId
-                            ? <Badge variant="secondary">Select location</Badge>
+                            ? <StatusBadge status="Select location" tone="neutral" />
                             : isUnbuild
-                              ? <Badge className="bg-amber-600 hover:bg-amber-600">Will recover</Badge>
+                              ? <StatusBadge status="Will recover" tone="info" />
                               : short
-                                ? <Badge variant="destructive">Short</Badge>
-                                : <Badge className="bg-emerald-600 hover:bg-emerald-600">Ready</Badge>}
+                                ? <StatusBadge status="Short" tone="danger" />
+                                : <StatusBadge status="Ready" tone="success" />}
                         </TableCell>
                       </TableRow>
                     );
@@ -401,12 +403,10 @@ export default function PackAssemblyPage() {
         </Card>
       </div>
 
-      <Card>
-        <CardHeader>
-          <CardTitle>Recent build and unbuild activity</CardTitle>
-          <CardDescription>The latest posted assembly transactions at your authorized locations.</CardDescription>
-        </CardHeader>
-        <CardContent className="overflow-x-auto">
+      <TableCard
+        title="Recent build and unbuild activity"
+        description="The latest posted assembly transactions at your authorized locations."
+      >
           <Table>
             <TableHeader><TableRow>
               <TableHead>Date / document</TableHead>
@@ -427,22 +427,21 @@ export default function PackAssemblyPage() {
                 const documentQuantity = document.unbuildQuantity || document.buildQuantity || mainLine?.quantity || 0;
                 return (
                   <TableRow key={document.id}>
-                    <TableCell><div>{document.transactionDate}</div><div className="font-mono text-xs text-muted-foreground">{document.documentNumber}</div></TableCell>
-                    <TableCell><Badge className={unbuilt ? 'bg-amber-600 hover:bg-amber-600' : 'bg-fuchsia-700 hover:bg-fuchsia-700'}>{unbuilt ? 'Unbuilt' : 'Built'}</Badge></TableCell>
+                    <TableCell className="whitespace-nowrap"><div>{document.transactionDate}</div><div className="font-mono text-xs text-muted-foreground">{document.documentNumber}</div></TableCell>
+                    <TableCell><Badge variant="outline">{unbuilt ? 'Unbuilt' : 'Built'}</Badge></TableCell>
                     <TableCell><div className="font-medium">{document.mainItemName || mainLine?.itemName}</div><div className="text-xs text-muted-foreground">{document.mainItemCode || mainLine?.itemCode}</div></TableCell>
                     <TableCell>{document.sourceLocationName || '—'}</TableCell>
                     <TableCell className="text-right tabular-nums">{formatQuantity(documentQuantity)} {mainLine?.unit}</TableCell>
                     <TableCell className="text-right">{canViewCost ? formatCurrency(mainLine?.unitCost || 0) : 'Restricted'}</TableCell>
                     <TableCell className="text-right">{canViewCost ? formatCurrency(Number(mainLine?.unitCost || 0) * Number(documentQuantity)) : 'Restricted'}</TableCell>
-                    <TableCell><Badge className="bg-emerald-600 hover:bg-emerald-600">{document.status}</Badge></TableCell>
+                    <TableCell className="whitespace-nowrap"><StatusBadge status={document.status} tone={document.status === 'Posted' ? 'success' : undefined} /></TableCell>
                   </TableRow>
                 );
               })}
               {!documents.length && <TableRow><TableCell colSpan={8} className="h-28 text-center text-muted-foreground">No pack assembly transactions have been posted yet.</TableCell></TableRow>}
             </TableBody>
           </Table>
-        </CardContent>
-      </Card>
+      </TableCard>
     </div>
   );
 }

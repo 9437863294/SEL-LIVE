@@ -23,10 +23,10 @@ import {
   ArchiveRestore,
   Archive,
   Crown,
-  Search,
   UserMinus,
   Users,
 } from 'lucide-react';
+import { SearchInput } from '@/components/shared/filter-bar';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
@@ -267,16 +267,7 @@ export function TeamDialog({
               <span className="text-[11px] text-muted-foreground">{draft.memberUserIds.length} selected</span>
             </div>
 
-            <div className="relative mb-2">
-              <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
-              <Input
-                value={search}
-                onChange={(event) => setSearch(event.target.value)}
-                placeholder="Search employees"
-                className="bg-white pl-8"
-                aria-label="Search employees"
-              />
-            </div>
+            <SearchInput value={search} onChange={setSearch} placeholder="Search employees" className="mb-2" />
 
             <div className="max-h-64 space-y-0.5 overflow-y-auto rounded-lg border bg-white p-1.5">
               {filtered.length === 0 && (
@@ -303,7 +294,7 @@ export function TeamDialog({
                       <span className="block truncate text-sm font-medium text-slate-800">
                         {person.name}
                         {isLeader && (
-                          <Badge variant="outline" className="ml-1.5 border-amber-200 bg-amber-50 text-[10px] text-amber-800">
+                          <Badge variant="warning" className="ml-1.5">
                             <Crown className="mr-0.5 h-2.5 w-2.5" />
                             Leader
                           </Badge>
@@ -422,7 +413,7 @@ export function TeamMemberList({
                 subtitle={[member.designation, member.departmentName].filter(Boolean).join(' · ') || null}
               />
               {member.isLeader && (
-                <Badge variant="outline" className="shrink-0 border-amber-200 bg-amber-50 text-[11px] text-amber-800">
+                <Badge variant="warning" className="shrink-0">
                   <Crown className="mr-0.5 h-3 w-3" />
                   Leader
                 </Badge>

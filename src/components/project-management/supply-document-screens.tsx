@@ -44,8 +44,6 @@ import { formatQuantity, toNumber } from "@/lib/purchase-orders";
 import { PUNCH_SEVERITIES, type PunchItem, type PunchSeverity } from "@/lib/supply-gates";
 import {
   buildSupplyRegisterRows,
-  supplyDocStatusStyles,
-  supplyItemStatusStyles,
   supplyPoLineKey,
   supplyRejectedQtyOf,
   supplyStage,
@@ -76,7 +74,6 @@ import {
   PmSectionHead,
   PmShell,
   PmSidebar,
-  PmStatusPill,
   PmTableFoot,
   pmAccent,
   type PmListColumn,
@@ -104,6 +101,7 @@ import {
 } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { PageHeader } from "@/components/shared/page-header";
+import { StatusBadge } from "@/components/shared/status-badge";
 
 /** Per-stage screen chrome the ledger definition does not carry. */
 export interface SupplyStageChrome {
@@ -506,7 +504,7 @@ export function SupplyDocumentNew({ stage }: { stage: SupplyLedgerStage }) {
         </>
       ),
     },
-    { header: "Unit", className: "text-muted-foreground", cell: (row) => row.ledger.unit },
+    { header: "Unit", cell: (row) => row.ledger.unit },
     {
       header: "Ordered",
       align: "right",
@@ -553,18 +551,9 @@ export function SupplyDocumentNew({ stage }: { stage: SupplyLedgerStage }) {
       mobile: "aside",
       cell: ({ ledger }) =>
         ledger.awaitingUpstream ? (
-          <PmStatusPill label="Awaiting upstream" tone="neutral" />
+          <StatusBadge status="Awaiting upstream" tone="neutral" />
         ) : (
-          <PmStatusPill
-            label={ledger.status}
-            tone={
-              ledger.status === "Complete"
-                ? "ok"
-                : ledger.status === "Partial"
-                  ? "wait"
-                  : "neutral"
-            }
-          />
+          <StatusBadge status={ledger.status} />
         ),
     },
     {
@@ -1192,10 +1181,10 @@ export function SupplyDocumentRegister({ stage }: { stage: SupplyLedgerStage }) 
         ),
     },
     { header: "Number", className: "font-medium", mobile: "title", cell: (row) => row.docNumber },
-    { header: "Date", className: "text-muted-foreground", cell: (row) => formatDate(row.docDate) },
+    { header: "Date", className: "whitespace-nowrap", cell: (row) => formatDate(row.docDate) },
     {
       header: "Decided",
-      className: "text-muted-foreground",
+      className: "whitespace-nowrap",
       cell: (row) => formatDate(row.decidedDate),
     },
     { header: "Vendor", mobile: "title", cell: (row) => row.vendorName || "—" },
@@ -1232,12 +1221,7 @@ export function SupplyDocumentRegister({ stage }: { stage: SupplyLedgerStage }) 
       mobile: "aside",
       cell: (row) => (
         <>
-          <Badge
-            variant="outline"
-            className={`border-transparent ${supplyDocStatusStyles[row.status]}`}
-          >
-            {row.status}
-          </Badge>
+          <StatusBadge status={row.status} />
           {row.blockingObservationCount > 0 && (
             <span
               className="ml-1 inline-flex items-center gap-0.5 text-xs text-amber-700"
@@ -1361,12 +1345,7 @@ export function SupplyDocumentRegister({ stage }: { stage: SupplyLedgerStage }) 
                 {ledger.acceptedPct}% of upstream
               </span>
             ) : null}
-            <Badge
-              variant="outline"
-              className={`ml-auto shrink-0 border-transparent text-[11px] ${supplyItemStatusStyles[line.status]}`}
-            >
-              {line.status}
-            </Badge>
+            <StatusBadge status={line.status} className="ml-auto shrink-0" />
           </li>
         );
       })}
@@ -1595,10 +1574,6 @@ export function SupplyDocumentRegister({ stage }: { stage: SupplyLedgerStage }) 
                     : notAccepted > 0
                       ? "Partially accepted"
                       : "Accepted";
-                const outcomeStyle =
-                  outcome === "Partially accepted"
-                    ? "bg-amber-100 text-amber-800"
-                    : supplyItemStatusStyles[outcome];
                 return (
                   <Card
                     key={item.id}
@@ -1616,9 +1591,7 @@ export function SupplyDocumentRegister({ stage }: { stage: SupplyLedgerStage }) 
                             {item.poNumber}
                           </p>
                         </div>
-                        <Badge variant="outline" className={cn("shrink-0", outcomeStyle)}>
-                          {outcome}
-                        </Badge>
+                        <StatusBadge status={outcome} className="shrink-0" />
                       </div>
 
                       {/* The quantity decision, as the arithmetic it actually is: presented is fixed,

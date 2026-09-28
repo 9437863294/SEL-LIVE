@@ -3,7 +3,6 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { useParams, notFound } from 'next/navigation';
 import {
-  Search,
   MoreHorizontal,
   ShieldAlert,
   RotateCcw,
@@ -16,7 +15,9 @@ import {
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { Input } from '@/components/ui/input';
+import { Badge } from '@/components/ui/badge';
+import { SearchInput } from '@/components/shared/filter-bar';
+import { TableCard } from '@/components/shared/table-card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useToast } from '@/hooks/use-toast';
@@ -49,7 +50,6 @@ import {
   DailyMetricCard,
   dailyPageContainerClass,
   dailySurfaceCardClass,
-  dailyTableHeaderClass,
   dailyTabsListClass,
 } from '@/components/daily-requisition/module-shell';
 import { PageHeader } from '@/components/shared/page-header';
@@ -452,51 +452,55 @@ export default function DynamicWorkflowStepPage() {
       else setSelectedIds(new Set());
     };
 
+    const isVerifiedHeader = isVerificationStep && tabKey === 'verified';
+    const showBulkHeader = Boolean(isBulkTab && stepConfig?.bulkAction);
+    const selectionText = selectedIds.size > 0 ? `${selectedIds.size} selected` : 'Select entries for bulk action';
+
     return (
-      <Card className={dailySurfaceCardClass}>
-        <div className="h-1.5 w-full bg-gradient-to-r from-cyan-400 via-fuchsia-400 to-amber-300 opacity-70" />
-
-        {/* Bulk action header for applicable tabs */}
-        {isBulkTab && stepConfig?.bulkAction && (
-          <div className="flex items-center justify-between border-b border-white/60 px-4 py-4 sm:px-5">
-            <p className="text-sm text-slate-500">
-              {selectedIds.size > 0 ? `${selectedIds.size} selected` : 'Select entries for bulk action'}
-            </p>
-            <Button
-              onClick={() =>
-                handleBatchStatusUpdate(Array.from(selectedIds), stepConfig.bulkAction!.newStatus)
-              }
-              disabled={selectedIds.size === 0 || !canBulkAction}
-            >
-              <Check className="mr-2 h-4 w-4" />
-              {stepConfig.bulkAction.label} ({selectedIds.size})
-            </Button>
-          </div>
-        )}
-
-        {/* Verified tab header for GST step - Send for Payment */}
-        {isVerificationStep && tabKey === 'verified' && (
-          <CardHeader>
-            <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-              <div>
-                <CardTitle>Verified Entries</CardTitle>
-                <CardDescription>Entries successfully verified and ready to be sent for payment.</CardDescription>
-              </div>
-              <Button
-                onClick={() =>
-                  handleBatchStatusUpdate(Array.from(selectedIds), 'Received for Payment')
-                }
-                disabled={selectedIds.size === 0 || !canSendForPayment}
-              >
-                Send for Payment ({selectedIds.size})
-              </Button>
-            </div>
-          </CardHeader>
-        )}
-
-        <CardContent className="p-0">
+      <TableCard
+        title={isVerifiedHeader ? 'Verified Entries' : tab.label}
+        description={
+          isVerifiedHeader ? (
+            <>
+              Entries successfully verified and ready to be sent for payment.
+              {showBulkHeader && <span className="block">{selectionText}</span>}
+            </>
+          ) : showBulkHeader ? (
+            selectionText
+          ) : undefined
+        }
+        actions={
+          showBulkHeader || isVerifiedHeader ? (
+            <>
+              {/* Bulk action for applicable tabs */}
+              {showBulkHeader && stepConfig?.bulkAction && (
+                <Button
+                  onClick={() =>
+                    handleBatchStatusUpdate(Array.from(selectedIds), stepConfig.bulkAction!.newStatus)
+                  }
+                  disabled={selectedIds.size === 0 || !canBulkAction}
+                >
+                  <Check className="mr-2 h-4 w-4" />
+                  {stepConfig.bulkAction.label} ({selectedIds.size})
+                </Button>
+              )}
+              {/* Verified tab action for GST step - Send for Payment */}
+              {isVerifiedHeader && (
+                <Button
+                  onClick={() =>
+                    handleBatchStatusUpdate(Array.from(selectedIds), 'Received for Payment')
+                  }
+                  disabled={selectedIds.size === 0 || !canSendForPayment}
+                >
+                  Send for Payment ({selectedIds.size})
+                </Button>
+              )}
+            </>
+          ) : undefined
+        }
+      >
           <Table>
-            <TableHeader className={dailyTableHeaderClass}>
+            <TableHeader>
               <TableRow>
                 {/* Checkbox column */}
                 {(isBulkTab || (isVerificationStep && tabKey === 'verified')) && (
@@ -540,7 +544,6 @@ export default function DynamicWorkflowStepPage() {
                 data.map((entry) => (
                   <TableRow
                     key={entry.id}
-                    className="hover:bg-slate-50/70"
                     data-state={selectedIds.has(entry.id) ? 'selected' : undefined}
                   >
                     {/* Checkbox cell */}
@@ -558,8 +561,8 @@ export default function DynamicWorkflowStepPage() {
                         />
                       </TableCell>
                     )}
-                    <TableCell className="font-medium">{entry.receptionNo}</TableCell>
-                    <TableCell>
+                    <TableCell className="whitespace-nowrap font-medium">{entry.receptionNo}</TableCell>
+                    <TableCell className="whitespace-nowrap">
                       {isPaymentStep && tabKey === 'paid'
                         ? entry.paidAtText || 'N/A'
                         : tabKey === 'pending' && dynamicIndex === 0
@@ -571,7 +574,7 @@ export default function DynamicWorkflowStepPage() {
                     {(isVerificationStep || (dynamicIndex === 0 && tabKey !== 'pending')) && (
                       <TableCell>{entry.receivedByName || 'N/A'}</TableCell>
                     )}
-                    <TableCell className="text-right">{formatCurrency(entry.netAmount)}</TableCell>
+                    <TableCell className="whitespace-nowrap text-right tabular-nums">{formatCurrency(entry.netAmount)}</TableCell>
 
                     {/* Row-level actions */}
                     {showRowActions && (
@@ -590,8 +593,7 @@ export default function DynamicWorkflowStepPage() {
               )}
             </TableBody>
           </Table>
-        </CardContent>
-      </Card>
+      </TableCard>
     );
   };
 
@@ -750,13 +752,13 @@ export default function DynamicWorkflowStepPage() {
           description={stepConfig.description}
           meta={
             <>
-              <span className="rounded-full border border-white/70 bg-white/70 px-3 py-1 text-xs text-slate-600 backdrop-blur">
+              <Badge variant="neutral">
                 Stage {stageNumber} of {totalSteps}
-              </span>
+              </Badge>
               {stepConfig.tabs.length > 1 && (
-                <span className="rounded-full border border-emerald-200/80 bg-emerald-50 px-3 py-1 text-xs text-emerald-700">
+                <Badge variant="neutral">
                   {(tabEntries[stepConfig.tabs[1]?.key] || []).length} {stepConfig.tabs[1]?.label.toLowerCase()}
-                </span>
+                </Badge>
               )}
             </>
           }
@@ -775,19 +777,12 @@ export default function DynamicWorkflowStepPage() {
         </div>
 
         {/* Search */}
-        <Card className="mb-6 rounded-2xl border border-white/70 bg-white/70 shadow-sm backdrop-blur">
-          <CardContent className="p-4 sm:p-5">
-            <div className="relative">
-              <Search className="absolute left-3 top-3.5 h-4 w-4 text-slate-400" />
-              <Input
-                placeholder="Search by Reception No, Project, or Party Name..."
-                className="h-11 border-white/70 bg-white/80 pl-9"
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-              />
-            </div>
-          </CardContent>
-        </Card>
+        <SearchInput
+          className="mb-6"
+          placeholder="Search by Reception No, Project, or Party Name..."
+          value={searchTerm}
+          onChange={setSearchTerm}
+        />
 
         {/* Tabbed view */}
         <Tabs defaultValue={stepConfig.tabs[0]?.key} onValueChange={() => setSelectedIds(new Set())}>

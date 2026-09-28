@@ -41,6 +41,7 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -415,9 +416,9 @@ export default function NewRfqPage() {
             <span className="font-medium text-foreground">Select items</span>
             · whole indents or individual items across several
           </p>
-          <span className="ml-auto rounded-full bg-violet-100 px-2 py-0.5 text-[11px] font-semibold tabular-nums text-violet-700">
+          <Badge variant="neutral" className="ml-auto tabular-nums">
             {selectedCount} selected
-          </span>
+          </Badge>
         </div>
         <CardContent className="space-y-3 p-4">
           {indents.length ? indents.map((indent) => {

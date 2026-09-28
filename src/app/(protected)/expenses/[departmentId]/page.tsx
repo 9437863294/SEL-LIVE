@@ -8,8 +8,8 @@ import { useParams } from 'next/navigation';
 import Link from 'next/link';
 import {
   Plus, ShieldAlert, SlidersHorizontal,
-  Search, Calendar as CalendarIcon, Edit, Save, Loader2,
-  Receipt, IndianRupee, FileText, TrendingUp, Filter, Upload, X, Building2, BarChart3,
+  Calendar as CalendarIcon, Edit, Save, Loader2,
+  Receipt, IndianRupee, FileText, TrendingUp, Upload, X, Building2, BarChart3,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -17,7 +17,9 @@ import { db } from '@/lib/firebase';
 import { doc, getDoc, collection, query, where, getDocs, updateDoc } from 'firebase/firestore';
 import type { Department, ExpenseRequest, Project, AccountHead, SubAccountHead } from '@/lib/types';
 import { useToast } from '@/hooks/use-toast';
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
+import { Card, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
+import { TableCard } from '@/components/shared/table-card';
+import { FilterBar, SearchInput } from '@/components/shared/filter-bar';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import {
@@ -140,11 +142,11 @@ export default function DepartmentExpensesPage() {
     });
   }, [expenses, filters]);
 
-  const hasActiveFilters =
-    filters.requestNo !== '' ||
-    filters.partyName !== '' ||
-    filters.projectName !== 'all' ||
-    Boolean(filters.dateRange?.from && filters.dateRange?.to);
+  const activeFilterCount =
+    (filters.requestNo !== '' ? 1 : 0) +
+    (filters.partyName !== '' ? 1 : 0) +
+    (filters.projectName !== 'all' ? 1 : 0) +
+    (filters.dateRange?.from && filters.dateRange?.to ? 1 : 0);
 
   const clearFilters = () =>
     setFilters({ requestNo: '', projectName: 'all', partyName: '', dateRange: undefined });
@@ -223,7 +225,7 @@ export default function DepartmentExpensesPage() {
       case 'Project Name': return getProjectName(expense.projectId);
       case 'Amount':
         return (
-          <span className="font-semibold text-emerald-600 dark:text-emerald-400">
+          <span className="tabular-nums">
             ₹{(expense.amount || 0).toLocaleString('en-IN')}
           </span>
         );
@@ -404,34 +406,25 @@ export default function DepartmentExpensesPage() {
           </div>
         </div>
 
-        {/* Filter Panel */}
-        <Card className="border-border/60 bg-card/60 backdrop-blur-sm">
-          <CardContent className="p-4 space-y-3">
-            <div className="flex items-center gap-2 mb-1">
-              <Filter className="h-3.5 w-3.5 text-muted-foreground" />
-              <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Filters</span>
-            </div>
-            <div className="w-full grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
-              <div className="relative">
-                <Search className="absolute left-2.5 top-2.5 h-3.5 w-3.5 text-muted-foreground" />
-                <Input
-                  placeholder="Search Request No..."
-                  className="pl-8 h-9 text-sm"
-                  value={filters.requestNo}
-                  onChange={e => handleFilterChange('requestNo', e.target.value)}
-                />
-              </div>
-              <div className="relative">
-                <Search className="absolute left-2.5 top-2.5 h-3.5 w-3.5 text-muted-foreground" />
-                <Input
-                  placeholder="Search Party Name..."
-                  className="pl-8 h-9 text-sm"
-                  value={filters.partyName}
-                  onChange={e => handleFilterChange('partyName', e.target.value)}
-                />
-              </div>
+        {/* Data Table */}
+        <TableCard
+          title="Expense requests"
+          count={filteredExpenses.length}
+          total={expenses.length}
+          noun="request"
+          toolbar={
+            <FilterBar
+              search={{ value: filters.requestNo, onChange: value => handleFilterChange('requestNo', value), placeholder: 'Search Request No...' }}
+              activeCount={activeFilterCount}
+              onClear={clearFilters}
+            >
+              <SearchInput
+                placeholder="Search Party Name..."
+                value={filters.partyName}
+                onChange={value => handleFilterChange('partyName', value)}
+              />
               <Select value={filters.projectName} onValueChange={value => handleFilterChange('projectName', value)}>
-                <SelectTrigger className="h-9 text-sm">
+                <SelectTrigger aria-label="Project">
                   <SelectValue placeholder="All Projects" />
                 </SelectTrigger>
                 <SelectContent>
@@ -443,7 +436,7 @@ export default function DepartmentExpensesPage() {
                 <PopoverTrigger asChild>
                   <Button
                     variant="outline"
-                    className={cn('h-9 w-full justify-start text-left font-normal text-sm', !filters.dateRange && 'text-muted-foreground')}
+                    className={cn('w-full justify-start text-left font-normal', !filters.dateRange && 'text-muted-foreground')}
                   >
                     <CalendarIcon className="mr-2 h-3.5 w-3.5" />
                     {filters.dateRange?.from
@@ -464,8 +457,7 @@ export default function DepartmentExpensesPage() {
                   />
                 </PopoverContent>
               </Popover>
-            </div>
-            <div className="flex items-center gap-1 flex-wrap">
+              <div className="flex items-center gap-1 flex-wrap" role="group" aria-label="Date range presets">
               {[
                 // "All time" first, and it is the default — whoever narrows the range needs a way
                 // back that does not depend on working out how to unpick a date picker.
@@ -477,36 +469,26 @@ export default function DepartmentExpensesPage() {
               ].map(btn => (
                 <Button
                   key={btn.label}
-                  variant="ghost"
+                  variant={btn.active ? 'secondary' : 'ghost'}
                   size="sm"
-                  className={cn('h-7 text-xs px-2.5', btn.active && 'bg-primary/10 text-primary')}
                   onClick={btn.fn}
                 >
                   {btn.label}
                 </Button>
               ))}
-              {hasActiveFilters && (
-                <Button variant="ghost" size="sm" className="h-7 text-xs px-2.5 text-muted-foreground" onClick={clearFilters}>
-                  <X className="mr-1 h-3 w-3" /> Clear filters
-                </Button>
-              )}
-            </div>
-          </CardContent>
-        </Card>
-
-        {/* Data Table */}
-        <Card className="border-border/60 bg-card/60 backdrop-blur-sm overflow-hidden">
-          <CardContent className="p-0">
-            <div className="overflow-x-auto">
+              </div>
+            </FilterBar>
+          }
+        >
               <Table>
                 <TableHeader>
-                  <TableRow className="bg-muted/40 hover:bg-muted/40">
+                  <TableRow>
                     {visibleHeaders.map(header => (
-                      <TableHead key={header} className="whitespace-nowrap px-4 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                      <TableHead key={header} className="whitespace-nowrap">
                         {header}
                       </TableHead>
                     ))}
-                    <TableHead className="text-right text-xs font-semibold uppercase tracking-wide text-muted-foreground">Actions</TableHead>
+                    <TableHead className="text-right">Actions</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -526,10 +508,10 @@ export default function DepartmentExpensesPage() {
                       <TableRow
                         key={expense.id}
                         onClick={() => setDetailsExpense(expense)}
-                        className="cursor-pointer hover:bg-primary/5 transition-colors duration-150 group"
+                        className="cursor-pointer group"
                       >
                         {visibleHeaders.map(header => (
-                          <TableCell key={header} className="whitespace-nowrap text-sm px-4">
+                          <TableCell key={header} className="whitespace-nowrap">
                             {getCellContent(header, expense)}
                           </TableCell>
                         ))}
@@ -554,7 +536,7 @@ export default function DepartmentExpensesPage() {
                       </TableRow>
                     ))
                   ) : (
-                    <TableRow className="hover:bg-transparent">
+                    <TableRow>
                       <TableCell colSpan={visibleHeaders.length + 1}>
                         {/* "Nothing here" and "nothing here *because of a filter you set*" are very
                             different messages, and conflating them is how a full register reads as
@@ -583,9 +565,7 @@ export default function DepartmentExpensesPage() {
                   )}
                 </TableBody>
               </Table>
-            </div>
-          </CardContent>
-        </Card>
+        </TableCard>
       </div>
 
       <ExpenseDetailsDialog

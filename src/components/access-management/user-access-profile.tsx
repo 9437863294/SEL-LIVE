@@ -44,6 +44,7 @@ import { Label } from '@/components/ui/label';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Textarea } from '@/components/ui/textarea';
 import { hrDialog, HrEmptyState, HrField, HrLoader } from '@/components/hr/hr-ui';
+import { StatusBadge, type StatusTone } from '@/components/shared/status-badge';
 import { useToast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
 import {
@@ -63,7 +64,7 @@ import {
 import { linkMethodLabel } from '@/lib/greythr-linking';
 import type { User } from '@/lib/types';
 import type { AccessDirectoryState } from '@/hooks/useAccessDirectory';
-import { UserEffectiveAccessPanel } from './effective-access';
+import { TEMPORARY_GRANT_TONE, UserEffectiveAccessPanel } from './effective-access';
 import { RemovalPreviewDialog } from './assignment-preview';
 import { AuditHistory } from './audit-history';
 import {
@@ -591,9 +592,7 @@ export function UserAccessProfile({
                   title={entry.roleName || 'Direct permissions'}
                   subtitle={`${formatGrantDate(entry.startAt)} → ${formatGrantDate(entry.expiresAt)}`}
                   badge={grantState}
-                  badgeTone={
-                    grantState === 'Active' ? 'amber' : grantState === 'Upcoming' ? 'sky' : 'slate'
-                  }
+                  badgeTone={TEMPORARY_GRANT_TONE[grantState] ?? 'neutral'}
                   meta={[
                     entry.reason ? `“${entry.reason}”` : null,
                     entry.approvedByName ? `approved by ${entry.approvedByName}` : null,
@@ -699,17 +698,11 @@ function GreytHRConnectionCard({ user }: { user: User }) {
         <CardTitle className="flex items-center gap-1.5 text-sm">
           <Link2 className={cn('h-4 w-4', connected ? 'text-emerald-600' : 'text-slate-400')} />
           greytHR connection
-          <Badge
-            variant="outline"
-            className={cn(
-              'text-[10px] font-normal',
-              connected
-                ? 'border-emerald-200 bg-emerald-50 text-emerald-700'
-                : 'border-slate-200 bg-slate-100 text-slate-600',
-            )}
-          >
-            {connected ? 'Connected' : 'Not connected'}
-          </Badge>
+          {/* "Connected" is not a word the shared vocabulary knows, so its tone is given. */}
+          <StatusBadge
+            status={connected ? 'Connected' : 'Not connected'}
+            tone={connected ? 'success' : 'neutral'}
+          />
         </CardTitle>
         <CardDescription className="text-xs">
           {connected
@@ -775,9 +768,7 @@ function GrantSection({
         <CardTitle className="flex items-center gap-1.5 text-sm">
           <Icon className="h-4 w-4 text-indigo-600" />
           {title}
-          {items.length > 0 && (
-            <Badge variant="outline" className="text-[10px] text-slate-500">{items.length}</Badge>
-          )}
+          {items.length > 0 && <Badge variant="neutral">{items.length}</Badge>}
         </CardTitle>
         <CardDescription className="text-xs">{description}</CardDescription>
       </CardHeader>
@@ -792,7 +783,7 @@ function GrantRow({
   title,
   subtitle,
   badge,
-  badgeTone = 'slate',
+  badgeTone,
   meta,
   onRemove,
   /** Names what a click actually revokes — "Revoke Delete" rather than a bare "Remove". */
@@ -800,8 +791,10 @@ function GrantRow({
 }: {
   title: string;
   subtitle?: string;
+  /** A status word (a temporary grant's state). */
   badge?: string;
-  badgeTone?: 'slate' | 'amber' | 'sky';
+  /** Overrides the tone the shared vocabulary would read `badge` as. */
+  badgeTone?: StatusTone;
   meta: Array<string | null>;
   onRemove?: () => void;
   removeLabel?: string;
@@ -812,21 +805,7 @@ function GrantRow({
       <div className="min-w-0">
         <div className="flex flex-wrap items-center gap-1.5 text-sm font-medium text-slate-800">
           {title}
-          {badge && (
-            <Badge
-              variant="outline"
-              className={cn(
-                'text-[10px]',
-                badgeTone === 'amber'
-                  ? 'border-amber-200 bg-amber-50 text-amber-800'
-                  : badgeTone === 'sky'
-                    ? 'border-sky-200 bg-sky-50 text-sky-700'
-                    : 'border-slate-200 bg-white text-slate-500',
-              )}
-            >
-              {badge}
-            </Badge>
-          )}
+          {badge && <StatusBadge status={badge} tone={badgeTone} />}
         </div>
         {subtitle && <p className="text-xs text-slate-600">{subtitle}</p>}
         {visibleMeta.length > 0 && (

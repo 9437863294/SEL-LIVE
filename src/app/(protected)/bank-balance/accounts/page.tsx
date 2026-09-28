@@ -2,8 +2,10 @@
 export const dynamic = 'force-dynamic';
 
 import { useState, useEffect } from 'react';
-import { Plus, Edit, Trash2, ShieldAlert, Building2, CreditCard, CheckCircle2, XCircle } from 'lucide-react';
+import { Plus, Edit, Trash2, ShieldAlert, Building2, CreditCard } from 'lucide-react';
 import { PageHeader } from '@/components/shared/page-header';
+import { TableCard } from '@/components/shared/table-card';
+import { StatusBadge } from '@/components/shared/status-badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import {
@@ -30,7 +32,6 @@ import type { BankAccount } from '@/lib/types';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Badge } from '@/components/ui/badge';
 import { useAuthorization } from '@/hooks/useAuthorization';
-import { cn } from '@/lib/utils';
 
 type FormData = Omit<BankAccount, 'id' | 'currentBalance' | 'drawingPower' | 'interestRateLog' | 'openingBalance' | 'openingUtilization'> & {
   openingBalanceOrUtilization: number | '';
@@ -202,20 +203,18 @@ export default function ManageBanksPage() {
         }
       />
 
-      <Card className="rounded-xl border-border/60 shadow-sm overflow-hidden">
-        <CardContent className="p-0">
-          <div className="overflow-x-auto">
+      <TableCard title="Bank accounts" icon={Building2} count={accounts.length} noun="account">
             <Table>
               <TableHeader>
-                <TableRow className="bg-muted/40 hover:bg-muted/40">
-                  <TableHead className="font-semibold">Bank Name</TableHead>
-                  <TableHead className="font-semibold">Short Name</TableHead>
-                  <TableHead className="font-semibold">Account No.</TableHead>
-                  <TableHead className="font-semibold">Type</TableHead>
-                  <TableHead className="font-semibold">Status</TableHead>
-                  <TableHead className="font-semibold">Branch</TableHead>
-                  <TableHead className="font-semibold">IFSC</TableHead>
-                  <TableHead className="text-right font-semibold">Actions</TableHead>
+                <TableRow>
+                  <TableHead>Bank Name</TableHead>
+                  <TableHead>Short Name</TableHead>
+                  <TableHead>Account No.</TableHead>
+                  <TableHead>Type</TableHead>
+                  <TableHead>Status</TableHead>
+                  <TableHead>Branch</TableHead>
+                  <TableHead>IFSC</TableHead>
+                  <TableHead className="text-right">Actions</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -227,7 +226,7 @@ export default function ManageBanksPage() {
                   ))
                   : accounts.length > 0
                     ? accounts.map(acc => (
-                      <TableRow key={acc.id} className="hover:bg-muted/30 transition-colors cursor-pointer">
+                      <TableRow key={acc.id} className="cursor-pointer">
                         <TableCell className="font-medium">
                           <div className="flex items-center gap-2">
                             {acc.accountType === 'Cash Credit'
@@ -237,31 +236,18 @@ export default function ManageBanksPage() {
                             {acc.bankName}
                           </div>
                         </TableCell>
-                        <TableCell className="font-mono text-sm">{acc.shortName}</TableCell>
-                        <TableCell className="font-mono text-sm">{acc.accountNumber}</TableCell>
+                        <TableCell className="whitespace-nowrap font-mono">{acc.shortName}</TableCell>
+                        <TableCell className="whitespace-nowrap font-mono">{acc.accountNumber}</TableCell>
                         <TableCell>
-                          <Badge variant="outline" className={cn(
-                            'text-xs',
-                            acc.accountType === 'Cash Credit'
-                              ? 'border-violet-200 text-violet-700 bg-violet-50 dark:bg-violet-950/20'
-                              : 'border-sky-200 text-sky-700 bg-sky-50 dark:bg-sky-950/20',
-                          )}>
+                          <Badge variant="neutral" className="whitespace-nowrap">
                             {acc.accountType}
                           </Badge>
                         </TableCell>
                         <TableCell>
-                          <div className="flex items-center gap-1.5">
-                            {acc.status === 'Active'
-                              ? <CheckCircle2 className="h-3.5 w-3.5 text-green-500" />
-                              : <XCircle className="h-3.5 w-3.5 text-muted-foreground" />
-                            }
-                            <span className={cn('text-sm', acc.status === 'Active' ? 'text-green-700 dark:text-green-400' : 'text-muted-foreground')}>
-                              {acc.status}
-                            </span>
-                          </div>
+                          <StatusBadge status={acc.status} />
                         </TableCell>
-                        <TableCell className="text-sm">{acc.branch}</TableCell>
-                        <TableCell className="font-mono text-xs text-muted-foreground">{acc.ifsc}</TableCell>
+                        <TableCell>{acc.branch}</TableCell>
+                        <TableCell className="whitespace-nowrap font-mono">{acc.ifsc}</TableCell>
                         <TableCell className="text-right">
                           <div className="flex items-center justify-end gap-2">
                             <Button variant="ghost" size="sm" onClick={() => openDialog('edit', acc)} disabled={!canEdit} className="h-8 px-3 rounded-lg hover:bg-primary/10">
@@ -310,9 +296,7 @@ export default function ManageBanksPage() {
                 }
               </TableBody>
             </Table>
-          </div>
-        </CardContent>
-      </Card>
+      </TableCard>
 
       {/* Dialog */}
       <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>

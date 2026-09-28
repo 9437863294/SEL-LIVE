@@ -4,9 +4,8 @@
 import { useState, useEffect, useMemo, Fragment } from 'react';
 import { useParams } from 'next/navigation';
 import Link from 'next/link';
-import { ArrowLeft, PlusCircle, Search, ChevronDown, ChevronRight, ArrowUpDown } from 'lucide-react';
+import { ArrowLeft, PlusCircle, ChevronDown, ChevronRight, ArrowUpDown } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { db } from '@/lib/firebase';
 import { collection, getDocs, query, where } from 'firebase/firestore';
@@ -14,12 +13,12 @@ import type { BoqItem, Project, FabricationBomItem } from '@/lib/types';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useToast } from '@/hooks/use-toast';
 import { BomDialog } from '@/components/store-stock-management/BomDialog';
-import { ScrollArea } from '@/components/ui/scroll-area';
-import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { cn } from '@/lib/utils';
 import { projectMatchesSlug } from '@/lib/project-slug';
+import { FilterBar } from '@/components/shared/filter-bar';
 import { PageHeader } from '@/components/shared/page-header';
+import { TableCard } from '@/components/shared/table-card';
 
 export default function AssemblyPage() {
   const params = useParams();
@@ -182,13 +181,16 @@ export default function AssemblyPage() {
     <>
       <div>
         <PageHeader title="BOM Management" />
-        <Card>
-          <CardHeader>
-            <div className="flex justify-between items-center">
-              <CardTitle>BOQ Items</CardTitle>
-              <div className="flex items-center gap-2">
+        <TableCard
+          title="BOQ Items"
+          toolbar={
+            <FilterBar
+              search={{ value: searchTerm, onChange: setSearchTerm, placeholder: 'Search...' }}
+              activeCount={filterColumn !== 'all' ? 1 : 0}
+              onClear={() => { setSearchTerm(''); setFilterColumn('all'); }}
+            >
                 <Select value={filterColumn} onValueChange={setFilterColumn}>
-                  <SelectTrigger className="w-[180px]">
+                  <SelectTrigger aria-label="Search column">
                     <SelectValue placeholder="Filter by..." />
                   </SelectTrigger>
                   <SelectContent>
@@ -198,22 +200,11 @@ export default function AssemblyPage() {
                     <SelectItem value="description">Description</SelectItem>
                   </SelectContent>
                 </Select>
-                <div className="relative w-full max-w-sm">
-                  <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
-                  <Input
-                    placeholder="Search..."
-                    value={searchTerm}
-                    onChange={(e) => setSearchTerm(e.target.value)}
-                    className="pl-8"
-                  />
-                </div>
-              </div>
-            </div>
-          </CardHeader>
-          <CardContent>
-            <ScrollArea className="h-[calc(100vh-22rem)]">
+            </FilterBar>
+          }
+        >
               <Table>
-                <TableHeader className="sticky top-0 bg-background z-10">
+                <TableHeader>
                   <TableRow>
                     <TableHead className="w-12"></TableHead>
                     <TableHead>
@@ -272,7 +263,7 @@ export default function AssemblyPage() {
                               </TableCell>
                             </TableRow>
                             {isExpanded && hasBom && (
-                               <TableRow className="bg-muted/50 hover:bg-muted/50">
+                               <TableRow className="bg-muted/30">
                                     <TableCell colSpan={8} className="p-0">
                                       <div className="p-4">
                                         <h4 className="font-semibold mb-2 ml-2">Bill of Materials</h4>
@@ -316,9 +307,7 @@ export default function AssemblyPage() {
                   )}
                 </TableBody>
               </Table>
-            </ScrollArea>
-          </CardContent>
-        </Card>
+        </TableCard>
       </div>
       {selectedItem && currentProject && (
         <BomDialog

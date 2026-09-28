@@ -2,13 +2,11 @@
 
 import { useMemo, useState } from 'react';
 import Link from 'next/link';
-import { ArrowLeft, Download, FileBarChart, Search } from 'lucide-react';
+import { ArrowLeft, Download, FileBarChart } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent } from '@/components/ui/card';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { FilterBar } from '@/components/shared/filter-bar';
+import { TableCard } from '@/components/shared/table-card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { cn } from '@/lib/utils';
 import {
@@ -640,9 +638,7 @@ export default function ReportsHub({ slug }: { slug?: string }) {
                           <div className="flex items-center gap-1.5">
                             <p className="truncate text-sm font-medium text-slate-800">{entry.title}</p>
                             {entry.sensitive && (
-                              <Badge variant="outline" className="border-amber-200 bg-amber-50 text-[10px] text-amber-800">
-                                salary
-                              </Badge>
+                              <Badge variant="warning">salary</Badge>
                             )}
                           </div>
                           <p className="mt-0.5 text-[11px] text-muted-foreground">{entry.purpose}</p>
@@ -709,23 +705,26 @@ export default function ReportsHub({ slug }: { slug?: string }) {
         }
       />
 
-      <div className="mb-3 sm:w-80">
-        <Label className="text-xs">Search within this report</Label>
-        <div className="relative">
-          <Search className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-          <Input value={search} onChange={event => setSearch(event.target.value)} placeholder="Filter rows…" className="pl-8" />
-        </div>
-      </div>
-
+      <TableCard
+        title="Results"
+        count={rows.length}
+        noun="row"
+        toolbar={
+          <FilterBar
+            search={{ value: search, onChange: setSearch, placeholder: 'Filter rows…', label: 'Search within this report' }}
+            onClear={() => setSearch('')}
+          />
+        }
+      >
       {rows.length === 0 ? (
-        <HrEmptyState
-          icon={FileBarChart}
-          title="Nothing to report yet"
-          description="This report fills in as requirements, candidates and joinings are recorded."
-        />
+        <div className="p-3">
+          <HrEmptyState
+            icon={FileBarChart}
+            title="Nothing to report yet"
+            description="This report fills in as requirements, candidates and joinings are recorded."
+          />
+        </div>
       ) : (
-        <Card className="border-white/60 bg-white/80 shadow-sm backdrop-blur-sm">
-          <CardContent className="overflow-x-auto p-0">
             <Table>
               <TableHeader>
                 <TableRow>
@@ -742,7 +741,7 @@ export default function ReportsHub({ slug }: { slug?: string }) {
                     {headers.map(header => (
                       <TableCell
                         key={header}
-                        className={cn('text-sm', numericHeaders.includes(header) && 'text-right tabular-nums')}
+                        className={cn(numericHeaders.includes(header) && 'text-right tabular-nums')}
                       >
                         {row[header] === '' || row[header] === undefined ? '—' : String(row[header])}
                       </TableCell>
@@ -750,9 +749,9 @@ export default function ReportsHub({ slug }: { slug?: string }) {
                   </TableRow>
                 ))}
                 {Object.keys(totals).length > 0 && (
-                  <TableRow className="border-t-2 border-slate-200 bg-slate-50 font-semibold">
+                  <TableRow className="border-t-2 font-semibold">
                     {headers.map((header, index) => (
-                      <TableCell key={header} className={cn('text-sm', numericHeaders.includes(header) && 'text-right tabular-nums')}>
+                      <TableCell key={header} className={cn(numericHeaders.includes(header) && 'text-right tabular-nums')}>
                         {index === 0 ? 'Total' : totals[header] !== undefined ? totals[header] : ''}
                       </TableCell>
                     ))}
@@ -760,9 +759,8 @@ export default function ReportsHub({ slug }: { slug?: string }) {
                 )}
               </TableBody>
             </Table>
-          </CardContent>
-        </Card>
       )}
+      </TableCard>
     </div>
   );
 }

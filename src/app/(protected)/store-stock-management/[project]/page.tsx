@@ -27,19 +27,20 @@ import { collection, getDocs, query, where } from 'firebase/firestore';
 import { format, formatDistanceToNow } from 'date-fns';
 import { db } from '@/lib/firebase';
 import type { BoqItem, InventoryLog, Project } from '@/lib/types';
-import { calculateProjectStockDashboard, type ProjectStockHealth } from '@/lib/project-stock-dashboard';
+import { calculateProjectStockDashboard } from '@/lib/project-stock-dashboard';
 import { useAuthorization } from '@/hooks/useAuthorization';
 import { useToast } from '@/hooks/use-toast';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
-import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Progress } from '@/components/ui/progress';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { cn } from '@/lib/utils';
 import { projectMatchesSlug } from '@/lib/project-slug';
+import { cn } from '@/lib/utils';
 import { PageHeader, SectionHeader } from '@/components/shared/page-header';
+import { StatusBadge } from '@/components/shared/status-badge';
+import { TableCard } from '@/components/shared/table-card';
 
 
 const currency = new Intl.NumberFormat('en-IN', {
@@ -153,18 +154,7 @@ export default function ProjectDashboardPage() {
         icon={Building2}
         eyebrow="Project stock workspace"
         title={currentProject.projectName}
-        badge={
-          <Badge
-            variant="outline"
-            className={cn(
-              currentProject.status === 'Active'
-                ? 'border-emerald-200 bg-emerald-50 text-emerald-700'
-                : 'border-slate-200 bg-slate-100 text-slate-600',
-            )}
-          >
-            {currentProject.status || 'Unknown'}
-          </Badge>
-        }
+        badge={<StatusBadge status={currentProject.status || 'Unknown'} />}
         meta={
           <div className="flex flex-wrap gap-x-5 gap-y-1.5 text-xs text-muted-foreground sm:text-sm">
             <ProjectMeta icon={MapPin} value={currentProject.location || currentProject.projectSite || 'Location not configured'} />
@@ -195,29 +185,35 @@ export default function ProjectDashboardPage() {
       </div>
 
       <div className="grid gap-6 xl:grid-cols-[minmax(0,1.7fr)_minmax(300px,0.8fr)]">
-        <Card className="min-w-0 border-slate-200/80 shadow-sm">
-          <CardHeader className="gap-3 sm:flex-row sm:items-center sm:justify-between">
-            <div><CardTitle>Recent stock movements</CardTitle><CardDescription>Latest project receipts and issues, grouped into business documents.</CardDescription></div>
-            {canViewTransactions && <Button asChild variant="outline" size="sm"><Link href={`/store-stock-management/${projectSlug}/transactions`}>View all<ArrowRight className="ml-2 h-4 w-4" /></Link></Button>}
-          </CardHeader>
-          <CardContent className="overflow-x-auto p-0">
+        <TableCard
+          title="Recent stock movements"
+          description="Latest project receipts and issues, grouped into business documents."
+          actions={canViewTransactions ? <Button asChild variant="outline" size="sm"><Link href={`/store-stock-management/${projectSlug}/transactions`}>View all<ArrowRight className="ml-2 h-4 w-4" /></Link></Button> : undefined}
+          scroll="natural"
+        >
             <Table>
               <TableHeader><TableRow><TableHead>Document</TableHead><TableHead>Date</TableHead><TableHead>Type</TableHead><TableHead>Lines</TableHead><TableHead className="text-right">Amount</TableHead></TableRow></TableHeader>
               <TableBody>
                 {recentMovements.map((movement) => (
                   <TableRow key={movement.id}>
                     <TableCell><p className="max-w-64 truncate font-medium">{movement.reference}</p><p className="max-w-64 truncate text-xs text-muted-foreground">{movement.counterparty}</p></TableCell>
-                    <TableCell className="whitespace-nowrap text-sm">{movement.date ? format(movement.date, 'dd MMM yyyy') : '—'}</TableCell>
-                    <TableCell><MovementBadge type={movement.transactionType} /></TableCell>
-                    <TableCell>{movement.lineCount}</TableCell>
-                    <TableCell className="text-right font-medium tabular-nums">{currency.format(movement.totalAmount)}</TableCell>
+                    <TableCell className="whitespace-nowrap">{movement.date ? format(movement.date, 'dd MMM yyyy') : '—'}</TableCell>
+                    <TableCell className="whitespace-nowrap">
+                      <StatusBadge
+                        status={movement.transactionType}
+                        tone={movement.transactionType === 'Goods Receipt' ? 'success' : movement.transactionType === 'Goods Issue' ? 'danger' : 'neutral'}
+                      >
+                        {movement.transactionType === 'Goods Receipt' ? 'Receipt' : movement.transactionType === 'Goods Issue' ? 'Issue' : movement.transactionType}
+                      </StatusBadge>
+                    </TableCell>
+                    <TableCell className="tabular-nums">{movement.lineCount}</TableCell>
+                    <TableCell className="whitespace-nowrap text-right font-medium tabular-nums">{currency.format(movement.totalAmount)}</TableCell>
                   </TableRow>
                 ))}
                 {!recentMovements.length && <TableRow><TableCell colSpan={5} className="h-32 text-center text-muted-foreground">No project stock movements have been recorded yet.</TableCell></TableRow>}
               </TableBody>
             </Table>
-          </CardContent>
-        </Card>
+        </TableCard>
 
         <div className="space-y-6">
           <Card className="border-slate-200/80 shadow-sm">
@@ -245,21 +241,20 @@ export default function ProjectDashboardPage() {
         </div>
       </div>
 
-      <Card className="border-slate-200/80 shadow-sm">
-        <CardHeader className="gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <div><CardTitle>Current stock positions</CardTitle><CardDescription>Highest-value available items. Values come from each receipt layer’s remaining quantity and cost.</CardDescription></div>
-          {canViewInventory && <Button asChild variant="outline" size="sm"><Link href={`/store-stock-management/${projectSlug}/inventory`}>Open inventory<ArrowRight className="ml-2 h-4 w-4" /></Link></Button>}
-        </CardHeader>
-        <CardContent className="overflow-x-auto p-0">
+      <TableCard
+        title="Current stock positions"
+        description="Highest-value available items. Values come from each receipt layer’s remaining quantity and cost."
+        actions={canViewInventory ? <Button asChild variant="outline" size="sm"><Link href={`/store-stock-management/${projectSlug}/inventory`}>Open inventory<ArrowRight className="ml-2 h-4 w-4" /></Link></Button> : undefined}
+        scroll="natural"
+      >
           <Table>
             <TableHeader><TableRow><TableHead>Item</TableHead><TableHead className="text-right">Received</TableHead><TableHead className="text-right">Issued</TableHead><TableHead className="text-right">Current</TableHead><TableHead>Status</TableHead><TableHead className="text-right">Stock value</TableHead></TableRow></TableHeader>
             <TableBody>
-              {currentStockRows.map((row) => <TableRow key={row.itemId}><TableCell><p className="max-w-xl truncate font-medium">{row.itemName}</p><p className="text-xs text-muted-foreground">{row.unit}</p></TableCell><TableCell className="text-right tabular-nums">{formatQuantity(row.receivedQuantity)}</TableCell><TableCell className="text-right tabular-nums">{formatQuantity(row.issuedQuantity)}</TableCell><TableCell className="text-right font-bold tabular-nums">{formatQuantity(row.currentQuantity)}</TableCell><TableCell><StockHealthBadge health={row.health} /></TableCell><TableCell className="text-right font-medium tabular-nums">{currency.format(row.currentValue)}</TableCell></TableRow>)}
+              {currentStockRows.map((row) => <TableRow key={row.itemId}><TableCell><p className="max-w-xl truncate font-medium">{row.itemName}</p><p className="text-xs text-muted-foreground">{row.unit}</p></TableCell><TableCell className="text-right tabular-nums">{formatQuantity(row.receivedQuantity)}</TableCell><TableCell className="text-right tabular-nums">{formatQuantity(row.issuedQuantity)}</TableCell><TableCell className="text-right font-medium tabular-nums">{formatQuantity(row.currentQuantity)}</TableCell><TableCell className="whitespace-nowrap"><StatusBadge status={row.health} tone={row.health === 'Low remaining' ? 'warning' : undefined} /></TableCell><TableCell className="whitespace-nowrap text-right font-medium tabular-nums">{currency.format(row.currentValue)}</TableCell></TableRow>)}
               {!currentStockRows.length && <TableRow><TableCell colSpan={6} className="h-32 text-center text-muted-foreground">No available stock. Post a stock-in transaction to establish the project balance.</TableCell></TableRow>}
             </TableBody>
           </Table>
-        </CardContent>
-      </Card>
+      </TableCard>
 
       {workspaceLinks.length > 0 && (
         <section className="space-y-3">
@@ -297,18 +292,6 @@ function HealthPill({ label, value, icon: Icon, className }: { label: string; va
 
 function SetupRow({ label, value }: { label: string; value: string }) {
   return <div className="flex items-start justify-between gap-4 border-b border-slate-100 pb-3 last:border-0 last:pb-0"><span className="text-muted-foreground">{label}</span><span className="max-w-[60%] text-right font-medium">{value}</span></div>;
-}
-
-function MovementBadge({ type }: { type: string }) {
-  if (type === 'Goods Receipt') return <Badge className="bg-emerald-100 text-emerald-800 hover:bg-emerald-100">Receipt</Badge>;
-  if (type === 'Goods Issue') return <Badge className="bg-rose-100 text-rose-800 hover:bg-rose-100">Issue</Badge>;
-  return <Badge variant="secondary">{type}</Badge>;
-}
-
-function StockHealthBadge({ health }: { health: ProjectStockHealth }) {
-  if (health === 'Out of stock') return <Badge variant="destructive">Out of stock</Badge>;
-  if (health === 'Low remaining') return <Badge className="bg-amber-100 text-amber-800 hover:bg-amber-100">Low remaining</Badge>;
-  return <Badge className="bg-emerald-100 text-emerald-800 hover:bg-emerald-100">In stock</Badge>;
 }
 
 function formatQuantity(value: number) {

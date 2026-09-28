@@ -6,6 +6,7 @@ import Link from 'next/link';
 import { Home, Loader2, ShieldAlert } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { PageHeader, SectionHeader } from '@/components/shared/page-header';
+import { TableCard } from '@/components/shared/table-card';
 import {
   Card,
   CardContent,
@@ -350,7 +351,7 @@ export default function SiteFundSummaryPage() {
             <div className="space-y-1">
               <p className="text-sm font-medium text-muted-foreground">Year</p>
               <Select value={filters.year} onValueChange={(val) => handleFilterChange('year', val)}>
-                <SelectTrigger className="bg-white/80 border-white/70">
+                <SelectTrigger>
                   <SelectValue placeholder="All Years" />
                 </SelectTrigger>
                 <SelectContent>
@@ -362,7 +363,7 @@ export default function SiteFundSummaryPage() {
             <div className="space-y-1">
               <p className="text-sm font-medium text-muted-foreground">Month</p>
               <Select value={filters.month} onValueChange={(val) => handleFilterChange('month', val)}>
-                <SelectTrigger className="bg-white/80 border-white/70">
+                <SelectTrigger>
                   <SelectValue placeholder="All Months" />
                 </SelectTrigger>
                 <SelectContent>
@@ -374,7 +375,7 @@ export default function SiteFundSummaryPage() {
             <div className="space-y-1">
               <p className="text-sm font-medium text-muted-foreground">Project</p>
               <Select value={filters.project} onValueChange={(val) => handleFilterChange('project', val)}>
-                <SelectTrigger className="bg-white/80 border-white/70">
+                <SelectTrigger>
                   <SelectValue placeholder="All Projects" />
                 </SelectTrigger>
                 <SelectContent>
@@ -386,7 +387,7 @@ export default function SiteFundSummaryPage() {
             <div className="space-y-1">
               <p className="text-sm font-medium text-muted-foreground">Applicant</p>
               <Select value={filters.applicant} onValueChange={(val) => handleFilterChange('applicant', val)}>
-                <SelectTrigger className="bg-white/80 border-white/70">
+                <SelectTrigger>
                   <SelectValue placeholder="All Applicants" />
                 </SelectTrigger>
                 <SelectContent>
@@ -451,27 +452,22 @@ export default function SiteFundSummaryPage() {
                 return null; 
               }
               return (
-              <Card key={step.name} className="overflow-hidden rounded-2xl border border-white/70 bg-white/70 shadow-[0_18px_60px_-55px_rgba(2,6,23,0.55)] backdrop-blur">
-                <div className="h-1.5 w-full bg-gradient-to-r from-cyan-300 via-fuchsia-300 to-amber-200 opacity-70" />
-                <CardHeader className="p-4">
-                  <CardTitle className="text-center text-slate-900">{step.name}</CardTitle>
-                </CardHeader>
-                <CardContent className="p-0">
+              <TableCard key={step.name} title={step.name} scroll="natural">
                   <Table>
-                    <TableHeader className="bg-white/80 border-y border-white/70">
+                    <TableHeader>
                       <TableRow>
-                        <TableHead className="text-slate-700">User</TableHead>
-                        <TableHead className="text-slate-700">Total</TableHead>
-                        <TableHead className="text-slate-700">Done</TableHead>
-                        <TableHead className="text-slate-700">On Time</TableHead>
-                        <TableHead className="text-slate-700">Rejected</TableHead>
+                        <TableHead>User</TableHead>
+                        <TableHead>Total</TableHead>
+                        <TableHead>Done</TableHead>
+                        <TableHead>On Time</TableHead>
+                        <TableHead>Rejected</TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
                      {Object.entries(stepData).map(([userName, data]) => {
                          if (data.total === 0 && data.completed === 0) return null;
                          return (
-                             <TableRow key={userName} className="hover:bg-slate-50/70">
+                             <TableRow key={userName}>
                                  <TableCell>{userName}</TableCell>
                                  <TableCell>{data.total}</TableCell>
                                  <TableCell>{data.completed}</TableCell>
@@ -482,8 +478,7 @@ export default function SiteFundSummaryPage() {
                      })}
                     </TableBody>
                   </Table>
-                </CardContent>
-              </Card>
+              </TableCard>
             )})
         )}
       </div>

@@ -2,7 +2,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { Building2, Edit, Plus, Search, ShieldAlert, Trash2, X } from 'lucide-react';
+import { Building2, Edit, Plus, ShieldAlert, Trash2 } from 'lucide-react';
 import { addDoc, collection, deleteDoc, doc, getDocs, updateDoc } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import { useAuthorization } from '@/hooks/useAuthorization';
@@ -19,7 +19,6 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from '@/components/ui/alert-dialog';
-import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import {
@@ -37,6 +36,9 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Skeleton } from '@/components/ui/skeleton';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { PageHeader } from '@/components/shared/page-header';
+import { TableCard } from '@/components/shared/table-card';
+import { SearchInput } from '@/components/shared/filter-bar';
+import { StatusBadge } from '@/components/shared/status-badge';
 import { cn } from '@/lib/utils';
 
 const INIT = { name: '', status: 'Active' as 'Active' | 'Inactive' };
@@ -154,21 +156,17 @@ export default function ManageInsuranceCompaniesPage() {
         </CardContent>
       </Card>
 
-      {/* Search */}
-      <div className="flex items-center gap-2">
-        <div className="relative flex-1 max-w-sm">
-          <Search className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
-          <Input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search companies…" className="pl-8 h-9 text-sm" />
-          {search && <button onClick={() => setSearch('')} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"><X className="h-3.5 w-3.5" /></button>}
-        </div>
-        <span className="text-xs text-muted-foreground">{filtered.length} companies</span>
-      </div>
-
       {/* Table */}
-      <Card className="overflow-hidden border-border/60">
+      <TableCard
+        title="Companies"
+        icon={Building2}
+        count={filtered.length}
+        total={companies.length}
+        toolbar={<SearchInput value={search} onChange={setSearch} placeholder="Search companies…" className="sm:max-w-sm" />}
+      >
         <Table>
           <TableHeader>
-            <TableRow className="bg-muted/40 hover:bg-muted/40">
+            <TableRow>
               <TableHead>Company Name</TableHead>
               <TableHead>Status</TableHead>
               {(canEdit || canDelete) && <TableHead className="text-right">Actions</TableHead>}
@@ -178,15 +176,13 @@ export default function ManageInsuranceCompaniesPage() {
             {filtered.length === 0 ? (
               <TableRow><TableCell colSpan={3} className="h-24 text-center text-muted-foreground">No companies found.</TableCell></TableRow>
             ) : filtered.map((company) => (
-              <TableRow key={company.id} className="hover:bg-muted/20 transition-colors">
+              <TableRow key={company.id}>
                 <TableCell className="font-medium">{company.name}</TableCell>
                 <TableCell>
-                  <Badge variant="outline" className={cn('text-[10px]', company.status === 'Active' ? 'bg-emerald-100 text-emerald-700 border-emerald-200' : 'bg-slate-100 text-slate-500 border-slate-200')}>
-                    {company.status}
-                  </Badge>
+                  <StatusBadge status={company.status} />
                 </TableCell>
                 {(canEdit || canDelete) && (
-                  <TableCell className="text-right space-x-2">
+                  <TableCell className="text-right space-x-2 whitespace-nowrap">
                     {canEdit && (
                       <Button variant="ghost" size="sm" onClick={() => openEdit(company)} className="h-7 gap-1 text-xs">
                         <Edit className="h-3 w-3" /> Edit
@@ -217,7 +213,7 @@ export default function ManageInsuranceCompaniesPage() {
             ))}
           </TableBody>
         </Table>
-      </Card>
+      </TableCard>
 
       {/* Add/Edit Dialog */}
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>

@@ -19,6 +19,7 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
+import { TableCard } from '@/components/shared/table-card';
 import { db } from '@/lib/firebase';
 import { collection, getDocs, query, where } from 'firebase/firestore';
 import type { BankExpense, BankAccount } from '@/lib/types';
@@ -245,29 +246,25 @@ export default function CashflowStatementPage() {
         backLabel="Back to reports"
       />
 
-      <Card>
-        <CardHeader>
-          <CardTitle>Monthly Cashflow</CardTitle>
-          <CardDescription>
-            Based on bankExpenses (excluding contra) and opening balances /
-            utilizations.
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="pt-4">
-          <div className="overflow-x-auto border rounded-lg">
+      <TableCard
+        title="Monthly Cashflow"
+        description="Based on bankExpenses (excluding contra) and opening balances / utilizations."
+        count={data.length}
+        noun="month"
+      >
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead className="font-bold text-xs p-2">
+                  <TableHead>
                     MONTH
                   </TableHead>
-                  <TableHead className="text-right font-bold text-xs p-2">
+                  <TableHead className="text-right">
                     INFLOW (RECEIPTS)
                   </TableHead>
-                  <TableHead className="text-right font-bold text-xs p-2">
+                  <TableHead className="text-right">
                     OUTFLOW (PAYMENTS)
                   </TableHead>
-                  <TableHead className="text-right font-bold text-xs p-2">
+                  <TableHead className="text-right">
                     NET CASHFLOW
                   </TableHead>
                 </TableRow>
@@ -276,24 +273,24 @@ export default function CashflowStatementPage() {
                 {isLoading ? (
                   Array.from({ length: 5 }).map((_, i) => (
                     <TableRow key={i}>
-                      <TableCell colSpan={4} className="p-2">
+                      <TableCell colSpan={4}>
                         <Skeleton className="h-5" />
                       </TableCell>
                     </TableRow>
                   ))
                 ) : data.length > 0 ? (
                   data.map((row) => (
-                    <TableRow key={row.month} className="text-xs">
-                      <TableCell className="font-medium p-2">
+                    <TableRow key={row.month}>
+                      <TableCell className="whitespace-nowrap font-medium">
                         {row.monthLabel}
                       </TableCell>
-                      <TableCell className="text-right text-green-600 p-2">
+                      <TableCell className="whitespace-nowrap text-right tabular-nums text-green-600">
                         {formatCurrency(row.inflow)}
                       </TableCell>
-                      <TableCell className="text-right text-red-600 p-2">
+                      <TableCell className="whitespace-nowrap text-right tabular-nums text-red-600">
                         {formatCurrency(row.outflow)}
                       </TableCell>
-                      <TableCell className="text-right font-medium p-2">
+                      <TableCell className="whitespace-nowrap text-right font-medium tabular-nums">
                         {formatCurrency(row.net)}
                       </TableCell>
                     </TableRow>
@@ -312,25 +309,23 @@ export default function CashflowStatementPage() {
               {!isLoading && data.length > 0 && (
                 <TableFooter>
                   <TableRow>
-                    <TableCell className="font-bold text-xs p-2">
+                    <TableCell>
                       TOTAL
                     </TableCell>
-                    <TableCell className="text-right font-bold text-xs p-2 text-green-700">
+                    <TableCell className="whitespace-nowrap text-right tabular-nums text-green-700">
                       {formatCurrency(totalInflow)}
                     </TableCell>
-                    <TableCell className="text-right font-bold text-xs p-2 text-red-700">
+                    <TableCell className="whitespace-nowrap text-right tabular-nums text-red-700">
                       {formatCurrency(totalOutflow)}
                     </TableCell>
-                    <TableCell className="text-right font-bold text-xs p-2">
+                    <TableCell className="whitespace-nowrap text-right tabular-nums">
                       {formatCurrency(totalNet)}
                     </TableCell>
                   </TableRow>
                 </TableFooter>
               )}
             </Table>
-          </div>
-        </CardContent>
-      </Card>
+      </TableCard>
     </div>
     </>
   );

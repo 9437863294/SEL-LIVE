@@ -43,6 +43,8 @@ import {
   SessionStatusBadge,
 } from './ui';
 import { PageHeader } from '@/components/shared/page-header';
+import { FilterBar } from '@/components/shared/filter-bar';
+import { TableCard } from '@/components/shared/table-card';
 
 /* ════════════════════════════════════════════════════════════════════════════════════════════
  * One person's day (§18) — also §37's self-view, which is the same screen pointed at yourself
@@ -293,15 +295,16 @@ export function EmployeeActivity({ userId, selfView = false }: { userId: string;
               </CardContent>
             </Card>
 
-            <Card>
-              <CardHeader>
-                <CardTitle className="text-base">Sessions</CardTitle>
-                <CardDescription>Each sign-in on each computer.</CardDescription>
-              </CardHeader>
-              <CardContent>
+            <TableCard
+              title="Sessions"
+              description="Each sign-in on each computer."
+              count={(day.data?.sessions ?? []).length}
+              noun="session"
+            >
                 <HrDataList
                   rows={day.data?.sessions ?? []}
                   dense
+                  frameless
                   columns={[
                     { header: 'Computer', mobile: 'title', cell: (row) => row.deviceName },
                     { header: 'In', mobile: 'detail', cell: (row) => <ClockTime value={row.loginAt} /> },
@@ -330,8 +333,7 @@ export function EmployeeActivity({ userId, selfView = false }: { userId: string;
                   ]}
                   empty={<p className="py-6 text-center text-sm text-muted-foreground">No sessions.</p>}
                 />
-              </CardContent>
-            </Card>
+            </TableCard>
           </div>
 
           <Card>
@@ -547,28 +549,26 @@ export function EmployeeActivityDirectory() {
       <PageHeader
         title="Employee activity"
         description="One row per person per day. Open a row for the hour-by-hour timeline."
-        actions={
-          <Input
-            type="date"
-            value={workDate}
-            max={todayWorkDate()}
-            onChange={(event) => setWorkDate(event.target.value)}
-            className="w-auto"
-          />
-        }
       />
 
-      <Card>
-        <CardHeader className="flex flex-row items-center justify-between gap-3 space-y-0">
-          <CardTitle className="text-base">{rows.length} {rows.length === 1 ? 'person' : 'people'}</CardTitle>
-          <Input
-            value={search}
-            onChange={(event) => setSearch(event.target.value)}
-            placeholder="Filter by name or department"
-            className="max-w-xs"
-          />
-        </CardHeader>
-        <CardContent>
+      <TableCard
+        title="People"
+        count={rows.length}
+        toolbar={
+          <FilterBar
+            search={{ value: search, onChange: setSearch, placeholder: 'Filter by name or department' }}
+            activeCount={workDate !== todayWorkDate() ? 1 : 0}
+          >
+            <Input
+              type="date"
+              value={workDate}
+              max={todayWorkDate()}
+              onChange={(event) => setWorkDate(event.target.value)}
+              aria-label="Date"
+            />
+          </FilterBar>
+        }
+      >
           {days.loading ? (
             <HrLoader />
           ) : (
@@ -576,6 +576,7 @@ export function EmployeeActivityDirectory() {
               rows={rows}
               columns={columns}
               dense
+              frameless
               cardHref={(row) => WINDOWS_AGENT_ROUTES.user(row.userId)}
               empty={
                 <HrEmptyState
@@ -585,8 +586,7 @@ export function EmployeeActivityDirectory() {
               }
             />
           )}
-        </CardContent>
-      </Card>
+      </TableCard>
 
       <MeasurementNotice />
     </div>
@@ -620,23 +620,26 @@ export function SessionsRegister() {
       <PageHeader
         title="Sessions"
         description="Every sign-in and sign-out the agents recorded."
-        actions={
-          <div className="flex items-center gap-2">
-            <Input type="date" value={fromDate} max={toDate} onChange={(event) => setFromDate(event.target.value)} className="w-auto" />
-            <span className="text-sm text-muted-foreground">to</span>
-            <Input type="date" value={toDate} min={fromDate} max={todayWorkDate()} onChange={(event) => setToDate(event.target.value)} className="w-auto" />
-          </div>
-        }
       />
 
-      <Card>
-        <CardContent className="pt-6">
+      <TableCard
+        title="Session register"
+        count={rows.length}
+        noun="session"
+        toolbar={
+          <FilterBar>
+            <Input type="date" value={fromDate} max={toDate} onChange={(event) => setFromDate(event.target.value)} aria-label="From" title="From" />
+            <Input type="date" value={toDate} min={fromDate} max={todayWorkDate()} onChange={(event) => setToDate(event.target.value)} aria-label="To" title="To" />
+          </FilterBar>
+        }
+      >
           {sessions.loading ? (
             <HrLoader />
           ) : (
             <HrDataList
               rows={rows}
               dense
+              frameless
               columns={[
                 {
                   header: 'Employee',
@@ -665,8 +668,7 @@ export function SessionsRegister() {
               empty={<HrEmptyState title="No sessions in this range" />}
             />
           )}
-        </CardContent>
-      </Card>
+      </TableCard>
     </div>
   );
 }

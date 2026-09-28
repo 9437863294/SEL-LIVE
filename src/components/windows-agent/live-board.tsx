@@ -4,8 +4,8 @@ import { useEffect, useMemo, useState } from 'react';
 import { RefreshCw, WifiOff } from 'lucide-react';
 
 import { Badge } from '@/components/ui/badge';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Input } from '@/components/ui/input';
+import { SearchInput } from '@/components/shared/filter-bar';
+import { TableCard } from '@/components/shared/table-card';
 import {
   HrAccessDenied,
   HrDataList,
@@ -198,7 +198,7 @@ export default function LiveBoard() {
       className: 'hidden md:table-cell',
       mobile: 'detail',
       cell: (row) => (
-        <span className="text-sm text-muted-foreground">{row.deviceName}</span>
+        <span className="text-muted-foreground">{row.deviceName}</span>
       ),
     },
     {
@@ -219,7 +219,7 @@ export default function LiveBoard() {
         row.presence === 'OFFLINE' || row.presence === 'LOCKED' ? (
           <span className="text-muted-foreground">—</span>
         ) : (
-          <span className="text-sm">{row.currentApplication ?? '—'}</span>
+          <span>{row.currentApplication ?? '—'}</span>
         ),
     },
     {
@@ -242,11 +242,7 @@ export default function LiveBoard() {
       cell: (row) => (
         <span className="flex items-center justify-end gap-2">
           {row.health.length > 0 ? (
-            <Badge
-              variant="outline"
-              className="border-amber-200 bg-amber-50 text-amber-700"
-              title={row.health.join(', ')}
-            >
+            <Badge variant="warning" title={row.health.join(', ')}>
               <WifiOff className="mr-1 h-3 w-3" aria-hidden />
               {row.health.length}
             </Badge>
@@ -273,28 +269,24 @@ export default function LiveBoard() {
         <HrKpiCard label="Agent problems" value={counts.unhealthy} tone={counts.unhealthy ? 'rose' : 'slate'} />
       </div>
 
-      <Card>
-        <CardHeader className="flex flex-row items-center justify-between gap-3 space-y-0">
-          <CardTitle className="flex items-center gap-2 text-base">
-            <RefreshCw
-              className={subscribed ? 'h-4 w-4 animate-spin text-emerald-600' : 'h-4 w-4 text-muted-foreground'}
-              style={subscribed ? { animationDuration: '3s' } : undefined}
-              aria-hidden
-            />
-            {rows.length} {rows.length === 1 ? 'session' : 'sessions'}
-          </CardTitle>
-          <Input
-            value={search}
-            onChange={(event) => setSearch(event.target.value)}
-            placeholder="Filter by name, device, department or program"
-            className="max-w-xs"
+      <TableCard
+        title="Open sessions"
+        count={rows.length}
+        noun="session"
+        actions={
+          <RefreshCw
+            className={subscribed ? 'h-4 w-4 animate-spin text-emerald-600' : 'h-4 w-4 text-muted-foreground'}
+            style={subscribed ? { animationDuration: '3s' } : undefined}
+            aria-hidden
           />
-        </CardHeader>
-        <CardContent>
+        }
+        toolbar={<SearchInput value={search} onChange={setSearch} placeholder="Filter by name, device, department or program" className="sm:max-w-xs" />}
+      >
           <HrDataList
             rows={rows}
             columns={columns}
             dense
+            frameless
             cardHref={(row) => WINDOWS_AGENT_ROUTES.user(row.userId)}
             empty={
               <HrEmptyState
@@ -307,8 +299,7 @@ export default function LiveBoard() {
               />
             }
           />
-        </CardContent>
-      </Card>
+      </TableCard>
 
       <MeasurementNotice />
     </div>

@@ -2,10 +2,10 @@
 
 /** Small presentational pieces shared by Mail Hub screens. */
 
-import { AlertTriangle, CheckCircle2, CircleDashed, Clock, Loader2, RefreshCw, ShieldAlert, XCircle } from 'lucide-react';
+import { AlertTriangle, Clock, Loader2, RefreshCw } from 'lucide-react';
 import type { ReactNode } from 'react';
 
-import { Badge } from '@/components/ui/badge';
+import { StatusBadge, type StatusTone } from '@/components/shared/status-badge';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import type { MailRecoveryAdvice } from '@/lib/mail-hub/model';
@@ -45,23 +45,25 @@ export function Spinner({ label }: { label?: string }) {
   );
 }
 
-const STATUS_STYLE: Record<string, { label: string; className: string; icon: typeof CheckCircle2 }> = {
-  active: { label: 'Synced', className: 'bg-emerald-50 text-emerald-700 border-emerald-200', icon: CheckCircle2 },
-  connecting: { label: 'First sync', className: 'bg-sky-50 text-sky-700 border-sky-200', icon: CircleDashed },
-  reauth_required: { label: 'Reconnect needed', className: 'bg-rose-50 text-rose-700 border-rose-200', icon: ShieldAlert },
-  error: { label: 'Provider problem', className: 'bg-amber-50 text-amber-800 border-amber-200', icon: AlertTriangle },
-  disconnected: { label: 'Disconnected', className: 'bg-slate-100 text-slate-600 border-slate-200', icon: XCircle },
+const ACCOUNT_STATUS_META: Record<string, { label: string; tone: StatusTone }> = {
+  active: { label: 'Synced', tone: 'success' },
+  connecting: { label: 'First sync', tone: 'info' },
+  reauth_required: { label: 'Reconnect needed', tone: 'danger' },
+  error: { label: 'Provider problem', tone: 'warning' },
+  disconnected: { label: 'Disconnected', tone: 'neutral' },
 };
 
+/**
+ * A mailbox's sync state on the shared `StatusBadge`, in Mail Hub's own words ("Synced",
+ * "Reconnect needed"); the states still syncing carry the live dot.
+ */
 export function AccountStatusBadge({ account }: { account: Pick<AccountRow, 'status' | 'sync'> }) {
-  const style = STATUS_STYLE[account.status] ?? STATUS_STYLE.active;
-  const Icon = style.icon;
   const recovering = account.status === 'active' && account.sync.phase === 'recovery';
+  const meta = recovering ? { label: 'Resyncing', tone: 'info' as const } : ACCOUNT_STATUS_META[account.status] ?? ACCOUNT_STATUS_META.active;
   return (
-    <Badge variant="outline" className={cn('gap-1 whitespace-nowrap font-medium', recovering ? STATUS_STYLE.connecting.className : style.className)}>
-      <Icon className={cn('h-3 w-3', account.status === 'connecting' && 'animate-spin')} />
-      {recovering ? 'Resyncing' : style.label}
-    </Badge>
+    <StatusBadge status={account.status} tone={meta.tone} dot={recovering || account.status === 'connecting'}>
+      {meta.label}
+    </StatusBadge>
   );
 }
 
@@ -92,13 +94,12 @@ export function RecoveryPanel({ advice, actions }: { advice: MailRecoveryAdvice;
 export function DeadlineBadge({ thread }: { thread: Pick<ThreadSummary, 'deadline' | 'assignment'> }) {
   if (thread.deadline === 'none' || thread.deadline === 'answered') return null;
   const due = thread.assignment?.dueAt ? new Date(thread.assignment.dueAt) : null;
-  const className =
-    thread.deadline === 'overdue' ? 'border-rose-200 bg-rose-50 text-rose-700' : thread.deadline === 'due-soon' ? 'border-amber-200 bg-amber-50 text-amber-800' : 'border-slate-200 bg-slate-50 text-slate-600';
+  const tone: StatusTone = thread.deadline === 'overdue' ? 'danger' : thread.deadline === 'due-soon' ? 'warning' : 'neutral';
   return (
-    <Badge variant="outline" className={cn('gap-1 whitespace-nowrap text-[11px]', className)}>
-      <Clock className="h-3 w-3" />
+    <StatusBadge status={thread.deadline} tone={tone}>
+      <Clock className="h-3 w-3" aria-hidden="true" />
       {thread.deadline === 'overdue' ? 'Overdue' : 'Due'} {due ? formatShort(due.toISOString()) : ''}
-    </Badge>
+    </StatusBadge>
   );
 }
 

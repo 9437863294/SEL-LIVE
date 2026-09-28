@@ -20,6 +20,7 @@ import {
   dailySurfaceCardClass,
 } from '@/components/daily-requisition/module-shell';
 import { PageHeader } from '@/components/shared/page-header';
+import { Badge } from '@/components/ui/badge';
 
 interface PrintingSettings {
   paperSize: string;
@@ -105,9 +106,9 @@ export default function PrintingSetupPage() {
         backHref="/daily-requisition/settings"
         meta={
           <>
-            <span className="rounded-full border border-white/70 bg-white/70 px-3 py-1 text-xs text-slate-600 backdrop-blur">
+            <Badge variant="neutral">
               Output settings
-            </span>
+            </Badge>
           </>
         }
         actions={

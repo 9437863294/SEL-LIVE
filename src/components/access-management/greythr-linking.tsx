@@ -41,7 +41,6 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
-import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -75,13 +74,18 @@ import {
   type LinkReportResponse,
 } from '@/lib/greythr-sync-client';
 import { PageHeader } from '@/components/shared/page-header';
+import { FilterBar, SearchInput } from '@/components/shared/filter-bar';
+import { StatusBadge, type StatusTone } from '@/components/shared/status-badge';
+import { TableCard } from '@/components/shared/table-card';
 
-const STATUS_TONE: Record<LinkRowStatus, string> = {
-  linked: 'border-emerald-200 bg-emerald-50 text-emerald-700',
-  suggested: 'border-blue-200 bg-blue-50 text-blue-700',
-  review: 'border-amber-200 bg-amber-50 text-amber-800',
-  conflict: 'border-rose-200 bg-rose-50 text-rose-700',
-  unlinked: 'border-slate-200 bg-slate-100 text-slate-600',
+/**
+ * Only the link states the shared vocabulary would misread: "linked" and "suggested" are not status
+ * words it knows, and a conflict is this console's worst case. "review" and "unlinked" read right.
+ */
+const LINK_STATUS_TONE: Partial<Record<LinkRowStatus, StatusTone>> = {
+  linked: 'success',
+  suggested: 'info',
+  conflict: 'danger',
 };
 
 const FILTERS: Array<{ value: 'all' | LinkRowStatus; label: string }> = [
@@ -273,9 +277,9 @@ export function GreytHRLinkingWorkspace() {
       header: 'Status',
       mobile: 'aside',
       cell: (row) => (
-        <Badge variant="outline" className={cn('font-normal', STATUS_TONE[row.status])}>
+        <StatusBadge status={row.status} tone={LINK_STATUS_TONE[row.status]}>
           {LINK_STATUS_LABELS[row.status]}
-        </Badge>
+        </StatusBadge>
       ),
     },
     {
@@ -312,19 +316,7 @@ export function GreytHRLinkingWorkspace() {
     {
       header: 'Account',
       className: 'hidden md:table-cell',
-      cell: (row) => (
-        <Badge
-          variant="outline"
-          className={cn(
-            'font-normal',
-            row.user.status === 'Active'
-              ? 'border-emerald-200 bg-emerald-50 text-emerald-700'
-              : 'border-slate-200 bg-slate-100 text-slate-600',
-          )}
-        >
-          {row.user.status}
-        </Badge>
-      ),
+      cell: (row) => <StatusBadge status={row.user.status} />,
     },
     {
       header: 'Actions',
@@ -495,41 +487,50 @@ export function GreytHRLinkingWorkspace() {
         </Card>
       )}
 
-      <div className="mb-3 flex flex-col gap-2 sm:flex-row sm:items-center">
-        <div className="relative flex-1">
-          <Search className="absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-          <Input
-            value={search}
-            onChange={(event) => setSearch(event.target.value)}
-            placeholder="Search by name, email or employee number…"
-            className="pl-8"
+      <TableCard
+        title="Platform users"
+        icon={Users}
+        count={rows.length}
+        noun="user"
+        toolbar={
+          <FilterBar
+            search={{ value: search, onChange: setSearch, placeholder: 'Search by name, email or employee number…' }}
+            activeCount={filter !== 'all' ? 1 : 0}
+            onClear={() => {
+              setSearch('');
+              setFilter('all');
+            }}
+          >
+            <Select value={filter} onValueChange={(value) => setFilter(value as typeof filter)}>
+              <SelectTrigger aria-label="Link status">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {FILTERS.map((entry) => (
+                  <SelectItem key={entry.value} value={entry.value}>
+                    {entry.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </FilterBar>
+        }
+      >
+        <div className="p-3 sm:p-0">
+          <HrDataList
+            frameless
+            rows={rows}
+            columns={columns}
+            empty={
+              <HrEmptyState
+                title="Nothing to show"
+                description="No user matches this filter."
+                icon={Users}
+              />
+            }
           />
         </div>
-        <Select value={filter} onValueChange={(value) => setFilter(value as typeof filter)}>
-          <SelectTrigger className="sm:w-52">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            {FILTERS.map((entry) => (
-              <SelectItem key={entry.value} value={entry.value}>
-                {entry.label}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-      </div>
-
-      <HrDataList
-        rows={rows}
-        columns={columns}
-        empty={
-          <HrEmptyState
-            title="Nothing to show"
-            description="No user matches this filter."
-            icon={Users}
-          />
-        }
-      />
+      </TableCard>
 
       {/* ── Choose an employee ── */}
 
@@ -546,9 +547,9 @@ export function GreytHRLinkingWorkspace() {
 
           <div className={hrDialog.body}>
             {!choosing?.candidates.length && (
-              <Input
+              <SearchInput
                 value={employeeSearch}
-                onChange={(event) => setEmployeeSearch(event.target.value)}
+                onChange={setEmployeeSearch}
                 placeholder="Employee number, name, department…"
               />
             )}

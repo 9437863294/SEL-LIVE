@@ -19,7 +19,7 @@ import {
   missingBGDocumentTypes,
   uploadBGDocument,
 } from "@/lib/bank-guarantee-documents";
-import { Badge } from "@/components/ui/badge";
+import { StatusBadge } from "@/components/shared/status-badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -143,22 +143,22 @@ export default function BGDocumentPanel({
         title={title}
         description="Files are versioned and stored in the organization-scoped BG folder."
         badge={
-          <Badge variant={missing.length ? "destructive" : "secondary"}>
+          <StatusBadge tone={missing.length ? "danger" : "success"}>
             {missing.length ? `${missing.length} required missing` : "Complete"}
-          </Badge>
+          </StatusBadge>
         }
       />
 
       {requiredTypes.length > 0 && (
         <div className="flex flex-wrap gap-2">
           {requiredTypes.map((item) => (
-            <Badge
+            <StatusBadge
               key={item}
-              variant={missing.includes(item) ? "outline" : "secondary"}
+              tone={missing.includes(item) ? "warning" : "success"}
             >
               {missing.includes(item) ? "Missing: " : "Ready: "}
               {item}
-            </Badge>
+            </StatusBadge>
           ))}
         </div>
       )}

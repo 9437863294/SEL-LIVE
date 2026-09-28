@@ -87,6 +87,8 @@ import { Separator } from '@/components/ui/separator';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { cn } from '@/lib/utils';
 import { PageHeader } from '@/components/shared/page-header';
+import { TableCard } from '@/components/shared/table-card';
+import { SearchInput } from '@/components/shared/filter-bar';
 
 const PREVIEW_ROWS = 25;
 const PREVIEW_COLUMNS = 10;
@@ -576,7 +578,7 @@ export default function FDExportWorkspace() {
               <div className="flex items-baseline justify-between gap-3"><span className="text-muted-foreground">Sheets</span><span className="font-semibold">{sheetCount}</span></div>
               <div className="flex flex-wrap gap-1 pt-0.5">
                 {['Fixed Deposits', ...sheets.map((key) => OPTIONAL_SHEETS.find((item) => item.key === key)?.label || ''), 'Export Scope']
-                  .filter(Boolean).map((label) => <Badge key={label} variant="secondary" className="text-[10px] font-normal">{label}</Badge>)}
+                  .filter(Boolean).map((label) => <Badge key={label} variant="neutral">{label}</Badge>)}
               </div>
             </div>
             <Separator />
@@ -602,10 +604,7 @@ export default function FDExportWorkspace() {
             {Boolean(activeFilters.length) && <Button variant="ghost" size="sm" onClick={resetFilters}><RotateCcw className="mr-2 h-4 w-4" />Clear all</Button>}
           </CardHeader>
           <CardContent className="space-y-5">
-            <div className="relative">
-              <Search className="absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
-              <Input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search reference, FD number, bank, holder, project or remarks…" className="pl-9" />
-            </div>
+            <SearchInput value={search} onChange={setSearch} placeholder="Search reference, FD number, bank, holder, project or remarks…" />
 
             <div className="space-y-2.5">
               <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Deposit attributes</p>
@@ -684,10 +683,7 @@ export default function FDExportWorkspace() {
                   {openGroups.length ? 'Collapse all' : 'Expand all'}
                 </Button>
               </div>
-              <div className="relative">
-                <Search className="absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
-                <Input value={columnQuery} onChange={(event) => setColumnQuery(event.target.value)} placeholder="Find a field by name…" className="pl-9" />
-              </div>
+              <SearchInput value={columnQuery} onChange={setColumnQuery} placeholder="Find a field by name…" />
               <div className="space-y-2">{FD_EXPORT_COLUMN_GROUPS.map((group) => {
                 const groupColumns = FD_EXPORT_COLUMNS.filter((column) => column.group === group);
                 const visible = fieldSearch ? groupColumns.filter((column) => column.header.toLowerCase().includes(fieldSearch)) : groupColumns;
@@ -701,7 +697,7 @@ export default function FDExportWorkspace() {
                       onClick={() => setOpenGroups((current) => (current.includes(group) ? current.filter((item) => item !== group) : [...current, group]))}>
                       <span className="truncate text-sm font-medium text-slate-700">{group}</span>
                       <span className="flex shrink-0 items-center gap-2">
-                        <Badge variant={activeCount ? 'secondary' : 'outline'} className="text-[10px] font-normal">{activeCount}/{groupColumns.length}</Badge>
+                        <Badge variant={activeCount ? 'neutral' : 'outline'}>{activeCount}/{groupColumns.length}</Badge>
                         <ChevronDown className={cn('h-4 w-4 text-muted-foreground transition-transform', open && 'rotate-180')} />
                       </span>
                     </button>
@@ -748,38 +744,31 @@ export default function FDExportWorkspace() {
           </CardContent>
         </Card>}
 
-        {step === 'download' && <Card className="overflow-hidden border-white/80 bg-white/90 shadow-sm">
-          <CardHeader className="flex flex-col justify-between gap-3 sm:flex-row sm:items-start">
-            <div>
-              <CardTitle>Step 4 · Preview &amp; download</CardTitle>
-              <CardDescription>First {previewRows.length} of {filtered.length} rows · {previewColumns.length} of {columns.length} columns shown.</CardDescription>
-            </div>
-            <div className="flex flex-wrap gap-2">
+        {step === 'download' && <TableCard
+          title={<>Step 4 · Preview &amp; download</>}
+          description={<>First {previewRows.length} of {filtered.length} rows · {previewColumns.length} of {columns.length} columns shown.</>}
+          actions={<>
               {columns.length > PREVIEW_COLUMNS && <Button variant="outline" size="sm" onClick={() => setShowAllPreviewColumns((current) => !current)}>
                 <Table2 className="mr-2 h-4 w-4" />{showAllPreviewColumns ? `First ${PREVIEW_COLUMNS} columns` : `All ${columns.length} columns`}
               </Button>}
               <Button size="sm" onClick={() => void exportExcel()} disabled={!canDownload || busy} className="bg-gradient-to-r from-cyan-600 to-blue-700">
                 {busy ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Download className="mr-2 h-4 w-4" />}Export Excel ({filtered.length})
               </Button>
-            </div>
-          </CardHeader>
-          <CardContent className="p-0">
-            <div className="overflow-x-auto border-t border-slate-100">
+          </>}
+        >
               <Table>
-                <TableHeader><TableRow>{previewColumns.map((column) => <TableHead key={column.key} className={cn('whitespace-nowrap', (column.kind === 'amount' || column.kind === 'number' || column.kind === 'percent') && 'text-right')}>{column.header}</TableHead>)}</TableRow></TableHeader>
+                <TableHeader><TableRow>{previewColumns.map((column) => <TableHead key={column.key} className={cn((column.kind === 'amount' || column.kind === 'number' || column.kind === 'percent') && 'text-right')}>{column.header}</TableHead>)}</TableRow></TableHeader>
                 <TableBody>
                   {Boolean(previewColumns.length) && previewRows.map((row) => <TableRow key={row.id}>{previewColumns.map((column) => {
                     const value = column.value(row);
                     const display = value instanceof Date ? value.toLocaleDateString('en-IN') : column.kind === 'amount' ? formatFdCurrency(Number(value) || 0, row.currency) : String(value ?? '');
-                    return <TableCell key={column.key} className={cn('whitespace-nowrap text-xs', (column.kind === 'amount' || column.kind === 'number' || column.kind === 'percent') && 'text-right')}>{display}</TableCell>;
+                    return <TableCell key={column.key} className={cn('whitespace-nowrap', (column.kind === 'amount' || column.kind === 'number' || column.kind === 'percent') && 'text-right tabular-nums')}>{display}</TableCell>;
                   })}</TableRow>)}
-                  {!columns.length && <TableRow><TableCell className="h-28 text-center text-sm text-muted-foreground">Select at least one column in step 2 to preview the export.</TableCell></TableRow>}
-                  {Boolean(columns.length) && !previewRows.length && <TableRow><TableCell colSpan={previewColumns.length} className="h-28 text-center text-sm text-muted-foreground">No fixed deposits match this scope — widen the filters in step 1.</TableCell></TableRow>}
+                  {!columns.length && <TableRow><TableCell className="h-28 text-center text-muted-foreground">Select at least one column in step 2 to preview the export.</TableCell></TableRow>}
+                  {Boolean(columns.length) && !previewRows.length && <TableRow><TableCell colSpan={previewColumns.length} className="h-28 text-center text-muted-foreground">No fixed deposits match this scope — widen the filters in step 1.</TableCell></TableRow>}
                 </TableBody>
               </Table>
-            </div>
-          </CardContent>
-        </Card>}
+        </TableCard>}
 
         <div className="flex items-center justify-between gap-2">
           <Button variant="outline" onClick={() => previous && setStep(previous.id)} disabled={!previous}>

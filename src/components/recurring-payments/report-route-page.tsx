@@ -27,18 +27,11 @@ import {
   visibleObligations,
 } from "@/lib/recurring-payments";
 import { exportWorkbook } from "@/lib/report-excel";
-import { Badge } from "@/components/ui/badge";
+import { StatusBadge } from "@/components/shared/status-badge";
 import { Button } from "@/components/ui/button";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
-import CollapsibleFilterCard from "./collapsible-filter-card";
+import { FilterBar } from "@/components/shared/filter-bar";
+import { TableCard } from "@/components/shared/table-card";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import {
   Select,
   SelectContent,
@@ -110,8 +103,6 @@ function addDays(dateOnly: string, delta: number) {
   date.setDate(date.getDate() + delta);
   return recurringDateOnly(date);
 }
-
-const COMPACT_CONTROL = "h-8 text-sm";
 
 function datePresets(today: string): Array<{ label: string; from: string }> {
   return [
@@ -434,20 +425,58 @@ function ReportRouteView({ kind }: { kind: ReportKind }) {
           </div>
         </div>
       )}
-      <CollapsibleFilterCard activeCount={activeFilterCount} onClear={() => setFilters(DEFAULT_FILTERS)}>
-          <div className="space-y-1.5 border-b pb-3">
-            <div className="flex flex-wrap items-center gap-1.5">
-              <span className="mr-1 flex items-center gap-1 text-xs font-medium text-muted-foreground">
-                <CalendarRange className="h-3.5 w-3.5" />
-                Date range
-              </span>
+      <TableCard
+        title="Report records"
+        count={rows.length}
+        noun="record"
+        description={<>Organization: {user?.organizationName || organizationId}</>}
+        toolbar={
+          <FilterBar activeCount={activeFilterCount} onClear={() => setFilters(DEFAULT_FILTERS)}>
+            <Select
+              value={filters.dateField}
+              onValueChange={(dateField) =>
+                setFilters((current) => ({
+                  ...current,
+                  dateField: dateField as typeof current.dateField,
+                }))
+              }
+            >
+              <SelectTrigger aria-label="Date field">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="dueDate">By due date</SelectItem>
+                <SelectItem value="billDate">By bill date</SelectItem>
+                <SelectItem value="paymentDate">By payment date</SelectItem>
+              </SelectContent>
+            </Select>
+            <Input
+              type="date"
+              aria-label="From date"
+              value={filters.from}
+              onChange={(event) =>
+                setFilters((current) => ({
+                  ...current,
+                  from: event.target.value,
+                }))
+              }
+            />
+            <Input
+              type="date"
+              aria-label="To date"
+              value={filters.to}
+              onChange={(event) =>
+                setFilters((current) => ({ ...current, to: event.target.value }))
+              }
+            />
+            <div className="flex flex-wrap items-center gap-1.5" role="group" aria-label="Date range presets">
+              <CalendarRange className="h-4 w-4 text-muted-foreground" aria-hidden="true" />
               {datePresets(today).map((preset) => (
                 <Button
                   key={preset.label}
                   type="button"
                   size="sm"
                   variant="outline"
-                  className="h-7 px-2.5 text-xs"
                   onClick={() =>
                     setFilters((current) => ({
                       ...current,
@@ -463,7 +492,6 @@ function ReportRouteView({ kind }: { kind: ReportKind }) {
                 type="button"
                 size="sm"
                 variant="ghost"
-                className="h-7 px-2.5 text-xs text-muted-foreground"
                 onClick={() =>
                   setFilters((current) => ({ ...current, from: "", to: "" }))
                 }
@@ -471,291 +499,212 @@ function ReportRouteView({ kind }: { kind: ReportKind }) {
                 All time
               </Button>
             </div>
-            <div className="grid gap-2 sm:grid-cols-3">
-              <Select
-                value={filters.dateField}
-                onValueChange={(dateField) =>
-                  setFilters((current) => ({
-                    ...current,
-                    dateField: dateField as typeof current.dateField,
-                  }))
-                }
-              >
-                <SelectTrigger className={COMPACT_CONTROL}>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="dueDate">By due date</SelectItem>
-                  <SelectItem value="billDate">By bill date</SelectItem>
-                  <SelectItem value="paymentDate">By payment date</SelectItem>
-                </SelectContent>
-              </Select>
-              <Input
-                type="date"
-                className={COMPACT_CONTROL}
-                value={filters.from}
-                onChange={(event) =>
-                  setFilters((current) => ({
-                    ...current,
-                    from: event.target.value,
-                  }))
-                }
-              />
-              <Input
-                type="date"
-                className={COMPACT_CONTROL}
-                value={filters.to}
-                onChange={(event) =>
-                  setFilters((current) => ({ ...current, to: event.target.value }))
-                }
-              />
-            </div>
-          </div>
-          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-5">
-            <Field label="Category">
-              <Filter
-                value={filters.category}
-                label="All categories"
-                options={values("category")}
-                onChange={(category) =>
-                  setFilters((current) => ({ ...current, category }))
-                }
-              />
-            </Field>
-            <Field label="Vendor">
-              <Filter
-                value={filters.vendor}
-                label="All vendors"
-                options={values("vendorName")}
-                onChange={(vendor) =>
-                  setFilters((current) => ({ ...current, vendor }))
-                }
-              />
-            </Field>
-            <Field label="Status">
-              <Filter
-                value={filters.status}
-                label="All statuses"
-                options={values("status")}
-                onChange={(status) =>
-                  setFilters((current) => ({ ...current, status }))
-                }
-              />
-            </Field>
-            <Field label="Branch">
-              <Filter
-                value={filters.branch}
-                label="All branches"
-                options={values("branchName")}
-                onChange={(branch) =>
-                  setFilters((current) => ({ ...current, branch }))
-                }
-              />
-            </Field>
-            <Field label="Project">
-              <Select
-                value={filters.project}
-                onValueChange={(project) =>
-                  setFilters((current) => ({ ...current, project }))
-                }
-              >
-                <SelectTrigger className={COMPACT_CONTROL}>
-                  <SelectValue placeholder="All global projects" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All global projects</SelectItem>
-                  {activeProjects.map((project) => (
-                    <SelectItem value={project.id} key={project.id}>
-                      {project.projectName}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </Field>
-            <Field label="Department">
-              <Select
-                value={filters.department}
-                onValueChange={(department) =>
-                  setFilters((current) => ({ ...current, department }))
-                }
-              >
-                <SelectTrigger className={COMPACT_CONTROL}>
-                  <SelectValue placeholder="All global departments" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All global departments</SelectItem>
-                  {activeDepartments.map((department) => (
-                    <SelectItem value={department.id} key={department.id}>
-                      {department.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </Field>
-            <Field label="Owner">
-              <Select
-                value={filters.owner}
-                onValueChange={(owner) =>
-                  setFilters((current) => ({ ...current, owner }))
-                }
-              >
-                <SelectTrigger className={COMPACT_CONTROL}>
-                  <SelectValue placeholder="All owners" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All owners</SelectItem>
-                  {users.map((entry) => (
-                    <SelectItem value={entry.id} key={entry.id}>
-                      {personOptionLabel(entry)}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </Field>
-            <Field label="Source">
-              <Select
-                value={filters.source}
-                onValueChange={(source) =>
-                  setFilters((current) => ({
-                    ...current,
-                    source: source as typeof current.source,
-                  }))
-                }
-              >
-                <SelectTrigger className={COMPACT_CONTROL}>
-                  <SelectValue placeholder="All sources" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All sources</SelectItem>
-                  <SelectItem value="Recurring">Recurring (auto-generated)</SelectItem>
-                  <SelectItem value="Manual">Manual entry</SelectItem>
-                </SelectContent>
-              </Select>
-            </Field>
-            <Field label="Min amount">
-              <Input
-                type="number"
-                className={COMPACT_CONTROL}
-                placeholder="No minimum"
-                value={filters.min}
-                onChange={(event) =>
-                  setFilters((current) => ({
-                    ...current,
-                    min: event.target.value,
-                  }))
-                }
-              />
-            </Field>
-            <Field label="Max amount">
-              <Input
-                type="number"
-                className={COMPACT_CONTROL}
-                placeholder="No maximum"
-                value={filters.max}
-                onChange={(event) =>
-                  setFilters((current) => ({
-                    ...current,
-                    max: event.target.value,
-                  }))
-                }
-              />
-            </Field>
-          </div>
-      </CollapsibleFilterCard>
-      <Card>
-        <CardHeader>
-          <CardTitle>{rows.length} report record(s)</CardTitle>
-          <CardDescription>
-            Organization: {user?.organizationName || organizationId}
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="p-0">
-          <div className="overflow-x-auto">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Date</TableHead>
-                  <TableHead>Payment</TableHead>
-                  <TableHead>Scope</TableHead>
-                  <TableHead>Category</TableHead>
-                  <TableHead>Vendor</TableHead>
-                  <TableHead>Owner</TableHead>
-                  <TableHead className="text-right">Expected</TableHead>
-                  <TableHead className="text-right">Actual</TableHead>
-                  <TableHead className="text-right">Outstanding</TableHead>
-                  <TableHead>Status</TableHead>
-                  <TableHead>Confidence</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {rows.map((item) => (
-                  <TableRow key={item.id}>
-                    <TableCell className="whitespace-nowrap">{item.dueDate}</TableCell>
-                    <TableCell className="whitespace-nowrap font-medium">
-                      {item.title}
-                    </TableCell>
-                    <TableCell className="whitespace-nowrap">
-                      {item.projectName || item.branchName || "Organization-wide"}
-                    </TableCell>
-                    <TableCell className="whitespace-nowrap">{item.category}</TableCell>
-                    <TableCell className="whitespace-nowrap">{item.vendorName}</TableCell>
-                    <TableCell className="whitespace-nowrap">
-                      {users.find((entry) => entry.id === item.assignedTo)?.name || "—"}
-                    </TableCell>
-                    <TableCell className="whitespace-nowrap text-right">
-                      {currency(item.expectedAmount)}
-                    </TableCell>
-                    <TableCell className="whitespace-nowrap text-right">
-                      {currency(item.billAmount || 0)}
-                    </TableCell>
-                    <TableCell className="whitespace-nowrap text-right font-semibold">
-                      {currency(
-                        Math.max(
-                          0,
-                          (item.billAmount || item.expectedAmount) -
-                            (item.settledAmount || item.paidAmount),
-                        ),
-                      )}
-                    </TableCell>
-                    <TableCell className="whitespace-nowrap">
-                      <Badge variant="outline">{item.status}</Badge>
-                    </TableCell>
-                    <TableCell className="whitespace-nowrap">
-                      {item.billAmount
-                        ? "Confirmed bill"
-                        : item.amountType === "Fixed"
-                          ? "Fixed"
-                          : "Estimated"}
-                    </TableCell>
-                  </TableRow>
+            <Filter
+              value={filters.category}
+              label="All categories"
+              options={values("category")}
+              onChange={(category) =>
+                setFilters((current) => ({ ...current, category }))
+              }
+            />
+            <Filter
+              value={filters.vendor}
+              label="All vendors"
+              options={values("vendorName")}
+              onChange={(vendor) =>
+                setFilters((current) => ({ ...current, vendor }))
+              }
+            />
+            <Filter
+              value={filters.status}
+              label="All statuses"
+              options={values("status")}
+              onChange={(status) =>
+                setFilters((current) => ({ ...current, status }))
+              }
+            />
+            <Filter
+              value={filters.branch}
+              label="All branches"
+              options={values("branchName")}
+              onChange={(branch) =>
+                setFilters((current) => ({ ...current, branch }))
+              }
+            />
+            <Select
+              value={filters.project}
+              onValueChange={(project) =>
+                setFilters((current) => ({ ...current, project }))
+              }
+            >
+              <SelectTrigger aria-label="Project">
+                <SelectValue placeholder="All global projects" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All global projects</SelectItem>
+                {activeProjects.map((project) => (
+                  <SelectItem value={project.id} key={project.id}>
+                    {project.projectName}
+                  </SelectItem>
                 ))}
-                {!rows.length && (
-                  <TableRow>
-                    <TableCell
-                      colSpan={11}
-                      className="h-28 text-center text-muted-foreground"
-                    >
-                      No records match the report filters.
-                    </TableCell>
-                  </TableRow>
-                )}
-              </TableBody>
-            </Table>
-          </div>
-        </CardContent>
-      </Card>
+              </SelectContent>
+            </Select>
+            <Select
+              value={filters.department}
+              onValueChange={(department) =>
+                setFilters((current) => ({ ...current, department }))
+              }
+            >
+              <SelectTrigger aria-label="Department">
+                <SelectValue placeholder="All global departments" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All global departments</SelectItem>
+                {activeDepartments.map((department) => (
+                  <SelectItem value={department.id} key={department.id}>
+                    {department.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <Select
+              value={filters.owner}
+              onValueChange={(owner) =>
+                setFilters((current) => ({ ...current, owner }))
+              }
+            >
+              <SelectTrigger aria-label="Owner">
+                <SelectValue placeholder="All owners" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All owners</SelectItem>
+                {users.map((entry) => (
+                  <SelectItem value={entry.id} key={entry.id}>
+                    {personOptionLabel(entry)}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <Select
+              value={filters.source}
+              onValueChange={(source) =>
+                setFilters((current) => ({
+                  ...current,
+                  source: source as typeof current.source,
+                }))
+              }
+            >
+              <SelectTrigger aria-label="Source">
+                <SelectValue placeholder="All sources" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All sources</SelectItem>
+                <SelectItem value="Recurring">Recurring (auto-generated)</SelectItem>
+                <SelectItem value="Manual">Manual entry</SelectItem>
+              </SelectContent>
+            </Select>
+            <Input
+              type="number"
+              aria-label="Min amount"
+              placeholder="Min amount"
+              value={filters.min}
+              onChange={(event) =>
+                setFilters((current) => ({
+                  ...current,
+                  min: event.target.value,
+                }))
+              }
+            />
+            <Input
+              type="number"
+              aria-label="Max amount"
+              placeholder="Max amount"
+              value={filters.max}
+              onChange={(event) =>
+                setFilters((current) => ({
+                  ...current,
+                  max: event.target.value,
+                }))
+              }
+            />
+          </FilterBar>
+        }
+      >
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead>Date</TableHead>
+              <TableHead>Payment</TableHead>
+              <TableHead>Scope</TableHead>
+              <TableHead>Category</TableHead>
+              <TableHead>Vendor</TableHead>
+              <TableHead>Owner</TableHead>
+              <TableHead className="text-right">Expected</TableHead>
+              <TableHead className="text-right">Actual</TableHead>
+              <TableHead className="text-right">Outstanding</TableHead>
+              <TableHead>Status</TableHead>
+              <TableHead>Confidence</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {rows.map((item) => (
+              <TableRow key={item.id}>
+                <TableCell className="whitespace-nowrap">{item.dueDate}</TableCell>
+                <TableCell className="whitespace-nowrap font-medium">
+                  {item.title}
+                </TableCell>
+                <TableCell className="whitespace-nowrap">
+                  {item.projectName || item.branchName || "Organization-wide"}
+                </TableCell>
+                <TableCell className="whitespace-nowrap">{item.category}</TableCell>
+                <TableCell className="whitespace-nowrap">{item.vendorName}</TableCell>
+                <TableCell className="whitespace-nowrap">
+                  {users.find((entry) => entry.id === item.assignedTo)?.name || "—"}
+                </TableCell>
+                <TableCell className="whitespace-nowrap text-right">
+                  {currency(item.expectedAmount)}
+                </TableCell>
+                <TableCell className="whitespace-nowrap text-right">
+                  {currency(item.billAmount || 0)}
+                </TableCell>
+                <TableCell className="whitespace-nowrap text-right">
+                  {currency(
+                    Math.max(
+                      0,
+                      (item.billAmount || item.expectedAmount) -
+                        (item.settledAmount || item.paidAmount),
+                    ),
+                  )}
+                </TableCell>
+                <TableCell className="whitespace-nowrap">
+                  <StatusBadge status={item.status} />
+                </TableCell>
+                <TableCell className="whitespace-nowrap">
+                  {item.billAmount
+                    ? "Confirmed bill"
+                    : item.amountType === "Fixed"
+                      ? "Fixed"
+                      : "Estimated"}
+                </TableCell>
+              </TableRow>
+            ))}
+            {!rows.length && (
+              <TableRow>
+                <TableCell
+                  colSpan={11}
+                  className="h-28 text-center text-muted-foreground"
+                >
+                  No records match the report filters.
+                </TableCell>
+              </TableRow>
+            )}
+          </TableBody>
+        </Table>
+      </TableCard>
     </div>
   );
 }
 
-function Field({ label, children }: { label: string; children: React.ReactNode }) {
-  return (
-    <div className="space-y-1">
-      <Label className="text-xs font-medium text-muted-foreground">{label}</Label>
-      {children}
-    </div>
-  );
-}
 function Filter({
   value,
   label,
@@ -769,7 +718,7 @@ function Filter({
 }) {
   return (
     <Select value={value} onValueChange={onChange}>
-      <SelectTrigger className={COMPACT_CONTROL}>
+      <SelectTrigger>
         <SelectValue placeholder={label} />
       </SelectTrigger>
       <SelectContent>

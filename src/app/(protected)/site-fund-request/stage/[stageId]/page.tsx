@@ -9,8 +9,9 @@ import {
   Eye,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent } from '@/components/ui/card';
 import { PageHeader } from '@/components/shared/page-header';
+import { TableCard } from '@/components/shared/table-card';
+import { StatusBadge } from '@/components/shared/status-badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
@@ -24,13 +25,11 @@ import { useToast } from '@/hooks/use-toast';
 import { useParams, useRouter } from 'next/navigation';
 import { useAuth } from '@/components/auth/AuthProvider';
 import { Skeleton } from '@/components/ui/skeleton';
-import { Badge } from '@/components/ui/badge';
 import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { getAssigneeForStep, calculateDeadline } from '@/lib/workflow-utils';
 import ViewRequestDialog from '@/components/site-fund-request/ViewRequestDialog';
-import { cn } from '@/lib/utils';
 
 const MODULE_LABEL = 'Site Fund Request';
 const WORKFLOW_DOC = 'site-fund-request';
@@ -57,16 +56,6 @@ function formatINR(n?: number) {
   const v = Number.isFinite(n as number) ? (n as number) : 0;
   try { return new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 2 }).format(v); }
   catch { return `₹${v.toFixed(2)}`; }
-}
-
-function statusBadgeClass(status?: string) {
-  switch (status) {
-    case 'Completed':  return 'border-emerald-200/80 bg-emerald-50 text-emerald-700';
-    case 'Rejected':   return 'border-rose-200/80 bg-rose-50 text-rose-700';
-    case 'In Progress': return 'border-sky-200/80 bg-sky-50 text-sky-700';
-    case 'Pending':    return 'border-amber-200/80 bg-amber-50 text-amber-700';
-    default:           return 'border-slate-200/80 bg-slate-50 text-slate-700';
-  }
 }
 
 const stepDisplay = (step: WorkflowStep): string => step?.name || 'Unknown Step';
@@ -194,11 +183,9 @@ export default function StagePage() {
   };
 
   const renderTable = (data: Requisition[], type: 'pending' | 'completed') => (
-    <Card className="overflow-hidden rounded-2xl border border-white/70 bg-white/70 shadow-[0_20px_70px_-55px_rgba(2,6,23,0.55)] backdrop-blur">
-      <div className="h-1.5 w-full bg-gradient-to-r from-indigo-400 via-violet-400 to-blue-400 opacity-70" />
-      <CardContent className="p-0">
+    <TableCard>
         <Table>
-          <TableHeader className="bg-white/80 border-b border-white/70">
+          <TableHeader>
             <TableRow>
               <TableHead>Request ID</TableHead>
               <TableHead>Date</TableHead>
@@ -216,14 +203,12 @@ export default function StagePage() {
               const currentStep = workflow.find(s => s.id === task.currentStepId);
               const actions = Array.isArray(currentStep?.actions) ? (currentStep!.actions as (string | ActionConfig)[]) : [];
               return (
-                <TableRow key={task.id} onClick={() => { setSelectedRequisition(task); setIsViewOpen(true); }} className="cursor-pointer hover:bg-slate-50/70">
-                  <TableCell className="font-mono text-sm">{task.requisitionId ?? '-'}</TableCell>
-                  <TableCell>{humanDate(task.date)}</TableCell>
-                  <TableCell>{formatINR(task.amount)}</TableCell>
+                <TableRow key={task.id} onClick={() => { setSelectedRequisition(task); setIsViewOpen(true); }} className="cursor-pointer">
+                  <TableCell className="font-mono whitespace-nowrap">{task.requisitionId ?? '-'}</TableCell>
+                  <TableCell className="whitespace-nowrap">{humanDate(task.date)}</TableCell>
+                  <TableCell className="whitespace-nowrap tabular-nums">{formatINR(task.amount)}</TableCell>
                   <TableCell>
-                    <Badge variant="outline" className={cn('whitespace-nowrap', statusBadgeClass(task.status))}>
-                      {task.status || '—'}
-                    </Badge>
+                    <StatusBadge status={task.status}>{task.status || '—'}</StatusBadge>
                   </TableCell>
                   <TableCell className="text-right">
                     {isActionLoading === task.id ? (
@@ -255,15 +240,14 @@ export default function StagePage() {
               );
             }) : (
               <TableRow>
-                <TableCell colSpan={5} className="text-center h-24 text-slate-500">
+                <TableCell colSpan={5} className="h-24 text-center text-muted-foreground">
                   No {type} tasks for this stage.
                 </TableCell>
               </TableRow>
             )}
           </TableBody>
         </Table>
-      </CardContent>
-    </Card>
+    </TableCard>
   );
 
   return (

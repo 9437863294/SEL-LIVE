@@ -21,8 +21,11 @@ import { useAuthorization } from '@/hooks/useAuthorization';
 import { useAuth } from '@/components/auth/AuthProvider';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { Card, CardContent } from '@/components/ui/card';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { PageHeader } from '@/components/shared/page-header';
+import { TableCard } from '@/components/shared/table-card';
+import { FilterBar } from '@/components/shared/filter-bar';
+import { StatusBadge } from '@/components/shared/status-badge';
 import { Progress } from '@/components/ui/progress';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -79,22 +82,19 @@ type CategoryRow = {
   pctUsed: number | null;
 };
 
-// ── Status badge ───────────────────────────────────────────────────────────────
-function StatusBadge({ status }: { status: UtilRow['status'] }) {
-  if (status === 'over-budget')
-    return <Badge variant="destructive" className="text-[11px] px-2 py-0.5">Over Budget</Badge>;
-  if (status === 'warning')
-    return <Badge className="text-[11px] px-2 py-0.5 bg-amber-500 hover:bg-amber-500">Warning</Badge>;
-  if (status === 'on-track')
-    return <Badge className="text-[11px] px-2 py-0.5 bg-emerald-600 hover:bg-emerald-600">On Track</Badge>;
-  return <Badge variant="outline" className="text-[11px] px-2 py-0.5 text-muted-foreground">No Budget</Badge>;
-}
+// ── Status labels (the badge itself is the shared StatusBadge) ──────────────────
+const UTIL_STATUS_LABEL: Record<UtilRow['status'], string> = {
+  'over-budget': 'Over Budget',
+  warning:       'Warning',
+  'on-track':    'On Track',
+  'no-budget':   'No Budget',
+};
 
+/** Only the rows that need attention are tinted; the status column says the rest. */
 function rowBg(status: UtilRow['status']) {
-  if (status === 'over-budget') return 'bg-red-50/60 hover:bg-red-50';
-  if (status === 'warning')     return 'bg-amber-50/60 hover:bg-amber-50';
-  if (status === 'on-track')    return 'bg-emerald-50/40 hover:bg-emerald-50/70';
-  return 'bg-slate-50/40 hover:bg-muted/20';
+  if (status === 'over-budget') return 'bg-rose-50/60';
+  if (status === 'warning')     return 'bg-amber-50/60';
+  return undefined;
 }
 
 // ── Main page ──────────────────────────────────────────────────────────────────
@@ -473,7 +473,7 @@ export default function BudgetReportsPage() {
 
   // ── Render helpers ─────────────────────────────────────────────────────────
   function pctBar(pct: number | null, status: UtilRow['status']) {
-    if (pct === null) return <span className="text-xs text-muted-foreground">—</span>;
+    if (pct === null) return <span className="text-muted-foreground">—</span>;
     const color = status === 'over-budget' ? 'bg-destructive' : status === 'warning' ? 'bg-amber-500' : 'bg-emerald-500';
     return (
       <div className="flex items-center gap-2 min-w-[100px]">
@@ -512,9 +512,13 @@ export default function BudgetReportsPage() {
       />
 
       {/* ── Persistent filters ── */}
-      <div className="flex flex-wrap gap-2 items-center">
+      <FilterBar
+        activeCount={filterProjectId ? 1 : 0}
+        onClear={() => setFilterProjectId('')}
+        summary={<>{visibleProjects.length} project{visibleProjects.length !== 1 ? 's' : ''} visible · {rangeLabel}</>}
+      >
         <Select value={filterProjectId || '_all'} onValueChange={v => setFilterProjectId(v === '_all' ? '' : v)}>
-          <SelectTrigger className="h-8 text-xs w-full sm:w-auto min-w-[140px]">
+          <SelectTrigger aria-label="Project">
             <SelectValue placeholder="All Projects" />
           </SelectTrigger>
           <SelectContent>
@@ -531,11 +535,7 @@ export default function BudgetReportsPage() {
           onChange={next => { setRange(next); setExpandedRows(new Set()); }}
           compact
         />
-
-        <span className="ml-auto text-xs text-muted-foreground">
-          {visibleProjects.length} project{visibleProjects.length !== 1 ? 's' : ''} visible · {rangeLabel}
-        </span>
-      </div>
+      </FilterBar>
 
       {/* ── Summary cards ── */}
       <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
@@ -580,9 +580,9 @@ export default function BudgetReportsPage() {
           <TabsTrigger value="over-budget" className="text-xs px-2 py-1 data-[state=active]:font-semibold">
             Over-Budget Alert
             {overBudgetRows.length > 0 && (
-              <span className="ml-1 flex h-4 w-4 items-center justify-center rounded-full bg-red-600 text-[9px] font-bold text-white">
+              <Badge variant="neutral" className="ml-1">
                 {overBudgetRows.length}
-              </span>
+              </Badge>
             )}
           </TabsTrigger>
           <TabsTrigger value="category" className="text-xs px-2 py-1 data-[state=active]:font-semibold">
@@ -597,57 +597,54 @@ export default function BudgetReportsPage() {
             TAB 1 — Budget Utilization
         ══════════════════════════════════════════════════════════════════ */}
         {activeTab === 'utilization' && (
-          <div className="space-y-3 mt-3">
-            {/* Toolbar */}
-            <div className="flex flex-wrap items-center gap-2">
-              <Select value={filterStatus || '_all'} onValueChange={v => setFilterStatus(v === '_all' ? '' : v)}>
-                <SelectTrigger className="h-8 text-xs w-full sm:w-auto min-w-[140px]">
-                  <SelectValue placeholder="All Statuses" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="_all">All Statuses</SelectItem>
-                  <SelectItem value="on-track">On Track (&lt;80%)</SelectItem>
-                  <SelectItem value="warning">Warning (80–100%)</SelectItem>
-                  <SelectItem value="over-budget">Over Budget</SelectItem>
-                  <SelectItem value="no-budget">No Budget</SelectItem>
-                </SelectContent>
-              </Select>
-
-              <span className="text-xs text-muted-foreground">{tab1Rows.length} row{tab1Rows.length !== 1 ? 's' : ''}</span>
-
-              {canExport && (
-                <Button variant="outline" size="sm" className="ml-auto gap-1.5 h-8" onClick={exportTab1} disabled={exporting}>
-                  {exporting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Download className="h-3.5 w-3.5" />}
-                  Export Excel
-                </Button>
-              )}
-            </div>
-
+          <TableCard
+            className="mt-3"
+            title="Budget utilization"
+            count={tab1Rows.length}
+            noun="row"
+            actions={canExport ? (
+              <Button variant="outline" size="sm" className="gap-1.5" onClick={exportTab1} disabled={exporting}>
+                {exporting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Download className="h-3.5 w-3.5" />}
+                Export Excel
+              </Button>
+            ) : undefined}
+            toolbar={
+              <FilterBar activeCount={filterStatus ? 1 : 0} onClear={() => setFilterStatus('')}>
+                <Select value={filterStatus || '_all'} onValueChange={v => setFilterStatus(v === '_all' ? '' : v)}>
+                  <SelectTrigger aria-label="Status">
+                    <SelectValue placeholder="All Statuses" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="_all">All Statuses</SelectItem>
+                    <SelectItem value="on-track">On Track (&lt;80%)</SelectItem>
+                    <SelectItem value="warning">Warning (80–100%)</SelectItem>
+                    <SelectItem value="over-budget">Over Budget</SelectItem>
+                    <SelectItem value="no-budget">No Budget</SelectItem>
+                  </SelectContent>
+                </Select>
+              </FilterBar>
+            }
+          >
             {tab1Rows.length === 0 ? (
-              <Card className="bg-white/80">
-                <CardContent className="flex flex-col items-center gap-3 py-12">
+                <div className="flex flex-col items-center gap-3 py-12">
                   <TrendingUp className="h-10 w-10 text-muted-foreground/40" />
                   <p className="text-sm text-muted-foreground">No budget data found for the selected FY and filters.</p>
-                </CardContent>
-              </Card>
+                </div>
             ) : (
-              <Card className="bg-white/80 backdrop-blur-sm">
-                <CardContent className="p-0">
-                  <div className="overflow-auto" style={{ maxHeight: 'calc(100vh - 320px)' }}>
-                    <table className="w-full text-sm min-w-[700px]">
-                      <thead className="sticky top-0 z-10">
-                        <tr className="border-b bg-slate-100 shadow-sm">
-                          <th className="px-4 py-2.5 text-left font-medium min-w-[200px]">Project</th>
-                          <th className="px-4 py-2.5 text-left font-medium whitespace-nowrap">Month</th>
-                          <th className="px-4 py-2.5 text-right font-medium whitespace-nowrap text-emerald-700">Budget (₹)</th>
-                          <th className="px-4 py-2.5 text-right font-medium whitespace-nowrap text-rose-600">Spent (₹)</th>
-                          <th className="px-4 py-2.5 text-right font-medium whitespace-nowrap text-indigo-600">Remaining (₹)</th>
-                          <th className="px-4 py-2.5 text-left font-medium min-w-[130px]">% Used</th>
-                          <th className="px-4 py-2.5 text-left font-medium">Status</th>
-                          <th className="px-4 py-2.5 text-center font-medium whitespace-nowrap">Approval</th>
-                        </tr>
-                      </thead>
-                      <tbody>
+                    <Table className="min-w-[700px]">
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead className="min-w-[200px]">Project</TableHead>
+                          <TableHead>Month</TableHead>
+                          <TableHead className="text-right">Budget (₹)</TableHead>
+                          <TableHead className="text-right">Spent (₹)</TableHead>
+                          <TableHead className="text-right">Remaining (₹)</TableHead>
+                          <TableHead className="min-w-[130px]">% Used</TableHead>
+                          <TableHead>Status</TableHead>
+                          <TableHead className="text-center">Approval</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
                         {tab1Rows.map((row) => {
                           const rowKey = `${row.projectId}:${row.month}`;
                           const isExp  = expandedRows.has(rowKey);
@@ -693,19 +690,19 @@ export default function BudgetReportsPage() {
                             row.budget === null || catBudgetSum === 0 ? null :
                             catBudgetSum > row.budget  ? 'Over-allocated' :
                             catBudgetSum === row.budget ? 'Fully allocated' : 'Under-allocated';
-                          const allocColor =
-                            allocLabel === 'Over-allocated'  ? 'bg-red-100 text-red-700 hover:bg-red-100' :
-                            allocLabel === 'Fully allocated' ? 'bg-emerald-100 text-emerald-700 hover:bg-emerald-100' :
-                                                               'bg-amber-100 text-amber-700 hover:bg-amber-100';
+                          const allocTone =
+                            allocLabel === 'Over-allocated'  ? 'danger' as const :
+                            allocLabel === 'Fully allocated' ? 'success' as const :
+                                                               'warning' as const;
 
                           return (
                             <Fragment key={rowKey}>
                               {/* ── Main row ── */}
-                              <tr
-                                className={cn('border-b transition-colors', rowBg(row.status), hasCats && 'cursor-pointer select-none')}
+                              <TableRow
+                                className={cn(rowBg(row.status), hasCats && 'cursor-pointer select-none')}
                                 onClick={hasCats ? () => toggleRow(rowKey) : undefined}
                               >
-                                <td className="px-4 py-2.5 font-medium text-slate-800 max-w-[200px]">
+                                <TableCell className="font-medium max-w-[200px]">
                                   <div className="flex items-center gap-1.5">
                                     {hasCats
                                       ? isExp
@@ -714,9 +711,9 @@ export default function BudgetReportsPage() {
                                       : <span className="w-3.5 shrink-0" />}
                                     <span className="truncate" title={row.projectName}>{row.projectName}</span>
                                   </div>
-                                </td>
-                                <td className="px-4 py-2.5 whitespace-nowrap text-slate-600 text-xs">{monthLabel(row.month)}</td>
-                                <td className="px-4 py-2.5 text-right font-semibold text-emerald-700 tabular-nums whitespace-nowrap">
+                                </TableCell>
+                                <TableCell className="whitespace-nowrap">{monthLabel(row.month)}</TableCell>
+                                <TableCell className="text-right font-medium text-emerald-700 tabular-nums whitespace-nowrap">
                                   {row.budget !== null ? (
                                     <div>
                                       {formatINR(row.budget)}
@@ -732,21 +729,21 @@ export default function BudgetReportsPage() {
                                   ) : (
                                     catBudgetSum > 0
                                       ? <div>{formatINR(catBudgetSum)}<p className="text-[10px] font-normal text-muted-foreground">∑ categories</p></div>
-                                      : <span className="text-muted-foreground font-normal text-xs">—</span>
+                                      : <span className="text-muted-foreground font-normal">—</span>
                                   )}
-                                </td>
-                                <td className="px-4 py-2.5 text-right font-semibold text-rose-700 tabular-nums whitespace-nowrap">
+                                </TableCell>
+                                <TableCell className="text-right font-medium text-rose-700 tabular-nums whitespace-nowrap">
                                   {formatINR(row.spent)}
-                                </td>
-                                <td className={cn('px-4 py-2.5 text-right font-semibold tabular-nums whitespace-nowrap',
+                                </TableCell>
+                                <TableCell className={cn('text-right font-medium tabular-nums whitespace-nowrap',
                                   row.remaining === null ? 'text-muted-foreground' :
                                   row.remaining < 0 ? 'text-destructive' : 'text-indigo-700'
                                 )}>
                                   {row.remaining !== null ? formatINR(row.remaining) : '—'}
-                                </td>
-                                <td className="px-4 py-2.5">{pctBar(row.pctUsed, row.status)}</td>
-                                <td className="px-4 py-2.5"><StatusBadge status={row.status} /></td>
-                                <td className="px-4 py-2.5 text-center">
+                                </TableCell>
+                                <TableCell>{pctBar(row.pctUsed, row.status)}</TableCell>
+                                <TableCell><StatusBadge status={row.status}>{UTIL_STATUS_LABEL[row.status]}</StatusBadge></TableCell>
+                                <TableCell className="text-center">
                                   {row.approval ? (
                                     <a
                                       href={row.approval.fileUrl}
@@ -754,201 +751,188 @@ export default function BudgetReportsPage() {
                                       rel="noopener noreferrer"
                                       title={row.approval.fileName}
                                       onClick={e => e.stopPropagation()}
-                                      className="inline-flex items-center gap-1 text-blue-600 hover:text-blue-800 text-xs"
+                                      className="inline-flex items-center gap-1 text-blue-600 hover:text-blue-800"
                                     >
                                       <FileText className="h-3.5 w-3.5 shrink-0" />
                                       <ExternalLink className="h-3 w-3 shrink-0" />
                                     </a>
                                   ) : (
-                                    <span className="text-muted-foreground text-xs">—</span>
+                                    <span className="text-muted-foreground">—</span>
                                   )}
-                                </td>
-                              </tr>
+                                </TableCell>
+                              </TableRow>
 
                               {/* ── Category sub-rows (expanded) ── */}
                               {isExp && catData.map(c => (
-                                <tr key={`${rowKey}:${c.cat}`} className="border-b bg-slate-50/70 hover:bg-slate-100/60 transition-colors">
-                                  <td className="py-1.5 pl-10 pr-4">
+                                <TableRow key={`${rowKey}:${c.cat}`} className="bg-slate-50/60">
+                                  <TableCell className="pl-10">
                                     <div className="flex items-center gap-1.5">
                                       <Layers className="h-2.5 w-2.5 text-teal-500 shrink-0" />
-                                      <span className="text-xs text-slate-600 font-medium">{c.cat}</span>
+                                      <span className="font-medium">{c.cat}</span>
                                     </div>
-                                  </td>
-                                  <td className="px-4 py-1.5 text-xs text-muted-foreground italic">↳ category</td>
-                                  <td className="px-4 py-1.5 text-right text-xs font-semibold text-emerald-700 tabular-nums whitespace-nowrap">
+                                  </TableCell>
+                                  <TableCell className="italic">↳ category</TableCell>
+                                  <TableCell className="text-right font-medium text-emerald-700 tabular-nums whitespace-nowrap">
                                     {c.budget !== null ? formatINR(c.budget) : <span className="text-muted-foreground font-normal">—</span>}
-                                  </td>
-                                  <td className="px-4 py-1.5 text-right text-xs font-semibold text-rose-700 tabular-nums whitespace-nowrap">
+                                  </TableCell>
+                                  <TableCell className="text-right font-medium text-rose-700 tabular-nums whitespace-nowrap">
                                     {c.spent > 0 ? formatINR(c.spent) : <span className="text-muted-foreground font-normal">—</span>}
-                                  </td>
-                                  <td className={cn('px-4 py-1.5 text-right text-xs font-semibold tabular-nums whitespace-nowrap',
+                                  </TableCell>
+                                  <TableCell className={cn('text-right font-medium tabular-nums whitespace-nowrap',
                                     c.remaining === null ? 'text-muted-foreground' :
                                     c.remaining < 0 ? 'text-destructive' : 'text-indigo-700'
                                   )}>
                                     {c.remaining !== null ? formatINR(c.remaining) : '—'}
-                                  </td>
-                                  <td className="px-4 py-1.5">{pctBar(c.pct, c.status)}</td>
-                                  <td className="px-4 py-1.5"><StatusBadge status={c.status} /></td>
-                                  <td />
-                                </tr>
+                                  </TableCell>
+                                  <TableCell>{pctBar(c.pct, c.status)}</TableCell>
+                                  <TableCell><StatusBadge status={c.status}>{UTIL_STATUS_LABEL[c.status]}</StatusBadge></TableCell>
+                                  <TableCell />
+                                </TableRow>
                               ))}
 
                               {/* ── Category totals footer row ── */}
                               {isExp && catData.length > 0 && (
-                                <tr className="border-b bg-teal-50/60 border-t-2 border-t-teal-200">
-                                  <td className="py-2 pl-10 pr-4">
+                                <TableRow className="bg-slate-50/60 font-medium">
+                                  <TableCell className="pl-10">
                                     <div className="flex items-center gap-1.5 flex-wrap">
-                                      <span className="text-xs font-bold text-teal-800">∑ Total Allocated</span>
+                                      <span>∑ Total Allocated</span>
                                       {allocLabel && (
-                                        <Badge className={cn('text-[10px] px-1.5 py-0 font-normal', allocColor)}>
-                                          {allocLabel}
-                                        </Badge>
+                                        <StatusBadge status={allocLabel} tone={allocTone} />
                                       )}
                                     </div>
-                                  </td>
-                                  <td className="px-4 py-2 text-xs text-muted-foreground italic">{catData.length} categories</td>
-                                  <td className="px-4 py-2 text-right text-xs font-bold text-emerald-700 tabular-nums whitespace-nowrap">
+                                  </TableCell>
+                                  <TableCell className="italic font-normal">{catData.length} categories</TableCell>
+                                  <TableCell className="text-right text-emerald-700 tabular-nums whitespace-nowrap">
                                     {catBudgetSum > 0 ? formatINR(catBudgetSum) : <span className="text-muted-foreground font-normal">—</span>}
-                                  </td>
-                                  <td className="px-4 py-2 text-right text-xs font-bold text-rose-700 tabular-nums whitespace-nowrap">
+                                  </TableCell>
+                                  <TableCell className="text-right text-rose-700 tabular-nums whitespace-nowrap">
                                     {catSpentSum > 0 ? formatINR(catSpentSum) : <span className="text-muted-foreground font-normal">—</span>}
-                                  </td>
-                                  <td className={cn('px-4 py-2 text-right text-xs font-bold tabular-nums whitespace-nowrap',
+                                  </TableCell>
+                                  <TableCell className={cn('text-right tabular-nums whitespace-nowrap',
                                     catRemaining === null ? 'text-muted-foreground' :
                                     catRemaining < 0 ? 'text-destructive' : 'text-teal-700'
                                   )}>
                                     {catRemaining !== null ? formatINR(catRemaining) : '—'}
-                                  </td>
-                                  <td className="px-4 py-2">{pctBar(catPctUsed, catTotalStatus)}</td>
-                                  <td className="px-4 py-2"><StatusBadge status={catTotalStatus} /></td>
-                                  <td />
-                                </tr>
+                                  </TableCell>
+                                  <TableCell>{pctBar(catPctUsed, catTotalStatus)}</TableCell>
+                                  <TableCell><StatusBadge status={catTotalStatus}>{UTIL_STATUS_LABEL[catTotalStatus]}</StatusBadge></TableCell>
+                                  <TableCell />
+                                </TableRow>
                               )}
                             </Fragment>
                           );
                         })}
-                      </tbody>
-                    </table>
-                  </div>
-                </CardContent>
-              </Card>
+                      </TableBody>
+                    </Table>
             )}
-          </div>
+          </TableCard>
         )}
 
         {/* ══════════════════════════════════════════════════════════════════
             TAB 2 — Over-Budget Alert
         ══════════════════════════════════════════════════════════════════ */}
         {activeTab === 'over-budget' && (
-          <div className="space-y-3 mt-3">
-            <div className="flex flex-wrap items-center gap-2">
-              <span className="text-xs text-muted-foreground">
-                {overBudgetRows.length} over-budget month{overBudgetRows.length !== 1 ? 's' : ''} · Sorted by Overshoot % (highest first)
-              </span>
-              {canExport && (
-                <Button variant="outline" size="sm" className="ml-auto gap-1.5 h-8" onClick={exportTab2} disabled={exporting}>
-                  {exporting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Download className="h-3.5 w-3.5" />}
-                  Export Excel
-                </Button>
-              )}
-            </div>
-
+          <TableCard
+            className="mt-3"
+            title="Over-budget months"
+            description="Sorted by Overshoot % (highest first)"
+            count={overBudgetRows.length}
+            noun="month"
+            actions={canExport ? (
+              <Button variant="outline" size="sm" className="gap-1.5" onClick={exportTab2} disabled={exporting}>
+                {exporting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Download className="h-3.5 w-3.5" />}
+                Export Excel
+              </Button>
+            ) : undefined}
+          >
             {overBudgetRows.length === 0 ? (
-              <Card className="bg-white/80">
-                <CardContent className="flex flex-col items-center gap-3 py-12">
+                <div className="flex flex-col items-center gap-3 py-12">
                   <CheckCircle2 className="h-10 w-10 text-emerald-500/70" />
                   <p className="text-sm text-muted-foreground">
                     No over-budget months found for {rangeLabel}.
                   </p>
                   <p className="text-xs text-muted-foreground">All projects are within budget.</p>
-                </CardContent>
-              </Card>
+                </div>
             ) : (
-              <Card className="bg-white/80 backdrop-blur-sm border-red-100">
-                <CardContent className="p-0">
-                  <div className="overflow-auto" style={{ maxHeight: 'calc(100vh - 320px)' }}>
-                    <table className="w-full text-sm min-w-[700px]">
-                      <thead className="sticky top-0 z-10">
-                        <tr className="border-b bg-red-50 shadow-sm">
-                          <th className="px-4 py-2.5 text-left font-medium min-w-[200px]">Project</th>
-                          <th className="px-4 py-2.5 text-left font-medium whitespace-nowrap">Month</th>
-                          <th className="px-4 py-2.5 text-right font-medium whitespace-nowrap text-emerald-700">Budget (₹)</th>
-                          <th className="px-4 py-2.5 text-right font-medium whitespace-nowrap text-rose-600">Spent (₹)</th>
-                          <th className="px-4 py-2.5 text-right font-medium whitespace-nowrap text-destructive">Overshoot (₹)</th>
-                          <th className="px-4 py-2.5 text-right font-medium whitespace-nowrap text-destructive">Overshoot %</th>
-                        </tr>
-                      </thead>
-                      <tbody>
+                    <Table className="min-w-[700px]">
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead className="min-w-[200px]">Project</TableHead>
+                          <TableHead>Month</TableHead>
+                          <TableHead className="text-right">Budget (₹)</TableHead>
+                          <TableHead className="text-right">Spent (₹)</TableHead>
+                          <TableHead className="text-right">Overshoot (₹)</TableHead>
+                          <TableHead className="text-right">Overshoot %</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
                         {overBudgetRows.map(row => {
                           const overshoot    = row.spent - (row.budget ?? 0);
                           const overshootPct = row.pctUsed !== null ? row.pctUsed - 100 : 0;
                           return (
-                            <tr key={`${row.projectId}-${row.month}`} className="border-b bg-red-50/50 hover:bg-red-50 transition-colors">
-                              <td className="px-4 py-2.5 font-medium text-slate-800 max-w-[200px] truncate" title={row.projectName}>
+                            <TableRow key={`${row.projectId}-${row.month}`}>
+                              <TableCell className="font-medium max-w-[200px] truncate" title={row.projectName}>
                                 {row.projectName}
-                              </td>
-                              <td className="px-4 py-2.5 whitespace-nowrap text-slate-600 text-xs">{monthLabel(row.month)}</td>
-                              <td className="px-4 py-2.5 text-right text-emerald-700 tabular-nums whitespace-nowrap">
+                              </TableCell>
+                              <TableCell className="whitespace-nowrap">{monthLabel(row.month)}</TableCell>
+                              <TableCell className="text-right text-emerald-700 tabular-nums whitespace-nowrap">
                                 {row.budget !== null ? formatINR(row.budget) : '—'}
-                              </td>
-                              <td className="px-4 py-2.5 text-right font-semibold text-rose-700 tabular-nums whitespace-nowrap">
+                              </TableCell>
+                              <TableCell className="text-right font-medium text-rose-700 tabular-nums whitespace-nowrap">
                                 {formatINR(row.spent)}
-                              </td>
-                              <td className="px-4 py-2.5 text-right font-bold text-destructive tabular-nums whitespace-nowrap">
+                              </TableCell>
+                              <TableCell className="text-right font-medium text-destructive tabular-nums whitespace-nowrap">
                                 +{formatINR(overshoot)}
-                              </td>
-                              <td className="px-4 py-2.5 text-right font-bold text-destructive tabular-nums whitespace-nowrap">
+                              </TableCell>
+                              <TableCell className="text-right font-medium text-destructive tabular-nums whitespace-nowrap">
                                 +{overshootPct.toFixed(1)}%
-                              </td>
-                            </tr>
+                              </TableCell>
+                            </TableRow>
                           );
                         })}
-                      </tbody>
-                    </table>
-                  </div>
-                </CardContent>
-              </Card>
+                      </TableBody>
+                    </Table>
             )}
-          </div>
+          </TableCard>
         )}
 
         {/* ══════════════════════════════════════════════════════════════════
             TAB 3 — Budget vs Actual by Category
         ══════════════════════════════════════════════════════════════════ */}
         {activeTab === 'category' && (
-          <div className="space-y-3 mt-3">
-            <div className="flex flex-wrap items-center gap-2">
-              <Select value={filterCategory || '_all'} onValueChange={v => setFilterCategory(v === '_all' ? '' : v)}>
-                <SelectTrigger className="h-8 text-xs w-full sm:w-auto min-w-[140px]">
-                  <SelectValue placeholder="All Categories" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="_all">All Categories</SelectItem>
-                  {allCategories.map(c => (
-                    <SelectItem key={c} value={c}>{c}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-
-              <span className="text-xs text-muted-foreground">{categoryRows.length} row{categoryRows.length !== 1 ? 's' : ''}</span>
-
-              {catBudgetErr && (
-                <span className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded px-2 py-0.5">
-                  Category budgets could not be loaded
-                </span>
-              )}
-
-              {canExport && (
-                <Button variant="outline" size="sm" className="ml-auto gap-1.5 h-8" onClick={exportTab3} disabled={exporting}>
-                  {exporting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Download className="h-3.5 w-3.5" />}
-                  Export Excel
-                </Button>
-              )}
-            </div>
-
+          <TableCard
+            className="mt-3"
+            title="Budget vs actual by category"
+            count={categoryRows.length}
+            noun="row"
+            actions={canExport ? (
+              <Button variant="outline" size="sm" className="gap-1.5" onClick={exportTab3} disabled={exporting}>
+                {exporting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Download className="h-3.5 w-3.5" />}
+                Export Excel
+              </Button>
+            ) : undefined}
+            toolbar={
+              <FilterBar
+                activeCount={filterCategory ? 1 : 0}
+                onClear={() => setFilterCategory('')}
+                summary={catBudgetErr ? <Badge variant="warning">Category budgets could not be loaded</Badge> : undefined}
+              >
+                <Select value={filterCategory || '_all'} onValueChange={v => setFilterCategory(v === '_all' ? '' : v)}>
+                  <SelectTrigger aria-label="Category">
+                    <SelectValue placeholder="All Categories" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="_all">All Categories</SelectItem>
+                    {allCategories.map(c => (
+                      <SelectItem key={c} value={c}>{c}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </FilterBar>
+            }
+          >
             {categoryRows.length === 0 ? (
-              <Card className="bg-white/80">
-                <CardContent className="flex flex-col items-center gap-3 py-12">
+                <div className="flex flex-col items-center gap-3 py-12">
                   <Target className="h-10 w-10 text-muted-foreground/40" />
                   <p className="text-sm text-muted-foreground">
                     No category budget or expense data found for {rangeLabel}.
@@ -956,57 +940,49 @@ export default function BudgetReportsPage() {
                   <p className="text-xs text-muted-foreground">
                     Set category budgets from the Site Fund Budget page to see this report.
                   </p>
-                </CardContent>
-              </Card>
+                </div>
             ) : (
-              <Card className="bg-white/80 backdrop-blur-sm">
-                <CardContent className="p-0">
-                  <div className="overflow-auto" style={{ maxHeight: 'calc(100vh - 320px)' }}>
-                    <table className="w-full text-sm min-w-[700px]">
-                      <thead className="sticky top-0 z-10">
-                        <tr className="border-b bg-slate-100 shadow-sm">
-                          <th className="px-4 py-2.5 text-left font-medium min-w-[180px]">Project</th>
-                          <th className="px-4 py-2.5 text-left font-medium whitespace-nowrap">Month</th>
-                          <th className="px-4 py-2.5 text-left font-medium min-w-[160px]">Category</th>
-                          <th className="px-4 py-2.5 text-right font-medium whitespace-nowrap text-emerald-700">Budget (₹)</th>
-                          <th className="px-4 py-2.5 text-right font-medium whitespace-nowrap text-rose-600">Spent (₹)</th>
-                          <th className="px-4 py-2.5 text-right font-medium whitespace-nowrap text-indigo-600">Variance (₹)</th>
-                          <th className="px-4 py-2.5 text-left font-medium min-w-[110px]">% Used</th>
-                        </tr>
-                      </thead>
-                      <tbody>
+                    <Table className="min-w-[700px]">
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead className="min-w-[180px]">Project</TableHead>
+                          <TableHead>Month</TableHead>
+                          <TableHead className="min-w-[160px]">Category</TableHead>
+                          <TableHead className="text-right">Budget (₹)</TableHead>
+                          <TableHead className="text-right">Spent (₹)</TableHead>
+                          <TableHead className="text-right">Variance (₹)</TableHead>
+                          <TableHead className="min-w-[110px]">% Used</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
                         {categoryRows.map((row, idx) => {
                           const isOver = row.pctUsed !== null && row.pctUsed > 100;
                           const isNear = row.pctUsed !== null && row.pctUsed >= 80 && row.pctUsed <= 100;
                           return (
-                            <tr
+                            <TableRow
                               key={`${row.projectId}-${row.month}-${row.category}`}
-                              className={cn('border-b transition-colors',
-                                isOver ? 'bg-red-50/40 hover:bg-red-50/70' :
-                                isNear ? 'bg-amber-50/40 hover:bg-amber-50/70' :
-                                'bg-white hover:bg-muted/20'
-                              )}
+                              className={cn(isOver ? 'bg-rose-50/60' : isNear ? 'bg-amber-50/60' : undefined)}
                             >
-                              <td className="px-4 py-2.5 text-slate-700 max-w-[180px] truncate text-xs" title={row.projectName}>
+                              <TableCell className="max-w-[180px] truncate" title={row.projectName}>
                                 {row.projectName}
-                              </td>
-                              <td className="px-4 py-2.5 whitespace-nowrap text-slate-600 text-xs">{monthLabel(row.month)}</td>
-                              <td className="px-4 py-2.5 font-medium text-slate-800">{row.category}</td>
-                              <td className="px-4 py-2.5 text-right text-emerald-700 tabular-nums whitespace-nowrap">
-                                {row.budget !== null ? formatINR(row.budget) : <span className="text-muted-foreground text-xs">—</span>}
-                              </td>
-                              <td className="px-4 py-2.5 text-right font-semibold text-rose-700 tabular-nums whitespace-nowrap">
+                              </TableCell>
+                              <TableCell className="whitespace-nowrap">{monthLabel(row.month)}</TableCell>
+                              <TableCell className="font-medium">{row.category}</TableCell>
+                              <TableCell className="text-right text-emerald-700 tabular-nums whitespace-nowrap">
+                                {row.budget !== null ? formatINR(row.budget) : <span className="text-muted-foreground">—</span>}
+                              </TableCell>
+                              <TableCell className="text-right font-medium text-rose-700 tabular-nums whitespace-nowrap">
                                 {formatINR(row.spent)}
-                              </td>
-                              <td className={cn('px-4 py-2.5 text-right font-semibold tabular-nums whitespace-nowrap',
+                              </TableCell>
+                              <TableCell className={cn('text-right font-medium tabular-nums whitespace-nowrap',
                                 row.variance === null ? 'text-muted-foreground' :
                                 row.variance < 0 ? 'text-destructive' : 'text-indigo-700'
                               )}>
                                 {row.variance !== null
                                   ? (row.variance < 0 ? '−' : '+') + formatINR(Math.abs(row.variance))
                                   : '—'}
-                              </td>
-                              <td className="px-4 py-2.5">
+                              </TableCell>
+                              <TableCell>
                                 {row.pctUsed !== null ? (
                                   <div className="flex items-center gap-2 min-w-[100px]">
                                     <div className="flex-1 bg-slate-100 rounded-full h-1.5 overflow-hidden">
@@ -1024,83 +1000,70 @@ export default function BudgetReportsPage() {
                                       {row.pctUsed.toFixed(1)}%
                                     </span>
                                   </div>
-                                ) : <span className="text-xs text-muted-foreground">—</span>}
-                              </td>
-                            </tr>
+                                ) : <span className="text-muted-foreground">—</span>}
+                              </TableCell>
+                            </TableRow>
                           );
                         })}
-                      </tbody>
-                    </table>
-                  </div>
-                </CardContent>
-              </Card>
+                      </TableBody>
+                    </Table>
             )}
-          </div>
+          </TableCard>
         )}
 
         {/* ══════════════════════════════════════════════════════════════════
             TAB 4 — Approval Status
         ══════════════════════════════════════════════════════════════════ */}
         {activeTab === 'approval' && (
-          <div className="space-y-3 mt-3">
-            <div className="flex flex-wrap items-center gap-2">
-              <span className="text-xs text-muted-foreground">
-                {approvalRows.filter(r => r.approval).length} uploaded ·{' '}
-                {approvalRows.filter(r => !r.approval).length} pending
-              </span>
-              {canExport && (
-                <Button variant="outline" size="sm" className="ml-auto gap-1.5 h-8" onClick={exportTab4} disabled={exporting}>
-                  {exporting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Download className="h-3.5 w-3.5" />}
-                  Export Excel
-                </Button>
-              )}
-            </div>
-
+          <TableCard
+            className="mt-3"
+            title="Approval status"
+            description={<>
+              {approvalRows.filter(r => r.approval).length} uploaded ·{' '}
+              {approvalRows.filter(r => !r.approval).length} pending
+            </>}
+            actions={canExport ? (
+              <Button variant="outline" size="sm" className="gap-1.5" onClick={exportTab4} disabled={exporting}>
+                {exporting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Download className="h-3.5 w-3.5" />}
+                Export Excel
+              </Button>
+            ) : undefined}
+          >
             {approvalRows.length === 0 ? (
-              <Card className="bg-white/80">
-                <CardContent className="flex flex-col items-center gap-3 py-12">
+                <div className="flex flex-col items-center gap-3 py-12">
                   <FileText className="h-10 w-10 text-muted-foreground/40" />
                   <p className="text-sm text-muted-foreground">No budget data found for {rangeLabel}.</p>
-                </CardContent>
-              </Card>
+                </div>
             ) : (
-              <Card className="bg-white/80 backdrop-blur-sm">
-                <CardContent className="p-0">
-                  <div className="overflow-auto" style={{ maxHeight: 'calc(100vh - 320px)' }}>
-                    <table className="w-full text-sm min-w-[700px]">
-                      <thead className="sticky top-0 z-10">
-                        <tr className="border-b bg-slate-100 shadow-sm">
-                          <th className="px-4 py-2.5 text-left font-medium min-w-[200px]">Project</th>
-                          <th className="px-4 py-2.5 text-left font-medium whitespace-nowrap">Month</th>
-                          <th className="px-4 py-2.5 text-right font-medium whitespace-nowrap text-emerald-700">Monthly Budget (₹)</th>
-                          <th className="px-4 py-2.5 text-left font-medium min-w-[180px]">Approval File</th>
-                          <th className="px-4 py-2.5 text-left font-medium">Uploaded By</th>
-                          <th className="px-4 py-2.5 text-left font-medium whitespace-nowrap">Uploaded On</th>
-                          <th className="px-4 py-2.5 text-center font-medium">Status</th>
-                        </tr>
-                      </thead>
-                      <tbody>
+                    <Table className="min-w-[700px]">
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead className="min-w-[200px]">Project</TableHead>
+                          <TableHead>Month</TableHead>
+                          <TableHead className="text-right">Monthly Budget (₹)</TableHead>
+                          <TableHead className="min-w-[180px]">Approval File</TableHead>
+                          <TableHead>Uploaded By</TableHead>
+                          <TableHead>Uploaded On</TableHead>
+                          <TableHead className="text-center">Status</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
                         {approvalRows.map(row => (
-                          <tr
-                            key={`${row.projectId}-${row.month}`}
-                            className={cn('border-b transition-colors',
-                              row.approval ? 'bg-emerald-50/30 hover:bg-emerald-50/60' : 'bg-amber-50/30 hover:bg-amber-50/60'
-                            )}
-                          >
-                            <td className="px-4 py-2.5 font-medium text-slate-800 max-w-[200px] truncate" title={row.projectName}>
+                          <TableRow key={`${row.projectId}-${row.month}`}>
+                            <TableCell className="font-medium max-w-[200px] truncate" title={row.projectName}>
                               {row.projectName}
-                            </td>
-                            <td className="px-4 py-2.5 whitespace-nowrap text-slate-600 text-xs">{monthLabel(row.month)}</td>
-                            <td className="px-4 py-2.5 text-right text-emerald-700 tabular-nums whitespace-nowrap">
-                              {row.monthBudget !== null ? formatINR(row.monthBudget) : <span className="text-muted-foreground text-xs">—</span>}
-                            </td>
-                            <td className="px-4 py-2.5">
+                            </TableCell>
+                            <TableCell className="whitespace-nowrap">{monthLabel(row.month)}</TableCell>
+                            <TableCell className="text-right text-emerald-700 tabular-nums whitespace-nowrap">
+                              {row.monthBudget !== null ? formatINR(row.monthBudget) : <span className="text-muted-foreground">—</span>}
+                            </TableCell>
+                            <TableCell>
                               {row.approval ? (
                                 <a
                                   href={row.approval.fileUrl}
                                   target="_blank"
                                   rel="noopener noreferrer"
-                                  className="inline-flex items-center gap-1.5 text-blue-600 hover:text-blue-800 hover:underline underline-offset-2 text-xs max-w-[180px] truncate"
+                                  className="inline-flex items-center gap-1.5 text-blue-600 hover:text-blue-800 hover:underline underline-offset-2 max-w-[180px] truncate"
                                   title={row.approval.fileName}
                                 >
                                   <FileText className="h-3.5 w-3.5 shrink-0" />
@@ -1108,37 +1071,34 @@ export default function BudgetReportsPage() {
                                   <ExternalLink className="h-3 w-3 shrink-0" />
                                 </a>
                               ) : (
-                                <span className="text-muted-foreground text-xs italic">No file uploaded</span>
+                                <span className="text-muted-foreground italic">No file uploaded</span>
                               )}
-                            </td>
-                            <td className="px-4 py-2.5 text-xs text-slate-600 whitespace-nowrap">
+                            </TableCell>
+                            <TableCell className="whitespace-nowrap">
                               {row.approval?.uploadedByName || <span className="text-muted-foreground">—</span>}
-                            </td>
-                            <td className="px-4 py-2.5 text-xs text-slate-600 whitespace-nowrap">
+                            </TableCell>
+                            <TableCell className="whitespace-nowrap tabular-nums">
                               {row.approval ? fmtDate(row.approval.uploadedAt) : <span className="text-muted-foreground">—</span>}
-                            </td>
-                            <td className="px-4 py-2.5 text-center">
+                            </TableCell>
+                            <TableCell className="text-center">
                               {row.approval ? (
-                                <Badge className="text-[11px] px-2 py-0.5 bg-emerald-600 hover:bg-emerald-600 gap-1">
+                                <StatusBadge status="Uploaded" tone="success">
                                   <CheckCircle2 className="h-3 w-3" />
                                   Uploaded
-                                </Badge>
+                                </StatusBadge>
                               ) : (
-                                <Badge variant="outline" className="text-[11px] px-2 py-0.5 text-amber-700 border-amber-300 bg-amber-50 gap-1">
+                                <StatusBadge status="Pending">
                                   <XCircle className="h-3 w-3" />
                                   Pending
-                                </Badge>
+                                </StatusBadge>
                               )}
-                            </td>
-                          </tr>
+                            </TableCell>
+                          </TableRow>
                         ))}
-                      </tbody>
-                    </table>
-                  </div>
-                </CardContent>
-              </Card>
+                      </TableBody>
+                    </Table>
             )}
-          </div>
+          </TableCard>
         )}
       </Tabs>
     </div>

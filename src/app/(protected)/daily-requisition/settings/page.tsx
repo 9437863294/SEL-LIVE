@@ -13,6 +13,7 @@ import {
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { ShieldAlert } from 'lucide-react';
 import { PageHeader } from '@/components/shared/page-header';
+import { Badge } from '@/components/ui/badge';
 
 /* ---- Workflow items (new) ---- */
 const workflowItems = [
@@ -113,12 +114,12 @@ export default function DailyRequisitionSettingsPage() {
         description="Configure workflow steps, numbering, printing, and access-related controls."
         meta={
           <>
-            <span className="rounded-full border border-white/70 bg-white/70 px-3 py-1 text-xs text-slate-600 backdrop-blur">
+            <Badge variant="neutral">
               Administrative controls
-            </span>
-            <span className="rounded-full border border-emerald-200/80 bg-emerald-50 px-3 py-1 text-xs text-emerald-700">
+            </Badge>
+            <Badge variant="neutral">
               {enabledCount} visible options
-            </span>
+            </Badge>
           </>
         }
       />

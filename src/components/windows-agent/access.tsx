@@ -1,13 +1,14 @@
 'use client';
 
 import { useMemo, useState } from 'react';
-import { Globe, Laptop, Search, ShieldCheck } from 'lucide-react';
+import { Globe, Laptop, ShieldCheck } from 'lucide-react';
 
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent } from '@/components/ui/card';
 import { Checkbox } from '@/components/ui/checkbox';
-import { Input } from '@/components/ui/input';
+import { SearchInput } from '@/components/shared/filter-bar';
+import { TableCard } from '@/components/shared/table-card';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import {
@@ -140,12 +141,12 @@ export function ComputerAccessPage() {
       mobile: 'aside',
       cell: (row) =>
         row.restricted ? (
-          <Badge variant="outline" className="border-amber-200 bg-amber-50 text-amber-700">
+          <Badge variant="warning">
             <Laptop className="mr-1 h-3 w-3" aria-hidden />
             Restricted
           </Badge>
         ) : (
-          <Badge variant="outline" className="border-emerald-200 bg-emerald-50 text-emerald-700">
+          <Badge variant="success">
             <Globe className="mr-1 h-3 w-3" aria-hidden />
             Any computer
           </Badge>
@@ -247,22 +248,12 @@ export function ComputerAccessPage() {
         />
       </div>
 
-      <Card>
-        <CardHeader className="flex flex-row items-center justify-between gap-3 space-y-0">
-          <CardTitle className="text-base">
-            {rows.length} {rows.length === 1 ? 'person' : 'people'}
-          </CardTitle>
-          <div className="relative max-w-xs">
-            <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" aria-hidden />
-            <Input
-              value={search}
-              onChange={(event) => setSearch(event.target.value)}
-              placeholder="Filter by name or department"
-              className="pl-8"
-            />
-          </div>
-        </CardHeader>
-        <CardContent>
+      <TableCard
+        title="People"
+        count={rows.length}
+        total={directory.length}
+        toolbar={<SearchInput value={search} onChange={setSearch} placeholder="Filter by name or department" className="sm:max-w-xs" />}
+      >
           {data.loading ? (
             <HrLoader />
           ) : (
@@ -270,7 +261,7 @@ export function ComputerAccessPage() {
               rows={rows}
               columns={columns}
               dense
-              maxHeightClassName="sm:max-h-[40rem]"
+              frameless
               empty={
                 <HrEmptyState
                   title={restrictedOnly ? 'Nobody is restricted' : 'No people found'}
@@ -283,8 +274,7 @@ export function ComputerAccessPage() {
               }
             />
           )}
-        </CardContent>
-      </Card>
+      </TableCard>
 
       {editing && editingRow ? (
         <AccessEditor
@@ -378,12 +368,7 @@ function AccessEditor({
           </div>
 
           <div className="flex items-center gap-2">
-            <Input
-              value={filter}
-              onChange={(event) => setFilter(event.target.value)}
-              placeholder="Search computers"
-              className="max-w-sm"
-            />
+            <SearchInput value={filter} onChange={setFilter} placeholder="Search computers" className="max-w-sm flex-1" />
             {selected.length > 0 ? (
               <Button variant="ghost" size="sm" onClick={() => setSelected([])}>
                 Clear — allow any computer

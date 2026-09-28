@@ -5,7 +5,8 @@ import { useState, useEffect, useMemo } from 'react';
 import { Save, Loader2, Plus, Trash2, Library } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { PageHeader } from '@/components/shared/page-header';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { TableCard } from '@/components/shared/table-card';
 import { Input } from '@/components/ui/input';
 import { useToast } from '@/hooks/use-toast';
 import { db } from '@/lib/firebase';
@@ -513,20 +514,15 @@ export default function CreateBillPage() {
           </CardContent>
         </Card>
 
-        <Card>
-          <CardHeader>
-               <div className="flex items-center justify-between">
-                  <div>
-                      <CardTitle>Bill Items</CardTitle>
-                      <CardDescription>Add items from the selected Work Order to this bill.</CardDescription>
-                  </div>
+        <TableCard
+          title="Bill Items"
+          description="Add items from the selected Work Order to this bill."
+          actions={
                   <Button variant="outline" type="button" onClick={() => setIsSelectorOpen(true)} disabled={!selectedWorkOrder}>
                       <Library className="mr-2 h-4 w-4" /> Add Items from Work Order
                   </Button>
-              </div>
-          </CardHeader>
-          <CardContent>
-              <div className="overflow-x-auto">
+          }
+        >
                   <Table>
                       <TableHeader>
                           <TableRow>
@@ -552,7 +548,7 @@ export default function CreateBillPage() {
                                   <TableCell>{item.orderQty}</TableCell>
                                   <TableCell>{item.jmcCertifiedQty}</TableCell>
                                   <TableCell>{item.alreadyBilledQty}</TableCell>
-                                  <TableCell className="font-semibold">{item.executedQty}</TableCell>
+                                  <TableCell>{item.executedQty}</TableCell>
                                   <TableCell>{formatCurrency(item.rate)}</TableCell>
                                   <TableCell>
                                       <Input 
@@ -572,9 +568,7 @@ export default function CreateBillPage() {
                           ))}
                       </TableBody>
                   </Table>
-              </div>
-          </CardContent>
-        </Card>
+        </TableCard>
 
         <Card className="mt-6">
             <CardHeader><CardTitle>Financial Summary</CardTitle></CardHeader>

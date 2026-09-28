@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { ArrowRight, Copy, Layers, Pencil, Sparkles, Trash2, Workflow } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
+import { StatusBadge } from '@/components/shared/status-badge';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
@@ -328,7 +329,7 @@ export function WorkflowTemplatesPanel({
                     {stages.length} stage{stages.length === 1 ? '' : 's'}
                   </Badge>
                   {calls.length > 0 && (
-                    <Badge className="bg-violet-600 text-[10px] hover:bg-violet-600">
+                    <Badge variant="neutral" className="text-[10px]">
                       {calls.length} sub-workflow{calls.length === 1 ? '' : 's'}
                     </Badge>
                   )}
@@ -348,15 +349,9 @@ export function WorkflowTemplatesPanel({
                     </Badge>
                   )}
                   {unassigned > 0 && (
-                    <Badge variant="outline" className="border-amber-300 bg-amber-50 text-[10px] text-amber-800">
-                      {unassigned} unassigned
-                    </Badge>
+                    <StatusBadge tone="warning">{unassigned} unassigned</StatusBadge>
                   )}
-                  {row.active === false && (
-                    <Badge variant="outline" className="text-[10px]">
-                      Inactive
-                    </Badge>
-                  )}
+                  {row.active === false && <StatusBadge status="Inactive" />}
                 </>
               }
               subtitle={

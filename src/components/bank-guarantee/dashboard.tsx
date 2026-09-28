@@ -49,9 +49,11 @@ import {
   type BGRequest,
   type BankGuarantee,
 } from "@/lib/bank-guarantee";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { PageHeader } from "@/components/shared/page-header";
+import { FilterBar } from "@/components/shared/filter-bar";
+import { StatusBadge } from "@/components/shared/status-badge";
+import { TableCard } from "@/components/shared/table-card";
 import {
   Card,
   CardContent,
@@ -513,10 +515,16 @@ export default function BankGuaranteeDashboard() {
           </>
         }
       />
-      <Card>
-        <CardContent className="grid gap-2 p-3 sm:grid-cols-3">
+      <FilterBar
+        activeCount={[bank, project, status].filter((value) => value !== "ALL").length}
+        onClear={() => {
+          setBank("ALL");
+          setProject("ALL");
+          setStatus("ALL");
+        }}
+      >
           <Select value={bank} onValueChange={setBank}>
-            <SelectTrigger>
+            <SelectTrigger aria-label="Bank">
               <SelectValue placeholder="All banks" />
             </SelectTrigger>
             <SelectContent>
@@ -533,7 +541,7 @@ export default function BankGuaranteeDashboard() {
             </SelectContent>
           </Select>
           <Select value={project} onValueChange={setProject}>
-            <SelectTrigger>
+            <SelectTrigger aria-label="Project">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
@@ -550,7 +558,7 @@ export default function BankGuaranteeDashboard() {
             </SelectContent>
           </Select>
           <Select value={status} onValueChange={setStatus}>
-            <SelectTrigger>
+            <SelectTrigger aria-label="Status">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
@@ -564,9 +572,8 @@ export default function BankGuaranteeDashboard() {
               )}
             </SelectContent>
           </Select>
-        </CardContent>
-      </Card>
-      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
+      </FilterBar>
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
         {cards.map(([label, value, tone]) => (
           <Card key={label}>
             <CardContent className="p-4">
@@ -578,7 +585,7 @@ export default function BankGuaranteeDashboard() {
           </Card>
         ))}
       </div>
-      <div className="grid gap-4 xl:grid-cols-2">
+      <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
         <Chart title="Bank-wise BG exposure" data={bankData} />
         <Chart title="Project-wise BG exposure" data={projectData} />
         <Card>
@@ -623,18 +630,12 @@ export default function BankGuaranteeDashboard() {
           </CardContent>
         </Card>
       </div>
-      <Card>
-        <CardHeader>
-          <CardTitle>
-            Expiry and claim action queue
-          </CardTitle>
-          <CardDescription>
-            BGs reaching expiry within 120 days, expired, or inside claim
-            period.
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="p-0">
-          <div className="overflow-x-auto">
+      <TableCard
+        title="Expiry and claim action queue"
+        description="BGs reaching expiry within 120 days, expired, or inside claim period."
+        count={upcoming.length}
+        noun="BG"
+      >
             <Table>
               <TableHeader>
                 <TableRow>
@@ -677,10 +678,10 @@ export default function BankGuaranteeDashboard() {
                     <TableCell>
                       {toBgDateInput(item.currentClaimExpiryDate)}
                     </TableCell>
-                    <TableCell>
-                      <Badge variant="outline">
+                    <TableCell className="whitespace-nowrap">
+                      <StatusBadge status={item.extensionDecision || "NO_ACTION_YET"}>
                         {bgLabel(item.extensionDecision || "NO_ACTION_YET")}
-                      </Badge>
+                      </StatusBadge>
                     </TableCell>
                   </TableRow>
                 ))}
@@ -696,9 +697,7 @@ export default function BankGuaranteeDashboard() {
                 )}
               </TableBody>
             </Table>
-          </div>
-        </CardContent>
-      </Card>
+      </TableCard>
     </div>
   );
 }

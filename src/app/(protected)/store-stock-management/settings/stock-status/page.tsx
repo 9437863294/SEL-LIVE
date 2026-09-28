@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
-import { Building2, FolderKanban, Loader2, Search } from 'lucide-react';
+import { Building2, FolderKanban, Loader2 } from 'lucide-react';
 import { collection, getDocs, query, where } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import { inventoryCommand } from '@/lib/inventory-client';
@@ -10,15 +10,15 @@ import { useAuthorization } from '@/hooks/useAuthorization';
 import { useToast } from '@/hooks/use-toast';
 import type { Project } from '@/lib/types';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Switch } from '@/components/ui/switch';
 import { Skeleton } from '@/components/ui/skeleton';
-import { Badge } from '@/components/ui/badge';
-import { Input } from '@/components/ui/input';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
+import { SearchInput } from '@/components/shared/filter-bar';
 import { PageHeader } from '@/components/shared/page-header';
+import { StatusBadge } from '@/components/shared/status-badge';
+import { TableCard } from '@/components/shared/table-card';
 
 interface PropertyRecord {
   id: string;
@@ -100,7 +100,7 @@ export default function StockStatusPage() {
 
       {!authorizationLoading && !canEditProjects && !canEditProperties && <Alert variant="destructive"><AlertTitle>View only</AlertTitle><AlertDescription>Your role needs Store &amp; Stock Management → Settings → Edit, Manage Projects, or Manage Properties to change these switches.</AlertDescription></Alert>}
 
-      <div className="relative max-w-md"><Search className="absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" /><Input className="pl-9" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search project or property…" /></div>
+      <SearchInput className="max-w-md" value={search} onChange={setSearch} placeholder="Search project or property…" />
 
       <Tabs defaultValue="projects">
         <TabsList className="grid h-auto w-full max-w-2xl grid-cols-1 gap-1 p-1 sm:grid-cols-2">
@@ -109,17 +109,17 @@ export default function StockStatusPage() {
         </TabsList>
 
         <TabsContent value="projects" className="mt-4">
-          <Card><CardHeader><CardTitle>BOQ-based project stock</CardTitle><CardDescription>Enabled projects appear in the legacy project selector with BOQ, BOM, conversions, project receipts, and project issues.</CardDescription></CardHeader><CardContent className="overflow-x-auto"><Table><TableHeader><TableRow><TableHead>Project</TableHead><TableHead>Site code</TableHead><TableHead>Location</TableHead><TableHead>Project status</TableHead><TableHead className="text-right">BOQ stock enabled</TableHead></TableRow></TableHeader><TableBody>
-            {loading ? <LoadingRows /> : filteredProjects.map((project) => <TableRow key={project.id}><TableCell className="font-medium">{project.projectName || '—'}</TableCell><TableCell>{project.siteCode || '—'}</TableCell><TableCell>{project.location || project.projectSite || '—'}</TableCell><TableCell><Badge variant={project.status === 'Active' ? 'default' : 'secondary'}>{project.status || 'Unknown'}</Badge></TableCell><TableCell className="text-right"><ScopeSwitch loading={savingKey === `Project:${project.id}`} checked={Boolean(project.stockManagementRequired)} disabled={!canEditProjects || project.status !== 'Active'} onChange={(checked) => toggle('Project', project.id, checked)} /></TableCell></TableRow>)}
+          <TableCard title="BOQ-based project stock" description="Enabled projects appear in the legacy project selector with BOQ, BOM, conversions, project receipts, and project issues."><Table><TableHeader><TableRow><TableHead>Project</TableHead><TableHead>Site code</TableHead><TableHead>Location</TableHead><TableHead>Project status</TableHead><TableHead className="text-right">BOQ stock enabled</TableHead></TableRow></TableHeader><TableBody>
+            {loading ? <LoadingRows /> : filteredProjects.map((project) => <TableRow key={project.id}><TableCell className="font-medium">{project.projectName || '—'}</TableCell><TableCell className="whitespace-nowrap">{project.siteCode || '—'}</TableCell><TableCell>{project.location || project.projectSite || '—'}</TableCell><TableCell className="whitespace-nowrap"><StatusBadge status={project.status || 'Unknown'} /></TableCell><TableCell className="text-right"><ScopeSwitch loading={savingKey === `Project:${project.id}`} checked={Boolean(project.stockManagementRequired)} disabled={!canEditProjects || project.status !== 'Active'} onChange={(checked) => toggle('Project', project.id, checked)} /></TableCell></TableRow>)}
             {!loading && !filteredProjects.length && <TableRow><TableCell colSpan={5} className="h-28 text-center text-muted-foreground">No projects match this search.</TableCell></TableRow>}
-          </TableBody></Table></CardContent></Card>
+          </TableBody></Table></TableCard>
         </TabsContent>
 
         <TabsContent value="properties" className="mt-4">
-          <Card><CardHeader className="gap-3 sm:flex-row sm:items-center sm:justify-between"><div><CardTitle>Property item inventory</CardTitle><CardDescription>Enabling a property creates or activates its default Main Store for Item Master transactions.</CardDescription></div><Button asChild variant="outline"><Link href="/insurance/settings/assets">Manage Property Master</Link></Button></CardHeader><CardContent className="overflow-x-auto"><Table><TableHeader><TableRow><TableHead>Property</TableHead><TableHead>Location</TableHead><TableHead>Description</TableHead><TableHead>Property status</TableHead><TableHead className="text-right">Item inventory enabled</TableHead></TableRow></TableHeader><TableBody>
-            {loading ? <LoadingRows /> : filteredProperties.map((property) => <TableRow key={property.id}><TableCell className="font-medium">{property.name}</TableCell><TableCell>{property.location || '—'}</TableCell><TableCell className="max-w-md truncate">{property.description || '—'}</TableCell><TableCell><Badge variant={property.status === 'Active' ? 'default' : 'secondary'}>{property.status || 'Unknown'}</Badge></TableCell><TableCell className="text-right"><ScopeSwitch loading={savingKey === `Property:${property.id}`} checked={Boolean(property.inventoryManagementRequired)} disabled={!canEditProperties || property.status !== 'Active'} onChange={(checked) => toggle('Property', property.id, checked)} /></TableCell></TableRow>)}
+          <TableCard title="Property item inventory" description="Enabling a property creates or activates its default Main Store for Item Master transactions." actions={<Button asChild variant="outline"><Link href="/insurance/settings/assets">Manage Property Master</Link></Button>}><Table><TableHeader><TableRow><TableHead>Property</TableHead><TableHead>Location</TableHead><TableHead>Description</TableHead><TableHead>Property status</TableHead><TableHead className="text-right">Item inventory enabled</TableHead></TableRow></TableHeader><TableBody>
+            {loading ? <LoadingRows /> : filteredProperties.map((property) => <TableRow key={property.id}><TableCell className="font-medium">{property.name}</TableCell><TableCell>{property.location || '—'}</TableCell><TableCell className="max-w-md truncate">{property.description || '—'}</TableCell><TableCell className="whitespace-nowrap"><StatusBadge status={property.status || 'Unknown'} /></TableCell><TableCell className="text-right"><ScopeSwitch loading={savingKey === `Property:${property.id}`} checked={Boolean(property.inventoryManagementRequired)} disabled={!canEditProperties || property.status !== 'Active'} onChange={(checked) => toggle('Property', property.id, checked)} /></TableCell></TableRow>)}
             {!loading && !filteredProperties.length && <TableRow><TableCell colSpan={5} className="h-28 text-center text-muted-foreground">No Property Master records found. Add a Property asset first.</TableCell></TableRow>}
-          </TableBody></Table></CardContent></Card>
+          </TableBody></Table></TableCard>
         </TabsContent>
       </Tabs>
     </div>

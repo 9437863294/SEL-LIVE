@@ -9,6 +9,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow, TableFoo
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { TableCard } from '@/components/shared/table-card';
 import { db } from '@/lib/firebase';
 import { collection, getDocs } from 'firebase/firestore';
 import type { BankAccount, BankExpense } from '@/lib/types';
@@ -16,7 +17,6 @@ import { format, startOfMonth, endOfMonth } from 'date-fns';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useToast } from '@/hooks/use-toast';
 import { useAuthorization } from '@/hooks/useAuthorization';
-import { cn } from '@/lib/utils';
 
 interface TransferRow {
   contraId: string;
@@ -167,11 +167,11 @@ export default function InternalTransfersPage() {
         {/* Filters */}
         <Card className="mb-5 rounded-xl border-border/60 shadow-sm">
           <CardContent className="p-4">
-            <div className="flex flex-wrap gap-4 items-end">
-              <div className="flex-1 min-w-[220px]">
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-[2fr_1fr_1fr] sm:items-end">
+              <div className="min-w-0">
                 <Label className="text-xs text-muted-foreground mb-1.5 block">Account (From or To)</Label>
                 <Select value={accountFilter} onValueChange={setAccountFilter}>
-                  <SelectTrigger className="h-9">
+                  <SelectTrigger>
                     <SelectValue placeholder="All accounts" />
                   </SelectTrigger>
                   <SelectContent>
@@ -186,39 +186,39 @@ export default function InternalTransfersPage() {
               </div>
               <div>
                 <Label className="text-xs text-muted-foreground mb-1.5 block">From Date</Label>
-                <Input type="date" value={fromDate} onChange={e => setFromDate(e.target.value)} className="h-9 w-40" />
+                <Input type="date" value={fromDate} onChange={e => setFromDate(e.target.value)} />
               </div>
               <div>
                 <Label className="text-xs text-muted-foreground mb-1.5 block">To Date</Label>
-                <Input type="date" value={toDate} onChange={e => setToDate(e.target.value)} className="h-9 w-40" />
+                <Input type="date" value={toDate} onChange={e => setToDate(e.target.value)} />
               </div>
             </div>
           </CardContent>
         </Card>
 
         {/* Table */}
-        <Card className="rounded-xl border-border/60 shadow-sm overflow-hidden">
-          <CardHeader className="border-b border-border/40 pb-4">
-            <CardTitle>Transfer Log</CardTitle>
-            <CardDescription>
+        <TableCard
+          title="Transfer Log"
+          description={
+            <>
               {fromDate && toDate
                 ? `${format(new Date(fromDate), 'dd MMM yyyy')} to ${format(new Date(toDate), 'dd MMM yyyy')}`
                 : ''}
-              &nbsp;·&nbsp; {transfers.length} transfer{transfers.length !== 1 ? 's' : ''}
               {accountFilter !== 'all' && ` · filtered by ${accountMap[accountFilter] ?? accountFilter}`}
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="p-0">
-            <div className="overflow-x-auto">
+            </>
+          }
+          count={transfers.length}
+          noun="transfer"
+        >
               <Table>
                 <TableHeader>
-                  <TableRow className="bg-muted/30 hover:bg-muted/30">
-                    <TableHead className="font-semibold text-xs w-28">Date</TableHead>
-                    <TableHead className="font-semibold text-xs">From Account</TableHead>
-                    <TableHead className="font-semibold text-xs w-8 text-center"></TableHead>
-                    <TableHead className="font-semibold text-xs">To Account</TableHead>
-                    <TableHead className="font-semibold text-xs">Description</TableHead>
-                    <TableHead className="text-right font-semibold text-xs w-36">Amount</TableHead>
+                  <TableRow>
+                    <TableHead className="w-28">Date</TableHead>
+                    <TableHead>From Account</TableHead>
+                    <TableHead className="w-8 text-center"></TableHead>
+                    <TableHead>To Account</TableHead>
+                    <TableHead>Description</TableHead>
+                    <TableHead className="text-right w-36">Amount</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -232,24 +232,24 @@ export default function InternalTransfersPage() {
                       </TableCell>
                     </TableRow>
                   ) : transfers.map(row => (
-                    <TableRow key={row.contraId} className="hover:bg-muted/20 text-xs transition-colors">
-                      <TableCell className="font-mono text-xs">
+                    <TableRow key={row.contraId}>
+                      <TableCell className="whitespace-nowrap font-mono">
                         {format(row.date, 'dd/MM/yyyy')}
                         <span className="text-[10px] text-muted-foreground ml-1">{format(row.date, 'EEE')}</span>
                       </TableCell>
                       <TableCell>
                         <span className="font-medium text-red-600 dark:text-red-400">{row.fromAccountName}</span>
                       </TableCell>
-                      <TableCell className="text-center px-1">
+                      <TableCell className="text-center">
                         <ArrowRightLeft className="h-3.5 w-3.5 text-indigo-400 mx-auto" />
                       </TableCell>
                       <TableCell>
                         <span className="font-medium text-green-600 dark:text-green-400">{row.toAccountName}</span>
                       </TableCell>
-                      <TableCell className="text-muted-foreground max-w-xs">
+                      <TableCell className="max-w-xs">
                         <span className="line-clamp-1">{row.description || '—'}</span>
                       </TableCell>
-                      <TableCell className="text-right font-semibold font-mono text-indigo-600 dark:text-indigo-400">
+                      <TableCell className="whitespace-nowrap text-right font-medium font-mono text-indigo-600 dark:text-indigo-400">
                         {formatCurrency(row.amount)}
                       </TableCell>
                     </TableRow>
@@ -257,18 +257,16 @@ export default function InternalTransfersPage() {
                 </TableBody>
                 {transfers.length > 0 && (
                   <TableFooter>
-                    <TableRow className="bg-muted/40 hover:bg-muted/40">
-                      <TableCell colSpan={5} className="font-bold text-xs">TOTAL ({transfers.length} transfers)</TableCell>
-                      <TableCell className="text-right font-bold text-xs font-mono text-indigo-700 dark:text-indigo-400">
+                    <TableRow>
+                      <TableCell colSpan={5}>TOTAL ({transfers.length} transfers)</TableCell>
+                      <TableCell className="whitespace-nowrap text-right font-mono text-indigo-700 dark:text-indigo-400">
                         {formatCurrency(totalAmount)}
                       </TableCell>
                     </TableRow>
                   </TableFooter>
                 )}
               </Table>
-            </div>
-          </CardContent>
-        </Card>
+        </TableCard>
       </div>
     </>
   );

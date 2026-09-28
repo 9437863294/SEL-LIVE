@@ -11,7 +11,6 @@ import {
   Loader2,
   Plus,
   RefreshCw,
-  Search,
   ShieldAlert,
   X,
 } from "lucide-react";
@@ -41,7 +40,6 @@ import { Badge } from "@/components/ui/badge";
 import {
   Card,
   CardContent,
-  CardDescription,
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
@@ -74,6 +72,9 @@ import {
 import { Textarea } from "@/components/ui/textarea";
 import { Switch } from "@/components/ui/switch";
 import { PageHeader } from "@/components/shared/page-header";
+import { TableCard } from "@/components/shared/table-card";
+import { FilterBar } from "@/components/shared/filter-bar";
+import { StatusBadge } from "@/components/shared/status-badge";
 
 type Draft = {
   instrumentType: "BG" | "LC";
@@ -484,19 +485,26 @@ export default function FDAssignmentWorkspace({
           </Card>
         ))}
       </div>
-      <Card>
-        <CardContent className="flex flex-col gap-2 p-3 sm:flex-row">
-          <div className="relative flex-1">
-            <Search className="absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
-            <Input
-              className="pl-9"
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              placeholder="Search FD, instrument, bank, project…"
-            />
-          </div>
+      <TableCard
+        title="Assignments"
+        count={visible.length}
+        total={assignments.length}
+        noun="assignment"
+        toolbar={
+          <FilterBar
+            search={{
+              value: search,
+              onChange: setSearch,
+              placeholder: "Search FD, instrument, bank, project…",
+            }}
+            activeCount={status !== "ALL" ? 1 : 0}
+            onClear={() => {
+              setSearch("");
+              setStatus("ALL");
+            }}
+          >
           <Select value={status} onValueChange={setStatus}>
-            <SelectTrigger className="sm:w-52">
+            <SelectTrigger>
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
@@ -517,11 +525,9 @@ export default function FDAssignmentWorkspace({
               ))}
             </SelectContent>
           </Select>
-        </CardContent>
-      </Card>
-      <Card>
-        <CardContent className="p-0">
-          <div className="overflow-x-auto">
+          </FilterBar>
+        }
+      >
             <Table>
               <TableHeader>
                 <TableRow>
@@ -559,21 +565,21 @@ export default function FDAssignmentWorkspace({
                         {item.partyName || "-"}
                       </p>
                     </TableCell>
-                    <TableCell className="text-right">
+                    <TableCell className="whitespace-nowrap text-right tabular-nums">
                       {formatFdCurrency(item.assignmentAmount)}
                     </TableCell>
-                    <TableCell className="text-right">
+                    <TableCell className="whitespace-nowrap text-right tabular-nums">
                       {formatFdCurrency(assignmentOutstanding(item))}
                     </TableCell>
-                    <TableCell>
+                    <TableCell className="whitespace-nowrap">
                       {toDate(item.expectedReleaseDate)?.toLocaleDateString(
                         "en-IN",
                       ) || "-"}
                     </TableCell>
                     <TableCell>
-                      <Badge variant="outline">
+                      <StatusBadge status={item.status}>
                         {fdStatusLabel(item.status)}
-                      </Badge>
+                      </StatusBadge>
                     </TableCell>
                     <TableCell>
                       <div className="flex justify-end gap-1">
@@ -637,9 +643,7 @@ export default function FDAssignmentWorkspace({
                 )}
               </TableBody>
             </Table>
-          </div>
-        </CardContent>
-      </Card>
+      </TableCard>
 
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
         <DialogContent className="max-h-[94vh] max-w-5xl overflow-y-auto">
@@ -881,19 +885,16 @@ export default function FDAssignmentWorkspace({
               </Field>
             </div>
           </div>
-          <Card>
-            <CardHeader>
-              <CardTitle>
-                Available FD Allocation
-              </CardTitle>
-              <CardDescription>
+          <TableCard
+            title="Available FD Allocation"
+            description={
+              <>
                 Required {formatFdCurrency(requiredMargin)} · Selected{" "}
                 {formatFdCurrency(selectedTotal)} · Balance{" "}
                 {formatFdCurrency(Math.max(0, requiredMargin - selectedTotal))}
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="p-0">
-              <div className="max-h-72 overflow-auto">
+              </>
+            }
+          >
                 <Table>
                   <TableHeader>
                     <TableRow>
@@ -950,7 +951,7 @@ export default function FDAssignmentWorkspace({
                               </p>
                             )}
                           </TableCell>
-                          <TableCell className="text-right">
+                          <TableCell className="whitespace-nowrap text-right tabular-nums">
                             {formatFdCurrency(fd.availableAmount)}
                           </TableCell>
                           <TableCell>
@@ -982,9 +983,7 @@ export default function FDAssignmentWorkspace({
                     )}
                   </TableBody>
                 </Table>
-              </div>
-            </CardContent>
-          </Card>
+          </TableCard>
           <DialogFooter>
             <Button variant="outline" onClick={() => setDialogOpen(false)}>
               Cancel

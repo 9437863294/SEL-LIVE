@@ -43,13 +43,13 @@ import {
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
+import { StatusBadge } from '@/components/shared/status-badge';
 import { cn } from '@/lib/utils';
 import { moduleBadgeClass } from '@/lib/activity-modules';
 import {
   CALENDAR_VIEWS,
   WEEKDAY_LABELS,
   WORK_KIND_ACCENT,
-  WORK_KIND_BADGE,
   WORK_KIND_LABEL,
   calendarItems,
   daysUntil,
@@ -456,30 +456,19 @@ function DayView({ anchor, today, items }: { anchor: string; today: string; item
               <span className="w-12 shrink-0 text-xs font-semibold tabular-nums text-slate-700">
                 {item.startTime ?? '—'}
               </span>
-              <Badge
-                variant="outline"
-                className={cn('shrink-0 gap-1 whitespace-nowrap px-1.5 py-0 text-[10px]', WORK_KIND_BADGE[item.kind])}
-              >
+              <Badge variant="outline" className="shrink-0 gap-1 whitespace-nowrap">
                 <Icon aria-hidden className="h-2.5 w-2.5" />
                 {WORK_KIND_LABEL[item.kind].replace(/s$/, '')}
               </Badge>
               <span className="min-w-0 flex-1 truncate text-sm font-medium text-slate-800">{item.title}</span>
-              <Badge
-                variant="outline"
-                className={cn('shrink-0 whitespace-nowrap px-1.5 py-0 text-[10px]', moduleBadgeClass(item.module))}
-              >
+              <Badge variant="outline" className="shrink-0 whitespace-nowrap">
                 {item.module}
               </Badge>
               {item.stage ? (
                 <span className="hidden shrink-0 text-xs text-muted-foreground lg:inline">{item.stage}</span>
               ) : null}
               {urgency === 'overdue' ? (
-                <Badge
-                  variant="outline"
-                  className="shrink-0 whitespace-nowrap border-rose-200 bg-rose-50 px-1.5 py-0 text-[10px] font-medium text-rose-700"
-                >
-                  Overdue
-                </Badge>
+                <StatusBadge status="Overdue" className="shrink-0" />
               ) : null}
             </Link>
           </li>

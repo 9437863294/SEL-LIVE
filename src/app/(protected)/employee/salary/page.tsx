@@ -15,17 +15,18 @@
  */
 
 import { useState, useEffect, useCallback, useMemo } from 'react';
-import { Download, IndianRupee, Loader2, RefreshCw, Search, TrendingDown, Users, Wallet, X } from 'lucide-react';
+import { Download, IndianRupee, Loader2, RefreshCw, Search, TrendingDown, Users, Wallet } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
-import { Input } from '@/components/ui/input';
+import { FilterBar } from '@/components/shared/filter-bar';
+import { StatusBadge } from '@/components/shared/status-badge';
+import { TableCard } from '@/components/shared/table-card';
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from '@/components/ui/select';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import {
   HrAccessDenied,
   HrDataList,
   HrEmptyState,
-  HrFilterCard,
   HrLoader,
   SensitiveMoney,
   hrDialog,
@@ -34,10 +35,8 @@ import {
 import {
   EmployeeKpiCard,
   EmployeePageShell,
-  EmployeeStatusPill,
   EmployeeSubNav,
   EMP_CARD_CLASS,
-  EMP_REGISTER_HEIGHT,
 } from '@/components/employee/employee-ui';
 import { useHrPermissions } from '@/components/hr/use-hr-config';
 import { useToast } from '@/hooks/use-toast';
@@ -525,13 +524,15 @@ export default function EmployeeSalaryPage() {
         badge={
           !isAuthLoading && canView ? (
             lastSynced ? (
-              <EmployeeStatusPill tone="emerald" icon={RefreshCw}>
+              <StatusBadge tone="success">
+                <RefreshCw className="h-3 w-3" aria-hidden="true" />
                 {monthLabel} · synced {lastSynced}
-              </EmployeeStatusPill>
+              </StatusBadge>
             ) : (
-              <EmployeeStatusPill tone="amber" icon={RefreshCw}>
+              <StatusBadge tone="warning">
+                <RefreshCw className="h-3 w-3" aria-hidden="true" />
                 {monthLabel} · not synced yet
-              </EmployeeStatusPill>
+              </StatusBadge>
             )
           ) : undefined
         }
@@ -637,74 +638,111 @@ export default function EmployeeSalaryPage() {
             />
           </div>
 
-          {/* ── Filters: one card, collapsed on a phone, three columns at most ── */}
-          <HrFilterCard
-            summary={
-              activeFilterCount > 0
-                ? `${activeFilterCount} filter(s) active · ${filteredEmployees.length} of ${displayedEmployees.length} shown`
-                : `${displayedEmployees.length} salary record(s) for ${monthLabel}`
+          {/* ── Register: filters in its toolbar, the old <tfoot> totals and paging in its footer ── */}
+          <TableCard
+            toolbar={
+              <FilterBar
+                search={{
+                  value: filters.searchTerm,
+                  onChange: (value) => handleFilterChange('searchTerm', value),
+                  placeholder: 'Search by ID or name…',
+                }}
+                activeCount={activeFilterCount}
+                onClear={clearFilters}
+                summary={
+                  activeFilterCount > 0
+                    ? `${activeFilterCount} filter(s) active · ${filteredEmployees.length} of ${displayedEmployees.length} shown`
+                    : `${displayedEmployees.length} salary record(s) for ${monthLabel}`
+                }
+              >
+                <Select value={filters.projectName} onValueChange={(value) => handleFilterChange('projectName', value)}>
+                  <SelectTrigger aria-label="Project"><SelectValue placeholder="All Projects" /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All Projects</SelectItem>
+                    {filterOptions['Project Name'].map(opt => <SelectItem key={opt} value={opt}>{opt}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+                <Select value={filters.location} onValueChange={(value) => handleFilterChange('location', value)}>
+                  <SelectTrigger aria-label="Location"><SelectValue placeholder="All Locations" /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All Locations</SelectItem>
+                    {filterOptions['Location'].map(opt => <SelectItem key={opt} value={opt}>{opt}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+                <Select value={filters.employeeType} onValueChange={(value) => handleFilterChange('employeeType', value)}>
+                  <SelectTrigger aria-label="Employee type"><SelectValue placeholder="All Types" /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All Types</SelectItem>
+                    {filterOptions['EMPLOYEE TYPE'].map(opt => <SelectItem key={opt} value={opt}>{opt}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+                <Select value={filters.designation} onValueChange={(value) => handleFilterChange('designation', value)}>
+                  <SelectTrigger aria-label="Designation"><SelectValue placeholder="All Designations" /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All Designations</SelectItem>
+                    {filterOptions['Designation'].map(opt => <SelectItem key={opt} value={opt}>{opt}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+                <Select value={filters.department} onValueChange={(value) => handleFilterChange('department', value)}>
+                  <SelectTrigger aria-label="Department"><SelectValue placeholder="All Departments" /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All Departments</SelectItem>
+                    {filterOptions['Department'].map(opt => <SelectItem key={opt} value={opt}>{opt}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+              </FilterBar>
             }
-            actions={
-              activeFilterCount > 0 ? (
-                <Button variant="ghost" size="sm" className="h-7 gap-1 text-xs" onClick={clearFilters}>
-                  <X className="h-3.5 w-3.5" />
-                  Clear
-                </Button>
+            footer={
+              !isBusy && filteredEmployees.length > 0 ? (
+                <div className="space-y-3">
+                  {/* The old <tfoot>: totals for what the filters show, as a strip that reads on a phone. */}
+                  <div className="flex flex-col gap-2 text-sm sm:flex-row sm:items-center sm:justify-between">
+                    <p className="font-semibold text-slate-800">
+                      Total · {filteredEmployees.length} employee{filteredEmployees.length === 1 ? '' : 's'}
+                    </p>
+                    <div className="grid grid-cols-3 gap-3 sm:flex sm:gap-6 sm:text-right">
+                      <div>
+                        <p className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">Gross</p>
+                        <SensitiveMoney value={totals.gross} canView={canViewSalary} exact className="font-semibold" />
+                      </div>
+                      <div>
+                        <p className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">Deductions</p>
+                        <SensitiveMoney
+                          value={totals.deductions}
+                          canView={canViewSalary}
+                          exact
+                          className="font-semibold text-rose-700"
+                        />
+                      </div>
+                      <div>
+                        <p className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">Net</p>
+                        <SensitiveMoney value={totals.net} canView={canViewSalary} exact className="font-semibold text-emerald-700" />
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="flex flex-col items-center gap-2 text-center">
+                    <p className="text-xs text-muted-foreground">
+                      Showing <span className="font-medium text-slate-700">{visibleRows.length}</span> of{' '}
+                      {filteredEmployees.length}
+                      {activeFilterCount > 0 ? <> (filtered from {displayedEmployees.length})</> : null} salary record
+                      {filteredEmployees.length === 1 ? '' : 's'} for {monthLabel}
+                    </p>
+                    {visibleRows.length < filteredEmployees.length && (
+                      <Button variant="outline" size="sm" onClick={() => setVisibleCount((count) => count + PAGE_SIZE)}>
+                        Show {Math.min(PAGE_SIZE, filteredEmployees.length - visibleRows.length)} more
+                      </Button>
+                    )}
+                  </div>
+                </div>
               ) : undefined
             }
           >
-            <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2 lg:grid-cols-3">
-              <div className="relative sm:col-span-2 lg:col-span-1">
-                <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-                <Input
-                  placeholder="Search by ID or name…"
-                  value={filters.searchTerm}
-                  onChange={(e) => handleFilterChange('searchTerm', e.target.value)}
-                  className="pl-9"
-                />
-              </div>
-              <Select value={filters.projectName} onValueChange={(value) => handleFilterChange('projectName', value)}>
-                <SelectTrigger><SelectValue placeholder="All Projects" /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All Projects</SelectItem>
-                  {filterOptions['Project Name'].map(opt => <SelectItem key={opt} value={opt}>{opt}</SelectItem>)}
-                </SelectContent>
-              </Select>
-              <Select value={filters.location} onValueChange={(value) => handleFilterChange('location', value)}>
-                <SelectTrigger><SelectValue placeholder="All Locations" /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All Locations</SelectItem>
-                  {filterOptions['Location'].map(opt => <SelectItem key={opt} value={opt}>{opt}</SelectItem>)}
-                </SelectContent>
-              </Select>
-              <Select value={filters.employeeType} onValueChange={(value) => handleFilterChange('employeeType', value)}>
-                <SelectTrigger><SelectValue placeholder="All Types" /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All Types</SelectItem>
-                  {filterOptions['EMPLOYEE TYPE'].map(opt => <SelectItem key={opt} value={opt}>{opt}</SelectItem>)}
-                </SelectContent>
-              </Select>
-              <Select value={filters.designation} onValueChange={(value) => handleFilterChange('designation', value)}>
-                <SelectTrigger><SelectValue placeholder="All Designations" /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All Designations</SelectItem>
-                  {filterOptions['Designation'].map(opt => <SelectItem key={opt} value={opt}>{opt}</SelectItem>)}
-                </SelectContent>
-              </Select>
-              <Select value={filters.department} onValueChange={(value) => handleFilterChange('department', value)}>
-                <SelectTrigger><SelectValue placeholder="All Departments" /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All Departments</SelectItem>
-                  {filterOptions['Department'].map(opt => <SelectItem key={opt} value={opt}>{opt}</SelectItem>)}
-                </SelectContent>
-              </Select>
-            </div>
-          </HrFilterCard>
-
           {isBusy ? (
             <HrLoader label={isSyncing ? `Syncing ${monthLabel} from greytHR…` : `Loading salary for ${monthLabel}…`} />
           ) : filteredEmployees.length === 0 ? (
-            displayedEmployees.length > 0 ? (
+            <div className="p-3">
+            {displayedEmployees.length > 0 ? (
               <HrEmptyState
                 icon={Search}
                 title="No employees match these filters"
@@ -726,62 +764,22 @@ export default function EmployeeSalaryPage() {
                 }
                 action={canSync ? syncButton : undefined}
               />
-            )
+            )}
+            </div>
           ) : (
-            <div className="space-y-2.5">
+            <div className="p-3 sm:p-0">
               {/* Rows open the payslip only for 63.12 holders — the breakdown behind the tap is the
                   very data the masked cells withhold. */}
               <HrDataList
                 rows={visibleRows}
                 columns={columns}
                 dense
-                maxHeightClassName={EMP_REGISTER_HEIGHT}
+                frameless
                 onRowClick={canViewSalary ? (emp) => setPayslipFor(emp) : undefined}
               />
-
-              {/* The old <tfoot>: totals for what the filters show, as a strip that reads on a phone. */}
-              <Card className={EMP_CARD_CLASS}>
-                <CardContent className="flex flex-col gap-2 px-4 py-3 text-sm sm:flex-row sm:items-center sm:justify-between">
-                  <p className="font-semibold text-slate-800">
-                    Total · {filteredEmployees.length} employee{filteredEmployees.length === 1 ? '' : 's'}
-                  </p>
-                  <div className="grid grid-cols-3 gap-3 sm:flex sm:gap-6 sm:text-right">
-                    <div>
-                      <p className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">Gross</p>
-                      <SensitiveMoney value={totals.gross} canView={canViewSalary} exact className="font-semibold" />
-                    </div>
-                    <div>
-                      <p className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">Deductions</p>
-                      <SensitiveMoney
-                        value={totals.deductions}
-                        canView={canViewSalary}
-                        exact
-                        className="font-semibold text-rose-700"
-                      />
-                    </div>
-                    <div>
-                      <p className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">Net</p>
-                      <SensitiveMoney value={totals.net} canView={canViewSalary} exact className="font-semibold text-emerald-700" />
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
-
-              <div className="flex flex-col items-center gap-2 pb-2 text-center">
-                <p className="text-xs text-muted-foreground">
-                  Showing <span className="font-medium text-slate-700">{visibleRows.length}</span> of{' '}
-                  {filteredEmployees.length}
-                  {activeFilterCount > 0 ? <> (filtered from {displayedEmployees.length})</> : null} salary record
-                  {filteredEmployees.length === 1 ? '' : 's'} for {monthLabel}
-                </p>
-                {visibleRows.length < filteredEmployees.length && (
-                  <Button variant="outline" size="sm" onClick={() => setVisibleCount((count) => count + PAGE_SIZE)}>
-                    Show {Math.min(PAGE_SIZE, filteredEmployees.length - visibleRows.length)} more
-                  </Button>
-                )}
-              </div>
             </div>
           )}
+          </TableCard>
         </div>
       )}
 

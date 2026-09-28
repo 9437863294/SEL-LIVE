@@ -44,8 +44,8 @@ import {
   AlertDialogTrigger,
 } from '@/components/ui/alert-dialog';
 import ExcelJS from 'exceljs';
-import { Badge } from '@/components/ui/badge';
 import { PageHeader } from '@/components/shared/page-header';
+import { StatusBadge } from '@/components/shared/status-badge';
 
 /* ---------- helpers ---------- */
 function toDateSafe(value: any): Date | null {
@@ -412,17 +412,7 @@ export default function JmcLogPage() {
       header: 'Stage Status',
       mobile: 'aside',
       cell: (entry) => (
-        <Badge
-          variant={
-            entry.status === 'Completed'
-              ? 'default'
-              : entry.status === 'Rejected' || entry.status === 'Cancelled'
-              ? 'destructive'
-              : 'secondary'
-          }
-        >
-          {entry.status}
-        </Badge>
+        <StatusBadge status={entry.status} />
       ),
     },
     {

@@ -22,11 +22,13 @@ import {
   type InterviewFeedback,
   type InterviewRatings,
   type InterviewRecommendation,
+  hrStatusLabel,
 } from '@/lib/hr-requirement';
 import { HrControlError, submitInterviewFeedback } from '@/lib/hr-requirement-service';
-import { HrAlertNotice, HrEmptyState, HrField, HrLoader, HrSection, HrStatusBadge, hrDialog } from './hr-ui';
+import { HrAlertNotice, HrEmptyState, HrField, HrLoader, HrSection, hrBadgeTone, hrDialog } from './hr-ui';
 import { useHrCollection, useHrConfig, useHrPermissions } from './use-hr-config';
 import { PageHeader } from '@/components/shared/page-header';
+import { StatusBadge } from '@/components/shared/status-badge';
 
 /**
  * The interviewer's own screen, spec sections 25 and 26.
@@ -92,11 +94,13 @@ export default function MyInterviews() {
             <div className="min-w-0">
               <div className="flex flex-wrap items-center gap-2">
                 <p className="truncate text-sm font-semibold text-slate-800">{interview.candidateName}</p>
-                <HrStatusBadge status={interview.status} />
+                <StatusBadge status={interview.status} tone={hrBadgeTone(interview.status)}>
+                  {hrStatusLabel(interview.status)}
+                </StatusBadge>
                 {submitted && (
-                  <Badge variant="outline" className="gap-1 border-emerald-200 bg-emerald-50 text-emerald-700">
+                  <StatusBadge tone="success">
                     <ShieldCheck className="h-3 w-3" /> Feedback submitted
-                  </Badge>
+                  </StatusBadge>
                 )}
               </div>
               <p className="mt-0.5 text-xs text-muted-foreground">
@@ -143,7 +147,7 @@ export default function MyInterviews() {
                 <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Skills</p>
                 <div className="mt-1 flex flex-wrap gap-1">
                   {candidate.skills.slice(0, 12).map(skill => (
-                    <Badge key={skill} variant="secondary" className="text-[10px]">{skill}</Badge>
+                    <Badge key={skill} variant="neutral">{skill}</Badge>
                   ))}
                 </div>
               </div>

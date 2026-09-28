@@ -15,11 +15,13 @@ import { useAuthorization } from '@/hooks/useAuthorization';
 import { useActivityLogger } from '@/hooks/useActivityLogger';
 import { useToast } from '@/hooks/use-toast';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent } from '@/components/ui/card';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { PageHeader } from '@/components/shared/page-header';
+import { TableCard } from '@/components/shared/table-card';
+import { FilterBar } from '@/components/shared/filter-bar';
+import { StatusBadge } from '@/components/shared/status-badge';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Switch } from '@/components/ui/switch';
 import {
@@ -284,15 +286,18 @@ export default function ProjectSettingsPage() {
         </div>
       )}
 
-      <Input
-        placeholder="Search by project name, code or person..."
-        value={search}
-        onChange={e => setSearch(e.target.value)}
-        className="max-w-sm"
-      />
-
-      <Card className="bg-white/80 backdrop-blur-sm">
-        <CardContent className="p-0">
+      <TableCard
+        title="Site Account projects"
+        count={filtered.length}
+        total={rows.length}
+        noun="project"
+        toolbar={
+          <FilterBar
+            search={{ value: search, onChange: setSearch, placeholder: 'Search by project name, code or person...' }}
+            onClear={() => setSearch('')}
+          />
+        }
+      >
           {filtered.length === 0 ? (
             <div className="flex flex-col items-center gap-3 py-12 text-center">
               <Settings className="h-10 w-10 text-muted-foreground/40" />
@@ -306,29 +311,29 @@ export default function ProjectSettingsPage() {
               )}
             </div>
           ) : (
-            <div className="overflow-x-auto overflow-y-auto max-h-[60vh]">
-              <table className="w-full min-w-[700px] text-sm">
-                <thead className="sticky top-0 z-10">
-                  <tr className="border-b bg-slate-100">
-                    <th className="px-4 py-2.5 text-left font-medium">Project Name</th>
-                    <th className="px-4 py-2.5 text-left font-medium">Site Code</th>
-                    <th className="px-4 py-2.5 text-center font-medium">Enabled</th>
-                    <th className="px-4 py-2.5 text-left font-medium">Assigned / Alt. User / Viewer</th>
-                    <th className="px-4 py-2.5 text-center font-medium">Status</th>
-                    {(canEdit || canDelete) && <th className="px-4 py-2.5 text-right font-medium">Actions</th>}
-                  </tr>
-                </thead>
-                <tbody>
+              <Table className="min-w-[700px]">
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Project Name</TableHead>
+                    <TableHead>Site Code</TableHead>
+                    <TableHead className="text-center">Enabled</TableHead>
+                    <TableHead>Assigned / Alt. User / Viewer</TableHead>
+                    <TableHead className="text-center">Status</TableHead>
+                    {(canEdit || canDelete) && <TableHead className="text-right">Actions</TableHead>}
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
                   {filtered.map(row => (
-                    <tr key={row.id} className="border-b hover:bg-muted/20 transition-colors">
-                      <td className="px-4 py-2.5 font-medium">{row.projectName}</td>
-                      <td className="px-4 py-2.5 text-muted-foreground">{row.projectCode || '—'}</td>
-                      <td className="px-4 py-2.5 text-center">
-                        <Badge className={row.enabledForSiteAccount ? 'bg-emerald-100 text-emerald-700 hover:bg-emerald-100' : 'bg-slate-100 text-slate-600'}>
-                          {row.enabledForSiteAccount ? 'Yes' : 'No'}
-                        </Badge>
-                      </td>
-                      <td className="px-4 py-2.5">
+                    <TableRow key={row.id}>
+                      <TableCell className="font-medium">{row.projectName}</TableCell>
+                      <TableCell className="font-mono whitespace-nowrap">{row.projectCode || '—'}</TableCell>
+                      <TableCell className="text-center">
+                        <StatusBadge
+                          status={row.enabledForSiteAccount ? 'Yes' : 'No'}
+                          tone={row.enabledForSiteAccount ? 'success' : 'neutral'}
+                        />
+                      </TableCell>
+                      <TableCell>
                         <div className="flex flex-col gap-0.5">
                           {row.assignedPersonName ? (
                             <div className="flex items-center gap-1.5">
@@ -351,14 +356,12 @@ export default function ProjectSettingsPage() {
                             </div>
                           )}
                         </div>
-                      </td>
-                      <td className="px-4 py-2.5 text-center">
-                        <Badge variant={row.status === 'Active' ? 'default' : 'secondary'}>
-                          {row.status}
-                        </Badge>
-                      </td>
+                      </TableCell>
+                      <TableCell className="text-center whitespace-nowrap">
+                        <StatusBadge status={row.status} />
+                      </TableCell>
                       {(canEdit || canDelete) && (
-                        <td className="px-4 py-2.5 text-right">
+                        <TableCell className="text-right">
                           <div className="flex justify-end gap-1">
                             {canEdit && (
                               <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => openEdit(row)}>
@@ -387,16 +390,14 @@ export default function ProjectSettingsPage() {
                               </AlertDialog>
                             )}
                           </div>
-                        </td>
+                        </TableCell>
                       )}
-                    </tr>
+                    </TableRow>
                   ))}
-                </tbody>
-              </table>
-            </div>
+                </TableBody>
+              </Table>
           )}
-        </CardContent>
-      </Card>
+      </TableCard>
 
       {/* Add / Edit Dialog */}
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>

@@ -4,7 +4,6 @@ import Link from 'next/link';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { FilePlus2, RefreshCw } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent } from '@/components/ui/card';
 import { useToast } from '@/hooks/use-toast';
 import {
   eApprovalDelegators,
@@ -318,31 +317,27 @@ export function RegisterView({ scope }: { scope: RegisterScope }) {
         }
         meta={[{ label: 'Showing', value: `${visible.length} ${visible.length === 1 ? 'approval' : 'approvals'}` }]}
       />
-      <Card>
-        <CardContent className="px-2 py-3 sm:px-3">
-          <EApprovalRequestTable
-            rows={visible}
-            isLoading={isLoading}
-            emptyTitle={config.emptyTitle}
-            emptyDescription={config.emptyDescription}
-            showRequester={config.showRequester}
-            showPendingWith={config.showPendingWith}
-            showAgeing={scope !== 'drafts'}
-            showStatusFilter={scope !== 'drafts'}
-            // Offered on every register rather than only the full one: the row button renders nothing
-            // where the viewer may not delete that row, so a requester sees it on their own drafts
-            // and nowhere else, and an administrator sees it wherever they genuinely hold the grant.
-            // Deciding that per scope here would be a second copy of a rule the engine already owns.
-            renderActions={
-              deleteAuthority
-                ? (row) => (
-                    <DeleteApprovalRowButton request={row} authority={deleteAuthority} onSelect={setDeleting} />
-                  )
-                : undefined
-            }
-          />
-        </CardContent>
-      </Card>
+      <EApprovalRequestTable
+        rows={visible}
+        isLoading={isLoading}
+        emptyTitle={config.emptyTitle}
+        emptyDescription={config.emptyDescription}
+        showRequester={config.showRequester}
+        showPendingWith={config.showPendingWith}
+        showAgeing={scope !== 'drafts'}
+        showStatusFilter={scope !== 'drafts'}
+        // Offered on every register rather than only the full one: the row button renders nothing
+        // where the viewer may not delete that row, so a requester sees it on their own drafts
+        // and nowhere else, and an administrator sees it wherever they genuinely hold the grant.
+        // Deciding that per scope here would be a second copy of a rule the engine already owns.
+        renderActions={
+          deleteAuthority
+            ? (row) => (
+                <DeleteApprovalRowButton request={row} authority={deleteAuthority} onSelect={setDeleting} />
+              )
+            : undefined
+        }
+      />
 
       {/* Keyed by the row, so each confirmation mounts fresh — a reason typed for one request can
           never be carried into another one's dialog. */}

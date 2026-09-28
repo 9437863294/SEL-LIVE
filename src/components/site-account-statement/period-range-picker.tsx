@@ -53,7 +53,7 @@ export function PeriodRangePicker({
   return (
     <div className={cn('flex flex-wrap items-center gap-2', className)}>
       <Select value={preset} onValueChange={v => applyPreset(v as SASRangePreset)}>
-        <SelectTrigger className="h-8 w-full text-xs sm:w-auto sm:min-w-[150px]" aria-label="Date range preset">
+        <SelectTrigger className="w-full sm:w-auto sm:min-w-[150px]" aria-label="Date range preset">
           <div className="flex items-center gap-1.5">
             <CalendarRange className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
             <SelectValue />
@@ -71,7 +71,7 @@ export function PeriodRangePicker({
           value={range.from}
           onValueChange={v => onChange(clampRange({ from: v, to: range.to }, 'from'))}
         >
-          <SelectTrigger className="h-8 text-xs min-w-[110px]" aria-label="Range start month">
+          <SelectTrigger className="min-w-[110px]" aria-label="Range start month">
             <SelectValue />
           </SelectTrigger>
           <SelectContent className="max-h-72">
@@ -87,7 +87,7 @@ export function PeriodRangePicker({
           value={range.to}
           onValueChange={v => onChange(clampRange({ from: range.from, to: v }, 'to'))}
         >
-          <SelectTrigger className="h-8 text-xs min-w-[110px]" aria-label="Range end month">
+          <SelectTrigger className="min-w-[110px]" aria-label="Range end month">
             <SelectValue />
           </SelectTrigger>
           <SelectContent className="max-h-72">
@@ -102,8 +102,7 @@ export function PeriodRangePicker({
         <Button
           type="button"
           variant="ghost"
-          size="sm"
-          className="h-8 px-2 text-xs text-muted-foreground"
+          className="px-2 text-muted-foreground"
           onClick={() => applyPreset('thisMonth')}
         >
           This month

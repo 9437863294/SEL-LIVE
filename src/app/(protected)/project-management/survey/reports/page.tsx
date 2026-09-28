@@ -28,11 +28,8 @@ import {
   SURVEY_ENTRY_COLLECTION,
   SURVEY_ENTRY_STATUSES,
   isTerminalSurveyStatus,
-  surveyStatusStyles,
   type SurveyEntry,
-  type SurveyEntryStatus,
 } from "@/lib/project-management-survey-workflow";
-import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   Table,
@@ -43,6 +40,8 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { PageHeader } from "@/components/shared/page-header";
+import { StatusBadge } from "@/components/shared/status-badge";
+import { TableCard } from "@/components/shared/table-card";
 
 const toNumber = (value: unknown) => {
   const parsed = Number(String(value ?? "").replace(/,/g, "").trim());
@@ -193,11 +192,7 @@ export default function SurveyReportsPage() {
         </Card>
       </div>
 
-      <Card>
-        <CardHeader className="pb-3">
-          <CardTitle className="text-base">Entries by status</CardTitle>
-        </CardHeader>
-        <CardContent className="p-0">
+      <TableCard title="Entries by status" scroll="natural">
           <Table>
             <TableHeader>
               <TableRow>
@@ -210,18 +205,15 @@ export default function SurveyReportsPage() {
               {summary.byStatus.map((row) => (
                 <TableRow key={row.status}>
                   <TableCell>
-                    <Badge variant="outline" className={surveyStatusStyles[row.status as SurveyEntryStatus]}>
-                      {row.status}
-                    </Badge>
+                    <StatusBadge status={row.status} />
                   </TableCell>
-                  <TableCell className="text-right">{row.count}</TableCell>
-                  <TableCell className="text-right">{formatCurrency(row.value)}</TableCell>
+                  <TableCell className="text-right tabular-nums">{row.count}</TableCell>
+                  <TableCell className="text-right tabular-nums">{formatCurrency(row.value)}</TableCell>
                 </TableRow>
               ))}
             </TableBody>
           </Table>
-        </CardContent>
-      </Card>
+      </TableCard>
     </SurveyPageShell>
   );
 }

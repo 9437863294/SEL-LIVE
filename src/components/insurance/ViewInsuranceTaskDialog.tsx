@@ -13,7 +13,8 @@ import {
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
 import { Separator } from '@/components/ui/separator';
-import { Badge } from '@/components/ui/badge';
+import { TableCard } from '@/components/shared/table-card';
+import { StatusBadge } from '@/components/shared/status-badge';
 import type { InsuranceTask, WorkflowStep, ActionLog, ActionConfig } from '@/lib/types';
 import { format } from 'date-fns';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
@@ -112,9 +113,7 @@ export default function ViewInsuranceTaskDialog({ isOpen, onOpenChange, task, wo
             
             <Separator />
 
-            <div>
-              <h3 className="text-lg font-semibold mb-2">Workflow Status</h3>
-              <div className="border rounded-md">
+            <TableCard title="Workflow Status" scroll="natural">
                 <Table>
                     <TableHeader>
                         <TableRow>
@@ -131,18 +130,15 @@ export default function ViewInsuranceTaskDialog({ isOpen, onOpenChange, task, wo
                                 <TableRow key={index}>
                                     <TableCell className="font-medium">{step.name}</TableCell>
                                     <TableCell>{step.assignedUserName}</TableCell>
-                                    <TableCell>{step.deadline}</TableCell>
-                                    <TableCell>{step.completionDate}</TableCell>
+                                    <TableCell className="whitespace-nowrap">{step.deadline}</TableCell>
+                                    <TableCell className="whitespace-nowrap">{step.completionDate}</TableCell>
                                     <TableCell>
-                                    <Badge 
-                                        variant={
-                                        step.status === 'Completed' ? 'default' : 
-                                        step.status === 'Current' ? 'secondary' : 'outline'
-                                        }
-                                        className={step.status === 'Completed' ? 'bg-green-500 hover:bg-green-600' : ''}
-                                    >
-                                        {step.status}
-                                    </Badge>
+                                    {/* Here "Current" is the step in progress and "Pending" one not reached yet. */}
+                                    <StatusBadge
+                                        status={step.status}
+                                        tone={step.status === 'Current' ? 'progress' : step.status === 'Pending' ? 'neutral' : undefined}
+                                        dot={step.status === 'Current'}
+                                    />
                                     </TableCell>
                                 </TableRow>
                             ))
@@ -155,8 +151,7 @@ export default function ViewInsuranceTaskDialog({ isOpen, onOpenChange, task, wo
                         )}
                     </TableBody>
                 </Table>
-              </div>
-            </div>
+            </TableCard>
              {isActionAllowed && (
                   <div className="space-y-4 pt-4 border-t">
                       {isUploadRequired && (

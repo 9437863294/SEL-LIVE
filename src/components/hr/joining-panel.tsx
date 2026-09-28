@@ -31,6 +31,7 @@ import {
   type DocumentVerificationStatus,
   type JoiningRecord,
   type PreJoiningDocument,
+  hrStatusLabel,
 } from '@/lib/hr-requirement';
 import {
   HrControlError,
@@ -49,14 +50,17 @@ import {
   HrLoader,
   HrMeter,
   HrSection,
-  HrStatusBadge,
   SensitiveMoney,
+  hrBadgeTone,
   hrDialog,
   type HrListColumn,
 } from './hr-ui';
 import { ReasonDialog } from './interview-panel';
 import { useHrCollection, useHrConfig, useHrPermissions } from './use-hr-config';
 import { PageHeader } from '@/components/shared/page-header';
+import { FilterBar } from '@/components/shared/filter-bar';
+import { StatusBadge } from '@/components/shared/status-badge';
+import { TableCard } from '@/components/shared/table-card';
 
 /**
  * Pre-joining and joining — spec sections 31 to 36.
@@ -96,7 +100,8 @@ export default function JoiningPanel({
   const { rows: documents } = useHrCollection<PreJoiningDocument>(HR_COLLECTIONS.preJoining);
   const { rows: candidates } = useHrCollection<Candidate>(HR_COLLECTIONS.candidates);
 
-  const [statusFilter, setStatusFilter] = useState(mode === 'pre-joining' ? 'documents' : 'upcoming');
+  const defaultStatusFilter = mode === 'pre-joining' ? 'documents' : 'upcoming';
+  const [statusFilter, setStatusFilter] = useState(defaultStatusFilter);
   const [checklistFor, setChecklistFor] = useState<JoiningRecord | null>(null);
   const [confirmFor, setConfirmFor] = useState<JoiningRecord | null>(null);
   const [postponeFor, setPostponeFor] = useState<JoiningRecord | null>(null);
@@ -190,14 +195,22 @@ export default function JoiningPanel({
       className: 'hidden lg:table-cell',
       cell: row =>
         row.employeeCode ? (
-          <Badge variant="outline" className="border-emerald-200 bg-emerald-50 font-medium text-emerald-800">
+          <Badge variant="outline" className="font-mono">
             {row.employeeCode}
           </Badge>
         ) : (
           <span className="text-xs text-muted-foreground">—</span>
         ),
     },
-    { header: 'Status', mobile: 'aside', cell: row => <HrStatusBadge status={row.status} /> },
+    {
+      header: 'Status',
+      mobile: 'aside',
+      cell: row => (
+        <StatusBadge status={row.status} tone={hrBadgeTone(row.status)}>
+          {hrStatusLabel(row.status)}
+        </StatusBadge>
+      ),
+    },
     {
       header: 'Actions',
       mobile: 'footer',
@@ -219,7 +232,7 @@ export default function JoiningPanel({
             <Button size="sm" variant="outline" className="gap-1" onClick={() => setChecklistFor(row)}>
               <FileText className="h-3.5 w-3.5" /> Documents
               {row.summary.mandatoryPending > 0 && (
-                <Badge variant="secondary" className="ml-1 h-4 px-1 text-[10px]">{row.summary.mandatoryPending}</Badge>
+                <Badge variant="neutral" className="ml-1 h-4 px-1 text-[10px]">{row.summary.mandatoryPending}</Badge>
               )}
             </Button>
             {permissions.can('Confirm Joining', 'Joining') && (
@@ -272,32 +285,44 @@ export default function JoiningPanel({
         />
       )}
 
-      <div className="mb-3 sm:w-60">
-        <Label className="text-xs">Show</Label>
-        <Select value={statusFilter} onValueChange={setStatusFilter}>
-          <SelectTrigger><SelectValue /></SelectTrigger>
-          <SelectContent>
-            <SelectItem value="upcoming">Awaiting joining</SelectItem>
-            <SelectItem value="documents">Documents pending</SelectItem>
-            <SelectItem value="joined">Joined</SelectItem>
-            <SelectItem value="not-joined">Did not join / cancelled</SelectItem>
-            <SelectItem value="all">All</SelectItem>
-          </SelectContent>
-        </Select>
-      </div>
-
-      <HrDataList
-        rows={decorated}
-        columns={columns}
-        rowClassName={row => (row.summary.mandatoryPending > 0 && row.status !== 'JOINED' ? 'bg-amber-50/40' : undefined)}
-        empty={
-          <HrEmptyState
-            icon={UserPlus}
-            title="Nothing here yet"
-            description="A joining record is created automatically when a candidate accepts their offer."
-          />
+      <TableCard
+        title={mode === 'pre-joining' ? 'Pre-joining' : 'Joinings'}
+        count={decorated.length}
+        noun="record"
+        toolbar={
+          <FilterBar
+            activeCount={statusFilter !== defaultStatusFilter ? 1 : 0}
+            onClear={() => setStatusFilter(defaultStatusFilter)}
+          >
+            <Select value={statusFilter} onValueChange={setStatusFilter}>
+              <SelectTrigger aria-label="Show"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="upcoming">Awaiting joining</SelectItem>
+                <SelectItem value="documents">Documents pending</SelectItem>
+                <SelectItem value="joined">Joined</SelectItem>
+                <SelectItem value="not-joined">Did not join / cancelled</SelectItem>
+                <SelectItem value="all">All</SelectItem>
+              </SelectContent>
+            </Select>
+          </FilterBar>
         }
-      />
+      >
+        <div className="p-3 sm:p-0">
+          <HrDataList
+            frameless
+            rows={decorated}
+            columns={columns}
+            rowClassName={row => (row.summary.mandatoryPending > 0 && row.status !== 'JOINED' ? 'bg-amber-50/40' : undefined)}
+            empty={
+              <HrEmptyState
+                icon={UserPlus}
+                title="Nothing here yet"
+                description="A joining record is created automatically when a candidate accepts their offer."
+              />
+            }
+          />
+        </div>
+      </TableCard>
 
       <ChecklistDialog record={checklistFor} onClose={() => setChecklistFor(null)} />
 
@@ -465,7 +490,9 @@ function ChecklistDialog({ record, onClose }: { record: JoiningRecord | null; on
                     )}
                   </div>
                   <div className="flex shrink-0 items-center gap-1.5">
-                    <HrStatusBadge status={document.status} />
+                    <StatusBadge status={document.status} tone={hrBadgeTone(document.status)}>
+                      {hrStatusLabel(document.status)}
+                    </StatusBadge>
                     {busyId === document.id ? (
                       <Loader2 className="h-4 w-4 animate-spin text-indigo-600" />
                     ) : (

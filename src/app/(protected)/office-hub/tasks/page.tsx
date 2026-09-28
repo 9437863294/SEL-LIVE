@@ -26,12 +26,9 @@ import {
   ListTodo,
   Plus,
   Rows3,
-  Search,
   X,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
@@ -57,20 +54,20 @@ import {
   OfficeHubAccessDenied,
   OfficeHubDataList,
   OfficeHubEmptyState,
-  OfficeHubFilterCard,
   OfficeHubKpiCard,
   PersonChip,
   PriorityBadge,
-  ResultCount,
   TaskDueDate,
   TaskProgressBar,
-  TaskStatusBadge,
   type OfficeHubListColumn,
 } from '@/components/office-hub/ui';
 import { DateRangePicker, MultiSelect } from '@/components/office-hub/selectors';
 import { TaskKanban, TaskKanbanSkeleton } from '@/components/office-hub/task-kanban';
 import { QuickCreateTaskDialog } from '@/components/office-hub/task-form';
+import { FilterBar } from '@/components/shared/filter-bar';
 import { PageHeader } from '@/components/shared/page-header';
+import { StatusBadge } from '@/components/shared/status-badge';
+import { TableCard } from '@/components/shared/table-card';
 
 type Scope = 'mine' | 'created' | 'team' | 'department' | 'all';
 type View = 'all' | 'overdue' | 'completed' | 'unassigned';
@@ -232,7 +229,7 @@ export default function TasksPage() {
       header: 'Status',
       mobile: 'detail',
       className: 'w-32',
-      cell: (task) => <TaskStatusBadge status={task.status} />,
+      cell: (task) => <StatusBadge status={task.status} />,
     },
     {
       header: 'Progress',
@@ -241,6 +238,90 @@ export default function TasksPage() {
       cell: (task) => <TaskProgressBar task={task} />,
     },
   ];
+
+  /** One filter bar for both displays: in the register's frame for the list, above the board. */
+  const filterBar = (
+    <FilterBar
+      search={{ value: search, onChange: setSearch, placeholder: 'Reference, title, assignee' }}
+      activeCount={activeFilterCount(filters)}
+      onClear={clearFilters}
+      actions={
+        meetingId ? (
+          <Button size="sm" variant="ghost" className="gap-1" onClick={clearFilters}>
+            <X className="h-3.5 w-3.5" />
+            Showing one meeting&rsquo;s tasks
+          </Button>
+        ) : undefined
+      }
+    >
+      <Select value={effectiveScope} onValueChange={(next) => setScope(next as Scope)}>
+        <SelectTrigger aria-label="Scope">
+          <SelectValue />
+        </SelectTrigger>
+        <SelectContent>
+          {availableScopes.map((entry) => (
+            <SelectItem key={entry.value} value={entry.value}>
+              {entry.label}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+
+      <DateRangePicker
+        inline
+        label="Due between"
+        from={filters.dueFrom}
+        to={filters.dueTo}
+        onChange={(range) => setFilters((current) => ({ ...current, dueFrom: range.from, dueTo: range.to }))}
+      />
+
+      <MultiSelect
+        placeholder="Any status"
+        options={TASK_STATUSES.map((status) => ({ value: status, label: status }))}
+        value={filters.statuses ?? []}
+        onChange={(next) => setFilters((current) => ({ ...current, statuses: next as TaskStatus[] }))}
+      />
+
+      <MultiSelect
+        placeholder="Any priority"
+        options={OFFICE_HUB_PRIORITIES.map((priority) => ({ value: priority, label: priority }))}
+        value={filters.priorities ?? []}
+        onChange={(next) => setFilters((current) => ({ ...current, priorities: next as OfficeHubPriority[] }))}
+      />
+
+      <MultiSelect
+        placeholder="Any assignee"
+        options={directory.people.map((person) => ({
+          value: person.userId,
+          label: person.name,
+          hint: person.departmentName ?? undefined,
+        }))}
+        value={filters.assigneeIds ?? []}
+        onChange={(next) => setFilters((current) => ({ ...current, assigneeIds: next }))}
+      />
+
+      <MultiSelect
+        placeholder="Any team"
+        options={directory.teams.map((team) => ({ value: team.id, label: team.name }))}
+        value={filters.teamIds ?? []}
+        onChange={(next) => setFilters((current) => ({ ...current, teamIds: next }))}
+      />
+
+      <MultiSelect
+        placeholder="Any department"
+        options={directory.departments.map((department) => ({ value: department.id, label: department.name }))}
+        value={filters.departmentIds ?? []}
+        onChange={(next) => setFilters((current) => ({ ...current, departmentIds: next }))}
+      />
+
+      <MultiSelect
+        placeholder="Any project"
+        options={directory.projects.map((project) => ({ value: project.id, label: project.name }))}
+        value={filters.projectIds ?? []}
+        onChange={(next) => setFilters((current) => ({ ...current, projectIds: next }))}
+      />
+    </FilterBar>
+  );
 
   return (
     <div className="space-y-3">
@@ -326,172 +407,67 @@ export default function TasksPage() {
         </div>
       </div>
 
-      <OfficeHubFilterCard
-        summary={
-          hasActiveFilters(effectiveFilters)
-            ? `${activeFilterCount(effectiveFilters)} filter(s) active`
-            : `${availableScopes.find((entry) => entry.value === effectiveScope)?.label ?? 'My tasks'}`
-        }
-        actions={
-          hasActiveFilters(effectiveFilters) ? (
-            <Button size="sm" variant="ghost" onClick={clearFilters} className="h-7 gap-1 px-2 text-[11px]">
-              <X className="h-3 w-3" />
-              Clear
-            </Button>
-          ) : undefined
-        }
-      >
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
-          <div className="sm:col-span-2">
-            <Label className="mb-1 block text-xs">Search</Label>
-            <div className="relative">
-              <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
-              <Input
-                value={search}
-                onChange={(event) => setSearch(event.target.value)}
-                placeholder="Reference, title, assignee"
-                className="bg-white pl-8"
-              />
-            </div>
-          </div>
-
-          <div>
-            <Label className="mb-1 block text-xs">Scope</Label>
-            <Select value={effectiveScope} onValueChange={(next) => setScope(next as Scope)}>
-              <SelectTrigger className="bg-white">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {availableScopes.map((entry) => (
-                  <SelectItem key={entry.value} value={entry.value}>
-                    {entry.label}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-
-          <DateRangePicker
-            label="Due between"
-            from={filters.dueFrom}
-            to={filters.dueTo}
-            onChange={(range) => setFilters((current) => ({ ...current, dueFrom: range.from, dueTo: range.to }))}
-          />
-
-          <MultiSelect
-            label="Status"
-            placeholder="Any status"
-            options={TASK_STATUSES.map((status) => ({ value: status, label: status }))}
-            value={filters.statuses ?? []}
-            onChange={(next) => setFilters((current) => ({ ...current, statuses: next as TaskStatus[] }))}
-          />
-
-          <MultiSelect
-            label="Priority"
-            placeholder="Any priority"
-            options={OFFICE_HUB_PRIORITIES.map((priority) => ({ value: priority, label: priority }))}
-            value={filters.priorities ?? []}
-            onChange={(next) => setFilters((current) => ({ ...current, priorities: next as OfficeHubPriority[] }))}
-          />
-
-          <MultiSelect
-            label="Assignee"
-            placeholder="Anyone"
-            options={directory.people.map((person) => ({
-              value: person.userId,
-              label: person.name,
-              hint: person.departmentName ?? undefined,
-            }))}
-            value={filters.assigneeIds ?? []}
-            onChange={(next) => setFilters((current) => ({ ...current, assigneeIds: next }))}
-          />
-
-          <MultiSelect
-            label="Team"
-            placeholder="Any team"
-            options={directory.teams.map((team) => ({ value: team.id, label: team.name }))}
-            value={filters.teamIds ?? []}
-            onChange={(next) => setFilters((current) => ({ ...current, teamIds: next }))}
-          />
-
-          <MultiSelect
-            label="Department"
-            placeholder="Any department"
-            options={directory.departments.map((department) => ({ value: department.id, label: department.name }))}
-            value={filters.departmentIds ?? []}
-            onChange={(next) => setFilters((current) => ({ ...current, departmentIds: next }))}
-          />
-
-          <MultiSelect
-            label="Project"
-            placeholder="Any project"
-            options={directory.projects.map((project) => ({ value: project.id, label: project.name }))}
-            value={filters.projectIds ?? []}
-            onChange={(next) => setFilters((current) => ({ ...current, projectIds: next }))}
-          />
-        </div>
-      </OfficeHubFilterCard>
-
-      <div className="flex items-center justify-between">
-        <ResultCount shown={filtered.length} total={all.length} noun="task" />
-        {meetingId && (
-          <Button size="sm" variant="ghost" className="h-7 gap-1 px-2 text-[11px]" onClick={clearFilters}>
-            <X className="h-3 w-3" />
-            Showing one meeting&rsquo;s tasks
-          </Button>
-        )}
-      </div>
-
-      {tasksQuery.isLoading ? (
-        display === 'board' ? (
-          <TaskKanbanSkeleton />
-        ) : (
-          <Skeleton className="h-96 w-full rounded-xl" />
-        )
-      ) : display === 'board' ? (
-        <TaskKanban tasks={filtered} onChanged={tasksQuery.reload} />
+      {display === 'board' ? (
+        <>
+          {filterBar}
+          {tasksQuery.isLoading ? <TaskKanbanSkeleton /> : <TaskKanban tasks={filtered} onChanged={tasksQuery.reload} />}
+        </>
       ) : (
-        <OfficeHubDataList
-          rows={filtered}
-          columns={columns}
-          cardHref={(task) => `${OFFICE_HUB_BASE_PATH}/tasks/${task.id}`}
-          maxHeightClassName="sm:max-h-[42rem]"
-          rowClassName={(task) =>
-            cn(isTaskOverdue(task, today) && 'bg-rose-50/60', task.status === 'Cancelled' && 'opacity-60')
-          }
-          empty={
-            <OfficeHubEmptyState
-              icon={view === 'overdue' ? CheckSquare : ListTodo}
-              title={
-                view === 'overdue'
-                  ? 'Nothing is overdue.'
-                  : view === 'completed'
-                    ? 'No completed tasks in this scope.'
-                    : hasActiveFilters(effectiveFilters)
-                      ? 'No tasks match these filters.'
-                      : 'No pending tasks.'
+        <TableCard
+          title="Task register"
+          description={availableScopes.find((entry) => entry.value === effectiveScope)?.label ?? 'My tasks'}
+          icon={ListTodo}
+          count={filtered.length}
+          total={all.length}
+          noun="task"
+          toolbar={filterBar}
+        >
+          {tasksQuery.isLoading ? (
+            <Skeleton className="h-96 w-full rounded-xl" />
+          ) : (
+            <OfficeHubDataList
+              rows={filtered}
+              columns={columns}
+              cardHref={(task) => `${OFFICE_HUB_BASE_PATH}/tasks/${task.id}`}
+              frameless
+              rowClassName={(task) =>
+                cn(isTaskOverdue(task, today) && 'bg-rose-50/60', task.status === 'Cancelled' && 'opacity-60')
               }
-              description={
-                view === 'overdue'
-                  ? 'Everything with a due date is on time.'
-                  : hasActiveFilters(effectiveFilters)
-                    ? 'Clear a filter or widen the scope.'
-                    : undefined
-              }
-              action={
-                hasActiveFilters(effectiveFilters) ? (
-                  <Button size="sm" variant="outline" onClick={clearFilters}>
-                    Clear filters
-                  </Button>
-                ) : capabilities.canCreateTask ? (
-                  <Button size="sm" onClick={() => setCreating(true)}>
-                    Create a task
-                  </Button>
-                ) : undefined
+              empty={
+                <OfficeHubEmptyState
+                  icon={view === 'overdue' ? CheckSquare : ListTodo}
+                  title={
+                    view === 'overdue'
+                      ? 'Nothing is overdue.'
+                      : view === 'completed'
+                        ? 'No completed tasks in this scope.'
+                        : hasActiveFilters(effectiveFilters)
+                          ? 'No tasks match these filters.'
+                          : 'No pending tasks.'
+                  }
+                  description={
+                    view === 'overdue'
+                      ? 'Everything with a due date is on time.'
+                      : hasActiveFilters(effectiveFilters)
+                        ? 'Clear a filter or widen the scope.'
+                        : undefined
+                  }
+                  action={
+                    hasActiveFilters(effectiveFilters) ? (
+                      <Button size="sm" variant="outline" onClick={clearFilters}>
+                        Clear filters
+                      </Button>
+                    ) : capabilities.canCreateTask ? (
+                      <Button size="sm" onClick={() => setCreating(true)}>
+                        Create a task
+                      </Button>
+                    ) : undefined
+                  }
+                />
               }
             />
-          }
-        />
+          )}
+        </TableCard>
       )}
 
       <QuickCreateTaskDialog open={creating} onOpenChange={setCreating} onCreated={() => tasksQuery.reload()} />

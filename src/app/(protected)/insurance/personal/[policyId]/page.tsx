@@ -6,7 +6,7 @@ import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { ArrowLeft, Edit, Save, Loader2, RefreshCw, X, Eye, FilePlus, RotateCcw } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { useToast } from '@/hooks/use-toast';
 import { db } from '@/lib/firebase';
 import { storage } from '@/lib/firebase-storage';
@@ -16,9 +16,10 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { Label } from '@/components/ui/label';
 import { format, addMonths, addYears, addQuarters, isPast, isWithinInterval, addDays } from 'date-fns';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { Badge } from '@/components/ui/badge';
 import { RenewalDialog } from '@/components/insurance/RenewalDialog';
 import { PageHeader } from '@/components/shared/page-header';
+import { TableCard } from '@/components/shared/table-card';
+import { StatusBadge } from '@/components/shared/status-badge';
 
 export default function PolicyDetailsPage() {
   const { policyId } = useParams() as { policyId: string };
@@ -184,12 +185,7 @@ export default function PolicyDetailsPage() {
             </CardContent>
         </Card>
         
-        <Card>
-            <CardHeader>
-                <CardTitle>Premium Schedule & Renewals</CardTitle>
-                <CardDescription>History of all premium payments for this policy.</CardDescription>
-            </CardHeader>
-            <CardContent>
+        <TableCard title="Premium Schedule & Renewals" description="History of all premium payments for this policy.">
                 <Table>
                     <TableHeader>
                         <TableRow>
@@ -204,10 +200,10 @@ export default function PolicyDetailsPage() {
                     <TableBody>
                         {premiumSchedule.map((emi) => (
                             <TableRow key={emi.no}>
-                                <TableCell>{emi.no}</TableCell>
-                                <TableCell>{formatDate(emi.dueDate)}</TableCell>
-                                <TableCell><Badge variant={emi.statusVariant}>{emi.status}</Badge></TableCell>
-                                <TableCell>{emi.renewalDetails ? formatDate(emi.renewalDetails.paymentDate.toDate()) : 'N/A'}</TableCell>
+                                <TableCell className="tabular-nums">{emi.no}</TableCell>
+                                <TableCell className="whitespace-nowrap">{formatDate(emi.dueDate)}</TableCell>
+                                <TableCell><StatusBadge status={emi.status} /></TableCell>
+                                <TableCell className="whitespace-nowrap">{emi.renewalDetails ? formatDate(emi.renewalDetails.paymentDate.toDate()) : 'N/A'}</TableCell>
                                 <TableCell>{emi.renewalDetails ? emi.renewalDetails.paymentType : 'N/A'}</TableCell>
                                 <TableCell className="text-right">
                                     {emi.status !== 'Paid' && (
@@ -220,8 +216,7 @@ export default function PolicyDetailsPage() {
                         ))}
                     </TableBody>
                 </Table>
-            </CardContent>
-        </Card>
+        </TableCard>
     </div>
     {selectedEmiForRenewal && (
         <RenewalDialog 

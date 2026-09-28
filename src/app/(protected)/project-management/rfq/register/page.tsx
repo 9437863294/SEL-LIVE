@@ -47,7 +47,6 @@ import {
   RFQ_PERMISSION_RESOURCE,
   RFQ_STATUSES,
   formatDate,
-  rfqStatusStyles,
   type Rfq,
   type RfqItem,
 } from "@/lib/rfq";
@@ -71,6 +70,8 @@ import {
   type PmListColumn,
 } from "@/components/project-management/pm-shell";
 import { PageHeader } from "@/components/shared/page-header";
+import { StatusBadge } from "@/components/shared/status-badge";
+import { pmStatusTone } from "@/components/project-management/pm-status-tones";
 
 type ProjectMapping = {
   id: string;
@@ -300,7 +301,7 @@ export default function RfqRegisterPage() {
       mobile: "aside",
       cell: (rfq) => (
         <>
-          <span className={`whitespace-nowrap rounded-full px-2.5 py-1 text-xs font-medium ${rfqStatusStyles[rfq.status]}`}>{rfq.status}</span>
+          <StatusBadge status={rfq.status} tone={pmStatusTone(rfq.status)} />
           {isLegacyRfq(rfq as RfqLike) && (
             <p
               className="mt-1 text-xs text-muted-foreground"
@@ -453,7 +454,9 @@ export default function RfqRegisterPage() {
               <p className="mb-2 px-1 text-xs font-medium uppercase tracking-wide text-muted-foreground">Vendors invited</p>
               <div className="mb-3 flex flex-wrap gap-1.5 px-1">
                 {(rfq.vendorNames ?? []).map((name) => (
-                  <span key={name} className="max-w-full truncate rounded-full border bg-background px-2.5 py-1 text-xs">{name}</span>
+                  <Badge key={name} variant="outline" className="max-w-full">
+                    <span className="truncate">{name}</span>
+                  </Badge>
                 ))}
               </div>
               <PmDataList

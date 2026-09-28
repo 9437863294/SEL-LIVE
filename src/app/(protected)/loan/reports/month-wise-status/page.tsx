@@ -8,6 +8,7 @@ import {
   CardContent,
 } from '@/components/ui/card';
 import { PageHeader } from '@/components/shared/page-header';
+import { StatusBadge } from '@/components/shared/status-badge';
 import {
   Table,
   TableBody,
@@ -199,7 +200,7 @@ export default function MonthWiseStatusReportPage() {
                 <div className="p-3">
                   <div className="flex items-center justify-between mb-3">
                     <p className="text-sm font-bold text-slate-700">{month}</p>
-                    {allPaid && <span className="text-[10px] font-medium text-emerald-600 bg-emerald-50 border border-emerald-200 rounded-full px-1.5 py-0.5">Paid</span>}
+                    {allPaid && <StatusBadge status="Paid" />}
                     {data.totalDue === 0 && <span className="text-[10px] text-muted-foreground">No EMIs</span>}
                   </div>
 

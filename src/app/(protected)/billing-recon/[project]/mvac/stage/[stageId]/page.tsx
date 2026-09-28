@@ -4,7 +4,8 @@ import { useState, useEffect, useMemo, useCallback } from 'react';
 import { Check, Clock, Loader2, MoreHorizontal, Calendar as CalendarIcon } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { PageHeader } from '@/components/shared/page-header';
-import { Card, CardContent } from '@/components/ui/card';
+import { TableCard } from '@/components/shared/table-card';
+import { StatusBadge } from '@/components/shared/status-badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { db } from '@/lib/firebase';
@@ -34,7 +35,6 @@ import { useParams, useRouter } from 'next/navigation';
 import { useAuth } from '@/components/auth/AuthProvider';
 import { Skeleton } from '@/components/ui/skeleton';
 import ViewMvacEntryDialog from '@/components/billing-recon/ViewMvacEntryDialog';
-import { Badge } from '@/components/ui/badge';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -370,8 +370,7 @@ export default function StagePage() {
   };
 
   const renderTable = (data: MvacEntry[], type: 'pending' | 'completed') => (
-    <Card>
-      <CardContent className="p-0 overflow-x-auto">
+    <TableCard>
         <Table className="min-w-[880px]">
           <TableHeader>
             <TableRow>
@@ -409,9 +408,7 @@ export default function StagePage() {
                     <TableCell className="whitespace-nowrap">{humanDate((entry as any).mvacDate)}</TableCell>
                     <TableCell className="text-right whitespace-nowrap">{formatINR(total)}</TableCell>
                     <TableCell className="whitespace-nowrap">
-                      <Badge variant={entry.status === 'Completed' ? 'default' : 'secondary'}>
-                        {entry.status}
-                      </Badge>
+                      <StatusBadge status={entry.status} />
                     </TableCell>
                     <TableCell className="text-right">
                       {isActionLoading === entry.id ? (
@@ -473,8 +470,7 @@ export default function StagePage() {
             )}
           </TableBody>
         </Table>
-      </CardContent>
-    </Card>
+    </TableCard>
   );
 
   return (

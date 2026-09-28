@@ -95,9 +95,9 @@ export default function DailyRequisitionReportsHubPage() {
         description="Select a report to view focused analytics and export to Excel."
         backHref="/daily-requisition"
         meta={
-          <span className="rounded-full border border-white/70 bg-white/70 px-3 py-1 text-xs text-slate-600 backdrop-blur">
+          <Badge variant="neutral">
             {REPORTS.length} reports available
-          </span>
+          </Badge>
         }
       />
 
@@ -123,7 +123,7 @@ export default function DailyRequisitionReportsHubPage() {
                       <div className={`flex h-9 w-9 items-center justify-center rounded-lg ${report.iconBg}`}>
                         <Icon className="h-5 w-5" />
                       </div>
-                      <Badge variant="outline" className={`text-xs ${report.scopeColor}`}>
+                      <Badge variant="outline">
                         {report.scope}
                       </Badge>
                     </div>

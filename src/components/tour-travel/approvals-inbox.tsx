@@ -10,14 +10,17 @@ import { useAuth } from '@/components/auth/AuthProvider';
 import { useAuthorization } from '@/hooks/useAuthorization';
 import {
   TT_COLLECTIONS,
+  travelStatusLabel,
   type TravelAdvance,
   type TravelClaim,
   type TravelRequest,
 } from '@/lib/tour-travel';
 import { TT_PERMISSION_MODULE } from './module-layout-shell';
 import { useTravelCollection, useTravelConfig } from './use-travel-config';
-import { Money, TravelDataList, TravelEmptyState, TravelLoader, TravelStatusBadge } from './travel-ui';
+import { Money, TravelEmptyState, TravelLoader } from './travel-ui';
 import { PageHeader } from '@/components/shared/page-header';
+import { DataList } from '@/components/shared/data-list';
+import { StatusBadge } from '@/components/shared/status-badge';
 
 /**
  * Approvals inbox for this module.
@@ -101,20 +104,20 @@ export default function ApprovalsInbox() {
           <TabsList>
             <TabsTrigger value="tours" className="gap-1.5">
               <ClipboardCheck className="h-3.5 w-3.5" /> Tours
-              {pendingTours.length > 0 && <Badge variant="secondary" className="ml-1">{pendingTours.length}</Badge>}
+              {pendingTours.length > 0 && <Badge variant="neutral" className="ml-1">{pendingTours.length}</Badge>}
             </TabsTrigger>
             <TabsTrigger value="advances" className="gap-1.5">
               <Wallet className="h-3.5 w-3.5" /> Advances
-              {pendingAdvances.length > 0 && <Badge variant="secondary" className="ml-1">{pendingAdvances.length}</Badge>}
+              {pendingAdvances.length > 0 && <Badge variant="neutral" className="ml-1">{pendingAdvances.length}</Badge>}
             </TabsTrigger>
             <TabsTrigger value="claims" className="gap-1.5">
               <ReceiptIndianRupee className="h-3.5 w-3.5" /> Claims
-              {pendingClaims.length > 0 && <Badge variant="secondary" className="ml-1">{pendingClaims.length}</Badge>}
+              {pendingClaims.length > 0 && <Badge variant="neutral" className="ml-1">{pendingClaims.length}</Badge>}
             </TabsTrigger>
           </TabsList>
 
           <TabsContent value="tours" className="mt-3">
-            <TravelDataList
+            <DataList
               rows={pendingTours}
               rowClassName={request => ((request.policyExceptions?.length || 0) > 0 ? 'bg-amber-50/40 border-amber-200' : undefined)}
               empty={<TravelEmptyState title="No tours awaiting your approval" icon={ClipboardCheck} />}
@@ -185,7 +188,7 @@ export default function ApprovalsInbox() {
           </TabsContent>
 
           <TabsContent value="advances" className="mt-3">
-            <TravelDataList
+            <DataList
               rows={pendingAdvances}
               rowClassName={advance => (advance.outstandingOverride ? 'bg-amber-50/40 border-amber-200' : undefined)}
               empty={<TravelEmptyState title="No advance requests awaiting approval" icon={Wallet} />}
@@ -232,13 +235,13 @@ export default function ApprovalsInbox() {
           </TabsContent>
 
           <TabsContent value="claims" className="mt-3">
-            <TravelDataList
+            <DataList
               rows={pendingClaims}
               empty={<TravelEmptyState title="No claims awaiting your verification" icon={ReceiptIndianRupee} />}
               columns={[
                 { header: 'Claim', mobile: 'title', cell: claim => <span className="font-medium">{claim.referenceNumber}</span> },
                 { header: 'Employee', mobile: 'title', cell: claim => claim.employeeName },
-                { header: 'Status', mobile: 'aside', cell: claim => <TravelStatusBadge status={claim.status} /> },
+                { header: 'Status', mobile: 'aside', cell: claim => <StatusBadge status={claim.status}>{travelStatusLabel(claim.status)}</StatusBadge> },
                 {
                   header: 'Tour',
                   className: 'hidden md:table-cell',

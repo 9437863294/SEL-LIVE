@@ -287,10 +287,10 @@ export default function RecurringEApprovalSettingsPage() {
                       : 'Shown in E-Approval, completed on the payment’s own form.'}
                   </p>
                 </div>
-                <Badge variant={mode === 'Decision' ? 'default' : 'outline'} className="text-[10px]">
+                <Badge variant={mode === 'Decision' ? 'info' : 'outline'}>
                   {mode === 'Decision' ? 'Decision' : 'Visibility'}
                 </Badge>
-                <Badge variant="secondary" className="text-[10px]">{step.tat}h</Badge>
+                <Badge variant="neutral">{step.tat}h</Badge>
               </div>
             );
           })}

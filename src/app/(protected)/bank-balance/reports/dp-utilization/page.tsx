@@ -7,7 +7,8 @@ import { Button } from '@/components/ui/button';
 import { PageHeader } from '@/components/shared/page-header';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow, TableFooter } from '@/components/ui/table';
-import { Badge } from '@/components/ui/badge';
+import { TableCard } from '@/components/shared/table-card';
+import { StatusBadge } from '@/components/shared/status-badge';
 import { Progress } from '@/components/ui/progress';
 import { db } from '@/lib/firebase';
 import { collection, getDocs, query, orderBy } from 'firebase/firestore';
@@ -131,10 +132,10 @@ export default function DpUtilizationPage() {
   }
 
   function utilizationBadge(pct: number) {
-    if (pct >= 90) return { label: 'Critical', cls: 'border-red-200 text-red-700 bg-red-50 dark:bg-red-950/20' };
-    if (pct >= 75) return { label: 'High', cls: 'border-orange-200 text-orange-700 bg-orange-50 dark:bg-orange-950/20' };
-    if (pct >= 50) return { label: 'Moderate', cls: 'border-amber-200 text-amber-700 bg-amber-50 dark:bg-amber-950/20' };
-    return { label: 'Healthy', cls: 'border-emerald-200 text-emerald-700 bg-emerald-50 dark:bg-emerald-950/20' };
+    if (pct >= 90) return { label: 'Critical', tone: 'danger' as const };
+    if (pct >= 75) return { label: 'High', tone: 'warning' as const };
+    if (pct >= 50) return { label: 'Moderate', tone: 'info' as const };
+    return { label: 'Healthy', tone: 'success' as const };
   }
 
   if (authLoading || (isLoading && canView)) {
@@ -215,28 +216,25 @@ export default function DpUtilizationPage() {
         </div>
 
         {/* Table */}
-        <Card className="rounded-xl border-border/60 shadow-sm overflow-hidden">
-          <CardHeader className="border-b border-border/40 pb-4">
-            <CardTitle className="flex items-center gap-2">
-              <TrendingUp className="h-4 w-4 text-rose-500" />
-              Account-wise DP Utilization
-            </CardTitle>
-            <CardDescription>Based on drawing power logs and current calculated utilization.</CardDescription>
-          </CardHeader>
-          <CardContent className="p-0">
-            <div className="overflow-x-auto">
+        <TableCard
+          icon={TrendingUp}
+          title="Account-wise DP Utilization"
+          description="Based on drawing power logs and current calculated utilization."
+          count={rows.length}
+          noun="account"
+        >
               <Table>
                 <TableHeader>
-                  <TableRow className="bg-muted/30 hover:bg-muted/30">
-                    <TableHead className="font-semibold text-xs">Bank / Account</TableHead>
-                    <TableHead className="text-right font-semibold text-xs">DP</TableHead>
-                    <TableHead className="text-right font-semibold text-xs">OD</TableHead>
-                    <TableHead className="text-right font-semibold text-xs">TOD</TableHead>
-                    <TableHead className="text-right font-semibold text-xs">Total Limit</TableHead>
-                    <TableHead className="text-right font-semibold text-xs">Utilization</TableHead>
-                    <TableHead className="text-right font-semibold text-xs">Headroom</TableHead>
-                    <TableHead className="font-semibold text-xs w-40">Usage</TableHead>
-                    <TableHead className="font-semibold text-xs w-24">Status</TableHead>
+                  <TableRow>
+                    <TableHead>Bank / Account</TableHead>
+                    <TableHead className="text-right">DP</TableHead>
+                    <TableHead className="text-right">OD</TableHead>
+                    <TableHead className="text-right">TOD</TableHead>
+                    <TableHead className="text-right">Total Limit</TableHead>
+                    <TableHead className="text-right">Utilization</TableHead>
+                    <TableHead className="text-right">Headroom</TableHead>
+                    <TableHead className="w-40">Usage</TableHead>
+                    <TableHead className="w-24">Status</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -252,12 +250,12 @@ export default function DpUtilizationPage() {
                   ) : rows.map(row => {
                     const badge = utilizationBadge(row.utilizationPct);
                     return (
-                      <TableRow key={row.id} className="hover:bg-muted/20 text-xs transition-colors">
+                      <TableRow key={row.id}>
                         <TableCell>
                           <div className="flex items-center gap-2">
                             <CreditCard className="h-4 w-4 text-rose-400 shrink-0" />
                             <div>
-                              <p className="font-semibold">{row.bankName}</p>
+                              <p className="font-medium">{row.bankName}</p>
                               <p className="text-[10px] text-muted-foreground font-mono">{row.accountNumber}</p>
                               {row.dpFromDate && (
                                 <p className="text-[10px] text-muted-foreground">DP since {format(new Date(row.dpFromDate), 'dd MMM yyyy')}</p>
@@ -265,14 +263,14 @@ export default function DpUtilizationPage() {
                             </div>
                           </div>
                         </TableCell>
-                        <TableCell className="text-right font-mono">{formatCurrency(row.dpAmount)}</TableCell>
-                        <TableCell className="text-right font-mono text-muted-foreground">{row.odAmount > 0 ? formatCurrency(row.odAmount) : '—'}</TableCell>
-                        <TableCell className="text-right font-mono text-muted-foreground">{row.todAmount > 0 ? formatCurrency(row.todAmount) : '—'}</TableCell>
-                        <TableCell className="text-right font-semibold font-mono">{formatCurrency(row.totalLimit)}</TableCell>
-                        <TableCell className={cn('text-right font-semibold font-mono', utilizationColor(row.utilizationPct))}>
+                        <TableCell className="whitespace-nowrap text-right font-mono">{formatCurrency(row.dpAmount)}</TableCell>
+                        <TableCell className="whitespace-nowrap text-right font-mono">{row.odAmount > 0 ? formatCurrency(row.odAmount) : '—'}</TableCell>
+                        <TableCell className="whitespace-nowrap text-right font-mono">{row.todAmount > 0 ? formatCurrency(row.todAmount) : '—'}</TableCell>
+                        <TableCell className="whitespace-nowrap text-right font-medium font-mono">{formatCurrency(row.totalLimit)}</TableCell>
+                        <TableCell className={cn('whitespace-nowrap text-right font-medium font-mono', utilizationColor(row.utilizationPct))}>
                           {formatCurrency(row.currentUtilization)}
                         </TableCell>
-                        <TableCell className="text-right font-mono text-emerald-600 dark:text-emerald-400">
+                        <TableCell className="whitespace-nowrap text-right font-mono text-emerald-600 dark:text-emerald-400">
                           {formatCurrency(row.availableHeadroom)}
                         </TableCell>
                         <TableCell>
@@ -287,7 +285,7 @@ export default function DpUtilizationPage() {
                           </div>
                         </TableCell>
                         <TableCell>
-                          <Badge variant="outline" className={cn('text-xs', badge.cls)}>{badge.label}</Badge>
+                          <StatusBadge status={badge.label} tone={badge.tone} />
                         </TableCell>
                       </TableRow>
                     );
@@ -295,19 +293,17 @@ export default function DpUtilizationPage() {
                 </TableBody>
                 {rows.length > 0 && (
                   <TableFooter>
-                    <TableRow className="bg-muted/40 hover:bg-muted/40">
-                      <TableCell colSpan={4} className="font-bold text-xs">TOTAL</TableCell>
-                      <TableCell className="text-right font-bold text-xs font-mono">{formatCurrency(totalLimit)}</TableCell>
-                      <TableCell className={cn('text-right font-bold text-xs font-mono', utilizationColor(overallPct))}>{formatCurrency(totalUtilization)}</TableCell>
-                      <TableCell className="text-right font-bold text-xs font-mono text-emerald-700">{formatCurrency(totalHeadroom)}</TableCell>
-                      <TableCell colSpan={2} className="text-xs text-muted-foreground font-mono">{overallPct.toFixed(1)}% overall</TableCell>
+                    <TableRow>
+                      <TableCell colSpan={4}>TOTAL</TableCell>
+                      <TableCell className="whitespace-nowrap text-right font-mono">{formatCurrency(totalLimit)}</TableCell>
+                      <TableCell className={cn('whitespace-nowrap text-right font-mono', utilizationColor(overallPct))}>{formatCurrency(totalUtilization)}</TableCell>
+                      <TableCell className="whitespace-nowrap text-right font-mono text-emerald-700">{formatCurrency(totalHeadroom)}</TableCell>
+                      <TableCell colSpan={2} className="whitespace-nowrap font-mono">{overallPct.toFixed(1)}% overall</TableCell>
                     </TableRow>
                   </TableFooter>
                 )}
               </Table>
-            </div>
-          </CardContent>
-        </Card>
+        </TableCard>
       </div>
     </>
   );

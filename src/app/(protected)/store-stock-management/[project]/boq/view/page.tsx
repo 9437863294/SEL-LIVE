@@ -10,7 +10,6 @@ import {
   ChevronDown,
   ChevronRight,
   ChevronUp,
-  Search,
   Edit,
   Save,
 } from 'lucide-react';
@@ -53,7 +52,9 @@ import type { CheckedState } from '@radix-ui/react-checkbox';
 import { Tooltip, TooltipProvider, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { projectMatchesSlug } from '@/lib/project-slug';
+import { FilterBar } from '@/components/shared/filter-bar';
 import { PageHeader } from '@/components/shared/page-header';
+import { TableCard } from '@/components/shared/table-card';
 
 
 export type BoqItem = {
@@ -560,53 +561,22 @@ export default function ViewBoqPage() {
   ];
   
   return (
-    <div className="flex flex-col h-[calc(100vh-8rem)] w-full px-4 sm:px-6 lg:px-8">
+    <div className="w-full px-4 sm:px-6 lg:px-8">
       {/* Header */}
       <PageHeader
-        className="shrink-0"
         title="View BOQ"
         backHref={`/store-stock-management/${projectSlug}/boq`}
         backLabel="Back to BOQ Management"
+      />
+
+      {/* Table */}
+      <TableCard
+        title="BOQ items"
+        count={sortedBoqItems.length}
+        total={boqItems.length}
+        noun="item"
         actions={
-        <div className="flex items-center gap-2 flex-wrap">
-          <div className="relative">
-            <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
-            <Input
-              placeholder="Search..."
-              value={filters.search}
-              onChange={(e) => handleFilterChange('search', e.target.value)}
-              className="pl-8"
-            />
-          </div>
-
-          {Object.keys(filterOptions).map((key) => {
-            const options = filterOptions[key as keyof typeof filterOptions] as string[];
-            if (!options || options.length === 0) return null;
-            return (
-              <Select
-                key={key}
-                value={filters[key as keyof typeof filters]}
-                onValueChange={(v) => handleFilterChange(key as keyof typeof filters, v)}
-              >
-                <SelectTrigger className="w-[180px]">
-                  <SelectValue placeholder={`Filter by ${key}`} />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All {key}s</SelectItem>
-                  {options.map((opt) => (
-                    <SelectItem key={opt} value={opt}>
-                      {opt}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            );
-          })}
-
-          <Button variant="secondary" onClick={clearFilters}>
-            Clear Filters
-          </Button>
-
+        <>
           {selectedItemIds.length > 0 && (
             <AlertDialog>
               <AlertDialogTrigger asChild>
@@ -668,22 +638,47 @@ export default function ViewBoqPage() {
                 </DialogFooter>
             </DialogContent>
           </Dialog>
-        </div>
+        </>
         }
-      />
-
-      {/* Table */}
-      <div className="flex-1 min-h-0">
-        <div className="h-full border rounded-lg flex flex-col min-w-0">
-          <div className="relative flex-1 min-h-0 w-full overflow-auto">
+        toolbar={
+          <FilterBar
+            search={{ value: filters.search, onChange: (v) => handleFilterChange('search', v), placeholder: 'Search...' }}
+            activeCount={(['Scope 1', 'Scope 2', 'Category 1'] as const).filter((k) => filters[k] !== 'all').length}
+            onClear={clearFilters}
+          >
+            {Object.keys(filterOptions).map((key) => {
+              const options = filterOptions[key as keyof typeof filterOptions] as string[];
+              if (!options || options.length === 0) return null;
+              return (
+                <Select
+                  key={key}
+                  value={filters[key as keyof typeof filters]}
+                  onValueChange={(v) => handleFilterChange(key as keyof typeof filters, v)}
+                >
+                  <SelectTrigger aria-label={key}>
+                    <SelectValue placeholder={`Filter by ${key}`} />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All {key}s</SelectItem>
+                    {options.map((opt) => (
+                      <SelectItem key={opt} value={opt}>
+                        {opt}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              );
+            })}
+          </FilterBar>
+        }
+      >
             <TooltipProvider>
-              <div className="min-w-max">
-                <Table className="text-sm">
+                <Table className="min-w-max">
                   <TableHeader>
                     <TableRow>
                       {/* Sticky selection cell */}
                       <TableHead
-                        className="sticky left-0 top-0 bg-background z-30 w-[50px] shadow-[1px_0_0_0_var(--border)]"
+                        className="sticky left-0 !z-30 w-[50px] shadow-[1px_0_0_0_var(--border)]"
                         aria-sort="none"
                       >
                         <Checkbox
@@ -694,14 +689,14 @@ export default function ViewBoqPage() {
                         />
                       </TableHead>
                       {/* Sticky expand cell */}
-                      <TableHead className="sticky left-[50px] top-0 bg-background z-30 w-12 shadow-[1px_0_0_0_var(--border)]">
+                      <TableHead className="sticky left-[50px] !z-30 w-12 shadow-[1px_0_0_0_var(--border)]">
                         <span className="sr-only">Expand</span>
                       </TableHead>
 
                       {visibleHeaders.map((header) => (
                         <TableHead
                           key={header}
-                          className="sticky top-0 bg-background z-20 whitespace-nowrap px-4 cursor-pointer select-none"
+                          className="whitespace-nowrap cursor-pointer select-none"
                           onClick={() => handleSort(header)}
                           title="Sort"
                           aria-sort={sortKey === header ? (sortDirection === 'asc' ? 'ascending' : 'descending') : 'none'}
@@ -720,7 +715,7 @@ export default function ViewBoqPage() {
                           </div>
                         </TableHead>
                       ))}
-                      <TableHead className="sticky top-0 bg-background z-20">Actions</TableHead>
+                      <TableHead>Actions</TableHead>
                     </TableRow>
                   </TableHeader>
 
@@ -731,7 +726,7 @@ export default function ViewBoqPage() {
                           <TableCell className="sticky left-0 bg-background z-10 shadow-[1px_0_0_0_var(--border)]">
                             <Skeleton className="h-5 w-5" />
                           </TableCell>
-                          <TableCell className="sticky left-[50px] bg-background z-10 shadow-[1px_0_0_0_var(--border)] px-2">
+                          <TableCell className="sticky left-[50px] bg-background z-10 shadow-[1px_0_0_0_var(--border)]">
                             <Skeleton className="h-5 w-5" />
                           </TableCell>
                           {visibleHeaders.map((_, j) => (
@@ -773,7 +768,7 @@ export default function ViewBoqPage() {
                               </TableCell>
 
                               {/* Sticky expand cell */}
-                              <TableCell className="sticky left-[50px] bg-background z-10 shadow-[1px_0_0_0_var(--border)] px-2">
+                              <TableCell className="sticky left-[50px] bg-background z-10 shadow-[1px_0_0_0_var(--border)]">
                                 {hasBom ? (
                                   <Button
                                     size="icon"
@@ -853,7 +848,7 @@ export default function ViewBoqPage() {
                             </TableRow>
 
                             {isExpanded && hasBom && (
-                              <TableRow className="bg-muted/50 hover:bg-muted/50">
+                              <TableRow className="bg-muted/30">
                                 <TableCell colSpan={visibleHeaders.length + 3} className="p-0">
                                   <div className="p-4">
                                     <h4 className="font-semibold mb-2 ml-2 text-sm">Bill of Materials</h4>
@@ -893,11 +888,8 @@ export default function ViewBoqPage() {
                     )}
                   </TableBody>
                 </Table>
-              </div>
             </TooltipProvider>
-          </div>
-        </div>
-      </div>
+      </TableCard>
 
       <BoqItemDetailsDialog
         isOpen={isDetailsDialogOpen}

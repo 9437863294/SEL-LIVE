@@ -32,7 +32,6 @@ import {
   ListOrdered,
   PlayCircle,
 } from 'lucide-react';
-import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Checkbox } from '@/components/ui/checkbox';
@@ -61,7 +60,6 @@ import {
 } from '@/lib/office-hub-service';
 import { useOfficeHub, useOfficeHubAction, useOfficeHubQuery } from '@/components/office-hub/hooks';
 import {
-  DecisionStatusBadge,
   MeetingStatusBadge,
   MomStageBadge,
   OfficeHubAccessDenied,
@@ -75,6 +73,7 @@ import {
 import { ParticipantList } from '@/components/office-hub/selectors';
 import { DocumentsPanel } from '@/components/office-hub/documents-panel';
 import { PageHeader } from '@/components/shared/page-header';
+import { StatusBadge } from '@/components/shared/status-badge';
 
 export default function MeetingPreparePage() {
   const params = useParams<{ meetingId: string }>();
@@ -379,15 +378,9 @@ export default function MeetingPreparePage() {
                         {overdue ? '🔴' : item.status === 'In Progress' ? '🟡' : '⚪'}
                       </span>
                       <p className="min-w-0 break-words text-sm font-medium text-slate-800">{item.title}</p>
-                      <Badge variant="outline" className="border-slate-200 bg-slate-50 text-[11px]">
-                        {item.status}
-                      </Badge>
+                      <StatusBadge status={item.status} />
                       <PriorityBadge priority={item.priority} />
-                      {overdue && (
-                        <Badge variant="outline" className="border-rose-200 bg-rose-50 text-[11px] text-rose-700">
-                          Overdue
-                        </Badge>
-                      )}
+                      {overdue && <StatusBadge status="Overdue" />}
                     </div>
                     <p className="mt-0.5 text-xs text-muted-foreground">
                       {item.reference} · {item.responsibleUserName || item.responsibleTeamName || 'Unassigned'}
@@ -450,7 +443,7 @@ export default function MeetingPreparePage() {
                   >
                     {decision.title}
                   </Link>
-                  <DecisionStatusBadge status={decision.status} />
+                  <StatusBadge status={decision.status} />
                 </li>
               ))}
             </ul>

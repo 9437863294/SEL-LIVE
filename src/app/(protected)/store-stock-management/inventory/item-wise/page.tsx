@@ -13,23 +13,22 @@ import {
   PackageCheck,
   PackageX,
   Printer,
-  Search,
 } from 'lucide-react';
 import { db } from '@/lib/firebase';
 import { useAuth } from '@/components/auth/AuthProvider';
 import { useAuthorization } from '@/hooks/useAuthorization';
 import { useToast } from '@/hooks/use-toast';
 import type { InventoryBalance, InventoryItem, InventoryLocation } from '@/lib/inventory';
-import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { FilterBar } from '@/components/shared/filter-bar';
 import { PageHeader } from '@/components/shared/page-header';
+import { StatusBadge } from '@/components/shared/status-badge';
+import { TableCard } from '@/components/shared/table-card';
 
 type StockStatus = 'all' | 'in' | 'low' | 'out';
 type SortMode = 'name' | 'available-desc' | 'available-asc' | 'value-desc';
@@ -328,60 +327,50 @@ export default function ItemWiseInventoryPage() {
         </Card>
       )}
 
-      <Card className="print:hidden">
-        <CardHeader><CardTitle>Filters</CardTitle><CardDescription>Filter the item register without changing the underlying inventory balance.</CardDescription></CardHeader>
-        <CardContent className="grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
-          <Field label="Search item">
-            <div className="relative"><Search className="absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" /><Input className="pl-9" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Code, name, barcode, part…" /></div>
-          </Field>
-          <Field label="Category">
-            <Select value={category} onValueChange={setCategory}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="all">All categories</SelectItem>{categories.map((entry) => <SelectItem key={entry} value={entry}>{entry}</SelectItem>)}</SelectContent></Select>
-          </Field>
-          <Field label="Location">
-            <Select value={locationId} onValueChange={setLocationId}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="all">All accessible locations</SelectItem>{locations.map((location) => <SelectItem key={location.id} value={location.id}>{location.locationCode} · {location.locationName}</SelectItem>)}</SelectContent></Select>
-          </Field>
-          <Field label="Stock status">
-            <Select value={status} onValueChange={(value: StockStatus) => setStatus(value)}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="all">All statuses</SelectItem><SelectItem value="in">In stock</SelectItem><SelectItem value="low">Low stock</SelectItem><SelectItem value="out">Out of stock</SelectItem></SelectContent></Select>
-          </Field>
-          <Field label="Sort by">
-            <Select value={sort} onValueChange={(value: SortMode) => setSort(value)}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="name">Item name</SelectItem><SelectItem value="available-desc">Available: high to low</SelectItem><SelectItem value="available-asc">Available: low to high</SelectItem>{canViewCost && <SelectItem value="value-desc">Value: high to low</SelectItem>}</SelectContent></Select>
-          </Field>
-        </CardContent>
-      </Card>
-
-      <Card>
-        <CardHeader className="gap-2 sm:flex-row sm:items-center sm:justify-between">
-          <div><CardTitle>Item stock register</CardTitle><CardDescription>{filteredRows.length} item(s) · click a row for stock availability by location</CardDescription></div>
-          {(search || category !== 'all' || locationId !== 'all' || status !== 'all') && <Button className="print:hidden" variant="ghost" onClick={() => { setSearch(''); setCategory('all'); setLocationId('all'); setStatus('all'); }}>Clear filters</Button>}
-        </CardHeader>
-        <CardContent className="overflow-x-auto p-0 sm:p-0">
+      <TableCard
+        title="Item stock register"
+        description="Click a row for stock availability by location"
+        count={filteredRows.length}
+        noun="item"
+        toolbar={
+          <FilterBar
+            search={{ value: search, onChange: setSearch, placeholder: 'Code, name, barcode, part…' }}
+            activeCount={[category !== 'all', locationId !== 'all', status !== 'all'].filter(Boolean).length}
+            onClear={() => { setSearch(''); setCategory('all'); setLocationId('all'); setStatus('all'); }}
+          >
+            <Select value={category} onValueChange={setCategory}><SelectTrigger aria-label="Category"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="all">All categories</SelectItem>{categories.map((entry) => <SelectItem key={entry} value={entry}>{entry}</SelectItem>)}</SelectContent></Select>
+            <Select value={locationId} onValueChange={setLocationId}><SelectTrigger aria-label="Location"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="all">All accessible locations</SelectItem>{locations.map((location) => <SelectItem key={location.id} value={location.id}>{location.locationCode} · {location.locationName}</SelectItem>)}</SelectContent></Select>
+            <Select value={status} onValueChange={(value: StockStatus) => setStatus(value)}><SelectTrigger aria-label="Stock status"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="all">All statuses</SelectItem><SelectItem value="in">In stock</SelectItem><SelectItem value="low">Low stock</SelectItem><SelectItem value="out">Out of stock</SelectItem></SelectContent></Select>
+            <Select value={sort} onValueChange={(value: SortMode) => setSort(value)}><SelectTrigger aria-label="Sort by"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="name">Item name</SelectItem><SelectItem value="available-desc">Available: high to low</SelectItem><SelectItem value="available-asc">Available: low to high</SelectItem>{canViewCost && <SelectItem value="value-desc">Value: high to low</SelectItem>}</SelectContent></Select>
+          </FilterBar>
+        }
+        footer={filteredRows.length > PAGE_SIZE ? (
+          <div className="flex flex-wrap items-center justify-between gap-2 print:hidden">
+            <p>Showing {(currentPage - 1) * PAGE_SIZE + 1}–{Math.min(currentPage * PAGE_SIZE, filteredRows.length)} of {filteredRows.length}</p>
+            <div className="flex items-center gap-2"><Button variant="outline" size="sm" disabled={currentPage <= 1} onClick={() => setPage((value) => Math.max(1, value - 1))}><ChevronLeft className="h-4 w-4" /></Button><span className="font-medium">Page {currentPage} of {pageCount}</span><Button variant="outline" size="sm" disabled={currentPage >= pageCount} onClick={() => setPage((value) => Math.min(pageCount, value + 1))}><ChevronRight className="h-4 w-4" /></Button></div>
+          </div>
+        ) : undefined}
+      >
           <Table>
-            <TableHeader><TableRow><TableHead className="pl-6">Item</TableHead><TableHead>Category / brand</TableHead><TableHead className="text-right">On hand</TableHead><TableHead className="text-right">Reserved</TableHead><TableHead className="text-right">Available</TableHead><TableHead>Locations</TableHead>{canViewCost && <><TableHead className="text-right">Avg. cost</TableHead><TableHead className="text-right">Value</TableHead></>}<TableHead className="pr-6">Status</TableHead></TableRow></TableHeader>
+            <TableHeader><TableRow><TableHead>Item</TableHead><TableHead>Category / brand</TableHead><TableHead className="text-right">On hand</TableHead><TableHead className="text-right">Reserved</TableHead><TableHead className="text-right">Available</TableHead><TableHead>Locations</TableHead>{canViewCost && <><TableHead className="text-right">Avg. cost</TableHead><TableHead className="text-right">Value</TableHead></>}<TableHead>Status</TableHead></TableRow></TableHeader>
             <TableBody>
               {pageRows.map((row) => {
                 const label = stockStatus(row);
-                return <TableRow key={row.item.id} className="cursor-pointer hover:bg-cyan-50/50" onClick={() => setSelected(row)}>
-                  <TableCell className="pl-6"><div className="font-semibold">{row.item.itemName}</div><div className="text-xs text-muted-foreground">{row.item.itemCode} · {row.item.unit}{row.item.partNumber ? ` · Part ${row.item.partNumber}` : ''}</div></TableCell>
+                return <TableRow key={row.item.id} className="cursor-pointer" onClick={() => setSelected(row)}>
+                  <TableCell><div className="font-medium">{row.item.itemName}</div><div className="text-xs text-muted-foreground">{row.item.itemCode} · {row.item.unit}{row.item.partNumber ? ` · Part ${row.item.partNumber}` : ''}</div></TableCell>
                   <TableCell><div>{row.item.category || 'Uncategorized'}</div><div className="text-xs text-muted-foreground">{row.item.brand || 'No brand'}</div></TableCell>
                   <TableCell className="text-right tabular-nums">{formatQuantity(row.onHand)}</TableCell>
                   <TableCell className="text-right tabular-nums">{formatQuantity(row.reserved)}</TableCell>
-                  <TableCell className="text-right font-semibold tabular-nums">{formatQuantity(row.available)}</TableCell>
+                  <TableCell className="text-right font-medium tabular-nums">{formatQuantity(row.available)}</TableCell>
                   <TableCell><div>{row.locationCount}</div><div className="max-w-48 truncate text-xs text-muted-foreground">{row.locationNames.join(', ') || 'No stock location'}</div></TableCell>
                   {canViewCost && <><TableCell className="text-right tabular-nums">{formatCurrency(row.averageCost)}</TableCell><TableCell className="text-right font-medium tabular-nums">{formatCurrency(row.value)}</TableCell></>}
-                  <TableCell className="pr-6"><StatusBadge status={label} /></TableCell>
+                  <TableCell className="whitespace-nowrap"><StatusBadge status={label} /></TableCell>
                 </TableRow>;
               })}
               {!pageRows.length && <TableRow><TableCell colSpan={canViewCost ? 9 : 7} className="h-32 text-center text-muted-foreground">No items match the selected filters.</TableCell></TableRow>}
             </TableBody>
           </Table>
-          {filteredRows.length > PAGE_SIZE && (
-            <div className="flex items-center justify-between border-t px-6 py-4 print:hidden">
-              <p className="text-sm text-muted-foreground">Showing {(currentPage - 1) * PAGE_SIZE + 1}–{Math.min(currentPage * PAGE_SIZE, filteredRows.length)} of {filteredRows.length}</p>
-              <div className="flex items-center gap-2"><Button variant="outline" size="sm" disabled={currentPage <= 1} onClick={() => setPage((value) => Math.max(1, value - 1))}><ChevronLeft className="h-4 w-4" /></Button><span className="text-sm font-medium">Page {currentPage} of {pageCount}</span><Button variant="outline" size="sm" disabled={currentPage >= pageCount} onClick={() => setPage((value) => Math.min(pageCount, value + 1))}><ChevronRight className="h-4 w-4" /></Button></div>
-            </div>
-          )}
-        </CardContent>
-      </Card>
+      </TableCard>
 
       <Dialog open={Boolean(selected)} onOpenChange={(open) => !open && setSelected(null)}>
         <DialogContent size="xl">
@@ -408,20 +397,12 @@ function stockStatus(row: ItemStockRow) {
   return 'In stock';
 }
 
-function StatusBadge({ status }: { status: string }) {
-  return <Badge variant={status === 'In stock' ? 'default' : 'destructive'} className={status === 'Low stock' ? 'bg-amber-500 hover:bg-amber-500' : ''}>{status}</Badge>;
-}
-
 function formatQuantity(value: number) {
   return Number(value || 0).toLocaleString('en-IN', { maximumFractionDigits: 3 });
 }
 
 function formatCurrency(value: number) {
   return `₹${Number(value || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
-}
-
-function Field({ label, children }: { label: string; children: React.ReactNode }) {
-  return <div className="space-y-1.5"><Label>{label}</Label>{children}</div>;
 }
 
 function Metric({ title, value, icon: Icon, active }: { title: string; value: string; icon: typeof Boxes; active?: boolean }) {

@@ -63,7 +63,6 @@ import {
   ResponseSummaryChip,
   TaskDueDate,
   TaskProgressBar,
-  TaskStatusBadge,
   type OfficeHubListColumn,
 } from '@/components/office-hub/ui';
 import {
@@ -73,6 +72,7 @@ import {
   teamDraftFrom,
 } from '@/components/office-hub/team-form';
 import { PageHeader } from '@/components/shared/page-header';
+import { StatusBadge } from '@/components/shared/status-badge';
 
 export default function TeamDetailPage() {
   const params = useParams<{ teamId: string }>();
@@ -203,7 +203,7 @@ export default function TeamDetailPage() {
     { header: 'Assignee', mobile: 'detail', className: 'w-40', cell: (task) => <PersonChip name={task.assigneeName ?? null} /> },
     { header: 'Due', mobile: 'aside', className: 'w-32', cell: (task) => <TaskDueDate task={task} today={today} /> },
     { header: 'Priority', mobile: 'detail', className: 'hidden sm:table-cell w-24', cell: (task) => <PriorityBadge priority={task.priority} /> },
-    { header: 'Status', mobile: 'detail', className: 'w-32', cell: (task) => <TaskStatusBadge status={task.status} /> },
+    { header: 'Status', mobile: 'detail', className: 'w-32', cell: (task) => <StatusBadge status={task.status} /> },
     { header: 'Progress', mobile: 'footer', className: 'hidden md:table-cell w-32', cell: (task) => <TaskProgressBar task={task} /> },
   ];
 
@@ -274,25 +274,12 @@ export default function TeamDetailPage() {
       />
 
       <div className="flex flex-wrap items-center gap-2">
-        <Badge
-          variant="outline"
-          className={
-            team.status === 'Archived'
-              ? 'border-slate-200 bg-slate-50 text-[11px] text-slate-500'
-              : 'border-emerald-200 bg-emerald-50 text-[11px] text-emerald-700'
-          }
-        >
-          {team.status}
-        </Badge>
+        <StatusBadge status={team.status} />
         <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
           <Crown className="h-3.5 w-3.5 text-amber-500" />
           {team.leaderName}
         </span>
-        {team.departmentName && (
-          <Badge variant="outline" className="border-slate-200 bg-slate-50 text-[11px]">
-            {team.departmentName}
-          </Badge>
-        )}
+        {team.departmentName && <Badge variant="neutral">{team.departmentName}</Badge>}
       </div>
 
       {team.status === 'Archived' && (

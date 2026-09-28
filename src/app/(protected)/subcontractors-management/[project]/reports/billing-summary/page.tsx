@@ -17,6 +17,8 @@ import {
 } from 'lucide-react';
 import { PageHeader } from '@/components/shared/page-header';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
+import { TableCard } from '@/components/shared/table-card';
+import { FilterBar } from '@/components/shared/filter-bar';
 import {
   Table,
   TableBody,
@@ -345,9 +347,22 @@ export default function BillingSummaryReport() {
       />
       <PmContent>
 
-        <Card className="mb-6 border-border/60">
-            <CardHeader className="p-4">
-                <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4">
+        <FilterBar
+            className="mb-6"
+            activeCount={
+                (['project', 'subcontractor', 'year', 'month'] as const).filter(
+                    (k) => filters[k] !== (k === 'project' && projectSlug !== 'all' ? projectSlug : 'all'),
+                ).length
+            }
+            onClear={() =>
+                setFilters({
+                    project: projectSlug === 'all' ? 'all' : projectSlug,
+                    subcontractor: 'all',
+                    year: 'all',
+                    month: 'all',
+                })
+            }
+        >
                     {projectSlug === 'all' && (
                         <Select value={filters.project} onValueChange={(v) => handleFilterChange('project', v)}>
                             <SelectTrigger><SelectValue placeholder="All Projects" /></SelectTrigger>
@@ -378,9 +393,7 @@ export default function BillingSummaryReport() {
                             {filterOptions.months.map(m => <SelectItem key={m.value} value={m.value}>{m.label}</SelectItem>)}
                         </SelectContent>
                     </Select>
-                </div>
-            </CardHeader>
-        </Card>
+        </FilterBar>
 
         <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4 mb-8">
             {isLoading ? (
@@ -405,9 +418,11 @@ export default function BillingSummaryReport() {
             )}
         </div>
         
-        <Card>
-          <CardHeader><CardTitle>Work Order Wise Summary</CardTitle></CardHeader>
-          <CardContent>
+        <TableCard
+          title="Work Order Wise Summary"
+          count={isLoading ? undefined : workOrderSummary.length}
+          noun="work order"
+        >
             <Table>
                 <TableHeader>
                     <TableRow>
@@ -449,8 +464,7 @@ export default function BillingSummaryReport() {
                    )}
                 </TableBody>
             </Table>
-          </CardContent>
-        </Card>
+        </TableCard>
 
       </PmContent>
     </>

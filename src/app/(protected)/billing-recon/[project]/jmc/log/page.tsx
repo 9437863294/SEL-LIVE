@@ -8,7 +8,8 @@ import {
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { PageHeader } from '@/components/shared/page-header';
-import { Card, CardContent } from '@/components/ui/card';
+import { TableCard } from '@/components/shared/table-card';
+import { StatusBadge } from '@/components/shared/status-badge';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { db } from '@/lib/firebase';
 import { collection, getDocs, orderBy, query, deleteDoc, doc, getDoc, Timestamp } from 'firebase/firestore';
@@ -32,7 +33,6 @@ import {
   AlertDialogTrigger,
 } from '@/components/ui/alert-dialog';
 import ExcelJS from 'exceljs';
-import { Badge } from '@/components/ui/badge';
 import { projectMatchesSlug } from '@/lib/project-slug';
 
 /* ---------- helpers ---------- */
@@ -349,9 +349,7 @@ export default function JmcLogPage() {
           }
         />
 
-        <Card>
-          {/* Make the wide table scroll horizontally inside the card */}
-          <CardContent className="p-0 overflow-x-auto">
+        <TableCard title="JMC entries" count={isLoading ? undefined : jmcEntries.length}>
             {/* Give the table a sensible min width so columns don’t squish */}
             <Table className="min-w-[1200px]">
               <TableHeader>
@@ -401,7 +399,7 @@ export default function JmcLogPage() {
                     return (
                       <TableRow
                         key={entry.id}
-                        className="cursor-pointer hover:bg-muted/40"
+                        className="cursor-pointer"
                         onClick={() => handleViewDetails(entry)}
                       >
                         <TableCell className="font-medium">
@@ -425,18 +423,7 @@ export default function JmcLogPage() {
                         </TableCell>
                         <TableCell>{entry.stage ?? '-'}</TableCell>
                         <TableCell>
-                          <Badge
-                            variant={
-                              entry.status === 'Completed'
-                                ? 'default'
-                                : entry.status === 'Rejected' ||
-                                  entry.status === 'Cancelled'
-                                ? 'destructive'
-                                : 'secondary'
-                            }
-                          >
-                            {entry.status}
-                          </Badge>
+                          <StatusBadge status={entry.status} />
                         </TableCell>
                         <TableCell className="text-right">
                           <div className="flex gap-1 justify-end">
@@ -523,8 +510,7 @@ export default function JmcLogPage() {
                 )}
               </TableBody>
             </Table>
-          </CardContent>
-        </Card>
+        </TableCard>
       </div>
 
       <ViewJmcEntryDialog

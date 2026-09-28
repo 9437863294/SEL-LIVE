@@ -21,17 +21,13 @@ import { useEffect, useMemo, useState } from 'react';
 import {
   AlertTriangle,
   CalendarClock,
-  CheckCircle2,
-  Circle,
-  CircleDashed,
   Clock,
   MapPin,
   Radio,
   Users,
   Video,
-  XCircle,
 } from 'lucide-react';
-import { Badge } from '@/components/ui/badge';
+import { StatusBadge, type StatusTone } from '@/components/shared/status-badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Progress } from '@/components/ui/progress';
@@ -41,7 +37,6 @@ import {
   formatIsoDate,
   formatRelativeToNow,
   type AttendanceStatus,
-  type DecisionStatus,
   type InvitationResponse,
   type MeetingMode,
   type MeetingStatus,
@@ -49,7 +44,6 @@ import {
   type OfficeHubMeeting,
   type OfficeHubPriority,
   type OfficeHubTask,
-  type TaskStatus,
   meetingTimeState,
   taskDueBucket,
   taskProgress,
@@ -63,7 +57,6 @@ export {
   HrDataList as OfficeHubDataList,
   HrEmptyState as OfficeHubEmptyState,
   HrField as OfficeHubField,
-  HrFilterCard as OfficeHubFilterCard,
   HrKpiCard as OfficeHubKpiCard,
   HrLoader as OfficeHubLoader,
   HrMeter as OfficeHubMeter,
@@ -78,54 +71,22 @@ import { useHrInsideLink } from '@/components/hr/hr-ui';
 
 /* ── badges ──────────────────────────────────────────────────────────────────────────────────── */
 
-const MEETING_STATUS_TONE: Record<MeetingStatus, string> = {
-  Draft: 'border-slate-200 bg-slate-50 text-slate-600',
-  Scheduled: 'border-sky-200 bg-sky-50 text-sky-700',
-  // In Progress is the only one that is deliberately loud: it is the state that wants acting on.
-  'In Progress': 'border-emerald-300 bg-emerald-100 text-emerald-800',
-  Completed: 'border-teal-200 bg-teal-50 text-teal-700',
-  Cancelled: 'border-rose-200 bg-rose-50 text-rose-700',
-  Postponed: 'border-amber-200 bg-amber-50 text-amber-700',
+/*
+ * Office Hub's statuses are drawn by the app's one `StatusBadge`. Task and decision statuses read
+ * correctly from the shared vocabulary, so screens use `StatusBadge` for them directly; the
+ * wrappers below exist only where Office Hub means something the shared words do not say — a
+ * word the vocabulary does not know, a label that differs from the stored value, or an empty
+ * state.
+ */
+
+/** Postponed is not in the shared vocabulary; to Office Hub it is a meeting waiting on a new date. */
+const MEETING_STATUS_TONE: Partial<Record<MeetingStatus, StatusTone>> = {
+  Postponed: 'warning',
 };
 
 export function MeetingStatusBadge({ status, className }: { status: MeetingStatus; className?: string }) {
-  return (
-    <Badge variant="outline" className={cn('border font-medium', MEETING_STATUS_TONE[status], className)}>
-      {status === 'In Progress' && <Radio className="mr-1 h-3 w-3 animate-pulse" />}
-      {status}
-    </Badge>
-  );
-}
-
-const TASK_STATUS_TONE: Record<TaskStatus, string> = {
-  'Not Started': 'border-slate-200 bg-slate-50 text-slate-600',
-  'In Progress': 'border-sky-200 bg-sky-50 text-sky-700',
-  'On Hold': 'border-amber-200 bg-amber-50 text-amber-700',
-  Completed: 'border-emerald-200 bg-emerald-50 text-emerald-700',
-  Cancelled: 'border-rose-200 bg-rose-50 text-rose-700',
-};
-
-export function TaskStatusBadge({ status, className }: { status: TaskStatus; className?: string }) {
-  return (
-    <Badge variant="outline" className={cn('border font-medium', TASK_STATUS_TONE[status], className)}>
-      {status}
-    </Badge>
-  );
-}
-
-const DECISION_STATUS_TONE: Record<DecisionStatus, string> = {
-  Open: 'border-sky-200 bg-sky-50 text-sky-700',
-  'In Progress': 'border-indigo-200 bg-indigo-50 text-indigo-700',
-  Completed: 'border-emerald-200 bg-emerald-50 text-emerald-700',
-  Cancelled: 'border-rose-200 bg-rose-50 text-rose-700',
-};
-
-export function DecisionStatusBadge({ status, className }: { status: DecisionStatus; className?: string }) {
-  return (
-    <Badge variant="outline" className={cn('border font-medium', DECISION_STATUS_TONE[status], className)}>
-      {status}
-    </Badge>
-  );
+  // A meeting in progress is live — the one state that wants acting on — so it carries the dot.
+  return <StatusBadge status={status} tone={MEETING_STATUS_TONE[status]} dot={status === 'In Progress'} className={className} />;
 }
 
 /**
@@ -134,46 +95,33 @@ export function DecisionStatusBadge({ status, className }: { status: DecisionSta
  * Only Critical is red. A palette where High is also red leaves nothing for Critical to escalate
  * to, and every register ends up looking like an emergency.
  */
-const PRIORITY_TONE: Record<OfficeHubPriority, string> = {
-  Low: 'border-slate-200 bg-slate-50 text-slate-500',
-  Medium: 'border-blue-200 bg-blue-50 text-blue-700',
-  High: 'border-amber-300 bg-amber-50 text-amber-800',
-  Critical: 'border-rose-300 bg-rose-100 text-rose-800',
+const PRIORITY_TONE: Record<OfficeHubPriority, StatusTone> = {
+  Low: 'neutral',
+  Medium: 'info',
+  High: 'warning',
+  Critical: 'danger',
 };
 
 export function PriorityBadge({ priority, className }: { priority: OfficeHubPriority; className?: string }) {
-  return (
-    <Badge variant="outline" className={cn('border font-medium', PRIORITY_TONE[priority], className)}>
-      {priority === 'Critical' && <AlertTriangle className="mr-1 h-3 w-3" />}
-      {priority}
-    </Badge>
-  );
+  return <StatusBadge status={priority} tone={PRIORITY_TONE[priority]} className={className} />;
 }
 
-const RESPONSE_META: Record<InvitationResponse, { tone: string; icon: React.ElementType; label: string }> = {
-  Accepted: { tone: 'border-emerald-200 bg-emerald-50 text-emerald-700', icon: CheckCircle2, label: 'Accepted' },
-  Maybe: { tone: 'border-amber-200 bg-amber-50 text-amber-700', icon: CircleDashed, label: 'Maybe' },
-  Declined: { tone: 'border-rose-200 bg-rose-50 text-rose-700', icon: XCircle, label: 'Declined' },
-  'No Response': { tone: 'border-slate-200 bg-slate-50 text-slate-500', icon: Circle, label: 'Awaiting' },
+/** "Maybe" is a soft yes that still wants chasing; an unanswered invitation reads "Awaiting". */
+const RESPONSE_META: Record<InvitationResponse, { tone: StatusTone; label: string }> = {
+  Accepted: { tone: 'success', label: 'Accepted' },
+  Maybe: { tone: 'warning', label: 'Maybe' },
+  Declined: { tone: 'danger', label: 'Declined' },
+  'No Response': { tone: 'neutral', label: 'Awaiting' },
 };
 
 export function ResponseBadge({ response, className }: { response: InvitationResponse; className?: string }) {
   const meta = RESPONSE_META[response] ?? RESPONSE_META['No Response'];
-  const Icon = meta.icon;
   return (
-    <Badge variant="outline" className={cn('border font-medium', meta.tone, className)}>
-      <Icon className="mr-1 h-3 w-3" />
+    <StatusBadge status={response} tone={meta.tone} className={className}>
       {meta.label}
-    </Badge>
+    </StatusBadge>
   );
 }
-
-const ATTENDANCE_TONE: Record<AttendanceStatus, string> = {
-  Present: 'border-emerald-200 bg-emerald-50 text-emerald-700',
-  Late: 'border-amber-200 bg-amber-50 text-amber-700',
-  Absent: 'border-rose-200 bg-rose-50 text-rose-700',
-  Excused: 'border-slate-200 bg-slate-50 text-slate-600',
-};
 
 export function AttendanceBadge({
   attendance,
@@ -185,30 +133,23 @@ export function AttendanceBadge({
   if (!attendance) {
     return <span className={cn('text-xs text-muted-foreground', className)}>Not marked</span>;
   }
-  return (
-    <Badge variant="outline" className={cn('border font-medium', ATTENDANCE_TONE[attendance], className)}>
-      {attendance}
-    </Badge>
-  );
+  return <StatusBadge status={attendance} className={className} />;
 }
 
-const MOM_STAGE_TONE: Record<MomStage, string> = {
-  Draft: 'border-slate-200 bg-slate-50 text-slate-600',
-  Prepared: 'border-sky-200 bg-sky-50 text-sky-700',
-  Reviewed: 'border-indigo-200 bg-indigo-50 text-indigo-700',
-  Approved: 'border-violet-200 bg-violet-50 text-violet-700',
-  Published: 'border-emerald-200 bg-emerald-50 text-emerald-700',
+/** The minutes' stages in order of how far along they are; the shared vocabulary knows only Draft and Approved. */
+const MOM_STAGE_TONE: Record<MomStage, StatusTone> = {
+  Draft: 'neutral',
+  Prepared: 'info',
+  Reviewed: 'progress',
+  Approved: 'success',
+  Published: 'success',
 };
 
 export function MomStageBadge({ stage, className }: { stage: MomStage | null | undefined; className?: string }) {
   if (!stage) {
     return <span className={cn('text-xs text-muted-foreground', className)}>No minutes</span>;
   }
-  return (
-    <Badge variant="outline" className={cn('border font-medium', MOM_STAGE_TONE[stage], className)}>
-      {stage}
-    </Badge>
-  );
+  return <StatusBadge status={stage} tone={MOM_STAGE_TONE[stage]} className={className} />;
 }
 
 export function MeetingModeBadge({ mode, className }: { mode: MeetingMode; className?: string }) {
@@ -543,24 +484,6 @@ export function FieldError({ message }: { message?: string | null }) {
     <p className="mt-1 flex items-start gap-1 text-xs text-destructive" role="alert">
       <AlertTriangle className="mt-0.5 h-3 w-3 shrink-0" />
       {message}
-    </p>
-  );
-}
-
-/** The "n of m" count a register shows above itself. */
-export function ResultCount({ shown, total, noun }: { shown: number; total: number; noun: string }) {
-  if (shown === total) {
-    return (
-      <p className="text-xs text-muted-foreground">
-        {total} {noun}
-        {total === 1 ? '' : 's'}
-      </p>
-    );
-  }
-  return (
-    <p className="text-xs text-muted-foreground">
-      Showing {shown} of {total} {noun}
-      {total === 1 ? '' : 's'}
     </p>
   );
 }

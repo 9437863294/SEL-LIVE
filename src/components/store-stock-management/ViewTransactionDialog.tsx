@@ -210,25 +210,25 @@ export default function ViewTransactionDialog({ isOpen, onOpenChange, transactio
                   <TableBody>
                     {summary.items.map(item => (
                       <TableRow key={item.id}>
-                        <TableCell>{item.itemName}</TableCell>
-                        <TableCell>{item.quantity} {item.unit}</TableCell>
-                        <TableCell>{formatCurrency(item.cost)}</TableCell>
-                        <TableCell>{formatCurrency((item.quantity || 0) * (item.cost || 0))}</TableCell>
-                        {isGrn && <TableCell className="text-destructive">{item.issuedQuantity}</TableCell>}
-                        {isGrn && <TableCell className="font-semibold">{item.balanceQuantity}</TableCell>}
+                        <TableCell className="font-medium">{item.itemName}</TableCell>
+                        <TableCell className="whitespace-nowrap tabular-nums">{item.quantity} {item.unit}</TableCell>
+                        <TableCell className="whitespace-nowrap tabular-nums">{formatCurrency(item.cost)}</TableCell>
+                        <TableCell className="whitespace-nowrap tabular-nums">{formatCurrency((item.quantity || 0) * (item.cost || 0))}</TableCell>
+                        {isGrn && <TableCell className="tabular-nums text-destructive">{item.issuedQuantity}</TableCell>}
+                        {isGrn && <TableCell className="font-medium tabular-nums">{item.balanceQuantity}</TableCell>}
                         {isGrn && (
-                            <TableCell className="text-right font-bold">
+                            <TableCell className="whitespace-nowrap text-right font-medium tabular-nums">
                                 {formatCurrency((item.balanceQuantity || 0) * (item.cost || 0))}
                             </TableCell>
                         )}
                       </TableRow>
                     ))}
-                     <TableRow className="font-bold bg-muted">
+                     <TableRow className="bg-muted/50 font-medium">
                         <TableCell colSpan={isGrn ? 3 : 3} className="text-right">Total</TableCell>
-                        <TableCell colSpan={isGrn ? 1 : 4} className="text-right">{formatCurrency(summary.totalAmount)}</TableCell>
+                        <TableCell colSpan={isGrn ? 1 : 4} className="whitespace-nowrap text-right tabular-nums">{formatCurrency(summary.totalAmount)}</TableCell>
                         {isGrn && <TableCell colSpan={2}></TableCell>}
                         {isGrn && (
-                          <TableCell className="text-right">{formatCurrency(summary.remainingValue)}</TableCell>
+                          <TableCell className="whitespace-nowrap text-right tabular-nums">{formatCurrency(summary.remainingValue)}</TableCell>
                         )}
                     </TableRow>
                   </TableBody>

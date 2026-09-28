@@ -85,13 +85,14 @@ import {
 } from './pickers';
 import {
   ACCESS_SCROLL_FRAME_CLASS,
-  ACCESS_STICKY_TOOLBAR_CLASS,
   AccessCard,
   AccessPageShell,
   RiskBadges,
   RoleBadge,
 } from './access-ui';
 import { PageHeader } from '@/components/shared/page-header';
+import { StatusBadge } from '@/components/shared/status-badge';
+import { TableCard } from '@/components/shared/table-card';
 
 type TabId =
   | 'overview'
@@ -269,10 +270,7 @@ export function AccessControlCenter() {
       aside={
         // Reassurance for somebody arriving on this screen, not something they act on — and on a
         // phone it was a whole row of the little height there is. Desktop only.
-        <Badge
-          variant="outline"
-          className="hidden gap-1 border-emerald-200 bg-emerald-50 text-[10px] text-emerald-700 sm:inline-flex"
-        >
+        <Badge variant="success" className="hidden gap-1 sm:inline-flex">
           <ShieldCheck className="h-3 w-3" />
           Additive only — existing permissions are never replaced
         </Badge>
@@ -572,12 +570,11 @@ function UsersTab({
             <RoleBadge key={assignment.roleId} name={assignment.roleName} kind="additional" />
           ))}
           {(row.grant?.additionalRoles?.length ?? 0) > 2 && (
-            <Badge variant="outline" className="text-[10px] text-muted-foreground">
-              +{(row.grant?.additionalRoles?.length ?? 0) - 2}
-            </Badge>
+            <Badge variant="neutral">+{(row.grant?.additionalRoles?.length ?? 0) - 2}</Badge>
           )}
+          {/* Temporary grants in force — the same tone as a temporary RoleBadge. */}
           {(row.access?.temporaryActive.length ?? 0) > 0 && (
-            <Badge variant="outline" className="gap-1 border-amber-200 bg-amber-50 text-[10px] text-amber-800">
+            <Badge variant="warning" className="gap-1">
               <CalendarClock className="h-3 w-3" />
               {row.access?.temporaryActive.length}
             </Badge>
@@ -605,18 +602,11 @@ function UsersTab({
       header: 'Status',
       mobile: 'aside',
       cell: (row) => (
-        <Badge
-          variant="outline"
-          className={
-            row.user.status === 'Inactive'
-              ? 'border-slate-300 bg-slate-100 text-slate-600'
-              : 'border-emerald-200 bg-emerald-50 text-emerald-700'
-          }
-        >
+        <StatusBadge status={row.user.status ?? 'Active'}>
           {row.user.status === 'Inactive' && row.user.deactivation?.until
             ? `Inactive until ${formatGrantDate(row.user.deactivation.until)}`
             : (row.user.status ?? 'Active')}
-        </Badge>
+        </StatusBadge>
       ),
     },
     {
@@ -633,11 +623,65 @@ function UsersTab({
 
   return (
     <div className="space-y-3">
-      {/* Pinned to the top of the tab's frame, like the role library's — filtering ~1,300 users
-          from halfway down the register should not mean scrolling back up to reach the control,
-          and the "N of M users" readout belongs with the filter that produces it. */}
-      <AccessCard className={ACCESS_STICKY_TOOLBAR_CLASS}>
-        <CardContent className="space-y-2.5 p-3">
+      {/* The register frame: the filter sits in its toolbar and the "N of M users" count in its
+          title, so the readout stays with the filter that produces it, and the list scrolls inside
+          the card under a pinned header rather than taking the filter away with it. */}
+      <TableCard
+        title="Users"
+        icon={Users}
+        count={filtered.length}
+        total={directory.users.length}
+        noun="user"
+        actions={
+          <>
+            {selectedIds.length > 0 && <Badge variant="neutral">{selectedIds.length} selected</Badge>}
+            <Button variant="outline" size="sm" disabled={!rows.length} onClick={() => void exportUsers()}>
+              <Download className="mr-1.5 h-4 w-4" />
+              Export ({rows.length})
+            </Button>
+            {canAssign && (
+              // A link, not a dialog trigger: the form is its own page now, and it comes back here
+              // with the new user preselected via `assignTo`.
+              <Button asChild variant="outline" size="sm">
+                <Link href="/settings/access-management/users/new?returnTo=%2Fsettings%2Faccess-management">
+                  <UserPlus className="mr-1.5 h-4 w-4" />
+                  Add user
+                </Link>
+              </Button>
+            )}
+            {/*
+              Revocation sits beside assignment deliberately.
+
+              Granting was bulk and prominent; removing was single-user and reachable only from a
+              profile page — so a permission given to forty people could only be taken back forty
+              times. An operation whose inverse is forty times harder to find is an operation
+              administrators avoid, which is worse for access hygiene than the button being here.
+            */}
+            {canRevoke && (
+              <Button
+                variant="outline"
+                size="sm"
+                className="border-destructive/30 text-destructive hover:bg-destructive/5"
+                disabled={!targets.length}
+                onClick={() => setRemoveOpen(true)}
+              >
+                <ShieldMinus className="mr-1.5 h-4 w-4" />
+                Remove access from {targets.length}
+              </Button>
+            )}
+            {canAssign && (
+              <Button
+                size="sm"
+                disabled={!filtered.length}
+                onClick={() => onAssign({ userIds: filtered.map((user) => user.id) })}
+              >
+                <ShieldPlus className="mr-1.5 h-4 w-4" />
+                Assign access to {filtered.length} filtered
+              </Button>
+            )}
+          </>
+        }
+        toolbar={
           <UserFilterBar
             filter={filter}
             onChange={setFilter}
@@ -645,87 +689,31 @@ function UsersTab({
             registry={state.registry}
             defaultFilter={USERS_TAB_FILTER}
           />
-          <div className="flex flex-wrap items-center justify-between gap-2">
-            <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-              <span>
-                {filtered.length} of {directory.users.length} users
-              </span>
-              {selectedIds.length > 0 && (
-                <Badge variant="outline" className="border-indigo-200 bg-indigo-50 text-indigo-700">
-                  {selectedIds.length} selected
-                </Badge>
-              )}
-            </div>
-            {/* Full-width (sharing a row where two fit) on a phone, natural width from `sm` up. */}
-            <div className="flex flex-wrap gap-2 [&>*]:flex-1 sm:[&>*]:flex-none">
-              <Button variant="outline" size="sm" disabled={!rows.length} onClick={() => void exportUsers()}>
-                <Download className="mr-1.5 h-4 w-4" />
-                Export ({rows.length})
-              </Button>
-              {canAssign && (
-                // A link, not a dialog trigger: the form is its own page now, and it comes back here
-                // with the new user preselected via `assignTo`.
-                <Button asChild variant="outline" size="sm">
-                  <Link href="/settings/access-management/users/new?returnTo=%2Fsettings%2Faccess-management">
-                    <UserPlus className="mr-1.5 h-4 w-4" />
-                    Add user
-                  </Link>
-                </Button>
-              )}
-              {/*
-                Revocation sits beside assignment deliberately.
-
-                Granting was bulk and prominent; removing was single-user and reachable only from a
-                profile page — so a permission given to forty people could only be taken back forty
-                times. An operation whose inverse is forty times harder to find is an operation
-                administrators avoid, which is worse for access hygiene than the button being here.
-              */}
-              {canRevoke && (
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="border-destructive/30 text-destructive hover:bg-destructive/5"
-                  disabled={!targets.length}
-                  onClick={() => setRemoveOpen(true)}
-                >
-                  <ShieldMinus className="mr-1.5 h-4 w-4" />
-                  Remove access from {targets.length}
-                </Button>
-              )}
-              {canAssign && (
-                <Button
-                  size="sm"
-                  disabled={!filtered.length}
-                  onClick={() => onAssign({ userIds: filtered.map((user) => user.id) })}
-                >
-                  <ShieldPlus className="mr-1.5 h-4 w-4" />
-                  Assign access to {filtered.length} filtered
-                </Button>
-              )}
-            </div>
-          </div>
-        </CardContent>
-      </AccessCard>
-
-      {rows.length === 0 ? (
-        <HrEmptyState icon={Users} title="No users match these filters" description="Try widening the search." />
-      ) : (
-        <>
-          <HrDataList
-            rows={rows.slice(0, 250)}
-            columns={columns}
-            cardHref={(row) => `/settings/access-management/users/${row.id}`}
-            maxHeightClassName="sm:max-h-[30rem]"
-            dense
-          />
-          {rows.length > 250 && (
-            <p className="py-3 text-center text-xs text-muted-foreground">
+        }
+        footer={
+          rows.length > 250 ? (
+            <>
               Showing the first 250 of {rows.length}. Narrow the filter to see the rest — bulk actions
               still apply to all {rows.length}.
-            </p>
-          )}
-        </>
-      )}
+            </>
+          ) : undefined
+        }
+      >
+        {rows.length === 0 ? (
+          <div className="p-3">
+            <HrEmptyState icon={Users} title="No users match these filters" description="Try widening the search." />
+          </div>
+        ) : (
+          <div className="p-3 sm:p-0">
+            <HrDataList
+              rows={rows.slice(0, 250)}
+              columns={columns}
+              cardHref={(row) => `/settings/access-management/users/${row.id}`}
+              frameless
+            />
+          </div>
+        )}
+      </TableCard>
 
       {/* Step 1: what to remove. */}
       <RemoveAccessDialog

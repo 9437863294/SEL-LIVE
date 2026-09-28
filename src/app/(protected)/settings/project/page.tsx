@@ -3,9 +3,12 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { Plus, ShieldAlert } from 'lucide-react';
+import { FolderKanban, Plus, ShieldAlert } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { PageHeader } from '@/components/shared/page-header';
+import { DataList } from '@/components/shared/data-list';
+import { StatusBadge } from '@/components/shared/status-badge';
+import { TableCard } from '@/components/shared/table-card';
 import {
   Card,
   CardContent,
@@ -13,14 +16,6 @@ import {
   CardTitle as CardTitleShad,
   CardDescription as CardDescriptionShad,
 } from '@/components/ui/card';
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from '@/components/ui/table';
 import {
   Dialog,
   DialogContent,
@@ -40,7 +35,6 @@ import type { Project } from '@/lib/types';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useAuthorization } from '@/hooks/useAuthorization';
-import { ScrollArea } from '@/components/ui/scroll-area';
 
 const initialNewProjectState = {
   projectName: '',
@@ -219,6 +213,8 @@ export default function ManageProjectPage() {
       )
   }
 
+  const serialOf = new Map(projects.map((proj, index) => [proj.id, index + 1]));
+
   return (
     <>
       {/* ── Background ── */}
@@ -307,106 +303,42 @@ export default function ManageProjectPage() {
         }
       />
 
-      {/* ── Mobile card list (visible below md) ── */}
-      <div className="md:hidden space-y-3">
-        {projects.length === 0 && !isLoading && (
-          <p className="text-center text-sm text-muted-foreground py-8">No projects found.</p>
+      <TableCard title="Projects" icon={FolderKanban} count={projects.length} noun="project">
+        {isLoading ? (
+          <div className="space-y-2 p-4">
+            {Array.from({ length: 5 }).map((_, i) => <Skeleton key={i} className="h-10 w-full rounded-lg" />)}
+          </div>
+        ) : (
+          <div className="p-3 sm:p-0">
+            <DataList
+              frameless
+              rows={projects}
+              empty={<p className="py-8 text-center text-sm text-muted-foreground">No projects found.</p>}
+              columns={[
+                { header: 'Sr. No.', mobile: 'omit', className: 'tabular-nums', cell: (proj) => serialOf.get(proj.id) },
+                { header: 'Project Name', mobile: 'title', className: 'font-medium', cell: (proj) => proj.projectName },
+                { header: 'Site Code', className: 'whitespace-nowrap', cell: (proj) => proj.siteCode },
+                { header: 'Project Site', cell: (proj) => proj.projectSite },
+                { header: 'Project Division', cell: (proj) => proj.projectDivision },
+                { header: 'Location', cell: (proj) => proj.location },
+                { header: 'Site in-charge', cell: (proj) => proj.siteInCharge },
+                { header: 'Status', mobile: 'aside', cell: (proj) => <StatusBadge status={proj.status} /> },
+                {
+                  header: 'Actions',
+                  align: 'right',
+                  mobile: 'footer',
+                  cell: (proj) => (
+                    <div className="flex justify-end gap-2">
+                      <Button variant="outline" size="sm" onClick={() => openEditDialog(proj)} disabled={!canEdit}>Edit</Button>
+                      <Button variant="destructive" size="sm" onClick={() => handleDeleteProject(proj.id)} disabled={!canDelete}>Delete</Button>
+                    </div>
+                  ),
+                },
+              ]}
+            />
+          </div>
         )}
-        {isLoading
-          ? Array.from({ length: 3 }).map((_, i) => <Skeleton key={i} className="h-36 w-full rounded-xl" />)
-          : projects.map((proj) => (
-              <Card key={proj.id} className="overflow-hidden border-border/60">
-                <div className="h-0.5 w-full bg-gradient-to-r from-amber-400 to-yellow-400" />
-                <CardContent className="p-4 space-y-2">
-                  <div className="flex items-center justify-between gap-2">
-                    <span className="font-semibold text-sm">{proj.projectName}</span>
-                    <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
-                      proj.status === 'Active'
-                        ? 'bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-400'
-                        : 'bg-muted text-muted-foreground'
-                    }`}>
-                      {proj.status}
-                    </span>
-                  </div>
-                  {proj.siteCode && <p className="text-xs text-muted-foreground">Site Code: {proj.siteCode}</p>}
-                  {proj.projectSite && <p className="text-xs text-muted-foreground">Site: {proj.projectSite}</p>}
-                  {proj.location && <p className="text-xs text-muted-foreground">Location: {proj.location}</p>}
-                  <div className="grid grid-cols-2 gap-2 pt-1">
-                    <Button variant="outline" className="h-10 rounded-lg text-sm" onClick={() => openEditDialog(proj)} disabled={!canEdit}>Edit</Button>
-                    <Button variant="destructive" className="h-10 rounded-lg text-sm" onClick={() => handleDeleteProject(proj.id)} disabled={!canDelete}>Delete</Button>
-                  </div>
-                </CardContent>
-              </Card>
-            ))}
-      </div>
-
-      {/* ── Desktop table (hidden below md) ── */}
-      <div className="hidden md:block">
-      <Card>
-        <CardContent className="p-0">
-          <ScrollArea className="h-[calc(100vh-15rem)]">
-            <Table>
-              <TableHeader className="sticky top-0 bg-background z-10">
-                <TableRow>
-                  <TableHead>Sr. No.</TableHead>
-                  <TableHead>Project Name</TableHead>
-                  <TableHead>Site Code</TableHead>
-                  <TableHead>Project Site</TableHead>
-                  <TableHead>Project Division</TableHead>
-                  <TableHead>Location</TableHead>
-                  <TableHead>Site in-charge</TableHead>
-                  <TableHead>Status</TableHead>
-                  <TableHead className="text-right">Actions</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {isLoading ? (
-                  Array.from({ length: 5 }).map((_, i) => (
-                    <TableRow key={i}>
-                      <TableCell><Skeleton className="h-5 w-10" /></TableCell>
-                      <TableCell><Skeleton className="h-5 w-32" /></TableCell>
-                      <TableCell><Skeleton className="h-5 w-24" /></TableCell>
-                      <TableCell><Skeleton className="h-5 w-24" /></TableCell>
-                      <TableCell><Skeleton className="h-5 w-24" /></TableCell>
-                      <TableCell><Skeleton className="h-5 w-32" /></TableCell>
-                      <TableCell><Skeleton className="h-5 w-24" /></TableCell>
-                      <TableCell><Skeleton className="h-5 w-16" /></TableCell>
-                      <TableCell className="text-right space-x-2">
-                         <Skeleton className="h-8 w-16 inline-block" />
-                         <Skeleton className="h-8 w-16 inline-block" />
-                      </TableCell>
-                    </TableRow>
-                  ))
-                ) : projects.length > 0 ? (
-                  projects.map((proj, index) => (
-                    <TableRow key={proj.id}>
-                      <TableCell>{index + 1}</TableCell>
-                      <TableCell className="font-medium">{proj.projectName}</TableCell>
-                      <TableCell>{proj.siteCode}</TableCell>
-                      <TableCell>{proj.projectSite}</TableCell>
-                      <TableCell>{proj.projectDivision}</TableCell>
-                      <TableCell>{proj.location}</TableCell>
-                      <TableCell>{proj.siteInCharge}</TableCell>
-                      <TableCell>{proj.status}</TableCell>
-                      <TableCell className="text-right space-x-2">
-                        <Button variant="outline" size="sm" onClick={() => openEditDialog(proj)} disabled={!canEdit}>Edit</Button>
-                        <Button variant="destructive" size="sm" onClick={() => handleDeleteProject(proj.id)} disabled={!canDelete}>Delete</Button>
-                      </TableCell>
-                    </TableRow>
-                  ))
-                ) : (
-                  <TableRow>
-                    <TableCell colSpan={9} className="text-center h-24">
-                      No projects found.
-                    </TableCell>
-                  </TableRow>
-                )}
-              </TableBody>
-            </Table>
-          </ScrollArea>
-        </CardContent>
-      </Card>
-      </div>
+      </TableCard>
 
       <Dialog open={isEditDialogOpen} onOpenChange={setIsEditDialogOpen}>
         <DialogContent className="sm:max-w-3xl">

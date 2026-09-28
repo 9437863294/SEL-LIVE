@@ -1,14 +1,12 @@
 'use client';
 
 import Link from 'next/link';
-import { useState } from 'react';
-import { ChevronDown, Loader2, ShieldAlert } from 'lucide-react';
-import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
+import { Loader2, ShieldAlert } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Progress } from '@/components/ui/progress';
+import type { StatusTone } from '@/components/shared/status-badge';
 import { cn } from '@/lib/utils';
-import { hrCurrency, hrStatusLabel, hrStatusTone, priorityTone, type RequirementPriority } from '@/lib/hr-requirement';
+import { hrCurrency, type RequirementPriority } from '@/lib/hr-requirement';
 
 /**
  * Presentation primitives shared across the HR screens.
@@ -31,21 +29,35 @@ import { hrCurrency, hrStatusLabel, hrStatusTone, priorityTone, type Requirement
 export { TONES as HR_TONES, KpiCard as HrKpiCard } from '@/components/shared/kpi-card';
 export type { Tone as HrTone } from '@/components/shared/kpi-card';
 
-/** Status badge. Always renders through `hrStatusLabel`, so no screen prints a raw token. */
-export function HrStatusBadge({ status, className }: { status: string; className?: string }) {
-  return (
-    <Badge variant="outline" className={cn('border font-medium', hrStatusTone(status), className)}>
-      {hrStatusLabel(status)}
-    </Badge>
-  );
+/**
+ * HR tokens the app's shared status vocabulary would misread: "Not joined" contains "joined",
+ * and a postponed joining or a re-upload request is waiting on someone, not finished. Everything
+ * else takes its tone from the word itself (`@/lib/status-tone`).
+ */
+const HR_STATUS_TONES: Record<string, StatusTone> = {
+  NOT_JOINED: 'danger',
+  BLACKLISTED: 'danger',
+  POSTPONED: 'warning',
+  REUPLOAD_REQUIRED: 'warning',
+  COMPENSATION_APPROVAL: 'warning',
+  REOPENED: 'info',
+  RESCHEDULED: 'info',
+  UPLOADED: 'info',
+  VIEWED: 'info',
+  PRE_JOINING: 'progress',
+};
+
+/** The tone an HR status badge takes when HR means something particular by the token; else undefined. */
+export function hrBadgeTone(status: string): StatusTone | undefined {
+  return HR_STATUS_TONES[status];
 }
 
-export function HrPriorityBadge({ priority, className }: { priority: RequirementPriority | string; className?: string }) {
-  return (
-    <Badge variant="outline" className={cn('border font-medium', priorityTone(priority), className)}>
-      {priority}
-    </Badge>
-  );
+/** Requirement priority on the shared tones: Low → neutral, Normal → info, High → warning, Critical/Urgent → danger. */
+export function hrPriorityBadgeTone(priority: RequirementPriority | string): StatusTone {
+  if (priority === 'Critical' || priority === 'Urgent') return 'danger';
+  if (priority === 'High') return 'warning';
+  if (priority === 'Normal') return 'info';
+  return 'neutral';
 }
 
 /** Money, right-aligned and tabular so columns of figures line up for scanning. */
@@ -127,42 +139,6 @@ export function HrAccessDenied({ what = 'this page' }: { what?: string }) {
           <p className="mt-0.5 text-xs text-muted-foreground">Contact your administrator to request access.</p>
         </div>
       </CardContent>
-    </Card>
-  );
-}
-
-/**
- * Collapsible filter panel. Collapsed by default on mobile, because the requirement register's
- * eleven filters otherwise push the actual rows off the first screen on a phone.
- */
-export function HrFilterCard({
-  children,
-  title = 'Filters',
-  summary,
-  actions,
-}: {
-  children: React.ReactNode;
-  title?: string;
-  summary?: string;
-  actions?: React.ReactNode;
-}) {
-  const [open, setOpen] = useState(false);
-  return (
-    <Card className="mb-3 border-white/60 bg-white/80 shadow-sm backdrop-blur-sm">
-      <CardHeader className="flex-row items-center justify-between gap-2 space-y-0 px-4 py-3">
-        <div className="min-w-0">
-          <CardTitle className="text-sm">{title}</CardTitle>
-          {summary && <CardDescription className="truncate text-xs">{summary}</CardDescription>}
-        </div>
-        <div className="flex shrink-0 items-center gap-2">
-          {actions}
-          <Button variant="ghost" size="sm" className="shrink-0 gap-1 lg:hidden" onClick={() => setOpen(value => !value)}>
-            {open ? 'Hide' : 'Show'}
-            <ChevronDown className={cn('h-4 w-4 transition-transform', open && 'rotate-180')} />
-          </Button>
-        </div>
-      </CardHeader>
-      <CardContent className={cn('px-4 pb-4', !open && 'hidden lg:block')}>{children}</CardContent>
     </Card>
   );
 }
@@ -250,33 +226,15 @@ export function HrFillBar({
   );
 }
 
-/** SLA badge, tinted by state (spec section 40). */
-export function HrSlaBadge({
-  state,
-  consumedPercent,
-  overdueDays,
-}: {
-  state: 'Not started' | 'On track' | 'Due soon' | 'Overdue' | string;
-  consumedPercent?: number;
-  overdueDays?: number;
-}) {
-  const tone =
-    state === 'Overdue'
-      ? 'bg-rose-100 text-rose-800 border-rose-200'
-      : state === 'Due soon'
-        ? 'bg-amber-100 text-amber-800 border-amber-200'
-        : state === 'On track'
-          ? 'bg-emerald-100 text-emerald-800 border-emerald-200'
-          : 'bg-slate-100 text-slate-700 border-slate-200';
-
-  const label =
-    state === 'Overdue' && overdueDays
-      ? `Overdue ${overdueDays}d`
-      : state === 'Not started'
-        ? 'SLA not started'
-        : `${state}${consumedPercent !== undefined ? ` · ${Math.round(consumedPercent)}%` : ''}`;
-
-  return <Badge variant="outline" className={cn('border font-medium', tone)}>{label}</Badge>;
+/**
+ * The SLA badge's label (spec section 40): "Overdue 3d", "SLA not started", "On track · 40%".
+ * Rendered as `<StatusBadge status={state}>{hrSlaLabel(…)}</StatusBadge>` — the state words read
+ * as neutral / success / warning / danger in the shared vocabulary.
+ */
+export function hrSlaLabel(state: string, consumedPercent?: number, overdueDays?: number): string {
+  if (state === 'Overdue' && overdueDays) return `Overdue ${overdueDays}d`;
+  if (state === 'Not started') return 'SLA not started';
+  return `${state}${consumedPercent !== undefined ? ` · ${Math.round(consumedPercent)}%` : ''}`;
 }
 
 /** A labelled progress meter, for document completion and manpower fulfilment. */

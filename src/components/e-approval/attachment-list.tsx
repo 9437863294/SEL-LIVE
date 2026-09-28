@@ -2,7 +2,7 @@
 
 import { useMemo, useRef, useState } from 'react';
 import { Download, FileSignature, FileText, History, Loader2, Paperclip, Trash2, Upload } from 'lucide-react';
-import { Badge } from '@/components/ui/badge';
+import { StatusBadge } from '@/components/shared/status-badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { useToast } from '@/hooks/use-toast';
@@ -263,19 +263,13 @@ export function AttachmentList({
                     )}
                   </div>
                   {attachment.supersedesAttachmentId && (
-                    <Badge variant="outline" className="shrink-0 border-amber-200 bg-amber-50 text-[10px] text-amber-800">
-                      Revision
-                    </Badge>
+                    <StatusBadge status="Revision" tone="warning" className="shrink-0" />
                   )}
-                  {superseded && (
-                    <Badge variant="outline" className="shrink-0 text-[10px] text-muted-foreground">
-                      Superseded
-                    </Badge>
-                  )}
+                  {superseded && <StatusBadge status="Superseded" className="shrink-0" />}
                   {attachment.signedByName && (
-                    <Badge variant="outline" className="shrink-0 gap-1 border-emerald-200 bg-emerald-50 text-[10px] text-emerald-800">
+                    <StatusBadge tone="success" className="shrink-0">
                       <FileSignature className="h-3 w-3" /> Signed
-                    </Badge>
+                    </StatusBadge>
                   )}
                   {canUpload && canSign && isPdf(attachment) && (
                     <Button

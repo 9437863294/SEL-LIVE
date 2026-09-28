@@ -29,7 +29,6 @@ import {
   RFQ_AWARD_WORKFLOW_DOC_ID,
   awardPremium,
   canActOnRfqAward,
-  rfqAwardStatusStyles,
   rfqAwardsForStep,
   type RfqAwardAction,
   type RfqAwardApproval,
@@ -55,7 +54,6 @@ import {
   type PmSidebarLink,
 } from "@/components/project-management/pm-shell";
 import { cn } from "@/lib/utils";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import {
@@ -70,6 +68,8 @@ import {
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { PageHeader } from "@/components/shared/page-header";
+import { StatusBadge } from "@/components/shared/status-badge";
+import { pmStatusTone } from "@/components/project-management/pm-status-tones";
 
 const toDateSafe = (value: unknown): Date | null => {
   if (!value) return null;
@@ -350,7 +350,7 @@ export default function RfqAwardStagePage() {
       mobile: "title",
       cell: (item) => <span title={item.description}>{item.description || "—"}</span>,
     },
-    { header: "Indent", className: "text-xs", cell: (item) => item.sourceIndentNumber || "—" },
+    { header: "Indent", className: "whitespace-nowrap", cell: (item) => item.sourceIndentNumber || "—" },
     {
       header: "Qty",
       className: "whitespace-nowrap text-right",
@@ -402,7 +402,6 @@ export default function RfqAwardStagePage() {
     },
     {
       header: "vs Lowest",
-      className: "text-xs",
       cell: (approval) => {
         const premium = awardPremium(approval.totalAmount, approval.lowestLandedCost);
         return approval.lowestLandedCost == null ? (
@@ -420,19 +419,15 @@ export default function RfqAwardStagePage() {
         );
       },
     },
-    { header: "Requested By", className: "text-sm", cell: (approval) => approval.requestedByName || "—" },
+    { header: "Requested By", cell: (approval) => approval.requestedByName || "—" },
     {
       header: "Status",
       mobile: "aside",
-      cell: (approval) => (
-        <Badge variant="outline" className={rfqAwardStatusStyles[approval.status]}>
-          {approval.status}
-        </Badge>
-      ),
+      cell: (approval) => <StatusBadge status={approval.status} tone={pmStatusTone(approval.status)} />,
     },
     {
       header: "Due",
-      className: "text-xs text-muted-foreground",
+      className: "whitespace-nowrap",
       cell: (approval) => {
         const due = toDateSafe(approval.deadline);
         return due ? (

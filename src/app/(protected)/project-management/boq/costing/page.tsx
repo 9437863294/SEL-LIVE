@@ -14,7 +14,6 @@ import {
   ChevronDown,
   ChevronRight,
   ChevronUp,
-  Search,
   Edit,
   Route,
   Save,
@@ -61,7 +60,7 @@ import {
   YES_NO_OPTIONS,
 } from '@/lib/project-management-boq-columns';
 import { PO_COLLECTION, type PurchaseOrder } from '@/lib/purchase-orders';
-import { MDL_COLLECTION, mdlOverallStatusStyles, type MdlDrawing } from '@/lib/mdl';
+import { MDL_COLLECTION, type MdlDrawing } from '@/lib/mdl';
 import {
   MC_COLLECTION,
   INSPECTION_COLLECTION,
@@ -69,8 +68,6 @@ import {
   DI_COLLECTION,
   GRN_COLLECTION,
   MVAC_COLLECTION,
-  mcStatusStyles,
-  mdccStatusStyles,
   type ManufacturingClearance,
   type InspectionRecord,
   type MdccRecord,
@@ -78,7 +75,7 @@ import {
   type GrnRecord,
   type MvacRecord,
 } from '@/lib/supply-gates';
-import { reconcileBoqQuantities, quantityExceptionStyles } from '@/lib/boq-quantity-control';
+import { reconcileBoqQuantities } from '@/lib/boq-quantity-control';
 import {
   WORK_ORDER_COLLECTION,
   aggregateSubcontractorBillsByBoqItem,
@@ -92,7 +89,10 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import type { CheckedState } from '@radix-ui/react-checkbox';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { PM_DIALOG } from '@/components/project-management/pm-shell';
+import { pmStatusTone } from '@/components/project-management/pm-status-tones';
+import { FilterBar } from '@/components/shared/filter-bar';
 import { PageHeader } from '@/components/shared/page-header';
+import { StatusBadge } from '@/components/shared/status-badge';
 
 
 export type BoqItem = {
@@ -1241,30 +1241,96 @@ export default function ViewBoqPage() {
           className="mb-0 min-w-0 sm:mb-0"
         />
 
-        {/* Phones: search on top, the filters paired beneath it, the actions last — a 2-column grid
-            reordered with `max-sm:order-*` so the desktop row keeps its source order. */}
-        <div className="grid grid-cols-2 gap-2 sm:flex sm:flex-wrap sm:items-center lg:justify-end">
-          {canAddManual && (
-            <Link
-              href={`/project-management/boq/add?project=${encodeURIComponent(mappingId)}`}
-              className="max-sm:order-last"
-            >
-              <Button variant="outline" className="w-full sm:w-auto">
-                <ListPlus className="mr-2 h-4 w-4" /> Add Items
-              </Button>
-            </Link>
-          )}
+        <FilterBar
+          className="min-w-0"
+          search={{ value: filters.search, onChange: (value) => handleFilterChange('search', value), placeholder: 'Search...' }}
+          activeCount={(['Scope 1', 'Scope 2', 'Category 1'] as const).filter((key) => filters[key] !== 'all').length}
+          onClear={clearFilters}
+          actions={
+            <>
+              {canAddManual && (
+                <Link href={`/project-management/boq/add?project=${encodeURIComponent(mappingId)}`}>
+                  <Button variant="outline">
+                    <ListPlus className="mr-2 h-4 w-4" /> Add Items
+                  </Button>
+                </Link>
+              )}
 
-          <div className="relative col-span-2 max-sm:order-first">
-            <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
-            <Input
-              placeholder="Search..."
-              value={filters.search}
-              onChange={(e) => handleFilterChange('search', e.target.value)}
-              className="pl-8"
-            />
-          </div>
+              {canDelete && selectedItemIds.length > 0 && (
+                <AlertDialog>
+                  <AlertDialogTrigger asChild>
+                    <Button variant="destructive" disabled={isDeleting}>
+                      {isDeleting ? (
+                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      ) : (
+                        <Trash2 className="mr-2 h-4 w-4" />
+                      )}
+                      Delete ({selectedItemIds.length})
+                    </Button>
+                  </AlertDialogTrigger>
+                  <AlertDialogContent>
+                    <AlertDialogHeader>
+                      <AlertDialogTitle>Are you absolutely sure?</AlertDialogTitle>
+                      <AlertDialogDescription>
+                        {blockedIds.length > 0 ? (
+                          <>
+                            This will permanently delete {deletableIds.length} item(s). {blockedIds.length} of the
+                            selected item(s) are referenced by an indent, purchase order, or MDL drawing and will be
+                            skipped — reassign or remove those references first if they also need to be deleted.
+                          </>
+                        ) : (
+                          <>This will permanently delete {deletableIds.length} item(s).</>
+                        )}
+                      </AlertDialogDescription>
+                    </AlertDialogHeader>
+                    <AlertDialogFooter>
+                      <AlertDialogCancel>Cancel</AlertDialogCancel>
+                      <AlertDialogAction onClick={handleDelete} disabled={deletableIds.length === 0}>
+                        Continue
+                      </AlertDialogAction>
+                    </AlertDialogFooter>
+                  </AlertDialogContent>
+                </AlertDialog>
+              )}
 
+              <Dialog open={isColumnEditorOpen} onOpenChange={setIsColumnEditorOpen}>
+                <DialogTrigger asChild>
+                  <Button variant="outline">
+                    <Settings className="mr-2 h-4 w-4" /> Columns
+                  </Button>
+                </DialogTrigger>
+                <DialogContent className={cn(PM_DIALOG.content, 'sm:max-w-md')}>
+                    <DialogHeader className={PM_DIALOG.header}>
+                        <DialogTitle>Customize Columns</DialogTitle>
+                        <DialogDescription>Reorder and toggle visibility of columns.</DialogDescription>
+                    </DialogHeader>
+                    {/* On a phone the sheet's body is what scrolls, so the fixed height gives way to it. */}
+                    <ScrollArea className="hr-dialog-body h-[60vh] max-sm:h-auto">
+                        <div className="py-4 space-y-2 pr-6 max-sm:py-0 max-sm:pr-0">
+                            {columnOrder.map((header) => (
+                                <div key={header} className="flex items-center gap-2 p-2 border rounded-md max-sm:p-3">
+                                    <Checkbox
+                                        id={`vis-${header}`}
+                                        checked={!!columnVisibility[header]}
+                                        onCheckedChange={(checked) => setColumnVisibility((prev) => ({ ...prev, [header]: !!checked }))}
+                                    />
+                                    <Label htmlFor={`vis-${header}`} className="flex-1">
+                                        {columnNames[header] || header}
+                                    </Label>
+                                </div>
+                            ))}
+                        </div>
+                    </ScrollArea>
+                    <DialogFooter className={cn(PM_DIALOG.footer, 'max-sm:[&>*]:col-span-2')}>
+                        <DialogClose asChild>
+                            <Button>Done</Button>
+                        </DialogClose>
+                    </DialogFooter>
+                </DialogContent>
+              </Dialog>
+            </>
+          }
+        >
           {Object.keys(filterOptions).map((key) => {
             const options = filterOptions[key as keyof typeof filterOptions] as string[];
             if (!options || options.length === 0) return null;
@@ -1274,7 +1340,7 @@ export default function ViewBoqPage() {
                 value={filters[key as keyof typeof filters]}
                 onValueChange={(v) => handleFilterChange(key as keyof typeof filters, v)}
               >
-                <SelectTrigger className="w-full min-w-0 sm:w-[180px]">
+                <SelectTrigger>
                   <SelectValue placeholder={`Filter by ${key}`} />
                 </SelectTrigger>
                 <SelectContent>
@@ -1288,84 +1354,7 @@ export default function ViewBoqPage() {
               </Select>
             );
           })}
-
-          <Button variant="secondary" onClick={clearFilters}>
-            Clear Filters
-          </Button>
-
-          {canDelete && selectedItemIds.length > 0 && (
-            <AlertDialog>
-              <AlertDialogTrigger asChild>
-                <Button variant="destructive" disabled={isDeleting} className="max-sm:order-last">
-                  {isDeleting ? (
-                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  ) : (
-                    <Trash2 className="mr-2 h-4 w-4" />
-                  )}
-                  Delete ({selectedItemIds.length})
-                </Button>
-              </AlertDialogTrigger>
-              <AlertDialogContent>
-                <AlertDialogHeader>
-                  <AlertDialogTitle>Are you absolutely sure?</AlertDialogTitle>
-                  <AlertDialogDescription>
-                    {blockedIds.length > 0 ? (
-                      <>
-                        This will permanently delete {deletableIds.length} item(s). {blockedIds.length} of the
-                        selected item(s) are referenced by an indent, purchase order, or MDL drawing and will be
-                        skipped — reassign or remove those references first if they also need to be deleted.
-                      </>
-                    ) : (
-                      <>This will permanently delete {deletableIds.length} item(s).</>
-                    )}
-                  </AlertDialogDescription>
-                </AlertDialogHeader>
-                <AlertDialogFooter>
-                  <AlertDialogCancel>Cancel</AlertDialogCancel>
-                  <AlertDialogAction onClick={handleDelete} disabled={deletableIds.length === 0}>
-                    Continue
-                  </AlertDialogAction>
-                </AlertDialogFooter>
-              </AlertDialogContent>
-            </AlertDialog>
-          )}
-
-          <Dialog open={isColumnEditorOpen} onOpenChange={setIsColumnEditorOpen}>
-            <DialogTrigger asChild>
-              <Button variant="outline" className="max-sm:order-last">
-                <Settings className="mr-2 h-4 w-4" /> Columns
-              </Button>
-            </DialogTrigger>
-            <DialogContent className={cn(PM_DIALOG.content, 'sm:max-w-md')}>
-                <DialogHeader className={PM_DIALOG.header}>
-                    <DialogTitle>Customize Columns</DialogTitle>
-                    <DialogDescription>Reorder and toggle visibility of columns.</DialogDescription>
-                </DialogHeader>
-                {/* On a phone the sheet's body is what scrolls, so the fixed height gives way to it. */}
-                <ScrollArea className="hr-dialog-body h-[60vh] max-sm:h-auto">
-                    <div className="py-4 space-y-2 pr-6 max-sm:py-0 max-sm:pr-0">
-                        {columnOrder.map((header) => (
-                            <div key={header} className="flex items-center gap-2 p-2 border rounded-md max-sm:p-3">
-                                <Checkbox
-                                    id={`vis-${header}`}
-                                    checked={!!columnVisibility[header]}
-                                    onCheckedChange={(checked) => setColumnVisibility((prev) => ({ ...prev, [header]: !!checked }))}
-                                />
-                                <Label htmlFor={`vis-${header}`} className="flex-1">
-                                    {columnNames[header] || header}
-                                </Label>
-                            </div>
-                        ))}
-                    </div>
-                </ScrollArea>
-                <DialogFooter className={cn(PM_DIALOG.footer, 'max-sm:[&>*]:col-span-2')}>
-                    <DialogClose asChild>
-                        <Button>Done</Button>
-                    </DialogClose>
-                </DialogFooter>
-            </DialogContent>
-          </Dialog>
-        </div>
+        </FilterBar>
       </div>
 
       {/* Table */}
@@ -1374,14 +1363,17 @@ export default function ViewBoqPage() {
         <div className="h-full border rounded-lg flex flex-col min-w-0">
           <div className="relative flex-1 min-h-0 w-full min-w-0">
               <div className="h-full">
-                <Table className="text-sm" containerClassName="h-full overflow-auto">
+                {/* The sheet keeps its own scroll box (not a TableCard): its frozen selection/expand
+                    columns need their own z-order over the pinned header, and the sheet fills the
+                    viewport rather than a capped card. The pinned cells take the header band's tint. */}
+                <Table containerClassName="h-full overflow-auto">
                   <TableHeader>
                     <TableRow>
                       {/* Sticky selection cell — pinned sideways from `sm` only: on a phone the
                           selection and expand columns would take a third of the width, so there the
                           Description column is the one that stays in view. */}
                       <TableHead
-                        className="sticky top-0 bg-background z-30 w-[50px] shadow-[1px_0_0_0_var(--border)] sm:left-0"
+                        className="sticky top-0 z-30 w-[50px] bg-slate-100 shadow-[1px_0_0_0_var(--border)] sm:left-0"
                         aria-sort="none"
                       >
                         <Checkbox
@@ -1392,7 +1384,7 @@ export default function ViewBoqPage() {
                         />
                       </TableHead>
                       {/* Sticky expand cell */}
-                      <TableHead className="sticky top-0 bg-background z-30 w-12 shadow-[1px_0_0_0_var(--border)] sm:left-[50px]">
+                      <TableHead className="sticky top-0 z-30 w-12 bg-slate-100 shadow-[1px_0_0_0_var(--border)] sm:left-[50px]">
                         <span className="sr-only">Expand</span>
                       </TableHead>
 
@@ -1400,7 +1392,7 @@ export default function ViewBoqPage() {
                         <TableHead
                           key={header}
                           className={cn(
-                            'sticky top-0 bg-background z-20 whitespace-nowrap px-4 cursor-pointer select-none',
+                            'sticky top-0 z-20 cursor-pointer select-none whitespace-nowrap bg-slate-100',
                             header === 'Description' &&
                               'max-sm:left-0 max-sm:z-30 max-sm:shadow-[1px_0_0_0_hsl(var(--border))]',
                           )}
@@ -1422,7 +1414,7 @@ export default function ViewBoqPage() {
                           </div>
                         </TableHead>
                       ))}
-                      <TableHead className="sticky top-0 bg-background z-20">Actions</TableHead>
+                      <TableHead className="sticky top-0 z-20 bg-slate-100">Actions</TableHead>
                     </TableRow>
                   </TableHeader>
 
@@ -1433,7 +1425,7 @@ export default function ViewBoqPage() {
                           <TableCell className="sm:sticky sm:left-0 bg-background z-10 shadow-[1px_0_0_0_var(--border)]">
                             <Skeleton className="h-5 w-5" />
                           </TableCell>
-                          <TableCell className="sm:sticky sm:left-[50px] bg-background z-10 shadow-[1px_0_0_0_var(--border)] px-2">
+                          <TableCell className="sm:sticky sm:left-[50px] bg-background z-10 shadow-[1px_0_0_0_var(--border)]">
                             <Skeleton className="h-5 w-5" />
                           </TableCell>
                           {visibleHeaders.map((_, j) => (
@@ -1477,7 +1469,7 @@ export default function ViewBoqPage() {
                               </TableCell>
 
                               {/* Sticky expand cell */}
-                              <TableCell className="sm:sticky sm:left-[50px] bg-background z-10 shadow-[1px_0_0_0_var(--border)] px-2">
+                              <TableCell className="sm:sticky sm:left-[50px] bg-background z-10 shadow-[1px_0_0_0_var(--border)]">
                                 {hasBom ? (
                                   <Button
                                     size="icon"
@@ -1523,16 +1515,7 @@ export default function ViewBoqPage() {
                                     display = <span className="text-muted-foreground">—</span>;
                                   } else {
                                     const status = mdlStatusByBoqItemId.get(item.id) ?? 'Pending';
-                                    display = (
-                                      <span
-                                        className={cn(
-                                          'inline-flex rounded-full px-2 py-0.5 text-xs font-medium',
-                                          mdlOverallStatusStyles[status],
-                                        )}
-                                      >
-                                        {status}
-                                      </span>
-                                    );
+                                    display = <StatusBadge status={status} tone={pmStatusTone(status)} />;
                                   }
                                 } else if (header === 'Qty Reconciliation') {
                                   const ledger = reconciliationByBoqItemId.get(item.id);
@@ -1540,16 +1523,14 @@ export default function ViewBoqPage() {
                                     display = <span className="text-muted-foreground">—</span>;
                                   } else {
                                     display = (
-                                      <span
-                                        className={cn(
-                                          'inline-flex rounded-full px-2 py-0.5 text-xs font-medium',
-                                          quantityExceptionStyles[ledger.worstSeverity],
-                                        )}
+                                      <StatusBadge
+                                        status={ledger.worstSeverity}
+                                        tone={ledger.worstSeverity === 'critical' ? 'danger' : 'warning'}
                                         title={ledger.exceptions.map((e) => e.message).join('\n')}
                                       >
                                         {ledger.worstSeverity === 'critical' ? 'Breach' : 'Check'} (
                                         {ledger.exceptions.length})
-                                      </span>
+                                      </StatusBadge>
                                     );
                                   }
                                 } else if (SUPPLY_GATE_STATUS_COLUMNS.has(header) || SUPPLY_GATE_QTY_COLUMNS.has(header)) {
@@ -1560,18 +1541,11 @@ export default function ViewBoqPage() {
                                     display = <span className="text-muted-foreground">—</span>;
                                   } else if (header === 'MC Status') {
                                     const status = mcStatusByBoqItemId.get(item.id) ?? 'Pending';
-                                    display = (
-                                      <span className={cn('inline-flex rounded-full px-2 py-0.5 text-xs font-medium', mcStatusStyles[status])}>
-                                        {status}
-                                      </span>
-                                    );
+                                    display = <StatusBadge status={status} tone={pmStatusTone(status)} />;
                                   } else if (header === 'MDCC Status') {
                                     const status = mdccStatusByBoqItemId.get(item.id) ?? 'Pending';
-                                    display = (
-                                      <span className={cn('inline-flex rounded-full px-2 py-0.5 text-xs font-medium', mdccStatusStyles[status])}>
-                                        {status}
-                                      </span>
-                                    );
+                                    // An issued MDCC is the gate cleared, not merely a document sent.
+                                    display = <StatusBadge status={status} tone={status === 'Issued' ? 'success' : pmStatusTone(status)} />;
                                   } else if (header === 'Inspection Accepted Qty') {
                                     display = fmtNum(inspectionQtyByBoqItemId.get(item.id) ?? 0);
                                   } else if (header === 'DI Dispatch Qty') {
@@ -1666,7 +1640,7 @@ export default function ViewBoqPage() {
                             </TableRow>
 
                             {isExpanded && hasBom && (
-                              <TableRow className="bg-muted/50 hover:bg-muted/50">
+                              <TableRow className="bg-muted/50">
                                 <TableCell colSpan={visibleHeaders.length + 3} className="p-0">
                                   {/* The row spans the whole sheet; on a phone the panel stays pinned to the
                                       visible width of the scroll box instead of starting off-screen. */}
@@ -1701,7 +1675,7 @@ export default function ViewBoqPage() {
                       })
                     ) : (
                       <TableRow>
-                        <TableCell colSpan={visibleHeaders.length + 3} className="text-center h-24">
+                        <TableCell colSpan={visibleHeaders.length + 3} className="text-center">
                           No BOQ items found.
                         </TableCell>
                       </TableRow>

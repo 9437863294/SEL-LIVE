@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState, type KeyboardEvent } from "react";
+import { useCallback, useEffect, useMemo, useState, type KeyboardEvent, type ReactNode } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import {
@@ -14,7 +14,6 @@ import {
   Paperclip,
   PenTool,
   RotateCcw,
-  Search,
   ShieldAlert,
   ShoppingCart,
   Truck,
@@ -59,7 +58,6 @@ import {
   getMdlSubDrawings,
   isAwaitingVendorCollection,
   isCollectedFromVendor,
-  mdlDrawingStageStyles,
   mdlOutlineNo,
   type MdlDrawing,
   type MdlPoRef,
@@ -72,6 +70,11 @@ import {
   JMC_MAIN_CLASS,
 } from "@/components/jmc/jmc-page-shell";
 import { PageHeader } from "@/components/shared/page-header";
+import { TableCard } from "@/components/shared/table-card";
+import { SearchInput } from "@/components/shared/filter-bar";
+import { StatusBadge } from "@/components/shared/status-badge";
+import { pmStatusTone } from "@/components/project-management/pm-status-tones";
+import { Badge } from "@/components/ui/badge";
 
 const PERMISSION_RESOURCE = "Project Management.Drawing";
 
@@ -522,11 +525,6 @@ export default function DrawingPage() {
   // description cell — each in a column of its own.
   const DRAWING_COLUMN_COUNT = 10;
 
-  // Compacted here rather than in components/ui/table.tsx, which every other table in the app
-  // shares. `[&_td]` beats a cell's own `py-*`, so cells no longer set vertical padding at all.
-  const DRAWING_TABLE_DENSITY =
-    "[&_th]:h-8 [&_th]:whitespace-nowrap [&_th]:px-2 [&_th]:text-xs [&_td]:px-2 [&_td]:py-1";
-
   const drawingRows = (rows: CollectionRow[], prefix: number[], mode: "pending" | "collected") =>
     rows.map((row, index) => {
       const { item, sub } = row;
@@ -542,16 +540,16 @@ export default function DrawingPage() {
             {mdlOutlineNo(...prefix, index)}.
           </TableCell>
           <TableCell className="whitespace-nowrap">{String(item["BOQ SL No"] ?? "—")}</TableCell>
-          <TableCell className="max-w-[200px] truncate text-sm font-medium" title={sub.title}>
+          <TableCell className="max-w-[200px] truncate font-medium" title={sub.title}>
             {sub.title || "Untitled drawing"}
           </TableCell>
           <TableCell
-            className="max-w-[200px] truncate text-xs text-muted-foreground"
+            className="max-w-[200px] truncate"
             title={String(item.Description ?? "")}
           >
             {String(item.Description ?? "—")}
           </TableCell>
-          <TableCell className="max-w-[140px] truncate text-xs" title={sub.assignedToName}>
+          <TableCell className="max-w-[140px] truncate" title={sub.assignedToName}>
             {sub.assignedToName || <span className="text-muted-foreground">Unassigned</span>}
           </TableCell>
           <TableCell className="max-w-[180px] whitespace-nowrap">
@@ -567,7 +565,7 @@ export default function DrawingPage() {
               <span className="text-muted-foreground">—</span>
             )}
           </TableCell>
-          <TableCell className="whitespace-nowrap text-sm">
+          <TableCell className="whitespace-nowrap">
             {mode === "pending"
               ? formatMdlDate(sub.plannedEndDate)
               : formatMdlDate(sub.collection?.receivedOn)}
@@ -575,20 +573,13 @@ export default function DrawingPage() {
           {/* The PO's vendor is on the group row; this is who actually sent the drawing, which is
               not always the same party and is only known once it has been collected. */}
           <TableCell
-            className="max-w-[140px] truncate text-xs text-muted-foreground"
+            className="max-w-[140px] truncate"
             title={sub.collection?.vendorName}
           >
             {sub.collection?.vendorName || "—"}
           </TableCell>
-          <TableCell>
-            <span
-              className={cn(
-                "whitespace-nowrap rounded-full px-2 py-0.5 text-[11px] font-medium",
-                mdlDrawingStageStyles[stage],
-              )}
-            >
-              {stage}
-            </span>
+          <TableCell className="whitespace-nowrap">
+            <StatusBadge status={stage} tone={pmStatusTone(stage)} />
           </TableCell>
           <TableCell>
             <div className="flex items-center justify-end gap-1">
@@ -668,14 +659,14 @@ export default function DrawingPage() {
         )}
         <div className="ml-auto flex items-center gap-2">
           {awaitingRedo > 0 && (
-            <span className="flex items-center gap-1 whitespace-nowrap rounded-full bg-rose-100 px-2 py-0.5 text-[11px] font-semibold text-rose-700">
+            <Badge variant="danger" className="gap-1 whitespace-nowrap">
               <RotateCcw className="h-3 w-3" />
               {awaitingRedo} replacement{awaitingRedo === 1 ? "" : "s"}
-            </span>
+            </Badge>
           )}
-          <span className="whitespace-nowrap rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-medium text-amber-800">
+          <Badge variant="neutral" className="whitespace-nowrap">
             {rows.length} drawing{rows.length === 1 ? "" : "s"}
-          </span>
+          </Badge>
         </div>
       </div>
     );
@@ -693,7 +684,7 @@ export default function DrawingPage() {
     return [
       <TableRow
         key={key}
-        className={cn("cursor-pointer bg-muted/40 hover:bg-muted/70", isOpen && "border-b-0")}
+        className={cn("cursor-pointer bg-muted/40", isOpen && "border-b-0")}
         onClick={() => toggleGroup(key)}
       >
         <TableCell colSpan={DRAWING_COLUMN_COUNT}>
@@ -741,11 +732,7 @@ export default function DrawingPage() {
       mobile: "aside",
       cell: ({ sub }) => {
         const stage = computeMdlDrawingStage(sub, true);
-        return (
-          <span className={cn("whitespace-nowrap rounded-full px-2 py-0.5 text-[11px] font-medium", mdlDrawingStageStyles[stage])}>
-            {stage}
-          </span>
-        );
+        return <StatusBadge status={stage} tone={pmStatusTone(stage)} />;
       },
     },
     {
@@ -829,31 +816,25 @@ export default function DrawingPage() {
     );
   };
 
-  const renderTable = (rows: CollectionRow[], mode: "pending" | "collected") => {
+  const renderTable = (rows: CollectionRow[], mode: "pending" | "collected", empty: ReactNode) => {
     const { groups, ungrouped } = groupRowsByPo(rows);
     const groupKeys = [
       ...groups.map((group) => `po:${group.po.poId}`),
       ...(ungrouped.length ? ["other"] : []),
     ];
     return (
-      <>
-        {/* This bar carries the table's own title as well as its controls. The card used to add a
-            CardHeader above it repeating what the sidebar already says, so the screen titled the
-            same table three times over — page header, sidebar, card — before any data. */}
-        <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-2 border-b border-border/60 px-4 py-2.5">
-          <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
-            {mode === "pending" ? (
-              <Truck className="h-3.5 w-3.5 shrink-0 text-orange-600" />
-            ) : (
-              <CheckCircle2 className="h-3.5 w-3.5 shrink-0 text-emerald-600" />
-            )}
-            <span className="font-medium text-foreground">
-              {mode === "pending" ? "To collect from vendor" : "Collected from vendor"}
-            </span>
-            · {rows.length} drawing{rows.length === 1 ? "" : "s"} across {groups.length} purchase
-            order{groups.length === 1 ? "" : "s"}
-          </p>
-          <div className="flex items-center gap-1">
+      <TableCard
+        icon={mode === "pending" ? Truck : CheckCircle2}
+        title={mode === "pending" ? "To collect from vendor" : "Collected from vendor"}
+        description={
+          rows.length
+            ? `${rows.length} drawing${rows.length === 1 ? "" : "s"} across ${groups.length} purchase order${groups.length === 1 ? "" : "s"}`
+            : undefined
+        }
+        scroll={rows.length ? "contained" : "natural"}
+        actions={
+          rows.length ? (
+          <>
             <Button
               variant="ghost"
               size="sm"
@@ -874,10 +855,13 @@ export default function DrawingPage() {
             >
               Collapse all
             </Button>
-          </div>
-        </div>
-        <div className="hidden overflow-x-auto sm:block">
-          <Table className={DRAWING_TABLE_DENSITY}>
+          </>
+          ) : undefined
+        }
+      >
+        {rows.length ? (
+        <>
+          <Table containerClassName="hidden sm:block">
             <TableHeader>
               <TableRow>
                 <TableHead className="w-16">SL NO</TableHead>
@@ -900,14 +884,17 @@ export default function DrawingPage() {
                 drawingGroupRow("other", groups.length, ungrouped, mode)}
             </TableBody>
           </Table>
-        </div>
-        <div className="divide-y sm:hidden">
-          {groups.map((group, groupIndex) =>
-            drawingPhoneGroup(`po:${group.po.poId}`, groupIndex, group.rows, mode, group.po),
-          )}
-          {ungrouped.length > 0 && drawingPhoneGroup("other", groups.length, ungrouped, mode)}
-        </div>
-      </>
+          <div className="divide-y sm:hidden">
+            {groups.map((group, groupIndex) =>
+              drawingPhoneGroup(`po:${group.po.poId}`, groupIndex, group.rows, mode, group.po),
+            )}
+            {ungrouped.length > 0 && drawingPhoneGroup("other", groups.length, ungrouped, mode)}
+          </div>
+        </>
+        ) : (
+          empty
+        )}
+      </TableCard>
     );
   };
 
@@ -947,16 +934,12 @@ export default function DrawingPage() {
         />
 
         <div className="min-w-0 flex-1 space-y-4">
-          <div className="relative">
-            <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
-            <Input
-              placeholder="Search by drawing, item, BOQ SL No, vendor or PO number..."
-              aria-label="Search drawings"
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              className="pl-8"
-            />
-          </div>
+          <SearchInput
+            placeholder="Search by drawing, item, BOQ SL No, vendor or PO number..."
+            label="Search drawings"
+            value={search}
+            onChange={setSearch}
+          />
 
           {itemsMissingDrawingList.length > 0 && (
             <Card className="border-amber-200 bg-amber-50/60">
@@ -992,28 +975,20 @@ export default function DrawingPage() {
           )}
 
           {activeTab === "collected" ? (
-            <Card className="overflow-hidden border-border/60">
-              <div className="h-1 w-full bg-gradient-to-r from-emerald-500 to-teal-600" />
-              <CardContent className="p-0">
-                {collectedRows.length ? (
-                  renderTable(collectedRows, "collected")
-                ) : (
+            renderTable(
+              collectedRows,
+              "collected",
                   <div className="flex flex-col items-center gap-3 p-8 text-center">
                     <Inbox className="h-10 w-10 text-muted-foreground" />
                     <p className="text-sm text-muted-foreground">
                       {search.trim() ? "No collected drawings match your search." : "No vendor drawings collected yet."}
                     </p>
-                  </div>
-                )}
-              </CardContent>
-            </Card>
+                  </div>,
+            )
           ) : (
-            <Card className="overflow-hidden border-border/60">
-              <div className="h-1 w-full bg-gradient-to-r from-orange-500 to-amber-600" />
-              <CardContent className="p-0">
-                {pendingRows.length ? (
-                  renderTable(pendingRows, "pending")
-                ) : (
+            renderTable(
+              pendingRows,
+              "pending",
                   <div className="flex flex-col items-center gap-3 p-8 text-center">
                     <ClipboardCheck className="h-10 w-10 text-muted-foreground" />
                     <div>
@@ -1038,10 +1013,8 @@ export default function DrawingPage() {
                         </Link>
                       </Button>
                     )}
-                  </div>
-                )}
-              </CardContent>
-            </Card>
+                  </div>,
+            )
           )}
         </div>
       </div>

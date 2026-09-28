@@ -5,7 +5,8 @@ import { useState, useEffect, useMemo, useCallback } from 'react';
 import Link from 'next/link';
 import { ArrowLeft, Save, Loader2, Library, Plus } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { TableCard } from '@/components/shared/table-card';
 import { Input } from '@/components/ui/input';
 import { useToast } from '@/hooks/use-toast';
 import { db } from '@/lib/firebase';
@@ -264,13 +265,11 @@ export default function CreateRetentionBillPage() {
           </CardContent>
         </Card>
         
-        <Card className="lg:col-span-2">
-          <CardHeader>
-            <CardTitle>Select Bills to Claim Retention</CardTitle>
-            <CardDescription>Only bills with an unclaimed retention amount are shown.</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="border rounded-md max-h-96 overflow-y-auto">
+        <TableCard
+          className="lg:col-span-2"
+          title="Select Bills to Claim Retention"
+          description="Only bills with an unclaimed retention amount are shown."
+        >
               <Table>
                 <TableHeader>
                   <TableRow>
@@ -293,9 +292,7 @@ export default function CreateRetentionBillPage() {
                   )}
                 </TableBody>
               </Table>
-            </div>
-          </CardContent>
-        </Card>
+        </TableCard>
       </div>
       </PmContent>
     </>

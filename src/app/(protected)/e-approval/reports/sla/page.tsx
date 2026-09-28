@@ -3,11 +3,10 @@
 import { useState } from 'react';
 import { Bar, BarChart, CartesianGrid, Cell, LabelList, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import { AlertTriangle, CheckCircle2, Clock, HelpCircle } from 'lucide-react';
-import { Badge } from '@/components/ui/badge';
-import { Card, CardContent } from '@/components/ui/card';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { cn } from '@/lib/utils';
+import { StatusBadge } from '@/components/shared/status-badge';
+import { TableCard } from '@/components/shared/table-card';
 import { exportRowsToExcel } from '@/lib/report-excel';
 import { summarizeEApprovalSla, type AnalyticsStepRow } from '@/lib/e-approval-analytics';
 import { ChartCard, eaTooltipStyle, EA_VIZ, TriageChip } from '@/components/e-approval/dashboard-parts';
@@ -217,23 +216,21 @@ export default function EApprovalSlaReportPage() {
               }
             />
 
-            <Card>
-              <CardContent className="px-2 py-3 sm:px-3">
-                <p className="mb-1 flex items-center gap-1.5 px-1 text-sm font-semibold">
-                  <Clock className="h-4 w-4 text-amber-600" /> Approaching SLA
-                </p>
-                <p className="mb-2 px-1 text-[11px] text-muted-foreground">
-                  Steps with 80% or more of their clock consumed and still running — the chase list.
-                </p>
+            <TableCard
+              title="Approaching SLA"
+              icon={Clock}
+              description="Steps with 80% or more of their clock consumed and still running — the chase list."
+              count={approaching.length}
+              noun="step"
+            >
                 {approaching.length === 0 ? (
                   <p className="px-1 py-6 text-center text-sm text-muted-foreground">
                     Nothing is close to breaching.
                   </p>
                 ) : (
-                  <div className="overflow-x-auto rounded-lg border">
                     <Table>
                       <TableHeader>
-                        <TableRow className="bg-muted/40">
+                        <TableRow>
                           <TableHead>Reference</TableHead>
                           <TableHead>Subject</TableHead>
                           <TableHead>Stage</TableHead>
@@ -244,28 +241,26 @@ export default function EApprovalSlaReportPage() {
                       <TableBody>
                         {approaching.map(({ step, request }) => (
                           <TableRow key={step.id}>
-                            <TableCell className="whitespace-nowrap font-mono text-[11px]">
+                            <TableCell className="whitespace-nowrap font-mono">
                               {request?.referenceNo || '—'}
                             </TableCell>
-                            <TableCell className="max-w-[240px] truncate text-xs">{request?.subject || '—'}</TableCell>
-                            <TableCell className="whitespace-nowrap text-xs">{step.name}</TableCell>
-                            <TableCell className="whitespace-nowrap text-xs">
+                            <TableCell className="max-w-[240px] truncate">{request?.subject || '—'}</TableCell>
+                            <TableCell className="whitespace-nowrap">{step.name}</TableCell>
+                            <TableCell className="whitespace-nowrap">
                               {step.assignment?.userName || step.assignment?.departmentName || step.assignment?.role || '—'}
                             </TableCell>
-                            <TableCell className="whitespace-nowrap text-xs">
-                              <Badge variant="outline" className={cn('text-[10px]', 'border-amber-200 bg-amber-50 text-amber-800')}>
-                                <AlertTriangle className="mr-1 h-3 w-3" />
+                            <TableCell className="whitespace-nowrap">
+                              <StatusBadge tone="warning">
+                                <AlertTriangle className="h-3 w-3" />
                                 {step.dueAt ? new Date(step.dueAt).toLocaleString('en-IN', { dateStyle: 'medium', timeStyle: 'short' }) : '—'}
-                              </Badge>
+                              </StatusBadge>
                             </TableCell>
                           </TableRow>
                         ))}
                       </TableBody>
                     </Table>
-                  </div>
                 )}
-              </CardContent>
-            </Card>
+            </TableCard>
           </>
         );
       }}

@@ -61,8 +61,10 @@ import {
 import { AuroraBackdrop } from '@/components/effects/AuroraBackdrop';
 import { CountUp } from '@/components/effects/CountUp';
 import { SpotlightCard } from '@/components/effects/SpotlightCard';
+import type { StatusTone } from '@/components/shared/status-badge';
 import { useAuthorization } from '@/hooks/useAuthorization';
 import { cn } from '@/lib/utils';
+import type { EmploymentState } from '@/lib/greythr';
 import type { LucideIcon } from 'lucide-react';
 
 /* ------------------------------------------------------------------------------------------------
@@ -188,6 +190,26 @@ export const EMP_TONES: Record<
 };
 
 const toneOf = (tone: EmpTone | undefined) => EMP_TONES[tone ?? 'indigo'] ?? EMP_TONES.indigo;
+
+/**
+ * greytHR's employment states on the app's status tones (`StatusBadge`). Passed as `tone` because
+ * the shared vocabulary would misread several of them: "Settled" reads as success and "Notice
+ * Period", "Relieved" and "Left" match nothing. Still working is green, serving notice amber, gone
+ * rose, and the terminal or unknown states neutral.
+ */
+export const EMPLOYMENT_STATE_TONE: Record<EmploymentState, StatusTone> = {
+  Active: 'success',
+  'Notice Period': 'warning',
+  Relieved: 'danger',
+  Retired: 'neutral',
+  Settled: 'neutral',
+  Left: 'danger',
+  Unknown: 'neutral',
+};
+
+/** The tone for a state as stored — a string, since older records may hold anything. */
+export const employmentStateTone = (state: string | null | undefined): StatusTone =>
+  EMPLOYMENT_STATE_TONE[state as EmploymentState] ?? 'neutral';
 
 /* ------------------------------------------------------------------------------------------------
  * The module map
@@ -468,54 +490,6 @@ export function EmployeePageShell({
       <AuroraBackdrop />
       <div className={cn('relative', width === 'wide' && 'mx-auto max-w-7xl', className)}>{children}</div>
     </div>
-  );
-}
-
-/* ------------------------------------------------------------------------------------------------
- * Header
- * ---------------------------------------------------------------------------------------------- */
-
-/**
- * A bordered status pill — "Live from greytHR", "synced 4 hours ago", "credentials not configured".
- *
- * `pulse` adds the two-layer ping dot Current Employees introduced for its live badge. It means one
- * specific thing: the data on screen was fetched on this page load. Anything else that pulses is
- * decoration, and decoration that mimics a liveness indicator is a lie.
- */
-export function EmployeeStatusPill({
-  tone = 'slate',
-  icon: Icon,
-  pulse = false,
-  title,
-  className,
-  children,
-}: {
-  tone?: EmpTone;
-  icon?: LucideIcon;
-  pulse?: boolean;
-  title?: string;
-  className?: string;
-  children: React.ReactNode;
-}) {
-  const palette = toneOf(tone);
-  return (
-    <span
-      title={title}
-      className={cn(
-        'inline-flex shrink-0 items-center gap-1.5 rounded-full border px-2 py-0.5 text-[11px] font-medium',
-        palette.chip,
-        className,
-      )}
-    >
-      {pulse && (
-        <span className="relative flex h-1.5 w-1.5">
-          <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-current opacity-60" />
-          <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-current" />
-        </span>
-      )}
-      {Icon && !pulse && <Icon className="h-3 w-3" />}
-      {children}
-    </span>
   );
 }
 
@@ -823,9 +797,7 @@ export function EmployeeToolRow({ item, index = 0 }: { item: EmployeeNavItem; in
             {item.label}
           </span>
           {item.comingSoon && (
-            <Badge variant="outline" className="border-slate-200 bg-slate-50 text-[10px] font-medium text-slate-500">
-              Coming soon
-            </Badge>
+            <Badge variant="neutral">Coming soon</Badge>
           )}
         </span>
         <span className="mt-0.5 block text-xs leading-snug text-muted-foreground">{item.description}</span>
@@ -863,21 +835,6 @@ export function EmployeeToolRow({ item, index = 0 }: { item: EmployeeNavItem; in
 /* ------------------------------------------------------------------------------------------------
  * Register furniture
  * ---------------------------------------------------------------------------------------------- */
-
-/**
- * The height a register's desktop table scrolls within, passed to `DataList`'s
- * `maxHeightClassName` — which also pins the header row to the top of it.
- *
- * These registers are 1,300 rows of near-identical shape, and reading one on a desktop meant
- * scrolling the whole page until the column headers were gone and every row was an unlabelled line
- * of numbers. Giving the table its own scroll frame keeps the headers, the filters and the KPI row
- * on screen while the rows move under them.
- *
- * The `min-h` is not redundant: on a 700px laptop the subtraction would otherwise leave a frame a
- * few rows tall, and when a min exceeds a max CSS keeps the min — so the table is never shorter
- * than about eight rows, even if that reintroduces a little page scrolling.
- */
-export const EMP_REGISTER_HEIGHT = 'sm:max-h-[calc(100dvh-23rem)] sm:min-h-[20rem]';
 
 /**
  * The "showing 300 of 1,284 · show 300 more" footer under a windowed register.

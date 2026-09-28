@@ -3,6 +3,8 @@
 import { useEffect, useState } from 'react';
 import { BadgeCheck, Loader2, Plus, Save, ShieldAlert, Trash2, UserPlus } from 'lucide-react';
 
+import { StatusBadge, type StatusTone } from '@/components/shared/status-badge';
+import { TableCard } from '@/components/shared/table-card';
 import { useLoader, useMailHub } from '@/components/mail-hub/hooks';
 import { EmptyState, ErrorNotice, Spinner, formatLong } from '@/components/mail-hub/ui';
 import { Badge } from '@/components/ui/badge';
@@ -58,8 +60,8 @@ export default function MailPermissionsPage() {
 
 function grantBadge(member: MailMailboxMember) {
   const status = member.providerGrant.read;
-  const className = status === 'verified' ? 'border-emerald-200 bg-emerald-50 text-emerald-700' : status === 'missing' ? 'border-rose-200 bg-rose-50 text-rose-700' : 'border-amber-200 bg-amber-50 text-amber-800';
-  return <Badge variant="outline" className={cn('text-[10px]', className)}>{status === 'verified' ? 'Provider: verified' : status === 'missing' ? 'Provider: no access' : status === 'error' ? 'Provider: check failed' : 'Provider: not verified'}</Badge>;
+  const tone: StatusTone = status === 'verified' ? 'success' : status === 'missing' ? 'danger' : 'warning';
+  return <StatusBadge status={status} tone={tone}>{status === 'verified' ? 'Provider: verified' : status === 'missing' ? 'Provider: no access' : status === 'error' ? 'Provider: check failed' : 'Provider: not verified'}</StatusBadge>;
 }
 
 function SharedMailboxes() {
@@ -158,7 +160,7 @@ function MailboxEditor({ mailbox, onChanged }: { mailbox: SharedMailboxRow; onCh
             )}
           </div>
           {members.error && <ErrorNotice message={members.error} onRetry={members.reload} />}
-          <div className="overflow-x-auto">
+          <div>
             <Table className="min-w-[720px]">
               <TableHeader>
                 <TableRow>
@@ -216,7 +218,7 @@ function MailboxEditor({ mailbox, onChanged }: { mailbox: SharedMailboxRow; onCh
                     </TableCell>
                   </TableRow>
                 ))}
-                {members.value?.members.length === 0 && <TableRow><TableCell colSpan={5} className="text-center text-sm text-muted-foreground">No members yet.</TableCell></TableRow>}
+                {members.value?.members.length === 0 && <TableRow><TableCell colSpan={5} className="text-center text-muted-foreground">No members yet.</TableCell></TableRow>}
               </TableBody>
             </Table>
           </div>
@@ -264,7 +266,7 @@ function ConnectionSettings() {
         <CardContent className="space-y-2 text-sm">
           {value?.environment.map((entry) => (
             <div key={entry.provider} className="flex flex-wrap items-start gap-2">
-              <Badge variant="outline" className={entry.available ? 'border-emerald-200 text-emerald-700' : 'border-amber-200 text-amber-800'}>{entry.provider}</Badge>
+              <Badge variant={entry.available ? 'success' : 'warning'}>{entry.provider}</Badge>
               <span className="text-xs text-muted-foreground">{entry.available ? 'Ready' : entry.problems.join(' ')}</span>
             </div>
           ))}
@@ -350,33 +352,30 @@ function AuditTrail() {
   const [mine, setMine] = useState(!data?.capabilities.canViewAudit);
   const { value, loading, error, reload } = useLoader(() => mailApi.audit({ mine }), [mine]);
   return (
-    <Card>
-      <CardHeader className="pb-3">
-        <CardTitle className="text-base">Audit trail</CardTitle>
-        <CardDescription>Append-only. Shared-mailbox activity (views, assignments, notes, sends) and configuration changes. Events about someone's personal mailbox are shown only to them.</CardDescription>
-      </CardHeader>
-      <CardContent className="space-y-2">
-        {data?.capabilities.canViewAudit && <label className="flex items-center gap-2 text-sm"><Switch checked={mine} onCheckedChange={setMine} /> Only my own activity</label>}
-        {error && <ErrorNotice message={error} onRetry={reload} />}
-        {loading && !value && <Spinner />}
-        <div className="overflow-x-auto">
-          <Table className="min-w-[640px]">
-            <TableHeader><TableRow><TableHead>When</TableHead><TableHead>Who</TableHead><TableHead>What</TableHead><TableHead>Action</TableHead></TableRow></TableHeader>
-            <TableBody>
-              {(value?.events ?? []).map((event) => (
-                <TableRow key={event.id}>
-                  <TableCell className="whitespace-nowrap text-xs">{formatLong(event.at)}</TableCell>
-                  <TableCell className="text-sm">{event.actorName}</TableCell>
-                  <TableCell className="text-sm">{event.summary}</TableCell>
-                  <TableCell><Badge variant="outline" className="text-[10px]">{event.action}</Badge></TableCell>
-                </TableRow>
-              ))}
-              {value?.events.length === 0 && <TableRow><TableCell colSpan={4} className="text-center text-sm text-muted-foreground">No events.</TableCell></TableRow>}
-            </TableBody>
-          </Table>
-        </div>
-      </CardContent>
-    </Card>
+    <TableCard
+      title="Audit trail"
+      description="Append-only. Shared-mailbox activity (views, assignments, notes, sends) and configuration changes. Events about someone's personal mailbox are shown only to them."
+      count={value ? value.events.length : undefined}
+      noun="event"
+      toolbar={data?.capabilities.canViewAudit ? <label className="flex items-center gap-2 text-sm"><Switch checked={mine} onCheckedChange={setMine} /> Only my own activity</label> : undefined}
+    >
+      {error && <div className="p-3"><ErrorNotice message={error} onRetry={reload} /></div>}
+      {loading && !value && <div className="px-4"><Spinner /></div>}
+      <Table className="min-w-[640px]">
+        <TableHeader><TableRow><TableHead>When</TableHead><TableHead>Who</TableHead><TableHead>What</TableHead><TableHead>Action</TableHead></TableRow></TableHeader>
+        <TableBody>
+          {(value?.events ?? []).map((event) => (
+            <TableRow key={event.id}>
+              <TableCell className="whitespace-nowrap">{formatLong(event.at)}</TableCell>
+              <TableCell>{event.actorName}</TableCell>
+              <TableCell>{event.summary}</TableCell>
+              <TableCell><Badge variant="outline">{event.action}</Badge></TableCell>
+            </TableRow>
+          ))}
+          {value?.events.length === 0 && <TableRow><TableCell colSpan={4} className="text-center text-muted-foreground">No events.</TableCell></TableRow>}
+        </TableBody>
+      </Table>
+    </TableCard>
   );
 }
 
@@ -442,19 +441,15 @@ function Reference() {
     ['Mail Hub › Audit › View', 'The shared-mailbox and configuration audit trail.'],
   ];
   return (
-    <Card>
-      <CardHeader className="pb-3">
-        <CardTitle className="text-base">How access works</CardTitle>
-        <CardDescription>
-          A personal mailbox is readable only by the person who connected it — no ERP permission, including every administrator permission, opens it. A shared mailbox needs two independent yeses: an ERP membership with Shared Mail › Read, and the email provider confirming the member’s own account has been granted the mailbox. Either alone is refused.
-        </CardDescription>
-      </CardHeader>
-      <CardContent>
-        <Table>
-          <TableHeader><TableRow><TableHead>Permission</TableHead><TableHead>What it allows</TableHead></TableRow></TableHeader>
-          <TableBody>{rows.map(([permission, text]) => <TableRow key={permission}><TableCell className="whitespace-nowrap font-medium">{permission}</TableCell><TableCell className="text-sm">{text}</TableCell></TableRow>)}</TableBody>
-        </Table>
-      </CardContent>
-    </Card>
+    <TableCard
+      title="How access works"
+      description="A personal mailbox is readable only by the person who connected it — no ERP permission, including every administrator permission, opens it. A shared mailbox needs two independent yeses: an ERP membership with Shared Mail › Read, and the email provider confirming the member’s own account has been granted the mailbox. Either alone is refused."
+      scroll="natural"
+    >
+      <Table>
+        <TableHeader><TableRow><TableHead>Permission</TableHead><TableHead>What it allows</TableHead></TableRow></TableHeader>
+        <TableBody>{rows.map(([permission, text]) => <TableRow key={permission}><TableCell className="whitespace-nowrap font-medium">{permission}</TableCell><TableCell>{text}</TableCell></TableRow>)}</TableBody>
+      </Table>
+    </TableCard>
   );
 }

@@ -487,7 +487,7 @@ function WeekGrid({
               </div>
 
               {holiday && (
-                <Badge variant="outline" className="mb-1 w-full justify-center border-violet-200 bg-violet-50 text-[10px] text-violet-800">
+                <Badge variant="progress" className="mb-1 w-full justify-center">
                   {holiday.name}
                 </Badge>
               )}
@@ -639,7 +639,7 @@ function AgendaList({
                   {date === today && ' · today'}
                 </p>
                 {holiday && (
-                  <Badge variant="outline" className="border-violet-200 bg-violet-50 text-[11px] text-violet-800">
+                  <Badge variant="progress">
                     {holiday.name}
                   </Badge>
                 )}

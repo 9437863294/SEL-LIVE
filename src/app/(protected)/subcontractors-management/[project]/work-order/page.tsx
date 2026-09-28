@@ -17,7 +17,8 @@ import type { WorkOrder, Project } from '@/lib/types';
 import { useParams, useRouter } from 'next/navigation';
 import { useAuthorization } from '@/hooks/useAuthorization';
 import { projectMatchesSlug } from '@/lib/project-slug';
-import { PM_TABLE_CLASS, PmContent, PmSectionHead } from '@/components/project-management/pm-shell';
+import { PmContent } from '@/components/project-management/pm-shell';
+import { TableCard } from '@/components/shared/table-card';
 
 const slugify = (text: string) => {
   if (!text) return '';
@@ -170,19 +171,8 @@ export default function WorkOrderLogPage() {
         }
       />
       <PmContent>
-        <PmSectionHead
-          title="All work orders"
-          stats={[
-            {
-              label: workOrders.length === 1 ? 'work order' : 'work orders',
-              value: String(workOrders.length),
-            },
-          ]}
-        />
-        <Card className="border-border/60">
-        <CardContent className="p-0">
-          <div className="overflow-x-auto">
-          <Table className={PM_TABLE_CLASS}>
+        <TableCard title="All work orders" count={workOrders.length} noun="work order">
+          <Table>
             <TableHeader>
               <TableRow>
                 <TableHead>WO No.</TableHead>
@@ -224,9 +214,7 @@ export default function WorkOrderLogPage() {
               )}
             </TableBody>
           </Table>
-          </div>
-        </CardContent>
-        </Card>
+        </TableCard>
       </PmContent>
     </>
   );

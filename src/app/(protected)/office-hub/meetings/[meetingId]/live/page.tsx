@@ -73,6 +73,7 @@ import {
 } from '@/lib/office-hub-service';
 import { useOfficeHub, useOfficeHubAction, useOfficeHubQuery } from '@/components/office-hub/hooks';
 import {
+  MeetingStatusBadge,
   OfficeHubAccessDenied,
   OfficeHubEmptyState,
   OfficeHubLoader,
@@ -220,12 +221,7 @@ export default function LiveMeetingPage() {
           </>
         }
         badge={
-          meeting.status === 'In Progress' ? (
-            <span className="inline-flex items-center gap-1.5 rounded-full border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-[11px] font-semibold text-emerald-700">
-              <Radio className="h-3 w-3 animate-pulse" />
-              In progress
-            </span>
-          ) : undefined
+          meeting.status === 'In Progress' ? <MeetingStatusBadge status={meeting.status} /> : undefined
         }
         meta={
           <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">

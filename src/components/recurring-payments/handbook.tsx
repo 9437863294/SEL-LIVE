@@ -21,6 +21,8 @@ import {
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { PageHeader } from '@/components/shared/page-header';
+import { StatusBadge } from '@/components/shared/status-badge';
+import { TableCard } from '@/components/shared/table-card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
@@ -104,28 +106,28 @@ const navMap: { href: string; label: string; icon: React.ElementType; descriptio
   { href: '/recurring-payments/settings', label: 'Settings', icon: Settings, description: 'Approval rules, notification rules, automation, workflow steps and permissions.' },
 ];
 
-const statusGlossary: { status: string; tone: string; meaning: string }[] = [
-  { status: 'Draft', tone: 'bg-slate-100 text-slate-700 border-slate-200', meaning: 'Not yet finalized — not visible in the active workflow.' },
-  { status: 'Scheduled', tone: 'bg-slate-100 text-slate-700 border-slate-200', meaning: 'A master’s next cycle exists but hasn’t entered the workflow yet.' },
-  { status: 'Generated', tone: 'bg-blue-50 text-blue-700 border-blue-200', meaning: 'Obligation created; waiting for the workflow to activate near the due date.' },
-  { status: 'Awaiting Bill', tone: 'bg-blue-50 text-blue-700 border-blue-200', meaning: 'At Bill Collection — waiting on the payment owner to submit the bill.' },
-  { status: 'Bill Received', tone: 'bg-blue-50 text-blue-700 border-blue-200', meaning: 'Bill submitted; about to move into Verification.' },
-  { status: 'Under Verification', tone: 'bg-blue-50 text-blue-700 border-blue-200', meaning: 'The verifier is checking the bill against the checklist.' },
-  { status: 'Pending Approval', tone: 'bg-amber-50 text-amber-700 border-amber-200', meaning: 'Waiting on one or more approvers.' },
-  { status: 'Approved', tone: 'bg-blue-50 text-blue-700 border-blue-200', meaning: 'Cleared for payment; about to enter Processing.' },
-  { status: 'Payment Processing', tone: 'bg-blue-50 text-blue-700 border-blue-200', meaning: 'Accounts is recording the transaction.' },
-  { status: 'Partially Paid', tone: 'bg-amber-50 text-amber-700 border-amber-200', meaning: 'Some amount recorded; balance still outstanding.' },
-  { status: 'Paid', tone: 'bg-emerald-50 text-emerald-700 border-emerald-200', meaning: 'Full amount paid; awaiting receipt verification and closure.' },
-  { status: 'Closed', tone: 'bg-emerald-50 text-emerald-700 border-emerald-200', meaning: 'Fully settled and closed. Locked if "Lock closed payments" is enabled.' },
-  { status: 'Returned for Correction', tone: 'bg-amber-50 text-amber-700 border-amber-200', meaning: 'Sent back one step for a fix.' },
-  { status: 'Rejected', tone: 'bg-rose-50 text-rose-700 border-rose-200', meaning: 'Stopped at verification or approval.' },
-  { status: 'Disputed', tone: 'bg-rose-50 text-rose-700 border-rose-200', meaning: 'The payment owner flagged a disagreement with the vendor or amount.' },
-  { status: 'Payment Failed', tone: 'bg-rose-50 text-rose-700 border-rose-200', meaning: 'A payment attempt failed at Processing.' },
-  { status: 'Paid Receipt Pending', tone: 'bg-amber-50 text-amber-700 border-amber-200', meaning: 'Paid, but the receipt/proof isn’t yet uploaded or verified.' },
-  { status: 'On Hold', tone: 'bg-amber-50 text-amber-700 border-amber-200', meaning: 'Manually paused at any actionable step.' },
-  { status: 'Waived', tone: 'bg-slate-100 text-slate-700 border-slate-200', meaning: 'Marked as not payable and closed without payment.' },
-  { status: 'Cancelled', tone: 'bg-slate-100 text-slate-700 border-slate-200', meaning: 'Cancelled before completion.' },
-  { status: 'Overdue', tone: 'bg-rose-50 text-rose-700 border-rose-200', meaning: 'Computed live — past the end of the master’s grace period (the due date itself, where no grace is configured) and not yet paid/closed. Between the due date and the end of grace a payment reads as “past due — in grace”, not as overdue. Shown on the Dashboard and Overdue page.' },
+const statusGlossary: { status: string; meaning: string }[] = [
+  { status: 'Draft', meaning: 'Not yet finalized — not visible in the active workflow.' },
+  { status: 'Scheduled', meaning: 'A master’s next cycle exists but hasn’t entered the workflow yet.' },
+  { status: 'Generated', meaning: 'Obligation created; waiting for the workflow to activate near the due date.' },
+  { status: 'Awaiting Bill', meaning: 'At Bill Collection — waiting on the payment owner to submit the bill.' },
+  { status: 'Bill Received', meaning: 'Bill submitted; about to move into Verification.' },
+  { status: 'Under Verification', meaning: 'The verifier is checking the bill against the checklist.' },
+  { status: 'Pending Approval', meaning: 'Waiting on one or more approvers.' },
+  { status: 'Approved', meaning: 'Cleared for payment; about to enter Processing.' },
+  { status: 'Payment Processing', meaning: 'Accounts is recording the transaction.' },
+  { status: 'Partially Paid', meaning: 'Some amount recorded; balance still outstanding.' },
+  { status: 'Paid', meaning: 'Full amount paid; awaiting receipt verification and closure.' },
+  { status: 'Closed', meaning: 'Fully settled and closed. Locked if "Lock closed payments" is enabled.' },
+  { status: 'Returned for Correction', meaning: 'Sent back one step for a fix.' },
+  { status: 'Rejected', meaning: 'Stopped at verification or approval.' },
+  { status: 'Disputed', meaning: 'The payment owner flagged a disagreement with the vendor or amount.' },
+  { status: 'Payment Failed', meaning: 'A payment attempt failed at Processing.' },
+  { status: 'Paid Receipt Pending', meaning: 'Paid, but the receipt/proof isn’t yet uploaded or verified.' },
+  { status: 'On Hold', meaning: 'Manually paused at any actionable step.' },
+  { status: 'Waived', meaning: 'Marked as not payable and closed without payment.' },
+  { status: 'Cancelled', meaning: 'Cancelled before completion.' },
+  { status: 'Overdue', meaning: 'Computed live — past the end of the master’s grace period (the due date itself, where no grace is configured) and not yet paid/closed. Between the due date and the end of grace a payment reads as “past due — in grace”, not as overdue. Shown on the Dashboard and Overdue page.' },
 ];
 
 const faqs: { q: string; a: string }[] = [
@@ -286,7 +288,7 @@ export default function RecurringPaymentsHandbook() {
                 <div>
                   <div className="flex flex-wrap items-center gap-2">
                     <p className="text-sm font-semibold text-slate-800">{item.title}</p>
-                    <Badge variant="outline" className="text-xs">{item.who}</Badge>
+                    <Badge variant="outline">{item.who}</Badge>
                   </div>
                   <p className="mt-1 text-sm text-muted-foreground">{item.detail}</p>
                 </div>
@@ -335,34 +337,31 @@ export default function RecurringPaymentsHandbook() {
         </CardContent>
       </Card>
 
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <ClipboardCheck className="h-5 w-5 text-emerald-600" /> Status glossary
-          </CardTitle>
-          <CardDescription>What every status you’ll see on a payment actually means.</CardDescription>
-        </CardHeader>
-        <CardContent className="overflow-x-auto">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead className="w-48">Status</TableHead>
-                <TableHead>Meaning</TableHead>
+      <TableCard
+        icon={ClipboardCheck}
+        title="Status glossary"
+        description="What every status you’ll see on a payment actually means."
+        scroll="natural"
+      >
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead className="w-48">Status</TableHead>
+              <TableHead>Meaning</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {statusGlossary.map((item) => (
+              <TableRow key={item.status}>
+                <TableCell className="whitespace-nowrap">
+                  <StatusBadge status={item.status} />
+                </TableCell>
+                <TableCell>{item.meaning}</TableCell>
               </TableRow>
-            </TableHeader>
-            <TableBody>
-              {statusGlossary.map((item) => (
-                <TableRow key={item.status}>
-                  <TableCell>
-                    <Badge variant="outline" className={item.tone}>{item.status}</Badge>
-                  </TableCell>
-                  <TableCell className="text-sm text-muted-foreground">{item.meaning}</TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        </CardContent>
-      </Card>
+            ))}
+          </TableBody>
+        </Table>
+      </TableCard>
 
       <Card>
         <CardHeader>

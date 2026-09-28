@@ -12,7 +12,6 @@ import { useSFRProjectAccess } from '@/hooks/useSFRProjectAccess';
 import { Button } from '@/components/ui/button';
 import {
   Card,
-  CardContent,
   CardDescription,
   CardHeader,
   CardTitle,
@@ -25,6 +24,9 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { Skeleton } from '@/components/ui/skeleton';
+import { Table, TableBody, TableCell, TableFooter, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { TableCard } from '@/components/shared/table-card';
+import { FilterBar } from '@/components/shared/filter-bar';
 
 // ─── helpers ────────────────────────────────────────────────────────────────
 
@@ -280,76 +282,59 @@ export default function ProjectWiseReportPage() {
         }
       />
 
-      {/* Filters */}
-      <Card className="overflow-hidden bg-white/70 border border-white/70 rounded-2xl shadow-[0_20px_70px_-55px_rgba(2,6,23,0.55)] backdrop-blur">
-        <div className="h-1.5 w-full bg-gradient-to-r from-sky-400 via-blue-400 to-indigo-400 opacity-70" />
-        <CardContent className="p-4">
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-            <div className="space-y-1">
-              <p className="text-xs font-medium text-slate-600">Financial Year</p>
-              <Select value={filters.fy} onValueChange={(v) => setFilters((f) => ({ ...f, fy: v }))}>
-                <SelectTrigger className="bg-white/80 border-white/70">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All Years</SelectItem>
-                  {fyOptions.map((fy) => (
-                    <SelectItem key={fy} value={fy}>{fy}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="space-y-1">
-              <p className="text-xs font-medium text-slate-600">Month</p>
-              <Select value={filters.month} onValueChange={(v) => setFilters((f) => ({ ...f, month: v }))}>
-                <SelectTrigger className="bg-white/80 border-white/70">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All Months</SelectItem>
-                  {MONTHS.map((m) => (
-                    <SelectItem key={m.value} value={m.value}>{m.label}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="space-y-1">
-              <p className="text-xs font-medium text-slate-600">Status</p>
-              <Select value={filters.status} onValueChange={(v) => setFilters((f) => ({ ...f, status: v }))}>
-                <SelectTrigger className="bg-white/80 border-white/70">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All Statuses</SelectItem>
-                  {ALL_STATUSES.map((s) => (
-                    <SelectItem key={s} value={s}>{s}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-          </div>
-        </CardContent>
-      </Card>
-
       {/* Table */}
-      <Card className="overflow-hidden rounded-2xl border border-white/70 bg-white/70 shadow-[0_20px_70px_-55px_rgba(2,6,23,0.55)] backdrop-blur">
-        <div className="h-1.5 w-full bg-gradient-to-r from-sky-400 via-blue-400 to-indigo-400 opacity-70" />
-        <CardHeader className="p-4 pb-2">
-          <CardTitle>Project Breakdown</CardTitle>
-          <CardDescription>
-            {rows.length} project{rows.length !== 1 ? 's' : ''} · {totals.total} request{totals.total !== 1 ? 's' : ''}
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="p-0">
+      <TableCard
+        title="Project Breakdown"
+        description={<>{rows.length} project{rows.length !== 1 ? 's' : ''} · {totals.total} request{totals.total !== 1 ? 's' : ''}</>}
+        toolbar={
+          <FilterBar
+            activeCount={Object.values(filters).filter((v) => v !== 'all').length}
+            onClear={() => setFilters({ fy: 'all', month: 'all', status: 'all' })}
+          >
+            <Select value={filters.fy} onValueChange={(v) => setFilters((f) => ({ ...f, fy: v }))}>
+              <SelectTrigger aria-label="Financial Year">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Years</SelectItem>
+                {fyOptions.map((fy) => (
+                  <SelectItem key={fy} value={fy}>{fy}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <Select value={filters.month} onValueChange={(v) => setFilters((f) => ({ ...f, month: v }))}>
+              <SelectTrigger aria-label="Month">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Months</SelectItem>
+                {MONTHS.map((m) => (
+                  <SelectItem key={m.value} value={m.value}>{m.label}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <Select value={filters.status} onValueChange={(v) => setFilters((f) => ({ ...f, status: v }))}>
+              <SelectTrigger aria-label="Status">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Statuses</SelectItem>
+                {ALL_STATUSES.map((s) => (
+                  <SelectItem key={s} value={s}>{s}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </FilterBar>
+        }
+      >
           {rows.length === 0 ? (
-            <div className="px-6 py-12 text-center text-sm text-slate-500">
+            <div className="px-6 py-12 text-center text-sm text-muted-foreground">
               No records match the selected filters.
             </div>
           ) : (
-            <div className="overflow-auto rounded-b-2xl border-t border-white/70 bg-white/80 max-h-[calc(100vh-380px)]">
-              <table className="w-full caption-bottom text-sm">
-                <thead>
-                  <tr className="border-b border-slate-200 bg-slate-50/90 sticky top-0 z-10">
+              <Table>
+                <TableHeader>
+                  <TableRow>
                     {[
                       'Project',
                       'Total Requests',
@@ -359,47 +344,39 @@ export default function ProjectWiseReportPage() {
                       'Completed',
                       'Rejected',
                     ].map((h) => (
-                      <th
-                        key={h}
-                        className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-500 whitespace-nowrap"
-                      >
+                      <TableHead key={h} className={h === 'Project' ? undefined : 'text-right'}>
                         {h}
-                      </th>
+                      </TableHead>
                     ))}
-                  </tr>
-                </thead>
-                <tbody>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
                   {rows.map((row) => (
-                    <tr
-                      key={row.projectId}
-                      className="border-b border-slate-100 hover:bg-slate-50/70 transition-colors"
-                    >
-                      <td className="px-4 py-3 font-medium text-slate-900">{row.projectName}</td>
-                      <td className="px-4 py-3 text-slate-700">{row.total}</td>
-                      <td className="px-4 py-3 font-medium text-slate-900">{formatCurrency(row.totalAmount)}</td>
-                      <td className="px-4 py-3 text-amber-700">{row.pending}</td>
-                      <td className="px-4 py-3 text-blue-700">{row.inProgress}</td>
-                      <td className="px-4 py-3 text-emerald-700">{row.completed}</td>
-                      <td className="px-4 py-3 text-red-700">{row.rejected}</td>
-                    </tr>
+                    <TableRow key={row.projectId}>
+                      <TableCell className="font-medium">{row.projectName}</TableCell>
+                      <TableCell className="text-right tabular-nums">{row.total}</TableCell>
+                      <TableCell className="text-right tabular-nums whitespace-nowrap">{formatCurrency(row.totalAmount)}</TableCell>
+                      <TableCell className="text-right tabular-nums">{row.pending}</TableCell>
+                      <TableCell className="text-right tabular-nums">{row.inProgress}</TableCell>
+                      <TableCell className="text-right tabular-nums">{row.completed}</TableCell>
+                      <TableCell className="text-right tabular-nums">{row.rejected}</TableCell>
+                    </TableRow>
                   ))}
-                </tbody>
-                <tfoot>
-                  <tr className="border-t-2 border-slate-300 bg-slate-100/80 font-semibold">
-                    <td className="px-4 py-3 text-slate-900">Total</td>
-                    <td className="px-4 py-3 text-slate-900">{totals.total}</td>
-                    <td className="px-4 py-3 text-slate-900">{formatCurrency(totals.totalAmount)}</td>
-                    <td className="px-4 py-3 text-amber-700">{totals.pending}</td>
-                    <td className="px-4 py-3 text-blue-700">{totals.inProgress}</td>
-                    <td className="px-4 py-3 text-emerald-700">{totals.completed}</td>
-                    <td className="px-4 py-3 text-red-700">{totals.rejected}</td>
-                  </tr>
-                </tfoot>
-              </table>
-            </div>
+                </TableBody>
+                <TableFooter>
+                  <TableRow>
+                    <TableCell>Total</TableCell>
+                    <TableCell className="text-right tabular-nums">{totals.total}</TableCell>
+                    <TableCell className="text-right tabular-nums whitespace-nowrap">{formatCurrency(totals.totalAmount)}</TableCell>
+                    <TableCell className="text-right tabular-nums">{totals.pending}</TableCell>
+                    <TableCell className="text-right tabular-nums">{totals.inProgress}</TableCell>
+                    <TableCell className="text-right tabular-nums">{totals.completed}</TableCell>
+                    <TableCell className="text-right tabular-nums">{totals.rejected}</TableCell>
+                  </TableRow>
+                </TableFooter>
+              </Table>
           )}
-        </CardContent>
-      </Card>
+      </TableCard>
     </div>
   );
 }

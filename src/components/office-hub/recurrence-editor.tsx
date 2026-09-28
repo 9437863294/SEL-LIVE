@@ -270,12 +270,12 @@ export function RecurrenceEditor({
             {preview.length > 0 && (
               <div className="mt-2 flex flex-wrap gap-1">
                 {preview.map((occurrence) => (
-                  <Badge key={occurrence.occurrenceKey} variant="outline" className="border-sky-200 bg-white text-[11px] font-normal">
+                  <Badge key={occurrence.occurrenceKey} variant="outline" className="font-normal">
                     {formatIsoDate(occurrence.date, { withWeekday: true, year: false })}
                   </Badge>
                 ))}
                 {normalized.endMode !== 'after-occurrences' && (
-                  <Badge variant="outline" className="border-sky-200 bg-white text-[11px] font-normal">
+                  <Badge variant="outline" className="font-normal">
                     …
                   </Badge>
                 )}

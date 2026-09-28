@@ -4,19 +4,18 @@
 import { useState, useEffect, useMemo } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { ArrowLeft, Search } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { db } from '@/lib/firebase';
 import { collection, getDocs, query, collectionGroup } from 'firebase/firestore';
 import type { WorkOrder, Bill, Project } from '@/lib/types';
 import { useToast } from '@/hooks/use-toast';
 import { Skeleton } from '@/components/ui/skeleton';
-import { Input } from '@/components/ui/input';
 import { Progress } from '@/components/ui/progress';
 import { projectMatchesSlug } from '@/lib/project-slug';
-import { PM_TABLE_CLASS, PmContent } from '@/components/project-management/pm-shell';
+import { PmContent } from '@/components/project-management/pm-shell';
+import { TableCard } from '@/components/shared/table-card';
+import { FilterBar } from '@/components/shared/filter-bar';
 import { PageHeader } from '@/components/shared/page-header';
 
 interface EnrichedWorkOrder extends WorkOrder {
@@ -115,22 +114,18 @@ export default function WorkOrderProgressReport() {
                 backLabel="Back to Reports"
             />
             <PmContent>
-                <div className="mb-3 flex flex-col gap-2 sm:flex-row">
-                    <div className="relative flex-1 sm:max-w-sm">
-                        <Search className="absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-                        <Input
-                            placeholder="Search by WO No or Contractor..."
-                            value={searchTerm}
-                            onChange={e => setSearchTerm(e.target.value)}
-                            className="pl-8"
-                        />
-                    </div>
-                </div>
-
-            <Card className="border-border/60">
-                <CardContent className="p-0">
-                    <div className="overflow-x-auto">
-                    <Table className={PM_TABLE_CLASS}>
+            <TableCard
+                title="Work orders"
+                count={isLoading ? undefined : enrichedWorkOrders.length}
+                total={workOrders.length}
+                noun="work order"
+                toolbar={
+                    <FilterBar
+                        search={{ value: searchTerm, onChange: setSearchTerm, placeholder: 'Search by WO No or Contractor...' }}
+                    />
+                }
+            >
+                    <Table>
                         <TableHeader>
                             <TableRow>
                                 <TableHead>Work Order ID</TableHead>
@@ -173,9 +168,7 @@ export default function WorkOrderProgressReport() {
                             )}
                         </TableBody>
                     </Table>
-                    </div>
-                </CardContent>
-            </Card>
+            </TableCard>
             </PmContent>
         </>
     );

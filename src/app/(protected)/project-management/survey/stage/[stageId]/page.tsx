@@ -27,7 +27,6 @@ import {
   SURVEY_WORKFLOW_DOC_ID,
   canActOnSurveyEntry,
   entriesForStep,
-  surveyStatusStyles,
   type SurveyAction,
   type SurveyEntry,
 } from "@/lib/project-management-survey-workflow";
@@ -35,7 +34,6 @@ import {
   DEFAULT_PLAUSIBILITY_LIMIT_PCT,
   classifySurveyDeviation,
   formatDeviationPct,
-  surveyClassificationStyles,
   type SurveyDeviation,
 } from "@/lib/project-management-survey";
 import { DEFAULT_VARIATION_TOLERANCE_PCT } from "@/lib/project-management-variations";
@@ -53,7 +51,6 @@ import {
   PmEmptyState,
   type PmListColumn,
 } from "@/components/project-management/pm-shell";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import {
@@ -69,6 +66,8 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
 import { PageHeader } from "@/components/shared/page-header";
+import { StatusBadge } from "@/components/shared/status-badge";
+import { pmStatusTone } from "@/components/project-management/pm-status-tones";
 
 /** An entry with its deviation, as the list renders it. */
 type StageListRow = SurveyDeviation & { id: string; entry: SurveyEntry };
@@ -275,9 +274,7 @@ export default function SurveyStagePage() {
             {formatQuantity(deviation)} ({formatDeviationPct(deviationPct)})
           </span>
           <div>
-            <Badge variant="outline" className={`mt-1 ${surveyClassificationStyles[classification]}`}>
-              {classification}
-            </Badge>
+            <StatusBadge status={classification} tone={pmStatusTone(classification)} className="mt-1" />
           </div>
         </>
       ),
@@ -287,9 +284,7 @@ export default function SurveyStagePage() {
       header: "Status",
       mobile: "aside",
       cell: ({ entry }) => (
-        <Badge variant="outline" className={surveyStatusStyles[entry.status]}>
-          {entry.status}
-        </Badge>
+        <StatusBadge status={entry.status} />
       ),
     },
     {

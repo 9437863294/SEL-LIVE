@@ -19,7 +19,8 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Label } from '@/components/ui/label';
 import { Skeleton } from '@/components/ui/skeleton';
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { Table, TableBody, TableCell, TableFooter, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { TableCard } from '@/components/shared/table-card';
 import {
   DropdownMenu,
   DropdownMenuCheckboxItem,
@@ -209,10 +210,8 @@ export function PivotReport({ expenses, isLoading }: { expenses: ReportExpense[]
       const rowElement = (
         <TableRow
           key={uniqueKey}
-          className={cn(
-            row.level === 0 ? 'bg-muted/40 font-semibold' : 'hover:bg-muted/20',
-            'transition-colors duration-150'
-          )}
+          // A top-level group row reads as a group; the tint encodes the hierarchy.
+          className={cn(row.level === 0 && 'bg-slate-50 font-medium')}
         >
           <TableCell style={{ paddingLeft: `${(row.level * 1.5) + 1}rem` }} className="whitespace-nowrap">
             {row.label}
@@ -223,7 +222,7 @@ export function PivotReport({ expenses, isLoading }: { expenses: ReportExpense[]
             </TableCell>
           ))}
           {pivotData.columns.length > 1 && (
-            <TableCell className="text-right font-bold tabular-nums text-primary">
+            <TableCell className="text-right font-medium tabular-nums">
               {formatValue(Number(row.data.__rowTotal || 0))}
             </TableCell>
           )}
@@ -237,7 +236,7 @@ export function PivotReport({ expenses, isLoading }: { expenses: ReportExpense[]
   const renderColumnHeaders = () => {
     if (pivotConfig.columns.length === 0) {
       return (
-        <TableRow className="bg-muted/40">
+        <TableRow>
           <TableHead>{pivotConfig.rows.join(' / ') || 'Summary'}</TableHead>
           <TableHead className="text-right">Grand Total</TableHead>
         </TableRow>
@@ -262,19 +261,19 @@ export function PivotReport({ expenses, isLoading }: { expenses: ReportExpense[]
       };
       processLevel(pivotData.columnHierarchy, 0);
       headerRows.push(
-        <TableRow key={`header-row-${i}`} className="bg-muted/40">
+        <TableRow key={`header-row-${i}`}>
           {i === 0 && (
-            <TableHead rowSpan={maxDepth} className="align-bottom font-bold text-xs uppercase tracking-wide">
+            <TableHead rowSpan={maxDepth} className="align-bottom">
               {pivotConfig.rows.join(' / ') || 'Summary'}
             </TableHead>
           )}
           {cells.map(c => (
-            <TableHead key={c.key} colSpan={c.colspan} className="text-center border-l text-xs font-semibold">
+            <TableHead key={c.key} colSpan={c.colspan} className="text-center border-l">
               {c.label}
             </TableHead>
           ))}
           {i === 0 && pivotData.columns.length > 1 && (
-            <TableHead rowSpan={maxDepth} className="text-right align-bottom border-l font-bold text-primary text-xs uppercase tracking-wide">
+            <TableHead rowSpan={maxDepth} className="text-right align-bottom border-l">
               Row Total
             </TableHead>
           )}
@@ -373,18 +372,10 @@ export function PivotReport({ expenses, isLoading }: { expenses: ReportExpense[]
           </CardContent>
         </Card>
       ) : (
-        <Card className="border-border/60 bg-card/60 backdrop-blur-sm overflow-hidden">
-          <CardHeader className="pb-3">
-            <CardTitle className="flex items-center gap-2 text-sm">
-              <TableIcon className="h-4 w-4 text-muted-foreground" />
-              Pivot Summary
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="p-0">
+        <TableCard icon={TableIcon} title="Pivot Summary">
             {isLoading ? (
               <div className="p-6"><Skeleton className="h-80 w-full" /></div>
             ) : (
-              <div className="overflow-x-auto">
                 <Table>
                   <TableHeader>
                     {renderColumnHeaders()}
@@ -399,30 +390,29 @@ export function PivotReport({ expenses, isLoading }: { expenses: ReportExpense[]
                         </TableCell>
                       </TableRow>
                     )}
-
-                    {/* Grand Total Row */}
-                    <TableRow className="bg-primary/5 border-t-2 border-primary/20 font-bold">
-                      <TableCell className="text-primary font-bold">Grand Total</TableCell>
+                  </TableBody>
+                  {/* Grand Total Row */}
+                  <TableFooter>
+                    <TableRow>
+                      <TableCell>Grand Total</TableCell>
                       {pivotData.columns.map(col => {
                         const colKey = col.path.join('_');
                         return (
-                          <TableCell key={`total-${colKey}`} className="text-right tabular-nums text-primary font-bold">
+                          <TableCell key={`total-${colKey}`} className="text-right tabular-nums">
                             {formatValue(Number(pivotData.grandTotalRow[colKey] || 0))}
                           </TableCell>
                         );
                       })}
                       {pivotData.columns.length > 1 && (
-                        <TableCell className="text-right text-primary font-bold tabular-nums">
+                        <TableCell className="text-right tabular-nums">
                           {formatValue(pivotData.grandTotal)}
                         </TableCell>
                       )}
                     </TableRow>
-                  </TableBody>
+                  </TableFooter>
                 </Table>
-              </div>
             )}
-          </CardContent>
-        </Card>
+        </TableCard>
       )}
     </div>
   );

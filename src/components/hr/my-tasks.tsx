@@ -245,7 +245,7 @@ export default function MyHrTasks() {
                   <div className="flex items-baseline gap-2">
                     <span className="text-xl font-semibold tabular-nums">{task.count}</span>
                     {task.hint && (
-                      <Badge variant="outline" className="border-current/20 bg-white/60 text-[10px]">
+                      <Badge variant="outline">
                         {task.hint}
                       </Badge>
                     )}

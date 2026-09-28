@@ -24,14 +24,18 @@ import { labelWithMark } from '@/components/vehicle-management/controlled-field'
 import { useToast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { PageHeader } from '@/components/shared/page-header';
+import { TableCard } from '@/components/shared/table-card';
+import { SearchInput } from '@/components/shared/filter-bar';
+import { StatusBadge, type StatusTone } from '@/components/shared/status-badge';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Badge } from '@/components/ui/badge';
 import {
+  Table,
   TableBody,
   TableCell,
   TableHead,
@@ -59,12 +63,22 @@ import {
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from '@/components/ui/command';
 import ExcelJS from 'exceljs';
-import { Check, ChevronsUpDown, Download, ExternalLink, FileCheck2, FileUp, History, Loader2, RefreshCw, Search, Upload } from 'lucide-react';
+import { Check, ChevronsUpDown, Download, ExternalLink, FileCheck2, FileUp, History, Loader2, RefreshCw, Upload } from 'lucide-react';
 import { VehicleImportDialog, type ImportField } from '@/components/vehicle-management/import-dialog';
 import { VehicleTablePagination, useVehicleTablePagination } from '@/components/vehicle-management/table-pagination';
 
 type PucRow = Record<string, any>;
 type PucForm = Record<string, string>;
+
+/** Alert stages are this module's own words ("7d", "Not Due"), so their tone is stated here. */
+const pucAlertTone = (stage: string): StatusTone =>
+  stage === 'Expired'
+    ? 'danger'
+    : ['Due Today', '7d', '15d', '30d'].includes(stage)
+      ? 'warning'
+      : stage === 'Not Applicable' || stage === 'Missing'
+        ? 'neutral'
+        : 'success';
 
 const buildInitialState = (): PucForm => ({
   vehicleId: '',
@@ -523,7 +537,7 @@ export default function PucManagementPage() {
         title="PUC Management"
         description="Track pollution certificate validity and renewal compliance."
         badge={
-          <Badge variant="outline" className="w-fit bg-white/70">
+          <Badge variant="neutral" className="w-fit">
             {rows.length} records
           </Badge>
         }
@@ -553,18 +567,13 @@ export default function PucManagementPage() {
           </>
         }
       />
-      <Card className="vm-panel-strong overflow-hidden">
-        <CardContent className="space-y-3 px-3 pb-4 pt-4 sm:px-6 sm:pb-6 sm:pt-6">
-          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-            <div className="relative w-full sm:max-w-sm">
-              <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-              <Input
-                placeholder="Vehicle, certificate or testing center..."
-                value={query}
-                onChange={(event) => setQuery(event.target.value)}
-                className="h-11 w-full border-slate-200 bg-white pl-9 focus-visible:ring-emerald-400/40 sm:h-10"
-              />
-            </div>
+      <TableCard
+        title={activeTab === 'current' ? 'Current Certificates' : 'Certificate History'}
+        icon={FileCheck2}
+        count={filteredRows.length}
+        total={activeTab === 'current' ? currentCount : historyCount}
+        noun="certificate"
+        actions={
             <div className="grid w-full grid-cols-2 items-center gap-1 rounded-lg border border-slate-200 bg-slate-100 p-1 sm:w-fit">
               <button type="button" onClick={() => setActiveTab('current')} className={cn('flex min-h-10 items-center justify-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-semibold transition-all', activeTab === 'current' ? 'bg-white text-emerald-700 shadow-sm' : 'text-slate-500 hover:text-slate-700')}>
                 <FileCheck2 className="h-3.5 w-3.5" />Current <span className="text-[10px] opacity-70">{currentCount}</span>
@@ -573,17 +582,39 @@ export default function PucManagementPage() {
                 <History className="h-3.5 w-3.5" />History <span className="text-[10px] opacity-70">{historyCount}</span>
               </button>
             </div>
-          </div>
+        }
+        toolbar={
+          <SearchInput
+            value={query}
+            onChange={setQuery}
+            placeholder="Vehicle, certificate or testing center..."
+            className="sm:max-w-sm"
+          />
+        }
+        footer={
+          !isLoading && filteredRows.length > 0 ? (
+            <VehicleTablePagination
+              currentPage={pucPagination.currentPage}
+              totalPages={pucPagination.totalPages}
+              totalRows={filteredRows.length}
+              pageSize={pucPagination.pageSize}
+              onPageChange={pucPagination.setCurrentPage}
+            />
+          ) : undefined
+        }
+      >
+          {!isLoading && filteredRows.length === 0 ? (
+            <div className="px-4 py-10 text-center text-sm text-muted-foreground">
+              No records found.
+            </div>
+          ) : (
+          <>
           {/* Mobile card list — visible only on small screens */}
-          <div className="space-y-2.5 sm:hidden">
+          <div className="space-y-2.5 p-3 sm:hidden">
             {isLoading ? (
               Array.from({ length: 4 }).map((_, index) => (
                 <Skeleton key={index} className="h-36 w-full rounded-xl" />
               ))
-            ) : filteredRows.length === 0 ? (
-              <div className="rounded-lg border border-white/70 bg-white/80 px-4 py-10 text-center text-muted-foreground">
-                No records found.
-              </div>
             ) : (
               pucPagination.paginatedRows.map((row) => (
                 <div key={row.id} className="rounded-xl border border-white/70 bg-white/85 p-4 shadow-sm active:scale-[0.99] transition-transform">
@@ -593,23 +624,9 @@ export default function PucManagementPage() {
                       <p className="text-xs text-muted-foreground">{row.pucCertificateNumber || '-'}</p>
                     </div>
                     {row.alertStage && (
-                      <Badge
-                        variant="outline"
-                        className={cn(
-                          'shrink-0 text-[10px]',
-                          row.alertStage === 'Expired'
-                            ? 'border-rose-300 bg-rose-50 text-rose-700'
-                            : row.alertStage === 'Due Today'
-                            ? 'border-orange-300 bg-orange-50 text-orange-700'
-                            : ['7d', '15d', '30d'].includes(String(row.alertStage))
-                            ? 'border-yellow-300 bg-yellow-50 text-yellow-700'
-                            : row.alertStage === 'Not Applicable' || row.alertStage === 'Missing'
-                            ? 'border-slate-200 bg-slate-100 text-slate-500'
-                            : 'border-emerald-300 bg-emerald-50 text-emerald-700'
-                        )}
-                      >
+                      <StatusBadge status={String(row.alertStage)} tone={pucAlertTone(String(row.alertStage))} className="shrink-0">
                         {row.alertStage}
-                      </Badge>
+                      </StatusBadge>
                     )}
                   </div>
                   <div className="space-y-2">
@@ -648,14 +665,8 @@ export default function PucManagementPage() {
 
           {/* Desktop table — hidden on small screens */}
           <div className="hidden sm:block">
-          {!isLoading && filteredRows.length === 0 ? (
-            <div className="rounded-lg border border-white/70 bg-white/80 px-4 py-10 text-center text-muted-foreground">
-              No records found.
-            </div>
-          ) : (
-          <div className="overflow-auto rounded-lg border border-white/70 bg-white/80 h-[calc(100vh-230px)]">
-            <table className="w-full caption-bottom text-sm">
-              <TableHeader className="sticky top-0 z-10 bg-slate-50 shadow-sm">
+            <Table containerClassName="overflow-visible">
+              <TableHeader>
                 <TableRow>
                   <TableHead>Vehicle Number</TableHead>
                   <TableHead>Certificate Number</TableHead>
@@ -679,11 +690,11 @@ export default function PucManagementPage() {
                   ))
                 ) : (
                   pucPagination.paginatedRows.map((row) => (
-                    <TableRow key={String(row.id)} className="hover:bg-emerald-50/70">
-                      <TableCell>{row.vehicleNumber || '-'}</TableCell>
-                      <TableCell>{row.pucCertificateNumber || '-'}</TableCell>
+                    <TableRow key={String(row.id)}>
+                      <TableCell className="font-medium">{row.vehicleNumber || '-'}</TableCell>
+                      <TableCell className="whitespace-nowrap">{row.pucCertificateNumber || '-'}</TableCell>
                       <TableCell>{row.testingCenterName || '-'}</TableCell>
-                      <TableCell>{row.expiryDate || '-'}</TableCell>
+                      <TableCell className="whitespace-nowrap">{row.expiryDate || '-'}</TableCell>
                       <TableCell>{row.alertStage || '-'}</TableCell>
                       <TableCell>{row.pucStatus || '-'}</TableCell>
                       <TableCell>{row.complianceStatus || '-'}</TableCell>
@@ -711,19 +722,11 @@ export default function PucManagementPage() {
                   ))
                 )}
               </TableBody>
-            </table>
+            </Table>
           </div>
+          </>
           )}
-          </div>
-          <VehicleTablePagination
-            currentPage={pucPagination.currentPage}
-            totalPages={pucPagination.totalPages}
-            totalRows={filteredRows.length}
-            pageSize={pucPagination.pageSize}
-            onPageChange={pucPagination.setCurrentPage}
-          />
-        </CardContent>
-      </Card>
+      </TableCard>
 
       <Dialog open={dialogOpen} onOpenChange={(open) => { setDialogOpen(open); if (!open) setIsRenewalMode(false); }}>
         <DialogContent className="vm-mobile-dialog flex max-h-[92dvh] w-[calc(100vw-2rem)] max-w-5xl flex-col gap-0 overflow-hidden rounded-2xl border-slate-200 bg-slate-50 p-0 shadow-2xl">
@@ -731,7 +734,7 @@ export default function PucManagementPage() {
             <div className="flex items-start gap-3">
               <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-emerald-500 to-teal-600 text-white shadow-lg shadow-emerald-500/20"><FileCheck2 className="h-5 w-5" /></div>
               <div className="min-w-0 flex-1">
-                {isRenewalMode && renewingFromId && !editingRow && <span className="mb-1 inline-flex rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-[10px] font-semibold text-amber-700">Renewing Existing Certificate</span>}
+                {isRenewalMode && renewingFromId && !editingRow && <Badge variant="warning" className="mb-1">Renewing Existing Certificate</Badge>}
                 <DialogTitle className="text-lg text-slate-900">{editingRow ? 'Edit PUC Certificate' : isRenewalMode && renewingFromId ? 'Renew PUC Certificate' : 'Add PUC Certificate'}</DialogTitle>
                 <DialogDescription className="mt-0.5">Certificate number, testing details, validity, readings, and document.</DialogDescription>
               </div>

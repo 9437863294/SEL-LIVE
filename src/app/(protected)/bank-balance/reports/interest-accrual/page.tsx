@@ -7,6 +7,7 @@ import { PageHeader } from '@/components/shared/page-header';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow, TableFooter } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
+import { TableCard } from '@/components/shared/table-card';
 import { db } from '@/lib/firebase';
 import { collection, getDocs } from 'firebase/firestore';
 import type { BankAccount, BankExpense, InterestRateLogEntry } from '@/lib/types';
@@ -218,56 +219,53 @@ export default function InterestAccrualPage() {
         ) : (
           <div className="space-y-6">
             {interestData.map(({ account, rows, totalInterest }) => (
-              <Card key={account.id} className="rounded-xl border-border/60 shadow-sm overflow-hidden">
-                <CardHeader className="border-b border-border/40 pb-3">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                      <CreditCard className="h-4 w-4 text-violet-500" />
-                      <div>
-                        <CardTitle>{account.bankName} — {account.shortName}</CardTitle>
-                        <CardDescription className="text-xs">{account.accountNumber}</CardDescription>
-                      </div>
-                    </div>
-                    <div className="text-right">
-                      <p className="text-xs text-muted-foreground">Total Est. Interest</p>
-                      <p className="font-bold text-violet-700 dark:text-violet-400">{formatCurrency(totalInterest)}</p>
-                    </div>
+              <TableCard
+                key={account.id}
+                icon={CreditCard}
+                title={`${account.bankName} — ${account.shortName}`}
+                description={account.accountNumber}
+                count={rows.length}
+                noun="month"
+                scroll="natural"
+                actions={
+                  <div className="text-right">
+                    <p className="text-xs text-muted-foreground">Total Est. Interest</p>
+                    <p className="font-bold text-violet-700 dark:text-violet-400">{formatCurrency(totalInterest)}</p>
                   </div>
-                </CardHeader>
-                <CardContent className="p-0">
-                  <div className="overflow-x-auto">
+                }
+              >
                     <Table>
                       <TableHeader>
-                        <TableRow className="bg-muted/30 hover:bg-muted/30">
-                          <TableHead className="font-semibold text-xs">Month</TableHead>
-                          <TableHead className="text-right font-semibold text-xs">Closing Utilization</TableHead>
-                          <TableHead className="text-right font-semibold text-xs w-28">Rate (%)</TableHead>
-                          <TableHead className="text-right font-semibold text-xs w-20">Days</TableHead>
-                          <TableHead className="text-right font-semibold text-xs">Est. Interest</TableHead>
+                        <TableRow>
+                          <TableHead>Month</TableHead>
+                          <TableHead className="text-right">Closing Utilization</TableHead>
+                          <TableHead className="text-right w-28">Rate (%)</TableHead>
+                          <TableHead className="text-right w-20">Days</TableHead>
+                          <TableHead className="text-right">Est. Interest</TableHead>
                         </TableRow>
                       </TableHeader>
                       <TableBody>
                         {rows.length === 0 ? (
                           <TableRow>
-                            <TableCell colSpan={5} className="text-center h-20 text-muted-foreground text-sm">
+                            <TableCell colSpan={5} className="text-center h-20 text-muted-foreground">
                               No transaction data.
                             </TableCell>
                           </TableRow>
                         ) : rows.map(row => (
-                          <TableRow key={row.month} className="hover:bg-muted/20 text-xs transition-colors">
-                            <TableCell className="font-medium">{row.monthLabel}</TableCell>
-                            <TableCell className="text-right font-mono">{formatCurrency(row.closingUtilization)}</TableCell>
-                            <TableCell className="text-right">
+                          <TableRow key={row.month}>
+                            <TableCell className="whitespace-nowrap font-medium">{row.monthLabel}</TableCell>
+                            <TableCell className="whitespace-nowrap text-right font-mono">{formatCurrency(row.closingUtilization)}</TableCell>
+                            <TableCell className="whitespace-nowrap text-right tabular-nums">
                               {row.rate > 0 ? (
-                                <Badge variant="outline" className="text-xs border-violet-200 text-violet-700 bg-violet-50 dark:bg-violet-950/20">
+                                <Badge variant="neutral">
                                   {row.rate.toFixed(2)}%
                                 </Badge>
                               ) : (
                                 <span className="text-muted-foreground">—</span>
                               )}
                             </TableCell>
-                            <TableCell className="text-right text-muted-foreground">{row.daysInMonth}</TableCell>
-                            <TableCell className={cn('text-right font-semibold font-mono', row.estimatedInterest > 0 ? 'text-rose-600 dark:text-rose-400' : 'text-muted-foreground')}>
+                            <TableCell className="text-right tabular-nums">{row.daysInMonth}</TableCell>
+                            <TableCell className={cn('whitespace-nowrap text-right font-medium font-mono', row.estimatedInterest > 0 ? 'text-rose-600 dark:text-rose-400' : 'text-muted-foreground')}>
                               {row.estimatedInterest > 0 ? formatCurrency(row.estimatedInterest) : '—'}
                             </TableCell>
                           </TableRow>
@@ -275,16 +273,14 @@ export default function InterestAccrualPage() {
                       </TableBody>
                       {rows.length > 0 && (
                         <TableFooter>
-                          <TableRow className="bg-muted/40 hover:bg-muted/40">
-                            <TableCell colSpan={4} className="font-bold text-xs">TOTAL ESTIMATED INTEREST</TableCell>
-                            <TableCell className="text-right font-bold text-xs text-rose-700 dark:text-rose-400 font-mono">{formatCurrency(totalInterest)}</TableCell>
+                          <TableRow>
+                            <TableCell colSpan={4}>TOTAL ESTIMATED INTEREST</TableCell>
+                            <TableCell className="whitespace-nowrap text-right text-rose-700 dark:text-rose-400 font-mono">{formatCurrency(totalInterest)}</TableCell>
                           </TableRow>
                         </TableFooter>
                       )}
                     </Table>
-                  </div>
-                </CardContent>
-              </Card>
+              </TableCard>
             ))}
           </div>
         )}

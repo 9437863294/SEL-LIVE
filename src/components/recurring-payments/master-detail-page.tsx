@@ -51,7 +51,7 @@ import {
   visibleObligations,
 } from "@/lib/recurring-payments";
 import { addBusinessHours } from "@/lib/working-hours";
-import { Badge } from "@/components/ui/badge";
+import { StatusBadge } from "@/components/shared/status-badge";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -70,7 +70,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import ModuleTableCard from "./module-table-card";
+import { TableCard } from "@/components/shared/table-card";
 
 type AuditRecord = {
   id: string;
@@ -331,7 +331,7 @@ export default function RecurringMasterDetailPage({
         backHref="/recurring-payments/masters"
         backLabel="Back to masters"
         title={master.title}
-        badge={<Badge variant="secondary">{master.status}</Badge>}
+        badge={<StatusBadge status={master.status} />}
         description={
           <>
             Master ID {master.id} · {master.category} ·{" "}
@@ -582,11 +582,11 @@ function PaymentTable({
   onOpen: (id: string) => void;
 }) {
   return (
-    <ModuleTableCard
+    <TableCard
       title="Generated payment obligations"
       description="One row per billing cycle generated from this master"
       count={payments.length}
-      countNoun="cycle"
+      noun="cycle"
     >
         <Table>
           <TableHeader>
@@ -618,7 +618,7 @@ function PaymentTable({
                   {currency(payment.paidAmount)}
                 </TableCell>
                 <TableCell>
-                  <Badge variant="outline">{payment.status}</Badge>
+                  <StatusBadge status={payment.status} />
                 </TableCell>
               </TableRow>
             ))}
@@ -634,7 +634,7 @@ function PaymentTable({
             )}
           </TableBody>
         </Table>
-    </ModuleTableCard>
+    </TableCard>
   );
 }
 function HeaderStat({ label, value }: { label: string; value: string }) {

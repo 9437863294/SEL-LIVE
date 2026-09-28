@@ -10,8 +10,10 @@ import { useAuthorization } from '@/hooks/useAuthorization';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
 import { Skeleton } from '@/components/ui/skeleton';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { FilterBar } from '@/components/shared/filter-bar';
+import { TableCard } from '@/components/shared/table-card';
 import {
   dailyPageContainerClass,
   dailySurfaceCardClass,
@@ -223,29 +225,24 @@ export default function DepartmentAnalysisPage() {
       />
 
       {/* Date filters */}
-      <Card className="mb-4 overflow-hidden border border-white/70 bg-white/70 shadow-sm backdrop-blur">
-        <div className="h-1 w-full bg-gradient-to-r from-emerald-500 to-teal-500" />
-        <CardContent className="flex flex-wrap items-end gap-4 p-4">
-          <div className="space-y-1">
-            <Label className="text-xs font-medium text-slate-600">From</Label>
-            <Input
-              type="date"
-              value={fromDate}
-              onChange={(e) => setFromDate(e.target.value)}
-              className="w-40 bg-white/80 border-white/70"
-            />
-          </div>
-          <div className="space-y-1">
-            <Label className="text-xs font-medium text-slate-600">To</Label>
-            <Input
-              type="date"
-              value={toDate}
-              onChange={(e) => setToDate(e.target.value)}
-              className="w-40 bg-white/80 border-white/70"
-            />
-          </div>
-        </CardContent>
-      </Card>
+      <FilterBar className="mb-4">
+        <label className="flex items-center gap-2">
+          <span className="text-sm text-muted-foreground">From</span>
+          <Input
+            type="date"
+            value={fromDate}
+            onChange={(e) => setFromDate(e.target.value)}
+          />
+        </label>
+        <label className="flex items-center gap-2">
+          <span className="text-sm text-muted-foreground">To</span>
+          <Input
+            type="date"
+            value={toDate}
+            onChange={(e) => setToDate(e.target.value)}
+          />
+        </label>
+      </FilterBar>
 
       {/* Stat cards */}
       <div className="mb-4 grid grid-cols-2 gap-3 sm:grid-cols-4">
@@ -293,58 +290,34 @@ export default function DepartmentAnalysisPage() {
       </div>
 
       {/* Table */}
-      <Card className="overflow-hidden border border-white/70 bg-white/70 shadow-sm backdrop-blur">
-        <div className="h-1 w-full bg-gradient-to-r from-emerald-500 to-teal-500" />
-        <CardHeader className="pb-2">
-          <CardTitle className="flex items-center gap-2 text-base">
-            <Layers className="h-4 w-4 text-emerald-500" />
-            Department Breakdown
-          </CardTitle>
-          <CardDescription>
-            {rows.length} department{rows.length !== 1 ? 's' : ''} · {totalEntries} entries in
-            range
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="p-0">
+      <TableCard
+        icon={Layers}
+        title="Department Breakdown"
+        description={<>{rows.length} department{rows.length !== 1 ? 's' : ''} · {totalEntries} entries in range</>}
+      >
           {rows.length === 0 ? (
-            <div className="px-6 py-12 text-center text-sm text-slate-500">
+            <div className="px-6 py-12 text-center text-sm text-muted-foreground">
               No entries found for the selected date range.
             </div>
           ) : (
-            <div className="overflow-auto rounded-b-2xl border-t border-white/70 bg-white/80 h-[calc(100vh-420px)] [&_th]:sticky [&_th]:top-0 [&_th]:z-10">
-              <table className="w-full caption-bottom text-sm">
-                <thead>
-                  <tr className="border-b border-slate-200 bg-slate-50/90 backdrop-blur">
-                    <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
-                      Department
-                    </th>
-                    <th className="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wide text-slate-500">
-                      Count
-                    </th>
-                    <th className="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wide text-slate-500">
-                      Total Gross
-                    </th>
-                    <th className="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wide text-slate-500">
-                      Total Net
-                    </th>
-                    <th className="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wide text-slate-500">
-                      Paid
-                    </th>
-                    <th className="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wide text-slate-500">
-                      Pending / Other
-                    </th>
-                  </tr>
-                </thead>
-                <tbody>
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Department</TableHead>
+                    <TableHead className="text-right">Count</TableHead>
+                    <TableHead className="text-right">Total Gross</TableHead>
+                    <TableHead className="text-right">Total Net</TableHead>
+                    <TableHead className="text-right">Paid</TableHead>
+                    <TableHead className="text-right">Pending / Other</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
                   {rows.map((row) => (
-                    <tr
-                      key={row.departmentId}
-                      className="border-b border-slate-100 transition-colors hover:bg-emerald-50/60"
-                    >
-                      <td className="px-4 py-3 font-medium text-slate-900">{row.name}</td>
-                      <td className="px-4 py-3 text-right">
+                    <TableRow key={row.departmentId}>
+                      <TableCell className="font-medium">{row.name}</TableCell>
+                      <TableCell className="text-right">
                         <div className="space-y-1">
-                          <div className="text-slate-800">{row.count}</div>
+                          <div className="tabular-nums">{row.count}</div>
                           <div className="ml-auto h-1.5 w-32 rounded-full bg-slate-100">
                             <div
                               className="h-1.5 rounded-full bg-gradient-to-r from-emerald-500 to-teal-600 transition-all"
@@ -354,23 +327,21 @@ export default function DepartmentAnalysisPage() {
                             />
                           </div>
                         </div>
-                      </td>
-                      <td className="px-4 py-3 text-right text-slate-700">
+                      </TableCell>
+                      <TableCell className="whitespace-nowrap text-right tabular-nums">
                         {formatCurrency(row.totalGross)}
-                      </td>
-                      <td className="px-4 py-3 text-right font-medium text-slate-900">
+                      </TableCell>
+                      <TableCell className="whitespace-nowrap text-right font-medium tabular-nums">
                         {formatCurrency(row.totalNet)}
-                      </td>
-                      <td className="px-4 py-3 text-right text-emerald-700">{row.paid}</td>
-                      <td className="px-4 py-3 text-right text-amber-700">{row.pendingOther}</td>
-                    </tr>
+                      </TableCell>
+                      <TableCell className="text-right tabular-nums">{row.paid}</TableCell>
+                      <TableCell className="text-right tabular-nums">{row.pendingOther}</TableCell>
+                    </TableRow>
                   ))}
-                </tbody>
-              </table>
-            </div>
+                </TableBody>
+              </Table>
           )}
-        </CardContent>
-      </Card>
+      </TableCard>
     </div>
   );
 }

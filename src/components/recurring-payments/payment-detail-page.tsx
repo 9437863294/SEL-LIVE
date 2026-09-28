@@ -35,6 +35,8 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { PageHeader } from '@/components/shared/page-header';
+import { StatusBadge, type StatusTone } from '@/components/shared/status-badge';
+import { TableCard } from '@/components/shared/table-card';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -42,6 +44,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Textarea } from '@/components/ui/textarea';
+
+const PRIORITY_TONE: Record<string, StatusTone> = { Low: 'neutral', Normal: 'info', High: 'warning', Critical: 'danger', Urgent: 'danger' };
 
 type CommentRecord = { id: string; message: string; userId: string; userName: string; mentions?: string[]; createdAt: unknown };
 type NotificationRecord = { id: string; title?: string; status?: string; channels?: string[]; daysUntilDue?: number; createdAt?: unknown };
@@ -273,7 +277,7 @@ export default function RecurringPaymentDetailPage({ paymentId }: { paymentId: s
       backHref="/recurring-payments/payments"
       backLabel="Back to payments"
       title={payment.title}
-      badge={<><Badge variant="secondary">{payment.status}</Badge><Badge variant="outline">{payment.priority || 'Normal'}</Badge></>}
+      badge={<><StatusBadge status={payment.status} /><StatusBadge status={payment.priority || 'Normal'} tone={PRIORITY_TONE[payment.priority || 'Normal'] || 'neutral'} /></>}
       description={`Payment ID ${payment.id} · ${payment.vendorName} · ${payment.sourceType || 'Recurring'}`}
       meta={timing?.label ? <span className={`text-sm font-medium ${timing.isOverdue ? 'text-red-600' : timing.withinGrace ? 'text-amber-600' : 'text-muted-foreground'}`}>{timing.label}</span> : undefined}
       actions={<div className="contents print:hidden"><Button variant="outline" onClick={() => window.print()}><Printer className="mr-2 h-4 w-4" />Print note</Button>{can('Edit', 'Recurring Payments.Payments') && isObligationEditable(payment) && <Link href={`/recurring-payments/payments/${payment.id}/edit`}><Button variant="outline"><Pencil className="mr-2 h-4 w-4" />Edit</Button></Link>}{can('Delete', 'Recurring Payments.Payments') && <Button variant="destructive" onClick={deletePayment}><Trash2 className="mr-2 h-4 w-4" />Delete</Button>}{canAct && <Link href={`/recurring-payments/stage/${payment.currentStepId}`}><Button><ExternalLink className="mr-2 h-4 w-4" />Open assigned action</Button></Link>}{can('Record Payment', 'Recurring Payments.Payments') && ['Approved', 'Payment Processing', 'Partially Paid'].includes(payment.status) && <Link href={`/recurring-payments/payments/${payment.id}/record-payment`}><Button className="bg-emerald-500 hover:bg-emerald-400"><WalletCards className="mr-2 h-4 w-4" />Record payment</Button></Link>}{can('Cancel', 'Recurring Payments.Payments') && !['Closed', 'Cancelled'].includes(payment.status) && <Button variant="destructive" onClick={cancelPayment}>Cancel</Button>}</div>}
@@ -286,10 +290,12 @@ export default function RecurringPaymentDetailPage({ paymentId }: { paymentId: s
       <TabsContent value="bill"><Card><CardHeader><CardTitle>Bill calculation and controls</CardTitle></CardHeader><CardContent className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4"><Info label="Base bill" value={currency(payment.billAmount || 0)} /><Info label="Tax" value={currency(payment.taxAmount || 0)} /><Info label="TDS" value={currency(payment.tdsAmount || 0)} /><Info label="Other deductions" value={currency(payment.deductionAmount || 0)} /><Info label="Adjustment" value={currency(payment.adjustmentAmount || 0)} /><Info label="Net payable" value={currency(payment.netPayableAmount || payment.billAmount || payment.expectedAmount)} /><Info label="Previous bill" value={currency(payment.varianceComparisons?.previous || 0)} /><Info label="Average of 3" value={currency(payment.varianceComparisons?.average3 || 0)} /><Info label="Average of 6" value={currency(payment.varianceComparisons?.average6 || 0)} /><Info label="Maximum limit" value={currency(payment.maximumAmount || 0)} /></CardContent></Card></TabsContent>
       <TabsContent value="approval"><Card><CardHeader><CardTitle>Approval path</CardTitle><CardDescription>{payment.approvalMode || 'Workflow assignment'} · current level {payment.currentApprovalLevel || 0}</CardDescription></CardHeader><CardContent className="space-y-3">{(payment.approvalLevels || []).map((approverId, index) => { const complete = (payment.approvalCompletedBy || []).includes(approverId); const pending = currentApprover === approverId || (payment.approvalMode === 'Parallel' && !complete); return <div className="flex items-center gap-3 rounded-xl border p-3" key={`${approverId}-${index}`}><div className={`rounded-full p-2 ${complete ? 'bg-emerald-100 text-emerald-600' : pending ? 'bg-amber-100 text-amber-600' : 'bg-slate-100 text-slate-500'}`}>{complete ? <CheckCircle2 className="h-4 w-4" /> : <ShieldCheck className="h-4 w-4" />}</div><div><p className="font-medium">Level {index + 1} · {userName(approverId, users)}</p><p className="text-xs text-muted-foreground">{complete ? 'Approved' : pending ? 'Pending action' : 'Waiting for previous level'}</p></div></div>; })}{!(payment.approvalLevels || []).length && <p className="py-8 text-center text-sm text-muted-foreground">The configured workflow controls approval assignment.</p>}</CardContent></Card></TabsContent>
       <TabsContent value="transactions">
-        <Card>
-          {transactionsLocked && <CardDescription className="px-5 pt-4 text-amber-600">This payment is closed — transactions are locked from editing.</CardDescription>}
-          <CardContent className="p-0">
-            <div className="overflow-x-auto">
+        <TableCard
+          title="Transactions"
+          count={transactions.length}
+          noun="transaction"
+          description={transactionsLocked ? <span className="text-amber-600">This payment is closed — transactions are locked from editing.</span> : undefined}
+        >
             <Table>
               <TableHeader>
                 <TableRow>
@@ -309,9 +315,9 @@ export default function RecurringPaymentDetailPage({ paymentId }: { paymentId: s
                     <TableCell className="whitespace-nowrap">{transaction.paymentDate}</TableCell>
                     <TableCell className="whitespace-nowrap">{transaction.mode}</TableCell>
                     <TableCell className="whitespace-nowrap">{maskAccount(transaction.bankAccount)}</TableCell>
-                    <TableCell className="whitespace-nowrap font-mono text-xs">{transaction.transactionReference}</TableCell>
+                    <TableCell className="whitespace-nowrap font-mono">{transaction.transactionReference}</TableCell>
                     <TableCell className="whitespace-nowrap">{transaction.paidByName}</TableCell>
-                    <TableCell className="whitespace-nowrap text-right font-semibold">{currency(transaction.amount)}</TableCell>
+                    <TableCell className="whitespace-nowrap text-right tabular-nums">{currency(transaction.amount)}</TableCell>
                     <TableCell className="whitespace-nowrap">
                       {transaction.receiptUrl
                         ? <a href={transaction.receiptUrl} target="_blank" rel="noreferrer"><Button variant="outline" size="sm"><ReceiptText className="mr-1 h-3 w-3" />View</Button></a>
@@ -340,13 +346,11 @@ export default function RecurringPaymentDetailPage({ paymentId }: { paymentId: s
                 )}
               </TableBody>
             </Table>
-            </div>
-          </CardContent>
-        </Card>
+        </TableCard>
       </TabsContent>
       <TabsContent value="documents"><Card><CardHeader><CardTitle>Document register</CardTitle><CardDescription>{hasReceipt ? 'Payment proof is available.' : 'Payment proof is currently missing.'}</CardDescription></CardHeader><CardContent className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">{documents.map((document, index) => <a href={document.reference} target="_blank" rel="noreferrer" className="flex gap-3 rounded-xl border p-4 hover:bg-muted" key={`${document.reference}-${index}`}><FileText className="h-5 w-5 text-indigo-600" /><div><p className="font-medium">{document.category || document.action}</p><p className="text-xs text-muted-foreground">Version {document.version || 1} · {document.fileType || 'document'}</p><p className="text-xs text-muted-foreground">{formatTimestamp(document.addedAt)}</p></div></a>)}{!documents.length && <p className="col-span-full py-10 text-center text-sm text-muted-foreground">No documents uploaded.</p>}</CardContent></Card></TabsContent>
       <TabsContent value="comments"><Card><CardHeader><CardTitle className="flex items-center gap-2"><MessageSquare className="h-5 w-5" />Comments and mentions</CardTitle></CardHeader><CardContent className="space-y-4">{can('Add Comment', 'Recurring Payments.Payments') && <div className="space-y-2"><Label>Add comment</Label><Textarea value={comment} onChange={event => setComment(event.target.value)} placeholder="Add remarks; mention a user with @Name" /><Button onClick={addComment} disabled={!comment.trim()}><Send className="mr-2 h-4 w-4" />Add comment</Button></div>}<div className="space-y-3">{comments.map(item => <div className="rounded-xl border p-3" key={item.id}><p className="text-sm">{item.message}</p><p className="mt-2 text-xs text-muted-foreground">{item.userName} · {formatTimestamp(item.createdAt)}</p></div>)}{!comments.length && <p className="py-8 text-center text-sm text-muted-foreground">No comments yet.</p>}</div></CardContent></Card></TabsContent>
-      <TabsContent value="notifications"><Card><CardHeader><CardTitle className="flex items-center gap-2"><BellRing className="h-5 w-5" />Reminder and escalation history</CardTitle></CardHeader><CardContent className="space-y-3">{notifications.map(item => <div className="flex items-center justify-between rounded-xl border p-3" key={item.id}><div><p className="font-medium">{item.title || 'Payment reminder'}</p><p className="text-xs text-muted-foreground">{(item.channels || []).join(', ') || 'Configured channels'} · {formatTimestamp(item.createdAt)}</p></div><Badge variant="outline">{item.status || 'Pending'}</Badge></div>)}{!notifications.length && <p className="py-8 text-center text-sm text-muted-foreground">No reminder history for this payment.</p>}</CardContent></Card></TabsContent>
+      <TabsContent value="notifications"><Card><CardHeader><CardTitle className="flex items-center gap-2"><BellRing className="h-5 w-5" />Reminder and escalation history</CardTitle></CardHeader><CardContent className="space-y-3">{notifications.map(item => <div className="flex items-center justify-between rounded-xl border p-3" key={item.id}><div><p className="font-medium">{item.title || 'Payment reminder'}</p><p className="text-xs text-muted-foreground">{(item.channels || []).join(', ') || 'Configured channels'} · {formatTimestamp(item.createdAt)}</p></div><StatusBadge status={item.status || 'Pending'} /></div>)}{!notifications.length && <p className="py-8 text-center text-sm text-muted-foreground">No reminder history for this payment.</p>}</CardContent></Card></TabsContent>
       <TabsContent value="audit"><Card><CardHeader><CardTitle className="flex items-center gap-2"><History className="h-5 w-5" />Immutable audit trail</CardTitle></CardHeader><CardContent className="space-y-3">{audit.map(item => <div className="flex items-start justify-between gap-4 rounded-xl border p-3" key={item.id}><div><p className="font-medium">{item.action}</p><p className="text-sm text-muted-foreground">{item.summary}</p><p className="text-xs text-muted-foreground">{item.userName}</p></div><span className="whitespace-nowrap text-xs text-muted-foreground">{formatTimestamp(item.createdAt)}</span></div>)}{!audit.length && <p className="py-8 text-center text-sm text-muted-foreground">No audit entries recorded.</p>}</CardContent></Card></TabsContent>
     </Tabs></div>
     {editingTransaction && (

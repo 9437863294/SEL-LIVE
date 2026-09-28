@@ -51,7 +51,6 @@ import {
   PmDataList,
   PmSectionHead,
   PmShell,
-  PmStatusPill,
   PmTableFoot,
   type PmListColumn,
 } from "@/components/project-management/pm-shell";
@@ -70,6 +69,7 @@ import {
 } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { PageHeader } from "@/components/shared/page-header";
+import { StatusBadge } from "@/components/shared/status-badge";
 
 const today = () => {
   const date = new Date();
@@ -357,7 +357,7 @@ export default function NewManufacturingClearancePage() {
         <span className="block sm:max-w-[22rem] sm:truncate">{row.ledger.itemDescription}</span>
       ),
     },
-    { header: "Unit", className: "text-muted-foreground", cell: (row) => row.ledger.unit },
+    { header: "Unit", cell: (row) => row.ledger.unit },
     {
       header: "Ordered",
       align: "right",
@@ -402,13 +402,13 @@ export default function NewManufacturingClearancePage() {
       mobile: "aside",
       cell: ({ ledger }) => (
         <>
-          <PmStatusPill
-            label={ledger.status}
+          <StatusBadge
+            status={ledger.status}
             tone={
               ledger.status === "Fully Cleared"
-                ? "ok"
+                ? "success"
                 : ledger.status === "Partially Cleared"
-                  ? "wait"
+                  ? "warning"
                   : "neutral"
             }
           />

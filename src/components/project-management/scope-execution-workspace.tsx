@@ -15,7 +15,6 @@ import {
   RadioTower,
   RefreshCw,
   Ruler,
-  Search,
   ShieldAlert,
   Trash2,
 } from "lucide-react";
@@ -48,10 +47,7 @@ import {
   type SubcontractorBillLike,
   type WorkOrderLike,
 } from "@/lib/civil-execution";
-import {
-  reconcileBoqQuantities,
-  quantityExceptionStyles,
-} from "@/lib/boq-quantity-control";
+import { reconcileBoqQuantities } from "@/lib/boq-quantity-control";
 import { DEFAULT_VARIATION_TOLERANCE_PCT } from "@/lib/project-management-variations";
 import { isBoqSectionHeader } from "@/lib/project-management-boq-columns";
 // Single source of truth for where the JMC screens live, so this link cannot drift from the routes.
@@ -84,7 +80,6 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import {
@@ -114,6 +109,10 @@ import {
   PmEmptyState,
   type PmListColumn,
 } from "@/components/project-management/pm-shell";
+import { pmStatusTone } from "@/components/project-management/pm-status-tones";
+import { FilterBar } from "@/components/shared/filter-bar";
+import { StatusBadge, type StatusTone } from "@/components/shared/status-badge";
+import { TableCard } from "@/components/shared/table-card";
 import { cn } from "@/lib/utils";
 
 type ScopeExecutionWorkspaceProps = {
@@ -146,19 +145,11 @@ const emptyDraft = (scope: WorkPackageScope): ProjectWorkPackageDraft => ({
   nextAction: "",
 });
 
-const statusStyles: Record<WorkPackageStatus, string> = {
-  "Not Started": "bg-slate-100 text-slate-700",
-  "In Progress": "bg-blue-100 text-blue-700",
-  Blocked: "bg-red-100 text-red-700",
-  "On Hold": "bg-amber-100 text-amber-700",
-  Completed: "bg-emerald-100 text-emerald-700",
-};
-
-const priorityStyles: Record<WorkPackagePriority, string> = {
-  Low: "border-slate-200 text-slate-600",
-  Medium: "border-blue-200 text-blue-700",
-  High: "border-orange-200 text-orange-700",
-  Critical: "border-red-200 text-red-700",
+const priorityTones: Record<WorkPackagePriority, StatusTone> = {
+  Low: "neutral",
+  Medium: "info",
+  High: "warning",
+  Critical: "danger",
 };
 
 const scopeTheme = {
@@ -193,13 +184,7 @@ const escapeCsvCell = (value: unknown) => {
   return `"${text.replace(/"/g, '""')}"`;
 };
 
-/**
- * On a phone each register's rows are cards of their own, so the Card around the register drops its
- * frame and its heading sits on the page — a card inside a card is only a thicker border. From `sm`
- * the Card is back and the list drops *its* frame instead, so the desktop keeps the one box it had.
- */
-const PHONE_BARE_CARD = "max-sm:border-0 max-sm:bg-transparent max-sm:shadow-none";
-const PHONE_BARE_CARD_HEADER = "max-sm:px-0 max-sm:pt-0";
+/** From `sm` the TableCard is the register's one box, so the list inside drops its own frame. */
 const LIST_IN_CARD = "sm:rounded-none sm:border-0 sm:shadow-none";
 
 const CONCURRENT_UPDATE_ERROR = "WORK_PACKAGE_CONCURRENT_UPDATE";
@@ -678,12 +663,12 @@ export default function ScopeExecutionWorkspace({ mappingId, scope }: ScopeExecu
     { header: "Owner", cell: (workPackage) => workPackage.ownerName },
     {
       header: "Priority",
-      cell: (workPackage) => <Badge variant="outline" className={priorityStyles[workPackage.priority]}>{workPackage.priority}</Badge>,
+      cell: (workPackage) => <StatusBadge status={workPackage.priority} tone={priorityTones[workPackage.priority]} />,
     },
     {
       header: "Status",
       mobile: "aside",
-      cell: (workPackage) => <Badge className={statusStyles[workPackage.status]}>{workPackage.status}</Badge>,
+      cell: (workPackage) => <StatusBadge status={workPackage.status} tone={pmStatusTone(workPackage.status)} />,
     },
     {
       header: "Progress",
@@ -753,7 +738,7 @@ export default function ScopeExecutionWorkspace({ mappingId, scope }: ScopeExecu
       // Top-right on a phone, so the description — what the line actually is — heads the card.
       header: "SL No",
       mobile: "aside",
-      className: "whitespace-nowrap text-xs",
+      className: "whitespace-nowrap",
       cell: ({ item }) => (
         <span className="max-sm:text-xs max-sm:text-muted-foreground">{readBoqSlNo(item) || "—"}</span>
       ),
@@ -763,22 +748,21 @@ export default function ScopeExecutionWorkspace({ mappingId, scope }: ScopeExecu
       mobile: "title",
       className: "min-w-64 max-w-xs",
       cell: ({ item }) => (
-        <p className="max-sm:line-clamp-2 sm:truncate sm:text-xs" title={String(item.Description ?? "")}>
+        <p className="max-sm:line-clamp-2 sm:truncate" title={String(item.Description ?? "")}>
           {String(item.Description ?? "") || "—"}
         </p>
       ),
     },
-    { header: "BOQ Qty", align: "right", className: "text-xs", cell: ({ boqQty }) => boqQty },
-    { header: "Surveyed", align: "right", className: "text-xs", cell: ({ surveyedQty }) => surveyedQty ?? "—" },
+    { header: "BOQ Qty", align: "right", cell: ({ boqQty }) => boqQty },
+    { header: "Surveyed", align: "right", cell: ({ surveyedQty }) => surveyedQty ?? "—" },
     {
       header: "WO Qty",
       align: "right",
-      className: "text-xs",
       cell: ({ workOrder }) => (workOrder ? workOrder.orderedQty : "—"),
     },
     {
       header: "Subcontractor",
-      className: "max-w-40 truncate text-xs",
+      className: "max-w-40 truncate",
       cell: ({ workOrder }) => (
         <span title={workOrder?.subcontractorNames.join(", ")}>
           {workOrder?.subcontractorNames.join(", ") || "—"}
@@ -788,19 +772,16 @@ export default function ScopeExecutionWorkspace({ mappingId, scope }: ScopeExecu
     {
       header: "Executed",
       align: "right",
-      className: "text-xs",
       cell: ({ measurement }) => (measurement ? measurement.executedQty : "—"),
     },
     {
       header: "Certified",
       align: "right",
-      className: "text-xs",
       cell: ({ measurement }) => (measurement ? measurement.certifiedQty : "—"),
     },
     {
       header: "Sub-billed",
       align: "right",
-      className: "text-xs",
       cell: ({ bill }) => (bill ? bill.billedQty : "—"),
     },
     {
@@ -808,15 +789,13 @@ export default function ScopeExecutionWorkspace({ mappingId, scope }: ScopeExecu
       mobile: "aside",
       cell: ({ ledger }) =>
         ledger.worstSeverity ? (
-          <Badge
-            variant="outline"
-            className={quantityExceptionStyles[ledger.worstSeverity]}
+          <StatusBadge
+            status={ledger.worstSeverity}
+            tone={ledger.worstSeverity === "critical" ? "danger" : "warning"}
             title={ledger.exceptions.map((exception) => exception.message).join("\n")}
-          >
-            {ledger.worstSeverity}
-          </Badge>
+          />
         ) : (
-          <Badge variant="outline" className="bg-emerald-100 text-emerald-700">clean</Badge>
+          <StatusBadge status="clean" tone="success" />
         ),
     },
     {
@@ -920,37 +899,37 @@ export default function ScopeExecutionWorkspace({ mappingId, scope }: ScopeExecu
 
       {summary.total > 0 && <Progress value={summary.averageProgressPct} className="h-2" />}
 
-      <Card className={PHONE_BARE_CARD}>
-        <CardHeader className={cn("pb-3", PHONE_BARE_CARD_HEADER)}>
-          <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-            <div>
-              <CardTitle className="text-base">Work-package register</CardTitle>
-              <CardDescription>Progress is controlled against package owners and planned dates.</CardDescription>
-            </div>
-            {/* Phones: search across the top, the two filters side by side beneath it. */}
-            <div className="grid grid-cols-2 gap-2 sm:flex sm:flex-row">
-              <div className="relative col-span-2 sm:w-64">
-                <Search className="absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
-                <Input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search packages..." className="pl-9" />
-              </div>
-              <Select value={statusFilter} onValueChange={(value) => setStatusFilter(value as WorkPackageStatus | "All")}>
-                <SelectTrigger className="sm:w-40"><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="All">All statuses</SelectItem>
-                  {WORK_PACKAGE_STATUSES.map((status) => <SelectItem key={status} value={status}>{status}</SelectItem>)}
-                </SelectContent>
-              </Select>
-              <Select value={priorityFilter} onValueChange={(value) => setPriorityFilter(value as WorkPackagePriority | "All")}>
-                <SelectTrigger className="sm:w-36"><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="All">All priorities</SelectItem>
-                  {WORK_PACKAGE_PRIORITIES.map((priority) => <SelectItem key={priority} value={priority}>{priority}</SelectItem>)}
-                </SelectContent>
-              </Select>
-            </div>
-          </div>
-        </CardHeader>
-        <CardContent className="p-0">
+      <TableCard
+        title="Work-package register"
+        description="Progress is controlled against package owners and planned dates."
+        toolbar={
+          <FilterBar
+            search={{ value: search, onChange: setSearch, placeholder: "Search packages..." }}
+            activeCount={(statusFilter !== "All" ? 1 : 0) + (priorityFilter !== "All" ? 1 : 0)}
+            onClear={() => {
+              setSearch("");
+              setStatusFilter("All");
+              setPriorityFilter("All");
+            }}
+          >
+            <Select value={statusFilter} onValueChange={(value) => setStatusFilter(value as WorkPackageStatus | "All")}>
+              <SelectTrigger><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="All">All statuses</SelectItem>
+                {WORK_PACKAGE_STATUSES.map((status) => <SelectItem key={status} value={status}>{status}</SelectItem>)}
+              </SelectContent>
+            </Select>
+            <Select value={priorityFilter} onValueChange={(value) => setPriorityFilter(value as WorkPackagePriority | "All")}>
+              <SelectTrigger><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="All">All priorities</SelectItem>
+                {WORK_PACKAGE_PRIORITIES.map((priority) => <SelectItem key={priority} value={priority}>{priority}</SelectItem>)}
+              </SelectContent>
+            </Select>
+          </FilterBar>
+        }
+      >
+        <div className="p-3 sm:p-0">
           <PmDataList
             rows={filteredPackages}
             columns={packageColumns}
@@ -965,35 +944,36 @@ export default function ScopeExecutionWorkspace({ mappingId, scope }: ScopeExecu
               />
             }
           />
-        </CardContent>
-      </Card>
+        </div>
+      </TableCard>
 
       {/* ── Subcontract & measurement coverage — the civil registers Billing Recon and
              Subcontractors Management own, joined per BOQ line ─────────────────────────── */}
-      <Card className={PHONE_BARE_CARD}>
-        <CardHeader className={cn("pb-3", PHONE_BARE_CARD_HEADER)}>
-          <CardTitle className="text-base">Subcontract &amp; measurement coverage</CardTitle>
-          <CardDescription>
+      <TableCard
+        title="Subcontract & measurement coverage"
+        description={
+          <>
             Work orders, JMC/MVAC measurement, and subcontractor billing joined onto each {scope.toLowerCase()} BOQ
             line, with every quantity checked down the ladder.
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="p-0">
-          {coverageHasData ? (
+          </>
+        }
+      >
+        {coverageHasData ? (
+          <div className="p-3 sm:p-0">
             <PmDataList
               rows={coverageRows}
               columns={coverageColumns}
               className={LIST_IN_CARD}
               cardHref={(row) => boqItemHref(row.item.id)}
             />
-          ) : (
-            <p className="p-6 text-center text-sm text-muted-foreground">
-              No work orders, measurement entries, or subcontractor bills reference this scope&apos;s BOQ lines yet.
-              They are created in Subcontractors Management and Billing Recon and appear here automatically.
-            </p>
-          )}
-        </CardContent>
-      </Card>
+          </div>
+        ) : (
+          <p className="p-6 text-center text-sm text-muted-foreground">
+            No work orders, measurement entries, or subcontractor bills reference this scope&apos;s BOQ lines yet.
+            They are created in Subcontractors Management and Billing Recon and appear here automatically.
+          </p>
+        )}
+      </TableCard>
 
       <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
         <DialogContent className={cn(PM_DIALOG.contentWide, "sm:max-h-[90dvh] sm:overflow-y-auto")}>

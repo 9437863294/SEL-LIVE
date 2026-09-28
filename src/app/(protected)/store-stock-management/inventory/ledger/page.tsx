@@ -2,17 +2,18 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { collection, getDocs, query, where } from 'firebase/firestore';
-import { Download, Printer, Search } from 'lucide-react';
+import { Download, Printer } from 'lucide-react';
 import { db } from '@/lib/firebase';
 import { useAuth } from '@/components/auth/AuthProvider';
 import { asDateInput, type InventoryItem, type InventoryLocation, type StockLedgerEntry } from '@/lib/inventory';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { FilterBar } from '@/components/shared/filter-bar';
 import { PageHeader } from '@/components/shared/page-header';
+import { TableCard } from '@/components/shared/table-card';
 
 export default function StockLedgerPage() {
   const { user } = useAuth();
@@ -78,12 +79,26 @@ export default function StockLedgerPage() {
   };
 
   return <div className="space-y-6 print:p-0"><PageHeader title="Stock ledger & movement report" description="Every posted quantity and value movement, filterable by date, item, location, and transaction." actions={<><Button variant="outline" className="print:hidden" onClick={() => window.print()}><Printer className="mr-2 h-4 w-4" />Print / PDF</Button><Button className="print:hidden" onClick={exportExcel}><Download className="mr-2 h-4 w-4" />Excel</Button></>} />
-    <Card className="print:hidden"><CardHeader><CardTitle>Report filters</CardTitle></CardHeader><CardContent className="grid gap-4 sm:grid-cols-2 lg:grid-cols-6"><Field label="From"><Input type="date" value={from} onChange={(event) => setFrom(event.target.value)} /></Field><Field label="To"><Input type="date" value={to} onChange={(event) => setTo(event.target.value)} /></Field><Field label="Item"><Select value={itemId} onValueChange={setItemId}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="all">All items</SelectItem>{items.map((item) => <SelectItem key={item.id} value={item.id}>{item.itemCode} · {item.itemName}</SelectItem>)}</SelectContent></Select></Field><Field label="Location"><Select value={locationId} onValueChange={setLocationId}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="all">All locations</SelectItem>{locations.map((location) => <SelectItem key={location.id} value={location.id}>{location.locationCode} · {location.locationName}</SelectItem>)}</SelectContent></Select></Field><Field label="Transaction"><Select value={transactionType} onValueChange={setTransactionType}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="all">All types</SelectItem>{types.map((type) => <SelectItem key={type} value={type}>{type}</SelectItem>)}</SelectContent></Select></Field><Field label="Document / item"><div className="relative"><Search className="absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" /><Input className="pl-9" value={search} onChange={(event) => setSearch(event.target.value)} /></div></Field></CardContent></Card>
-    <div className="grid gap-4 sm:grid-cols-3"><Summary label="Quantity in" value={totalIn.toLocaleString()} /><Summary label="Quantity out" value={totalOut.toLocaleString()} /><Summary label="Movement value" value={`₹${totalValue.toLocaleString('en-IN', { maximumFractionDigits: 2 })}`} /></div>
-    <Card><CardHeader><CardTitle>Ledger entries</CardTitle><CardDescription>{filtered.length} entries</CardDescription></CardHeader><CardContent className="overflow-x-auto"><Table><TableHeader><TableRow><TableHead>Date / document</TableHead><TableHead>Transaction</TableHead><TableHead>Item</TableHead><TableHead>Location</TableHead><TableHead className="text-right">In</TableHead><TableHead className="text-right">Out</TableHead><TableHead className="text-right">Rate</TableHead><TableHead className="text-right">Value</TableHead><TableHead className="text-right">Balance</TableHead></TableRow></TableHeader><TableBody>{filtered.map((entry) => <TableRow key={entry.id}><TableCell><div>{entry.transactionDate}</div><div className="font-mono text-xs text-muted-foreground">{entry.documentNumber}</div></TableCell><TableCell>{entry.transactionType}</TableCell><TableCell><div className="font-medium">{entry.itemName}</div><div className="text-xs text-muted-foreground">{entry.itemCode} · {entry.unit}</div></TableCell><TableCell>{entry.locationName}</TableCell><TableCell className="text-right tabular-nums text-emerald-700">{entry.quantityIn || '—'}</TableCell><TableCell className="text-right tabular-nums text-destructive">{entry.quantityOut || '—'}</TableCell><TableCell className="text-right">₹{Number(entry.costRate || 0).toLocaleString('en-IN')}</TableCell><TableCell className="text-right">₹{Number(entry.totalValue || 0).toLocaleString('en-IN')}</TableCell><TableCell className="text-right font-medium">{entry.balanceAfter}</TableCell></TableRow>)}{!filtered.length && <TableRow><TableCell colSpan={9} className="h-28 text-center text-muted-foreground">No ledger movements match the selected filters.</TableCell></TableRow>}</TableBody></Table></CardContent></Card>
+    <div className="grid grid-cols-1 gap-4 sm:grid-cols-3"><Summary label="Quantity in" value={totalIn.toLocaleString()} /><Summary label="Quantity out" value={totalOut.toLocaleString()} /><Summary label="Movement value" value={`₹${totalValue.toLocaleString('en-IN', { maximumFractionDigits: 2 })}`} /></div>
+    <TableCard
+      title="Ledger entries"
+      count={filtered.length}
+      toolbar={
+        <FilterBar
+          search={{ value: search, onChange: setSearch, placeholder: 'Search document / item' }}
+          activeCount={[from !== `${new Date().getFullYear()}-01-01`, to !== asDateInput(), itemId !== 'all', locationId !== 'all', transactionType !== 'all'].filter(Boolean).length}
+          onClear={() => { setFrom(`${new Date().getFullYear()}-01-01`); setTo(asDateInput()); setItemId('all'); setLocationId('all'); setTransactionType('all'); setSearch(''); }}
+        >
+          <Input type="date" aria-label="From date" title="From date" value={from} onChange={(event) => setFrom(event.target.value)} />
+          <Input type="date" aria-label="To date" title="To date" value={to} onChange={(event) => setTo(event.target.value)} />
+          <Select value={itemId} onValueChange={setItemId}><SelectTrigger aria-label="Item"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="all">All items</SelectItem>{items.map((item) => <SelectItem key={item.id} value={item.id}>{item.itemCode} · {item.itemName}</SelectItem>)}</SelectContent></Select>
+          <Select value={locationId} onValueChange={setLocationId}><SelectTrigger aria-label="Location"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="all">All locations</SelectItem>{locations.map((location) => <SelectItem key={location.id} value={location.id}>{location.locationCode} · {location.locationName}</SelectItem>)}</SelectContent></Select>
+          <Select value={transactionType} onValueChange={setTransactionType}><SelectTrigger aria-label="Transaction"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="all">All types</SelectItem>{types.map((type) => <SelectItem key={type} value={type}>{type}</SelectItem>)}</SelectContent></Select>
+        </FilterBar>
+      }
+    ><Table><TableHeader><TableRow><TableHead>Date / document</TableHead><TableHead>Transaction</TableHead><TableHead>Item</TableHead><TableHead>Location</TableHead><TableHead className="text-right">In</TableHead><TableHead className="text-right">Out</TableHead><TableHead className="text-right">Rate</TableHead><TableHead className="text-right">Value</TableHead><TableHead className="text-right">Balance</TableHead></TableRow></TableHeader><TableBody>{filtered.map((entry) => <TableRow key={entry.id}><TableCell className="whitespace-nowrap"><div>{entry.transactionDate}</div><div className="font-mono text-xs text-muted-foreground">{entry.documentNumber}</div></TableCell><TableCell>{entry.transactionType}</TableCell><TableCell><div className="font-medium">{entry.itemName}</div><div className="text-xs text-muted-foreground">{entry.itemCode} · {entry.unit}</div></TableCell><TableCell>{entry.locationName}</TableCell><TableCell className="text-right tabular-nums text-emerald-700">{entry.quantityIn || '—'}</TableCell><TableCell className="text-right tabular-nums text-destructive">{entry.quantityOut || '—'}</TableCell><TableCell className="whitespace-nowrap text-right tabular-nums">₹{Number(entry.costRate || 0).toLocaleString('en-IN')}</TableCell><TableCell className="whitespace-nowrap text-right tabular-nums">₹{Number(entry.totalValue || 0).toLocaleString('en-IN')}</TableCell><TableCell className="text-right font-medium tabular-nums">{entry.balanceAfter}</TableCell></TableRow>)}{!filtered.length && <TableRow><TableCell colSpan={9} className="h-28 text-center text-muted-foreground">No ledger movements match the selected filters.</TableCell></TableRow>}</TableBody></Table></TableCard>
   </div>;
 }
 
-function Field({ label, children }: { label: string; children: React.ReactNode }) { return <div className="space-y-1.5"><Label>{label}</Label>{children}</div>; }
 function Summary({ label, value }: { label: string; value: string }) { return <Card><CardContent className="p-5"><p className="text-sm text-muted-foreground">{label}</p><p className="mt-1 text-2xl font-bold">{value}</p></CardContent></Card>; }
 

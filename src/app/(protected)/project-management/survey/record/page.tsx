@@ -20,7 +20,6 @@ import {
   GitPullRequestArrow,
   Loader2,
   Ruler,
-  Search,
 } from "lucide-react";
 import {
   addDoc,
@@ -55,9 +54,7 @@ import {
   SURVEY_WORKFLOW_DOC_ID,
   initialSurveyState,
   isTerminalSurveyStatus,
-  surveyStatusStyles,
   type SurveyEntry,
-  type SurveyEntryStatus,
 } from "@/lib/project-management-survey-workflow";
 import { getAssigneeForStep, calculateDeadline } from "@/lib/workflow-utils";
 import { applySurveyEntryToBoqInTransaction } from "@/lib/project-management-survey-entries";
@@ -73,10 +70,8 @@ import {
   PM_DIALOG,
   PmDataList,
   PmEmptyState,
-  PmToolbar,
   type PmListColumn,
 } from "@/components/project-management/pm-shell";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -98,7 +93,9 @@ import {
 } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
+import { FilterBar } from "@/components/shared/filter-bar";
 import { PageHeader } from "@/components/shared/page-header";
+import { StatusBadge, type StatusTone } from "@/components/shared/status-badge";
 
 type SurveyRow = {
   boqItem: BoqItem;
@@ -132,6 +129,12 @@ const formatCurrency = (value: number) =>
   new Intl.NumberFormat("en-IN", { style: "currency", currency: "INR", maximumFractionDigits: 0 }).format(value);
 
 const getBoqSlNo = (item: BoqItem) => String(item["BOQ SL No"] ?? item["SL. No."] ?? "");
+
+/** A variation still has to be raised; a reduction is informational. */
+const SURVEY_CLASSIFICATION_TONE: Partial<Record<SurveyClassification, StatusTone>> = {
+  "Variation Required": "warning",
+  "Scope Reduction": "info",
+};
 
 export default function RecordSurveyPage() {
   const router = useRouter();
@@ -431,9 +434,7 @@ export default function RecordSurveyPage() {
       header: "Classification",
       mobile: "aside",
       cell: ({ classification }) => (
-        <Badge variant="outline" className={surveyClassificationStyles[classification]}>
-          {classification}
-        </Badge>
+        <StatusBadge status={classification} tone={SURVEY_CLASSIFICATION_TONE[classification]} />
       ),
     },
     {
@@ -441,12 +442,7 @@ export default function RecordSurveyPage() {
       cell: ({ row }) =>
         row.openEntry ? (
           <div className="space-y-1">
-            <Badge
-              variant="outline"
-              className={surveyStatusStyles[row.openEntry.status as SurveyEntryStatus]}
-            >
-              {row.openEntry.status}
-            </Badge>
+            <StatusBadge status={row.openEntry.status} />
             <p className="text-xs text-muted-foreground">
               {formatQuantity(row.openEntry.surveyedQty)}
               {row.openEntry.currentStepName ? ` · ${row.openEntry.currentStepName}` : ""}
@@ -550,21 +546,19 @@ export default function RecordSurveyPage() {
         {formatCurrency(coverage.totalValue)})
       </p>
 
-      <PmToolbar>
-        <div className="relative w-full sm:max-w-xs">
-          <Search className="absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-          <Input
-            className="pl-8"
-            placeholder="Search BOQ SL No or description..."
-            value={search}
-            onChange={(event) => setSearch(event.target.value)}
-          />
-        </div>
+      <FilterBar
+        search={{ value: search, onChange: setSearch, placeholder: "Search BOQ SL No or description..." }}
+        activeCount={classificationFilter !== "All" ? 1 : 0}
+        onClear={() => {
+          setSearch("");
+          setClassificationFilter("All");
+        }}
+      >
         <Select
           value={classificationFilter}
           onValueChange={(value: SurveyClassification | "All") => setClassificationFilter(value)}
         >
-          <SelectTrigger className="w-full sm:w-56">
+          <SelectTrigger>
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
@@ -576,7 +570,7 @@ export default function RecordSurveyPage() {
             ))}
           </SelectContent>
         </Select>
-      </PmToolbar>
+      </FilterBar>
 
       <PmDataList
         rows={filteredRows.map((item) => ({ ...item, id: item.row.boqItem.id }))}

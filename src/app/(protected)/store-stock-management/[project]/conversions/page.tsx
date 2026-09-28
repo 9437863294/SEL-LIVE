@@ -3,7 +3,6 @@
 
 import { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { db } from '@/lib/firebase';
 import { collection, getDocs, query } from 'firebase/firestore';
@@ -15,6 +14,7 @@ import { useParams } from 'next/navigation';
 import { ConversionDialog } from '@/components/store-stock-management/ConversionDialog';
 import { projectMatchesSlug } from '@/lib/project-slug';
 import { PageHeader } from '@/components/shared/page-header';
+import { TableCard } from '@/components/shared/table-card';
 
 export default function ConversionsPage() {
   const { toast } = useToast();
@@ -81,11 +81,7 @@ export default function ConversionsPage() {
     <>
       <div>
         <PageHeader title="Unit Conversions" />
-        <Card>
-          <CardHeader>
-            <CardTitle>Define Item Unit Conversions</CardTitle>
-          </CardHeader>
-          <CardContent>
+        <TableCard title="Define Item Unit Conversions">
             <Table>
               <TableHeader>
                 <TableRow>
@@ -118,8 +114,7 @@ export default function ConversionsPage() {
                 )}
               </TableBody>
             </Table>
-          </CardContent>
-        </Card>
+        </TableCard>
       </div>
       {selectedItem && currentProject && (
         <ConversionDialog

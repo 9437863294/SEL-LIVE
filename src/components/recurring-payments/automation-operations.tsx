@@ -8,11 +8,10 @@ import { useAuth } from '@/components/auth/AuthProvider';
 import { useAuthorization } from '@/hooks/useAuthorization';
 import { useToast } from '@/hooks/use-toast';
 import { RP_COLLECTIONS } from '@/lib/recurring-payments';
-import { Badge } from '@/components/ui/badge';
+import { StatusBadge } from '@/components/shared/status-badge';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { TableScrollArea } from './module-table-card';
+import { TableCard } from '@/components/shared/table-card';
 
 type Log = { id: string; organizationId?: string; jobName?: string; startedAt?: unknown; completedAt?: unknown; recordsProcessed?: number; successCount?: number; failureCount?: number; status?: string; errorDetails?: string; createdAt?: unknown };
 
@@ -85,7 +84,7 @@ export default function AutomationOperations() {
   }
 
   const canManage = can('Manage Automation', 'Recurring Payments.Settings') || can('Edit', 'Recurring Payments.Settings');
-  return <Card><CardHeader className="flex flex-row items-center justify-between"><div><CardTitle className="flex items-center gap-2"><Bot className="h-5 w-5 text-indigo-600" />Scheduler Operations</CardTitle><CardDescription>Organization-scoped, idempotent generation, workflow activation, overdue and reminder checks.</CardDescription></div>{canManage && <Button onClick={run} disabled={running}>{running ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Play className="mr-2 h-4 w-4" />}Run automation now</Button>}</CardHeader><CardContent className="p-0"><TableScrollArea><Table><TableHeader><TableRow><TableHead>Job</TableHead><TableHead>Started</TableHead><TableHead>Processed</TableHead><TableHead>Success</TableHead><TableHead>Failure</TableHead><TableHead>Status</TableHead></TableRow></TableHeader><TableBody>{logs.map(log => <TableRow key={log.id}><TableCell>{log.jobName || 'Recurring scheduler'}</TableCell><TableCell>{formatTimestamp(log.startedAt)}</TableCell><TableCell>{log.recordsProcessed || 0}</TableCell><TableCell>{log.successCount || 0}</TableCell><TableCell>{log.failureCount || 0}</TableCell><TableCell><Badge variant={log.status === 'Completed' ? 'default' : 'destructive'}>{log.status || 'Unknown'}</Badge></TableCell></TableRow>)}{!logs.length && <TableRow><TableCell colSpan={6} className="h-28 text-center text-muted-foreground"><RefreshCw className="mx-auto mb-2 h-6 w-6" />No organization automation logs recorded yet.</TableCell></TableRow>}</TableBody></Table></TableScrollArea></CardContent></Card>;
+  return <TableCard title="Scheduler Operations" icon={Bot} description="Organization-scoped, idempotent generation, workflow activation, overdue and reminder checks." actions={canManage ? <Button onClick={run} disabled={running}>{running ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Play className="mr-2 h-4 w-4" />}Run automation now</Button> : undefined}><Table><TableHeader><TableRow><TableHead>Job</TableHead><TableHead>Started</TableHead><TableHead>Processed</TableHead><TableHead>Success</TableHead><TableHead>Failure</TableHead><TableHead>Status</TableHead></TableRow></TableHeader><TableBody>{logs.map(log => <TableRow key={log.id}><TableCell>{log.jobName || 'Recurring scheduler'}</TableCell><TableCell>{formatTimestamp(log.startedAt)}</TableCell><TableCell className="tabular-nums">{log.recordsProcessed || 0}</TableCell><TableCell className="tabular-nums">{log.successCount || 0}</TableCell><TableCell className="tabular-nums">{log.failureCount || 0}</TableCell><TableCell><StatusBadge status={log.status || 'Unknown'} /></TableCell></TableRow>)}{!logs.length && <TableRow><TableCell colSpan={6} className="h-28 text-center text-muted-foreground"><RefreshCw className="mx-auto mb-2 h-6 w-6" />No organization automation logs recorded yet.</TableCell></TableRow>}</TableBody></Table></TableCard>;
 }
 
 function timestampMillis(value: unknown) { const timestamp = value as { toDate?: () => Date; seconds?: number } | null; if (timestamp?.toDate) return timestamp.toDate().getTime(); return Number(timestamp?.seconds || 0) * 1000; }

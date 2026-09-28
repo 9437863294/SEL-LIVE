@@ -130,7 +130,7 @@ export default function TripTrackingSettingsPage() {
       <Card className="vm-panel overflow-hidden">
         <div className="h-0.5 w-full bg-gradient-to-r from-teal-500 to-cyan-600" />
         <CardHeader className="border-b border-slate-100 p-4">
-          <div className="flex items-start gap-3"><div className="rounded-lg bg-teal-100 p-2"><Radio className="h-4 w-4 text-teal-700" /></div><div className="flex-1"><CardTitle>Trip Tracking Setup</CardTitle><CardDescription className="mt-0.5 text-xs">Applied when the driver starts a tracked trip.</CardDescription></div>{trackingDirty && <Badge className="bg-amber-500 text-white">Unsaved</Badge>}</div>
+          <div className="flex items-start gap-3"><div className="rounded-lg bg-teal-100 p-2"><Radio className="h-4 w-4 text-teal-700" /></div><div className="flex-1"><CardTitle>Trip Tracking Setup</CardTitle><CardDescription className="mt-0.5 text-xs">Applied when the driver starts a tracked trip.</CardDescription></div>{trackingDirty && <Badge variant="warning">Unsaved</Badge>}</div>
         </CardHeader>
         <CardContent className="space-y-3 p-4">
           <div className="rounded-xl border border-slate-200 bg-white p-3">

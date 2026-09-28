@@ -13,8 +13,8 @@ import { useAuth } from '@/components/auth/AuthProvider';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { PageHeader } from '@/components/shared/page-header';
+import { FilterBar } from '@/components/shared/filter-bar';
 import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Badge } from '@/components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -283,26 +283,20 @@ export default function DaywiseStatementPage() {
       />
 
       {/* Controls */}
-      <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-        <div className="space-y-1.5">
-          <Label className="text-xs">Project</Label>
+      <FilterBar
+        activeCount={[filterProject, filterFrom, filterTo].filter(Boolean).length}
+        onClear={() => { setFilterProject(''); setFilterFrom(''); setFilterTo(''); }}
+      >
           <Select value={filterProject || '_all_'} onValueChange={v => setFilterProject(v === '_all_' ? '' : v)}>
-            <SelectTrigger className="h-9 text-sm"><SelectValue placeholder="All Projects" /></SelectTrigger>
+            <SelectTrigger aria-label="Project"><SelectValue placeholder="All Projects" /></SelectTrigger>
             <SelectContent>
               <SelectItem value="_all_">All Projects</SelectItem>
               {visibleProjects.map(p => <SelectItem key={p.id} value={p.id}>{p.projectName}</SelectItem>)}
             </SelectContent>
           </Select>
-        </div>
-        <div className="space-y-1.5">
-          <Label className="text-xs">From Date</Label>
-          <Input type="date" value={filterFrom} onChange={e => setFilterFrom(e.target.value)} className="h-9 text-sm" />
-        </div>
-        <div className="space-y-1.5">
-          <Label className="text-xs">To Date</Label>
-          <Input type="date" value={filterTo} onChange={e => setFilterTo(e.target.value)} className="h-9 text-sm" />
-        </div>
-      </div>
+          <Input type="date" value={filterFrom} onChange={e => setFilterFrom(e.target.value)} aria-label="From date" title="From date" />
+          <Input type="date" value={filterTo} onChange={e => setFilterTo(e.target.value)} aria-label="To date" title="To date" />
+      </FilterBar>
 
       {/* Grand summary tiles */}
       {dayGroups.length > 0 && (

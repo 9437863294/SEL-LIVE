@@ -663,26 +663,26 @@ function MeetingTemplateCard({
         </div>
 
         <div className="flex flex-wrap gap-1.5">
-          <Badge variant="outline" className="border-slate-200 bg-slate-50 text-[11px]">
+          <Badge variant="neutral">
             {template.meetingType}
           </Badge>
-          <Badge variant="outline" className="border-slate-200 bg-slate-50 text-[11px]">
+          <Badge variant="neutral">
             {formatDuration(template.durationMinutes)}
           </Badge>
-          <Badge variant="outline" className="border-slate-200 bg-slate-50 text-[11px]">
+          <Badge variant="neutral">
             {template.mode}
           </Badge>
           {template.defaultStartTime && (
-            <Badge variant="outline" className="border-slate-200 bg-slate-50 text-[11px]">
+            <Badge variant="neutral">
               {template.defaultStartTime}
             </Badge>
           )}
-          <Badge variant="outline" className="gap-1 border-slate-200 bg-slate-50 text-[11px]">
+          <Badge variant="neutral" className="gap-1">
             <Users className="h-3 w-3" />
             {inviteeCount} selection{inviteeCount === 1 ? '' : 's'}
           </Badge>
           {(template.reminderOffsets?.length ?? 0) > 0 && (
-            <Badge variant="outline" className="border-slate-200 bg-slate-50 text-[11px]">
+            <Badge variant="neutral">
               {template.reminderOffsets.length} reminder{template.reminderOffsets.length === 1 ? '' : 's'}
             </Badge>
           )}

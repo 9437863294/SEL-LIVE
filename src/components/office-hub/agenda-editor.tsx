@@ -22,7 +22,7 @@ import {
   Trash2,
   Check,
 } from 'lucide-react';
-import { Badge } from '@/components/ui/badge';
+import { StatusBadge } from '@/components/shared/status-badge';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 import {
@@ -201,9 +201,9 @@ export function AgendaEditor({
             {formatDuration(fit.estimated)} planned of {formatDuration(fit.available)}
           </span>
           {!fit.fits && (
-            <Badge variant="outline" className="border-amber-200 bg-amber-50 text-[11px] text-amber-800">
+            <StatusBadge status="Over time" tone="warning">
               {formatDuration(fit.overBy)} over the booked slot
-            </Badge>
+            </StatusBadge>
           )}
         </div>
       )}
@@ -260,11 +260,7 @@ export function AgendaEditor({
                     {item.estimatedMinutes ? (
                       <span className="text-[11px] text-muted-foreground">{formatDuration(item.estimatedMinutes)}</span>
                     ) : null}
-                    {item.carriedFromMeetingId && (
-                      <Badge variant="outline" className="border-amber-200 bg-amber-50 text-[11px] text-amber-800">
-                        Carried forward
-                      </Badge>
-                    )}
+                    {item.carriedFromMeetingId && <StatusBadge status="Carried forward" tone="warning" />}
                   </div>
 
                   {item.description && (

@@ -15,11 +15,12 @@ import { collection, getDocs, doc, deleteDoc, query, where, collectionGroup } fr
 import type { Subcontractor, Project, ContactPerson, WorkOrder, Bill, ProformaBill } from '@/lib/types';
 import { Skeleton } from '@/components/ui/skeleton';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogHeader, AlertDialogFooter, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
-import { Badge } from '@/components/ui/badge';
+import { StatusBadge } from '@/components/shared/status-badge';
+import { TableCard } from '@/components/shared/table-card';
 import { useAuthorization } from '@/hooks/useAuthorization';
 import { format } from 'date-fns';
 import { projectMatchesSlug } from '@/lib/project-slug';
-import { PM_TABLE_CLASS, PmContent, PmSectionHead } from '@/components/project-management/pm-shell';
+import { PmContent } from '@/components/project-management/pm-shell';
 
 
 export default function ManageSubcontractorsPage() {
@@ -252,19 +253,8 @@ export default function ManageSubcontractorsPage() {
         }
       />
       <PmContent>
-        <PmSectionHead
-          title="All subcontractors"
-          stats={[
-            {
-              label: subcontractors.length === 1 ? 'subcontractor' : 'subcontractors',
-              value: String(subcontractors.length),
-            },
-          ]}
-        />
-       <Card className="border-border/60">
-          <CardContent className="p-0">
-            <div className="overflow-x-auto">
-            <Table className={PM_TABLE_CLASS}>
+       <TableCard title="All subcontractors" count={subcontractors.length} noun="subcontractor">
+            <Table>
                 <TableHeader>
                     <TableRow>
                         <TableHead className="w-12"></TableHead>
@@ -302,7 +292,7 @@ export default function ManageSubcontractorsPage() {
                                     <TableCell>{primaryContact.name} ({primaryContact.mobile})</TableCell>
                                     <TableCell>{sub.gstNumber || 'N/A'}</TableCell>
                                     <TableCell>{sub.panNumber || 'N/A'}</TableCell>
-                                    <TableCell><Badge variant={sub.status === 'Active' ? 'default' : 'secondary'}>{sub.status}</Badge></TableCell>
+                                    <TableCell><StatusBadge status={sub.status} /></TableCell>
                                     <TableCell className="text-right space-x-2">
                                         <Link href={`/subcontractors-management/${projectSlug}/manage/edit/${sub.id}`}>
                                             <Button variant="outline" size="sm" disabled={!canEdit}>
@@ -321,7 +311,7 @@ export default function ManageSubcontractorsPage() {
                                     </TableCell>
                                 </TableRow>
                                 {isExpanded && (
-                                    <TableRow className="bg-muted/50 hover:bg-muted/50">
+                                    <TableRow className="bg-muted/50">
                                         <TableCell colSpan={8} className="p-0">
                                             <div className="p-4">
                                                 <h4 className="font-semibold mb-2 ml-2">Work Orders</h4>
@@ -359,13 +349,13 @@ export default function ManageSubcontractorsPage() {
                                                                     <TableCell>{formatCurrency(wo.totalBilled)}</TableCell>
                                                                     <TableCell>{formatCurrency(wo.totalAdvanceTaken)}</TableCell>
                                                                     <TableCell>{formatCurrency(wo.totalAdvanceDeducted)}</TableCell>
-                                                                    <TableCell className="font-semibold">{formatCurrency(wo.advanceBalance)}</TableCell>
-                                                                    <TableCell className="font-semibold">{formatCurrency(wo.workOrderBalance)}</TableCell>
+                                                                    <TableCell>{formatCurrency(wo.advanceBalance)}</TableCell>
+                                                                    <TableCell>{formatCurrency(wo.workOrderBalance)}</TableCell>
                                                                     <TableCell>{wo.status || 'Active'}</TableCell>
                                                                 </TableRow>
                                                                 {isWoExpanded && (
-                                                                    <TableRow className="bg-background hover:bg-background">
-                                                                        <TableCell colSpan={10} className="p-2">
+                                                                    <TableRow className="bg-background">
+                                                                        <TableCell colSpan={10}>
                                                                             <div className="p-2 border rounded-md">
                                                                                 <h5 className="font-semibold text-sm mb-2 ml-2">Deducted In Bills</h5>
                                                                                 <Table>
@@ -411,9 +401,7 @@ export default function ManageSubcontractorsPage() {
                     )}
                 </TableBody>
             </Table>
-            </div>
-          </CardContent>
-       </Card>
+       </TableCard>
       </PmContent>
     </>
   );

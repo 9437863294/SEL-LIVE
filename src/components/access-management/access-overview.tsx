@@ -560,9 +560,7 @@ export function AccessOverview({
                       {access && (
                         <RiskBadges privileges={detectPrivilegedAccess(access)} conflicts={detectSodConflicts(access)} />
                       )}
-                      <Badge variant="outline" className="border-indigo-200 bg-indigo-50 text-[10px] text-indigo-700">
-                        {access?.permissionCount ?? 0}
-                      </Badge>
+                      <Badge variant="neutral" className="tabular-nums">{access?.permissionCount ?? 0}</Badge>
                       <ChevronRight className="h-3.5 w-3.5 text-slate-400" />
                     </div>
                   </button>
@@ -658,15 +656,11 @@ export function AccessOverview({
             </CardHeader>
             <CardContent className="flex flex-wrap gap-1.5 px-4 pb-4">
               {unusedRoles.slice(0, 24).map((role) => (
-                <Badge key={role.id} variant="outline" className="text-[10px] text-slate-500">
+                <Badge key={role.id} variant="outline">
                   {role.name}
                 </Badge>
               ))}
-              {unusedRoles.length > 24 && (
-                <Badge variant="outline" className="text-[10px] text-muted-foreground">
-                  +{unusedRoles.length - 24} more
-                </Badge>
-              )}
+              {unusedRoles.length > 24 && <Badge variant="neutral">+{unusedRoles.length - 24} more</Badge>}
             </CardContent>
           </AccessCard>
         </SpotlightCard>

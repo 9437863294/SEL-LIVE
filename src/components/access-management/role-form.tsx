@@ -231,7 +231,7 @@ export function RoleForm({
       */}
       <div className="hr-sticky-actions sticky bottom-0 -mx-1 flex flex-col gap-2 border-t border-white/70 bg-white/85 px-1 py-3 backdrop-blur-sm sm:flex-row sm:items-center">
         <div className="flex flex-wrap items-center gap-1.5">
-          <Badge variant="outline" className="border-indigo-200 bg-indigo-50 text-indigo-700">
+          <Badge variant="neutral">
             Selected: {selectedCount} permission{selectedCount === 1 ? '' : 's'}
           </Badge>
           {/* Surfaced before saving rather than only on the role card afterwards — the point of a

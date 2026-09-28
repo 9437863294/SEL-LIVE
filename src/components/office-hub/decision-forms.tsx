@@ -31,7 +31,6 @@ import {
   Pencil,
   Plus,
 } from 'lucide-react';
-import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import {
   Dialog,
@@ -75,13 +74,12 @@ import {
 import { useOfficeHub, useOfficeHubAction } from './hooks';
 import { DateField, DepartmentSelector, ProjectSelector, TeamSelector, UserSelector } from './selectors';
 import {
-  DecisionStatusBadge,
   FieldError,
   OfficeHubEmptyState,
   PriorityBadge,
-  TaskStatusBadge,
   officeHubDialog,
 } from './ui';
+import { StatusBadge } from '@/components/shared/status-badge';
 
 /* ── decisions ───────────────────────────────────────────────────────────────────────────────── */
 
@@ -878,13 +876,9 @@ export function DecisionsPanel({
                     >
                       {decision.title}
                     </Link>
-                    <DecisionStatusBadge status={decision.status} />
+                    <StatusBadge status={decision.status} />
                     <PriorityBadge priority={decision.priority} />
-                    {isDecisionOverdue(decision, today) && (
-                      <Badge variant="outline" className="border-rose-200 bg-rose-50 text-[11px] text-rose-700">
-                        Overdue
-                      </Badge>
-                    )}
+                    {isDecisionOverdue(decision, today) && <StatusBadge status="Overdue" />}
                   </div>
                   <p className="mt-0.5 text-xs text-muted-foreground">
                     {decision.reference} · {decision.ownerName}
@@ -1005,7 +999,7 @@ export function ActionItemsPanel({
                 <div className="min-w-0 flex-1">
                   <div className="flex flex-wrap items-center gap-1.5">
                     <p className="min-w-0 break-words text-sm font-medium text-slate-800">{item.title}</p>
-                    <TaskStatusBadge
+                    <StatusBadge
                       status={
                         item.status === 'Open'
                           ? 'Not Started'
@@ -1017,16 +1011,8 @@ export function ActionItemsPanel({
                       }
                     />
                     <PriorityBadge priority={item.priority} />
-                    {isActionItemOverdue(item, today) && (
-                      <Badge variant="outline" className="border-rose-200 bg-rose-50 text-[11px] text-rose-700">
-                        Overdue
-                      </Badge>
-                    )}
-                    {item.carriedFromActionItemId && (
-                      <Badge variant="outline" className="border-amber-200 bg-amber-50 text-[11px] text-amber-800">
-                        Carried forward
-                      </Badge>
-                    )}
+                    {isActionItemOverdue(item, today) && <StatusBadge status="Overdue" />}
+                    {item.carriedFromActionItemId && <StatusBadge status="Carried forward" tone="warning" />}
                   </div>
                   <p className="mt-0.5 text-xs text-muted-foreground">
                     {item.reference} · {item.responsibleUserName || item.responsibleTeamName || 'Unassigned'}

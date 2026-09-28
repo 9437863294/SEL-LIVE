@@ -109,7 +109,6 @@ import {
   PriorityBadge,
   ResponseSummaryChip,
   TaskDueDate,
-  TaskStatusBadge,
   useTickingNow,
 } from '@/components/office-hub/ui';
 import { ParticipantPanel } from '@/components/office-hub/attendance-table';
@@ -118,6 +117,7 @@ import { MeetingNotesEditor } from '@/components/office-hub/notes-editor';
 import { ActionItemsPanel, DecisionsPanel } from '@/components/office-hub/decision-forms';
 import { DocumentsPanel } from '@/components/office-hub/documents-panel';
 import { PageHeader } from '@/components/shared/page-header';
+import { StatusBadge } from '@/components/shared/status-badge';
 
 export default function MeetingDetailPage() {
   const params = useParams<{ meetingId: string }>();
@@ -377,14 +377,12 @@ export default function MeetingDetailPage() {
       <div className="flex flex-wrap items-center gap-2">
         <MeetingStatusBadge status={meeting.status} />
         <PriorityBadge priority={meeting.priority} />
-        <Badge variant="outline" className="border-slate-200 bg-slate-50 text-[11px]">
-          {meeting.meetingType}
-        </Badge>
+        <Badge variant="neutral">{meeting.meetingType}</Badge>
         <MeetingModeBadge mode={meeting.mode} />
         <MeetingWhenBadge meeting={meeting} now={now} />
         <ResponseSummaryChip summary={meeting.responseSummary} />
         {meeting.recurrence.frequency !== 'None' && (
-          <Badge variant="outline" className="border-indigo-200 bg-indigo-50 text-[11px] text-indigo-700">
+          <Badge variant="neutral">
             <Repeat className="mr-1 h-3 w-3" />
             {describeRecurrence(meeting.recurrence, meeting.date)}
           </Badge>
@@ -754,7 +752,7 @@ export default function MeetingDetailPage() {
                   </div>
                   <div className="flex shrink-0 items-center gap-2">
                     <TaskDueDate task={task} today={today} />
-                    <TaskStatusBadge status={task.status} />
+                    <StatusBadge status={task.status} />
                   </div>
                 </li>
               ))}

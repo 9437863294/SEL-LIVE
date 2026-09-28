@@ -4,13 +4,6 @@
 import * as React from 'react';
 import { useState, useEffect, useMemo, useCallback, Fragment } from 'react';
 import {
-  Card,
-  CardHeader,
-  CardTitle,
-  CardContent,
-  CardDescription,
-} from '@/components/ui/card';
-import {
   Table,
   TableBody,
   TableCell,
@@ -20,13 +13,14 @@ import {
 } from '@/components/ui/table';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
+import { FilterBar } from '@/components/shared/filter-bar';
+import { StatusBadge } from '@/components/shared/status-badge';
+import { TableCard } from '@/components/shared/table-card';
 import {
   MoreHorizontal,
   PlusCircle,
   MinusCircle,
-  Search,
   Eye,
   Edit,
   Trash2,
@@ -476,14 +470,14 @@ export default function TransactionsPage() {
     );
   }, [transactions, searchTerm, typeFilter, boqItems]);
   
-  const getBadgeVariant = (type: string) => {
+  const getTypeTone = (type: string) => {
     switch (type) {
       case 'Goods Receipt':
-        return 'default';
+        return 'success' as const;
       case 'Goods Issue':
-        return 'destructive';
+        return 'danger' as const;
       default:
-        return 'secondary';
+        return 'neutral' as const;
     }
   };
 
@@ -501,16 +495,13 @@ export default function TransactionsPage() {
     <>
       <div>
         <PageHeader title="Transactions" />
-        <Card>
-          <CardHeader>
-            <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
-              <div>
-                <CardTitle>Movement History</CardTitle>
-                <CardDescription>
-                  A complete log of all stock movements and transactions.
-                </CardDescription>
-              </div>
-              <div className="flex items-center gap-2">
+        <TableCard
+          title="Movement History"
+          description="A complete log of all stock movements and transactions."
+          count={transactionSummaries.length}
+          noun="transaction"
+          actions={
+            <>
                  <Button variant="secondary" onClick={handleAutoAssembly} disabled={isAutoAssembling}>
                     {isAutoAssembling ? <Loader2 className="mr-2 h-4 w-4 animate-spin"/> : <GitCommit className="mr-2 h-4 w-4" />}
                     Auto-Assemble
@@ -525,20 +516,16 @@ export default function TransactionsPage() {
                     <MinusCircle className="mr-2 h-4 w-4" /> Stock Out
                   </Button>
                 </Link>
-              </div>
-            </div>
-            <div className="mt-4 flex items-center gap-2">
-              <div className="relative flex-grow">
-                <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
-                <Input
-                  placeholder="Filter by GRN or Issue ID..."
-                  className="pl-8"
-                  value={searchTerm}
-                  onChange={(e) => setSearchTerm(e.target.value)}
-                />
-              </div>
+            </>
+          }
+          toolbar={
+            <FilterBar
+              search={{ value: searchTerm, onChange: setSearchTerm, placeholder: 'Filter by GRN or Issue ID...' }}
+              activeCount={typeFilter !== 'all' ? 1 : 0}
+              onClear={() => { setSearchTerm(''); setTypeFilter('all'); }}
+            >
               <Select value={typeFilter} onValueChange={setTypeFilter}>
-                <SelectTrigger className="w-[180px]">
+                <SelectTrigger aria-label="Transaction type">
                     <SelectValue placeholder="All Types" />
                 </SelectTrigger>
                 <SelectContent>
@@ -547,9 +534,9 @@ export default function TransactionsPage() {
                     <SelectItem value="Goods Issue">Goods Issue</SelectItem>
                 </SelectContent>
               </Select>
-            </div>
-          </CardHeader>
-          <CardContent>
+            </FilterBar>
+          }
+        >
             <Table>
               <TableHeader>
                 <TableRow>
@@ -585,18 +572,18 @@ export default function TransactionsPage() {
                               {summary.id}
                           </Button>
                         </TableCell>
-                        <TableCell className="text-sm">
+                        <TableCell className="whitespace-nowrap">
                           {summary.date ? format(summary.date, 'dd/MM/yyyy HH:mm') : 'N/A'}
                         </TableCell>
-                        <TableCell>
-                          <Badge variant={getBadgeVariant(summary.transactionType)}>
+                        <TableCell className="whitespace-nowrap">
+                          <StatusBadge status={summary.transactionType} tone={getTypeTone(summary.transactionType)}>
                             {summary.transactionType}
-                          </Badge>
+                          </StatusBadge>
                         </TableCell>
-                        <TableCell>
+                        <TableCell className="whitespace-nowrap tabular-nums">
                           {summary.totalAmount ? new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR' }).format(summary.totalAmount) : 'N/A'}
                         </TableCell>
-                         <TableCell>
+                         <TableCell className="whitespace-nowrap tabular-nums">
                           {summary.transactionType === 'Goods Receipt' ? new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR' }).format(summary.remainingValue) : 'N/A'}
                         </TableCell>
                         <TableCell className="text-right">
@@ -609,7 +596,7 @@ export default function TransactionsPage() {
                         </TableCell>
                       </TableRow>
                        {expandedRows.has(summary.id) && (
-                          <TableRow className="bg-muted/30 hover:bg-muted/30">
+                          <TableRow className="bg-muted/30">
                             <TableCell colSpan={7} className="p-0">
                               <div className="p-4">
                                 <h4 className="font-semibold text-sm mb-2 ml-2">Items</h4>
@@ -632,15 +619,15 @@ export default function TransactionsPage() {
                                   <TableBody>
                                     {summary.items.map(item => (
                                       <TableRow key={item.id}>
-                                        <TableCell>{item.itemName}</TableCell>
-                                        <TableCell>{item.quantity} {item.unit}</TableCell>
-                                        <TableCell>{new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR' }).format(item.cost || 0)}</TableCell>
-                                        <TableCell>{new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR' }).format((item.quantity || 0) * (item.cost || 0))}</TableCell>
+                                        <TableCell className="font-medium">{item.itemName}</TableCell>
+                                        <TableCell className="whitespace-nowrap tabular-nums">{item.quantity} {item.unit}</TableCell>
+                                        <TableCell className="whitespace-nowrap tabular-nums">{new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR' }).format(item.cost || 0)}</TableCell>
+                                        <TableCell className="whitespace-nowrap tabular-nums">{new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR' }).format((item.quantity || 0) * (item.cost || 0))}</TableCell>
                                         {summary.transactionType === 'Goods Receipt' && (
                                           <>
-                                            <TableCell className="text-destructive">{item.issuedQuantity}</TableCell>
-                                            <TableCell className="font-semibold">{item.balanceQuantity}</TableCell>
-                                            <TableCell className="text-right font-bold">{new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR' }).format((item.balanceQuantity || 0) * (item.cost || 0))}</TableCell>
+                                            <TableCell className="tabular-nums text-destructive">{item.issuedQuantity}</TableCell>
+                                            <TableCell className="font-medium tabular-nums">{item.balanceQuantity}</TableCell>
+                                            <TableCell className="whitespace-nowrap text-right font-medium tabular-nums">{new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR' }).format((item.balanceQuantity || 0) * (item.cost || 0))}</TableCell>
                                           </>
                                         )}
                                       </TableRow>
@@ -662,8 +649,7 @@ export default function TransactionsPage() {
                 )}
               </TableBody>
             </Table>
-          </CardContent>
-        </Card>
+        </TableCard>
       </div>
       <ViewTransactionDialog 
         isOpen={isViewOpen}

@@ -21,18 +21,11 @@ import { exportWorkbook } from "@/lib/report-excel";
 import { addBusinessHours } from "@/lib/working-hours";
 import type { Holiday, WorkingHours } from "@/lib/types";
 import { personOptionLabel } from '@/lib/people-directory';
-import { Badge } from "@/components/ui/badge";
+import { StatusBadge } from "@/components/shared/status-badge";
 import { Button } from "@/components/ui/button";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
 import { PageHeader, SectionHeader } from "@/components/shared/page-header";
-import CollapsibleFilterCard from "./collapsible-filter-card";
-import { Label } from "@/components/ui/label";
+import { FilterBar } from "@/components/shared/filter-bar";
+import { TableCard } from "@/components/shared/table-card";
 import {
   Select,
   SelectContent,
@@ -321,68 +314,54 @@ export default function WorkflowCompletionReport() {
       />
       {loadError && <ReportErrorBanner />}
 
-      <CollapsibleFilterCard activeCount={activeFilterCount} onClear={() => setFilters(DEFAULT_FILTERS)}>
-        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
-          <FilterField label="Year">
-            <Select value={filters.year} onValueChange={year => setFilters(current => ({ ...current, year }))}>
-              <SelectTrigger className="h-8 text-sm"><SelectValue /></SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All years</SelectItem>
-                {years.map(year => <SelectItem value={year} key={year}>{year}</SelectItem>)}
-              </SelectContent>
-            </Select>
-          </FilterField>
-          <FilterField label="Month">
-            <Select value={filters.month} onValueChange={month => setFilters(current => ({ ...current, month }))}>
-              <SelectTrigger className="h-8 text-sm"><SelectValue /></SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All months</SelectItem>
-                {Array.from({ length: 12 }, (_, index) => (
-                  <SelectItem value={String(index + 1).padStart(2, "0")} key={index}>
-                    {new Date(0, index).toLocaleString("en-IN", { month: "long" })}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </FilterField>
-          <FilterField label="Project">
-            <Select value={filters.project} onValueChange={project => setFilters(current => ({ ...current, project }))}>
-              <SelectTrigger className="h-8 text-sm"><SelectValue placeholder="All projects" /></SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All projects</SelectItem>
-                {activeProjects.map(project => <SelectItem value={project.id} key={project.id}>{project.projectName}</SelectItem>)}
-              </SelectContent>
-            </Select>
-          </FilterField>
-          <FilterField label="Department">
-            <Select value={filters.department} onValueChange={department => setFilters(current => ({ ...current, department }))}>
-              <SelectTrigger className="h-8 text-sm"><SelectValue placeholder="All departments" /></SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All departments</SelectItem>
-                {activeDepartments.map(department => <SelectItem value={department.id} key={department.id}>{department.name}</SelectItem>)}
-              </SelectContent>
-            </Select>
-          </FilterField>
-          <FilterField label="Category">
-            <Select value={filters.category} onValueChange={category => setFilters(current => ({ ...current, category }))}>
-              <SelectTrigger className="h-8 text-sm"><SelectValue placeholder="All categories" /></SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All categories</SelectItem>
-                {categories.map(category => <SelectItem value={category} key={category}>{category}</SelectItem>)}
-              </SelectContent>
-            </Select>
-          </FilterField>
-          <FilterField label="Owner">
-            <Select value={filters.owner} onValueChange={owner => setFilters(current => ({ ...current, owner }))}>
-              <SelectTrigger className="h-8 text-sm"><SelectValue placeholder="All owners" /></SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All owners</SelectItem>
-                {users.map(entry => <SelectItem value={entry.id} key={entry.id}>{personOptionLabel(entry)}</SelectItem>)}
-              </SelectContent>
-            </Select>
-          </FilterField>
-        </div>
-      </CollapsibleFilterCard>
+      <FilterBar className="print:hidden" activeCount={activeFilterCount} onClear={() => setFilters(DEFAULT_FILTERS)}>
+        <Select value={filters.year} onValueChange={year => setFilters(current => ({ ...current, year }))}>
+          <SelectTrigger aria-label="Year"><SelectValue /></SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All years</SelectItem>
+            {years.map(year => <SelectItem value={year} key={year}>{year}</SelectItem>)}
+          </SelectContent>
+        </Select>
+        <Select value={filters.month} onValueChange={month => setFilters(current => ({ ...current, month }))}>
+          <SelectTrigger aria-label="Month"><SelectValue /></SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All months</SelectItem>
+            {Array.from({ length: 12 }, (_, index) => (
+              <SelectItem value={String(index + 1).padStart(2, "0")} key={index}>
+                {new Date(0, index).toLocaleString("en-IN", { month: "long" })}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        <Select value={filters.project} onValueChange={project => setFilters(current => ({ ...current, project }))}>
+          <SelectTrigger aria-label="Project"><SelectValue placeholder="All projects" /></SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All projects</SelectItem>
+            {activeProjects.map(project => <SelectItem value={project.id} key={project.id}>{project.projectName}</SelectItem>)}
+          </SelectContent>
+        </Select>
+        <Select value={filters.department} onValueChange={department => setFilters(current => ({ ...current, department }))}>
+          <SelectTrigger aria-label="Department"><SelectValue placeholder="All departments" /></SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All departments</SelectItem>
+            {activeDepartments.map(department => <SelectItem value={department.id} key={department.id}>{department.name}</SelectItem>)}
+          </SelectContent>
+        </Select>
+        <Select value={filters.category} onValueChange={category => setFilters(current => ({ ...current, category }))}>
+          <SelectTrigger aria-label="Category"><SelectValue placeholder="All categories" /></SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All categories</SelectItem>
+            {categories.map(category => <SelectItem value={category} key={category}>{category}</SelectItem>)}
+          </SelectContent>
+        </Select>
+        <Select value={filters.owner} onValueChange={owner => setFilters(current => ({ ...current, owner }))}>
+          <SelectTrigger aria-label="Owner"><SelectValue placeholder="All owners" /></SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All owners</SelectItem>
+            {users.map(entry => <SelectItem value={entry.id} key={entry.id}>{personOptionLabel(entry)}</SelectItem>)}
+          </SelectContent>
+        </Select>
+      </FilterBar>
 
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-5">
         <ReportMetricTile label="Total payments" value={String(summary.total)} />
@@ -397,39 +376,36 @@ export default function WorkflowCompletionReport() {
         title="Step-wise workload"
         description="Who handled each step, how many they completed, and how many stayed within the step's TAT."
       />
-      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+      <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
         {workflow.map(step => {
           const stepData = stepReport[step.name];
           const entries = stepData ? Object.entries(stepData).filter(([, stat]) => stat.total > 0) : [];
           if (!entries.length) return null;
           return (
-            <Card key={step.id}>
-              <CardHeader><CardTitle>{step.name}</CardTitle></CardHeader>
-              <CardContent className="p-0">
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>User</TableHead>
-                      <TableHead className="text-right">Total</TableHead>
-                      <TableHead className="text-right">Done</TableHead>
-                      <TableHead className="text-right">On time</TableHead>
-                      <TableHead className="text-right">Rejected</TableHead>
+            <TableCard key={step.id} title={step.name} scroll="natural">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>User</TableHead>
+                    <TableHead className="text-right">Total</TableHead>
+                    <TableHead className="text-right">Done</TableHead>
+                    <TableHead className="text-right">On time</TableHead>
+                    <TableHead className="text-right">Rejected</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {entries.map(([userName, stat]) => (
+                    <TableRow key={userName}>
+                      <TableCell>{userName}</TableCell>
+                      <TableCell className="text-right">{stat.total}</TableCell>
+                      <TableCell className="text-right">{stat.completed}</TableCell>
+                      <TableCell className="text-right">{stat.onTime}</TableCell>
+                      <TableCell className="text-right">{stat.rejected || "—"}</TableCell>
                     </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {entries.map(([userName, stat]) => (
-                      <TableRow key={userName}>
-                        <TableCell>{userName}</TableCell>
-                        <TableCell className="text-right">{stat.total}</TableCell>
-                        <TableCell className="text-right">{stat.completed}</TableCell>
-                        <TableCell className="text-right">{stat.onTime}</TableCell>
-                        <TableCell className="text-right">{stat.rejected || "—"}</TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              </CardContent>
-            </Card>
+                  ))}
+                </TableBody>
+              </Table>
+            </TableCard>
           );
         })}
         {!workflow.some(step => stepReport[step.name] && Object.keys(stepReport[step.name]).length) && (
@@ -437,53 +413,48 @@ export default function WorkflowCompletionReport() {
         )}
       </div>
 
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2"><History className="h-5 w-5" />Completion timeline</CardTitle>
-          <CardDescription>Every completed or rejected step, exactly when it happened — {completions.length} event(s)</CardDescription>
-        </CardHeader>
-        <CardContent className="p-0">
-          <div className="overflow-x-auto">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Completed at</TableHead>
-                  <TableHead>Payment</TableHead>
-                  <TableHead>Vendor</TableHead>
-                  <TableHead>Step</TableHead>
-                  <TableHead>Action</TableHead>
-                  <TableHead>By</TableHead>
-                  <TableHead>On time</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {completions.map((item, index) => (
-                  <TableRow key={`${item.paymentId}-${index}`}>
-                    <TableCell className="whitespace-nowrap">{formatTimestamp(item.timestamp)}</TableCell>
-                    <TableCell className="whitespace-nowrap font-medium">{item.title}</TableCell>
-                    <TableCell className="whitespace-nowrap">{item.vendorName}</TableCell>
-                    <TableCell className="whitespace-nowrap">{item.stepName}</TableCell>
-                    <TableCell className="whitespace-nowrap">
-                      <Badge variant={REJECTION_ACTIONS.includes(item.action) ? "destructive" : "outline"}>{item.action}</Badge>
-                    </TableCell>
-                    <TableCell className="whitespace-nowrap">{item.userName}</TableCell>
-                    <TableCell className="whitespace-nowrap">{item.onTime === null ? "—" : item.onTime ? "Yes" : "No"}</TableCell>
-                  </TableRow>
-                ))}
-                {!completions.length && (
-                  <TableRow>
-                    <TableCell colSpan={7} className="h-28 text-center text-muted-foreground">No completed steps match the selected filters.</TableCell>
-                  </TableRow>
-                )}
-              </TableBody>
-            </Table>
-          </div>
-        </CardContent>
-      </Card>
+      <TableCard
+        title="Completion timeline"
+        icon={History}
+        description="Every completed or rejected step, exactly when it happened"
+        count={completions.length}
+        noun="event"
+      >
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead>Completed at</TableHead>
+              <TableHead>Payment</TableHead>
+              <TableHead>Vendor</TableHead>
+              <TableHead>Step</TableHead>
+              <TableHead>Action</TableHead>
+              <TableHead>By</TableHead>
+              <TableHead>On time</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {completions.map((item, index) => (
+              <TableRow key={`${item.paymentId}-${index}`}>
+                <TableCell className="whitespace-nowrap">{formatTimestamp(item.timestamp)}</TableCell>
+                <TableCell className="whitespace-nowrap font-medium">{item.title}</TableCell>
+                <TableCell className="whitespace-nowrap">{item.vendorName}</TableCell>
+                <TableCell className="whitespace-nowrap">{item.stepName}</TableCell>
+                <TableCell className="whitespace-nowrap">
+                  <StatusBadge tone={REJECTION_ACTIONS.includes(item.action) ? "danger" : "neutral"}>{item.action}</StatusBadge>
+                </TableCell>
+                <TableCell className="whitespace-nowrap">{item.userName}</TableCell>
+                <TableCell className="whitespace-nowrap">{item.onTime === null ? "—" : item.onTime ? "Yes" : "No"}</TableCell>
+              </TableRow>
+            ))}
+            {!completions.length && (
+              <TableRow>
+                <TableCell colSpan={7} className="h-28 text-center text-muted-foreground">No completed steps match the selected filters.</TableCell>
+              </TableRow>
+            )}
+          </TableBody>
+        </Table>
+      </TableCard>
     </div>
   );
 }
 
-function FilterField({ label, children }: { label: string; children: React.ReactNode }) {
-  return <div className="space-y-1"><Label className="text-xs font-medium text-muted-foreground">{label}</Label>{children}</div>;
-}

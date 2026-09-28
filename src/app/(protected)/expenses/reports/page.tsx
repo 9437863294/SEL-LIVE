@@ -19,9 +19,7 @@ import { collection, getDocs } from 'firebase/firestore';
 import {
   BarChart3,
   Download,
-  Filter,
   Printer,
-  Search,
   ShieldAlert,
   Calendar as CalendarIcon,
   Table as TableIcon,
@@ -39,20 +37,21 @@ import {
   filterExpensesForReport,
   formatReportCell,
   type EnrichedExpense,
-  type ExpenseReportGroup,
 } from '@/lib/expenses-reports';
 import { useExpensesSettings } from '@/components/expenses/use-expenses-settings';
 import { PivotReport } from '@/components/expenses/pivot-report';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Calendar } from '@/components/ui/calendar';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { TableCard } from '@/components/shared/table-card';
+import { FilterBar } from '@/components/shared/filter-bar';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Skeleton } from '@/components/ui/skeleton';
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { Table, TableBody, TableCell, TableFooter, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { format } from 'date-fns';
 import type { DateRange } from 'react-day-picker';
 import { cn } from '@/lib/utils';
@@ -60,15 +59,6 @@ import { PageHeader } from '@/components/shared/page-header';
 
 /** The custom pivot sits in the list alongside the fixed reports, under its own id. */
 const PIVOT_ID = 'custom-pivot';
-
-const GROUP_TONE: Record<ExpenseReportGroup | 'Custom', string> = {
-  Summary: 'text-blue-600 bg-blue-50 border-blue-200',
-  Breakdown: 'text-violet-600 bg-violet-50 border-violet-200',
-  Trend: 'text-fuchsia-600 bg-fuchsia-50 border-fuchsia-200',
-  Control: 'text-amber-600 bg-amber-50 border-amber-200',
-  Detail: 'text-teal-600 bg-teal-50 border-teal-200',
-  Custom: 'text-slate-600 bg-slate-100 border-slate-200',
-};
 
 function ReportCentre() {
   const { can, isLoading: isAuthLoading } = useAuthorization();
@@ -165,7 +155,9 @@ function ReportCentre() {
     return parts.join(' · ');
   }, [departmentId, projectId, dateRange, departments, projects]);
 
-  const hasFilters = departmentId !== 'all' || projectId !== 'all' || !!search || !!dateRange?.from;
+  const activeFilterCount =
+    (departmentId !== 'all' ? 1 : 0) + (projectId !== 'all' ? 1 : 0) + (search ? 1 : 0) + (dateRange?.from ? 1 : 0);
+  const hasFilters = activeFilterCount > 0;
   const clearFilters = () => {
     setDepartmentId('all');
     setProjectId('all');
@@ -249,91 +241,61 @@ function ReportCentre() {
       />
 
       {/* Filters — one set, applied to whichever report is showing. */}
-      <Card className="border-white/60 bg-white/70 shadow-sm backdrop-blur-sm print:hidden">
-        <CardContent className="space-y-3 p-4">
-          <div className="flex items-center gap-2">
-            <Filter className="h-3.5 w-3.5 text-muted-foreground" />
-            <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Scope</span>
-            {hasFilters && (
-              <Button variant="ghost" size="sm" className="ml-auto h-7 px-2.5 text-xs text-muted-foreground" onClick={clearFilters}>
-                Clear
+      <FilterBar
+        className="print:hidden"
+        search={{ value: search, onChange: setSearch, placeholder: 'Request no, party, description…' }}
+        activeCount={activeFilterCount}
+        onClear={clearFilters}
+        summary={`${scoped.length.toLocaleString('en-IN')} of ${expenses.length.toLocaleString('en-IN')} requests in scope`}
+      >
+        <Select value={departmentId} onValueChange={setDepartmentId}>
+          <SelectTrigger aria-label="Department"><SelectValue /></SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All departments</SelectItem>
+            {departments.map(entry => (
+              <SelectItem key={entry.id} value={entry.id}>{entry.name}</SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        <Select value={projectId} onValueChange={setProjectId}>
+          <SelectTrigger aria-label="Project"><SelectValue /></SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All projects</SelectItem>
+            {projects.map(entry => (
+              <SelectItem key={entry.id} value={entry.id}>{entry.projectName}</SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        <Popover>
+          <PopoverTrigger asChild>
+            <Button
+              variant="outline"
+              aria-label="Period"
+              className={cn('w-full justify-start text-left font-normal', !dateRange && 'text-muted-foreground')}
+            >
+              <CalendarIcon className="mr-2 h-3.5 w-3.5" />
+              {dateRange?.from && dateRange?.to
+                ? `${format(dateRange.from, 'dd MMM')} – ${format(dateRange.to, 'dd MMM yy')}`
+                : 'All time'}
+            </Button>
+          </PopoverTrigger>
+          <PopoverContent className="w-auto p-0" align="start">
+            <Calendar
+              initialFocus
+              mode="range"
+              defaultMonth={dateRange?.from}
+              selected={dateRange}
+              onSelect={setDateRange}
+              numberOfMonths={2}
+            />
+            <div className="border-t p-2">
+              <Button variant="ghost" size="sm" className="w-full text-xs" onClick={() => setDateRange(undefined)}>
+                All time
               </Button>
-            )}
-          </div>
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
-            <div className="space-y-1.5">
-              <Label className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">Department</Label>
-              <Select value={departmentId} onValueChange={setDepartmentId}>
-                <SelectTrigger className="h-9 text-sm"><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All departments</SelectItem>
-                  {departments.map(entry => (
-                    <SelectItem key={entry.id} value={entry.id}>{entry.name}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
             </div>
-            <div className="space-y-1.5">
-              <Label className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">Project</Label>
-              <Select value={projectId} onValueChange={setProjectId}>
-                <SelectTrigger className="h-9 text-sm"><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All projects</SelectItem>
-                  {projects.map(entry => (
-                    <SelectItem key={entry.id} value={entry.id}>{entry.projectName}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="space-y-1.5">
-              <Label className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">Period</Label>
-              <Popover>
-                <PopoverTrigger asChild>
-                  <Button
-                    variant="outline"
-                    className={cn('h-9 w-full justify-start text-left text-sm font-normal', !dateRange && 'text-muted-foreground')}
-                  >
-                    <CalendarIcon className="mr-2 h-3.5 w-3.5" />
-                    {dateRange?.from && dateRange?.to
-                      ? `${format(dateRange.from, 'dd MMM')} – ${format(dateRange.to, 'dd MMM yy')}`
-                      : 'All time'}
-                  </Button>
-                </PopoverTrigger>
-                <PopoverContent className="w-auto p-0" align="start">
-                  <Calendar
-                    initialFocus
-                    mode="range"
-                    defaultMonth={dateRange?.from}
-                    selected={dateRange}
-                    onSelect={setDateRange}
-                    numberOfMonths={2}
-                  />
-                  <div className="border-t p-2">
-                    <Button variant="ghost" size="sm" className="w-full text-xs" onClick={() => setDateRange(undefined)}>
-                      All time
-                    </Button>
-                  </div>
-                </PopoverContent>
-              </Popover>
-            </div>
-            <div className="space-y-1.5">
-              <Label className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">Search</Label>
-              <div className="relative">
-                <Search className="absolute left-2.5 top-2.5 h-3.5 w-3.5 text-muted-foreground" />
-                <Input
-                  className="h-9 pl-8 text-sm"
-                  placeholder="Request no, party, description…"
-                  value={search}
-                  onChange={event => setSearch(event.target.value)}
-                />
-              </div>
-            </div>
-          </div>
-          <p className="text-[11px] text-muted-foreground">
-            {scoped.length.toLocaleString('en-IN')} of {expenses.length.toLocaleString('en-IN')} requests in scope
-          </p>
-        </CardContent>
-      </Card>
+          </PopoverContent>
+        </Popover>
+      </FilterBar>
 
       {/* The selected report. The catalogue that used to sit beside it is now nested under
           Reports in the module sidebar, so the page gets its full width. */}
@@ -342,44 +304,44 @@ function ReportCentre() {
           <PivotReport expenses={scoped} isLoading={isLoading} />
         ) : definition && result ? (
           <>
-            <Card className="overflow-hidden border-white/60 bg-white/70 shadow-sm backdrop-blur-sm">
-              <div className="h-[3px] bg-gradient-to-r from-fuchsia-500 via-pink-500 to-transparent" />
-              <CardHeader className="pb-3">
-                <div className="flex flex-wrap items-center gap-2">
-                  <CardTitle className="text-base">{definition.title}</CardTitle>
-                  <Badge variant="outline" className={cn('text-[10px]', GROUP_TONE[definition.group])}>
-                    {definition.group}
-                  </Badge>
-                </div>
-                <CardDescription className="text-xs">{definition.description}</CardDescription>
-              </CardHeader>
-              <CardContent className="pt-0">
-                <div className="flex flex-wrap gap-2">
-                  {result.stats.map(stat => (
-                    <div key={stat.label} className="rounded-lg border border-border/60 bg-muted/30 px-3 py-2">
-                      <p className="text-[10px] uppercase tracking-wide text-muted-foreground">{stat.label}</p>
-                      <p className="text-sm font-bold">{stat.value}</p>
-                    </div>
-                  ))}
-                </div>
-                {definition.id === 'high-value' && (
-                  <div className="mt-3 flex items-center gap-2 print:hidden">
-                    <Label className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
-                      Threshold ₹
-                    </Label>
+            <TableCard
+              title={
+                <span className="flex flex-wrap items-center gap-2">
+                  {definition.title}
+                  <Badge variant="neutral">{definition.group}</Badge>
+                </span>
+              }
+              description={
+                <>
+                  {definition.description}
+                  {/* In the heading rather than the toolbar, so the figures still print. */}
+                  <div className="mt-2 flex flex-wrap gap-2">
+                    {result.stats.map(stat => (
+                      <div key={stat.label} className="rounded-lg border border-border/60 bg-muted/30 px-3 py-2">
+                        <p className="text-[10px] uppercase tracking-wide text-muted-foreground">{stat.label}</p>
+                        <p className="text-sm font-bold text-foreground">{stat.value}</p>
+                      </div>
+                    ))}
+                  </div>
+                </>
+              }
+              count={isLoading ? undefined : result.rows.length}
+              noun="row"
+              toolbar={
+                definition.id === 'high-value' ? (
+                  <div className="flex items-center gap-2">
+                    <Label htmlFor="expense-report-threshold">Threshold ₹</Label>
                     <Input
+                      id="expense-report-threshold"
                       type="number"
-                      className="h-8 w-40 text-sm"
+                      className="max-w-[10rem]"
                       value={threshold}
                       onChange={event => setHighValueThreshold(Number(event.target.value) || 0)}
                     />
                   </div>
-                )}
-              </CardContent>
-            </Card>
-
-            <Card className="overflow-hidden border-white/60 bg-white/70 shadow-sm backdrop-blur-sm">
-              <CardContent className="p-0">
+                ) : undefined
+              }
+            >
                 {isLoading ? (
                   <div className="space-y-2 p-6">
                     {Array.from({ length: 6 }).map((_, index) => <Skeleton key={index} className="h-6 w-full" />)}
@@ -395,14 +357,14 @@ function ReportCentre() {
                     )}
                   </div>
                 ) : (
-                  <Table containerClassName="max-h-[calc(100vh-22rem)] overflow-auto">
-                    <TableHeader className="sticky top-0 z-10 bg-background">
-                      <TableRow className="bg-muted/40 hover:bg-muted/40">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
                         {result.columns.map(column => (
                           <TableHead
                             key={column.key}
                             className={cn(
-                              'whitespace-nowrap px-4 text-xs font-semibold uppercase tracking-wide text-muted-foreground',
+                              'whitespace-nowrap',
                               column.type && column.type !== 'text' && column.type !== 'date' && 'text-right',
                             )}
                           >
@@ -413,14 +375,13 @@ function ReportCentre() {
                     </TableHeader>
                     <TableBody>
                       {result.rows.map((row, index) => (
-                        <TableRow key={index} className="hover:bg-fuchsia-500/5">
+                        <TableRow key={index}>
                           {result.columns.map(column => (
                             <TableCell
                               key={column.key}
                               className={cn(
-                                'whitespace-nowrap px-4 text-sm',
+                                'whitespace-nowrap',
                                 column.type && column.type !== 'text' && column.type !== 'date' && 'text-right tabular-nums',
-                                column.type === 'currency' && 'font-medium',
                               )}
                             >
                               <span className="block max-w-[320px] truncate" title={String(row[column.key] ?? '')}>
@@ -430,13 +391,15 @@ function ReportCentre() {
                           ))}
                         </TableRow>
                       ))}
-                      {result.total && (
-                        <TableRow className="border-t-2 border-fuchsia-500/20 bg-fuchsia-500/5 font-bold hover:bg-fuchsia-500/5">
+                    </TableBody>
+                    {result.total && (
+                      <TableFooter>
+                        <TableRow>
                           {result.columns.map(column => (
                             <TableCell
                               key={column.key}
                               className={cn(
-                                'whitespace-nowrap px-4 text-sm',
+                                'whitespace-nowrap',
                                 column.type && column.type !== 'text' && column.type !== 'date' && 'text-right tabular-nums',
                               )}
                             >
@@ -446,12 +409,11 @@ function ReportCentre() {
                             </TableCell>
                           ))}
                         </TableRow>
-                      )}
-                    </TableBody>
+                      </TableFooter>
+                    )}
                   </Table>
                 )}
-              </CardContent>
-            </Card>
+            </TableCard>
           </>
         ) : null}
         </div>

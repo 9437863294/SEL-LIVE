@@ -2,6 +2,7 @@
 
 import Link from 'next/link';
 import { Badge } from '@/components/ui/badge';
+import { StatusBadge, type StatusTone } from '@/components/shared/status-badge';
 import { cn } from '@/lib/utils';
 import {
   formatSeconds,
@@ -25,85 +26,73 @@ import {
  * arguing with them.
  */
 
-const PRESENCE_STYLES: Record<PresenceState, { label: string; className: string; dot: string }> = {
-  ACTIVE: { label: 'Active', className: 'bg-emerald-50 text-emerald-700 border-emerald-200', dot: 'bg-emerald-500' },
-  IDLE: { label: 'Idle', className: 'bg-amber-50 text-amber-700 border-amber-200', dot: 'bg-amber-500' },
-  EXTENDED_IDLE: { label: 'Idle (extended)', className: 'bg-orange-50 text-orange-700 border-orange-200', dot: 'bg-orange-500' },
-  LOCKED: { label: 'Locked', className: 'bg-slate-100 text-slate-700 border-slate-200', dot: 'bg-slate-400' },
-  OFFLINE: { label: 'Offline', className: 'bg-zinc-100 text-zinc-600 border-zinc-200', dot: 'bg-zinc-400' },
+const PRESENCE_META: Record<PresenceState, { label: string; tone: StatusTone }> = {
+  ACTIVE: { label: 'Active', tone: 'success' },
+  IDLE: { label: 'Idle', tone: 'warning' },
+  EXTENDED_IDLE: { label: 'Idle (extended)', tone: 'warning' },
+  LOCKED: { label: 'Locked', tone: 'neutral' },
+  OFFLINE: { label: 'Offline', tone: 'neutral' },
 };
 
 export function PresenceBadge({ presence, className }: { presence: PresenceState; className?: string }) {
-  const style = PRESENCE_STYLES[presence] ?? PRESENCE_STYLES.OFFLINE;
+  const meta = PRESENCE_META[presence] ?? PRESENCE_META.OFFLINE;
   return (
-    <Badge variant="outline" className={cn('gap-1.5 font-medium', style.className, className)}>
-      <span className={cn('h-1.5 w-1.5 rounded-full', style.dot)} aria-hidden />
-      {style.label}
-    </Badge>
+    <StatusBadge status={presence} tone={meta.tone} dot className={className}>
+      {meta.label}
+    </StatusBadge>
   );
 }
 
-const DEVICE_STATUS_STYLES: Record<DeviceStatus, { label: string; className: string }> = {
-  PENDING: { label: 'Awaiting approval', className: 'bg-amber-50 text-amber-700 border-amber-200' },
-  ACTIVE: { label: 'Active', className: 'bg-emerald-50 text-emerald-700 border-emerald-200' },
-  BLOCKED: { label: 'Blocked', className: 'bg-rose-50 text-rose-700 border-rose-200' },
-  DISABLED: { label: 'Disabled', className: 'bg-zinc-100 text-zinc-600 border-zinc-200' },
-  MAINTENANCE: { label: 'Maintenance', className: 'bg-blue-50 text-blue-700 border-blue-200' },
-  RETIRED: { label: 'Retired', className: 'bg-slate-100 text-slate-600 border-slate-200' },
+const DEVICE_STATUS_META: Record<DeviceStatus, { label: string; tone: StatusTone }> = {
+  PENDING: { label: 'Awaiting approval', tone: 'warning' },
+  ACTIVE: { label: 'Active', tone: 'success' },
+  BLOCKED: { label: 'Blocked', tone: 'danger' },
+  DISABLED: { label: 'Disabled', tone: 'neutral' },
+  MAINTENANCE: { label: 'Maintenance', tone: 'info' },
+  RETIRED: { label: 'Retired', tone: 'neutral' },
 };
 
 export function DeviceStatusBadge({ status, className }: { status: DeviceStatus; className?: string }) {
-  const style = DEVICE_STATUS_STYLES[status] ?? DEVICE_STATUS_STYLES.DISABLED;
+  const meta = DEVICE_STATUS_META[status] ?? DEVICE_STATUS_META.DISABLED;
   return (
-    <Badge variant="outline" className={cn('font-medium', style.className, className)}>
-      {style.label}
-    </Badge>
+    <StatusBadge status={status} tone={meta.tone} className={className}>
+      {meta.label}
+    </StatusBadge>
   );
 }
 
-const SESSION_STATUS_STYLES: Record<SessionStatus, { label: string; className: string }> = {
-  OPEN: { label: 'Open', className: 'bg-emerald-50 text-emerald-700 border-emerald-200' },
-  CLOSED: { label: 'Closed', className: 'bg-slate-100 text-slate-700 border-slate-200' },
+const SESSION_STATUS_META: Record<SessionStatus, { label: string; tone: StatusTone }> = {
+  OPEN: { label: 'Open', tone: 'success' },
+  CLOSED: { label: 'Closed', tone: 'neutral' },
   // Amber rather than red: an unclean end is usually a power cut, not a person's fault, and
   // colouring it as an error invites somebody to be asked to explain a thunderstorm.
-  UNCLEAN_END: { label: 'Ended uncleanly', className: 'bg-amber-50 text-amber-700 border-amber-200' },
+  UNCLEAN_END: { label: 'Ended uncleanly', tone: 'warning' },
 };
 
 export function SessionStatusBadge({ status, className }: { status: SessionStatus; className?: string }) {
-  const style = SESSION_STATUS_STYLES[status] ?? SESSION_STATUS_STYLES.CLOSED;
+  const meta = SESSION_STATUS_META[status] ?? SESSION_STATUS_META.CLOSED;
   return (
-    <Badge variant="outline" className={cn('font-medium', style.className, className)}>
-      {style.label}
-    </Badge>
+    <StatusBadge status={status} tone={meta.tone} className={className}>
+      {meta.label}
+    </StatusBadge>
   );
 }
 
-const ATTENDANCE_STYLES: Record<AttendanceStatus, string> = {
-  Present: 'bg-emerald-50 text-emerald-700 border-emerald-200',
-  Late: 'bg-amber-50 text-amber-700 border-amber-200',
-  'Short Duration': 'bg-blue-50 text-blue-700 border-blue-200',
-  'Incomplete Logout': 'bg-orange-50 text-orange-700 border-orange-200',
-  'Offline Session': 'bg-violet-50 text-violet-700 border-violet-200',
+const ATTENDANCE_TONE: Record<AttendanceStatus, StatusTone> = {
+  Present: 'success',
+  Late: 'warning',
+  'Short Duration': 'info',
+  'Incomplete Logout': 'warning',
+  'Offline Session': 'progress',
 };
 
 export function AttendanceStatusBadge({ status, className }: { status: AttendanceStatus; className?: string }) {
   return (
-    <Badge variant="outline" className={cn('font-medium', ATTENDANCE_STYLES[status] ?? '', className)}>
+    <StatusBadge status={status} tone={ATTENDANCE_TONE[status]} className={className}>
       {status}
-    </Badge>
+    </StatusBadge>
   );
 }
-
-const CATEGORY_STYLES: Record<AppCategory, string> = {
-  ERP: 'bg-blue-50 text-blue-700 border-blue-200',
-  OFFICE: 'bg-indigo-50 text-indigo-700 border-indigo-200',
-  COMMUNICATION: 'bg-cyan-50 text-cyan-700 border-cyan-200',
-  DEVELOPMENT: 'bg-violet-50 text-violet-700 border-violet-200',
-  REFERENCE: 'bg-teal-50 text-teal-700 border-teal-200',
-  WORK: 'bg-emerald-50 text-emerald-700 border-emerald-200',
-  SYSTEM: 'bg-slate-100 text-slate-600 border-slate-200',
-  UNCLASSIFIED: 'bg-zinc-100 text-zinc-600 border-zinc-200',
-};
 
 const CATEGORY_LABELS: Record<AppCategory, string> = {
   ERP: 'ERP',
@@ -116,9 +105,10 @@ const CATEGORY_LABELS: Record<AppCategory, string> = {
   UNCLASSIFIED: 'Unclassified',
 };
 
+/** A category is a tag, not a state: one neutral chip for all of them. */
 export function CategoryBadge({ category, className }: { category: AppCategory; className?: string }) {
   return (
-    <Badge variant="outline" className={cn('font-medium', CATEGORY_STYLES[category] ?? '', className)}>
+    <Badge variant="neutral" className={className}>
       {CATEGORY_LABELS[category] ?? category}
     </Badge>
   );

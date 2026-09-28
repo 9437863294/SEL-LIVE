@@ -14,9 +14,10 @@ import {
   Edit,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { Badge } from '@/components/ui/badge';
+import { TableCard } from '@/components/shared/table-card';
+import { StatusBadge } from '@/components/shared/status-badge';
 import { useToast } from '@/hooks/use-toast';
 import { db } from '@/lib/firebase';
 import {
@@ -669,12 +670,12 @@ export default function LoanDetailsPage() {
           )}
         </Card>
 
-        <Card>
-          <CardHeader>
-            <CardTitle>Repayment Schedule</CardTitle>
-            <CardDescription>Detailed schedule of Equated Monthly Installments.</CardDescription>
-          </CardHeader>
-          <CardContent>
+        <TableCard
+          title="Repayment Schedule"
+          description="Detailed schedule of Equated Monthly Installments."
+          count={scheduleToDisplay.length}
+          noun="EMI"
+        >
             <Table>
               <TableHeader>
                 <TableRow>
@@ -720,7 +721,7 @@ export default function LoanDetailsPage() {
                     <TableCell>{formatCurrency(emi.emiAmount)}</TableCell>
                     <TableCell>{formatCurrency(emi.closingPrincipal)}</TableCell>
                     <TableCell>
-                      <Badge variant={emi.status === 'Paid' ? 'default' : 'secondary'}>{emi.status}</Badge>
+                      <StatusBadge status={emi.status} />
                     </TableCell>
                     <TableCell>
                       {!isEditing &&
@@ -785,8 +786,7 @@ export default function LoanDetailsPage() {
                 ))}
               </TableBody>
             </Table>
-          </CardContent>
-        </Card>
+        </TableCard>
       </div>
 
       <Dialog open={isPayDialogOpen} onOpenChange={setIsPayDialogOpen}>

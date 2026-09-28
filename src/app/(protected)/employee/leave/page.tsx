@@ -15,17 +15,18 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
-import { CalendarClock, Download, RefreshCw, Search, Users } from 'lucide-react';
+import { CalendarClock, Download, RefreshCw, Users } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { FilterBar } from '@/components/shared/filter-bar';
+import { StatusBadge } from '@/components/shared/status-badge';
+import { TableCard } from '@/components/shared/table-card';
 import {
   HrAccessDenied,
   HrAlertNotice,
   HrDataList,
   HrEmptyState,
-  HrFilterCard,
   HrLoader,
   type HrListColumn,
 } from '@/components/hr/hr-ui';
@@ -34,9 +35,7 @@ import {
   EmployeeKpiCard,
   EmployeeListFooter,
   EmployeePageShell,
-  EmployeeStatusPill,
   EmployeeSubNav,
-  EMP_REGISTER_HEIGHT,
 } from '@/components/employee/employee-ui';
 import { useAuthorization } from '@/hooks/useAuthorization';
 import { cn } from '@/lib/utils';
@@ -199,7 +198,7 @@ export default function LeaveRegisterPage() {
       align: 'right',
       mobile: 'aside',
       cell: (row) => (
-        <Badge variant="outline" className="border-indigo-200 bg-indigo-50 font-semibold text-indigo-700">
+        <Badge variant="neutral" className="tabular-nums">
           {row.balance.totalBalance}
         </Badge>
       ),
@@ -233,11 +232,12 @@ export default function LeaveRegisterPage() {
         badge={
           <>
             {report?.year && (
-              <EmployeeStatusPill tone="cyan" icon={CalendarClock}>
+              <Badge variant="neutral" className="gap-1.5">
+                <CalendarClock className="h-3 w-3" aria-hidden="true" />
                 Year {report.year}
-              </EmployeeStatusPill>
+              </Badge>
             )}
-            <EmployeeStatusPill tone="slate">Read-only</EmployeeStatusPill>
+            <StatusBadge status="Read-only" />
           </>
         }
         actions={
@@ -322,61 +322,66 @@ export default function LeaveRegisterPage() {
         </div>
       )}
 
-      <HrFilterCard summary={`${filtered.length} of ${report?.count ?? 0} employees`}>
-        <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-3">
-          <div className="relative">
-            <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
-            <Input
-              placeholder="Search name, employee no…"
-              className="pl-8"
-              value={search}
-              onChange={(event) => setSearch(event.target.value)}
+      <TableCard
+        toolbar={
+          <FilterBar
+            search={{ value: search, onChange: setSearch, placeholder: 'Search name, employee no…' }}
+            activeCount={(department !== 'all' ? 1 : 0) + (sortType !== 'total' ? 1 : 0)}
+            onClear={() => {
+              setSearch('');
+              setDepartment('all');
+              setSortType('total');
+            }}
+            summary={`${filtered.length} of ${report?.count ?? 0} employees`}
+          >
+            <Select value={department} onValueChange={setDepartment}>
+              <SelectTrigger aria-label="Department"><SelectValue placeholder="Department" /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All departments</SelectItem>
+                {departments.map((value) => (
+                  <SelectItem key={value} value={value}>{value}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <Select value={sortType} onValueChange={setSortType}>
+              <SelectTrigger aria-label="Sort by"><SelectValue placeholder="Sort by" /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="total">Sort by total balance</SelectItem>
+                {(report?.leaveTypes ?? []).map((type) => (
+                  <SelectItem key={type} value={type}>Sort by {type}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </FilterBar>
+        }
+        footer={
+          rows.length > 0 ? (
+            <EmployeeListFooter
+              shown={visibleRows.length}
+              total={rows.length}
+              noun="employee"
+              pageSize={PAGE_SIZE}
+              onMore={() => setVisibleCount((count) => count + PAGE_SIZE)}
             />
-          </div>
-          <Select value={department} onValueChange={setDepartment}>
-            <SelectTrigger><SelectValue placeholder="Department" /></SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">All departments</SelectItem>
-              {departments.map((value) => (
-                <SelectItem key={value} value={value}>{value}</SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-          <Select value={sortType} onValueChange={setSortType}>
-            <SelectTrigger><SelectValue placeholder="Sort by" /></SelectTrigger>
-            <SelectContent>
-              <SelectItem value="total">Sort by total balance</SelectItem>
-              {(report?.leaveTypes ?? []).map((type) => (
-                <SelectItem key={type} value={type}>Sort by {type}</SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+          ) : undefined
+        }
+      >
+        <div className="p-3 sm:p-0">
+          <HrDataList
+            rows={visibleRows}
+            columns={columns}
+            dense
+            frameless
+            empty={
+              <HrEmptyState
+                icon={CalendarClock}
+                title="No leave records match"
+                description={search || department !== 'all' ? 'Try a different search or department.' : 'Nothing synced yet.'}
+              />
+            }
+          />
         </div>
-      </HrFilterCard>
-
-      <div className="space-y-2.5">
-        <HrDataList
-          rows={visibleRows}
-          columns={columns}
-          dense
-          maxHeightClassName={EMP_REGISTER_HEIGHT}
-          empty={
-            <HrEmptyState
-              icon={CalendarClock}
-              title="No leave records match"
-              description={search || department !== 'all' ? 'Try a different search or department.' : 'Nothing synced yet.'}
-            />
-          }
-        />
-
-        <EmployeeListFooter
-          shown={visibleRows.length}
-          total={rows.length}
-          noun="employee"
-          pageSize={PAGE_SIZE}
-          onMore={() => setVisibleCount((count) => count + PAGE_SIZE)}
-        />
-      </div>
+      </TableCard>
     </EmployeePageShell>
   );
 }

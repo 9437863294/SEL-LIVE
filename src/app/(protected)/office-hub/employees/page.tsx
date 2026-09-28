@@ -16,11 +16,9 @@
 
 import Link from 'next/link';
 import { useMemo, useState } from 'react';
-import { Download, Search, Upload, UserRound, Users } from 'lucide-react';
+import { Download, Upload, UserRound, Users } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
 import { Skeleton } from '@/components/ui/skeleton';
 import {
   OFFICE_HUB_BASE_PATH,
@@ -36,11 +34,12 @@ import {
   OfficeHubEmptyState,
   OfficeHubKpiCard,
   PersonChip,
-  ResultCount,
   type OfficeHubListColumn,
 } from '@/components/office-hub/ui';
 import { MultiSelect } from '@/components/office-hub/selectors';
+import { FilterBar } from '@/components/shared/filter-bar';
 import { PageHeader } from '@/components/shared/page-header';
+import { TableCard } from '@/components/shared/table-card';
 
 export default function EmployeesPage() {
   const { viewer, capabilities, directory, today, periods, isLoading } = useOfficeHub();
@@ -171,15 +170,11 @@ export default function EmployeesPage() {
         ) : (
           <div className="flex flex-wrap gap-1">
             {row.teams.slice(0, 2).map((team) => (
-              <Badge key={team.id} variant="outline" className="border-slate-200 bg-slate-50 text-[11px]">
+              <Badge key={team.id} variant="neutral">
                 {team.name}
               </Badge>
             ))}
-            {row.teams.length > 2 && (
-              <Badge variant="outline" className="border-slate-200 bg-slate-50 text-[11px]">
-                +{row.teams.length - 2}
-              </Badge>
-            )}
+            {row.teams.length > 2 && <Badge variant="neutral">+{row.teams.length - 2}</Badge>}
           </div>
         ),
     },
@@ -262,48 +257,53 @@ export default function EmployeesPage() {
         />
       </div>
 
-      <div className="grid grid-cols-1 gap-3 sm:grid-cols-[minmax(0,1fr)_16rem]">
-        <div>
-          <Label className="mb-1 block text-xs">Search</Label>
-          <div className="relative">
-            <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
-            <Input
-              value={search}
-              onChange={(event) => setSearch(event.target.value)}
-              placeholder="Name, employee ID, designation or email"
-              className="bg-white pl-8"
-              aria-label="Search employees"
+      <TableCard
+        title="Employee directory"
+        icon={UserRound}
+        count={rows.length}
+        total={directory.people.length}
+        noun="employee"
+        toolbar={
+          <FilterBar
+            search={{
+              value: search,
+              onChange: setSearch,
+              placeholder: 'Name, employee ID, designation or email',
+              label: 'Search employees',
+            }}
+            activeCount={departmentIds.length ? 1 : 0}
+            onClear={() => {
+              setSearch('');
+              setDepartmentIds([]);
+            }}
+          >
+            <MultiSelect
+              placeholder="All departments"
+              options={directory.departments.map((department) => ({ value: department.id, label: department.name }))}
+              value={departmentIds}
+              onChange={setDepartmentIds}
             />
-          </div>
-        </div>
-        <MultiSelect
-          label="Department"
-          placeholder="All departments"
-          options={directory.departments.map((department) => ({ value: department.id, label: department.name }))}
-          value={departmentIds}
-          onChange={setDepartmentIds}
-        />
-      </div>
-
-      <ResultCount shown={rows.length} total={directory.people.length} noun="employee" />
-
-      <OfficeHubDataList
-        rows={rows}
-        columns={columns}
-        cardHref={(row) => `${OFFICE_HUB_BASE_PATH}/employees/${row.userId}`}
-        maxHeightClassName="sm:max-h-[42rem]"
-        empty={
-          <OfficeHubEmptyState
-            icon={UserRound}
-            title={search || departmentIds.length ? 'Nobody matches that.' : 'No employees with a login yet.'}
-            description={
-              search || departmentIds.length
-                ? 'Try a different spelling, or clear the department filter.'
-                : 'The directory lists people who have an account, because only they can be invited and respond.'
-            }
-          />
+          </FilterBar>
         }
-      />
+      >
+        <OfficeHubDataList
+          rows={rows}
+          columns={columns}
+          cardHref={(row) => `${OFFICE_HUB_BASE_PATH}/employees/${row.userId}`}
+          frameless
+          empty={
+            <OfficeHubEmptyState
+              icon={UserRound}
+              title={search || departmentIds.length ? 'Nobody matches that.' : 'No employees with a login yet.'}
+              description={
+                search || departmentIds.length
+                  ? 'Try a different spelling, or clear the department filter.'
+                  : 'The directory lists people who have an account, because only they can be invited and respond.'
+              }
+            />
+          }
+        />
+      </TableCard>
 
       {!showCounts && capabilities.canViewWorkload && (
         <p className="text-[11px] text-muted-foreground">

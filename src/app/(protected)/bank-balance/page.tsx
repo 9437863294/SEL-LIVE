@@ -25,6 +25,7 @@ import {
 } from '@/components/ui/dialog';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Badge } from '@/components/ui/badge';
+import { StatusBadge } from '@/components/shared/status-badge';
 import { cn } from '@/lib/utils';
 import { getApplicableCcLimit } from '@/lib/bank-balance-limit';
 
@@ -326,9 +327,7 @@ export default function BankBalanceDashboard() {
                 </p>
               </div>
               <div className="flex flex-col items-end gap-1">
-                <Badge variant="outline" className="text-xs border-primary/30 text-primary/80 bg-primary/5">
-                  Live
-                </Badge>
+                <StatusBadge status="Live" tone="success" dot />
                 <span className="text-xs text-muted-foreground">{format(lastRefreshed, 'HH:mm:ss')}</span>
               </div>
             </div>
@@ -423,13 +422,8 @@ export default function BankBalanceDashboard() {
                         </div>
                       </div>
                       <div className="flex flex-col items-end gap-1 shrink-0">
-                        <Badge
-                          variant={account.status === 'Active' ? 'default' : 'secondary'}
-                          className={cn('text-[10px] px-1.5 py-0', account.status === 'Active' && 'bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-400 border border-green-200/60')}
-                        >
-                          {account.status}
-                        </Badge>
-                        <Badge variant="outline" className={cn('text-[10px] px-1.5 py-0', isCC ? 'border-violet-200/60 text-violet-600' : 'border-sky-200/60 text-sky-600')}>
+                        <StatusBadge status={account.status} />
+                        <Badge variant="outline">
                           {isCC ? 'CC' : 'CA'}
                         </Badge>
                       </div>

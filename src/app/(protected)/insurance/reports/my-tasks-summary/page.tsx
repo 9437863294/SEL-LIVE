@@ -14,6 +14,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Skeleton } from '@/components/ui/skeleton';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { PageHeader, SectionHeader } from '@/components/shared/page-header';
+import { TableCard } from '@/components/shared/table-card';
+import { FilterBar } from '@/components/shared/filter-bar';
 import { cn } from '@/lib/utils';
 
 // ─── types ────────────────────────────────────────────────────────────────────
@@ -144,24 +146,25 @@ export default function MyTasksSummaryPage() {
       />
 
       {/* Filters */}
-      <Card className="border-border/60">
-        <CardContent className="p-3 grid grid-cols-2 gap-2 sm:grid-cols-4">
-          {[
-            { key: 'year',      placeholder: 'All Years',      opts: yearOpts.map((y) => ({ value: y, label: y })) },
-            { key: 'month',     placeholder: 'All Months',     opts: monthOpts },
-            { key: 'project',   placeholder: 'All Projects',   opts: projectOpts.map((p) => ({ value: p.id, label: p.projectName })) },
-            { key: 'applicant', placeholder: 'All Applicants', opts: applicantOpts.map((u) => ({ value: u.id, label: u.name })) },
-          ].map(({ key, placeholder, opts }) => (
-            <Select key={key} value={filters[key as keyof typeof filters]} onValueChange={(v) => setFilter(key, v)}>
-              <SelectTrigger className="h-9 text-sm"><SelectValue placeholder={placeholder} /></SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">{placeholder}</SelectItem>
-                {opts.map((o) => <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>)}
-              </SelectContent>
-            </Select>
-          ))}
-        </CardContent>
-      </Card>
+      <FilterBar
+        activeCount={Object.values(filters).filter((v) => v !== 'all').length}
+        onClear={() => setFilters({ year: 'all', month: 'all', project: 'all', applicant: 'all' })}
+      >
+        {[
+          { key: 'year',      placeholder: 'All Years',      opts: yearOpts.map((y) => ({ value: y, label: y })) },
+          { key: 'month',     placeholder: 'All Months',     opts: monthOpts },
+          { key: 'project',   placeholder: 'All Projects',   opts: projectOpts.map((p) => ({ value: p.id, label: p.projectName })) },
+          { key: 'applicant', placeholder: 'All Applicants', opts: applicantOpts.map((u) => ({ value: u.id, label: u.name })) },
+        ].map(({ key, placeholder, opts }) => (
+          <Select key={key} value={filters[key as keyof typeof filters]} onValueChange={(v) => setFilter(key, v)}>
+            <SelectTrigger><SelectValue placeholder={placeholder} /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">{placeholder}</SelectItem>
+              {opts.map((o) => <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>)}
+            </SelectContent>
+          </Select>
+        ))}
+      </FilterBar>
 
       {/* KPI cards */}
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
@@ -197,39 +200,32 @@ export default function MyTasksSummaryPage() {
               const users = Object.entries(stepData).filter(([, d]) => d.total > 0);
               if (users.length === 0) return null;
               return (
-                <Card key={step.name} className="overflow-hidden border-border/60">
-                  <div className="h-1 w-full bg-gradient-to-r from-cyan-400 to-blue-500" />
-                  <CardHeader className="pb-2">
-                    <CardTitle>{step.name}</CardTitle>
-                    <CardDescription className="text-[11px]">TAT: {step.tat}h</CardDescription>
-                  </CardHeader>
-                  <CardContent className="p-0">
+                <TableCard key={step.name} title={step.name} description={`TAT: ${step.tat}h`} scroll="natural">
                     <Table>
                       <TableHeader>
-                        <TableRow className="bg-muted/30">
-                          <TableHead className="text-xs">User</TableHead>
-                          <TableHead className="text-xs text-center">Total</TableHead>
-                          <TableHead className="text-xs text-center">Done</TableHead>
-                          <TableHead className="text-xs text-center">Rejected</TableHead>
+                        <TableRow>
+                          <TableHead>User</TableHead>
+                          <TableHead className="text-center">Total</TableHead>
+                          <TableHead className="text-center">Done</TableHead>
+                          <TableHead className="text-center">Rejected</TableHead>
                         </TableRow>
                       </TableHeader>
                       <TableBody>
                         {users.map(([userName, data]) => (
-                          <TableRow key={userName} className="hover:bg-muted/20">
-                            <TableCell className="text-xs font-medium">{userName}</TableCell>
-                            <TableCell className="text-xs text-center">{data.total}</TableCell>
-                            <TableCell className="text-xs text-center">
+                          <TableRow key={userName}>
+                            <TableCell className="font-medium">{userName}</TableCell>
+                            <TableCell className="text-center tabular-nums">{data.total}</TableCell>
+                            <TableCell className="text-center tabular-nums">
                               <span className={cn('font-semibold', data.completed > 0 ? 'text-emerald-600' : 'text-muted-foreground')}>{data.completed}</span>
                             </TableCell>
-                            <TableCell className="text-xs text-center">
+                            <TableCell className="text-center tabular-nums">
                               <span className={cn('font-semibold', data.rejected > 0 ? 'text-red-500' : 'text-muted-foreground')}>{data.rejected}</span>
                             </TableCell>
                           </TableRow>
                         ))}
                       </TableBody>
                     </Table>
-                  </CardContent>
-                </Card>
+                </TableCard>
               );
             })}
           </div>

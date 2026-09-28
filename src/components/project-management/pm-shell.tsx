@@ -66,12 +66,6 @@ const SIDEBAR_HEIGHT =
  * the same whether it is a plain `<Table>` or a responsive list.
  */
 /**
- * Kept so existing imports compile; it no longer styles anything. Every table takes the app's one
- * format from `ui/table.tsx`, so a Project Management register reads like any other.
- */
-export const PM_TABLE_CLASS = "";
-
-/**
  * Deterministic accents by position.
  *
  * A screen's views are a fixed list, so each one is given its colour by hand. A workflow's stages
@@ -589,39 +583,6 @@ export function PmTableFoot({ left, right }: { left: ReactNode; right?: ReactNod
   );
 }
 
-/** A status pill with a leading dot, as the mockup renders Issued / Commercial review. */
-export function PmStatusPill({
-  label,
-  tone,
-  note,
-}: {
-  label: string;
-  tone: "ok" | "wait" | "bad" | "neutral";
-  /** Secondary line beneath — kept for the one case the mockup allows it, the approval note. */
-  note?: string;
-}) {
-  const tones = {
-    ok: "bg-emerald-100 text-emerald-700 [&>span]:bg-emerald-600",
-    wait: "bg-amber-100 text-amber-800 [&>span]:bg-amber-600",
-    bad: "bg-red-100 text-red-700 [&>span]:bg-red-600",
-    neutral: "bg-muted text-muted-foreground [&>span]:bg-muted-foreground",
-  } as const;
-  return (
-    <span className="inline-flex flex-col gap-0.5">
-      <span
-        className={cn(
-          "inline-flex w-fit items-center gap-1.5 rounded-full px-2 py-0.5 text-[12px] font-medium",
-          tones[tone],
-        )}
-      >
-        <span aria-hidden className="h-1.5 w-1.5 shrink-0 rounded-full" />
-        {label}
-      </span>
-      {note && <span className="text-[11px] text-muted-foreground">{note}</span>}
-    </span>
-  );
-}
-
 /* ── Phone-ready building blocks ────────────────────────────────────────────────────────────── */
 
 /**
@@ -642,7 +603,7 @@ type PmDataListProps<T extends { id: string }> = Parameters<typeof DataList<T>>[
  *
  * A thin frame around the shared `DataList`. The frame is what makes it a Project Management
  * register rather than an HR one: on a desktop the table sits in the same bordered card with the
- * same `PM_TABLE_CLASS` density and the same `PmTableFoot` totals bar every register here had
+ * shared table format and the same `PmTableFoot` totals bar every register here had
  * before; on a phone the cards stand on the page by themselves, since a card inside a card is
  * just a thicker border, and the totals bar follows them as a rounded strip of its own.
  */
@@ -678,12 +639,7 @@ export function PmDataList<T extends { id: string }>({
       <DataList
         {...props}
         frameless
-        tableClassName={cn(
-          PM_TABLE_CLASS,
-          // A pinned header must be opaque, or the rows show through it as they scroll under.
-          props.maxHeightClassName && "[&_th]:bg-muted",
-          tableClassName,
-        )}
+        tableClassName={tableClassName}
       />
       {foot ? (
         <div className="mt-2.5 overflow-hidden rounded-lg border border-border/60 bg-card max-sm:[&>*]:border-t-0 sm:mt-0 sm:rounded-none sm:border-0">
@@ -726,25 +682,6 @@ export function PmEmptyState({
         <p className="max-w-sm text-[13px] text-muted-foreground">{description}</p>
       ) : null}
       {action ? <div className="mt-2">{action}</div> : null}
-    </div>
-  );
-}
-
-/**
- * A search/filter row: stacked at full width on a phone, one wrapping row from `sm`.
- *
- * Children with no width of their own stretch across a phone; give a control `sm:w-56` (not a
- * bare `w-56`) so it keeps its desktop width without overflowing a 360px screen.
- */
-export function PmToolbar({ children, className }: { children: ReactNode; className?: string }) {
-  return (
-    <div
-      className={cn(
-        "mb-3 flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center",
-        className,
-      )}
-    >
-      {children}
     </div>
   );
 }

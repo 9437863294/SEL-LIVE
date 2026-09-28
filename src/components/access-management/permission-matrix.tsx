@@ -27,11 +27,9 @@
 
 import * as React from 'react';
 import { useMemo, useState } from 'react';
-import { Check, Download, Grid3x3, Minus, Search } from 'lucide-react';
-import { Badge } from '@/components/ui/badge';
+import { Check, Download, Grid3x3, Minus } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { CardContent } from '@/components/ui/card';
-import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { HrDataList, HrEmptyState, type HrListColumn } from '@/components/hr/hr-ui';
@@ -50,6 +48,8 @@ import {
   type PermissionMap,
 } from '@/lib/access-control';
 import type { AccessDirectoryState } from '@/hooks/useAccessDirectory';
+import { SearchInput } from '@/components/shared/filter-bar';
+import { TableCard } from '@/components/shared/table-card';
 import { AccessCard, AccessHint } from './access-ui';
 
 type SubjectKind = 'role' | 'user';
@@ -97,7 +97,7 @@ export function PermissionMatrixView({ state }: { state: AccessDirectoryState })
     () => [
       {
         header: 'Module',
-        className: 'w-64 font-medium text-slate-800',
+        className: 'w-64 font-medium',
         mobile: 'title',
         cell: (row) => row.module,
       },
@@ -206,15 +206,7 @@ export function PermissionMatrixView({ state }: { state: AccessDirectoryState })
 
           <div className="space-y-1.5">
             <Label className="text-xs">Search modules</Label>
-            <div className="relative">
-              <Search className="pointer-events-none absolute left-3 top-2.5 h-4 w-4 text-slate-400" />
-              <Input
-                value={term}
-                onChange={(event) => setTerm(event.target.value)}
-                placeholder="Filter…"
-                className="pl-9"
-              />
-            </div>
+            <SearchInput value={term} onChange={setTerm} placeholder="Filter…" label="Search modules" />
           </div>
         </CardContent>
       </AccessCard>
@@ -226,22 +218,18 @@ export function PermissionMatrixView({ state }: { state: AccessDirectoryState })
           description="You'll get one row per module and one column per action family, with the exact permissions behind every tick in the tooltip."
         />
       ) : (
-        <>
-          <div className="flex flex-wrap items-center justify-between gap-2 px-1">
-            <div className="flex flex-wrap items-center gap-2 text-xs">
-              <Badge variant="outline" className="border-indigo-200 bg-indigo-50 text-indigo-700">
-                {subject.label}
-              </Badge>
-              <span className="text-muted-foreground">
-                {countPermissions(subject.permissions)} permissions across {rows.length} module(s)
-              </span>
-              {subject.access && (
-                <span className="text-muted-foreground">
-                  · roles in force: {subject.access.effectiveRoleNames.join(', ') || 'none'}
-                </span>
-              )}
-            </div>
-            <div className="flex gap-2">
+        <TableCard
+          title={subject.label}
+          count={rows.length}
+          noun="module"
+          description={
+            <>
+              {countPermissions(subject.permissions)} permissions
+              {subject.access && <> · roles in force: {subject.access.effectiveRoleNames.join(', ') || 'none'}</>}
+            </>
+          }
+          actions={
+            <>
               <Button
                 variant={onlyGranted ? 'default' : 'outline'}
                 size="sm"
@@ -253,27 +241,32 @@ export function PermissionMatrixView({ state }: { state: AccessDirectoryState })
                 <Download className="mr-1.5 h-4 w-4" />
                 Export
               </Button>
-            </div>
-          </div>
-
+            </>
+          }
+          footer={
+            <>
+              A tick means the subject holds at least one action in that family somewhere in the module —
+              hover it (tap it on a phone) for the exact permissions. An indigo ring marks a
+              tick that comes entirely from additional access rather than the base role.
+            </>
+          }
+        >
           {rows.length === 0 ? (
-            <HrEmptyState title="No modules match" description="Try clearing the search or the granted-only filter." />
+            <div className="p-3">
+              <HrEmptyState title="No modules match" description="Try clearing the search or the granted-only filter." />
+            </div>
           ) : (
-            <HrDataList
-              rows={rows}
-              columns={columns}
-              tableClassName="min-w-[46rem]"
-              rowClassName={(row) => (row.grantedCount === 0 ? 'opacity-60' : undefined)}
-              maxHeightClassName="sm:max-h-[30rem]"
-            />
+            <div className="p-3 sm:p-0">
+              <HrDataList
+                rows={rows}
+                columns={columns}
+                tableClassName="min-w-[46rem]"
+                rowClassName={(row) => (row.grantedCount === 0 ? 'opacity-60' : undefined)}
+                frameless
+              />
+            </div>
           )}
-
-          <p className="px-1 text-[11px] text-muted-foreground">
-            A tick means the subject holds at least one action in that family somewhere in the module —
-            hover it (tap it on a phone) for the exact permissions. An indigo ring marks a
-            tick that comes entirely from additional access rather than the base role.
-          </p>
-        </>
+        </TableCard>
       )}
     </div>
   );

@@ -16,7 +16,8 @@ import {
   Eye,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardHeader } from '@/components/ui/card';
+import { TableCard } from '@/components/shared/table-card';
+import { FilterBar } from '@/components/shared/filter-bar';
 import {
   Table,
   TableBody,
@@ -525,8 +526,7 @@ export default function BillLogPage() {
   };
 
   const renderTable = (data: DisplayBill[]) => (
-    <Card>
-      <CardContent className="p-0">
+    <TableCard>
         <Table>
           <TableHeader>
             <TableRow>
@@ -571,17 +571,7 @@ export default function BillLogPage() {
                     <TableCell>{bill.billNo}</TableCell>
                     <TableCell>{formatDateSafe(bill.date)}</TableCell>
                     <TableCell>
-                      <Badge
-                        variant={
-                          bill.type === 'Regular'
-                            ? 'default'
-                            : bill.type === 'Retention'
-                            ? 'secondary'
-                            : 'outline'
-                        }
-                      >
-                        {bill.type}
-                      </Badge>
+                      <Badge variant="neutral">{bill.type}</Badge>
                     </TableCell>
                     <TableCell>{bill.workOrderNo}</TableCell>
                     <TableCell>{formatCurrency(bill.netPayable || 0)}</TableCell>
@@ -679,8 +669,7 @@ export default function BillLogPage() {
             )}
           </TableBody>
         </Table>
-      </CardContent>
-    </Card>
+    </TableCard>
   );
 
   return (
@@ -696,9 +685,24 @@ export default function BillLogPage() {
       />
       <PmContent>
 
-        <Card className="mb-6 border-border/60">
-          <CardHeader className="p-4">
-            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4">
+        <FilterBar
+          className="mb-6"
+          activeCount={
+            (['project', 'subcontractor', 'type', 'year', 'month'] as const).filter(
+              (k) => filters[k] !== (k === 'project' && projectSlug !== 'all' ? projectSlug : 'all'),
+            ).length
+          }
+          onClear={() =>
+            setFilters({
+              project: projectSlug === 'all' ? 'all' : projectSlug,
+              workOrder: 'all',
+              subcontractor: 'all',
+              year: 'all',
+              month: 'all',
+              type: 'all',
+            })
+          }
+        >
               {projectSlug === 'all' && (
                 <Select
                   value={filters.project}
@@ -779,9 +783,7 @@ export default function BillLogPage() {
                   ))}
                 </SelectContent>
               </Select>
-            </div>
-          </CardHeader>
-        </Card>
+        </FilterBar>
 
         <Tabs defaultValue="all" className="w-full">
           <TabsList className="grid w-full grid-cols-4">

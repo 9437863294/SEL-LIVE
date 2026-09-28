@@ -3,7 +3,6 @@
 import { useMemo, useState } from 'react';
 import { Building, Loader2, Pencil, Plus, RefreshCw } from 'lucide-react';
 import { addDoc, collection, doc, serverTimestamp, updateDoc } from 'firebase/firestore';
-import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
@@ -13,19 +12,21 @@ import { Textarea } from '@/components/ui/textarea';
 import { useToast } from '@/hooks/use-toast';
 import { db } from '@/lib/firebase';
 import { withCreateAudit, withUpdateAudit } from '@/lib/audit-fields';
-import { HR_COLLECTIONS, roundPercent, type RecruitmentAgency } from '@/lib/hr-requirement';
+import { HR_COLLECTIONS, hrStatusLabel, roundPercent, type RecruitmentAgency } from '@/lib/hr-requirement';
 import { refreshAgencyPerformance } from '@/lib/hr-requirement-service';
 import {
   HrDataList,
   HrEmptyState,
   HrLoader,
-  HrStatusBadge,
   Money,
+  hrBadgeTone,
   hrDialog,
   type HrListColumn,
 } from './hr-ui';
 import { useHrCollection, useHrConfig, useHrPermissions } from './use-hr-config';
 import { PageHeader } from '@/components/shared/page-header';
+import { StatusBadge } from '@/components/shared/status-badge';
+import { TableCard } from '@/components/shared/table-card';
 
 /**
  * Recruitment agency management, spec section 47.
@@ -109,7 +110,18 @@ export default function Agencies() {
         return <span className="tabular-nums">{yieldPercent}%</span>;
       },
     },
-    { header: 'Status', mobile: 'aside', cell: row => <HrStatusBadge status={row.status?.toUpperCase() || 'ACTIVE'} /> },
+    {
+      header: 'Status',
+      mobile: 'aside',
+      cell: row => {
+        const status = row.status?.toUpperCase() || 'ACTIVE';
+        return (
+          <StatusBadge status={status} tone={hrBadgeTone(status)}>
+            {hrStatusLabel(status)}
+          </StatusBadge>
+        );
+      },
+    },
     {
       header: 'Actions',
       mobile: 'footer',
@@ -147,24 +159,29 @@ export default function Agencies() {
         }
       />
 
-      <HrDataList
-        rows={sorted}
-        columns={columns}
-        empty={
-          <HrEmptyState
-            icon={Building}
-            title="No agencies yet"
-            description="Add the consultants and agencies you work with, with their fee structure and replacement guarantee."
-            action={
-              permissions.can('Add', 'Agencies') ? (
-                <Button size="sm" className="gap-2" onClick={() => setCreating(true)}>
-                  <Plus className="h-4 w-4" /> Add agency
-                </Button>
-              ) : undefined
+      <TableCard title="Agencies" count={sorted.length}>
+        <div className="p-3 sm:p-0">
+          <HrDataList
+            frameless
+            rows={sorted}
+            columns={columns}
+            empty={
+              <HrEmptyState
+                icon={Building}
+                title="No agencies yet"
+                description="Add the consultants and agencies you work with, with their fee structure and replacement guarantee."
+                action={
+                  permissions.can('Add', 'Agencies') ? (
+                    <Button size="sm" className="gap-2" onClick={() => setCreating(true)}>
+                      <Plus className="h-4 w-4" /> Add agency
+                    </Button>
+                  ) : undefined
+                }
+              />
             }
           />
-        }
-      />
+        </div>
+      </TableCard>
 
       <AgencyDialog
         open={creating || Boolean(editing)}

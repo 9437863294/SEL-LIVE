@@ -10,6 +10,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
+import { TableCard } from '@/components/shared/table-card';
 import { db } from '@/lib/firebase';
 import { collection, getDocs } from 'firebase/firestore';
 import type { BankAccount, BankExpense } from '@/lib/types';
@@ -194,11 +195,11 @@ export default function DailyBalancePage() {
         {/* Filters */}
         <Card className="mb-5 rounded-xl border-border/60 shadow-sm">
           <CardContent className="p-4">
-            <div className="flex flex-wrap gap-4 items-end">
-              <div className="flex-1 min-w-[220px]">
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-[2fr_1fr_1fr] sm:items-end">
+              <div className="min-w-0">
                 <Label className="text-xs text-muted-foreground mb-1.5 block">Account</Label>
                 <Select value={selectedAccountId} onValueChange={setSelectedAccountId}>
-                  <SelectTrigger className="h-9">
+                  <SelectTrigger>
                     <SelectValue placeholder="Select account..." />
                   </SelectTrigger>
                   <SelectContent>
@@ -212,11 +213,11 @@ export default function DailyBalancePage() {
               </div>
               <div>
                 <Label className="text-xs text-muted-foreground mb-1.5 block">From Date</Label>
-                <Input type="date" value={fromDate} onChange={e => setFromDate(e.target.value)} className="h-9 w-40" />
+                <Input type="date" value={fromDate} onChange={e => setFromDate(e.target.value)} />
               </div>
               <div>
                 <Label className="text-xs text-muted-foreground mb-1.5 block">To Date</Label>
-                <Input type="date" value={toDate} onChange={e => setToDate(e.target.value)} className="h-9 w-40" />
+                <Input type="date" value={toDate} onChange={e => setToDate(e.target.value)} />
               </div>
             </div>
           </CardContent>
@@ -244,43 +245,32 @@ export default function DailyBalancePage() {
         )}
 
         {/* Table */}
-        <Card className="rounded-xl border-border/60 shadow-sm overflow-hidden">
-          <CardHeader className="border-b border-border/40 pb-4">
-            <div className="flex items-center justify-between">
-              <div>
-                <CardTitle className="flex items-center gap-2">
-                  {selectedAccount?.accountType === 'Cash Credit'
-                    ? <CreditCard className="h-4 w-4 text-violet-500" />
-                    : <Building2 className="h-4 w-4 text-sky-500" />}
-                  {selectedAccount
-                    ? `${selectedAccount.bankName} — ${selectedAccount.accountNumber}`
-                    : 'Select an account'}
-                </CardTitle>
-                <CardDescription>
-                  {fromDate && toDate
-                    ? `${format(new Date(fromDate), 'dd MMM yyyy')} to ${format(new Date(toDate), 'dd MMM yyyy')}`
-                    : ''} &nbsp;·&nbsp; {rows.length} days
-                </CardDescription>
-              </div>
-              {selectedAccount && (
-                <Badge variant="outline" className={cn('text-xs', selectedAccount.accountType === 'Cash Credit' ? 'border-violet-200 text-violet-700 bg-violet-50 dark:bg-violet-950/20' : 'border-sky-200 text-sky-700 bg-sky-50 dark:bg-sky-950/20')}>
-                  {selectedAccount.accountType}
-                </Badge>
-              )}
-            </div>
-          </CardHeader>
-          <CardContent className="p-0">
-            <div className="overflow-x-auto">
+        <TableCard
+          icon={selectedAccount?.accountType === 'Cash Credit' ? CreditCard : Building2}
+          title={
+            selectedAccount
+              ? `${selectedAccount.bankName} — ${selectedAccount.accountNumber}`
+              : 'Select an account'
+          }
+          description={
+            fromDate && toDate
+              ? `${format(new Date(fromDate), 'dd MMM yyyy')} to ${format(new Date(toDate), 'dd MMM yyyy')}`
+              : undefined
+          }
+          count={rows.length}
+          noun="day"
+          actions={selectedAccount ? <Badge variant="neutral">{selectedAccount.accountType}</Badge> : undefined}
+        >
               <Table>
                 <TableHeader>
-                  <TableRow className="bg-muted/30 hover:bg-muted/30">
-                    <TableHead className="font-semibold text-xs w-28">Date</TableHead>
-                    <TableHead className="font-semibold text-xs w-10 text-center">Txns</TableHead>
-                    <TableHead className="text-right font-semibold text-xs">Opening Balance</TableHead>
-                    <TableHead className="text-right font-semibold text-xs">Receipts</TableHead>
-                    <TableHead className="text-right font-semibold text-xs">Payments</TableHead>
-                    <TableHead className="text-right font-semibold text-xs">Transfers In/Out</TableHead>
-                    <TableHead className="text-right font-semibold text-xs">Closing Balance</TableHead>
+                  <TableRow>
+                    <TableHead className="w-28">Date</TableHead>
+                    <TableHead className="w-10 text-center">Txns</TableHead>
+                    <TableHead className="text-right">Opening Balance</TableHead>
+                    <TableHead className="text-right">Receipts</TableHead>
+                    <TableHead className="text-right">Payments</TableHead>
+                    <TableHead className="text-right">Transfers In/Out</TableHead>
+                    <TableHead className="text-right">Closing Balance</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -298,33 +288,30 @@ export default function DailyBalancePage() {
                     return (
                       <TableRow
                         key={row.dateKey}
-                        className={cn(
-                          'text-xs transition-colors',
-                          hasActivity ? 'hover:bg-teal-50/50 dark:hover:bg-teal-950/10' : 'hover:bg-muted/10 opacity-60',
-                        )}
+                        className={cn(!hasActivity && 'opacity-60')}
                       >
-                        <TableCell className="font-mono text-xs font-medium">
+                        <TableCell className="whitespace-nowrap font-mono font-medium">
                           {format(row.date, 'dd MMM yyyy')}
                           <span className="text-[10px] text-muted-foreground ml-1">{format(row.date, 'EEE')}</span>
                         </TableCell>
                         <TableCell className="text-center">
                           {hasActivity ? (
-                            <Badge variant="secondary" className="text-[10px] px-1.5 py-0">{row.txnCount}</Badge>
+                            <Badge variant="neutral">{row.txnCount}</Badge>
                           ) : <span className="text-muted-foreground">—</span>}
                         </TableCell>
-                        <TableCell className="text-right font-mono">{formatCurrency(row.openingBalance)}</TableCell>
-                        <TableCell className={cn('text-right font-mono', row.receipts > 0 ? 'text-green-600 dark:text-green-400' : 'text-muted-foreground')}>
+                        <TableCell className="whitespace-nowrap text-right font-mono">{formatCurrency(row.openingBalance)}</TableCell>
+                        <TableCell className={cn('whitespace-nowrap text-right font-mono', row.receipts > 0 ? 'text-green-600 dark:text-green-400' : 'text-muted-foreground')}>
                           {row.receipts > 0 ? formatCurrency(row.receipts) : '—'}
                         </TableCell>
-                        <TableCell className={cn('text-right font-mono', row.payments > 0 ? 'text-red-600 dark:text-red-400' : 'text-muted-foreground')}>
+                        <TableCell className={cn('whitespace-nowrap text-right font-mono', row.payments > 0 ? 'text-red-600 dark:text-red-400' : 'text-muted-foreground')}>
                           {row.payments > 0 ? formatCurrency(row.payments) : '—'}
                         </TableCell>
-                        <TableCell className="text-right font-mono text-muted-foreground text-[11px]">
+                        <TableCell className="whitespace-nowrap text-right font-mono">
                           {(row.contraIn > 0 || row.contraOut > 0)
                             ? <span>{row.contraIn > 0 ? `+${formatCurrency(row.contraIn)}` : ''}{row.contraIn > 0 && row.contraOut > 0 ? ' / ' : ''}{row.contraOut > 0 ? `-${formatCurrency(row.contraOut)}` : ''}</span>
                             : '—'}
                         </TableCell>
-                        <TableCell className={cn('text-right font-semibold font-mono', row.closingBalance < 0 ? 'text-red-600 dark:text-red-400' : '')}>
+                        <TableCell className={cn('whitespace-nowrap text-right font-medium font-mono', row.closingBalance < 0 ? 'text-red-600 dark:text-red-400' : '')}>
                           {formatCurrency(row.closingBalance)}
                         </TableCell>
                       </TableRow>
@@ -333,22 +320,20 @@ export default function DailyBalancePage() {
                 </TableBody>
                 {rows.length > 0 && (
                   <TableFooter>
-                    <TableRow className="bg-muted/40 hover:bg-muted/40">
-                      <TableCell colSpan={2} className="font-bold text-xs">PERIOD TOTAL</TableCell>
-                      <TableCell className="text-right font-bold text-xs font-mono">{formatCurrency(periodOpening)}</TableCell>
-                      <TableCell className="text-right font-bold text-xs text-green-700 dark:text-green-400 font-mono">{formatCurrency(totalReceipts)}</TableCell>
-                      <TableCell className="text-right font-bold text-xs text-red-700 dark:text-red-400 font-mono">{formatCurrency(totalPayments)}</TableCell>
+                    <TableRow>
+                      <TableCell colSpan={2}>PERIOD TOTAL</TableCell>
+                      <TableCell className="whitespace-nowrap text-right font-mono">{formatCurrency(periodOpening)}</TableCell>
+                      <TableCell className="whitespace-nowrap text-right text-green-700 dark:text-green-400 font-mono">{formatCurrency(totalReceipts)}</TableCell>
+                      <TableCell className="whitespace-nowrap text-right text-red-700 dark:text-red-400 font-mono">{formatCurrency(totalPayments)}</TableCell>
                       <TableCell />
-                      <TableCell className={cn('text-right font-bold text-xs font-mono', closingBalance < 0 ? 'text-red-700' : 'text-teal-700 dark:text-teal-400')}>
+                      <TableCell className={cn('whitespace-nowrap text-right font-mono', closingBalance < 0 ? 'text-red-700' : 'text-teal-700 dark:text-teal-400')}>
                         {formatCurrency(closingBalance)}
                       </TableCell>
                     </TableRow>
                   </TableFooter>
                 )}
               </Table>
-            </div>
-          </CardContent>
-        </Card>
+        </TableCard>
       </div>
     </>
   );

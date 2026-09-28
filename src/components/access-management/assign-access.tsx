@@ -321,27 +321,28 @@ export function AssignAccess({
       <div className="hr-sticky-actions sticky bottom-0 z-20 -mx-1 rounded-xl border border-white/70 bg-white/85 px-3 py-2.5 shadow-sm backdrop-blur max-lg:order-last lg:bottom-auto lg:top-0">
         <div className="flex items-center gap-2 lg:justify-between">
           <div className="flex min-w-0 flex-1 flex-wrap items-center gap-1.5 text-sm lg:gap-2">
-            <Badge variant="outline" className="gap-1 border-indigo-200 bg-indigo-50 text-indigo-700">
+            {/* Selection counts are neutral chips; "Temporary" marks the grant as one that lapses. */}
+            <Badge variant="neutral" className="gap-1">
               <Users className="h-3.5 w-3.5" />
               {selectedUserIds.length} user{selectedUserIds.length === 1 ? '' : 's'}
             </Badge>
-            <Badge variant="outline" className="gap-1 border-violet-200 bg-violet-50 text-violet-700">
+            <Badge variant="neutral" className="gap-1">
               <Layers className="h-3.5 w-3.5" />
               {selectedRoleIds.length} role{selectedRoleIds.length === 1 ? '' : 's'}
             </Badge>
             {Object.keys(directPermissions).length > 0 && (
-              <Badge variant="outline" className="gap-1 border-violet-200 bg-violet-50 text-violet-700">
+              <Badge variant="neutral" className="gap-1">
                 <KeyRound className="h-3.5 w-3.5" />
                 {countPermissions(directPermissions)} direct
               </Badge>
             )}
             {selectedProjectIds.length > 0 && (
-              <Badge variant="outline" className="border-emerald-200 bg-emerald-50 text-emerald-700">
+              <Badge variant="neutral">
                 {selectedProjectIds.length} project{selectedProjectIds.length === 1 ? '' : 's'}
               </Badge>
             )}
             {temporaryEnabled && (
-              <Badge variant="outline" className="gap-1 border-amber-200 bg-amber-50 text-amber-800">
+              <Badge variant="warning" className="gap-1">
                 <CalendarClock className="h-3.5 w-3.5" />
                 Temporary
               </Badge>
@@ -375,7 +376,7 @@ export function AssignAccess({
       {/* The secondary actions' phone home — see the toolbar comment. */}
       <div className="flex flex-wrap gap-2 lg:hidden [&>*]:flex-1">{secondaryActions()}</div>
 
-      <div className="grid gap-3 xl:grid-cols-2">
+      <div className="grid grid-cols-1 gap-3 xl:grid-cols-2">
         {/* ---- What to grant ---- */}
         <AccessCard>
           <CardHeader className="px-4 py-3">
@@ -416,7 +417,7 @@ export function AssignAccess({
                         .filter((moduleName, index, all) => all.indexOf(moduleName) === index)
                         .slice(0, 14)
                         .map((moduleName) => (
-                          <Badge key={moduleName} variant="outline" className="text-[10px] text-indigo-700">
+                          <Badge key={moduleName} variant="outline">
                             {moduleName}
                           </Badge>
                         ))}
@@ -705,7 +706,7 @@ function ScopeMultiSelect({
           {selected.map((id) => {
             const option = options.find((entry) => entry.id === id);
             return (
-              <Badge key={id} variant="outline" className="gap-1 border-slate-200 bg-white text-xs">
+              <Badge key={id} variant="outline" className="gap-1">
                 {option?.label ?? id}
                 <button
                   type="button"
@@ -849,18 +850,16 @@ function CopyAccessDialog({
                 {(request.roleIds ?? []).map((roleId) => {
                   const role = directory.roles.find((entry) => entry.id === roleId);
                   return (
-                    <Badge key={roleId} variant="outline" className="border-indigo-200 bg-indigo-50 text-indigo-700">
+                    <Badge key={roleId} variant="outline">
                       {role?.name ?? roleId}
                     </Badge>
                   );
                 })}
                 {Object.keys(request.directPermissions ?? {}).length > 0 && (
-                  <Badge variant="outline" className="border-violet-200 bg-violet-50 text-violet-700">
-                    {countPermissions(request.directPermissions)} direct permissions
-                  </Badge>
+                  <Badge variant="neutral">{countPermissions(request.directPermissions)} direct permissions</Badge>
                 )}
                 {(request.projectIds ?? []).map((projectId) => (
-                  <Badge key={projectId} variant="outline" className="border-emerald-200 bg-emerald-50 text-emerald-700">
+                  <Badge key={projectId} variant="outline">
                     {projects.find((project) => project.id === projectId)?.projectName ?? projectId}
                   </Badge>
                 ))}

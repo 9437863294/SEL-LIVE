@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { Loader2, Save, Edit, Trash2, Plus } from 'lucide-react';
 import { PageHeader } from '@/components/shared/page-header';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { TableCard } from '@/components/shared/table-card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { useToast } from '@/hooks/use-toast';
 import { db } from '@/lib/firebase';
@@ -225,13 +225,12 @@ export default function BillingStatusPage() {
     <div className="w-full max-w-6xl mx-auto px-4 sm:px-6 lg:px-8">
       <PageHeader title="Billing Status" backHref="/billing-recon/settings" backLabel="Back to settings" />
 
-      <Card>
-        <CardHeader>
-          <CardTitle>Project Billing Status</CardTitle>
-          <CardDescription>Enable or disable billing requirements for each project.</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <div className="border rounded-lg">
+      <TableCard
+        title="Project Billing Status"
+        description="Enable or disable billing requirements for each project."
+        count={isLoading ? undefined : projects.length}
+        noun="project"
+      >
             <Table>
               <TableHeader>
                 <TableRow>
@@ -261,7 +260,7 @@ export default function BillingStatusPage() {
                   ))
                 ) : projects.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={4} className="text-center text-sm text-muted-foreground">
+                    <TableCell colSpan={4} className="text-center">
                       No projects found.
                     </TableCell>
                   </TableRow>
@@ -296,9 +295,7 @@ export default function BillingStatusPage() {
                 )}
               </TableBody>
             </Table>
-          </div>
-        </CardContent>
-      </Card>
+      </TableCard>
 
       <Dialog
         open={isDetailDialogOpen}

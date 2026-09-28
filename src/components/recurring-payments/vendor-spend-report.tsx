@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { collection, onSnapshot, query, where } from "firebase/firestore";
-import { Download, Loader2, Printer, Search, Store } from "lucide-react";
+import { Download, Loader2, Printer, Store } from "lucide-react";
 import { db } from "@/lib/firebase";
 import { useAuth } from "@/components/auth/AuthProvider";
 import { useAuthorization } from "@/hooks/useAuthorization";
@@ -17,18 +17,11 @@ import {
 } from "@/lib/recurring-payments";
 import { exportWorkbook } from "@/lib/report-excel";
 import type { RecurringVendor } from "./vendor-management";
-import { Badge } from "@/components/ui/badge";
+import { StatusBadge } from "@/components/shared/status-badge";
 import { Button } from "@/components/ui/button";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
-import CollapsibleFilterCard from "./collapsible-filter-card";
+import { FilterBar } from "@/components/shared/filter-bar";
+import { TableCard } from "@/components/shared/table-card";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import {
   Select,
   SelectContent,
@@ -291,121 +284,99 @@ export default function VendorSpendReport() {
           tone={totals.outstanding > 0 ? "warning" : "good"}
         />
       </div>
-      <CollapsibleFilterCard activeCount={activeFilterCount} onClear={() => setFilters(DEFAULT_FILTERS)}>
-        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
-          <Field label="Vendor search">
-            <div className="relative">
-              <Search className="absolute left-2.5 top-2 h-4 w-4 text-muted-foreground" />
-              <Input
-                className="h-8 pl-8 text-sm"
-                placeholder="Search vendor..."
-                value={filters.search}
-                onChange={(event) => setFilters((current) => ({ ...current, search: event.target.value }))}
-              />
-            </div>
-          </Field>
-          <Field label="Due date from">
+      <TableCard
+        title="Vendors"
+        count={rows.length}
+        noun="vendor"
+        description={<>Sorted by outstanding value, highest first — {totals.vendorsOverdue} with at least one overdue payment</>}
+        toolbar={
+          <FilterBar
+            search={{
+              value: filters.search,
+              onChange: (search) => setFilters((current) => ({ ...current, search })),
+              placeholder: "Search vendor...",
+            }}
+            activeCount={activeFilterCount - (filters.search ? 1 : 0)}
+            onClear={() => setFilters(DEFAULT_FILTERS)}
+          >
             <Input
               type="date"
-              className="h-8 text-sm"
+              aria-label="Due date from"
               value={filters.from}
               onChange={(event) => setFilters((current) => ({ ...current, from: event.target.value }))}
             />
-          </Field>
-          <Field label="Due date to">
             <Input
               type="date"
-              className="h-8 text-sm"
+              aria-label="Due date to"
               value={filters.to}
               onChange={(event) => setFilters((current) => ({ ...current, to: event.target.value }))}
             />
-          </Field>
-          <Field label="Category">
             <Select value={filters.category} onValueChange={(category) => setFilters((current) => ({ ...current, category }))}>
-              <SelectTrigger className="h-8 text-sm"><SelectValue placeholder="All categories" /></SelectTrigger>
+              <SelectTrigger aria-label="Category"><SelectValue placeholder="All categories" /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">All categories</SelectItem>
                 {categories.map((category) => <SelectItem value={category} key={category}>{category}</SelectItem>)}
               </SelectContent>
             </Select>
-          </Field>
-          <Field label="Project">
             <Select value={filters.project} onValueChange={(project) => setFilters((current) => ({ ...current, project }))}>
-              <SelectTrigger className="h-8 text-sm"><SelectValue placeholder="All global projects" /></SelectTrigger>
+              <SelectTrigger aria-label="Project"><SelectValue placeholder="All global projects" /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">All global projects</SelectItem>
                 {activeProjects.map((project) => <SelectItem value={project.id} key={project.id}>{project.projectName}</SelectItem>)}
               </SelectContent>
             </Select>
-          </Field>
-        </div>
-      </CollapsibleFilterCard>
-      <Card>
-        <CardHeader>
-          <CardTitle>{rows.length} vendor(s)</CardTitle>
-          <CardDescription>Sorted by outstanding value, highest first — {totals.vendorsOverdue} with at least one overdue payment</CardDescription>
-        </CardHeader>
-        <CardContent className="p-0">
-          <div className="overflow-x-auto">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Vendor</TableHead>
-                  <TableHead>Category</TableHead>
-                  <TableHead>Status</TableHead>
-                  <TableHead className="text-right">Payments</TableHead>
-                  <TableHead className="text-right">Billed</TableHead>
-                  <TableHead className="text-right">Paid</TableHead>
-                  <TableHead className="text-right">Outstanding</TableHead>
-                  <TableHead>Ageing</TableHead>
-                  <TableHead>Last payment</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {rows.map((row) => (
-                  <TableRow key={row.vendorName}>
-                    <TableCell className="whitespace-nowrap font-medium">{row.vendorName}</TableCell>
-                    <TableCell className="whitespace-nowrap">{row.category || "—"}</TableCell>
-                    <TableCell className="whitespace-nowrap">
-                      <Badge variant={row.vendorStatus === "Active" ? "outline" : "secondary"}>{row.vendorStatus}</Badge>
-                    </TableCell>
-                    <TableCell className="whitespace-nowrap text-right">{row.count}</TableCell>
-                    <TableCell className="whitespace-nowrap text-right">{currency(row.billed)}</TableCell>
-                    <TableCell className="whitespace-nowrap text-right">{currency(row.paid)}</TableCell>
-                    <TableCell className="whitespace-nowrap text-right font-semibold">{currency(row.outstanding)}</TableCell>
-                    <TableCell className="whitespace-nowrap">
-                      {row.overdueCount > 0 ? (
-                        <Badge variant="destructive">
-                          {row.overdueCount} overdue · {row.oldestOverdueDays}d oldest
-                        </Badge>
-                      ) : (
-                        <span className="text-muted-foreground">On track</span>
-                      )}
-                    </TableCell>
-                    <TableCell className="whitespace-nowrap">{row.lastPaymentDate || "—"}</TableCell>
-                  </TableRow>
-                ))}
-                {!rows.length && (
-                  <TableRow>
-                    <TableCell colSpan={9} className="h-28 text-center text-muted-foreground">
-                      No vendor activity matches the report filters.
-                    </TableCell>
-                  </TableRow>
-                )}
-              </TableBody>
-            </Table>
-          </div>
-        </CardContent>
-      </Card>
+          </FilterBar>
+        }
+      >
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead>Vendor</TableHead>
+              <TableHead>Category</TableHead>
+              <TableHead>Status</TableHead>
+              <TableHead className="text-right">Payments</TableHead>
+              <TableHead className="text-right">Billed</TableHead>
+              <TableHead className="text-right">Paid</TableHead>
+              <TableHead className="text-right">Outstanding</TableHead>
+              <TableHead>Ageing</TableHead>
+              <TableHead>Last payment</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {rows.map((row) => (
+              <TableRow key={row.vendorName}>
+                <TableCell className="whitespace-nowrap font-medium">{row.vendorName}</TableCell>
+                <TableCell className="whitespace-nowrap">{row.category || "—"}</TableCell>
+                <TableCell className="whitespace-nowrap">
+                  <StatusBadge status={row.vendorStatus} />
+                </TableCell>
+                <TableCell className="whitespace-nowrap text-right">{row.count}</TableCell>
+                <TableCell className="whitespace-nowrap text-right">{currency(row.billed)}</TableCell>
+                <TableCell className="whitespace-nowrap text-right">{currency(row.paid)}</TableCell>
+                <TableCell className="whitespace-nowrap text-right">{currency(row.outstanding)}</TableCell>
+                <TableCell className="whitespace-nowrap">
+                  {row.overdueCount > 0 ? (
+                    <StatusBadge tone="danger">
+                      {row.overdueCount} overdue · {row.oldestOverdueDays}d oldest
+                    </StatusBadge>
+                  ) : (
+                    <span className="text-muted-foreground">On track</span>
+                  )}
+                </TableCell>
+                <TableCell className="whitespace-nowrap">{row.lastPaymentDate || "—"}</TableCell>
+              </TableRow>
+            ))}
+            {!rows.length && (
+              <TableRow>
+                <TableCell colSpan={9} className="h-28 text-center text-muted-foreground">
+                  No vendor activity matches the report filters.
+                </TableCell>
+              </TableRow>
+            )}
+          </TableBody>
+        </Table>
+      </TableCard>
     </div>
   );
 }
 
-function Field({ label, children }: { label: string; children: React.ReactNode }) {
-  return (
-    <div className="space-y-1">
-      <Label className="text-xs font-medium text-muted-foreground">{label}</Label>
-      {children}
-    </div>
-  );
-}

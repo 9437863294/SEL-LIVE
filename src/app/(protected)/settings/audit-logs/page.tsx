@@ -8,21 +8,22 @@ import {
   type QueryConstraint,
 } from 'firebase/firestore';
 import {
-  Activity, Download, Filter,
-  Loader2, RefreshCw, Search, X,
+  Activity, Download,
+  Loader2, RefreshCw, X,
 } from 'lucide-react';
 import { PageHeader } from '@/components/shared/page-header';
+import { DataList } from '@/components/shared/data-list';
+import { FilterBar } from '@/components/shared/filter-bar';
+import { TableCard } from '@/components/shared/table-card';
 import { db } from '@/lib/firebase';
-import { ACTIVITY_MODULE_NAMES, canonicalModuleName, moduleBadgeClass } from '@/lib/activity-modules';
+import { ACTIVITY_MODULE_NAMES, canonicalModuleName } from '@/lib/activity-modules';
 import { useAuthorization } from '@/hooks/useAuthorization';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Skeleton } from '@/components/ui/skeleton';
-import { TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 
 // ─── types ────────────────────────────────────────────────────────────────────
 
@@ -86,7 +87,6 @@ export default function AuditLogsPage() {
   const [moduleFilter, setModuleFilter] = useState('All');
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
-  const [showFilters, setShowFilters] = useState(false);
 
   // ── module options ──
   // Sourced from the registry rather than from the loaded rows. Deriving them from
@@ -258,6 +258,7 @@ export default function AuditLogsPage() {
 
   const clearFilters = () => { setSearch(''); setModuleFilter('All'); setDateFrom(''); setDateTo(''); };
   const hasActiveFilters = search || moduleFilter !== 'All' || dateFrom || dateTo;
+  const activeFilterCount = (moduleFilter !== 'All' ? 1 : 0) + (dateFrom ? 1 : 0) + (dateTo ? 1 : 0);
 
   return (
     <div className="space-y-4 px-4 py-3 sm:px-5">
@@ -270,7 +271,7 @@ export default function AuditLogsPage() {
         backLabel="Back to settings"
         badge={
           !isLoading ? (
-            <Badge variant="outline" className="text-xs">
+            <Badge variant="neutral">
               {filtered.length}{hasMore ? '+' : ''} records
             </Badge>
           ) : undefined
@@ -289,68 +290,6 @@ export default function AuditLogsPage() {
         }
       />
 
-      {/* Search + filters */}
-      <div className="flex flex-col gap-2">
-        <div className="flex gap-2">
-          <div className="relative flex-1">
-            <Search className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
-            <Input
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              placeholder="Search loaded rows — user, action, record, IP…"
-              className="pl-8 bg-white/85 h-9 text-sm"
-            />
-            {search && (
-              <button onClick={() => setSearch('')} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground">
-                <X className="h-3.5 w-3.5" />
-              </button>
-            )}
-          </div>
-          <Button variant="outline" size="sm" onClick={() => setShowFilters(!showFilters)}
-            className={`gap-1.5 bg-white ${showFilters ? 'border-indigo-300 text-indigo-700' : ''}`}>
-            <Filter className="h-3.5 w-3.5" />
-            Filters {hasActiveFilters && <span className="ml-0.5 flex h-4 w-4 items-center justify-center rounded-full bg-indigo-500 text-[10px] font-bold text-white">!</span>}
-          </Button>
-          {hasActiveFilters && (
-            <Button variant="ghost" size="sm" onClick={clearFilters} className="text-xs text-muted-foreground hover:text-foreground">
-              Clear
-            </Button>
-          )}
-        </div>
-
-        {showFilters && (
-          <Card className="p-3">
-            <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-              <div className="space-y-1">
-                <Label className="text-xs text-muted-foreground">Module</Label>
-                <Select value={moduleFilter} onValueChange={setModuleFilter}>
-                  <SelectTrigger className="h-8 text-sm bg-white">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {availableModules.map((m) => (
-                      <SelectItem key={m} value={m}>{m}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="space-y-1">
-                <Label className="text-xs text-muted-foreground">From Date</Label>
-                <Input type="date" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} className="h-8 text-sm bg-white" />
-              </div>
-              <div className="space-y-1">
-                <Label className="text-xs text-muted-foreground">To Date</Label>
-                <Input type="date" value={dateTo} onChange={(e) => setDateTo(e.target.value)} className="h-8 text-sm bg-white" />
-              </div>
-            </div>
-            <p className="mt-2 text-[11px] text-muted-foreground">
-              Module and date filter the full history. The search box narrows the rows
-              already loaded — use the filters, then Load More, to reach further back.
-            </p>
-          </Card>
-        )}
-      </div>
-
       {loadError && (
         <Card className="border-red-200 bg-red-50/60">
           <CardContent className="flex items-start gap-2 p-3">
@@ -360,104 +299,109 @@ export default function AuditLogsPage() {
         </Card>
       )}
 
-      {/* Table */}
-      <Card className="overflow-hidden">
-        <CardContent className="p-0">
-          {isLoading ? (
-            <div className="space-y-2 p-4">
-              {Array.from({ length: 8 }).map((_, i) => <Skeleton key={i} className="h-10 w-full rounded-lg" />)}
-            </div>
-          ) : filtered.length === 0 ? (
-            <div className="flex flex-col items-center justify-center gap-3 py-16 text-center">
-              <Activity className="h-10 w-10 text-muted-foreground/30" />
-              <p className="text-sm font-medium text-slate-600">No audit logs found</p>
-              <p className="text-xs text-muted-foreground">
-                {hasActiveFilters ? 'Try adjusting your filters.' : 'Actions across all modules will appear here.'}
-              </p>
-            </div>
-          ) : (
-            <>
-              {/* Mobile log list */}
-              <div className="space-y-2 sm:hidden p-3">
-                {filtered.map(log => (
-                  <div key={log.id} className="rounded-xl border bg-white/80 p-3 space-y-1.5 text-xs">
-                    <div className="flex items-start justify-between gap-2">
-                      <span className="font-semibold text-slate-800">{log.action}</span>
-                      <Badge variant="outline" className={`text-[10px] shrink-0 ${moduleBadgeClass(log.module)}`}>{log.module || '—'}</Badge>
-                    </div>
-                    <p className="text-muted-foreground">{log.userName ?? log.userId?.slice(0, 8) ?? '—'} · {formatTimestamp(log.timestamp)}</p>
-                    {log.ipAddress && <p className="font-mono text-muted-foreground">{log.ipAddress}</p>}
-                    <p className="text-muted-foreground leading-relaxed">{formatDetails(log.details)}</p>
-                  </div>
-                ))}
-              </div>
-
-              {/* Desktop table */}
-              <div className="hidden sm:block overflow-auto h-[calc(100vh-340px)]">
-                <table className="w-full caption-bottom text-sm">
-                  <TableHeader className="[&_th]:sticky [&_th]:top-0 [&_th]:z-10 [&_th]:bg-slate-50 [&_th]:shadow-sm">
-                    <TableRow>
-                      <TableHead className="w-[160px]">Timestamp</TableHead>
-                      <TableHead className="w-[160px]">User</TableHead>
-                      <TableHead className="w-[140px]">Module</TableHead>
-                      <TableHead className="w-[160px]">Action</TableHead>
-                      <TableHead>Details</TableHead>
-                      <TableHead className="w-[110px]">IP Address</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {filtered.map((log) => (
-                      <TableRow key={log.id} className="hover:bg-muted/30 transition-colors align-top">
-                        <TableCell className="text-xs text-muted-foreground whitespace-nowrap py-2.5">
-                          {formatTimestamp(log.timestamp)}
-                        </TableCell>
-                        <TableCell className="py-2.5">
-                          <div className="space-y-0.5">
-                            <p className="text-xs font-medium text-slate-800 leading-tight">
-                              {log.userName ?? log.userId?.slice(0, 8) ?? '—'}
-                            </p>
-                            {log.userEmail && (
-                              <p className="text-[11px] text-muted-foreground truncate max-w-[140px]">{log.userEmail}</p>
-                            )}
-                          </div>
-                        </TableCell>
-                        <TableCell className="py-2.5">
-                          <Badge variant="outline" className={`text-[11px] px-1.5 py-0 ${moduleBadgeClass(log.module)}`}>
-                            {log.module || '—'}
-                          </Badge>
-                        </TableCell>
-                        <TableCell className="py-2.5">
-                          <span className="text-xs font-medium text-slate-700">{log.action}</span>
-                        </TableCell>
-                        <TableCell className="py-2.5 max-w-[320px]">
-                          <p className="text-[11px] text-muted-foreground leading-relaxed break-words">
-                            {formatDetails(log.details)}
-                          </p>
-                        </TableCell>
-                        <TableCell className="py-2.5">
-                          <span className="text-[11px] font-mono text-muted-foreground">
-                            {log.ipAddress ?? '—'}
-                          </span>
-                        </TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </table>
-              </div>
-            </>
-          )}
-
-          {/* Load more */}
-          {!isLoading && hasMore && (
-            <div className="flex items-center justify-center border-t p-3">
+      <TableCard
+        toolbar={
+          <>
+            <FilterBar
+              search={{ value: search, onChange: setSearch, placeholder: 'Search loaded rows — user, action, record, IP…' }}
+              activeCount={activeFilterCount}
+              onClear={clearFilters}
+            >
+              <Select value={moduleFilter} onValueChange={setModuleFilter}>
+                <SelectTrigger aria-label="Module">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {availableModules.map((m) => (
+                    <SelectItem key={m} value={m}>{m === 'All' ? 'All modules' : m}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <Input type="date" aria-label="From date" title="From date" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} />
+              <Input type="date" aria-label="To date" title="To date" value={dateTo} onChange={(e) => setDateTo(e.target.value)} />
+            </FilterBar>
+            <p className="mt-2 text-[11px] text-muted-foreground">
+              Module and date filter the full history. The search box narrows the rows
+              already loaded — use the filters, then Load More, to reach further back.
+            </p>
+          </>
+        }
+        footer={
+          !isLoading && hasMore ? (
+            <div className="flex items-center justify-center">
               <Button variant="outline" size="sm" onClick={() => loadLogs(false, lastDoc)} disabled={isLoadingMore} className="gap-1.5">
                 {isLoadingMore && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
                 {isLoadingMore ? 'Loading…' : `Load ${PAGE_SIZE} More`}
               </Button>
             </div>
-          )}
-        </CardContent>
-      </Card>
+          ) : undefined
+        }
+      >
+        {isLoading ? (
+          <div className="space-y-2 p-4">
+            {Array.from({ length: 8 }).map((_, i) => <Skeleton key={i} className="h-10 w-full rounded-lg" />)}
+          </div>
+        ) : (
+          <div className="p-3 sm:p-0">
+            <DataList
+              frameless
+              rows={filtered}
+              empty={
+                <div className="flex flex-col items-center justify-center gap-3 py-16 text-center">
+                  <Activity className="h-10 w-10 text-muted-foreground/30" />
+                  <p className="text-sm font-medium text-slate-600">No audit logs found</p>
+                  <p className="text-xs text-muted-foreground">
+                    {hasActiveFilters ? 'Try adjusting your filters.' : 'Actions across all modules will appear here.'}
+                  </p>
+                </div>
+              }
+              columns={[
+                {
+                  header: 'Timestamp',
+                  className: 'w-[160px] whitespace-nowrap',
+                  cell: (log) => formatTimestamp(log.timestamp),
+                },
+                {
+                  header: 'User',
+                  className: 'w-[160px]',
+                  cell: (log) => (
+                    <div className="space-y-0.5">
+                      <p className="font-medium">{log.userName ?? log.userId?.slice(0, 8) ?? '—'}</p>
+                      {log.userEmail && (
+                        <p className="max-w-[140px] truncate text-[11px] text-muted-foreground">{log.userEmail}</p>
+                      )}
+                    </div>
+                  ),
+                },
+                {
+                  header: 'Module',
+                  mobile: 'aside',
+                  className: 'w-[140px]',
+                  cell: (log) => <Badge variant="neutral">{log.module || '—'}</Badge>,
+                },
+                {
+                  header: 'Action',
+                  mobile: 'title',
+                  className: 'w-[160px] font-medium',
+                  cell: (log) => log.action,
+                },
+                {
+                  header: 'Details',
+                  className: 'max-w-[320px]',
+                  cell: (log) => (
+                    <p className="whitespace-normal break-words text-muted-foreground">{formatDetails(log.details)}</p>
+                  ),
+                },
+                {
+                  header: 'IP Address',
+                  className: 'w-[110px] font-mono',
+                  cell: (log) => log.ipAddress ?? '—',
+                },
+              ]}
+            />
+          </div>
+        )}
+      </TableCard>
     </div>
   );
 }

@@ -5,18 +5,18 @@ import { ListChecks, Users } from 'lucide-react';
 
 import { useLoader } from '@/components/mail-hub/hooks';
 import { DeadlineBadge, EmptyState, ErrorNotice, Spinner, formatLong } from '@/components/mail-hub/ui';
-import { Badge } from '@/components/ui/badge';
+import { StatusBadge, type StatusTone } from '@/components/shared/status-badge';
 import { Checkbox } from '@/components/ui/checkbox';
 import { useToast } from '@/hooks/use-toast';
 import { mailApi } from '@/lib/mail-hub/client';
 import { cn } from '@/lib/utils';
 import { PageHeader } from '@/components/shared/page-header';
 
-const PRIORITY_STYLE: Record<string, string> = {
-  urgent: 'border-rose-200 bg-rose-50 text-rose-700',
-  high: 'border-amber-200 bg-amber-50 text-amber-800',
-  normal: 'border-slate-200 bg-slate-50 text-slate-600',
-  low: 'border-slate-200 bg-white text-slate-500',
+const PRIORITY_TONE: Record<string, StatusTone> = {
+  urgent: 'danger',
+  high: 'warning',
+  normal: 'info',
+  low: 'neutral',
 };
 
 /** Your mail work: shared-mailbox conversations assigned to you, and your follow-ups. */
@@ -76,7 +76,7 @@ export default function MailTasksPage() {
                       <Link href={`/mail/${followUp.sharedMailboxId ? 'shared' : 'inbox'}?account=${followUp.accountId}&thread=${followUp.threadId}`} className="min-w-0 flex-1">
                         <div className="flex items-center gap-2">
                           <span className="min-w-0 flex-1 truncate text-sm font-medium">{followUp.title}</span>
-                          <Badge variant="outline" className={cn('text-[10px] capitalize', PRIORITY_STYLE[followUp.priority])}>{followUp.priority}</Badge>
+                          <StatusBadge status={followUp.priority} tone={PRIORITY_TONE[followUp.priority] ?? 'neutral'} />
                         </div>
                         <p className={cn('text-xs', overdue ? 'font-medium text-rose-700' : 'text-muted-foreground')}>
                           {overdue ? 'Overdue — ' : 'Due '}{formatLong(followUp.dueAt)} · “{followUp.subject}”

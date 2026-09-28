@@ -2,19 +2,20 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
-import { History, RefreshCw, Search, X } from 'lucide-react';
+import { History, RefreshCw } from 'lucide-react';
 import { collection, getDocs, orderBy, query } from 'firebase/firestore';
 import { format } from 'date-fns';
 import { db } from '@/lib/firebase';
 import { useToast } from '@/hooks/use-toast';
 import type { ProjectInsurancePolicy, ProjectPolicyRenewal, User } from '@/lib/types';
-import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
-import { Input } from '@/components/ui/input';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { PageHeader } from '@/components/shared/page-header';
+import { TableCard } from '@/components/shared/table-card';
+import { SearchInput } from '@/components/shared/filter-bar';
+import { StatusBadge } from '@/components/shared/status-badge';
 import { cn } from '@/lib/utils';
 
 type EventType = 'Policy Created' | 'Policy Renewed';
@@ -27,11 +28,6 @@ type HistoryEvent = {
   eventType: EventType;
   user: string;
   details: string;
-};
-
-const EVENT_CFG: Record<EventType, { cls: string; dot: string }> = {
-  'Policy Created': { cls: 'bg-emerald-100 text-emerald-700 border-emerald-200', dot: 'bg-emerald-500' },
-  'Policy Renewed': { cls: 'bg-blue-100 text-blue-700 border-blue-200',           dot: 'bg-blue-500' },
 };
 
 const fmtCur = (n: number) =>
@@ -144,23 +140,18 @@ export default function ProjectInsuranceHistoryPage() {
         </CardContent>
       </Card>
 
-      {/* Search */}
-      <div className="flex items-center gap-2">
-        <div className="relative flex-1 max-w-sm">
-          <Search className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
-          <Input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search policy no., asset, user…" className="pl-8 h-9 text-sm" />
-          {search && <button onClick={() => setSearch('')} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"><X className="h-3.5 w-3.5" /></button>}
-        </div>
-        <span className="text-xs text-muted-foreground">{filtered.length} events</span>
-      </div>
-
       {/* Table */}
-      <Card className="overflow-hidden border-border/60">
-        <div className="overflow-x-auto">
+      <TableCard
+        title="Activity log"
+        icon={History}
+        count={filtered.length}
+        total={events.length}
+        noun="event"
+        toolbar={<SearchInput value={search} onChange={setSearch} placeholder="Search policy no., asset, user…" className="sm:max-w-sm" />}
+      >
           <Table>
             <TableHeader>
-              <TableRow className="bg-muted/40 hover:bg-muted/40">
-                <TableHead className="w-6" />
+              <TableRow>
                 <TableHead>Date & Time</TableHead>
                 <TableHead>Asset Name</TableHead>
                 <TableHead>Policy No.</TableHead>
@@ -172,31 +163,26 @@ export default function ProjectInsuranceHistoryPage() {
             <TableBody>
               {filtered.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={7} className="h-32 text-center">
+                  <TableCell colSpan={6} className="h-32 text-center">
                     <div className="flex flex-col items-center gap-2 text-muted-foreground">
                       <History className="h-8 w-8 opacity-30" />
                       <span className="text-sm">No history events found.</span>
                     </div>
                   </TableCell>
                 </TableRow>
-              ) : filtered.map((ev) => {
-                const cfg = EVENT_CFG[ev.eventType];
-                return (
-                  <TableRow key={ev.id} className="hover:bg-muted/20 transition-colors">
-                    <TableCell className="pr-0"><div className={cn('h-2 w-2 rounded-full mx-auto', cfg.dot)} /></TableCell>
-                    <TableCell className="text-xs text-muted-foreground whitespace-nowrap">{format(ev.date, 'dd MMM yyyy, HH:mm')}</TableCell>
+              ) : filtered.map((ev) => (
+                  <TableRow key={ev.id}>
+                    <TableCell className="whitespace-nowrap">{format(ev.date, 'dd MMM yyyy, HH:mm')}</TableCell>
                     <TableCell className="font-medium">{ev.assetName}</TableCell>
-                    <TableCell className="font-mono text-xs font-medium">{ev.policyNo}</TableCell>
-                    <TableCell><Badge variant="outline" className={cn('text-[10px]', cfg.cls)}>{ev.eventType}</Badge></TableCell>
-                    <TableCell className="text-sm">{ev.user}</TableCell>
-                    <TableCell className="text-sm text-muted-foreground">{ev.details}</TableCell>
+                    <TableCell className="font-mono font-medium whitespace-nowrap">{ev.policyNo}</TableCell>
+                    <TableCell><StatusBadge status={ev.eventType} /></TableCell>
+                    <TableCell>{ev.user}</TableCell>
+                    <TableCell>{ev.details}</TableCell>
                   </TableRow>
-                );
-              })}
+              ))}
             </TableBody>
           </Table>
-        </div>
-      </Card>
+      </TableCard>
     </div>
   );
 }

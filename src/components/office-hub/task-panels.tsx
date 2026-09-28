@@ -74,9 +74,9 @@ import {
   OfficeHubEmptyState,
   PersonChip,
   TaskProgressBar,
-  TaskStatusBadge,
   officeHubDialog,
 } from './ui';
+import { StatusBadge } from '@/components/shared/status-badge';
 
 /* ── subtasks (§28) ──────────────────────────────────────────────────────────────────────────── */
 
@@ -341,7 +341,7 @@ export function DependencyPanel({
                 ) : (
                   <CornerDownRight className="h-3.5 w-3.5 shrink-0 text-slate-400" />
                 )}
-                <Badge variant="outline" className="shrink-0 border-slate-200 bg-slate-50 text-[11px]">
+                <Badge variant="neutral" className="shrink-0">
                   {DEPENDENCY_LABELS[dependency.type]}
                 </Badge>
                 <Link
@@ -350,12 +350,8 @@ export function DependencyPanel({
                 >
                   {dependency.taskTitle}
                 </Link>
-                {status && <TaskStatusBadge status={status} className="shrink-0" />}
-                {isBlocker && (
-                  <Badge variant="outline" className="shrink-0 border-amber-200 bg-amber-50 text-[11px] text-amber-800">
-                    Blocking
-                  </Badge>
-                )}
+                {status && <StatusBadge status={status} className="shrink-0" />}
+                {isBlocker && <StatusBadge status="Blocking" tone="warning" className="shrink-0" />}
                 {canEdit && (
                   <Button
                     size="icon"

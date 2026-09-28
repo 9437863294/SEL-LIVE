@@ -40,7 +40,7 @@ export function VehicleTablePagination({
   const last = Math.min(currentPage * pageSize, totalRows);
 
   return (
-    <div className="flex flex-col gap-2 rounded-lg border border-white/70 bg-white/60 px-3 py-2 sm:flex-row sm:items-center sm:justify-between">
+    <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
       <p className="text-xs text-muted-foreground">Showing {first}-{last} of {totalRows}</p>
       <div className="flex items-center justify-between gap-2 sm:justify-end">
         <Button type="button" variant="outline" size="sm" onClick={() => onPageChange(Math.max(1, currentPage - 1))} disabled={currentPage === 1} className="h-8 bg-white">

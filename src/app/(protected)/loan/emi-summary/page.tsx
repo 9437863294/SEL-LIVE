@@ -8,6 +8,9 @@ import { AlertTriangle, ArrowLeft, CalendarCheck, CheckCircle, CheckCircle2, Clo
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { PageHeader } from '@/components/shared/page-header';
+import { TableCard } from '@/components/shared/table-card';
+import { FilterBar } from '@/components/shared/filter-bar';
+import { StatusBadge } from '@/components/shared/status-badge';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow, TableFooter } from '@/components/ui/table';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useToast } from '@/hooks/use-toast';
@@ -343,23 +346,9 @@ export default function EmiSummaryPage() {
           title="EMI Tracker"
           description="Monthly EMI due and payment status"
           actions={
-            <>
-              <Select value={selectedMonth} onValueChange={setSelectedMonth}>
-                <SelectTrigger className="h-9 w-36 text-sm"><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  {monthOptions.map(m => <SelectItem key={m} value={m}>{m}</SelectItem>)}
-                </SelectContent>
-              </Select>
-              <Select value={selectedYear} onValueChange={setSelectedYear}>
-                <SelectTrigger className="h-9 w-24 text-sm"><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  {yearOptions.map(y => <SelectItem key={y} value={y}>{y}</SelectItem>)}
-                </SelectContent>
-              </Select>
-              <Button variant="outline" size="sm" onClick={fetchAllData} className="gap-1.5" aria-label="Refresh">
-                <RefreshCw className="h-3.5 w-3.5" />
-              </Button>
-            </>
+            <Button variant="outline" size="sm" onClick={fetchAllData} className="gap-1.5" aria-label="Refresh">
+              <RefreshCw className="h-3.5 w-3.5" />
+            </Button>
           }
         />
         <Card className="overflow-hidden border-border/60">
@@ -378,8 +367,33 @@ export default function EmiSummaryPage() {
           </CardContent>
         </Card>
 
+        <TableCard
+          title={`EMIs for ${selectedMonth} ${selectedYear}`}
+          icon={CalendarCheck}
+          count={isLoading ? undefined : filteredEmis.length}
+          noun="EMI"
+          toolbar={
+            <FilterBar
+              activeCount={(selectedMonth !== currentMonth ? 1 : 0) + (selectedYear !== currentYear ? 1 : 0)}
+              onClear={() => { setSelectedMonth(currentMonth); setSelectedYear(currentYear); }}
+            >
+              <Select value={selectedMonth} onValueChange={setSelectedMonth}>
+                <SelectTrigger aria-label="Month"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  {monthOptions.map(m => <SelectItem key={m} value={m}>{m}</SelectItem>)}
+                </SelectContent>
+              </Select>
+              <Select value={selectedYear} onValueChange={setSelectedYear}>
+                <SelectTrigger aria-label="Year"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  {yearOptions.map(y => <SelectItem key={y} value={y}>{y}</SelectItem>)}
+                </SelectContent>
+              </Select>
+            </FilterBar>
+          }
+        >
         {/* Mobile card list */}
-        <div className="sm:hidden space-y-3">
+        <div className="sm:hidden space-y-3 p-3">
           {isLoading ? (
             Array.from({ length: 3 }).map((_, i) => (
               <Card key={i} className="overflow-hidden border-border/60">
@@ -410,9 +424,7 @@ export default function EmiSummaryPage() {
                       <p className="font-semibold text-sm leading-tight truncate">{emi.loan.lenderName}</p>
                       <p className="font-mono text-xs text-muted-foreground">{emi.loan.accountNo}</p>
                     </div>
-                    <span className={`shrink-0 rounded-full px-2 py-0.5 text-[11px] font-medium ${isPaid ? 'bg-emerald-100 text-emerald-700' : isOverdue ? 'bg-red-100 text-red-700' : 'bg-amber-100 text-amber-700'}`}>
-                      {isPaid ? 'Paid' : isOverdue ? 'Overdue' : 'Pending'}
-                    </span>
+                    <StatusBadge status={isPaid ? 'Paid' : isOverdue ? 'Overdue' : 'Pending'} className="shrink-0" />
                   </div>
 
                   {/* EMI amount */}
@@ -482,12 +494,10 @@ export default function EmiSummaryPage() {
         </div>
 
         {/* Table */}
-        <Card className="hidden sm:block overflow-hidden border-border/60">
-          <div className="overflow-x-auto">
-            <Table>
+            <Table containerClassName="hidden sm:block">
               <TableHeader>
-                <TableRow className="bg-muted/40 hover:bg-muted/40">
-                  <TableHead className="w-6" />
+                <TableRow>
+                  <TableHead>Status</TableHead>
                   <TableHead>Lender</TableHead>
                   <TableHead>A/C No</TableHead>
                   <TableHead>Due Date</TableHead>
@@ -517,30 +527,23 @@ export default function EmiSummaryPage() {
                   const isOverdue = emi.status !== 'Paid' && isPast(startOfDay(emi.dueDate.toDate()));
                   const isPaid    = emi.status === 'Paid';
                   return (
-                    <TableRow key={emi.id} className={`transition-colors ${isOverdue ? 'hover:bg-red-50/30 bg-red-50/10' : 'hover:bg-muted/20'}`}>
-                      <TableCell className="pr-0">
-                        {/* Named, not only coloured: Paid vs Pending has no other text in the row. */}
-                        <div
-                          role="img"
-                          aria-label={isPaid ? 'Paid' : isOverdue ? 'Overdue' : 'Pending'}
-                          title={isPaid ? 'Paid' : isOverdue ? 'Overdue' : 'Pending'}
-                          className={`h-2 w-2 rounded-full mx-auto ${isPaid ? 'bg-emerald-500' : isOverdue ? 'bg-red-500' : 'bg-amber-400'}`}
-                        />
+                    <TableRow key={emi.id} className={isOverdue ? 'bg-rose-50/60' : undefined}>
+                      <TableCell>
+                        <StatusBadge status={isPaid ? 'Paid' : isOverdue ? 'Overdue' : 'Pending'} />
                       </TableCell>
                       <TableCell className="font-medium">{emi.loan.lenderName}</TableCell>
-                      <TableCell className="font-mono text-xs">{emi.loan.accountNo}</TableCell>
-                      <TableCell>
-                        <span className={`text-sm ${isOverdue ? 'text-red-600 font-medium' : ''}`}>{formatDate(emi.dueDate)}</span>
-                        {isOverdue && <span className="ml-1 text-[10px] text-red-500">(overdue)</span>}
+                      <TableCell className="font-mono whitespace-nowrap">{emi.loan.accountNo}</TableCell>
+                      <TableCell className="whitespace-nowrap">
+                        <span className={isOverdue ? 'text-red-600 font-medium' : undefined}>{formatDate(emi.dueDate)}</span>
                       </TableCell>
-                      <TableCell className="text-right">{formatCurrency(emi.emiAmount)}</TableCell>
-                      <TableCell className="text-right">{formatCurrency(emi.principal)}</TableCell>
-                      <TableCell className="text-right">{formatCurrency(emi.interest)}</TableCell>
-                      <TableCell className={`text-right font-medium ${isPaid ? 'text-emerald-600' : 'text-muted-foreground'}`}>
+                      <TableCell className="text-right whitespace-nowrap tabular-nums">{formatCurrency(emi.emiAmount)}</TableCell>
+                      <TableCell className="text-right whitespace-nowrap tabular-nums">{formatCurrency(emi.principal)}</TableCell>
+                      <TableCell className="text-right whitespace-nowrap tabular-nums">{formatCurrency(emi.interest)}</TableCell>
+                      <TableCell className="text-right whitespace-nowrap tabular-nums">
                         {isPaid ? formatCurrency(emi.paidAmount) : '—'}
                       </TableCell>
-                      <TableCell className="text-center text-sm text-muted-foreground">{emi.emiNo}</TableCell>
-                      <TableCell className="text-right">
+                      <TableCell className="text-center tabular-nums">{emi.emiNo}</TableCell>
+                      <TableCell className="text-right whitespace-nowrap">
                         {emi.status === 'Pending' || isOverdue ? (
                           <Button size="sm" onClick={() => handleMarkAsPaidClick(emi)} className={`h-7 text-xs gap-1 ${isOverdue ? 'bg-red-600 hover:bg-red-700 text-white' : ''}`}>
                             {isOverdue && <AlertTriangle className="h-3 w-3" />}
@@ -573,8 +576,7 @@ export default function EmiSummaryPage() {
                 })}
               </TableBody>
             </Table>
-          </div>
-        </Card>
+        </TableCard>
       </div>
 
       <Dialog open={isPayDialogOpen} onOpenChange={setIsPayDialogOpen}>

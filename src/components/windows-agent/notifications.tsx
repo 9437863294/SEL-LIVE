@@ -6,7 +6,7 @@ import { getAuth } from 'firebase/auth';
 
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { TableCard } from '@/components/shared/table-card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -89,24 +89,26 @@ export function NotificationsPage() {
         }
       />
 
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-base">Recent</CardTitle>
-          <CardDescription>
+      <TableCard
+        title="Recent"
+        count={notifications.loading ? undefined : rows.length}
+        noun="notification"
+        description={
+          <>
             <strong>Delivered</strong> means it reached the computer. <strong>Displayed</strong>
             {' '}means Windows showed it. <strong>Clicked</strong> means the person acted on it.
             Keeping them apart is what makes a PC that fetches alerts and never shows them
             findable.
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
+          </>
+        }
+      >
           {notifications.loading ? (
             <HrLoader />
           ) : (
             <HrDataList
               rows={rows}
               dense
-              maxHeightClassName="sm:max-h-[36rem]"
+              frameless
               columns={[
                 {
                   header: 'Notification',
@@ -152,7 +154,7 @@ export function NotificationsPage() {
                   cell: (row) => {
                     const failed = row.deliveryCounts?.failed ?? 0;
                     return failed > 0 ? (
-                      <Badge variant="outline" className="border-rose-200 bg-rose-50 text-rose-700">
+                      <Badge variant="danger" className="tabular-nums">
                         {failed}
                       </Badge>
                     ) : (
@@ -170,8 +172,7 @@ export function NotificationsPage() {
               }
             />
           )}
-        </CardContent>
-      </Card>
+      </TableCard>
 
       {composing ? (
         <ComposeDialog

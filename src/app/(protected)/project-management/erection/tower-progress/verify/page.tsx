@@ -16,7 +16,6 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
   Select,
@@ -44,16 +43,17 @@ import { pendingVerificationUpdates } from "@/lib/project-management-tower-repor
 import { decideTowerProgressUpdate } from "@/lib/project-management-tower-service";
 import { useTowerProgress } from "@/components/project-management/tower-progress/tower-progress-provider";
 import {
-  ActivityStatusBadge,
+  ACTIVITY_STATUS_TONE,
   EmptyState,
   MetricCard,
   TowerProgressGuard,
   TowerProgressNav,
   TowerProgressShell,
   TowerReportPhoto,
-  VerificationBadge,
 } from "@/components/project-management/tower-progress/tower-progress-ui";
+import { FilterBar } from "@/components/shared/filter-bar";
 import { PageHeader } from "@/components/shared/page-header";
+import { StatusBadge } from "@/components/shared/status-badge";
 
 export default function VerifyProgressPage() {
   const { permissions } = useTowerProgress();
@@ -193,18 +193,19 @@ function VerifyQueue() {
                 Check the photographs match the tower, the activity and the date claimed.
               </CardDescription>
             </div>
-            <div className="flex flex-col gap-2 sm:flex-row">
-              <Input
-                value={search}
-                onChange={(event) => setSearch(event.target.value)}
-                placeholder="Tower, location or engineer..."
-                className="sm:w-56"
-              />
+            <FilterBar
+              search={{ value: search, onChange: setSearch, placeholder: "Tower, location or engineer..." }}
+              activeCount={activity !== "All" ? 1 : 0}
+              onClear={() => {
+                setSearch("");
+                setActivity("All");
+              }}
+            >
               <Select
                 value={activity}
                 onValueChange={(value) => setActivity(value as TowerActivity | "All")}
               >
-                <SelectTrigger className="sm:w-44">
+                <SelectTrigger>
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -216,7 +217,7 @@ function VerifyQueue() {
                   ))}
                 </SelectContent>
               </Select>
-            </div>
+            </FilterBar>
           </div>
         </CardHeader>
         <CardContent className="space-y-4 max-sm:px-3">
@@ -244,9 +245,13 @@ function VerifyQueue() {
                     </Link>
                     <span className="text-muted-foreground">·</span>
                     <span className="text-sm">{definition.label}</span>
-                    <ActivityStatusBadge status={update.fromStatus} className="opacity-60" />
+                    <StatusBadge
+                      status={update.fromStatus}
+                      tone={ACTIVITY_STATUS_TONE[update.fromStatus]}
+                      className="opacity-60"
+                    />
                     <span className="text-muted-foreground">→</span>
-                    <ActivityStatusBadge status={update.toStatus} />
+                    <StatusBadge status={update.toStatus} tone={ACTIVITY_STATUS_TONE[update.toStatus]} />
                     <Badge variant="outline" className="text-[11px]">
                       {formatTowerDate(update.progressDate)}
                     </Badge>
@@ -256,9 +261,7 @@ function VerifyQueue() {
                       </Badge>
                     ) : null}
                     {update.evidenceShortfall ? (
-                      <Badge className="bg-amber-100 text-[11px] text-amber-800">
-                        Saved short of evidence
-                      </Badge>
+                      <StatusBadge status="Saved short of evidence" tone="warning" />
                     ) : null}
                   </div>
 
@@ -389,7 +392,7 @@ function VerifyQueue() {
                 <span className="text-muted-foreground">
                   {TOWER_ACTIVITY_DEFINITIONS[update.activity].label}
                 </span>
-                <VerificationBadge state={update.verificationState} />
+                <StatusBadge status={update.verificationState} />
                 <span className="text-xs text-muted-foreground">
                   by {update.verifiedByName || "—"}
                 </span>

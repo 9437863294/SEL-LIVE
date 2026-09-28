@@ -18,7 +18,6 @@ import {
   Paperclip,
   Pencil,
   Plus,
-  Search,
   ShieldAlert,
   ShoppingCart,
   Table2,
@@ -114,10 +113,7 @@ import {
   isMdlOverdue,
   isMdlPendingTask,
   isRevisionRejected,
-  mdlDrawingStageStyles,
   mdlOutlineNo,
-  mdlOverallStatusStyles,
-  mdlRevisionStatusStyles,
   summariseMdlRows,
   type MdlDrawing,
   type MdlOverallStatus,
@@ -139,6 +135,11 @@ import {
   JMC_MAIN_CLASS,
 } from "@/components/jmc/jmc-page-shell";
 import { PageHeader } from "@/components/shared/page-header";
+import { TableCard } from "@/components/shared/table-card";
+import { FilterBar } from "@/components/shared/filter-bar";
+import { StatusBadge } from "@/components/shared/status-badge";
+import { pmStatusTone } from "@/components/project-management/pm-status-tones";
+import { Badge } from "@/components/ui/badge";
 
 type ProjectMapping = {
   id: string;
@@ -840,11 +841,6 @@ export default function MdlPage() {
   // is one line tall and the eye can scan down a column instead of re-reading a block per row.
   const REGISTER_COLUMN_COUNT = 16;
 
-  // Compacted here rather than in components/ui/table.tsx, which every other table in the app
-  // shares. `[&_td]` beats a cell's own `py-*`, so cells no longer set vertical padding at all.
-  const REGISTER_TABLE_DENSITY =
-    "[&_th]:h-8 [&_th]:whitespace-nowrap [&_th]:px-2 [&_th]:text-xs [&_td]:px-2 [&_td]:py-1";
-
   const registerHead = (
     <TableHeader>
       <TableRow>
@@ -946,21 +942,17 @@ export default function MdlPage() {
             {/* An item with sub-drawings has no single stage of its own — each sub-drawing carries
                 one, and they show on the expanded rows. */}
             {subDrawings.length === 0 && drawing ? (
-              <span
-                className={cn(
-                  "rounded-full px-1.5 py-0.5 text-[10px] font-medium",
-                  mdlDrawingStageStyles[computeMdlDrawingStage(drawing, poInfoByBoqItemId.has(item.id))],
-                )}
-              >
-                {computeMdlDrawingStage(drawing, poInfoByBoqItemId.has(item.id))}
-              </span>
+              <StatusBadge
+                status={computeMdlDrawingStage(drawing, poInfoByBoqItemId.has(item.id))}
+                tone={pmStatusTone(computeMdlDrawingStage(drawing, poInfoByBoqItemId.has(item.id)))}
+              />
             ) : (
               <span className="text-muted-foreground">—</span>
             )}
           </TableCell>
           {/* Assignment is a property of a sub-drawing, not of the BOQ item's own record, so this
               column is only ever filled on the expanded rows. */}
-          <TableCell className="text-muted-foreground">—</TableCell>
+          <TableCell>—</TableCell>
           <TableCell className="whitespace-nowrap">{drawing?.docNo || "—"}</TableCell>
           <TableCell className="max-w-xs truncate" title={drawing?.drawingNo}>{drawing?.drawingNo || "—"}</TableCell>
           <TableCell className="whitespace-nowrap">{formatMdlDate(rollup.plannedStartDate)}</TableCell>
@@ -969,23 +961,22 @@ export default function MdlPage() {
               {formatMdlDate(rollup.plannedEndDate)}
             </span>
             {overdue && (
-              <span
-                className="ml-1.5 rounded-full bg-red-100 px-1.5 py-0.5 text-[10px] font-semibold text-red-700"
+              <StatusBadge
+                status="Overdue"
+                className="ml-1.5"
                 title={
                   rollup.subTotal
                     ? "This item has a drawing past its planned end date — expand to see which"
                     : undefined
                 }
-              >
-                Overdue
-              </span>
+              />
             )}
           </TableCell>
           <TableCell className="whitespace-nowrap">
             {latest ? (
-              <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${latest.status ? mdlRevisionStatusStyles[latest.status] : "bg-muted text-muted-foreground"}`}>
+              <StatusBadge status={latest.status} tone={latest.status ? pmStatusTone(latest.status) : "neutral"}>
                 {latest.round}{latest.status ? ` · ${latest.status}` : ""}
-              </span>
+              </StatusBadge>
             ) : "—"}
           </TableCell>
           <TableCell className="whitespace-nowrap">
@@ -996,10 +987,8 @@ export default function MdlPage() {
             ) : "—"}
           </TableCell>
           <TableCell className="whitespace-nowrap">{formatMdlDate(rollup.approveDate)}</TableCell>
-          <TableCell>
-            <span className={`rounded-full px-2.5 py-1 text-xs font-medium ${mdlOverallStatusStyles[rollup.status]}`}>
-              {rollup.status}
-            </span>
+          <TableCell className="whitespace-nowrap">
+            <StatusBadge status={rollup.status} tone={pmStatusTone(rollup.status)} />
           </TableCell>
           <TableCell className="max-w-xs truncate" title={drawing?.remark}>{drawing?.remark || "—"}</TableCell>
           <TableCell onClick={(e) => e.stopPropagation()}>
@@ -1043,9 +1032,8 @@ export default function MdlPage() {
               const canEditThisSub = canEditMdlSubDrawing(sub, user?.id, canEdit);
               return (
                 <TableRow key={`${item.id}-${sub.id}`} className="border-b-0 last:border-b">
-                  <TableCell className="whitespace-nowrap text-xs tabular-nums text-muted-foreground">
-                    {/* Indent lives on an inner span: the table's `[&_td]:px-2` would override a
-                        `pl-*` set on the cell itself. */}
+                  <TableCell className="whitespace-nowrap tabular-nums">
+                    {/* Indent lives on an inner span, so the cell keeps the table's own padding. */}
                     <span className="pl-3">{mdlOutlineNo(...prefix, index, subIndex)}.</span>
                   </TableCell>
                   <TableCell />
@@ -1059,16 +1047,9 @@ export default function MdlPage() {
                       </span>
                     </div>
                   </TableCell>
-                  <TableCell className="text-muted-foreground">—</TableCell>
+                  <TableCell>—</TableCell>
                   <TableCell className="whitespace-nowrap">
-                    <span
-                      className={cn(
-                        "rounded-full px-1.5 py-0.5 text-[10px] font-medium",
-                        mdlDrawingStageStyles[subStage],
-                      )}
-                    >
-                      {subStage}
-                    </span>
+                    <StatusBadge status={subStage} tone={pmStatusTone(subStage)} />
                   </TableCell>
                   <TableCell className="max-w-[140px] whitespace-nowrap">
                     <span className="flex items-center gap-1 truncate text-xs">
@@ -1089,40 +1070,34 @@ export default function MdlPage() {
                       )}
                     </span>
                   </TableCell>
-                  <TableCell className="whitespace-nowrap text-sm">{sub.docNo || "—"}</TableCell>
-                  <TableCell className="max-w-xs truncate text-sm" title={sub.drawingNo}>{sub.drawingNo || "—"}</TableCell>
-                  <TableCell className="whitespace-nowrap text-sm">{formatMdlDate(sub.plannedStartDate)}</TableCell>
-                  <TableCell className="whitespace-nowrap text-sm">
+                  <TableCell className="whitespace-nowrap">{sub.docNo || "—"}</TableCell>
+                  <TableCell className="max-w-xs truncate" title={sub.drawingNo}>{sub.drawingNo || "—"}</TableCell>
+                  <TableCell className="whitespace-nowrap">{formatMdlDate(sub.plannedStartDate)}</TableCell>
+                  <TableCell className="whitespace-nowrap">
                     <span className={subOverdue ? "font-medium text-red-600" : ""}>
                       {formatMdlDate(sub.plannedEndDate)}
                     </span>
-                    {subOverdue && (
-                      <span className="ml-1.5 rounded-full bg-red-100 px-1.5 py-0.5 text-[10px] font-semibold text-red-700">
-                        Overdue
-                      </span>
-                    )}
+                    {subOverdue && <StatusBadge status="Overdue" className="ml-1.5" />}
                   </TableCell>
                   <TableCell className="whitespace-nowrap">
                     {subLatest ? (
-                      <span className={`rounded-full px-2 py-0.5 text-[11px] font-medium ${subLatest.status ? mdlRevisionStatusStyles[subLatest.status] : "bg-muted text-muted-foreground"}`}>
+                      <StatusBadge status={subLatest.status} tone={subLatest.status ? pmStatusTone(subLatest.status) : "neutral"}>
                         {subLatest.round}{subLatest.status ? ` · ${subLatest.status}` : ""}
-                      </span>
+                      </StatusBadge>
                     ) : "—"}
                   </TableCell>
-                  <TableCell className="whitespace-nowrap text-sm">
+                  <TableCell className="whitespace-nowrap">
                     {subCycleAgeDays != null ? (
                       <span className={subCycleAgeDays > 30 ? "font-medium text-amber-600" : ""}>
                         {subCycleAgeDays}d
                       </span>
                     ) : "—"}
                   </TableCell>
-                  <TableCell className="whitespace-nowrap text-sm">{formatMdlDate(sub.approveDate)}</TableCell>
-                  <TableCell>
-                    <span className={`rounded-full px-2 py-0.5 text-[11px] font-medium ${mdlOverallStatusStyles[sub.status]}`}>
-                      {sub.status}
-                    </span>
+                  <TableCell className="whitespace-nowrap">{formatMdlDate(sub.approveDate)}</TableCell>
+                  <TableCell className="whitespace-nowrap">
+                    <StatusBadge status={sub.status} tone={pmStatusTone(sub.status)} />
                   </TableCell>
-                  <TableCell className="max-w-xs truncate text-sm" title={sub.remark}>{sub.remark || "—"}</TableCell>
+                  <TableCell className="max-w-xs truncate" title={sub.remark}>{sub.remark || "—"}</TableCell>
                   <TableCell>
                     <div className="flex items-center">
                       <Button
@@ -1250,19 +1225,12 @@ export default function MdlPage() {
     {
       header: "Status",
       mobile: "aside",
-      cell: ({ rollup }) => (
-        <span className={`whitespace-nowrap rounded-full px-2.5 py-1 text-xs font-medium ${mdlOverallStatusStyles[rollup.status]}`}>
-          {rollup.status}
-        </span>
-      ),
+      cell: ({ rollup }) => <StatusBadge status={rollup.status} tone={pmStatusTone(rollup.status)} />,
     },
     {
       header: "Overdue",
       mobile: "aside",
-      cell: ({ rollup }) =>
-        rollup.overdue ? (
-          <span className="rounded-full bg-red-100 px-1.5 py-0.5 text-[10px] font-semibold text-red-700">Overdue</span>
-        ) : null,
+      cell: ({ rollup }) => (rollup.overdue ? <StatusBadge status="Overdue" /> : null),
     },
     {
       header: "Drawings",
@@ -1283,11 +1251,7 @@ export default function MdlPage() {
         // As on the desktop: an item with sub-drawings has no single stage of its own.
         if (subDrawings.length || !drawing) return <span className="text-muted-foreground">—</span>;
         const stage = computeMdlDrawingStage(drawing, poInfoByBoqItemId.has(item.id));
-        return (
-          <span className={cn("rounded-full px-1.5 py-0.5 text-[10px] font-medium", mdlDrawingStageStyles[stage])}>
-            {stage}
-          </span>
-        );
+        return <StatusBadge status={stage} tone={pmStatusTone(stage)} />;
       },
     },
     { header: "Doc No.", cell: ({ drawing }) => drawing?.docNo || "—" },
@@ -1304,9 +1268,9 @@ export default function MdlPage() {
       cell: ({ drawing }) => {
         const latest = getLatestRevisionAcrossItem(drawing);
         return latest ? (
-          <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${latest.status ? mdlRevisionStatusStyles[latest.status] : "bg-muted text-muted-foreground"}`}>
+          <StatusBadge status={latest.status} tone={latest.status ? pmStatusTone(latest.status) : "neutral"}>
             {latest.round}{latest.status ? ` · ${latest.status}` : ""}
-          </span>
+          </StatusBadge>
         ) : "—";
       },
     },
@@ -1394,12 +1358,8 @@ export default function MdlPage() {
         const subStage = computeMdlDrawingStage(sub, poInfoByBoqItemId.has(item.id));
         return (
           <span className="mt-0.5 flex flex-wrap items-center gap-1.5">
-            <span className={cn("whitespace-nowrap rounded-full px-1.5 py-0.5 text-[10px] font-medium", mdlDrawingStageStyles[subStage])}>
-              {subStage}
-            </span>
-            <span className={`whitespace-nowrap rounded-full px-2 py-0.5 text-[11px] font-medium ${mdlOverallStatusStyles[sub.status]}`}>
-              {sub.status}
-            </span>
+            <StatusBadge status={subStage} tone={pmStatusTone(subStage)} />
+            <StatusBadge status={sub.status} tone={pmStatusTone(sub.status)} />
             <span className={cn(sub.assignedToName && "text-foreground")}>{sub.assignedToName || "Unassigned"}</span>
             {sub.collection?.fileUrl && (
               <a
@@ -1428,11 +1388,7 @@ export default function MdlPage() {
         return (
           <>
             <span className={subOverdue ? "font-medium text-red-600" : ""}>{formatMdlDate(sub.plannedEndDate)}</span>
-            {subOverdue && (
-              <span className="ml-1.5 rounded-full bg-red-100 px-1.5 py-0.5 text-[10px] font-semibold text-red-700">
-                Overdue
-              </span>
-            )}
+            {subOverdue && <StatusBadge status="Overdue" className="ml-1.5" />}
           </>
         );
       },
@@ -1442,9 +1398,9 @@ export default function MdlPage() {
       cell: ({ sub }) => {
         const subLatest = getLatestRevision(sub.revisions ?? []);
         return subLatest ? (
-          <span className={`rounded-full px-2 py-0.5 text-[11px] font-medium ${subLatest.status ? mdlRevisionStatusStyles[subLatest.status] : "bg-muted text-muted-foreground"}`}>
+          <StatusBadge status={subLatest.status} tone={subLatest.status ? pmStatusTone(subLatest.status) : "neutral"}>
             {subLatest.round}{subLatest.status ? ` · ${subLatest.status}` : ""}
-          </span>
+          </StatusBadge>
         ) : "—";
       },
     },
@@ -1632,18 +1588,19 @@ export default function MdlPage() {
 
         <TabsContent value="register" className="mt-0 space-y-5">
           {poGroups.length || scopeGroups.length ? (
-            <Card className="overflow-hidden border-border/60">
-              <div className="h-1 w-full bg-gradient-to-r from-emerald-500 to-teal-600" />
-              {/* With every group closed by default, there has to be a way back to the full view
-                  in one action rather than N clicks. */}
-              <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 border-b border-border/60 px-4 py-2.5">
-                <p className="text-xs text-muted-foreground">
+            <TableCard
+              description={
+                <>
                   {poGroups.length} purchase order{poGroups.length === 1 ? "" : "s"}
                   {scopeGroups.length
                     ? ` · ${scopeGroups.length} group${scopeGroups.length === 1 ? "" : "s"} not yet ordered`
                     : ""}
-                </p>
-                <div className="flex items-center gap-1">
+                </>
+              }
+              // With every group closed by default, there has to be a way back to the full view
+              // in one action rather than N clicks.
+              actions={
+                <>
                   <Button
                     variant="ghost"
                     size="sm"
@@ -1664,11 +1621,10 @@ export default function MdlPage() {
                   >
                     Collapse all
                   </Button>
-                </div>
-              </div>
-              <CardContent className="p-0">
-                <div className="hidden overflow-x-auto sm:block">
-                  <Table className={REGISTER_TABLE_DENSITY}>
+                </>
+              }
+            >
+                  <Table containerClassName="hidden sm:block">
                     {registerHead}
                     <TableBody>
                       {poGroups.map((group, groupIndex) => {
@@ -1678,7 +1634,7 @@ export default function MdlPage() {
                           <TableRow
                             key={key}
                             className={cn(
-                              "cursor-pointer bg-muted/40 hover:bg-muted/70",
+                              "cursor-pointer bg-muted/40",
                               isOpen && "border-b-0",
                             )}
                             onClick={() => toggleGroup(key)}
@@ -1698,7 +1654,7 @@ export default function MdlPage() {
                           <TableRow
                             key={key}
                             className={cn(
-                              "cursor-pointer bg-muted/40 hover:bg-muted/70",
+                              "cursor-pointer bg-muted/40",
                               isOpen && "border-b-0",
                             )}
                             onClick={() => toggleGroup(key)}
@@ -1712,7 +1668,6 @@ export default function MdlPage() {
                       })}
                     </TableBody>
                   </Table>
-                </div>
 
                 <div className="divide-y sm:hidden">
                   {poGroups.map((group, groupIndex) => {
@@ -1728,8 +1683,7 @@ export default function MdlPage() {
                     );
                   })}
                 </div>
-              </CardContent>
-            </Card>
+            </TableCard>
           ) : (
             <Card className="border-dashed">
               <CardContent className="flex flex-col items-center gap-3 p-8 text-center">
@@ -1871,16 +1825,10 @@ export default function MdlPage() {
               <div className="rounded-lg border p-3">
                 <div className="mb-2 flex items-center justify-between gap-2">
                   <p className="text-sm font-medium">Collected from Vendor</p>
-                  <span
-                    className={cn(
-                      "rounded-full px-2 py-0.5 text-[11px] font-medium",
-                      mdlDrawingStageStyles[
-                        computeMdlDrawingStage(editTarget.sub, poInfoByBoqItemId.has(editTarget.item.id))
-                      ],
-                    )}
-                  >
-                    {computeMdlDrawingStage(editTarget.sub, poInfoByBoqItemId.has(editTarget.item.id))}
-                  </span>
+                  <StatusBadge
+                    status={computeMdlDrawingStage(editTarget.sub, poInfoByBoqItemId.has(editTarget.item.id))}
+                    tone={pmStatusTone(computeMdlDrawingStage(editTarget.sub, poInfoByBoqItemId.has(editTarget.item.id)))}
+                  />
                 </div>
                 {editTarget.sub.collection?.receivedOn ? (
                   <div className="space-y-1 text-xs text-muted-foreground">
@@ -1983,7 +1931,7 @@ export default function MdlPage() {
                 return (
                   <div key={revision.round} className="rounded-lg border p-3">
                     <div className="mb-2 flex items-center gap-2">
-                      <span className="rounded-full bg-primary/10 px-2 py-0.5 text-xs font-semibold text-primary">{revision.round}</span>
+                      <Badge variant="neutral">{revision.round}</Badge>
                     </div>
                     <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
                       <div className="space-y-1.5">
@@ -2133,24 +2081,27 @@ export default function MdlPage() {
           </DialogHeader>
 
           <div className={cn(PM_DIALOG.body, "space-y-0 py-4")}>
-            <div className="mb-4 flex flex-col items-center gap-2 sm:flex-row">
-              <div className="relative w-full flex-grow">
-                <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
-                <Input
-                  placeholder="Search by BOQ SL No, ERP SL No, or description..."
-                  aria-label="Search BOQ items"
-                  value={addSearch}
-                  onChange={(e) => setAddSearch(e.target.value)}
-                  className="pl-8"
-                />
-              </div>
-
+            <FilterBar
+              className="mb-4"
+              search={{
+                value: addSearch,
+                onChange: setAddSearch,
+                placeholder: "Search by BOQ SL No, ERP SL No, or description...",
+                label: "Search BOQ items",
+              }}
+              activeCount={Object.values(addFilters).filter((value) => value !== "all").length}
+              onClear={() => {
+                setAddSearch("");
+                setAddFilters({ "Scope 1": "all", "Scope 2": "all", "Category 1": "all" });
+                setSelectedToAdd(new Set());
+              }}
+            >
               {(["Scope 1", "Scope 2", "Category 1"] as const).map((key) => {
                 const options = addFilterOptions[key];
                 if (!options.length) return null;
                 return (
                   <Select key={key} value={addFilters[key]} onValueChange={(value) => handleAddFilterChange(key, value)}>
-                    <SelectTrigger className="w-full sm:w-[160px]">
+                    <SelectTrigger>
                       <SelectValue placeholder={`Filter by ${key}`} />
                     </SelectTrigger>
                     <SelectContent>
@@ -2164,7 +2115,7 @@ export default function MdlPage() {
                   </Select>
                 );
               })}
-            </div>
+            </FilterBar>
 
             <ScrollArea className="h-[50dvh] rounded-md border sm:h-96">
               <div className="p-1">

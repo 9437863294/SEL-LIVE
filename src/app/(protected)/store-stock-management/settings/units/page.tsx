@@ -4,7 +4,6 @@
 import { useState, useEffect } from 'react';
 import { Plus, Trash2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import {
   Dialog,
@@ -23,6 +22,7 @@ import { collection, getDocs, addDoc, deleteDoc, doc } from 'firebase/firestore'
 import type { Site } from '@/lib/types';
 import { Skeleton } from '@/components/ui/skeleton';
 import { PageHeader } from '@/components/shared/page-header';
+import { TableCard } from '@/components/shared/table-card';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogHeader, AlertDialogTitle, AlertDialogDescription, AlertDialogFooter, AlertDialogTrigger } from "@/components/ui/alert-dialog";
 
 export default function ManageUnitsPage() {
@@ -88,12 +88,7 @@ export default function ManageUnitsPage() {
         actions={<Button onClick={() => setIsDialogOpen(true)}><Plus className="mr-2 h-4 w-4"/> Add Unit</Button>}
       />
 
-      <Card className="border-slate-200/80 shadow-sm">
-        <CardHeader>
-          <CardTitle>Unit master</CardTitle>
-          <CardDescription>{units.length} unit{units.length === 1 ? '' : 's'} currently available.</CardDescription>
-        </CardHeader>
-        <CardContent className="p-0">
+      <TableCard title="Unit master" description="Units currently available." count={units.length} noun="unit">
           <Table>
             <TableHeader>
               <TableRow>
@@ -134,8 +129,7 @@ export default function ManageUnitsPage() {
               )}
             </TableBody>
           </Table>
-        </CardContent>
-      </Card>
+      </TableCard>
       
       <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
           <DialogContent className="sm:max-w-md">

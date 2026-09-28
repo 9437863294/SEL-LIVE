@@ -29,7 +29,7 @@ import {
   AccordionItem,
   AccordionTrigger,
 } from "@/components/ui/accordion";
-import { Badge } from '@/components/ui/badge';
+import { StatusBadge } from '@/components/shared/status-badge';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogHeader, AlertDialogFooter, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 
@@ -220,7 +220,7 @@ export default function ManageProjectsAndSitesPage() {
                       <AccordionTrigger className="hover:no-underline flex-1">
                           <div className="flex justify-between items-center w-full">
                               <h3 className="text-[15px] font-semibold leading-snug tracking-tight sm:text-base">{project.projectName}</h3>
-                              <Badge>{project.status || 'Active'}</Badge>
+                              <StatusBadge status={project.status || 'Active'} />
                           </div>
                       </AccordionTrigger>
                       <div className="ml-4 flex items-center gap-2">
@@ -243,7 +243,7 @@ export default function ManageProjectsAndSitesPage() {
                       </div>
                     </div>
                     <AccordionContent className="px-4 pb-4">
-                       <div className="border rounded-md">
+                       <div className="overflow-hidden rounded-md border">
                          <Table>
                             <TableHeader>
                                 <TableRow>

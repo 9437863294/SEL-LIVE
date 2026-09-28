@@ -35,6 +35,7 @@ import {
   type PmListColumn,
 } from "@/components/project-management/pm-shell";
 import { PageHeader } from "@/components/shared/page-header";
+import { TableCard } from "@/components/shared/table-card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -577,24 +578,25 @@ export default function NewIndentPage() {
       {/* A card on a desktop, where the table sits under the bar. On a phone the line items are
           cards themselves, so this one drops its frame and the bar becomes a plain heading row —
           a card of cards is only a thicker border. */}
-      <Card className="overflow-hidden border-border/60 max-sm:overflow-visible max-sm:rounded-none max-sm:border-0 max-sm:bg-transparent max-sm:shadow-none">
-        {/* Title, both add-actions and the running totals on one bar, so the totals are visible
-            while you type quantities rather than only after scrolling past the last row. */}
-        <div className="flex flex-wrap items-center gap-x-3 gap-y-2 border-b border-border/60 px-4 py-2.5 max-sm:mb-2.5 max-sm:border-b-0 max-sm:p-0">
-          <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
-            <Library className="h-3.5 w-3.5 shrink-0 text-emerald-600" />
-            <span className="font-medium text-foreground">Indent items</span>
-            · {rows.length} row{rows.length === 1 ? "" : "s"}
-          </p>
-          <div className="ml-auto flex flex-wrap items-center gap-2 max-sm:w-full">
+      <TableCard
+        title="Indent items"
+        icon={Library}
+        count={rows.length}
+        noun="row"
+        // The form's line items: the card grows with them rather than scrolling inside itself.
+        scroll="natural"
+        className="max-sm:overflow-visible max-sm:rounded-none max-sm:border-0 max-sm:bg-transparent max-sm:shadow-none"
+        actions={
+          <>
             <Button variant="outline" size="sm" className="h-9 px-2 text-xs max-sm:flex-1 sm:h-7" onClick={addRow}>
               <Plus className="mr-1.5 h-3.5 w-3.5" /> Add row
             </Button>
             <Button variant="outline" size="sm" className="h-9 px-2 text-xs max-sm:flex-1 sm:h-7" onClick={() => setIsMultiSelectOpen(true)}>
               <Library className="mr-1.5 h-3.5 w-3.5" /> Add from BOQ
             </Button>
-          </div>
-        </div>
+          </>
+        }
+      >
         <PmDataList
           rows={rows.map((row) => ({ ...row, id: row.rowId }))}
           columns={columns}
@@ -616,7 +618,7 @@ export default function NewIndentPage() {
             />
           }
         />
-      </Card>
+      </TableCard>
       </PmContent>
 
       <BoqMultiSelectDialog

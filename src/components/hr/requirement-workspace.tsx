@@ -85,14 +85,16 @@ import {
   HrFillBar,
   HrKpiCard,
   HrLoader,
-  HrPriorityBadge,
   HrSection,
-  HrSlaBadge,
-  HrStatusBadge,
   Money,
   SensitiveMoney,
+  hrBadgeTone,
   hrDialog,
+  hrPriorityBadgeTone,
+  hrSlaLabel,
 } from './hr-ui';
+import { StatusBadge } from '@/components/shared/status-badge';
+import { TableCard } from '@/components/shared/table-card';
 import InterviewPanel, { ReasonDialog } from './interview-panel';
 import JoiningPanel from './joining-panel';
 import OfferPanel from './offer-panel';
@@ -320,11 +322,13 @@ export default function RequirementWorkspace({ requirementId }: { requirementId:
         title={requirement.requirementNumber}
         badge={
           <>
-            <HrStatusBadge status={requirement.status} />
-            <HrPriorityBadge priority={requirement.priority} />
-            {requirement.fastTrack && (
-              <Badge variant="outline" className="border-rose-200 bg-rose-50 text-rose-700">Fast track</Badge>
-            )}
+            <StatusBadge status={requirement.status} tone={hrBadgeTone(requirement.status)}>
+              {hrStatusLabel(requirement.status)}
+            </StatusBadge>
+            <StatusBadge status={requirement.priority} tone={hrPriorityBadgeTone(requirement.priority)}>
+              {requirement.priority}
+            </StatusBadge>
+            {requirement.fastTrack && <StatusBadge tone="danger">Fast track</StatusBadge>}
           </>
         }
         description={
@@ -348,7 +352,7 @@ export default function RequirementWorkspace({ requirementId }: { requirementId:
                 Recruiter{' '}
                 {requirement.primaryRecruiterName || <span className="font-medium text-amber-700">unassigned</span>}
               </span>
-              <HrSlaBadge state={sla.state} consumedPercent={sla.consumedPercent} overdueDays={sla.overdueDays} />
+              <StatusBadge status={sla.state}>{hrSlaLabel(sla.state, sla.consumedPercent, sla.overdueDays)}</StatusBadge>
             </div>
           </div>
         }
@@ -479,7 +483,7 @@ export default function RequirementWorkspace({ requirementId }: { requirementId:
           <TabsTrigger value="candidates">
             Candidates
             {scoped.applications.length > 0 && (
-              <Badge variant="secondary" className="ml-1.5 tabular-nums">{scoped.applications.length}</Badge>
+              <Badge variant="neutral" className="ml-1.5 tabular-nums">{scoped.applications.length}</Badge>
             )}
           </TabsTrigger>
           <TabsTrigger value="pipeline">Pipeline</TabsTrigger>
@@ -487,14 +491,14 @@ export default function RequirementWorkspace({ requirementId }: { requirementId:
           <TabsTrigger value="selection">Selection</TabsTrigger>
           <TabsTrigger value="offers">
             Offers
-            {scoped.offers.length > 0 && <Badge variant="secondary" className="ml-1.5 tabular-nums">{scoped.offers.length}</Badge>}
+            {scoped.offers.length > 0 && <Badge variant="neutral" className="ml-1.5 tabular-nums">{scoped.offers.length}</Badge>}
           </TabsTrigger>
           <TabsTrigger value="joining">Joining</TabsTrigger>
           <TabsTrigger value="documents">Documents</TabsTrigger>
           <TabsTrigger value="communication">Communication</TabsTrigger>
           <TabsTrigger value="approvals">
             Approvals
-            {scoped.approvals.length > 0 && <Badge variant="secondary" className="ml-1.5 tabular-nums">{scoped.approvals.length}</Badge>}
+            {scoped.approvals.length > 0 && <Badge variant="neutral" className="ml-1.5 tabular-nums">{scoped.approvals.length}</Badge>}
           </TabsTrigger>
           <TabsTrigger value="activity">Activity log</TabsTrigger>
           <TabsTrigger value="cost">Cost</TabsTrigger>
@@ -582,7 +586,7 @@ export default function RequirementWorkspace({ requirementId }: { requirementId:
                         <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">{label}</p>
                         <div className="mt-1 flex flex-wrap gap-1">
                           {list.map(skill => (
-                            <Badge key={skill} variant="secondary" className="text-[10px]">{skill}</Badge>
+                            <Badge key={skill} variant="neutral">{skill}</Badge>
                           ))}
                         </div>
                       </div>
@@ -624,9 +628,7 @@ export default function RequirementWorkspace({ requirementId }: { requirementId:
                     <div className="min-w-0">
                       <div className="flex items-center gap-2">
                         <p className="truncate text-sm font-medium text-slate-800">{match.candidate.candidateName}</p>
-                        <Badge variant="outline" className="border-cyan-200 bg-cyan-50 text-[10px] text-cyan-700">
-                          {match.score}% match
-                        </Badge>
+                        <Badge variant="neutral" className="shrink-0 tabular-nums">{match.score}% match</Badge>
                       </div>
                       <p className="truncate text-[11px] text-muted-foreground">
                         {match.reasons.join(' · ') || 'Matched on the talent pool category'}
@@ -667,8 +669,10 @@ export default function RequirementWorkspace({ requirementId }: { requirementId:
 
         {/* Candidates — the list view of the same applications the board shows. */}
         <TabsContent value="candidates">
-          <HrSection title="Candidates" description={`${scoped.applications.length} applications against this requirement.`}>
+          <TableCard title="Candidates" description={`${scoped.applications.length} applications against this requirement.`}>
+            <div className="p-3 sm:p-0">
             <HrDataList
+              frameless
               rows={scoped.applications}
               columns={[
                 {
@@ -688,7 +692,15 @@ export default function RequirementWorkspace({ requirementId }: { requirementId:
                   align: 'right',
                   cell: row => (row.latestInterviewScore ? `${row.latestInterviewScore}/5` : '—'),
                 },
-                { header: 'Stage', mobile: 'aside', cell: row => <HrStatusBadge status={row.stage} /> },
+                {
+                  header: 'Stage',
+                  mobile: 'aside',
+                  cell: row => (
+                    <StatusBadge status={row.stage} tone={hrBadgeTone(row.stage)}>
+                      {hrStatusLabel(row.stage)}
+                    </StatusBadge>
+                  ),
+                },
               ]}
               cardHref={row => `/hr/candidates/${row.candidateId}`}
               empty={
@@ -699,7 +711,8 @@ export default function RequirementWorkspace({ requirementId }: { requirementId:
                 />
               }
             />
-          </HrSection>
+            </div>
+          </TableCard>
         </TabsContent>
 
         <TabsContent value="pipeline">

@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { collection, getDocs, query, where } from 'firebase/firestore';
-import { PackagePlus, Pencil, Plus, Search, Trash2 } from 'lucide-react';
+import { PackagePlus, Pencil, Plus, Trash2 } from 'lucide-react';
 import { db } from '@/lib/firebase';
 import { useAuth } from '@/components/auth/AuthProvider';
 import { useToast } from '@/hooks/use-toast';
@@ -18,7 +18,10 @@ import { Badge } from '@/components/ui/badge';
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { FilterBar } from '@/components/shared/filter-bar';
 import { PageHeader } from '@/components/shared/page-header';
+import { StatusBadge } from '@/components/shared/status-badge';
+import { TableCard } from '@/components/shared/table-card';
 
 type ItemForm = Omit<InventoryItem, 'id' | 'organizationId'> & { id?: string };
 
@@ -121,13 +124,18 @@ export default function ItemMasterPage() {
   return (
     <div className="space-y-6">
       <PageHeader title="Item Master" description="The central item catalog is independent from project BOQ." actions={<Button onClick={() => edit()}><Plus className="mr-2 h-4 w-4" />New item</Button>} />
-      <Card>
-        <CardHeader className="gap-4 sm:flex-row sm:items-center sm:justify-between"><div><CardTitle>Inventory items</CardTitle><CardDescription>{items.length} master records</CardDescription></div><div className="relative w-full sm:w-80"><Search className="absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" /><Input className="pl-9" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search items…" /></div></CardHeader>
-        <CardContent className="overflow-x-auto"><Table><TableHeader><TableRow><TableHead>Code</TableHead><TableHead>Item</TableHead><TableHead>Category</TableHead><TableHead>Unit</TableHead><TableHead>Pack list</TableHead><TableHead className="text-right">Reorder</TableHead><TableHead className="text-right">Cost rate</TableHead><TableHead>Tracking</TableHead><TableHead>Status</TableHead><TableHead /></TableRow></TableHeader><TableBody>
-          {filtered.map((item) => <TableRow key={item.id}><TableCell className="font-mono text-xs">{item.itemCode}</TableCell><TableCell><div className="font-medium">{item.itemName}</div><div className="max-w-sm truncate text-xs text-muted-foreground">{item.description || item.brand || '—'}</div></TableCell><TableCell>{item.category || '—'}</TableCell><TableCell>{item.unit}</TableCell><TableCell>{item.packList?.length ? <Badge className="bg-cyan-600 hover:bg-cyan-600"><PackagePlus className="mr-1 h-3 w-3" />{item.packList.length} sub-item{item.packList.length === 1 ? '' : 's'}</Badge> : <span className="text-muted-foreground">Standard item</span>}</TableCell><TableCell className="text-right">{item.reorderLevel}</TableCell><TableCell className="text-right">₹{Number(item.costRate || 0).toLocaleString('en-IN')}</TableCell><TableCell className="space-x-1">{item.serialTracking && <Badge variant="outline">Serial</Badge>}{item.batchTracking && <Badge variant="outline">Batch</Badge>}{item.expiryTracking && <Badge variant="outline">Expiry</Badge>}</TableCell><TableCell><Badge variant={item.active ? 'default' : 'secondary'}>{item.active ? 'Active' : 'Inactive'}</Badge></TableCell><TableCell><Button variant="ghost" size="icon" onClick={() => edit(item)} aria-label={`Edit ${item.itemName}`}><Pencil className="h-4 w-4" /></Button></TableCell></TableRow>)}
+      <TableCard
+        title="Inventory items"
+        count={filtered.length}
+        total={items.length}
+        noun="master record"
+        toolbar={<FilterBar search={{ value: search, onChange: setSearch, placeholder: 'Search items…' }} />}
+      >
+        <Table><TableHeader><TableRow><TableHead>Code</TableHead><TableHead>Item</TableHead><TableHead>Category</TableHead><TableHead>Unit</TableHead><TableHead>Pack list</TableHead><TableHead className="text-right">Reorder</TableHead><TableHead className="text-right">Cost rate</TableHead><TableHead>Tracking</TableHead><TableHead>Status</TableHead><TableHead /></TableRow></TableHeader><TableBody>
+          {filtered.map((item) => <TableRow key={item.id}><TableCell className="whitespace-nowrap font-mono">{item.itemCode}</TableCell><TableCell><div className="font-medium">{item.itemName}</div><div className="max-w-sm truncate text-xs text-muted-foreground">{item.description || item.brand || '—'}</div></TableCell><TableCell>{item.category || '—'}</TableCell><TableCell>{item.unit}</TableCell><TableCell>{item.packList?.length ? <Badge variant="neutral"><PackagePlus className="mr-1 h-3 w-3" />{item.packList.length} sub-item{item.packList.length === 1 ? '' : 's'}</Badge> : <span className="text-muted-foreground">Standard item</span>}</TableCell><TableCell className="text-right tabular-nums">{item.reorderLevel}</TableCell><TableCell className="whitespace-nowrap text-right tabular-nums">₹{Number(item.costRate || 0).toLocaleString('en-IN')}</TableCell><TableCell className="space-x-1">{item.serialTracking && <Badge variant="outline">Serial</Badge>}{item.batchTracking && <Badge variant="outline">Batch</Badge>}{item.expiryTracking && <Badge variant="outline">Expiry</Badge>}</TableCell><TableCell className="whitespace-nowrap"><StatusBadge status={item.active ? 'Active' : 'Inactive'} /></TableCell><TableCell><Button variant="ghost" size="icon" onClick={() => edit(item)} aria-label={`Edit ${item.itemName}`}><Pencil className="h-4 w-4" /></Button></TableCell></TableRow>)}
           {!filtered.length && <TableRow><TableCell colSpan={10} className="h-28 text-center text-muted-foreground">No Item Master records found.</TableCell></TableRow>}
-        </TableBody></Table></CardContent>
-      </Card>
+        </TableBody></Table>
+      </TableCard>
 
       <Dialog open={open} onOpenChange={setOpen}><DialogContent className="max-h-[90vh] max-w-4xl overflow-y-auto"><DialogHeader><DialogTitle>{form.id ? 'Edit inventory item' : 'Create inventory item'}</DialogTitle></DialogHeader>
         <div className="grid gap-4 py-2 sm:grid-cols-2 lg:grid-cols-3">

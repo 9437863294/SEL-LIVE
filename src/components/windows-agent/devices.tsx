@@ -5,7 +5,9 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { Ban, CheckCircle2, HardDrive, KeyRound, LogOut, Plus, RotateCcw } from 'lucide-react';
 
-import { Badge } from '@/components/ui/badge';
+import { SearchInput } from '@/components/shared/filter-bar';
+import { StatusBadge } from '@/components/shared/status-badge';
+import { TableCard } from '@/components/shared/table-card';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Checkbox } from '@/components/ui/checkbox';
@@ -155,9 +157,9 @@ export function DevicesPage() {
         <span className="flex flex-wrap items-center gap-1.5">
           <DeviceStatusBadge status={device.status} />
           {device.health.map((flag) => (
-            <Badge key={flag} variant="outline" className="border-amber-200 bg-amber-50 text-[10px] text-amber-700">
+            <StatusBadge key={flag} status={flag} tone="warning">
               {flag.replace(/_/g, ' ').toLowerCase()}
-            </Badge>
+            </StatusBadge>
           ))}
         </span>
       ),
@@ -196,17 +198,13 @@ export function DevicesPage() {
         <HrKpiCard label="Agent problems" value={counts.problems} tone={counts.problems ? 'rose' : 'slate'} />
       </div>
 
-      <Card>
-        <CardHeader className="flex flex-row items-center justify-between gap-3 space-y-0">
-          <CardTitle className="text-base">{rows.length} of {counts.total}</CardTitle>
-          <Input
-            value={search}
-            onChange={(event) => setSearch(event.target.value)}
-            placeholder="Filter by name, hostname, department or user"
-            className="max-w-xs"
-          />
-        </CardHeader>
-        <CardContent>
+      <TableCard
+        title="Device register"
+        count={rows.length}
+        total={counts.total}
+        noun="computer"
+        toolbar={<SearchInput value={search} onChange={setSearch} placeholder="Filter by name, hostname, department or user" className="sm:max-w-xs" />}
+      >
           {devices.loading ? (
             <HrLoader />
           ) : (
@@ -214,6 +212,7 @@ export function DevicesPage() {
               rows={rows}
               columns={columns}
               dense
+              frameless
               cardHref={(device) => WINDOWS_AGENT_ROUTES.device(device.id)}
               empty={
                 <HrEmptyState
@@ -224,8 +223,7 @@ export function DevicesPage() {
               }
             />
           )}
-        </CardContent>
-      </Card>
+      </TableCard>
 
       <EnrollmentCodesDialog open={codesOpen} onOpenChange={setCodesOpen} />
     </div>
@@ -367,7 +365,7 @@ function EnrollmentCodesDialog({
               rows={codes.data ?? []}
               dense
               columns={[
-                { header: 'Code', mobile: 'title', cell: (row) => <span className="font-mono text-sm">{row.id}</span> },
+                { header: 'Code', mobile: 'title', cell: (row) => <span className="font-mono">{row.id}</span> },
                 { header: 'Label', mobile: 'detail', cell: (row) => row.label },
                 {
                   header: 'Approval',
@@ -401,7 +399,7 @@ function EnrollmentCodesDialog({
                         {row.enabled ? 'Disable' : 'Enable'}
                       </Button>
                     ) : (
-                      <Badge variant="outline">{row.enabled ? 'Enabled' : 'Disabled'}</Badge>
+                      <StatusBadge status={row.enabled ? 'Enabled' : 'Disabled'} />
                     ),
                 },
               ]}
@@ -697,12 +695,7 @@ function AssignedUsersCard({
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-3">
-        <Input
-          value={filter}
-          onChange={(event) => setFilter(event.target.value)}
-          placeholder="Search people"
-          className="max-w-sm"
-        />
+        <SearchInput value={filter} onChange={setFilter} placeholder="Search people" className="max-w-sm" />
         <div className="max-h-64 space-y-1 overflow-y-auto rounded-md border p-2">
           {visible.map((person) => (
             <label key={person.id} className="flex items-center gap-2 rounded px-2 py-1 hover:bg-muted">

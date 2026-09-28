@@ -13,6 +13,7 @@ import {
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { PageHeader } from '@/components/shared/page-header';
+import { TableCard } from '@/components/shared/table-card';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { useToast } from '@/hooks/use-toast';
@@ -582,11 +583,9 @@ export default function DailyRequisitionWorkflowConfigurationPage() {
                       {isMapped(step) && (
                         <div className="space-y-2">
                           <Label>Assign Users</Label>
-                          <Card className="mt-2 overflow-hidden rounded-2xl border border-white/70 bg-white/70 shadow-sm backdrop-blur">
-                            <div className="h-1 w-full bg-gradient-to-r from-cyan-300 via-fuchsia-300 to-amber-200 opacity-70" />
-                            <div className="overflow-x-auto">
+                          <TableCard className="mt-2" scroll="natural">
                               <Table className="min-w-[720px]">
-                                <TableHeader className="bg-white/80 border-b border-white/70">
+                                <TableHeader>
                                   <TableRow>
                                     <TableHead className="whitespace-nowrap">
                                       {step.assignmentType === 'Project-based' ? 'Project' : 'Department'}
@@ -650,8 +649,7 @@ export default function DailyRequisitionWorkflowConfigurationPage() {
                                   })}
                                 </TableBody>
                               </Table>
-                            </div>
-                          </Card>
+                          </TableCard>
                         </div>
                       )}
 

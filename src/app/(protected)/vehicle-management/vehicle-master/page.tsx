@@ -20,8 +20,11 @@ import { diffFields } from '@/lib/activity-logger';
 import { useToast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { PageHeader, SectionHeader } from '@/components/shared/page-header';
+import { TableCard } from '@/components/shared/table-card';
+import { SearchInput } from '@/components/shared/filter-bar';
+import { StatusBadge } from '@/components/shared/status-badge';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
@@ -29,6 +32,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { Badge } from '@/components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import {
+  Table,
   TableBody,
   TableCell,
   TableHead,
@@ -800,7 +804,7 @@ export default function VehicleMasterPage() {
         title="Vehicle Master"
         description="Manage complete vehicle profile and assignment details."
         badge={
-          <Badge variant="outline" className="w-fit bg-white/70">
+          <Badge variant="neutral" className="w-fit">
             {rows.length - duplicateIds.size} records
           </Badge>
         }
@@ -830,38 +834,53 @@ export default function VehicleMasterPage() {
           </>
         }
       />
-      <Card className="vm-panel-strong overflow-hidden">
-        <CardContent className="space-y-3 px-3 pb-4 pt-4 sm:px-6 sm:pb-6 sm:pt-6">
-          <Input
-            placeholder="Search vehicle..."
-            value={query}
-            onChange={(event) => setQuery(event.target.value)}
-            className="h-11 w-full border-slate-200 bg-white focus-visible:ring-emerald-400/40 sm:h-10 sm:max-w-xs"
-          />
-          {duplicateIds.size > 0 && (
-            <div className="flex flex-col gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2.5 text-xs text-amber-800 sm:flex-row sm:items-center sm:justify-between">
-              <span>
-                {duplicateIds.size} record{duplicateIds.size === 1 ? '' : 's'} repeat a vehicle number that is already
-                registered. Only the original record for each number is listed.
-              </span>
-              <Button
-                size="sm"
-                variant="outline"
-                onClick={() => setShowDuplicates((prev) => !prev)}
-                className="h-8 shrink-0 border-amber-300 bg-white px-3 text-amber-800 hover:bg-amber-100"
-              >
-                {showDuplicates ? 'Hide duplicates' : 'Review duplicates'}
-              </Button>
+      <TableCard
+        title="Vehicle Register"
+        count={filteredRows.length}
+        noun="vehicle"
+        toolbar={
+          <div className="space-y-2">
+            <SearchInput value={query} onChange={setQuery} placeholder="Search vehicle..." className="sm:max-w-xs" />
+            {duplicateIds.size > 0 && (
+              <div className="flex flex-col gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2.5 text-xs text-amber-800 sm:flex-row sm:items-center sm:justify-between">
+                <span>
+                  {duplicateIds.size} record{duplicateIds.size === 1 ? '' : 's'} repeat a vehicle number that is already
+                  registered. Only the original record for each number is listed.
+                </span>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => setShowDuplicates((prev) => !prev)}
+                  className="h-8 shrink-0 border-amber-300 bg-white px-3 text-amber-800 hover:bg-amber-100"
+                >
+                  {showDuplicates ? 'Hide duplicates' : 'Review duplicates'}
+                </Button>
+              </div>
+            )}
+          </div>
+        }
+        footer={
+          !isLoading && filteredRows.length > 0 ? (
+            <VehicleTablePagination
+              currentPage={vehiclePagination.currentPage}
+              totalPages={vehiclePagination.totalPages}
+              totalRows={filteredRows.length}
+              pageSize={vehiclePagination.pageSize}
+              onPageChange={vehiclePagination.setCurrentPage}
+            />
+          ) : undefined
+        }
+      >
+          {!isLoading && filteredRows.length === 0 ? (
+            <div className="px-4 py-10 text-center text-sm text-muted-foreground">
+              No vehicle records found.
             </div>
-          )}
+          ) : (
+          <>
           {/* Mobile card view */}
-          <div className="space-y-2.5 sm:hidden">
+          <div className="space-y-2.5 p-3 sm:hidden">
             {isLoading ? (
               Array.from({ length: 3 }).map((_, i) => <Skeleton key={i} className="h-28 w-full rounded-xl" />)
-            ) : filteredRows.length === 0 ? (
-              <div className="rounded-xl border border-white/70 bg-white/85 px-4 py-8 text-center text-sm text-muted-foreground">
-                No vehicle records found.
-              </div>
             ) : (
               vehiclePagination.paginatedRows.map((row) => (
                 <div key={String(row.id)} onClick={() => setDetailsVehicle(row)} className="cursor-pointer rounded-xl border border-white/70 bg-white/85 p-4 shadow-sm active:scale-[0.99] transition-transform">
@@ -869,19 +888,17 @@ export default function VehicleMasterPage() {
                     <div>
                       <p className="flex items-center gap-1.5 text-sm font-semibold text-slate-800">
                         {row.vehicleNumber || '-'}
-                        {duplicateIds.has(String(row.id)) && (
-                          <span className="rounded-full bg-amber-100 px-1.5 py-0.5 text-[10px] font-semibold text-amber-700">
-                            Duplicate
-                          </span>
-                        )}
+                        {duplicateIds.has(String(row.id)) && <Badge variant="warning">Duplicate</Badge>}
                       </p>
                       <p className="text-xs text-muted-foreground">{row.vehicleType || '-'} · {row.fuelType || '-'}</p>
                     </div>
-                    <span className={`shrink-0 rounded-full px-2 py-0.5 text-[11px] font-medium ${
-                      String(row.vehicleStatus || '').toLowerCase() === 'active'
-                        ? 'bg-emerald-50 text-emerald-700'
-                        : 'bg-slate-100 text-slate-600'
-                    }`}>{row.vehicleStatus || '-'}</span>
+                    <StatusBadge
+                      status={String(row.vehicleStatus || '')}
+                      tone={String(row.vehicleStatus || '').toLowerCase() === 'active' ? 'success' : 'neutral'}
+                      className="shrink-0"
+                    >
+                      {row.vehicleStatus || '-'}
+                    </StatusBadge>
                   </div>
                   <div className="space-y-1.5">
                     <div className="flex justify-between gap-2">
@@ -910,14 +927,9 @@ export default function VehicleMasterPage() {
             )}
           </div>
 
-          {!isLoading && filteredRows.length === 0 ? (
-            <div className="hidden sm:block rounded-lg border border-white/70 bg-white/80 px-4 py-10 text-center text-muted-foreground">
-              No vehicle records found.
-            </div>
-          ) : (
-          <div className="hidden sm:block overflow-auto rounded-lg border border-white/70 bg-white/80 h-[calc(100vh-230px)]">
-            <table className="min-w-[1420px] w-full caption-bottom text-sm">
-              <TableHeader className="sticky top-0 z-10 bg-slate-50 shadow-sm">
+          <div className="hidden sm:block">
+            <Table className="min-w-[1420px]" containerClassName="overflow-visible">
+              <TableHeader>
                 <TableRow className="[&_th]:whitespace-nowrap">
                   <TableHead>Vehicle ID</TableHead>
                   <TableHead>Vehicle Number</TableHead>
@@ -946,20 +958,13 @@ export default function VehicleMasterPage() {
                     <TableRow
                       key={String(row.id)}
                       onClick={() => setDetailsVehicle(row)}
-                      className={cn(
-                        'h-14 cursor-pointer hover:bg-emerald-50/70',
-                        duplicateIds.has(String(row.id)) && 'bg-amber-50/70 hover:bg-amber-50'
-                      )}
+                      className={cn('cursor-pointer', duplicateIds.has(String(row.id)) && 'bg-amber-50/70')}
                     >
                       <TableCell className="whitespace-nowrap font-medium">{row.vehicleId || '-'}</TableCell>
-                      <TableCell className="whitespace-nowrap font-semibold text-slate-800">
+                      <TableCell className="whitespace-nowrap font-medium">
                         <span className="flex items-center gap-1.5">
                           {row.vehicleNumber || '-'}
-                          {duplicateIds.has(String(row.id)) && (
-                            <span className="rounded-full bg-amber-100 px-1.5 py-0.5 text-[10px] font-semibold text-amber-700">
-                              Duplicate
-                            </span>
-                          )}
+                          {duplicateIds.has(String(row.id)) && <Badge variant="warning">Duplicate</Badge>}
                         </span>
                       </TableCell>
                       <TableCell className="whitespace-nowrap">{row.vehicleType || '-'}</TableCell>
@@ -990,18 +995,11 @@ export default function VehicleMasterPage() {
                   ))
                 )}
               </TableBody>
-            </table>
+            </Table>
           </div>
+          </>
           )}
-          <VehicleTablePagination
-            currentPage={vehiclePagination.currentPage}
-            totalPages={vehiclePagination.totalPages}
-            totalRows={filteredRows.length}
-            pageSize={vehiclePagination.pageSize}
-            onPageChange={vehiclePagination.setCurrentPage}
-          />
-        </CardContent>
-      </Card>
+      </TableCard>
 
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
         <DialogContent className="inset-0 left-0 top-0 flex h-[100dvh] max-h-none w-screen max-w-none translate-x-0 translate-y-0 flex-col gap-0 overflow-hidden rounded-none border-0 bg-slate-50 p-0 shadow-2xl sm:left-1/2 sm:top-1/2 sm:h-[90dvh] sm:max-h-[900px] sm:w-[calc(100vw-3rem)] sm:max-w-6xl sm:-translate-x-1/2 sm:-translate-y-1/2 sm:rounded-2xl sm:border">

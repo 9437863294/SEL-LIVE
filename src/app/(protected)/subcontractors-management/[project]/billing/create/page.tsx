@@ -5,7 +5,8 @@ import { useState, useEffect, useMemo, Fragment, useId } from 'react';
 import Link from 'next/link';
 import { ArrowLeft, Save, Loader2, Plus, Trash2, Library, ChevronDown, ChevronRight } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { TableCard } from '@/components/shared/table-card';
 import { Input } from '@/components/ui/input';
 import { useToast } from '@/hooks/use-toast';
 import { db } from '@/lib/firebase';
@@ -797,15 +798,10 @@ export default function CreateBillPage() {
           </CardContent>
         </Card>
 
-        <Card>
-          <CardHeader>
-            <div className="flex items-center justify-between">
-              <div>
-                <CardTitle>Bill Items</CardTitle>
-                <CardDescription>
-                  Add items from the selected Work Order to this bill.
-                </CardDescription>
-              </div>
+        <TableCard
+          title="Bill Items"
+          description="Add items from the selected Work Order to this bill."
+          actions={
               <Button
                 variant="outline"
                 type="button"
@@ -814,10 +810,8 @@ export default function CreateBillPage() {
               >
                 <Library className="mr-2 h-4 w-4" /> Add Items from Work Order
               </Button>
-            </div>
-          </CardHeader>
-          <CardContent>
-            <div className="overflow-x-auto">
+          }
+        >
               <Table>
                 <TableHeader>
                   <TableRow>
@@ -862,7 +856,7 @@ export default function CreateBillPage() {
                         <TableCell>{item.orderQty}</TableCell>
                         <TableCell>{item.jmcCertifiedQty}</TableCell>
                         <TableCell>{item.alreadyBilledQty}</TableCell>
-                        <TableCell className="font-semibold">{item.availableQty}</TableCell>
+                        <TableCell>{item.availableQty}</TableCell>
                         <TableCell>
                           <Input
                             type="number"
@@ -889,7 +883,7 @@ export default function CreateBillPage() {
                       </TableRow>
 
                       {expandedRows.has(item.id) && item.isBreakdown && (
-                        <TableRow className="bg-muted/50 hover:bg-muted/50">
+                        <TableRow className="bg-muted/50">
                           <TableCell colSpan={12} className="p-0">
                             <div className="p-4">
                               <h4 className="mb-2 ml-2 font-semibold">Sub-Items Breakdown</h4>
@@ -911,7 +905,7 @@ export default function CreateBillPage() {
                                       <TableCell>{sub.slNo}</TableCell>
                                       <TableCell>{sub.name}</TableCell>
                                       <TableCell>{sub.quantity}</TableCell>
-                                      <TableCell className="font-semibold">
+                                      <TableCell>
                                         {sub.availableQty}
                                       </TableCell>
                                       <TableCell>
@@ -942,9 +936,7 @@ export default function CreateBillPage() {
                   ))}
                 </TableBody>
               </Table>
-            </div>
-          </CardContent>
-        </Card>
+        </TableCard>
 
         <Card className="mt-6">
           <CardHeader>

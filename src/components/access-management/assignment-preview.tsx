@@ -23,6 +23,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Textarea } from '@/components/ui/textarea';
+import { StatusBadge } from '@/components/shared/status-badge';
 import { hrDialog } from '@/components/hr/hr-ui';
 import { cn } from '@/lib/utils';
 import type { Project, Role, User } from '@/lib/types';
@@ -246,42 +247,38 @@ export function AssignmentPreviewDialog({
             <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
               Being granted
             </p>
+            {/* Named grants are plain tags, counts neutral chips; only "Temporary" is toned, because
+                it marks the grant as one that lapses. */}
             <div className="flex flex-wrap gap-1.5">
               {selectedRoles.map((role) => (
-                <Badge key={role.id} variant="outline" className="border-indigo-200 bg-indigo-50 text-indigo-700">
+                <Badge key={role.id} variant="outline">
                   {role.name} · {countPermissions(role.permissions)} permissions
                 </Badge>
               ))}
               {(request.templateIds ?? []).map((templateId) => {
                 const template = templates.find((entry) => entry.id === templateId);
                 return (
-                  <Badge key={templateId} variant="outline" className="border-violet-200 bg-violet-50 text-violet-700">
+                  <Badge key={templateId} variant="outline">
                     Template · {template?.name ?? templateId}
                   </Badge>
                 );
               })}
               {Object.keys(request.directPermissions ?? {}).length > 0 && (
-                <Badge variant="outline" className="border-violet-200 bg-violet-50 text-violet-700">
-                  {countPermissions(request.directPermissions)} direct permissions
-                </Badge>
+                <Badge variant="neutral">{countPermissions(request.directPermissions)} direct permissions</Badge>
               )}
               {(request.projectIds ?? []).map((projectId) => (
-                <Badge key={projectId} variant="outline" className="border-emerald-200 bg-emerald-50 text-emerald-700">
+                <Badge key={projectId} variant="outline">
                   Project · {projects.find((project) => project.id === projectId)?.projectName ?? projectId}
                 </Badge>
               ))}
               {(request.departmentIds ?? []).length > 0 && (
-                <Badge variant="outline" className="border-cyan-200 bg-cyan-50 text-cyan-700">
-                  {(request.departmentIds ?? []).length} department assignment(s)
-                </Badge>
+                <Badge variant="neutral">{(request.departmentIds ?? []).length} department assignment(s)</Badge>
               )}
               {(request.designations ?? []).length > 0 && (
-                <Badge variant="outline" className="border-teal-200 bg-teal-50 text-teal-700">
-                  {(request.designations ?? []).length} designation assignment(s)
-                </Badge>
+                <Badge variant="neutral">{(request.designations ?? []).length} designation assignment(s)</Badge>
               )}
               {request.temporary && (
-                <Badge variant="outline" className="border-amber-200 bg-amber-50 text-amber-800">
+                <Badge variant="warning">
                   Temporary · {request.temporary.startAt.slice(0, 10)} to {request.temporary.expiresAt.slice(0, 10)}
                 </Badge>
               )}
@@ -354,11 +351,8 @@ export function AssignmentPreviewDialog({
                         <div className="min-w-0 flex-1">
                           <div className="flex flex-wrap items-center gap-1.5">
                             <span className="truncate text-sm font-medium text-slate-800">{plan.userName}</span>
-                            {plan.noop && (
-                              <Badge variant="outline" className="border-slate-200 bg-slate-50 text-[10px] text-slate-500">
-                                Already assigned
-                              </Badge>
-                            )}
+                            {/* Neutral, not the "assigned" info tone: nothing will change for this user. */}
+                            {plan.noop && <StatusBadge status="Already assigned" tone="neutral" />}
                           </div>
                           <DiffSummary
                             className="mt-1"
@@ -370,7 +364,7 @@ export function AssignmentPreviewDialog({
                       </button>
 
                       {isOpen && (
-                        <div className="grid gap-3 bg-slate-50/60 px-3 py-2.5 sm:grid-cols-2">
+                        <div className="grid grid-cols-1 gap-3 bg-slate-50/60 px-3 py-2.5 sm:grid-cols-2">
                           <div>
                             <p className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-emerald-700">
                               Permissions being added ({plan.diff.addedCount})
@@ -385,7 +379,7 @@ export function AssignmentPreviewDialog({
                             {plan.rolesAlreadyHeld.length ? (
                               <div className="flex flex-wrap gap-1">
                                 {plan.rolesAlreadyHeld.map((role) => (
-                                  <Badge key={role.id} variant="outline" className="text-[10px] text-slate-600">
+                                  <Badge key={role.id} variant="outline">
                                     {role.name}
                                   </Badge>
                                 ))}
@@ -588,20 +582,12 @@ export function RemovalPreviewDialog({
                 <div key={user.id} className="px-2.5 py-2">
                   <div className="flex flex-wrap items-center gap-1.5">
                     <span className="truncate text-sm font-medium text-slate-800">{user.name || user.email}</span>
-                    <Badge
-                      variant="outline"
-                      className={
-                        lost.length
-                          ? 'border-destructive/40 bg-destructive/10 text-[10px] text-destructive'
-                          : 'border-emerald-200 bg-emerald-50 text-[10px] text-emerald-700'
-                      }
-                    >
+                    {/* The projected outcome for this user: losing something is the danger case. */}
+                    <StatusBadge tone={lost.length ? 'danger' : 'success'}>
                       {lost.length ? `${lost.length} removed` : 'no change'}
-                    </Badge>
+                    </StatusBadge>
                     {retained.length > 0 && (
-                      <Badge variant="outline" className="border-emerald-200 bg-emerald-50 text-[10px] text-emerald-700">
-                        {retained.length} still granted elsewhere
-                      </Badge>
+                      <StatusBadge tone="success">{retained.length} still granted elsewhere</StatusBadge>
                     )}
                   </div>
                   {lost.length > 0 && (

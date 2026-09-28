@@ -31,15 +31,15 @@ import {
   Loader2,
   MapPin,
   RefreshCw,
-  Search,
   UserSearch,
   X,
 } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { HrEmptyState } from '@/components/hr/hr-ui';
+import { SearchInput } from '@/components/shared/filter-bar';
+import { StatusBadge } from '@/components/shared/status-badge';
 import { useToast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
 import { employeeSearchText } from '@/lib/greythr';
@@ -145,9 +145,7 @@ export function EmployeePicker({ value, onSelect, disabled }: EmployeePickerProp
             <div className="flex flex-wrap items-center gap-1.5 text-sm font-semibold text-emerald-900">
               <CheckCircle2 className="h-4 w-4" />
               {value.name || value.employeeNo}
-              <Badge variant="outline" className="border-emerald-300 bg-white/70 text-[10px] text-emerald-800">
-                {value.employeeNo || value.employeeId}
-              </Badge>
+              <Badge variant="outline">{value.employeeNo || value.employeeId}</Badge>
             </div>
             <p className="mt-0.5 text-xs text-emerald-800">
               Linked to greytHR employee {value.employeeId}. Fields below are prefilled from greytHR and
@@ -169,34 +167,30 @@ export function EmployeePicker({ value, onSelect, disabled }: EmployeePickerProp
 
         <div className="mt-2 flex flex-wrap gap-1.5">
           {value.designation && (
-            <Badge variant="outline" className="gap-1 border-indigo-200 bg-white/80 text-[10px] text-indigo-700">
+            <Badge variant="outline" className="gap-1">
               <BadgeCheck className="h-3 w-3" />
               {value.designation}
             </Badge>
           )}
           {value.department && (
-            <Badge variant="outline" className="gap-1 border-cyan-200 bg-white/80 text-[10px] text-cyan-700">
+            <Badge variant="outline" className="gap-1">
               <Building2 className="h-3 w-3" />
               {value.department}
             </Badge>
           )}
           {value.projectName && (
-            <Badge variant="outline" className="gap-1 border-emerald-300 bg-white/80 text-[10px] text-emerald-700">
+            <Badge variant="outline" className="gap-1">
               <FolderKanban className="h-3 w-3" />
               {value.projectName}
             </Badge>
           )}
           {value.location && (
-            <Badge variant="outline" className="gap-1 border-slate-200 bg-white/80 text-[10px] text-slate-600">
+            <Badge variant="outline" className="gap-1">
               <MapPin className="h-3 w-3" />
               {value.location}
             </Badge>
           )}
-          {value.employmentType && (
-            <Badge variant="outline" className="border-slate-200 bg-white/80 text-[10px] text-slate-600">
-              {value.employmentType}
-            </Badge>
-          )}
+          {value.employmentType && <Badge variant="outline">{value.employmentType}</Badge>}
         </div>
       </div>
     );
@@ -207,26 +201,10 @@ export function EmployeePicker({ value, onSelect, disabled }: EmployeePickerProp
   return (
     <div className="space-y-2">
       <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
-        <div className="relative flex-1">
-          <Search className="pointer-events-none absolute left-3 top-2.5 h-4 w-4 text-slate-400" />
-          <Input
-            value={term}
-            onChange={(event) => setTerm(event.target.value)}
-            placeholder="Search by name, employee no. or email…"
-            className="pl-9"
-            disabled={disabled}
-          />
-          {term && (
-            <button
-              type="button"
-              onClick={() => setTerm('')}
-              aria-label="Clear search"
-              className="hr-inline-action absolute right-1 top-1/2 inline-flex -translate-y-1/2 items-center justify-center rounded-full p-1 text-slate-400 hover:bg-slate-100"
-            >
-              <X className="h-3.5 w-3.5" />
-            </button>
-          )}
-        </div>
+        {/* A fieldset, so the shared search box is disabled with the picker while the form saves. */}
+        <fieldset disabled={disabled} className="min-w-0 flex-1">
+          <SearchInput value={term} onChange={setTerm} placeholder="Search by name, employee no. or email…" />
+        </fieldset>
         <Button variant="outline" size="sm" onClick={() => void load()} disabled={loading || disabled}>
           {loading ? <Loader2 className="mr-1.5 h-4 w-4 animate-spin" /> : <RefreshCw className="mr-1.5 h-4 w-4" />}
           Reload
@@ -235,9 +213,7 @@ export function EmployeePicker({ value, onSelect, disabled }: EmployeePickerProp
 
       {list && (
         <div className="flex flex-wrap items-center gap-2 text-[11px] text-muted-foreground">
-          <Badge variant="outline" className="border-indigo-200 bg-indigo-50 text-indigo-700">
-            {filtered.length} selectable
-          </Badge>
+          <Badge variant="neutral">{filtered.length} selectable</Badge>
           <span>of {list.totalEmployees} active employees</span>
           {Object.entries(list.excluded).map(([reason, count]) => (
             <span key={reason}>
@@ -356,19 +332,12 @@ export function EmployeePicker({ value, onSelect, disabled }: EmployeePickerProp
                     <span className="truncate text-sm font-medium text-slate-800">
                       {employee.name || '(no name in greytHR)'}
                     </span>
-                    {employee.employeeNo && (
-                      <Badge variant="outline" className="text-[10px] text-slate-500">{employee.employeeNo}</Badge>
-                    )}
+                    {employee.employeeNo && <Badge variant="outline">{employee.employeeNo}</Badge>}
+                    {/* Neither phrase is in the shared vocabulary; both are cautions here. */}
                     {employee.employmentState === 'Notice Period' && (
-                      <Badge variant="outline" className="border-amber-200 bg-amber-50 text-[10px] text-amber-800">
-                        Notice period
-                      </Badge>
+                      <StatusBadge status="Notice period" tone="warning" />
                     )}
-                    {!employee.email && (
-                      <Badge variant="outline" className="border-amber-200 bg-amber-50 text-[10px] text-amber-800">
-                        No email in greytHR
-                      </Badge>
-                    )}
+                    {!employee.email && <StatusBadge status="No email in greytHR" tone="warning" />}
                   </span>
                   <span className="mt-0.5 line-clamp-2 text-xs text-muted-foreground sm:line-clamp-none sm:truncate">
                     {[employee.email, employee.designation, employee.department, employee.projectName]
@@ -407,7 +376,7 @@ export function CategoryChips({
   return (
     <div className={cn('flex flex-wrap gap-1.5', className)}>
       {entries.map(([category, value]) => (
-        <Badge key={category} variant="outline" className="text-[10px] text-slate-600">
+        <Badge key={category} variant="outline">
           <span className="text-slate-400">{category}:</span>&nbsp;{value}
         </Badge>
       ))}

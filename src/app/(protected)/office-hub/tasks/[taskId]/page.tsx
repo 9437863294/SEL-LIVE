@@ -84,8 +84,8 @@ import {
   PersonChip,
   PriorityBadge,
   TaskDueDate,
-  TaskStatusBadge,
 } from '@/components/office-hub/ui';
+import { StatusBadge } from '@/components/shared/status-badge';
 import {
   DependencyPanel,
   SubtaskPanel,
@@ -276,16 +276,16 @@ export default function TaskDetailPage() {
       />
 
       <div className="flex flex-wrap items-center gap-2">
-        <TaskStatusBadge status={task.status} />
+        <StatusBadge status={task.status} />
         <PriorityBadge priority={task.priority} />
         <TaskDueDate task={task} today={today} />
         {overdue && (
-          <Badge variant="outline" className="border-rose-200 bg-rose-50 text-[11px] text-rose-700">
+          <StatusBadge status="Overdue">
             {taskOverdueDays(task, today)} day{taskOverdueDays(task, today) === 1 ? '' : 's'} overdue
-          </Badge>
+          </StatusBadge>
         )}
         {(task.tags ?? []).map((tag) => (
-          <Badge key={tag} variant="outline" className="border-slate-200 bg-slate-50 text-[11px]">
+          <Badge key={tag} variant="outline">
             {tag}
           </Badge>
         ))}
@@ -404,7 +404,7 @@ export default function TaskDetailPage() {
                 <PriorityBadge priority={task.priority} />
               </OfficeHubField>
               <OfficeHubField label="Status">
-                <TaskStatusBadge status={task.status} />
+                <StatusBadge status={task.status} />
               </OfficeHubField>
               <OfficeHubField label="Progress">
                 <TaskProgressSummary task={task} />

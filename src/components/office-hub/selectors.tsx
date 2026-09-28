@@ -9,7 +9,8 @@
  */
 
 import { useMemo, useState } from 'react';
-import { Check, ChevronsUpDown, Search, Users, X } from 'lucide-react';
+import { Check, ChevronsUpDown, Users, X } from 'lucide-react';
+import { SearchInput } from '@/components/shared/filter-bar';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
@@ -467,22 +468,29 @@ export function TimeField({
   );
 }
 
-/** A from/to pair, used by every register's filter panel. */
+/**
+ * A from/to pair, used by every register's filter panel.
+ *
+ * `inline` puts the label beside the two dates, for a `FilterBar` row where every control sits on
+ * one line; the default stacks it above, for a form.
+ */
 export function DateRangePicker({
   from,
   to,
   onChange,
   label = 'Date range',
+  inline = false,
 }: {
   from: string | null | undefined;
   to: string | null | undefined;
   onChange: (range: { from: string | null; to: string | null }) => void;
   label?: string;
+  inline?: boolean;
 }) {
   return (
-    <div className="min-w-0">
-      <Label className="mb-1 block text-xs">{label}</Label>
-      <div className="flex items-center gap-2">
+    <div className={cn('min-w-0', inline && 'flex items-center gap-2')}>
+      <Label className={cn('block text-xs', inline ? 'shrink-0 whitespace-nowrap text-muted-foreground' : 'mb-1')}>{label}</Label>
+      <div className="flex min-w-0 flex-1 items-center gap-2">
         <Input
           type="date"
           value={from ?? ''}
@@ -588,16 +596,7 @@ export function ParticipantSelector({
 
       {tab === 'people' && (
         <>
-          <div className="relative">
-            <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
-            <Input
-              value={search}
-              onChange={(event) => setSearch(event.target.value)}
-              placeholder="Search employees"
-              className="bg-white pl-8"
-              aria-label="Search employees"
-            />
-          </div>
+          <SearchInput value={search} onChange={setSearch} placeholder="Search employees" />
           <div className="max-h-64 space-y-1 overflow-y-auto rounded-lg border bg-white p-1.5">
             {filteredPeople.length === 0 && (
               <p className="py-6 text-center text-sm text-muted-foreground">No matching employee.</p>
@@ -746,7 +745,7 @@ export function ParticipantSelector({
               <ParticipantChip key={participant.userId} participant={participant} />
             ))}
             {expansion.participants.length > 40 && (
-              <Badge variant="outline" className="border-indigo-200 bg-white text-[11px]">
+              <Badge variant="neutral">
                 +{expansion.participants.length - 40} more
               </Badge>
             )}

@@ -33,6 +33,7 @@ import {
   calculateMileage,
   parseTravelDateTime,
   roundMoney,
+  travelStatusLabel,
   type ExpenseCategory,
   type ExpensePaymentMode,
   type OwnVehicleType,
@@ -49,11 +50,11 @@ import {
   TravelField,
   TravelLoader,
   TravelSection,
-  TravelStatusBadge,
-  TravelDataList,
   travelDialog,
 } from './travel-ui';
 import { PageHeader } from '@/components/shared/page-header';
+import { CellLink, DataList } from '@/components/shared/data-list';
+import { StatusBadge } from '@/components/shared/status-badge';
 
 const todayIso = () => new Date().toISOString().slice(0, 10);
 
@@ -325,7 +326,7 @@ export default function MyTravel() {
         <TravelSection
           title="My Current Tour"
           description={`${currentTour.projectName || currentTour.tourType} · ${currentTour.departureDate} → ${currentTour.returnDate}`}
-          actions={<TravelStatusBadge status={currentTour.status} />}
+          actions={<StatusBadge status={currentTour.status}>{travelStatusLabel(currentTour.status)}</StatusBadge>}
         >
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
             <TravelField label="Reference">
@@ -354,7 +355,7 @@ export default function MyTravel() {
 
           {currentTourExpenses.length > 0 && (
             <div className="mt-4 border-t border-slate-100 pt-3">
-              <TravelDataList
+              <DataList
                 rows={currentTourExpenses.slice().sort((a, b) => (b.expenseDate || '').localeCompare(a.expenseDate || ''))}
                 rowClassName={expense => ((expense.flags?.length || 0) > 0 ? 'bg-amber-50/40 border-amber-200' : undefined)}
                 columns={[
@@ -390,7 +391,7 @@ export default function MyTravel() {
                           View bill
                         </a>
                       ) : (
-                        <Badge variant="outline" className="border-amber-300 bg-amber-50 text-[10px] text-amber-800">No bill</Badge>
+                        <Badge variant="warning">No bill</Badge>
                       ),
                   },
                   {
@@ -458,7 +459,7 @@ export default function MyTravel() {
         </TabsContent>
 
         <TabsContent value="claims" className="mt-3">
-          <TravelDataList
+          <DataList
             rows={mine.claims}
             cardHref={claim => `/tour-travel/claims/${claim.id}`}
             empty={<TravelEmptyState title="No claims yet" description="A claim is created from a completed tour." icon={ReceiptIndianRupee} />}
@@ -467,12 +468,12 @@ export default function MyTravel() {
                 header: 'Claim',
                 mobile: 'title',
                 cell: claim => (
-                  <Link href={`/tour-travel/claims/${claim.id}`} className="font-medium text-sky-700 hover:underline">
+                  <CellLink href={`/tour-travel/claims/${claim.id}`} className="font-medium text-sky-700 hover:underline">
                     {claim.referenceNumber}
-                  </Link>
+                  </CellLink>
                 ),
               },
-              { header: 'Status', mobile: 'aside', cell: claim => <TravelStatusBadge status={claim.status} /> },
+              { header: 'Status', mobile: 'aside', cell: claim => <StatusBadge status={claim.status}>{travelStatusLabel(claim.status)}</StatusBadge> },
               { header: 'Tour', cell: claim => claim.travelRequestNumber },
               { header: 'Claimed', align: 'right', cell: claim => <Money value={claim.totalClaimed} /> },
               { header: 'Approved', align: 'right', cell: claim => <Money value={claim.totalApproved} /> },
@@ -491,12 +492,12 @@ export default function MyTravel() {
         </TabsContent>
 
         <TabsContent value="advances" className="mt-3">
-          <TravelDataList
+          <DataList
             rows={mine.advances}
             empty={<TravelEmptyState title="No advances" description="Request an advance from an approved tour." icon={Wallet} />}
             columns={[
               { header: 'Advance', mobile: 'title', cell: advance => <span className="font-medium">{advance.referenceNumber}</span> },
-              { header: 'Status', mobile: 'aside', cell: advance => <TravelStatusBadge status={advance.status} /> },
+              { header: 'Status', mobile: 'aside', cell: advance => <StatusBadge status={advance.status}>{travelStatusLabel(advance.status)}</StatusBadge> },
               { header: 'Tour', cell: advance => advance.travelRequestNumber },
               { header: 'Approved', align: 'right', cell: advance => <Money value={advance.approvedAmount} /> },
               { header: 'Paid', align: 'right', cell: advance => <Money value={advance.paidAmount} /> },
@@ -664,7 +665,7 @@ export default function MyTravel() {
 function TourTable({ requests, emptyLabel }: { requests: TravelRequest[]; emptyLabel: string }) {
   const sorted = requests.slice().sort((a, b) => (b.departureDate || '').localeCompare(a.departureDate || ''));
   return (
-    <TravelDataList
+    <DataList
       rows={sorted}
       cardHref={request => `/tour-travel/requests/${request.id}`}
       empty={<TravelEmptyState title={emptyLabel} icon={Plane} />}
@@ -673,12 +674,12 @@ function TourTable({ requests, emptyLabel }: { requests: TravelRequest[]; emptyL
           header: 'Reference',
           mobile: 'title',
           cell: request => (
-            <Link href={`/tour-travel/requests/${request.id}`} className="font-medium text-sky-700 hover:underline">
+            <CellLink href={`/tour-travel/requests/${request.id}`} className="font-medium text-sky-700 hover:underline">
               {request.referenceNumber}
-            </Link>
+            </CellLink>
           ),
         },
-        { header: 'Status', mobile: 'aside', cell: request => <TravelStatusBadge status={request.status} /> },
+        { header: 'Status', mobile: 'aside', cell: request => <StatusBadge status={request.status}>{travelStatusLabel(request.status)}</StatusBadge> },
         { header: 'Type', cell: request => request.tourType },
         { header: 'Departure', cell: request => <span className="tabular-nums">{request.departureDate}</span> },
         { header: 'Return', cell: request => <span className="tabular-nums">{request.returnDate}</span> },

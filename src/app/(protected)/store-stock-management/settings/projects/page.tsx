@@ -4,7 +4,6 @@
 import { useState, useEffect } from 'react';
 import { Plus, Edit, Trash2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import {
   Dialog,
@@ -30,7 +29,8 @@ import {
   AccordionItem,
   AccordionTrigger,
 } from "@/components/ui/accordion";
-import { Badge } from '@/components/ui/badge';
+import { StatusBadge } from '@/components/shared/status-badge';
+import { TableCard } from '@/components/shared/table-card';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogHeader, AlertDialogFooter, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 
@@ -143,12 +143,12 @@ export default function ManageProjectsAndSitesPage() {
         }
       />
 
-       <Card className="border-slate-200/80 shadow-sm">
-        <CardHeader>
-          <CardTitle>Project master</CardTitle>
-          <CardDescription>{projects.length} project{projects.length === 1 ? '' : 's'} configured for store and stock workflows.</CardDescription>
-        </CardHeader>
-        <CardContent className="overflow-x-auto p-0">
+       <TableCard
+        title="Project master"
+        description="Projects configured for store and stock workflows."
+        count={projects.length}
+        noun="project"
+      >
           <Table>
             <TableHeader>
               <TableRow>
@@ -167,10 +167,10 @@ export default function ManageProjectsAndSitesPage() {
               ) : projects.length > 0 ? (
                 projects.map(project => (
                   <TableRow key={project.id}>
-                    <TableCell className="font-semibold">{project.projectName}</TableCell>
-                    <TableCell>{project.siteCode}</TableCell>
+                    <TableCell className="font-medium">{project.projectName}</TableCell>
+                    <TableCell className="whitespace-nowrap">{project.siteCode}</TableCell>
                     <TableCell>{project.location}</TableCell>
-                    <TableCell><Badge variant={project.status === 'Active' ? 'default' : 'secondary'}>{project.status}</Badge></TableCell>
+                    <TableCell className="whitespace-nowrap"><StatusBadge status={project.status} /></TableCell>
                     <TableCell className="text-right">
                        <Button variant="outline" size="sm" onClick={() => openProjectDialog('edit', project)}><Edit className="mr-2 h-4 w-4" />Edit</Button>
                         <AlertDialog>
@@ -198,8 +198,7 @@ export default function ManageProjectsAndSitesPage() {
               )}
             </TableBody>
           </Table>
-        </CardContent>
-      </Card>
+      </TableCard>
 
        {/* Project Dialog */}
        <Dialog open={isProjectDialogOpen} onOpenChange={setIsProjectDialogOpen}>

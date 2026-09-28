@@ -9,7 +9,8 @@ import { useAuthorization } from '@/hooks/useAuthorization';
 import { useToast } from '@/hooks/use-toast';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { PageHeader } from '@/components/shared/page-header';
-import { Label } from '@/components/ui/label';
+import { TableCard } from '@/components/shared/table-card';
+import { SearchInput } from '@/components/shared/filter-bar';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
@@ -25,7 +26,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
-import { AlertTriangle, CarFront, Plus, RotateCcw, Save, Search, Tag, Trash2 } from 'lucide-react';
+import { AlertTriangle, CarFront, Plus, RotateCcw, Save, Tag, Trash2 } from 'lucide-react';
 
 export default function VehicleTypesSettingsPage() {
   const { can } = useAuthorization();
@@ -159,60 +160,42 @@ export default function VehicleTypesSettingsPage() {
         </div>
       </div>
 
-      {/* Toolbar: search + add */}
-      <Card className="vm-panel overflow-hidden">
-        <CardContent className="grid grid-cols-1 gap-3 p-4 sm:grid-cols-2">
-          <div className="space-y-1.5">
-            <Label htmlFor="type-search" className="text-xs font-semibold text-slate-600">Search types</Label>
-            <div className="relative">
-              <Search className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-              <Input
-                id="type-search"
-                value={search}
-                onChange={(event) => setSearch(event.target.value)}
-                placeholder="Search vehicle types…"
-                className="bg-white pl-8"
-              />
-            </div>
-          </div>
-          <div className="space-y-1.5">
-            <Label htmlFor="new-vehicle-type" className="text-xs font-semibold text-slate-600">Add a new type</Label>
+      {/* List */}
+      <TableCard
+        title="Configured Types"
+        description="Sorted alphabetically. Vehicle counts reflect current Vehicle Master records."
+        icon={Tag}
+        count={visibleTypes.length}
+        total={localTypes.length}
+        noun="type"
+        scroll="natural"
+        toolbar={
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <SearchInput value={search} onChange={setSearch} placeholder="Search vehicle types…" label="Search types" />
             <div className="flex gap-2">
               <Input
                 id="new-vehicle-type"
+                aria-label="Add a new type"
                 value={newTypeName}
                 onChange={(event) => setNewTypeName(event.target.value)}
                 onKeyDown={(event) => { if (event.key === 'Enter') addType(); }}
-                placeholder="Example: Excavator"
+                placeholder="Add a new type, e.g. Excavator"
                 disabled={!canEdit}
                 maxLength={40}
-                className="bg-white"
               />
               <Button type="button" onClick={addType} disabled={!canEdit || !newTypeName.trim()} className="shrink-0 border-violet-200 bg-violet-600 text-white hover:bg-violet-700">
                 <Plus className="mr-1.5 h-4 w-4" />Add
               </Button>
             </div>
           </div>
-        </CardContent>
-      </Card>
-
-      {/* List */}
-      <Card className="vm-panel overflow-hidden">
-        <CardHeader className="flex flex-row items-center justify-between border-b border-slate-100 p-4">
-          <div>
-            <CardTitle>Configured Types</CardTitle>
-            <CardDescription className="mt-0.5 text-xs">Sorted alphabetically. Vehicle counts reflect current Vehicle Master records.</CardDescription>
-          </div>
-          <Badge variant="outline" className="bg-white">{visibleTypes.length} of {localTypes.length}</Badge>
-        </CardHeader>
-        <CardContent className="p-0">
+        }
+      >
           {visibleTypes.length === 0 ? (
             <div className="flex flex-col items-center gap-2 py-14 text-center text-sm text-muted-foreground">
               <Tag className="h-8 w-8 text-muted-foreground/40" />
               {localTypes.length === 0 ? 'No vehicle types configured yet.' : 'No types match your search.'}
             </div>
           ) : (
-            <div className="overflow-x-auto">
               <Table>
                 <TableHeader>
                   <TableRow>
@@ -226,7 +209,7 @@ export default function VehicleTypesSettingsPage() {
                     const count = usageByType[type] || 0;
                     return (
                       <TableRow key={type}>
-                        <TableCell className="font-medium text-slate-800">
+                        <TableCell className="font-medium">
                           <span className="flex items-center gap-2">
                             <CarFront className="h-3.5 w-3.5 text-violet-500" />
                             {type}
@@ -236,9 +219,9 @@ export default function VehicleTypesSettingsPage() {
                           {vehiclesLoading ? (
                             <Skeleton className="h-5 w-16" />
                           ) : count > 0 ? (
-                            <Badge variant="outline" className="border-emerald-200 bg-emerald-50 text-emerald-700">{count} vehicle{count === 1 ? '' : 's'}</Badge>
+                            <Badge variant="neutral">{count} vehicle{count === 1 ? '' : 's'}</Badge>
                           ) : (
-                            <Badge variant="outline" className="border-slate-200 bg-slate-50 text-slate-500">Not used</Badge>
+                            <Badge variant="outline">Not used</Badge>
                           )}
                         </TableCell>
                         {canEdit && (
@@ -260,10 +243,8 @@ export default function VehicleTypesSettingsPage() {
                   })}
                 </TableBody>
               </Table>
-            </div>
           )}
-        </CardContent>
-      </Card>
+      </TableCard>
 
       {/* Save bar */}
       <Card className="vm-panel overflow-hidden">
@@ -272,7 +253,7 @@ export default function VehicleTypesSettingsPage() {
             <RotateCcw className="mr-1.5 h-4 w-4" />Restore Defaults
           </Button>
           <div className="flex items-center gap-2">
-            {typesDirty && <Badge className="bg-amber-500 text-white">Unsaved changes</Badge>}
+            {typesDirty && <Badge variant="warning">Unsaved changes</Badge>}
             <Button onClick={saveTypes} disabled={!canEdit || typesSaving || !typesDirty} className="bg-gradient-to-r from-violet-500 to-purple-600 text-white">
               <Save className="mr-1.5 h-4 w-4" />{typesSaving ? 'Saving...' : typesDirty ? 'Save Vehicle Types' : 'Types Saved'}
             </Button>

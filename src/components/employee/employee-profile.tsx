@@ -69,9 +69,10 @@ import {
 } from '@/components/hr/hr-ui';
 import {
   EmployeePageShell,
-  EmployeeStatusPill,
   EMP_CARD_CLASS,
+  employmentStateTone,
 } from '@/components/employee/employee-ui';
+import { StatusBadge } from '@/components/shared/status-badge';
 import type { LeaveBalanceLine } from '@/lib/greythr';
 import { useAuthorization } from '@/hooks/useAuthorization';
 import { cn } from '@/lib/utils';
@@ -131,16 +132,6 @@ const LEAVE_COLUMNS: Array<HrListColumn<LeaveBalanceLine & { id: string }>> = [
     ),
   },
 ];
-
-const STATE_TONE: Record<string, string> = {
-  Active: 'border-emerald-200 bg-emerald-50 text-emerald-700',
-  'Notice Period': 'border-amber-200 bg-amber-50 text-amber-800',
-  Relieved: 'border-rose-200 bg-rose-50 text-rose-700',
-  Retired: 'border-slate-200 bg-slate-100 text-slate-600',
-  Settled: 'border-slate-200 bg-slate-100 text-slate-600',
-  Left: 'border-rose-200 bg-rose-50 text-rose-700',
-  Unknown: 'border-slate-300 bg-white text-slate-500',
-};
 
 const ADDRESS_LABELS: Record<GreytHRAddressType, string> = {
   presentaddress: 'Present address',
@@ -402,25 +393,27 @@ export function EmployeeProfile({ employeeId }: { employeeId: string }) {
             .join(' · ')}
           badge={
             <>
-              <Badge variant="outline" className={cn('text-xs', STATE_TONE[state] ?? STATE_TONE.Unknown)}>
+              <StatusBadge status={state} tone={employmentStateTone(state)}>
                 {state}
-              </Badge>
-              {employee.employmentType && (
-                <Badge variant="outline" className="text-xs text-slate-600">{employee.employmentType}</Badge>
-              )}
+              </StatusBadge>
+              {employee.employmentType && <Badge variant="outline">{employee.employmentType}</Badge>}
               {/* Live-verified or mirror-only, stated rather than implied — the distinction this
                   screen could not previously draw at all. */}
-              <EmployeeStatusPill
-                tone={provenance?.live.ok ? 'emerald' : 'amber'}
-                icon={provenance?.live.ok ? ShieldCheck : CloudOff}
+              <StatusBadge
+                tone={provenance?.live.ok ? 'success' : 'warning'}
                 title={
                   provenance?.live.ok
                     ? 'Refreshed from greytHR when this page loaded'
                     : (provenance?.live.error ?? 'Showing stored data')
                 }
               >
+                {provenance?.live.ok ? (
+                  <ShieldCheck className="h-3 w-3" aria-hidden="true" />
+                ) : (
+                  <CloudOff className="h-3 w-3" aria-hidden="true" />
+                )}
                 {provenance?.live.ok ? 'Live' : 'Stored'}
-              </EmployeeStatusPill>
+              </StatusBadge>
             </>
           }
           actions={
@@ -498,7 +491,7 @@ export function EmployeeProfile({ employeeId }: { employeeId: string }) {
               <TabsTrigger value="documents" className="text-xs">
                 Documents
                 {documents && documents.totalFiles > 0 && (
-                  <Badge variant="outline" className="ml-1.5 border-indigo-200 bg-indigo-50 text-[10px] text-indigo-700">
+                  <Badge variant="neutral" className="ml-1.5">
                     {documents.totalFiles}
                   </Badge>
                 )}
@@ -524,7 +517,7 @@ export function EmployeeProfile({ employeeId }: { employeeId: string }) {
               <HrField label="Gender">{employee.gender}</HrField>
               <HrField label="Blood group">
                 {employee.bloodGroup ? (
-                  <Badge variant="outline" className="gap-1 border-rose-200 bg-rose-50 text-rose-700">
+                  <Badge variant="outline" className="gap-1">
                     <Heart className="h-3 w-3" />
                     {employee.bloodGroup}
                   </Badge>
@@ -626,13 +619,9 @@ export function EmployeeProfile({ employeeId }: { employeeId: string }) {
                       <div className="flex flex-wrap items-center gap-1.5 text-sm font-medium text-slate-800">
                         {qualification.description}
                         {qualification.level && (
-                          <Badge variant="outline" className="text-[10px] text-slate-500">{qualification.level}</Badge>
+                          <Badge variant="outline">{qualification.level}</Badge>
                         )}
-                        {qualification.current && (
-                          <Badge variant="outline" className="border-emerald-200 bg-emerald-50 text-[10px] text-emerald-700">
-                            Current
-                          </Badge>
-                        )}
+                        {qualification.current && <StatusBadge status="Current" tone="success" />}
                       </div>
                       <p className="text-xs text-muted-foreground">
                         {[qualification.institute, qualification.university, qualification.year, qualification.grade]
@@ -664,20 +653,13 @@ export function EmployeeProfile({ employeeId }: { employeeId: string }) {
                       <div className="flex flex-wrap items-center gap-1.5 text-sm font-medium text-slate-800">
                         {asset.assetType}
                         {asset.assetId && (
-                          <Badge variant="outline" className="text-[10px] text-slate-500">{asset.assetId}</Badge>
+                          <Badge variant="outline">{asset.assetId}</Badge>
                         )}
+                        {/* Returned reads neutral, still held amber — by whether it came back, not the word. */}
                         {asset.status && (
-                          <Badge
-                            variant="outline"
-                            className={cn(
-                              'text-[10px]',
-                              asset.returnedOn
-                                ? 'border-slate-200 bg-slate-50 text-slate-600'
-                                : 'border-amber-200 bg-amber-50 text-amber-800',
-                            )}
-                          >
+                          <StatusBadge status={asset.status} tone={asset.returnedOn ? 'neutral' : 'warning'}>
                             {asset.status}
-                          </Badge>
+                          </StatusBadge>
                         )}
                       </div>
                       <p className="text-xs text-muted-foreground">
@@ -771,7 +753,7 @@ export function EmployeeProfile({ employeeId }: { employeeId: string }) {
                           <CardTitle className="flex items-center gap-1.5 text-sm">
                             <FolderOpen className="h-4 w-4 text-indigo-600" />
                             {category.label}
-                            <Badge variant="outline" className="text-[10px] text-slate-500">
+                            <Badge variant="neutral">
                               {category.files.length} file{category.files.length === 1 ? '' : 's'}
                             </Badge>
                           </CardTitle>
@@ -797,8 +779,7 @@ export function EmployeeProfile({ employeeId }: { employeeId: string }) {
                                     */}
                                     {file.duplicateName && (
                                       <Badge
-                                        variant="outline"
-                                        className="border-amber-200 bg-amber-50 text-[10px] font-normal text-amber-800"
+                                        variant="warning"
                                         title="Another file in this category has the same name. Both exist in greytHR — compare the upload times."
                                       >
                                         Same name as another file
@@ -856,7 +837,7 @@ export function EmployeeProfile({ employeeId }: { employeeId: string }) {
                   <CalendarDays className="h-4 w-4 text-indigo-600" />
                   Leave balance
                   {leave?.year && (
-                    <Badge variant="outline" className="text-[10px] text-slate-500">{leave.year}</Badge>
+                    <Badge variant="outline">{leave.year}</Badge>
                   )}
                 </CardTitle>
                 <CardDescription className="text-xs">
@@ -869,7 +850,7 @@ export function EmployeeProfile({ employeeId }: { employeeId: string }) {
                 {leave?.lines.length ? (
                   <>
                     <div className="mb-2 flex flex-wrap items-center gap-2">
-                      <Badge variant="outline" className="border-indigo-200 bg-indigo-50 text-indigo-700">
+                      <Badge variant="neutral">
                         {leave.totalBalance} day{leave.totalBalance === 1 ? '' : 's'} total
                       </Badge>
                     </div>
@@ -969,9 +950,7 @@ export function EmployeeProfile({ employeeId }: { employeeId: string }) {
                             <HrField key={code} label={IDENTITY_LABELS[code]}>
                               <span className="font-mono">{show(identity.documentNo, true)}</span>
                               {identity.verified && (
-                                <Badge variant="outline" className="ml-1.5 border-emerald-200 bg-emerald-50 text-[10px] text-emerald-700">
-                                  Verified
-                                </Badge>
+                                <StatusBadge status="Verified" className="ml-1.5" />
                               )}
                               {identity.expiryDate && (
                                 <span className="ml-1.5 text-xs text-muted-foreground">

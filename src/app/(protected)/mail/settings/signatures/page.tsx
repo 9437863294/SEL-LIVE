@@ -55,8 +55,8 @@ export default function MailSignaturesPage() {
             <button type="button" className="min-w-0 flex-1 text-left" disabled={!signature.editable} onClick={() => setEditing(signature)}>
               <div className="flex items-center gap-2">
                 <span className="truncate font-medium">{signature.name}</span>
-                <Badge variant="outline" className="text-[10px]">{signature.scope === 'department' ? signature.departmentName ?? 'Department' : 'Personal'}</Badge>
-                {signature.defaultForAccountId && <Badge variant="secondary" className="text-[10px]">Default{signature.defaultForAccountId === '*' ? '' : ` · ${personal.find((account) => account.id === signature.defaultForAccountId)?.emailAddress ?? ''}`}</Badge>}
+                <Badge variant="outline">{signature.scope === 'department' ? signature.departmentName ?? 'Department' : 'Personal'}</Badge>
+                {signature.defaultForAccountId && <Badge variant="neutral">Default{signature.defaultForAccountId === '*' ? '' : ` · ${personal.find((account) => account.id === signature.defaultForAccountId)?.emailAddress ?? ''}`}</Badge>}
               </div>
             </button>
             {signature.editable && (

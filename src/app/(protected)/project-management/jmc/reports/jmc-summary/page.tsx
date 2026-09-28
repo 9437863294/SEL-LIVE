@@ -4,12 +4,7 @@ export const dynamic = 'force-dynamic';
 
 import { useState, useEffect, useMemo, useCallback } from 'react';
 import { BarChart3, Home, Loader2, Users, CheckCircle, BarChart, Activity, XCircle } from 'lucide-react';
-import {
-  Card,
-  CardContent,
-  CardHeader,
-  CardTitle,
-} from '@/components/ui/card';
+import { Card, CardContent } from '@/components/ui/card';
 import {
   Select,
   SelectContent,
@@ -41,7 +36,9 @@ import {
   JmcPageShell,
   JmcProjectNotFound,
 } from '@/components/jmc/jmc-page-shell';
+import { FilterBar } from '@/components/shared/filter-bar';
 import { PageHeader } from '@/components/shared/page-header';
+import { TableCard } from '@/components/shared/table-card';
 
 interface SummaryStats {
     totalJMCs: number;
@@ -321,11 +318,12 @@ export default function JmcSummaryPage() {
       />
 
 
-      <Card className="border-border/60">
-        <CardContent className="p-4">
-          <div className="flex flex-col gap-2 sm:flex-row">
+      <FilterBar
+        activeCount={Object.values(filters).filter((value) => value !== 'all').length}
+        onClear={() => setFilters({ year: 'all', month: 'all', applicant: 'all' })}
+      >
             <Select value={filters.year} onValueChange={(val) => handleFilterChange('year', val)}>
-              <SelectTrigger className="sm:w-48"><SelectValue placeholder="All Years" /></SelectTrigger>
+              <SelectTrigger><SelectValue placeholder="All Years" /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">All Years</SelectItem>
                 {(getFilterOptions('year') as string[]).map(year => (
@@ -334,7 +332,7 @@ export default function JmcSummaryPage() {
               </SelectContent>
             </Select>
             <Select value={filters.month} onValueChange={(val) => handleFilterChange('month', val)}>
-              <SelectTrigger className="sm:w-48"><SelectValue placeholder="All Months" /></SelectTrigger>
+              <SelectTrigger><SelectValue placeholder="All Months" /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">All Months</SelectItem>
                 {(getFilterOptions('month') as { value: string, label: string }[]).map(month => (
@@ -343,7 +341,7 @@ export default function JmcSummaryPage() {
               </SelectContent>
             </Select>
             <Select value={filters.applicant} onValueChange={(val) => handleFilterChange('applicant', val)}>
-              <SelectTrigger className="sm:w-48"><SelectValue placeholder="All Applicants" /></SelectTrigger>
+              <SelectTrigger><SelectValue placeholder="All Applicants" /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">All Applicants</SelectItem>
                 {(getFilterOptions('applicant') as User[]).map(user => (
@@ -351,9 +349,7 @@ export default function JmcSummaryPage() {
                 ))}
               </SelectContent>
             </Select>
-          </div>
-        </CardContent>
-      </Card>
+      </FilterBar>
 
       <div className="grid grid-cols-2 gap-3 md:grid-cols-3 lg:grid-cols-5">
         {isLoading ? (
@@ -389,22 +385,17 @@ export default function JmcSummaryPage() {
                 return null;
               }
               return (
-              <Card key={step.id} className="border-border/60">
-                <CardHeader className="border-b bg-muted/50 p-3 sm:p-4">
-                  <CardTitle className="text-base">{step.name}</CardTitle>
-                </CardHeader>
-                <CardContent className="p-0">
-                  <div className="overflow-x-auto">
+              <TableCard key={step.id} title={step.name} scroll="natural">
                     {/* Five short columns: with tighter cells and a wrapping name they fit a phone
                         without a sideways scroll. */}
                     <Table className="max-sm:[--table-cell-px:0.625rem]">
                       <TableHeader>
                         <TableRow>
                           <TableHead>User</TableHead>
-                          <TableHead>Total</TableHead>
-                          <TableHead>Done</TableHead>
-                          <TableHead>On Time</TableHead>
-                          <TableHead>Rejected</TableHead>
+                          <TableHead className="text-right">Total</TableHead>
+                          <TableHead className="text-right">Done</TableHead>
+                          <TableHead className="text-right">On Time</TableHead>
+                          <TableHead className="text-right">Rejected</TableHead>
                         </TableRow>
                       </TableHeader>
                       <TableBody>
@@ -413,18 +404,16 @@ export default function JmcSummaryPage() {
                            return (
                                <TableRow key={userName}>
                                    <TableCell className="break-words sm:whitespace-nowrap">{userName}</TableCell>
-                                   <TableCell>{data.total}</TableCell>
-                                   <TableCell>{data.completed}</TableCell>
-                                   <TableCell>{data.onTime}</TableCell>
-                                   <TableCell>{data.rejected}</TableCell>
+                                   <TableCell className="text-right tabular-nums">{data.total}</TableCell>
+                                   <TableCell className="text-right tabular-nums">{data.completed}</TableCell>
+                                   <TableCell className="text-right tabular-nums">{data.onTime}</TableCell>
+                                   <TableCell className="text-right tabular-nums">{data.rejected}</TableCell>
                                </TableRow>
                            )
                        })}
                       </TableBody>
                     </Table>
-                  </div>
-                </CardContent>
-              </Card>
+              </TableCard>
             )})
         )}
       </div>

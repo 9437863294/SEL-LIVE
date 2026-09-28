@@ -13,6 +13,8 @@ import { collection, getDocs, query, orderBy } from 'firebase/firestore';
 import type { BankAccount, BankExpense } from '@/lib/types';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Badge } from '@/components/ui/badge';
+import { TableCard } from '@/components/shared/table-card';
+import { StatusBadge } from '@/components/shared/status-badge';
 import { format } from 'date-fns';
 import { useAuthorization } from '@/hooks/useAuthorization';
 import { cn } from '@/lib/utils';
@@ -175,22 +177,21 @@ export default function BankPositionReportPage() {
       </div>
 
       {/* Table */}
-      <Card className="rounded-xl border-border/60 shadow-sm overflow-hidden">
-        <CardHeader className="border-b border-border/40 pb-4">
-          <CardTitle>Account-wise Positions</CardTitle>
-          <CardDescription>Calculated from opening balances/utilizations and all ledger entries.</CardDescription>
-        </CardHeader>
-        <CardContent className="p-0">
-          <div className="overflow-x-auto">
+      <TableCard
+        title="Account-wise Positions"
+        description="Calculated from opening balances/utilizations and all ledger entries."
+        count={bankPositions.length}
+        noun="account"
+      >
             <Table>
               <TableHeader>
-                <TableRow className="bg-muted/30 hover:bg-muted/30">
-                  <TableHead className="font-semibold">Bank Name</TableHead>
-                  <TableHead className="font-semibold">Short Name</TableHead>
-                  <TableHead className="font-semibold">Account No.</TableHead>
-                  <TableHead className="font-semibold">Type</TableHead>
-                  <TableHead className="font-semibold">Status</TableHead>
-                  <TableHead className="text-right font-semibold">Balance / Utilization</TableHead>
+                <TableRow>
+                  <TableHead>Bank Name</TableHead>
+                  <TableHead>Short Name</TableHead>
+                  <TableHead>Account No.</TableHead>
+                  <TableHead>Type</TableHead>
+                  <TableHead>Status</TableHead>
+                  <TableHead className="text-right">Balance / Utilization</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -200,7 +201,7 @@ export default function BankPositionReportPage() {
                   ))
                   : bankPositions.length > 0
                     ? bankPositions.map(pos => (
-                      <TableRow key={pos.id} className="hover:bg-muted/20 transition-colors">
+                      <TableRow key={pos.id}>
                         <TableCell className="font-medium">
                           <div className="flex items-center gap-2">
                             {pos.accountType === 'Cash Credit'
@@ -210,20 +211,18 @@ export default function BankPositionReportPage() {
                             {pos.bankName}
                           </div>
                         </TableCell>
-                        <TableCell className="font-mono text-sm">{pos.shortName}</TableCell>
-                        <TableCell className="font-mono text-xs text-muted-foreground">{pos.accountNumber}</TableCell>
+                        <TableCell className="whitespace-nowrap font-mono">{pos.shortName}</TableCell>
+                        <TableCell className="whitespace-nowrap font-mono">{pos.accountNumber}</TableCell>
                         <TableCell>
-                          <Badge variant="outline" className={cn('text-xs', pos.accountType === 'Cash Credit' ? 'border-violet-200 text-violet-700 bg-violet-50 dark:bg-violet-950/20' : 'border-sky-200 text-sky-700 bg-sky-50 dark:bg-sky-950/20')}>
+                          <Badge variant="neutral" className="whitespace-nowrap">
                             {pos.accountType}
                           </Badge>
                         </TableCell>
                         <TableCell>
-                          <Badge variant={pos.status === 'Active' ? 'default' : 'secondary'} className={cn('text-xs', pos.status === 'Active' && 'bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-400 border border-green-200/60')}>
-                            {pos.status}
-                          </Badge>
+                          <StatusBadge status={pos.status} />
                         </TableCell>
-                        <TableCell className="text-right">
-                          <span className={cn('font-semibold text-sm', pos.closingBalance < 0 ? 'text-red-600 dark:text-red-400' : '')}>
+                        <TableCell className="whitespace-nowrap text-right tabular-nums">
+                          <span className={cn('font-medium', pos.closingBalance < 0 ? 'text-red-600 dark:text-red-400' : '')}>
                             {formatCurrency(pos.closingBalance)}
                           </span>
                         </TableCell>
@@ -243,16 +242,14 @@ export default function BankPositionReportPage() {
               </TableBody>
               {bankPositions.length > 0 && (
                 <TableFooter>
-                  <TableRow className="bg-primary/5 hover:bg-primary/5">
-                    <TableCell colSpan={5} className="text-right font-bold text-base">Grand Total</TableCell>
-                    <TableCell className="text-right font-bold text-base text-primary">{formatCurrency(grandTotal)}</TableCell>
+                  <TableRow>
+                    <TableCell colSpan={5} className="text-right">Grand Total</TableCell>
+                    <TableCell className="whitespace-nowrap text-right tabular-nums text-primary">{formatCurrency(grandTotal)}</TableCell>
                   </TableRow>
                 </TableFooter>
               )}
             </Table>
-          </div>
-        </CardContent>
-      </Card>
+      </TableCard>
     </div>
     </>
   );

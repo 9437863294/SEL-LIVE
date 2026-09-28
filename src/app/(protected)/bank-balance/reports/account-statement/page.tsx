@@ -9,7 +9,8 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow, TableFoo
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Badge } from '@/components/ui/badge';
+import { TableCard } from '@/components/shared/table-card';
+import { StatusBadge } from '@/components/shared/status-badge';
 import { db } from '@/lib/firebase';
 import { collection, getDocs } from 'firebase/firestore';
 import type { BankAccount, BankExpense } from '@/lib/types';
@@ -172,11 +173,11 @@ export default function AccountStatementPage() {
         {/* Filters */}
         <Card className="mb-5 rounded-xl border-border/60 shadow-sm">
           <CardContent className="p-4">
-            <div className="flex flex-wrap gap-4 items-end">
-              <div className="flex-1 min-w-[220px]">
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-[2fr_1fr_1fr] sm:items-end">
+              <div className="min-w-0">
                 <Label className="text-xs text-muted-foreground mb-1.5 block">Account</Label>
                 <Select value={selectedAccountId} onValueChange={setSelectedAccountId}>
-                  <SelectTrigger className="h-9">
+                  <SelectTrigger>
                     <SelectValue placeholder="Select account..." />
                   </SelectTrigger>
                   <SelectContent>
@@ -190,11 +191,11 @@ export default function AccountStatementPage() {
               </div>
               <div>
                 <Label className="text-xs text-muted-foreground mb-1.5 block">From Date</Label>
-                <Input type="date" value={fromDate} onChange={e => setFromDate(e.target.value)} className="h-9 w-40" />
+                <Input type="date" value={fromDate} onChange={e => setFromDate(e.target.value)} />
               </div>
               <div>
                 <Label className="text-xs text-muted-foreground mb-1.5 block">To Date</Label>
-                <Input type="date" value={toDate} onChange={e => setToDate(e.target.value)} className="h-9 w-40" />
+                <Input type="date" value={toDate} onChange={e => setToDate(e.target.value)} />
               </div>
             </div>
           </CardContent>
@@ -219,41 +220,33 @@ export default function AccountStatementPage() {
         )}
 
         {/* Statement Table */}
-        <Card className="rounded-xl border-border/60 shadow-sm overflow-hidden">
-          <CardHeader className="border-b border-border/40 pb-4">
-            <div className="flex items-center justify-between">
-              <div>
-                <CardTitle>
-                  {selectedAccount
-                    ? `${selectedAccount.bankName} — ${selectedAccount.accountNumber}`
-                    : 'Select an account'}
-                </CardTitle>
-                <CardDescription>
-                  {selectedAccount?.accountType} &nbsp;·&nbsp;
-                  {fromDate && toDate
-                    ? `${format(new Date(fromDate), 'dd MMM yyyy')} to ${format(new Date(toDate), 'dd MMM yyyy')}`
-                    : ''}
-                  &nbsp;·&nbsp; {statement.length} transaction{statement.length !== 1 ? 's' : ''}
-                </CardDescription>
-              </div>
-              {selectedAccount && (
-                <Badge variant="outline" className={cn('text-xs', selectedAccount.status === 'Active' ? 'border-green-200 text-green-700 bg-green-50 dark:bg-green-950/20' : 'border-gray-200')}>
-                  {selectedAccount.status}
-                </Badge>
-              )}
-            </div>
-          </CardHeader>
-          <CardContent className="p-0">
-            <div className="overflow-x-auto">
+        <TableCard
+          title={
+            selectedAccount
+              ? `${selectedAccount.bankName} — ${selectedAccount.accountNumber}`
+              : 'Select an account'
+          }
+          description={
+            <>
+              {selectedAccount?.accountType} &nbsp;·&nbsp;
+              {fromDate && toDate
+                ? `${format(new Date(fromDate), 'dd MMM yyyy')} to ${format(new Date(toDate), 'dd MMM yyyy')}`
+                : ''}
+            </>
+          }
+          count={statement.length}
+          noun="transaction"
+          actions={selectedAccount ? <StatusBadge status={selectedAccount.status} /> : undefined}
+        >
               <Table>
                 <TableHeader>
-                  <TableRow className="bg-muted/30 hover:bg-muted/30">
-                    <TableHead className="font-semibold text-xs w-28">Date</TableHead>
-                    <TableHead className="font-semibold text-xs">Description</TableHead>
-                    <TableHead className="font-semibold text-xs w-36">Ref / UTR</TableHead>
-                    <TableHead className="text-right font-semibold text-xs w-32">Debit</TableHead>
-                    <TableHead className="text-right font-semibold text-xs w-32">Credit</TableHead>
-                    <TableHead className="text-right font-semibold text-xs w-36">Balance</TableHead>
+                  <TableRow>
+                    <TableHead className="w-28">Date</TableHead>
+                    <TableHead>Description</TableHead>
+                    <TableHead className="w-36">Ref / UTR</TableHead>
+                    <TableHead className="text-right w-32">Debit</TableHead>
+                    <TableHead className="text-right w-32">Credit</TableHead>
+                    <TableHead className="text-right w-36">Balance</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -268,20 +261,20 @@ export default function AccountStatementPage() {
                     </TableRow>
                   ) : (
                     statement.map(row => (
-                      <TableRow key={row.id} className={cn('hover:bg-muted/20 text-xs transition-colors', row.isContra && 'opacity-65 italic')}>
-                        <TableCell className="font-mono text-xs">{format(row.date, 'dd/MM/yyyy')}</TableCell>
+                      <TableRow key={row.id} className={cn(row.isContra && 'opacity-65 italic')}>
+                        <TableCell className="whitespace-nowrap font-mono">{format(row.date, 'dd/MM/yyyy')}</TableCell>
                         <TableCell className="max-w-xs">
                           <span className="line-clamp-2">{row.description}</span>
                           {row.isContra && <span className="ml-1 text-[10px] text-muted-foreground not-italic">(Contra)</span>}
                         </TableCell>
-                        <TableCell className="font-mono text-xs text-muted-foreground">{row.ref || '—'}</TableCell>
-                        <TableCell className="text-right text-red-600 dark:text-red-400 font-mono text-xs">
+                        <TableCell className="whitespace-nowrap font-mono">{row.ref || '—'}</TableCell>
+                        <TableCell className="whitespace-nowrap text-right text-red-600 dark:text-red-400 font-mono">
                           {row.debit > 0 ? formatCurrency(row.debit) : ''}
                         </TableCell>
-                        <TableCell className="text-right text-green-600 dark:text-green-400 font-mono text-xs">
+                        <TableCell className="whitespace-nowrap text-right text-green-600 dark:text-green-400 font-mono">
                           {row.credit > 0 ? formatCurrency(row.credit) : ''}
                         </TableCell>
-                        <TableCell className={cn('text-right font-semibold font-mono text-xs', row.balance < 0 ? 'text-red-600 dark:text-red-400' : '')}>
+                        <TableCell className={cn('whitespace-nowrap text-right font-medium font-mono', row.balance < 0 ? 'text-red-600 dark:text-red-400' : '')}>
                           {formatCurrency(row.balance)}
                         </TableCell>
                       </TableRow>
@@ -290,20 +283,18 @@ export default function AccountStatementPage() {
                 </TableBody>
                 {statement.length > 0 && (
                   <TableFooter>
-                    <TableRow className="bg-muted/40 hover:bg-muted/40">
-                      <TableCell colSpan={3} className="font-bold text-xs">TOTAL</TableCell>
-                      <TableCell className="text-right font-bold text-xs text-red-700 dark:text-red-400 font-mono">{formatCurrency(totalDebit)}</TableCell>
-                      <TableCell className="text-right font-bold text-xs text-green-700 dark:text-green-400 font-mono">{formatCurrency(totalCredit)}</TableCell>
-                      <TableCell className={cn('text-right font-bold text-xs font-mono', (statement[statement.length - 1]?.balance ?? 0) < 0 ? 'text-red-700' : '')}>
+                    <TableRow>
+                      <TableCell colSpan={3}>TOTAL</TableCell>
+                      <TableCell className="whitespace-nowrap text-right text-red-700 dark:text-red-400 font-mono">{formatCurrency(totalDebit)}</TableCell>
+                      <TableCell className="whitespace-nowrap text-right text-green-700 dark:text-green-400 font-mono">{formatCurrency(totalCredit)}</TableCell>
+                      <TableCell className={cn('whitespace-nowrap text-right font-mono', (statement[statement.length - 1]?.balance ?? 0) < 0 ? 'text-red-700' : '')}>
                         {formatCurrency(statement[statement.length - 1]?.balance ?? 0)}
                       </TableCell>
                     </TableRow>
                   </TableFooter>
                 )}
               </Table>
-            </div>
-          </CardContent>
-        </Card>
+        </TableCard>
       </div>
     </>
   );

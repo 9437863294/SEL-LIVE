@@ -71,6 +71,8 @@ import {
   type PmListColumn,
 } from "@/components/project-management/pm-shell";
 import { PageHeader } from "@/components/shared/page-header";
+import { StatusBadge } from "@/components/shared/status-badge";
+import { TableCard } from "@/components/shared/table-card";
 import { useAuthorization } from "@/hooks/useAuthorization";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/components/auth/AuthProvider";
@@ -88,7 +90,6 @@ import {
   canTransitionLifecycle,
   deriveLegacyStatus,
   nextLifecycleStates,
-  projectLifecycleStyles,
   resolveLifecycle,
   validatePmProject,
   type PmProject,
@@ -596,14 +597,7 @@ export default function ProjectMappingsPage() {
       mobile: "aside",
       cell: (mapping) => (
         <>
-          <span
-            className={cn(
-              "rounded-full px-2.5 py-1 text-xs font-medium",
-              projectLifecycleStyles[resolveLifecycle(mapping)],
-            )}
-          >
-            {resolveLifecycle(mapping)}
-          </span>
+          <StatusBadge status={resolveLifecycle(mapping)} />
           {mapping.projectCode ? (
             <div className="mt-1 text-[10px] text-muted-foreground">
               {mapping.projectCode}
@@ -1048,21 +1042,12 @@ export default function ProjectMappingsPage() {
         }
       />
 
-      {/* On a phone the card drops its frame and accent strip: the header reads as a section
-          heading and the mapping cards stand on the page, rather than sitting inside a card. */}
-      <Card className="overflow-hidden border-border/60 max-sm:border-0 max-sm:bg-transparent max-sm:shadow-none">
-        <div className="h-1 w-full bg-gradient-to-r from-indigo-500 to-blue-600 max-sm:hidden" />
-        <CardHeader className="max-sm:px-0 max-sm:pt-0">
-          <CardTitle className="flex items-center gap-2">
-            <Link2 className="h-5 w-5 text-primary" />
-            Project mappings
-          </CardTitle>
-          <CardDescription>
-            The new project name is used inside Project Management. The mapped global
-            project remains the source for shared project data.
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="p-0">
+      <TableCard
+        title="Project mappings"
+        icon={Link2}
+        description="The new project name is used inside Project Management. The mapped global project remains the source for shared project data."
+      >
+        <div className="p-3 sm:p-0">
           <PmDataList
             rows={mappings}
             columns={columns}
@@ -1075,8 +1060,8 @@ export default function ProjectMappingsPage() {
               />
             }
           />
-        </CardContent>
-      </Card>
+        </div>
+      </TableCard>
     </main>
   );
 }

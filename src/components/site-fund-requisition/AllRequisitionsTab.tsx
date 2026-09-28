@@ -59,8 +59,9 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigge
 import ViewRequisitionDialog from './ViewRequisitionDialog';
 import { Switch } from '@/components/ui/switch';
 import { useAuthorization } from '@/hooks/useAuthorization';
-import { ScrollArea } from '@/components/ui/scroll-area';
 import { Tooltip, TooltipProvider, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip';
+import { TableCard } from '@/components/shared/table-card';
+import { FilterBar } from '@/components/shared/filter-bar';
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from '@/components/ui/command';
 
 
@@ -878,29 +879,16 @@ export default function AllRequisitionsTab() {
 
   return (
     <div className="flex flex-col h-full">
-        <div className="flex justify-end items-center gap-4 mb-4">
-            {canViewAll && (
-              <div className="flex items-center space-x-2">
-                  <Switch 
-                      id="my-requests-switch" 
-                      checked={showMyRequests}
-                      onCheckedChange={setShowMyRequests}
-                  />
-                  <Label htmlFor="my-requests-switch">My Requests Only</Label>
-              </div>
-            )}
-             <Select value={statusFilter} onValueChange={setStatusFilter}>
-                <SelectTrigger className="w-[180px]">
-                    <SelectValue placeholder="All Statuses" />
-                </SelectTrigger>
-                <SelectContent>
-                    <SelectItem value="all">All Statuses</SelectItem>
-                    <SelectItem value="Pending">Pending</SelectItem>
-                    <SelectItem value="In Progress">In Progress</SelectItem>
-                    <SelectItem value="Completed">Completed</SelectItem>
-                    <SelectItem value="Rejected">Rejected</SelectItem>
-                </SelectContent>
-            </Select>
+        <TableCard
+          toolbar={
+            <FilterBar
+              activeCount={(statusFilter !== 'all' ? 1 : 0) + (canViewAll && !showMyRequests ? 1 : 0)}
+              onClear={() => {
+                setStatusFilter('all');
+                setShowMyRequests(true);
+              }}
+              actions={
+                <>
             <Dialog open={isNewRequestOpen} onOpenChange={setIsNewRequestOpen}>
                 <DialogTrigger asChild>
                     <Button disabled={!canCreate}>New Request</Button>
@@ -959,12 +947,37 @@ export default function AllRequisitionsTab() {
                     ))}
                 </DropdownMenuContent>
             </DropdownMenu>
-        </div>
-        <div className="border rounded-lg flex-grow relative">
-          <ScrollArea className="absolute inset-0">
+                </>
+              }
+            >
+              {canViewAll && (
+                <div className="flex items-center space-x-2">
+                    <Switch
+                        id="my-requests-switch"
+                        checked={showMyRequests}
+                        onCheckedChange={setShowMyRequests}
+                    />
+                    <Label htmlFor="my-requests-switch">My Requests Only</Label>
+                </div>
+              )}
+              <Select value={statusFilter} onValueChange={setStatusFilter}>
+                  <SelectTrigger>
+                      <SelectValue placeholder="All Statuses" />
+                  </SelectTrigger>
+                  <SelectContent>
+                      <SelectItem value="all">All Statuses</SelectItem>
+                      <SelectItem value="Pending">Pending</SelectItem>
+                      <SelectItem value="In Progress">In Progress</SelectItem>
+                      <SelectItem value="Completed">Completed</SelectItem>
+                      <SelectItem value="Rejected">Rejected</SelectItem>
+                  </SelectContent>
+              </Select>
+            </FilterBar>
+          }
+        >
             <TooltipProvider>
             <Table>
-              <TableHeader className="sticky top-0 bg-background z-10">
+              <TableHeader>
                 <TableRow>
                   {visibleHeaders.map(header => (
                     <TableHead key={header}>{header}</TableHead>
@@ -1039,8 +1052,7 @@ export default function AllRequisitionsTab() {
               </TableBody>
             </Table>
             </TooltipProvider>
-          </ScrollArea>
-        </div>
+        </TableCard>
       {selectedRequisition && (
         <ViewRequisitionDialog
             isOpen={isViewDialogOpen}

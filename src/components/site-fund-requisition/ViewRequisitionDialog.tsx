@@ -76,7 +76,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { Badge } from '@/components/ui/badge';
+import { StatusBadge } from '@/components/shared/status-badge';
 import {
   Tooltip,
   TooltipProvider,
@@ -963,27 +963,17 @@ export default function ViewRequisitionDialog({
                                   }
                                 </TableCell>
                                 <TableCell>
-                                  <Badge
-                                    variant={
-                                      step.status ===
-                                      'Completed'
-                                        ? 'default'
-                                        : step.status ===
-                                          'Current'
-                                        ? 'secondary'
-                                        : 'outline'
+                                  {/* "Current" is the active step; "Pending" here means not reached yet. */}
+                                  <StatusBadge
+                                    status={step.status}
+                                    tone={
+                                      step.status === 'Current'
+                                        ? 'progress'
+                                        : step.status === 'Pending'
+                                        ? 'neutral'
+                                        : undefined
                                     }
-                                    className={
-                                      step.status ===
-                                      'Completed'
-                                        ? 'bg-green-500 hover:bg-green-600'
-                                        : ''
-                                    }
-                                  >
-                                    {
-                                      step.status
-                                    }
-                                  </Badge>
+                                  />
                                 </TableCell>
                               </TableRow>
                             )

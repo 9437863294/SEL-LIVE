@@ -36,7 +36,6 @@ import {
   PO_PERMISSION_RESOURCE,
   PO_STATUSES,
   formatCurrency,
-  poStatusStyles,
   toNumber,
   type POStatus,
   type PurchaseOrder,
@@ -60,7 +59,6 @@ import {
   PO_ISSUE_APPROVAL_COLLECTION,
   isLegacyPo,
   openIssueRequestForPo,
-  poIssueStatusStyles,
   type PoIssueApproval,
   type PoLike,
 } from "@/lib/project-management-po-workflow";
@@ -71,6 +69,9 @@ import {
   PoProjectNotFound,
 } from "@/components/po/po-page-shell";
 import { PageHeader } from "@/components/shared/page-header";
+import { FilterBar } from "@/components/shared/filter-bar";
+import { StatusBadge } from "@/components/shared/status-badge";
+import { pmStatusTone } from "@/components/project-management/pm-status-tones";
 
 type ProjectMapping = {
   id: string;
@@ -291,11 +292,7 @@ export default function PurchaseOrderRegisterPage() {
       header: "Status",
       className: "whitespace-nowrap",
       mobile: "aside",
-      cell: (po) => (
-        <span className={`rounded-full px-2 py-0.5 text-[11px] font-medium ${poStatusStyles[po.status]}`}>
-          {po.status}
-        </span>
-      ),
+      cell: (po) => <StatusBadge status={po.status} tone={pmStatusTone(po.status)} />,
     },
     {
       // Was stacked under Status: the open issue-approval request, and the legacy marker for POs
@@ -307,9 +304,7 @@ export default function PurchaseOrderRegisterPage() {
         const legacy = isLegacyPo(po as PoLike);
         return openRequest ? (
           <span className="flex items-center gap-1 truncate text-xs text-muted-foreground">
-            <span className={`shrink-0 rounded px-1.5 py-0.5 ${poIssueStatusStyles[openRequest.status]}`}>
-              {openRequest.status}
-            </span>
+            <StatusBadge status={openRequest.status} tone={pmStatusTone(openRequest.status)} className="shrink-0" />
             {openRequest.currentStepName && (
               <span className="truncate">· {openRequest.currentStepName}</span>
             )}
@@ -396,18 +391,22 @@ export default function PurchaseOrderRegisterPage() {
                 ? [{ label: "awaiting commercial review", value: String(awaitingReview), tone: "flag" as const }]
                 : []),
             ]}
-            actions={
-              <Select value={statusFilter} onValueChange={(value: "all" | POStatus) => setStatusFilter(value)}>
-                <SelectTrigger className="h-9 w-[150px] text-[13px] sm:h-8"><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All statuses</SelectItem>
-                  {PO_STATUSES.map((status) => (
-                    <SelectItem key={status} value={status}>{status}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            }
           />
+          <FilterBar
+            className="mb-3"
+            activeCount={statusFilter !== "all" ? 1 : 0}
+            onClear={() => setStatusFilter("all")}
+          >
+            <Select value={statusFilter} onValueChange={(value: "all" | POStatus) => setStatusFilter(value)}>
+              <SelectTrigger><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All statuses</SelectItem>
+                {PO_STATUSES.map((status) => (
+                  <SelectItem key={status} value={status}>{status}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </FilterBar>
           <PmDataList
             rows={filteredOrders}
             columns={poColumns}

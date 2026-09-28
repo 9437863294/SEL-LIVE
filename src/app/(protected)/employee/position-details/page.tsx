@@ -25,14 +25,15 @@ import {
   Layers,
   Loader2,
   RefreshCw,
-  Search,
   Tags,
   Trash2,
   Users,
-  X,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent } from '@/components/ui/card';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { FilterBar } from '@/components/shared/filter-bar';
+import { StatusBadge } from '@/components/shared/status-badge';
+import { TableCard } from '@/components/shared/table-card';
 import { useToast } from '@/hooks/use-toast';
 import { getAllEmployeePositions } from '@/ai';
 import { Badge } from '@/components/ui/badge';
@@ -42,7 +43,6 @@ import { fetchEmployeeRoster } from '@/lib/greythr-sync-client';
 import { isWorkingState, type EmploymentState } from '@/lib/greythr';
 import { exportRowsToExcel } from '@/lib/report-excel';
 import { cn } from '@/lib/utils';
-import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { db } from '@/lib/firebase';
 import { collection, getDocs, query, getDoc, doc, writeBatch } from 'firebase/firestore';
@@ -63,7 +63,6 @@ import {
   HrAlertNotice,
   HrDataList,
   HrEmptyState,
-  HrFilterCard,
   HrLoader,
   hrDialog,
   type HrListColumn,
@@ -73,10 +72,7 @@ import {
   EmployeeKpiCard,
   EmployeeListFooter,
   EmployeePageShell,
-  EmployeeStatusPill,
   EmployeeSubNav,
-  EMP_CARD_CLASS,
-  EMP_REGISTER_HEIGHT,
 } from '@/components/employee/employee-ui';
 import { PageHeader } from '@/components/shared/page-header';
 
@@ -193,62 +189,50 @@ function PositionEntries({ entries }: { entries: PositionRow[] }) {
   }
 
   return (
-    <div className="overflow-x-auto px-3 py-3">
-      <table className="w-full min-w-[32rem] text-xs">
-        <thead>
-          <tr className="text-left text-[10px] font-semibold uppercase tracking-wide text-slate-500">
-            <th className="px-2 py-1.5">Category</th>
-            <th className="px-2 py-1.5">Value</th>
-            <th className="px-2 py-1.5">Effective from</th>
-            <th className="px-2 py-1.5">Effective to</th>
-            <th className="px-2 py-1.5 text-right">Status</th>
-          </tr>
-        </thead>
-        <tbody className="divide-y divide-slate-100">
+    <div className="px-3 py-3">
+      <Table className="min-w-[32rem]">
+        <TableHeader>
+          <TableRow>
+            <TableHead>Category</TableHead>
+            <TableHead>Value</TableHead>
+            <TableHead>Effective from</TableHead>
+            <TableHead>Effective to</TableHead>
+            <TableHead className="text-right">Status</TableHead>
+          </TableRow>
+        </TableHeader>
+        <TableBody>
           {ordered.map((entry, index) => {
             const current = isCurrentEntry(entry);
-            // A hairline above the first row of each category, so the groups read without needing
+            // A firmer rule above the first row of each category, so the groups read without needing
             // the label to disappear on the repeats.
             const startsCategory = index === 0 || ordered[index - 1].category !== entry.category;
             return (
-              <tr
+              <TableRow
                 key={entry.id}
-                className={cn(current && 'bg-emerald-50/40', startsCategory && index > 0 && 'border-t-slate-200')}
+                className={cn(current && 'bg-emerald-50/40', startsCategory && index > 0 && 'border-t')}
               >
-                <td className="whitespace-nowrap px-2 py-1.5">
-                  <Badge
-                    variant="outline"
-                    className="border-indigo-200 bg-indigo-50 text-[10px] font-normal text-indigo-700"
-                  >
-                    {entry.category}
-                  </Badge>
-                </td>
-                <td className="px-2 py-1.5 font-medium text-slate-800">{entry.value || '—'}</td>
-                <td className="whitespace-nowrap px-2 py-1.5 tabular-nums text-slate-700">
-                  {entry.effectiveFrom || '—'}
-                </td>
-                <td className="whitespace-nowrap px-2 py-1.5 tabular-nums text-muted-foreground">
+                <TableCell className="whitespace-nowrap">
+                  <Badge variant="outline">{entry.category}</Badge>
+                </TableCell>
+                <TableCell className="font-medium">{entry.value || '—'}</TableCell>
+                <TableCell className="whitespace-nowrap tabular-nums">{entry.effectiveFrom || '—'}</TableCell>
+                <TableCell className="whitespace-nowrap tabular-nums">
                   {/* greytHR leaves the end date empty for the value in force; the old "N/A" read as
                       missing data rather than as "still applies". */}
                   {entry.effectiveTo || <span className="font-medium text-emerald-700">present</span>}
-                </td>
-                <td className="whitespace-nowrap px-2 py-1.5 text-right">
+                </TableCell>
+                <TableCell className="whitespace-nowrap text-right">
                   {current ? (
-                    <Badge
-                      variant="outline"
-                      className="border-emerald-200 bg-emerald-50 text-[10px] font-normal text-emerald-700"
-                    >
-                      Current
-                    </Badge>
+                    <StatusBadge status="Current" tone="success" />
                   ) : (
-                    <span className="text-[10px] text-muted-foreground">Superseded</span>
+                    <StatusBadge status="Superseded" tone="neutral" />
                   )}
-                </td>
-              </tr>
+                </TableCell>
+              </TableRow>
             );
           })}
-        </tbody>
-      </table>
+        </TableBody>
+      </Table>
     </div>
   );
 }
@@ -659,27 +643,12 @@ export default function EmployeePositionDetailsPage() {
       mobile: 'aside',
       cell: group => {
         const state = stateById.get(group.employeeId);
-        if (!state) {
-          return (
-            <Badge variant="outline" className="border-slate-200 bg-white text-[10px] font-normal text-slate-500">
-              Unknown
-            </Badge>
-          );
-        }
-        const working = isWorkingState(state);
+        if (!state) return <StatusBadge status="Unknown" tone="neutral" />;
+        // Working states read green and everything else neutral, as the register always showed them.
         return (
-          <Badge
-            variant="outline"
-            className={cn(
-              'text-[10px] font-normal',
-              working
-                ? 'border-emerald-200 bg-emerald-50 text-emerald-700'
-                : 'border-slate-200 bg-slate-50 text-slate-600',
-            )}
-            title={state}
-          >
+          <StatusBadge status={state} tone={isWorkingState(state) ? 'success' : 'neutral'} title={state}>
             {state}
-          </Badge>
+          </StatusBadge>
         );
       },
     },
@@ -731,27 +700,12 @@ export default function EmployeePositionDetailsPage() {
       mobile: 'aside',
       cell: group => {
         const state = stateById.get(group.employeeId);
-        if (!state) {
-          return (
-            <Badge variant="outline" className="border-slate-200 bg-white text-[10px] font-normal text-slate-500">
-              Unknown
-            </Badge>
-          );
-        }
-        const working = isWorkingState(state);
+        if (!state) return <StatusBadge status="Unknown" tone="neutral" />;
+        // Working states read green and everything else neutral, as the register always showed them.
         return (
-          <Badge
-            variant="outline"
-            className={cn(
-              'text-[10px] font-normal',
-              working
-                ? 'border-emerald-200 bg-emerald-50 text-emerald-700'
-                : 'border-slate-200 bg-slate-50 text-slate-600',
-            )}
-            title={state}
-          >
+          <StatusBadge status={state} tone={isWorkingState(state) ? 'success' : 'neutral'} title={state}>
             {state}
-          </Badge>
+          </StatusBadge>
         );
       },
     },
@@ -767,18 +721,14 @@ export default function EmployeePositionDetailsPage() {
             {group.current.slice(0, 3).map(entry => (
               <Badge
                 key={entry.id}
-                variant="secondary"
-                className="max-w-[12rem] truncate text-[10px] font-normal"
+                variant="neutral"
+                className="max-w-[12rem] truncate"
                 title={`${entry.category}: ${entry.value}`}
               >
                 {entry.value}
               </Badge>
             ))}
-            {group.current.length > 3 && (
-              <Badge variant="outline" className="text-[10px] font-normal text-muted-foreground">
-                +{group.current.length - 3}
-              </Badge>
-            )}
+            {group.current.length > 3 && <Badge variant="outline">+{group.current.length - 3}</Badge>}
           </span>
         );
       },
@@ -795,9 +745,7 @@ export default function EmployeePositionDetailsPage() {
       align: 'right',
       mobile: 'aside',
       cell: group => (
-        <Badge variant="outline" className="border-indigo-200 bg-indigo-50 font-semibold text-indigo-700">
-          {group.entries.length}
-        </Badge>
+        <Badge variant="neutral" className="tabular-nums">{group.entries.length}</Badge>
       ),
     },
     {
@@ -850,13 +798,15 @@ export default function EmployeePositionDetailsPage() {
         backLabel="Back to Employee Management"
         badge={
           lastSynced ? (
-            <EmployeeStatusPill tone="emerald" icon={Clock}>
+            <StatusBadge tone="success">
+              <Clock className="h-3 w-3" aria-hidden="true" />
               Synced {formatDistanceToNow(lastSynced.at, { addSuffix: true })}
-            </EmployeeStatusPill>
+            </StatusBadge>
           ) : (
-            <EmployeeStatusPill tone="amber" icon={Clock}>
+            <StatusBadge tone="warning">
+              <Clock className="h-3 w-3" aria-hidden="true" />
               No sync recorded
-            </EmployeeStatusPill>
+            </StatusBadge>
           )
         }
         actions={
@@ -968,65 +918,90 @@ export default function EmployeePositionDetailsPage() {
         />
       </div>
 
-      <HrFilterCard
-        summary={
-          `${groups.length} employee(s) · ${rows.length} record(s) · ${STATUS_LABEL[
-            filters.status
-          ].toLowerCase()}${filters.category !== 'all' ? ` · ${filters.category}` : ''}`
+      {/* Hidden by the status filter for want of a state, not because of one — see
+          `unknownStateCount`. */}
+      {!isLoading && unknownStateCount > 0 && (
+        <div className="mb-3">
+          <HrAlertNotice tone="amber" title={`${unknownStateCount} employee(s) hidden — no employment state`}>
+            They hold position records, but the roster has no employment state for them, so neither
+            &quot;{STATUS_LABEL.active}&quot; nor &quot;{STATUS_LABEL.left}&quot; can honestly include
+            them. Choose{' '}
+            <button
+              type="button"
+              onClick={() => handleFilterChange('status', 'all')}
+              className="font-medium underline"
+            >
+              {STATUS_LABEL.all}
+            </button>{' '}
+            to see them, or run a full sync so the roster covers them.
+          </HrAlertNotice>
+        </div>
+      )}
+
+      {/* The actions hold the view switch and its column picker — a segmented switch rather than
+          two screens: it is one register read two ways, and the filters, counts and export apply
+          to both. */}
+      <TableCard
+        title="Position register"
+        toolbar={
+          <FilterBar
+            search={{
+              value: filters.employeeId,
+              onChange: value => handleFilterChange('employeeId', value),
+              placeholder: 'Search employee ID or name...',
+            }}
+            activeCount={
+              (filters.status !== DEFAULT_FILTERS.status ? 1 : 0) + (filters.category !== DEFAULT_FILTERS.category ? 1 : 0)
+            }
+            onClear={clearFilters}
+            summary={
+              `${groups.length} employee(s) · ${rows.length} record(s) · ${STATUS_LABEL[
+                filters.status
+              ].toLowerCase()}${filters.category !== 'all' ? ` · ${filters.category}` : ''}`
+            }
+          >
+            <Select
+              value={filters.status}
+              onValueChange={value => handleFilterChange('status', value as StatusFilter)}
+            >
+              <SelectTrigger aria-label="Employment status">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="active">{STATUS_LABEL.active}</SelectItem>
+                <SelectItem value="left">{STATUS_LABEL.left}</SelectItem>
+                <SelectItem value="all">{STATUS_LABEL.all}</SelectItem>
+              </SelectContent>
+            </Select>
+            <Select value={filters.category} onValueChange={value => handleFilterChange('category', value)}>
+              <SelectTrigger aria-label="Category">
+                <SelectValue placeholder="Filter by Category" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Categories</SelectItem>
+                {uniqueCategories.map(cat => (
+                  <SelectItem key={cat} value={cat}>
+                    {cat}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </FilterBar>
         }
-        actions={
-          filtersActive ? (
-            <Button variant="ghost" size="sm" onClick={clearFilters} className="h-8 gap-1 text-xs">
-              <X className="h-3.5 w-3.5" />
-              Clear
-            </Button>
+        footer={
+          !isLoading && !isDeleting && !loadError && groups.length > 0 ? (
+            <EmployeeListFooter
+              shown={visibleGroups.length}
+              total={groups.length}
+              noun="employee"
+              pageSize={PAGE_SIZE}
+              onMore={() => setVisibleCount(count => count + PAGE_SIZE)}
+            />
           ) : undefined
         }
-      >
-        <div className="flex flex-col gap-2 sm:flex-row">
-          <div className="relative flex-grow">
-            <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
-            <Input
-              placeholder="Search employee ID or name..."
-              className="pl-8"
-              value={filters.employeeId}
-              onChange={e => handleFilterChange('employeeId', e.target.value)}
-            />
-          </div>
-          <Select
-            value={filters.status}
-            onValueChange={value => handleFilterChange('status', value as StatusFilter)}
-          >
-            <SelectTrigger className="w-full sm:w-[190px]">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="active">{STATUS_LABEL.active}</SelectItem>
-              <SelectItem value="left">{STATUS_LABEL.left}</SelectItem>
-              <SelectItem value="all">{STATUS_LABEL.all}</SelectItem>
-            </SelectContent>
-          </Select>
-          <Select value={filters.category} onValueChange={value => handleFilterChange('category', value)}>
-            <SelectTrigger className="w-full sm:w-[240px]">
-              <SelectValue placeholder="Filter by Category" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">All Categories</SelectItem>
-              {uniqueCategories.map(cat => (
-                <SelectItem key={cat} value={cat}>
-                  {cat}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
-      </HrFilterCard>
-
-      {/* ── View, and which columns of it ────────────────────────────────────────────────────
-          A segmented switch rather than two screens: it is one register read two ways, and the
-          filters, counts and export above apply to both. */}
-      {!isLoading && !isDeleting && !loadError && groups.length > 0 && (
-        <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+        actions={
+      !isLoading && !isDeleting && !loadError && groups.length > 0 ? (
+        <div className="flex flex-wrap items-center justify-between gap-2">
           <div className="inline-flex rounded-full border border-white/70 bg-white/70 p-0.5 shadow-sm backdrop-blur-sm">
             {(
               [
@@ -1064,41 +1039,21 @@ export default function EmployeePositionDetailsPage() {
             />
           </div>
         </div>
-      )}
-
-      {/* Hidden by the status filter for want of a state, not because of one — see
-          `unknownStateCount`. */}
-      {!isLoading && unknownStateCount > 0 && (
-        <div className="mb-3">
-          <HrAlertNotice tone="amber" title={`${unknownStateCount} employee(s) hidden — no employment state`}>
-            They hold position records, but the roster has no employment state for them, so neither
-            &quot;{STATUS_LABEL.active}&quot; nor &quot;{STATUS_LABEL.left}&quot; can honestly include
-            them. Choose{' '}
-            <button
-              type="button"
-              onClick={() => handleFilterChange('status', 'all')}
-              className="font-medium underline"
-            >
-              {STATUS_LABEL.all}
-            </button>{' '}
-            to see them, or run a full sync so the roster covers them.
-          </HrAlertNotice>
-        </div>
-      )}
-
+      ) : undefined
+        }
+      >
       {isLoading || isDeleting ? (
         <HrLoader label={isDeleting ? 'Clearing records and resyncing…' : 'Loading position details…'} />
       ) : loadError ? (
-        <Card className={EMP_CARD_CLASS}>
-          <CardContent className="flex flex-col items-center gap-3 py-12 text-center">
+          <div className="flex flex-col items-center gap-3 py-12 text-center">
             <Layers className="h-10 w-10 text-muted-foreground/40" />
             <p className="text-sm text-muted-foreground">{loadError}</p>
             <Button size="sm" onClick={() => void fetchPositionsFromDb()}>Try again</Button>
-          </CardContent>
-        </Card>
+          </div>
       ) : (
-        <div className="space-y-2.5">
+        <div className="p-3 sm:p-0">
           <HrDataList
+            frameless
             rows={visibleGroups}
             columns={shownColumns}
             // Expansion belongs to the grouped view. In the column view the row already shows every
@@ -1112,7 +1067,6 @@ export default function EmployeePositionDetailsPage() {
             expandedId={view === 'grouped' ? openId : null}
             renderExpanded={view === 'grouped' ? group => <PositionEntries entries={group.entries} /> : undefined}
             dense
-            maxHeightClassName={EMP_REGISTER_HEIGHT}
             empty={
               <HrEmptyState
                 icon={Layers}
@@ -1132,16 +1086,9 @@ export default function EmployeePositionDetailsPage() {
               />
             }
           />
-
-          <EmployeeListFooter
-            shown={visibleGroups.length}
-            total={groups.length}
-            noun="employee"
-            pageSize={PAGE_SIZE}
-            onMore={() => setVisibleCount(count => count + PAGE_SIZE)}
-          />
         </div>
       )}
+      </TableCard>
     </EmployeePageShell>
   );
 }

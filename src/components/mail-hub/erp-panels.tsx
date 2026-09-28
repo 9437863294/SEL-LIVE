@@ -64,7 +64,7 @@ export function LinksPanel({ detail, onChange }: { detail: ThreadDetail; onChang
         <ul className="space-y-1.5">
           {detail.links.map((link) => (
             <li key={link.id} className="flex items-center gap-2 text-sm">
-              <Badge variant="outline" className="shrink-0 text-[10px]">{MAIL_LINK_RECORD_LABELS[link.recordType]}</Badge>
+              <Badge variant="outline" className="shrink-0">{MAIL_LINK_RECORD_LABELS[link.recordType]}</Badge>
               {link.href ? (
                 <Link href={link.href} className="min-w-0 flex-1 truncate text-indigo-700 hover:underline">{link.recordLabel}</Link>
               ) : (

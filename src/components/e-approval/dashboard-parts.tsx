@@ -279,10 +279,10 @@ export function ChartCard({
         ) : !hasData ? (
           <p className="px-3 py-12 text-center text-sm text-muted-foreground">{emptyMessage}</p>
         ) : asTable && tableColumns ? (
-          <div className="overflow-x-auto px-2">
+          <div className="px-2">
             <Table>
               <TableHeader>
-                <TableRow className="bg-muted/40">
+                <TableRow>
                   {tableColumns.map((column, index) => (
                     <TableHead key={column} className={index === 0 ? '' : 'text-right'}>
                       {column}
@@ -296,7 +296,7 @@ export function ChartCard({
                     {row.map((cell, index) => (
                       <TableCell
                         key={index}
-                        className={cn('text-xs', index === 0 ? 'font-medium' : 'text-right tabular-nums')}
+                        className={index === 0 ? 'font-medium' : 'text-right tabular-nums'}
                       >
                         {cell}
                       </TableCell>

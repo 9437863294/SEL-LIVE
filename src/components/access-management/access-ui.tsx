@@ -35,7 +35,7 @@ import {
   Sparkles,
   UserCog,
 } from 'lucide-react';
-import { Badge } from '@/components/ui/badge';
+import { Badge, type BadgeProps } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
@@ -322,11 +322,14 @@ export interface ModulePickerItem {
   tone: ModulePickerTone;
 }
 
-const MODULE_TONE: Record<ModulePickerTone, string> = {
-  none: 'border-slate-200 bg-white text-slate-500',
-  some: 'border-amber-200 bg-amber-50 text-amber-700',
-  all: 'border-emerald-200 bg-emerald-50 text-emerald-700',
-  info: 'border-indigo-200 bg-indigo-50 text-indigo-700',
+/** The module's chips take the shared badge tones (`ui/badge`); nothing here picks its own colours. */
+type BadgeVariant = NonNullable<BadgeProps['variant']>;
+
+const MODULE_TONE: Record<ModulePickerTone, BadgeVariant> = {
+  none: 'outline',
+  some: 'warning',
+  all: 'success',
+  info: 'info',
 };
 
 /**
@@ -362,9 +365,9 @@ export function ModulePicker({
               <SelectItem key={item.name} value={item.name}>
                 <span className="flex items-center gap-2">
                   <span className="truncate">{item.name}</span>
-                  <span className={cn('rounded border px-1 text-[10px] leading-tight', MODULE_TONE[item.tone])}>
+                  <Badge variant={MODULE_TONE[item.tone]} className="px-1 text-[10px] leading-tight">
                     {item.caption}
-                  </span>
+                  </Badge>
                 </span>
               </SelectItem>
             ))}
@@ -390,7 +393,8 @@ export function ModulePicker({
               )}
             >
               <span className="min-w-0 truncate text-xs font-semibold text-slate-800">{item.name}</span>
-              <Badge variant="outline" className={cn('shrink-0 px-1 text-[9px] leading-tight', MODULE_TONE[item.tone])}>
+              {/* Compact on purpose: the chip shares a ~140px card with the module name. */}
+              <Badge variant={MODULE_TONE[item.tone]} className="shrink-0 px-1 text-[9px] leading-tight">
                 {item.caption}
               </Badge>
             </button>
@@ -508,16 +512,17 @@ export function AccessKpiCard({
  * Source badges (§8)
  * ---------------------------------------------------------------------------------------------- */
 
-const SOURCE_STYLE: Record<AccessSourceKind, { className: string; icon: React.ElementType; short: string }> = {
-  Existing: { className: 'border-slate-200 bg-slate-50 text-slate-700', icon: ShieldCheck, short: 'Existing' },
-  'Base Role': { className: 'border-slate-200 bg-slate-50 text-slate-700', icon: ShieldCheck, short: 'Base' },
-  'Additional Role': { className: 'border-indigo-200 bg-indigo-50 text-indigo-700', icon: Layers, short: 'Added' },
-  'Direct Permission': { className: 'border-violet-200 bg-violet-50 text-violet-700', icon: KeyRound, short: 'Direct' },
-  Department: { className: 'border-cyan-200 bg-cyan-50 text-cyan-700', icon: Building2, short: 'Dept' },
-  Designation: { className: 'border-teal-200 bg-teal-50 text-teal-700', icon: BadgeCheck, short: 'Desig' },
-  Project: { className: 'border-emerald-200 bg-emerald-50 text-emerald-700', icon: FolderKanban, short: 'Project' },
-  Temporary: { className: 'border-amber-200 bg-amber-50 text-amber-800', icon: CalendarClock, short: 'Temp' },
-  System: { className: 'border-slate-200 bg-white text-slate-600', icon: Sparkles, short: 'System' },
+/** A source is a category, not a status: each kind takes one of the shared badge tones. */
+const SOURCE_STYLE: Record<AccessSourceKind, { variant: BadgeVariant; icon: React.ElementType; short: string }> = {
+  Existing: { variant: 'neutral', icon: ShieldCheck, short: 'Existing' },
+  'Base Role': { variant: 'neutral', icon: ShieldCheck, short: 'Base' },
+  'Additional Role': { variant: 'info', icon: Layers, short: 'Added' },
+  'Direct Permission': { variant: 'progress', icon: KeyRound, short: 'Direct' },
+  Department: { variant: 'outline', icon: Building2, short: 'Dept' },
+  Designation: { variant: 'outline', icon: BadgeCheck, short: 'Desig' },
+  Project: { variant: 'success', icon: FolderKanban, short: 'Project' },
+  Temporary: { variant: 'warning', icon: CalendarClock, short: 'Temp' },
+  System: { variant: 'outline', icon: Sparkles, short: 'System' },
 };
 
 /**
@@ -551,10 +556,7 @@ export function SourceBadge({
 
   return (
     <AccessHint content={detail}>
-      <Badge
-        variant="outline"
-        className={cn('gap-1 whitespace-nowrap text-[10px] font-medium', style.className, className)}
-      >
+      <Badge variant={style.variant} className={cn('gap-1 whitespace-nowrap', className)}>
         <Icon className="h-3 w-3 shrink-0" />
         <span className="max-w-[10rem] truncate">{compact ? style.short : source.label}</span>
       </Badge>
@@ -583,9 +585,7 @@ export function SourceBadges({
         <SourceBadge key={`${source.kind}-${source.refId ?? source.label}-${index}`} source={source} compact={compact} />
       ))}
       {hidden > 0 && (
-        <Badge variant="outline" className="text-[10px] text-muted-foreground">
-          +{hidden} more
-        </Badge>
+        <Badge variant="neutral">+{hidden} more</Badge>
       )}
     </span>
   );
@@ -615,15 +615,12 @@ export function RoleBadge({
   disabled?: boolean;
   className?: string;
 }) {
-  const palette =
-    kind === 'base'
-      ? 'border-slate-300 bg-slate-100 text-slate-800'
-      : kind === 'temporary'
-        ? 'border-amber-200 bg-amber-50 text-amber-800'
-        : 'border-indigo-200 bg-indigo-50 text-indigo-700';
+  // A role is a tag, so it takes a shared badge tone: the base role neutral, an additional role
+  // info, a temporary one warning (it lapses).
+  const variant: BadgeVariant = kind === 'base' ? 'neutral' : kind === 'temporary' ? 'warning' : 'info';
 
   return (
-    <Badge variant="outline" className={cn('gap-1 text-xs font-medium', palette, className)}>
+    <Badge variant={variant} className={cn('gap-1', className)}>
       {kind === 'base' && <ShieldCheck className="h-3 w-3" />}
       {kind === 'additional' && <Layers className="h-3 w-3" />}
       {kind === 'temporary' && <CalendarClock className="h-3 w-3" />}
@@ -693,24 +690,10 @@ export function DiffSummary({
 }) {
   return (
     <span className={cn('inline-flex flex-wrap items-center gap-1.5 text-xs', className)}>
-      <Badge variant="outline" className="border-emerald-200 bg-emerald-50 text-emerald-700">
-        +{added} new
-      </Badge>
-      {already > 0 && (
-        <Badge variant="outline" className="border-slate-200 bg-slate-50 text-slate-600">
-          {already} already assigned
-        </Badge>
-      )}
-      <Badge
-        variant="outline"
-        className={
-          removed === 0
-            ? 'border-slate-200 bg-white text-slate-500'
-            : 'border-destructive/40 bg-destructive/10 text-destructive'
-        }
-      >
-        {removed} removed
-      </Badge>
+      <Badge variant="success">+{added} new</Badge>
+      {already > 0 && <Badge variant="neutral">{already} already assigned</Badge>}
+      {/* Zero removed is the resting state; anything else is the one number that must stand out. */}
+      <Badge variant={removed === 0 ? 'outline' : 'danger'}>{removed} removed</Badge>
     </span>
   );
 }
@@ -730,6 +713,8 @@ export function RiskBadges({
   className?: string;
 }) {
   if (!privileges.length && !conflicts.length) return null;
+  // Tone variants of `Badge`, not `StatusBadge`: a hint's trigger must take a ref and DOM props,
+  // which StatusBadge does not pass through.
   return (
     <span className={cn('inline-flex flex-wrap items-center gap-1', className)}>
       {privileges.length > 0 && (
@@ -742,7 +727,7 @@ export function RiskBadges({
             </ul>
           }
         >
-          <Badge variant="outline" className="gap-1 border-amber-200 bg-amber-50 text-[10px] text-amber-800">
+          <Badge variant="warning" className="gap-1 whitespace-nowrap">
             <UserCog className="h-3 w-3" />
             High privilege
           </Badge>
@@ -758,7 +743,7 @@ export function RiskBadges({
             </ul>
           }
         >
-          <Badge variant="outline" className="gap-1 border-rose-200 bg-rose-50 text-[10px] text-rose-700">
+          <Badge variant="danger" className="gap-1 whitespace-nowrap">
             <AlertTriangle className="h-3 w-3" />
             {conflicts.length} SoD conflict{conflicts.length === 1 ? '' : 's'}
           </Badge>

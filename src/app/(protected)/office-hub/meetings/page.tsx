@@ -13,10 +13,8 @@
 import Link from 'next/link';
 import { useMemo, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
-import { CalendarDays, CalendarPlus, Download, Filter, Search, Video, X } from 'lucide-react';
+import { CalendarDays, CalendarPlus, Download, Filter, Video } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Skeleton } from '@/components/ui/skeleton';
 import {
@@ -52,15 +50,15 @@ import {
   OfficeHubAccessDenied,
   OfficeHubDataList,
   OfficeHubEmptyState,
-  OfficeHubFilterCard,
   PriorityBadge,
   ResponseSummaryChip,
-  ResultCount,
   useTickingNow,
   type OfficeHubListColumn,
 } from '@/components/office-hub/ui';
 import { DateRangePicker, MultiSelect } from '@/components/office-hub/selectors';
+import { FilterBar } from '@/components/shared/filter-bar';
 import { PageHeader } from '@/components/shared/page-header';
+import { TableCard } from '@/components/shared/table-card';
 
 type Scope = 'mine' | 'organized' | 'team' | 'department' | 'all';
 
@@ -305,39 +303,27 @@ export default function MeetingsRegisterPage() {
         }
       />
 
-      <OfficeHubFilterCard
-        summary={
-          hasActiveFilters({ ...filters, search: debouncedSearch })
-            ? `${activeFilterCount({ ...filters, search: debouncedSearch })} filter(s) active`
-            : 'Showing your recent and upcoming meetings'
-        }
-        actions={
-          hasActiveFilters({ ...filters, search: debouncedSearch }) ? (
-            <Button size="sm" variant="ghost" onClick={clearFilters} className="h-7 gap-1 px-2 text-[11px]">
-              <X className="h-3 w-3" />
-              Clear
-            </Button>
-          ) : undefined
-        }
-      >
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
-          <div className="sm:col-span-2">
-            <Label className="mb-1 block text-xs">Search</Label>
-            <div className="relative">
-              <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
-              <Input
-                value={search}
-                onChange={(event) => setSearch(event.target.value)}
-                placeholder="Title, type, organizer, location, notes"
-                className="bg-white pl-8"
-              />
-            </div>
-          </div>
+      {meetingsQuery.error && (
+        <p className="text-xs text-destructive">
+          The register could not be loaded. Check your connection and try again.
+        </p>
+      )}
 
-          <div>
-            <Label className="mb-1 block text-xs">Scope</Label>
+      <TableCard
+        title="Meeting register"
+        description="Showing your recent and upcoming meetings"
+        icon={CalendarDays}
+        count={filtered.length}
+        total={all.length}
+        noun="meeting"
+        toolbar={
+          <FilterBar
+            search={{ value: search, onChange: setSearch, placeholder: 'Title, type, organizer, location, notes' }}
+            activeCount={activeFilterCount(filters)}
+            onClear={clearFilters}
+          >
             <Select value={effectiveScope} onValueChange={(next) => setScope(next as Scope)}>
-              <SelectTrigger className="bg-white">
+              <SelectTrigger aria-label="Scope">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -348,84 +334,74 @@ export default function MeetingsRegisterPage() {
                 ))}
               </SelectContent>
             </Select>
-          </div>
 
-          <DateRangePicker
-            from={filters.fromDate}
-            to={filters.toDate}
-            onChange={(range) => setFilters((current) => ({ ...current, ...range }))}
-          />
+            <DateRangePicker
+              inline
+              from={filters.fromDate}
+              to={filters.toDate}
+              onChange={(range) => setFilters((current) => ({ ...current, ...range }))}
+            />
 
-          <MultiSelect
-            label="Meeting type"
-            placeholder="Any type"
-            options={settings.meetingTypes.map((type) => ({ value: type, label: type }))}
-            value={filters.meetingTypes ?? []}
-            onChange={(next) => setFilters((current) => ({ ...current, meetingTypes: next }))}
-          />
+            <MultiSelect
+              placeholder="Any meeting type"
+              options={settings.meetingTypes.map((type) => ({ value: type, label: type }))}
+              value={filters.meetingTypes ?? []}
+              onChange={(next) => setFilters((current) => ({ ...current, meetingTypes: next }))}
+            />
 
-          <MultiSelect
-            label="Status"
-            placeholder="Any status"
-            options={MEETING_STATUSES.map((status) => ({ value: status, label: status }))}
-            value={filters.statuses ?? []}
-            onChange={(next) => setFilters((current) => ({ ...current, statuses: next as MeetingStatus[] }))}
-          />
+            <MultiSelect
+              placeholder="Any status"
+              options={MEETING_STATUSES.map((status) => ({ value: status, label: status }))}
+              value={filters.statuses ?? []}
+              onChange={(next) => setFilters((current) => ({ ...current, statuses: next as MeetingStatus[] }))}
+            />
 
-          <MultiSelect
-            label="Priority"
-            placeholder="Any priority"
-            options={OFFICE_HUB_PRIORITIES.map((priority) => ({ value: priority, label: priority }))}
-            value={filters.priorities ?? []}
-            onChange={(next) => setFilters((current) => ({ ...current, priorities: next as OfficeHubPriority[] }))}
-          />
+            <MultiSelect
+              placeholder="Any priority"
+              options={OFFICE_HUB_PRIORITIES.map((priority) => ({ value: priority, label: priority }))}
+              value={filters.priorities ?? []}
+              onChange={(next) => setFilters((current) => ({ ...current, priorities: next as OfficeHubPriority[] }))}
+            />
 
-          <MultiSelect
-            label="Mode"
-            placeholder="Any mode"
-            options={MEETING_MODES.map((mode) => ({ value: mode, label: mode }))}
-            value={filters.modes ?? []}
-            onChange={(next) => setFilters((current) => ({ ...current, modes: next as MeetingMode[] }))}
-          />
+            <MultiSelect
+              placeholder="Any mode"
+              options={MEETING_MODES.map((mode) => ({ value: mode, label: mode }))}
+              value={filters.modes ?? []}
+              onChange={(next) => setFilters((current) => ({ ...current, modes: next as MeetingMode[] }))}
+            />
 
-          <MultiSelect
-            label="Department"
-            placeholder="Any department"
-            options={directory.departments.map((department) => ({ value: department.id, label: department.name }))}
-            value={filters.departmentIds ?? []}
-            onChange={(next) => setFilters((current) => ({ ...current, departmentIds: next }))}
-          />
+            <MultiSelect
+              placeholder="Any department"
+              options={directory.departments.map((department) => ({ value: department.id, label: department.name }))}
+              value={filters.departmentIds ?? []}
+              onChange={(next) => setFilters((current) => ({ ...current, departmentIds: next }))}
+            />
 
-          <MultiSelect
-            label="Team"
-            placeholder="Any team"
-            options={directory.teams.map((team) => ({ value: team.id, label: team.name }))}
-            value={filters.teamIds ?? []}
-            onChange={(next) => setFilters((current) => ({ ...current, teamIds: next }))}
-          />
+            <MultiSelect
+              placeholder="Any team"
+              options={directory.teams.map((team) => ({ value: team.id, label: team.name }))}
+              value={filters.teamIds ?? []}
+              onChange={(next) => setFilters((current) => ({ ...current, teamIds: next }))}
+            />
 
-          <MultiSelect
-            label="Organizer"
-            placeholder="Anyone"
-            options={directory.people.map((person) => ({
-              value: person.userId,
-              label: person.name,
-              hint: person.departmentName ?? undefined,
-            }))}
-            value={filters.organizerIds ?? []}
-            onChange={(next) => setFilters((current) => ({ ...current, organizerIds: next }))}
-          />
+            <MultiSelect
+              placeholder="Any organizer"
+              options={directory.people.map((person) => ({
+                value: person.userId,
+                label: person.name,
+                hint: person.departmentName ?? undefined,
+              }))}
+              value={filters.organizerIds ?? []}
+              onChange={(next) => setFilters((current) => ({ ...current, organizerIds: next }))}
+            />
 
-          <MultiSelect
-            label="Participant"
-            placeholder="Anyone"
-            options={directory.people.map((person) => ({ value: person.userId, label: person.name }))}
-            value={filters.participantIds ?? []}
-            onChange={(next) => setFilters((current) => ({ ...current, participantIds: next }))}
-          />
+            <MultiSelect
+              placeholder="Any participant"
+              options={directory.people.map((person) => ({ value: person.userId, label: person.name }))}
+              value={filters.participantIds ?? []}
+              onChange={(next) => setFilters((current) => ({ ...current, participantIds: next }))}
+            />
 
-          <div>
-            <Label className="mb-1 block text-xs">Recurrence</Label>
             <Select
               value={filters.recurringOnly == null ? '__any__' : filters.recurringOnly ? 'recurring' : 'single'}
               onValueChange={(next) =>
@@ -435,75 +411,67 @@ export default function MeetingsRegisterPage() {
                 }))
               }
             >
-              <SelectTrigger className="bg-white">
+              <SelectTrigger aria-label="Recurrence">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="__any__">Any</SelectItem>
+                <SelectItem value="__any__">Any recurrence</SelectItem>
                 <SelectItem value="recurring">Recurring only</SelectItem>
                 <SelectItem value="single">One-off only</SelectItem>
               </SelectContent>
             </Select>
-          </div>
-        </div>
-      </OfficeHubFilterCard>
-
-      <div className="flex items-center justify-between">
-        <ResultCount shown={filtered.length} total={all.length} noun="meeting" />
-        {meetingsQuery.error && (
-          <p className="text-xs text-destructive">
-            The register could not be loaded. Check your connection and try again.
-          </p>
+          </FilterBar>
+        }
+        footer={
+          filtered.length > 0 ? (
+            <>
+              Times shown in {viewer.timeZone ?? settings.defaultTimeZone}. A meeting scheduled in
+              another zone shows a note on its own page.
+            </>
+          ) : undefined
+        }
+      >
+        {meetingsQuery.isLoading ? (
+          <Skeleton className="h-96 w-full rounded-xl" />
+        ) : (
+          <OfficeHubDataList
+            rows={filtered}
+            columns={columns}
+            cardHref={(meeting) => `${OFFICE_HUB_BASE_PATH}/meetings/${meeting.id}`}
+            frameless
+            rowClassName={(meeting) => (meeting.status === 'Cancelled' ? 'opacity-60' : undefined)}
+            empty={
+              <OfficeHubEmptyState
+                icon={CalendarDays}
+                title={
+                  hasActiveFilters({ ...filters, search: debouncedSearch })
+                    ? 'No meetings match these filters.'
+                    : 'No meetings in this period.'
+                }
+                description={
+                  hasActiveFilters({ ...filters, search: debouncedSearch })
+                    ? 'Widen the date range or clear a filter.'
+                    : `Nothing between ${formatIsoDate(filters.fromDate ?? today)} and ${formatIsoDate(
+                        filters.toDate ?? today,
+                      )}.`
+                }
+                action={
+                  hasActiveFilters({ ...filters, search: debouncedSearch }) ? (
+                    <Button size="sm" variant="outline" onClick={clearFilters} className="gap-2">
+                      <Filter className="h-4 w-4" />
+                      Clear filters
+                    </Button>
+                  ) : capabilities.canCreateMeeting ? (
+                    <Button size="sm" asChild>
+                      <Link href={`${OFFICE_HUB_BASE_PATH}/meetings/new`}>Schedule a meeting</Link>
+                    </Button>
+                  ) : undefined
+                }
+              />
+            }
+          />
         )}
-      </div>
-
-      {meetingsQuery.isLoading ? (
-        <Skeleton className="h-96 w-full rounded-xl" />
-      ) : (
-        <OfficeHubDataList
-          rows={filtered}
-          columns={columns}
-          cardHref={(meeting) => `${OFFICE_HUB_BASE_PATH}/meetings/${meeting.id}`}
-          maxHeightClassName="sm:max-h-[42rem]"
-          rowClassName={(meeting) => (meeting.status === 'Cancelled' ? 'opacity-60' : undefined)}
-          empty={
-            <OfficeHubEmptyState
-              icon={CalendarDays}
-              title={
-                hasActiveFilters({ ...filters, search: debouncedSearch })
-                  ? 'No meetings match these filters.'
-                  : 'No meetings in this period.'
-              }
-              description={
-                hasActiveFilters({ ...filters, search: debouncedSearch })
-                  ? 'Widen the date range or clear a filter.'
-                  : `Nothing between ${formatIsoDate(filters.fromDate ?? today)} and ${formatIsoDate(
-                      filters.toDate ?? today,
-                    )}.`
-              }
-              action={
-                hasActiveFilters({ ...filters, search: debouncedSearch }) ? (
-                  <Button size="sm" variant="outline" onClick={clearFilters} className="gap-2">
-                    <Filter className="h-4 w-4" />
-                    Clear filters
-                  </Button>
-                ) : capabilities.canCreateMeeting ? (
-                  <Button size="sm" asChild>
-                    <Link href={`${OFFICE_HUB_BASE_PATH}/meetings/new`}>Schedule a meeting</Link>
-                  </Button>
-                ) : undefined
-              }
-            />
-          }
-        />
-      )}
-
-      {filtered.length > 0 && (
-        <p className="text-[11px] text-muted-foreground">
-          Times shown in {viewer.timeZone ?? settings.defaultTimeZone}. A meeting scheduled in
-          another zone shows a note on its own page.
-        </p>
-      )}
+      </TableCard>
     </div>
   );
 }

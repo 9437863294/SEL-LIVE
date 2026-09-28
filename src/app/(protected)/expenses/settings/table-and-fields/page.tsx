@@ -60,6 +60,7 @@ import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Switch } from '@/components/ui/switch';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { cn } from '@/lib/utils';
 import { PageHeader } from '@/components/shared/page-header';
@@ -296,7 +297,7 @@ export default function ExpensesTableAndFieldsPage() {
                           {column.key}
                         </span>
                         {locked && (
-                          <Badge variant="outline" className="gap-1 border-slate-200 bg-slate-50 text-[10px] text-slate-600">
+                          <Badge variant="neutral" className="gap-1">
                             <Lock className="h-2.5 w-2.5" /> Always shown
                           </Badge>
                         )}
@@ -337,30 +338,27 @@ export default function ExpensesTableAndFieldsPage() {
                 <p className="mb-2 flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
                   <Eye className="h-3 w-3" /> Preview — {visibleColumns.length} of {columns.length} columns
                 </p>
-                <div className="overflow-x-auto rounded-xl border border-border/60">
-                  <table className="w-full text-xs">
-                    <thead className="bg-muted/40">
-                      <tr>
+                <div className="overflow-hidden rounded-xl border border-border/60">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
                         {visibleColumns.map(column => (
-                          <th
-                            key={column.key}
-                            className="whitespace-nowrap px-3 py-2 text-left font-semibold uppercase tracking-wide text-muted-foreground"
-                          >
+                          <TableHead key={column.key} className="whitespace-nowrap">
                             {column.key}
-                          </th>
+                          </TableHead>
                         ))}
-                      </tr>
-                    </thead>
-                    <tbody>
-                      <tr>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      <TableRow>
                         {visibleColumns.map(column => (
-                          <td key={column.key} className="whitespace-nowrap px-3 py-2 text-muted-foreground/60">
+                          <TableCell key={column.key} className="whitespace-nowrap">
                             —
-                          </td>
+                          </TableCell>
                         ))}
-                      </tr>
-                    </tbody>
-                  </table>
+                      </TableRow>
+                    </TableBody>
+                  </Table>
                 </div>
               </div>
             </CardContent>
@@ -389,7 +387,7 @@ export default function ExpensesTableAndFieldsPage() {
                         <div className="flex flex-wrap items-center gap-2">
                           <span className="text-sm font-medium">{definition.label}</span>
                           {definition.locked && (
-                            <Badge variant="outline" className="gap-1 border-slate-200 bg-slate-50 text-[10px] text-slate-600">
+                            <Badge variant="neutral" className="gap-1">
                               <Lock className="h-2.5 w-2.5" /> Required by the record
                             </Badge>
                           )}

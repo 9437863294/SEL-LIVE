@@ -60,7 +60,7 @@ export default function EmailAuthorizationPage() {
         backHref="/settings"
         backLabel="Back to settings"
         badge={
-          <Badge variant="outline" className="border-white/70 bg-white/70 text-slate-700 backdrop-blur">
+          <Badge variant="neutral">
             Settings
           </Badge>
         }

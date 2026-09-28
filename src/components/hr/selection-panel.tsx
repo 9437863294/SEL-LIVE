@@ -3,7 +3,6 @@
 import { useMemo, useState } from 'react';
 import Link from 'next/link';
 import { BadgeCheck, Check, Loader2, ThumbsDown, TrendingUp, X } from 'lucide-react';
-import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
@@ -22,6 +21,7 @@ import {
   type CompensationApproval,
   type HrRequirement,
   type SelectionProposal,
+  hrStatusLabel,
 } from '@/lib/hr-requirement';
 import {
   HrControlError,
@@ -35,13 +35,15 @@ import {
   HrEmptyState,
   HrField,
   HrLoader,
-  HrStatusBadge,
   SensitiveMoney,
+  hrBadgeTone,
   hrDialog,
   type HrListColumn,
 } from './hr-ui';
 import { useHrCollection, useHrConfig, useHrPermissions } from './use-hr-config';
 import { PageHeader } from '@/components/shared/page-header';
+import { StatusBadge } from '@/components/shared/status-badge';
+import { TableCard } from '@/components/shared/table-card';
 
 /**
  * Selection proposals and compensation approvals — spec sections 27 and 28.
@@ -154,9 +156,7 @@ export default function SelectionPanel({
       align: 'right',
       cell: row =>
         row.ctcAboveBand ? (
-          <Badge variant="outline" className="border-amber-200 bg-amber-50 text-amber-800">
-            +{row.ctcVariancePercent}%
-          </Badge>
+          <StatusBadge tone="warning" className="tabular-nums">+{row.ctcVariancePercent}%</StatusBadge>
         ) : (
           <span className="text-xs text-muted-foreground">In band</span>
         ),
@@ -167,14 +167,20 @@ export default function SelectionPanel({
       cell: row => (
         <span className="inline-flex items-center gap-1.5">
           {row.interviewScore ? `${row.interviewScore}/5` : '—'}
-          {row.hasDissent && (
-            <Badge variant="outline" className="border-rose-200 bg-rose-50 text-[10px] text-rose-700">dissent</Badge>
-          )}
+          {row.hasDissent && <StatusBadge tone="danger">dissent</StatusBadge>}
         </span>
       ),
     },
     { header: 'Joining', className: 'hidden lg:table-cell', cell: row => row.proposedJoiningDate || '—' },
-    { header: 'Status', mobile: 'aside', cell: row => <HrStatusBadge status={row.status} /> },
+    {
+      header: 'Status',
+      mobile: 'aside',
+      cell: row => (
+        <StatusBadge status={row.status} tone={hrBadgeTone(row.status)}>
+          {hrStatusLabel(row.status)}
+        </StatusBadge>
+      ),
+    },
     {
       header: 'Actions',
       mobile: 'footer',
@@ -251,17 +257,22 @@ export default function SelectionPanel({
         </div>
       )}
 
-      <HrDataList
-        rows={scoped}
-        columns={columns}
-        empty={
-          <HrEmptyState
-            icon={BadgeCheck}
-            title="No selection proposals yet"
-            description="Once a candidate clears the interview rounds, raise a selection proposal with the recommended CTC."
+      <TableCard title="Selection proposals" count={scoped.length} noun="proposal">
+        <div className="p-3 sm:p-0">
+          <HrDataList
+            frameless
+            rows={scoped}
+            columns={columns}
+            empty={
+              <HrEmptyState
+                icon={BadgeCheck}
+                title="No selection proposals yet"
+                description="Once a candidate clears the interview rounds, raise a selection proposal with the recommended CTC."
+              />
+            }
           />
-        }
-      />
+        </div>
+      </TableCard>
 
       <ProposalDialog
         application={proposeFor}

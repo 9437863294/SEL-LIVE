@@ -14,6 +14,7 @@ import {
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { PageHeader } from '@/components/shared/page-header';
+import { TableCard } from '@/components/shared/table-card';
 import { Input } from '@/components/ui/input';
 import { useToast } from '@/hooks/use-toast';
 import { db } from '@/lib/firebase';
@@ -576,8 +577,7 @@ export default function JmcWorkflowConfigurationPage() {
                       {isMapped(step) && (
                         <div className="space-y-2">
                           <Label>Assign Users</Label>
-                          <Card className="mt-2">
-                            <div className="overflow-x-auto">
+                          <TableCard scroll="natural" className="mt-2">
                               <Table className="min-w-[720px]">
                                 <TableHeader>
                                   <TableRow>
@@ -643,8 +643,7 @@ export default function JmcWorkflowConfigurationPage() {
                                   })}
                                 </TableBody>
                               </Table>
-                            </div>
-                          </Card>
+                          </TableCard>
                         </div>
                       )}
 

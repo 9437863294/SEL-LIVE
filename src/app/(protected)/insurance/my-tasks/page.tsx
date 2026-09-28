@@ -37,20 +37,14 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { Skeleton } from '@/components/ui/skeleton';
 import { PageHeader } from '@/components/shared/page-header';
+import { TableCard } from '@/components/shared/table-card';
+import { StatusBadge } from '@/components/shared/status-badge';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { cn } from '@/lib/utils';
 
 // ─── helpers ─────────────────────────────────────────────────────────────────
-
-const STATUS_CFG: Record<string, { label: string; cls: string }> = {
-  Pending:      { label: 'Pending',      cls: 'bg-amber-100 text-amber-700 border-amber-200' },
-  'In Progress':{ label: 'In Progress',  cls: 'bg-blue-100 text-blue-700 border-blue-200' },
-  'Needs Review':{ label: 'Needs Review',cls: 'bg-violet-100 text-violet-700 border-violet-200' },
-  Completed:    { label: 'Completed',    cls: 'bg-emerald-100 text-emerald-700 border-emerald-200' },
-  Rejected:     { label: 'Rejected',     cls: 'bg-red-100 text-red-700 border-red-200' },
-};
 
 const getActionName = (action: string | ActionConfig): string =>
   typeof action === 'string' ? action : action.name;
@@ -215,18 +209,17 @@ export default function MyTasksPage() {
       );
     }
     return (
-      <Card className="overflow-hidden border-border/60">
+      <TableCard title={isPending ? 'Pending tasks' : 'Completed / rejected tasks'} count={data.length} noun="task">
         {/* Mobile cards */}
         <div className="space-y-2 p-3 sm:hidden">
           {data.map((task) => {
-            const statusCfg = STATUS_CFG[task.status] ?? { label: task.status, cls: 'bg-slate-100 text-slate-600 border-slate-200' };
             const currentStep = workflow?.find((s) => s.id === task.currentStepId);
             const isOverdue = task.deadline && isPast(task.deadline.toDate());
             return (
               <div key={task.id} className={cn('rounded-xl border p-3 space-y-2 cursor-pointer transition-colors', isOverdue ? 'border-red-200 bg-red-50/40' : 'border-border/60 hover:bg-muted/30')} onClick={() => { setSelectedTask(task); setIsViewDialogOpen(true); }}>
                 <div className="flex items-start justify-between gap-2">
                   <div><p className="font-semibold text-sm">{task.insuredPerson}</p><p className="text-xs text-muted-foreground font-mono">{task.policyNo}</p></div>
-                  <Badge variant="outline" className={cn('text-[10px] shrink-0', statusCfg.cls)}>{statusCfg.label}</Badge>
+                  <StatusBadge status={task.status} className="shrink-0" />
                 </div>
                 <div className="grid grid-cols-2 gap-1 text-xs">
                   <div><span className="text-muted-foreground">Due: </span>{format(task.dueDate.toDate(), 'dd MMM yyyy')}</div>
@@ -251,10 +244,9 @@ export default function MyTasksPage() {
         </div>
 
         {/* Desktop table */}
-        <div className="hidden sm:block overflow-x-auto">
-          <Table>
+          <Table containerClassName="hidden sm:block">
             <TableHeader>
-              <TableRow className="bg-muted/40 hover:bg-muted/40">
+              <TableRow>
                 <TableHead>Created</TableHead>
                 <TableHead>Policy No.</TableHead>
                 <TableHead>Insured Person</TableHead>
@@ -266,28 +258,25 @@ export default function MyTasksPage() {
             </TableHeader>
             <TableBody>
               {data.map((task) => {
-                const statusCfg = STATUS_CFG[task.status] ?? { label: task.status, cls: 'bg-slate-100 text-slate-600' };
                 const currentStep = workflow?.find((s) => s.id === task.currentStepId);
                 const actions = currentStep?.actions || [];
                 const isOverdue = task.deadline && isPast(task.deadline.toDate());
                 return (
-                  <TableRow key={task.id} className={cn('cursor-pointer transition-colors', isOverdue ? 'bg-red-50/30 hover:bg-red-50/50' : 'hover:bg-muted/30')} onClick={() => { setSelectedTask(task); setIsViewDialogOpen(true); }}>
-                    <TableCell className="text-xs text-muted-foreground">{format(task.createdAt.toDate(), 'dd MMM yy, HH:mm')}</TableCell>
-                    <TableCell className="font-mono text-xs font-medium">{task.policyNo}</TableCell>
+                  <TableRow key={task.id} className={cn('cursor-pointer', isOverdue && 'bg-rose-50/60')} onClick={() => { setSelectedTask(task); setIsViewDialogOpen(true); }}>
+                    <TableCell className="whitespace-nowrap">{format(task.createdAt.toDate(), 'dd MMM yy, HH:mm')}</TableCell>
+                    <TableCell className="font-mono font-medium whitespace-nowrap">{task.policyNo}</TableCell>
                     <TableCell className="font-medium">{task.insuredPerson}</TableCell>
-                    <TableCell>{format(task.dueDate.toDate(), 'dd MMM yyyy')}</TableCell>
-                    <TableCell>
+                    <TableCell className="whitespace-nowrap">{format(task.dueDate.toDate(), 'dd MMM yyyy')}</TableCell>
+                    <TableCell className="whitespace-nowrap">
                       {task.deadline ? (
-                        <span className={cn('text-sm', isOverdue ? 'text-red-600 font-semibold' : '')}>
+                        <span className={cn(isOverdue && 'text-red-600 font-semibold')}>
                           {format(task.deadline.toDate(), 'dd MMM yy, HH:mm')}
                           {isOverdue && <span className="ml-1 text-[10px]">(overdue)</span>}
                         </span>
                       ) : '—'}
                     </TableCell>
                     <TableCell>
-                      <Badge variant="outline" className={cn('text-[10px]', statusCfg.cls)}>
-                        {isPending ? task.currentStage : statusCfg.label}
-                      </Badge>
+                      <StatusBadge status={task.status}>{isPending ? task.currentStage : undefined}</StatusBadge>
                     </TableCell>
                     <TableCell className="text-right" onClick={(e) => e.stopPropagation()}>
                       {isActionLoading === task.id ? (
@@ -321,8 +310,7 @@ export default function MyTasksPage() {
               })}
             </TableBody>
           </Table>
-        </div>
-      </Card>
+      </TableCard>
     );
   };
 
@@ -357,13 +345,13 @@ export default function MyTasksPage() {
             !isLoading && (
               <div className="flex items-center gap-2 text-sm">
                 {pendingTasks.length > 0 && (
-                  <Badge className="gap-1 bg-amber-100 text-amber-700 border-amber-200">
+                  <Badge variant="warning" className="gap-1">
                     <AlertTriangle className="h-3 w-3" />
                     {pendingTasks.length} pending
                   </Badge>
                 )}
                 {completedTasks.filter((t) => t.status === 'Completed').length > 0 && (
-                  <Badge className="gap-1 bg-emerald-100 text-emerald-700 border-emerald-200">
+                  <Badge variant="success" className="gap-1">
                     <CheckCircle2 className="h-3 w-3" />
                     {completedTasks.filter((t) => t.status === 'Completed').length} done
                   </Badge>
@@ -385,13 +373,13 @@ export default function MyTasksPage() {
             <TabsTrigger value="pending" className="h-7 text-xs">
               My Pending Tasks
               {!isLoading && pendingTasks.length > 0 && (
-                <Badge className="ml-1.5 h-4 min-w-4 px-1 text-[10px] bg-amber-500 text-white">{pendingTasks.length}</Badge>
+                <Badge variant="warning" className="ml-1.5 h-4 min-w-4 px-1 text-[10px]">{pendingTasks.length}</Badge>
               )}
             </TabsTrigger>
             <TabsTrigger value="completed" className="h-7 text-xs">
               Completed / Rejected
               {!isLoading && completedTasks.length > 0 && (
-                <Badge className="ml-1.5 h-4 min-w-4 px-1 text-[10px] bg-slate-400 text-white">{completedTasks.length}</Badge>
+                <Badge variant="neutral" className="ml-1.5 h-4 min-w-4 px-1 text-[10px]">{completedTasks.length}</Badge>
               )}
             </TabsTrigger>
           </TabsList>

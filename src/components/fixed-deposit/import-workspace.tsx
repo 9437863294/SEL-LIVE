@@ -70,6 +70,9 @@ import { Separator } from '@/components/ui/separator';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { cn } from '@/lib/utils';
 import { PageHeader } from '@/components/shared/page-header';
+import { TableCard } from '@/components/shared/table-card';
+import { FilterBar } from '@/components/shared/filter-bar';
+import { StatusBadge } from '@/components/shared/status-badge';
 
 /* ── constants ───────────────────────────────────────────────────────────── */
 
@@ -989,51 +992,52 @@ export default function FDImportWorkspace() {
         </CardContent>
       </Card>
 
-      <Card className="overflow-hidden border-white/80 bg-white/90 shadow-sm">
-        <CardHeader className="gap-3">
+      <TableCard
+        title="Row review"
+        description={<>{visibleRows.length} of {rows.length} rows shown{rows.length > PREVIEW_LIMIT ? ` · preview capped at ${PREVIEW_LIMIT}` : ''}.</>}
+        toolbar={<FilterBar
+          activeCount={rowFilter !== 'all' ? 1 : 0}
+          onClear={() => setRowFilter('all')}
+          actions={canExportExceptions && (errorRows.length > 0 || warningRows.length > 0) ? <Button size="sm" variant="outline" onClick={() => void exportExceptions()}><Download className="mr-2 h-4 w-4" />Export Exceptions</Button> : undefined}
+        >
+          <div className="flex flex-wrap gap-2">
+            {([['all', 'All', rows.length], ['ready', 'Clean', readyRows.length - warningRows.length], ['warning', 'Warnings', warningRows.length], ['error', 'Blocked', errorRows.length]] as const).map(([value, label, count]) => <Button key={value} size="sm" variant={rowFilter === value ? 'default' : 'outline'} onClick={() => setRowFilter(value)}>{label} <Badge variant="neutral" className="ml-1.5">{count}</Badge></Button>)}
+          </div>
+        </FilterBar>}
+        footer={<>
           <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-center">
-            <div><CardTitle>Row review</CardTitle><CardDescription>{visibleRows.length} of {rows.length} rows shown{rows.length > PREVIEW_LIMIT ? ` · preview capped at ${PREVIEW_LIMIT}` : ''}.</CardDescription></div>
-            <div className="flex flex-wrap gap-2">
-              {([['all', 'All', rows.length], ['ready', 'Clean', readyRows.length - warningRows.length], ['warning', 'Warnings', warningRows.length], ['error', 'Blocked', errorRows.length]] as const).map(([value, label, count]) => <Button key={value} size="sm" variant={rowFilter === value ? 'default' : 'outline'} onClick={() => setRowFilter(value)}>{label} <Badge variant="secondary" className="ml-1.5">{count}</Badge></Button>)}
-              {canExportExceptions && (errorRows.length > 0 || warningRows.length > 0) && <Button size="sm" variant="outline" onClick={() => void exportExceptions()}><Download className="mr-2 h-4 w-4" />Export Exceptions</Button>}
+            <Button variant="outline" onClick={() => setStep('mapping')} disabled={importing}><ArrowLeft className="mr-2 h-4 w-4" />Back to mapping</Button>
+            <div className="flex items-center gap-3">
+              {errorRows.length > 0 && <p className="text-xs text-muted-foreground">{errorRows.length} blocked rows will be skipped.</p>}
+              <Button onClick={() => void runImport()} disabled={!canImport || importing || !readyRows.length} className="bg-gradient-to-r from-cyan-600 to-blue-700">
+                {importing ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Upload className="mr-2 h-4 w-4" />}
+                Import {readyRows.length} rows{updateCount ? ` (${insertCount} new, ${updateCount} updates)` : ''}
+              </Button>
             </div>
           </div>
-        </CardHeader>
-        <CardContent className="p-0">
-          <div className="max-h-[520px] overflow-auto">
+          {importing && <div className="mt-3"><Progress value={progress} /><p className="mt-2 text-center text-xs text-muted-foreground">Committing… {progress}%</p></div>}
+        </>}
+      >
             <Table>
-              <TableHeader className="sticky top-0 z-10 bg-slate-50"><TableRow><TableHead className="w-14">Row</TableHead><TableHead>FD / Bank</TableHead><TableHead>Holder / Project</TableHead><TableHead className="text-right">Principal</TableHead><TableHead>Value → Maturity</TableHead><TableHead className="text-right">Eligible / Available</TableHead><TableHead>Validation</TableHead></TableRow></TableHeader>
+              <TableHeader><TableRow><TableHead className="w-14">Row</TableHead><TableHead>FD / Bank</TableHead><TableHead>Holder / Project</TableHead><TableHead className="text-right">Principal</TableHead><TableHead>Value → Maturity</TableHead><TableHead className="text-right">Eligible / Available</TableHead><TableHead>Validation</TableHead></TableRow></TableHeader>
               <TableBody>
                 {visibleRows.map((row) => <TableRow key={row.excelRow} className={row.errors.length ? 'bg-rose-50/40' : row.warnings.length ? 'bg-amber-50/30' : undefined}>
-                  <TableCell className="text-xs text-muted-foreground">{row.excelRow}</TableCell>
+                  <TableCell className="tabular-nums">{row.excelRow}</TableCell>
                   <TableCell><p className="font-medium">{text(row.values, 'fdNumber') || '—'}</p><p className="text-xs text-muted-foreground">{row.bank ? bankLabel(row.bank) : text(row.values, 'bankName') || 'Unresolved bank'}</p></TableCell>
-                  <TableCell><p className="text-sm">{text(row.values, 'holderName') || '—'}</p><p className="text-xs text-muted-foreground">{row.project?.projectName || text(row.values, 'projectName') || 'No project'}</p></TableCell>
-                  <TableCell className="text-right font-medium">{currency(num(row.values, 'principalAmount'))}<p className="text-xs font-normal text-muted-foreground">{num(row.values, 'interestRate')}% · {row.financials.tenureDays}d</p></TableCell>
-                  <TableCell className="text-xs">{asDate(row.values, 'valueDate')?.toLocaleDateString('en-IN') || '—'}<br />{asDate(row.values, 'maturityDate')?.toLocaleDateString('en-IN') || '—'}</TableCell>
-                  <TableCell className="text-right text-xs">{currency(row.financials.eligibleValue)}<br /><span className="font-medium text-emerald-700">{currency(row.financials.availableAmount)}</span></TableCell>
+                  <TableCell><p>{text(row.values, 'holderName') || '—'}</p><p className="text-xs text-muted-foreground">{row.project?.projectName || text(row.values, 'projectName') || 'No project'}</p></TableCell>
+                  <TableCell className="whitespace-nowrap text-right tabular-nums">{currency(num(row.values, 'principalAmount'))}<p className="text-xs text-muted-foreground">{num(row.values, 'interestRate')}% · {row.financials.tenureDays}d</p></TableCell>
+                  <TableCell className="whitespace-nowrap">{asDate(row.values, 'valueDate')?.toLocaleDateString('en-IN') || '—'}<br />{asDate(row.values, 'maturityDate')?.toLocaleDateString('en-IN') || '—'}</TableCell>
+                  <TableCell className="whitespace-nowrap text-right tabular-nums">{currency(row.financials.eligibleValue)}<br /><span className="text-emerald-700">{currency(row.financials.availableAmount)}</span></TableCell>
                   <TableCell className="max-w-[420px]">
-                    {!row.errors.length && !row.warnings.length && <Badge className="bg-emerald-600 hover:bg-emerald-600">Ready</Badge>}
+                    {!row.errors.length && !row.warnings.length && <StatusBadge status="Ready" tone="success" />}
                     {row.errors.length > 0 && <ul className="space-y-0.5">{row.errors.map((message, index) => <li key={index} className="flex gap-1.5 text-[11px] leading-snug text-rose-700"><XCircle className="mt-0.5 h-3 w-3 shrink-0" />{message}</li>)}</ul>}
                     {row.warnings.length > 0 && <ul className={cn('space-y-0.5', row.errors.length && 'mt-1')}>{row.warnings.map((message, index) => <li key={index} className="flex gap-1.5 text-[11px] leading-snug text-amber-700"><AlertTriangle className="mt-0.5 h-3 w-3 shrink-0" />{message}</li>)}</ul>}
                   </TableCell>
                 </TableRow>)}
-                {!visibleRows.length && <TableRow><TableCell colSpan={7} className="h-28 text-center text-sm text-muted-foreground">No rows in this view.</TableCell></TableRow>}
+                {!visibleRows.length && <TableRow><TableCell colSpan={7} className="h-28 text-center text-muted-foreground">No rows in this view.</TableCell></TableRow>}
               </TableBody>
             </Table>
-          </div>
-        </CardContent>
-        <CardContent className="flex flex-col justify-between gap-3 border-t pt-4 sm:flex-row sm:items-center">
-          <Button variant="outline" onClick={() => setStep('mapping')} disabled={importing}><ArrowLeft className="mr-2 h-4 w-4" />Back to mapping</Button>
-          <div className="flex items-center gap-3">
-            {errorRows.length > 0 && <p className="text-xs text-muted-foreground">{errorRows.length} blocked rows will be skipped.</p>}
-            <Button onClick={() => void runImport()} disabled={!canImport || importing || !readyRows.length} className="bg-gradient-to-r from-cyan-600 to-blue-700">
-              {importing ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Upload className="mr-2 h-4 w-4" />}
-              Import {readyRows.length} rows{updateCount ? ` (${insertCount} new, ${updateCount} updates)` : ''}
-            </Button>
-          </div>
-        </CardContent>
-        {importing && <CardContent className="border-t pt-4"><Progress value={progress} /><p className="mt-2 text-center text-xs text-muted-foreground">Committing… {progress}%</p></CardContent>}
-      </Card>
+      </TableCard>
     </div>}
 
     {/* Step 4 — summary */}
@@ -1054,10 +1058,9 @@ export default function FDImportWorkspace() {
         </CardContent>
       </Card>
 
-      {outcome.failures.length > 0 && <Card className="border-rose-200 bg-white/90">
-        <CardHeader><CardTitle className="text-rose-700">Rows that failed to write</CardTitle><CardDescription>These passed validation but Firestore rejected the batch. Fix the cause and re-import them.</CardDescription></CardHeader>
-        <CardContent className="p-0"><Table><TableHeader><TableRow><TableHead className="w-20">Row</TableHead><TableHead>FD Number</TableHead><TableHead>Error</TableHead></TableRow></TableHeader><TableBody>{outcome.failures.map((failure) => <TableRow key={failure.excelRow}><TableCell>{failure.excelRow}</TableCell><TableCell>{failure.reference}</TableCell><TableCell className="text-xs text-rose-700">{failure.message}</TableCell></TableRow>)}</TableBody></Table></CardContent>
-      </Card>}
+      {outcome.failures.length > 0 && <TableCard title="Rows that failed to write" description="These passed validation but Firestore rejected the batch. Fix the cause and re-import them." count={outcome.failures.length} noun="row">
+        <Table><TableHeader><TableRow><TableHead className="w-20">Row</TableHead><TableHead>FD Number</TableHead><TableHead>Error</TableHead></TableRow></TableHeader><TableBody>{outcome.failures.map((failure) => <TableRow key={failure.excelRow}><TableCell className="tabular-nums">{failure.excelRow}</TableCell><TableCell>{failure.reference}</TableCell><TableCell className="text-rose-700">{failure.message}</TableCell></TableRow>)}</TableBody></Table>
+      </TableCard>}
 
       {outcome.inserted > 0 && (outcome.updated > 0 || approvalMode === 'migrate') && <Card className="border-white/80 bg-white/90">
         <CardContent className="flex items-start gap-2.5 p-4 text-xs text-muted-foreground">

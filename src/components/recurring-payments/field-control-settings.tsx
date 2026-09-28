@@ -12,8 +12,10 @@ import { RP_FORM_KEYS, RP_FORM_REGISTRY, type RPFormKey } from '@/lib/recurring-
 import { fieldControlDocId, type RPFieldSetting } from './use-field-control';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { PageHeader } from '@/components/shared/page-header';
+import { TableCard } from '@/components/shared/table-card';
+import { FilterBar } from '@/components/shared/filter-bar';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Switch } from '@/components/ui/switch';
@@ -155,18 +157,24 @@ export default function RecurringFieldControlSettings() {
         </div>
       )}
 
-      <Card>
-        <CardHeader className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <div>
-            <CardTitle className="flex items-center gap-2">
-              <SlidersHorizontal className="h-5 w-5 text-emerald-600" />
-              {formDef.title}
-            </CardTitle>
-            <CardDescription>{formDef.description}</CardDescription>
-          </div>
-          <div className="flex items-center gap-2">
+      <TableCard
+        icon={SlidersHorizontal}
+        title={formDef.title}
+        description={formDef.description}
+        count={fields.length}
+        noun="field"
+        actions={
+          canEdit ? (
+            <Button variant="outline" size="sm" onClick={() => resetForm(activeForm)}>
+              <RotateCcw className="mr-2 h-3.5 w-3.5" />
+              Reset
+            </Button>
+          ) : undefined
+        }
+        toolbar={
+          <FilterBar>
             <Select value={activeForm} onValueChange={(value) => setActiveForm(value as RPFormKey)}>
-              <SelectTrigger className="w-64">
+              <SelectTrigger aria-label="Form">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -177,71 +185,62 @@ export default function RecurringFieldControlSettings() {
                 ))}
               </SelectContent>
             </Select>
-            {canEdit && (
-              <Button variant="outline" size="sm" onClick={() => resetForm(activeForm)}>
-                <RotateCcw className="mr-2 h-3.5 w-3.5" />
-                Reset
-              </Button>
-            )}
-          </div>
-        </CardHeader>
-        <CardContent className="p-0">
-          <div className="overflow-x-auto">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead className="w-64">Label</TableHead>
-                  <TableHead className="w-28 text-center">Required</TableHead>
-                  <TableHead className="w-28 text-center">Visible</TableHead>
-                  <TableHead>Field key</TableHead>
+          </FilterBar>
+        }
+      >
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead className="w-64">Label</TableHead>
+              <TableHead className="w-28 text-center">Required</TableHead>
+              <TableHead className="w-28 text-center">Visible</TableHead>
+              <TableHead>Field key</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {fields.map((field) => {
+              const setting = formFieldState[field.key] || {
+                visible: true,
+                required: field.defaultRequired,
+                label: field.defaultLabel,
+              };
+              return (
+                <TableRow key={field.key}>
+                  <TableCell>
+                    <Input
+                      value={setting.label}
+                      disabled={!canEdit}
+                      onChange={(event) => update(activeForm, field.key, { label: event.target.value })}
+                    />
+                  </TableCell>
+                  <TableCell className="text-center">
+                    <Switch
+                      checked={setting.required}
+                      disabled={!canEdit || field.locked}
+                      onCheckedChange={(value) => update(activeForm, field.key, { required: value })}
+                    />
+                  </TableCell>
+                  <TableCell className="text-center">
+                    <Switch
+                      checked={setting.visible}
+                      disabled={!canEdit || field.locked}
+                      onCheckedChange={(value) => update(activeForm, field.key, { visible: value })}
+                    />
+                  </TableCell>
+                  <TableCell className="whitespace-nowrap font-mono">
+                    {field.key}
+                    {field.locked && (
+                      <Badge variant="outline" className="ml-2 gap-1">
+                        <Lock className="h-2.5 w-2.5" /> Locked
+                      </Badge>
+                    )}
+                  </TableCell>
                 </TableRow>
-              </TableHeader>
-              <TableBody>
-                {fields.map((field) => {
-                  const setting = formFieldState[field.key] || {
-                    visible: true,
-                    required: field.defaultRequired,
-                    label: field.defaultLabel,
-                  };
-                  return (
-                    <TableRow key={field.key}>
-                      <TableCell>
-                        <Input
-                          value={setting.label}
-                          disabled={!canEdit}
-                          onChange={(event) => update(activeForm, field.key, { label: event.target.value })}
-                        />
-                      </TableCell>
-                      <TableCell className="text-center">
-                        <Switch
-                          checked={setting.required}
-                          disabled={!canEdit || field.locked}
-                          onCheckedChange={(value) => update(activeForm, field.key, { required: value })}
-                        />
-                      </TableCell>
-                      <TableCell className="text-center">
-                        <Switch
-                          checked={setting.visible}
-                          disabled={!canEdit || field.locked}
-                          onCheckedChange={(value) => update(activeForm, field.key, { visible: value })}
-                        />
-                      </TableCell>
-                      <TableCell className="whitespace-nowrap text-xs text-muted-foreground">
-                        {field.key}
-                        {field.locked && (
-                          <Badge variant="outline" className="ml-2 gap-1 text-[10px]">
-                            <Lock className="h-2.5 w-2.5" /> Locked
-                          </Badge>
-                        )}
-                      </TableCell>
-                    </TableRow>
-                  );
-                })}
-              </TableBody>
-            </Table>
-          </div>
-        </CardContent>
-      </Card>
+              );
+            })}
+          </TableBody>
+        </Table>
+      </TableCard>
       <p className="text-xs text-muted-foreground">
         Locked fields are required by the form's own logic — for example, a workflow step's mandatory amount or the
         record's own name/title — so they can't be hidden or made optional here, but their label can still be

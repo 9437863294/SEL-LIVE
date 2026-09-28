@@ -52,6 +52,7 @@ import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { HrAccessDenied, HrLoader } from '@/components/hr/hr-ui';
 import { PageHeader, SectionHeader } from '@/components/shared/page-header';
+import { StatusBadge, type StatusTone } from '@/components/shared/status-badge';
 import {
   EMPLOYEE_GROUPS,
   EMPLOYEE_NAV,
@@ -59,10 +60,8 @@ import {
   EmployeeKpiCard,
   EmployeePageShell,
   EmployeeSpotlightCard,
-  EmployeeStatusPill,
   EmployeeToolRow,
   useEmployeeAccess,
-  type EmpTone,
 } from '@/components/employee/employee-ui';
 import { fetchSyncReport, type SyncReport } from '@/lib/greythr-sync-client';
 import { cn } from '@/lib/utils';
@@ -82,7 +81,8 @@ const screenCount = (count: number) => `${count} ${count === 1 ? 'screen' : 'scr
  * ---------------------------------------------------------------------------------------------- */
 
 interface Freshness {
-  tone: EmpTone;
+  /** The pill's status tone: current green, a day old amber, a week old (or never) rose. */
+  tone: StatusTone;
   /** For the pill beside the sync card: "Synced 4 hours ago". */
   pill: string;
   /** Hours since the last successful run; null when there has never been one, or is not known. */
@@ -99,19 +99,19 @@ interface Freshness {
 }
 
 function readFreshness(report: SyncReport | null): Freshness {
-  if (!report) return { tone: 'slate', pill: 'Sync status unavailable', ageHours: null, known: false };
+  if (!report) return { tone: 'neutral', pill: 'Sync status unavailable', ageHours: null, known: false };
 
   const stamp = report.settings.lastSuccessfulRunAt;
   const parsed = stamp ? new Date(stamp) : null;
 
   if (!parsed || Number.isNaN(parsed.getTime())) {
-    return { tone: 'rose', pill: 'Never synced', ageHours: null, known: true };
+    return { tone: 'danger', pill: 'Never synced', ageHours: null, known: true };
   }
 
   const ageHours = (Date.now() - parsed.getTime()) / 3_600_000;
   const phrase = `Synced ${formatDistanceToNow(parsed, { addSuffix: true })}`;
-  const tone: EmpTone =
-    ageHours >= ALERT_AFTER_HOURS ? 'rose' : ageHours >= WARN_AFTER_HOURS ? 'amber' : 'emerald';
+  const tone: StatusTone =
+    ageHours >= ALERT_AFTER_HOURS ? 'danger' : ageHours >= WARN_AFTER_HOURS ? 'warning' : 'success';
 
   return { tone, pill: phrase, ageHours, known: true };
 }
@@ -326,7 +326,7 @@ export default function EmployeeHubPage() {
           {/* "3 still working" is exactly the misreading to avoid while the mirror is short of the
               roster: the screen behind this card can only show what the mirror holds. */}
           {mirrorIncomplete ? (
-            <span className="font-medium text-amber-700">mirror incomplete</span>
+            <StatusBadge tone="warning">mirror incomplete</StatusBadge>
           ) : (
             <span>{mirror.working.toLocaleString()} still working</span>
           )}
@@ -336,9 +336,9 @@ export default function EmployeeHubPage() {
     if (key === 'current') {
       return (
         <>
-          <EmployeeStatusPill tone="emerald" pulse>
+          <StatusBadge tone="success" dot>
             Live from greytHR
-          </EmployeeStatusPill>
+          </StatusBadge>
           <span>Fetched on open</span>
         </>
       );
@@ -346,9 +346,10 @@ export default function EmployeeHubPage() {
     if (key === 'sync') {
       return (
         <>
-          <EmployeeStatusPill tone={statsLoading ? 'slate' : freshness.tone} icon={Clock}>
+          <StatusBadge tone={statsLoading ? 'neutral' : freshness.tone}>
+            <Clock className="h-3 w-3" aria-hidden="true" />
             {statsLoading ? 'Checking…' : freshness.pill}
-          </EmployeeStatusPill>
+          </StatusBadge>
           {schedule && <span>{schedule.enabled ? `${schedule.frequency} schedule` : 'Schedule off'}</span>}
         </>
       );
@@ -392,12 +393,13 @@ export default function EmployeeHubPage() {
         backHref="/settings"
         backLabel="Back to settings"
         meta={
-          <EmployeeStatusPill tone={statsLoading ? 'slate' : freshness.tone} icon={Clock}>
+          <StatusBadge tone={statsLoading ? 'neutral' : freshness.tone}>
+            <Clock className="h-3 w-3" aria-hidden="true" />
             {statsLoading ? 'Checking sync status…' : freshness.pill}
             {freshness.known && freshness.ageHours !== null && freshness.ageHours >= WARN_AFTER_HOURS && (
               <span className="font-semibold">· needs a run</span>
             )}
-          </EmployeeStatusPill>
+          </StatusBadge>
         }
         actions={
           access.canSync ? (
@@ -485,7 +487,7 @@ export default function EmployeeHubPage() {
 
       {/* ── Anything that needs doing ────────────────────────────────────────────────────────── */}
       {notices.length > 0 && (
-        <div className={cn('mb-3 grid gap-2', notices.length > 1 && 'lg:grid-cols-2')}>
+        <div className={cn('mb-3 grid grid-cols-1 gap-2', notices.length > 1 && 'lg:grid-cols-2')}>
           {notices.map((notice, index) => (
             <NoticeRow key={notice.id} notice={notice} index={index} />
           ))}
@@ -505,7 +507,7 @@ export default function EmployeeHubPage() {
             actions={<span className="text-xs text-muted-foreground">{screenCount(primaries.length)}</span>}
             className="mb-2"
           />
-          <div className={cn('grid gap-3', primaries.length === 3 ? 'sm:grid-cols-2 lg:grid-cols-3' : 'sm:grid-cols-2')}>
+          <div className={cn('grid grid-cols-1 gap-3', primaries.length === 3 ? 'sm:grid-cols-2 lg:grid-cols-3' : 'sm:grid-cols-2')}>
             {primaries.map((item, index) => (
               <EmployeeSpotlightCard
                 key={item.key}
@@ -529,7 +531,7 @@ export default function EmployeeHubPage() {
       )}
 
       {/* ── Everything else, as rows ─────────────────────────────────────────────────────────── */}
-      <div className="grid gap-4 lg:grid-cols-2">
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
         {rowGroups.map(group => (
           <section key={group.key} className="min-w-0">
             <SectionHeader
@@ -539,7 +541,7 @@ export default function EmployeeHubPage() {
               className="mb-2"
             />
             <Card className={cn('rounded-2xl p-1.5', EMP_CARD_CLASS)}>
-              <div className="grid gap-0.5">
+              <div className="grid grid-cols-1 gap-0.5">
                 {group.items.map((item, index) => (
                   <EmployeeToolRow key={item.key} item={item} index={index} />
                 ))}

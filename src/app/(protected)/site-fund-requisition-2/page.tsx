@@ -4,6 +4,7 @@
 import { useState, useEffect, useMemo, useCallback } from 'react';
 import { Card, CardHeader, CardTitle, CardContent, CardDescription } from '@/components/ui/card';
 import { PageHeader } from '@/components/shared/page-header';
+import { StatusBadge } from '@/components/shared/status-badge';
 import { FileText, BarChart3, Settings, GitMerge } from 'lucide-react';
 import Link from 'next/link';
 import { useAuthorization } from '@/hooks/useAuthorization';
@@ -149,12 +150,9 @@ export default function SiteFundRequisition2Page() {
         title="Module Dashboard"
         description="Jump into requests, reports, settings, or stage-wise tasks."
         badge={
-          <div className="hidden sm:flex items-center gap-2">
-            <div className="rounded-full border border-white/70 bg-white/70 px-3 py-1 text-xs text-slate-600 backdrop-blur">
-              Live workflow stages
-            </div>
-            <div className="h-2 w-2 rounded-full bg-emerald-400" />
-          </div>
+          <StatusBadge status="Live" dot className="hidden sm:inline-flex">
+            Live workflow stages
+          </StatusBadge>
         }
       />
 

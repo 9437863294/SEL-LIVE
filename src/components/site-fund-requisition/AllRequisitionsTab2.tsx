@@ -60,10 +60,12 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigge
 import ViewRequisitionDialog from './ViewRequisitionDialog2';
 import { Switch } from '@/components/ui/switch';
 import { useAuthorization } from '@/hooks/useAuthorization';
-import { ScrollArea } from '@/components/ui/scroll-area';
 import { Tooltip, TooltipProvider, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip';
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from '@/components/ui/command';
 import { Badge } from '@/components/ui/badge';
+import { TableCard } from '@/components/shared/table-card';
+import { FilterBar } from '@/components/shared/filter-bar';
+import { StatusBadge } from '@/components/shared/status-badge';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 
 
@@ -161,21 +163,6 @@ const FY_MONTHS = [
   { value: '2', label: 'Feb' },
   { value: '3', label: 'Mar' },
 ];
-
-function statusBadgeClass(status?: string) {
-  switch (status) {
-    case 'Completed':
-      return 'border-emerald-200/80 bg-emerald-50 text-emerald-700';
-    case 'Rejected':
-      return 'border-rose-200/80 bg-rose-50 text-rose-700';
-    case 'In Progress':
-      return 'border-sky-200/80 bg-sky-50 text-sky-700';
-    case 'Pending':
-      return 'border-amber-200/80 bg-amber-50 text-amber-700';
-    default:
-      return 'border-slate-200/80 bg-slate-50 text-slate-700';
-  }
-}
 
 export default function AllRequisitionsTab() {
   const [isNewRequestOpen, setIsNewRequestOpen] = useState(false);
@@ -1313,9 +1300,9 @@ export default function AllRequisitionsTab() {
           style={{ maxHeight: 'calc(60vh - 180px)', minHeight: '160px' }}
         >
           <Table>
-            <TableHeader className="sticky top-0 z-10 bg-white/95 backdrop-blur-sm">
+            <TableHeader>
               <TableRow>
-                <TableHead className="w-8 text-center text-muted-foreground">#</TableHead>
+                <TableHead className="w-8 text-center">#</TableHead>
                 <TableHead className="min-w-[120px]">Date</TableHead>
                 <TableHead className="min-w-[130px]">Project</TableHead>
                 <TableHead className="min-w-[130px]">Department</TableHead>
@@ -1329,8 +1316,8 @@ export default function AllRequisitionsTab() {
             <TableBody>
               {bulkRows.map((row, idx) => (
                 <TableRow key={row.id}>
-                  <TableCell className="text-center text-xs text-muted-foreground">{idx + 1}</TableCell>
-                  <TableCell className="p-1">
+                  <TableCell className="text-center">{idx + 1}</TableCell>
+                  <TableCell>
                     <Input
                       type="date"
                       value={row.date}
@@ -1338,7 +1325,7 @@ export default function AllRequisitionsTab() {
                       className="h-8 text-sm"
                     />
                   </TableCell>
-                  <TableCell className="p-1">
+                  <TableCell>
                     <Select
                       value={row.project}
                       onValueChange={val => setBulkRows(prev => prev.map(r => r.id === row.id ? { ...r, project: val } : r))}
@@ -1353,7 +1340,7 @@ export default function AllRequisitionsTab() {
                       </SelectContent>
                     </Select>
                   </TableCell>
-                  <TableCell className="p-1">
+                  <TableCell>
                     <Select
                       value={row.department}
                       onValueChange={val => setBulkRows(prev => prev.map(r => r.id === row.id ? { ...r, department: val } : r))}
@@ -1368,7 +1355,7 @@ export default function AllRequisitionsTab() {
                       </SelectContent>
                     </Select>
                   </TableCell>
-                  <TableCell className="p-1">
+                  <TableCell>
                     <Input
                       type="number"
                       placeholder="0"
@@ -1377,7 +1364,7 @@ export default function AllRequisitionsTab() {
                       className="h-8 text-sm"
                     />
                   </TableCell>
-                  <TableCell className="p-1">
+                  <TableCell>
                     <Input
                       placeholder="Party name"
                       value={row.partyName}
@@ -1385,7 +1372,7 @@ export default function AllRequisitionsTab() {
                       className="h-8 text-sm"
                     />
                   </TableCell>
-                  <TableCell className="p-1">
+                  <TableCell>
                     <Input
                       placeholder="Description"
                       value={row.description}
@@ -1394,7 +1381,7 @@ export default function AllRequisitionsTab() {
                     />
                   </TableCell>
                   {/* Attachments */}
-                  <TableCell className="p-1 text-center">
+                  <TableCell className="text-center">
                     <label className="cursor-pointer inline-flex flex-col items-center gap-0.5">
                       <span className={cn(
                         'inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-xs border transition-colors',
@@ -1417,7 +1404,7 @@ export default function AllRequisitionsTab() {
                       />
                     </label>
                   </TableCell>
-                  <TableCell className="p-1">
+                  <TableCell>
                     <Button
                       type="button"
                       variant="ghost"
@@ -1506,7 +1493,7 @@ export default function AllRequisitionsTab() {
         {excelRows.length > 0 && (
           <div className="overflow-y-auto rounded-md border" style={{ maxHeight: '288px' }}>
             <Table>
-              <TableHeader className="sticky top-0 z-10 bg-white/95 backdrop-blur-sm">
+              <TableHeader>
                 <TableRow>
                   <TableHead className="w-10">#</TableHead>
                   <TableHead>Date</TableHead>
@@ -1521,7 +1508,7 @@ export default function AllRequisitionsTab() {
               <TableBody>
                 {(excelRows as any[]).map((row: any) => (
                   <TableRow key={row._rowNum} className={row._error ? 'bg-rose-50' : ''}>
-                    <TableCell className="text-muted-foreground">{row._rowNum}</TableCell>
+                    <TableCell>{row._rowNum}</TableCell>
                     <TableCell>{row.date}</TableCell>
                     <TableCell>{row._projectName ?? projects.find(p => p.id === row.projectId)?.projectName ?? row.projectId}</TableCell>
                     <TableCell>{row._deptName ?? departments.find(d => d.id === row.departmentId)?.name ?? row.departmentId}</TableCell>
@@ -1530,15 +1517,15 @@ export default function AllRequisitionsTab() {
                     <TableCell className="max-w-[150px] truncate">{row.description}</TableCell>
                     <TableCell>
                       {row._error ? (
-                        <span className="flex items-center gap-1 text-rose-600 text-xs">
+                        <StatusBadge tone="danger" className="whitespace-normal">
                           <AlertCircle className="h-3 w-3 shrink-0" />
                           {row._error}
-                        </span>
+                        </StatusBadge>
                       ) : (
-                        <span className="flex items-center gap-1 text-emerald-600 text-xs">
+                        <StatusBadge tone="success">
                           <Check className="h-3 w-3" />
                           OK
-                        </span>
+                        </StatusBadge>
                       )}
                     </TableCell>
                   </TableRow>
@@ -1713,105 +1700,27 @@ export default function AllRequisitionsTab() {
 
   return (
     <div className="flex min-w-0 flex-col gap-4">
-      <div className="rounded-2xl border border-white/70 bg-white/70 p-4 shadow-[0_20px_70px_-55px_rgba(2,6,23,0.55)] backdrop-blur">
-        <div className="mb-3 h-1.5 w-full rounded-full bg-gradient-to-r from-cyan-400 via-fuchsia-400 to-amber-300 opacity-70" />
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <div className="flex flex-wrap items-center gap-3">
-            {canViewAll && (
-              <div className="flex items-center space-x-2">
-                <Switch
-                  id="my-requests-switch"
-                  checked={showMyRequests}
-                  onCheckedChange={setShowMyRequests}
-                />
-                <Label htmlFor="my-requests-switch" className="text-sm text-slate-700">My Requests Only</Label>
-              </div>
-            )}
-            <Select value={statusFilter} onValueChange={setStatusFilter}>
-              <SelectTrigger className="w-[200px] bg-white/80 border-white/70">
-                <SelectValue placeholder="All Statuses" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All Statuses</SelectItem>
-                <SelectItem value="Pending">Pending</SelectItem>
-                <SelectItem value="In Progress">In Progress</SelectItem>
-                <SelectItem value="Completed">Completed</SelectItem>
-                <SelectItem value="Rejected">Rejected</SelectItem>
-              </SelectContent>
-            </Select>
-
-            <Select
-              value={fyFilter}
-              onValueChange={(v) => {
-                setFyFilter(v);
-                setMonthFilter('all');
-                setFromDate('');
-                setToDate('');
-              }}
-            >
-              <SelectTrigger className="w-[140px] bg-white/80 border-white/70">
-                <SelectValue placeholder="FY" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All FY</SelectItem>
-                {fyOptions.map((fy) => (
-                  <SelectItem key={fy} value={fy}>
-                    FY {fy}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-
-            <Select value={monthFilter} onValueChange={setMonthFilter}>
-              <SelectTrigger className="w-[120px] bg-white/80 border-white/70">
-                <SelectValue placeholder="Month" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All Months</SelectItem>
-                {FY_MONTHS.filter((m) => availableMonths.size === 0 || availableMonths.has(Number(m.value))).map((m) => (
-                  <SelectItem key={m.value} value={m.value}>
-                    {m.label}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-
-            <div className="flex items-center gap-2">
-              <div className="space-y-1">
-                <p className="text-[11px] font-medium text-slate-600">From</p>
-                <Input
-                  type="date"
-                  value={fromDate}
-                  onChange={(e) => setFromDate(e.target.value)}
-                  className="h-9 w-[150px] bg-white/80 border-white/70"
-                />
-              </div>
-              <div className="space-y-1">
-                <p className="text-[11px] font-medium text-slate-600">To</p>
-                <Input
-                  type="date"
-                  value={toDate}
-                  onChange={(e) => setToDate(e.target.value)}
-                  className="h-9 w-[150px] bg-white/80 border-white/70"
-                />
-              </div>
-              <Button
-                variant="outline"
-                className="mt-5 h-9 bg-white/70 border-white/70"
-                onClick={() => {
-                  setFyFilter(currentFyLabel());
-                  setMonthFilter('all');
-                  setFromDate('');
-                  setToDate('');
-                }}
-                type="button"
-              >
-                Reset
-              </Button>
-            </div>
-          </div>
-
-          <div className="flex flex-wrap items-center justify-end gap-2">
+      <TableCard
+        toolbar={
+          <FilterBar
+            activeCount={
+              (statusFilter !== 'all' ? 1 : 0) +
+              (fyFilter !== currentFyLabel() ? 1 : 0) +
+              (monthFilter !== 'all' ? 1 : 0) +
+              (fromDate ? 1 : 0) +
+              (toDate ? 1 : 0) +
+              (canViewAll && !showMyRequests ? 1 : 0)
+            }
+            onClear={() => {
+              setStatusFilter('all');
+              setShowMyRequests(true);
+              setFyFilter(currentFyLabel());
+              setMonthFilter('all');
+              setFromDate('');
+              setToDate('');
+            }}
+            actions={
+              <>
             <Dialog open={isNewRequestOpen} onOpenChange={(open) => { setIsNewRequestOpen(open); if (!open) { setNewRequestMode('manual'); setExcelRows([]); setBulkRows([mkEmptyBulkRow(1), mkEmptyBulkRow(2), mkEmptyBulkRow(3)]); setBulkIdOrder('asc'); } }}>
               <DialogTrigger asChild>
                 <Button
@@ -1931,23 +1840,97 @@ export default function AllRequisitionsTab() {
                 ))}
               </DropdownMenuContent>
             </DropdownMenu>
-          </div>
-        </div>
-      </div>
+              </>
+            }
+          >
+            {canViewAll && (
+              <div className="flex items-center space-x-2">
+                <Switch
+                  id="my-requests-switch"
+                  checked={showMyRequests}
+                  onCheckedChange={setShowMyRequests}
+                />
+                <Label htmlFor="my-requests-switch">My Requests Only</Label>
+              </div>
+            )}
+            <Select value={statusFilter} onValueChange={setStatusFilter}>
+              <SelectTrigger>
+                <SelectValue placeholder="All Statuses" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Statuses</SelectItem>
+                <SelectItem value="Pending">Pending</SelectItem>
+                <SelectItem value="In Progress">In Progress</SelectItem>
+                <SelectItem value="Completed">Completed</SelectItem>
+                <SelectItem value="Rejected">Rejected</SelectItem>
+              </SelectContent>
+            </Select>
 
-      <div className="min-w-0 overflow-hidden rounded-2xl border border-white/70 bg-white/70 shadow-[0_20px_70px_-55px_rgba(2,6,23,0.55)] backdrop-blur">
-        <TooltipProvider>
-          <ScrollArea className="h-[calc(100vh-22rem)]" showHorizontalScrollbar>
-            <Table
-              containerClassName="w-max overflow-visible"
-              className="w-max min-w-[1200px]"
+            <Select
+              value={fyFilter}
+              onValueChange={(v) => {
+                setFyFilter(v);
+                setMonthFilter('all');
+                setFromDate('');
+                setToDate('');
+              }}
             >
-              <TableHeader className="sticky top-0 z-10 bg-gradient-to-r from-white/90 via-white/80 to-white/90 backdrop-blur border-b border-white/70">
+              <SelectTrigger>
+                <SelectValue placeholder="FY" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All FY</SelectItem>
+                {fyOptions.map((fy) => (
+                  <SelectItem key={fy} value={fy}>
+                    FY {fy}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+
+            <Select value={monthFilter} onValueChange={setMonthFilter}>
+              <SelectTrigger>
+                <SelectValue placeholder="Month" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Months</SelectItem>
+                {FY_MONTHS.filter((m) => availableMonths.size === 0 || availableMonths.has(Number(m.value))).map((m) => (
+                  <SelectItem key={m.value} value={m.value}>
+                    {m.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+
+            <div className="flex items-center gap-2">
+              <Label htmlFor="sfr2-from-date" className="shrink-0">From</Label>
+              <Input
+                id="sfr2-from-date"
+                type="date"
+                value={fromDate}
+                onChange={(e) => setFromDate(e.target.value)}
+              />
+            </div>
+            <div className="flex items-center gap-2">
+              <Label htmlFor="sfr2-to-date" className="shrink-0">To</Label>
+              <Input
+                id="sfr2-to-date"
+                type="date"
+                value={toDate}
+                onChange={(e) => setToDate(e.target.value)}
+              />
+            </div>
+          </FilterBar>
+        }
+      >
+        <TooltipProvider>
+            <Table className="w-max min-w-[1200px]">
+              <TableHeader>
                 <TableRow>
                   {visibleHeaders.map(header => (
-                    <TableHead key={header} className="whitespace-nowrap text-slate-700">{header}</TableHead>
+                    <TableHead key={header} className="whitespace-nowrap">{header}</TableHead>
                   ))}
-                  <TableHead className="text-center text-slate-700">Actions</TableHead>
+                  <TableHead className="text-center">Actions</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -1955,7 +1938,7 @@ export default function AllRequisitionsTab() {
                   displayedRequisitions.map((req) => {
                     const expenseRequest = expenseRequests.find(exp => exp.requestNo === req.expenseRequestNo);
                     return (
-                      <TableRow key={req.id} className="hover:bg-slate-50/70">
+                      <TableRow key={req.id}>
                         {visibleHeaders.map(header => {
                           let content: React.ReactNode = 'N/A';
                           switch (header) {
@@ -1981,14 +1964,14 @@ export default function AllRequisitionsTab() {
                             case 'Stage': content = req.stage; break;
                             case 'Status':
                               content = (
-                                <Badge variant="outline" className={cn("whitespace-nowrap", statusBadgeClass(req.status))}>
+                                <StatusBadge status={req.status}>
                                   {req.status || '—'}
-                                </Badge>
+                                </StatusBadge>
                               );
                               break;
                             case 'Attachments':
                               content = (
-                                <Badge variant="outline" className="border-slate-200/80 bg-white/70 text-slate-700">
+                                <Badge variant="neutral">
                                   {req.attachments?.length || 0}
                                 </Badge>
                               );
@@ -2032,9 +2015,8 @@ export default function AllRequisitionsTab() {
                 )}
               </TableBody>
             </Table>
-          </ScrollArea>
         </TooltipProvider>
-      </div>
+      </TableCard>
       {selectedRequisition && (
         <ViewRequisitionDialog
           isOpen={isViewDialogOpen}

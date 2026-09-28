@@ -4,19 +4,20 @@
 import { useEffect, useMemo, useState } from 'react';
 import { addDays, format, getYear, isPast, isWithinInterval, startOfDay } from 'date-fns';
 import { collection, getDocs, orderBy, query, where } from 'firebase/firestore';
-import { AlertTriangle, CalendarCheck, CheckCircle2, Clock, RefreshCw, Search, Shield, TrendingDown, X } from 'lucide-react';
+import { AlertTriangle, CalendarCheck, CheckCircle2, Clock, RefreshCw, Shield, TrendingDown } from 'lucide-react';
 import { db } from '@/lib/firebase';
 import { useToast } from '@/hooks/use-toast';
 import { useRouter } from 'next/navigation';
 import type { InsurancePolicy } from '@/lib/types';
-import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
-import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { PageHeader } from '@/components/shared/page-header';
+import { TableCard } from '@/components/shared/table-card';
+import { FilterBar } from '@/components/shared/filter-bar';
+import { StatusBadge, type StatusTone } from '@/components/shared/status-badge';
 import { cn } from '@/lib/utils';
 
 // ─── helpers ─────────────────────────────────────────────────────────────────
@@ -30,10 +31,11 @@ function getMaturityStatus(d: Date | null): MaturityStatus {
   return 'upcoming';
 }
 
-const STATUS_CFG: Record<MaturityStatus, { label: string; badgeCls: string; rowCls: string; dot: string }> = {
-  matured:  { label: 'Matured',     badgeCls: 'bg-red-100 text-red-700 border-red-200',    rowCls: 'hover:bg-red-50/30',    dot: 'bg-red-500' },
-  near:     { label: 'Mature Soon', badgeCls: 'bg-amber-100 text-amber-700 border-amber-200', rowCls: 'hover:bg-amber-50/30', dot: 'bg-amber-400' },
-  upcoming: { label: 'Upcoming',    badgeCls: 'bg-slate-100 text-slate-600 border-slate-200', rowCls: 'hover:bg-slate-50/20', dot: 'bg-slate-300' },
+// The module's labels. A matured policy is the one needing action on this page, so it reads as danger.
+const STATUS_BADGE: Record<MaturityStatus, { label: string; tone?: StatusTone }> = {
+  matured:  { label: 'Matured', tone: 'danger' },
+  near:     { label: 'Mature Soon' },
+  upcoming: { label: 'Upcoming' },
 };
 
 const fmtCur = (n: number) =>
@@ -140,48 +142,48 @@ export default function MaturityDuePage() {
         </CardContent>
       </Card>
 
-      {/* ── Filters ────────────────────────────────────────────────────────── */}
-      <div className="flex flex-wrap items-center gap-2">
-        <div className="relative min-w-[200px] flex-1 max-w-xs">
-          <Search className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
-          <Input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search holder, policy, company…" className="pl-8 h-9 text-sm" />
-          {search && <button onClick={() => setSearch('')} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"><X className="h-3.5 w-3.5" /></button>}
-        </div>
-        <Select value={selectedYear} onValueChange={setSelectedYear}>
-          <SelectTrigger className="h-9 w-36 text-sm"><SelectValue placeholder="All Years" /></SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">All Years</SelectItem>
-            {yearOptions.map((y) => <SelectItem key={y} value={y}>{y}</SelectItem>)}
-          </SelectContent>
-        </Select>
-        <Select value={selectedMonth} onValueChange={setSelectedMonth}>
-          <SelectTrigger className="h-9 w-36 text-sm"><SelectValue placeholder="All Months" /></SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">All Months</SelectItem>
-            {monthOptions.map((m) => <SelectItem key={m.value} value={m.value}>{m.label}</SelectItem>)}
-          </SelectContent>
-        </Select>
-        {(search || selectedYear !== 'all' || selectedMonth !== 'all') && (
-          <button onClick={() => { setSearch(''); setSelectedYear('all'); setSelectedMonth('all'); }} className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground">
-            <X className="h-3 w-3" /> Clear
-          </button>
-        )}
-        <span className="ml-auto text-xs text-muted-foreground">{filtered.length} policies</span>
-      </div>
-
+      {/* ── Register ───────────────────────────────────────────────────────── */}
+      <TableCard
+        title="Policies by maturity"
+        icon={CalendarCheck}
+        count={filtered.length}
+        total={enriched.length}
+        toolbar={
+          <FilterBar
+            search={{ value: search, onChange: setSearch, placeholder: 'Search holder, policy, company…' }}
+            activeCount={(selectedYear !== 'all' ? 1 : 0) + (selectedMonth !== 'all' ? 1 : 0)}
+            onClear={() => { setSearch(''); setSelectedYear('all'); setSelectedMonth('all'); }}
+          >
+            <Select value={selectedYear} onValueChange={setSelectedYear}>
+              <SelectTrigger><SelectValue placeholder="All Years" /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Years</SelectItem>
+                {yearOptions.map((y) => <SelectItem key={y} value={y}>{y}</SelectItem>)}
+              </SelectContent>
+            </Select>
+            <Select value={selectedMonth} onValueChange={setSelectedMonth}>
+              <SelectTrigger><SelectValue placeholder="All Months" /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Months</SelectItem>
+                {monthOptions.map((m) => <SelectItem key={m.value} value={m.value}>{m.label}</SelectItem>)}
+              </SelectContent>
+            </Select>
+          </FilterBar>
+        }
+      >
       {/* ── Mobile cards ───────────────────────────────────────────────────── */}
-      <div className="space-y-2 sm:hidden">
+      <div className="space-y-2 p-3 sm:hidden">
         {filtered.length === 0 ? (
-          <Card><CardContent className="flex flex-col items-center justify-center gap-2 py-12 text-center"><CheckCircle2 className="h-10 w-10 text-emerald-400" /><p className="text-sm text-muted-foreground">No policies match your filters.</p></CardContent></Card>
+          <div className="flex flex-col items-center justify-center gap-2 py-12 text-center"><CheckCircle2 className="h-10 w-10 text-emerald-400" /><p className="text-sm text-muted-foreground">No policies match your filters.</p></div>
         ) : filtered.map((policy) => {
-          const cfg = STATUS_CFG[policy._status];
+          const badge = STATUS_BADGE[policy._status];
           const daysLeft = policy._mat ? Math.ceil((policy._mat.getTime() - Date.now()) / 86400000) : null;
           return (
             <Card key={policy.id} className={cn('cursor-pointer overflow-hidden border-border/60', policy._status === 'matured' && 'ring-1 ring-red-200')} onClick={() => router.push(`/insurance/personal/${policy.id}`)}>
               <CardContent className="p-3 space-y-2">
                 <div className="flex items-start justify-between gap-2">
                   <div><p className="font-semibold text-sm">{policy.insured_person}</p><p className="text-xs text-muted-foreground font-mono">{policy.policy_no}</p></div>
-                  <Badge variant="outline" className={cn('text-[10px] shrink-0', cfg.badgeCls)}>{cfg.label}</Badge>
+                  <StatusBadge status={badge.label} tone={badge.tone} className="shrink-0" />
                 </div>
                 <div className="grid grid-cols-2 gap-1 text-xs">
                   <div><span className="text-muted-foreground">Company: </span>{policy.insurance_company}</div>
@@ -195,12 +197,9 @@ export default function MaturityDuePage() {
       </div>
 
       {/* ── Desktop table ──────────────────────────────────────────────────── */}
-      <Card className="hidden sm:block overflow-hidden border-border/60">
-        <div className="overflow-x-auto">
-          <Table>
+          <Table containerClassName="hidden sm:block">
             <TableHeader>
-              <TableRow className="bg-muted/40 hover:bg-muted/40">
-                <TableHead className="w-6" />
+              <TableRow>
                 <TableHead>Policy Holder</TableHead>
                 <TableHead>Policy No.</TableHead>
                 <TableHead>Company</TableHead>
@@ -213,33 +212,31 @@ export default function MaturityDuePage() {
             </TableHeader>
             <TableBody>
               {filtered.length === 0 ? (
-                <TableRow><TableCell colSpan={9} className="h-32 text-center"><div className="flex flex-col items-center gap-2 text-muted-foreground"><CalendarCheck className="h-8 w-8 opacity-30" /><span className="text-sm">No policies match your filters.</span></div></TableCell></TableRow>
+                <TableRow><TableCell colSpan={8} className="h-32 text-center"><div className="flex flex-col items-center gap-2 text-muted-foreground"><CalendarCheck className="h-8 w-8 opacity-30" /><span className="text-sm">No policies match your filters.</span></div></TableCell></TableRow>
               ) : filtered.map((policy) => {
-                const cfg = STATUS_CFG[policy._status];
+                const badge = STATUS_BADGE[policy._status];
                 const daysLeft = policy._mat ? Math.ceil((policy._mat.getTime() - Date.now()) / 86400000) : null;
                 return (
-                  <TableRow key={policy.id} onClick={() => router.push(`/insurance/personal/${policy.id}`)} className={cn('cursor-pointer transition-colors', cfg.rowCls)}>
-                    <TableCell className="pr-0"><div className={cn('h-2 w-2 rounded-full mx-auto', cfg.dot)} /></TableCell>
+                  <TableRow key={policy.id} onClick={() => router.push(`/insurance/personal/${policy.id}`)} className="cursor-pointer">
                     <TableCell className="font-medium">{policy.insured_person}</TableCell>
-                    <TableCell className="font-mono text-xs">{policy.policy_no}</TableCell>
+                    <TableCell className="font-mono whitespace-nowrap">{policy.policy_no}</TableCell>
                     <TableCell>{policy.insurance_company}</TableCell>
                     <TableCell>{policy.policy_category || '—'}</TableCell>
-                    <TableCell className="text-center">{policy.tenure ?? '—'}</TableCell>
-                    <TableCell className="font-semibold">{fmtCur(policy.sum_insured)}</TableCell>
-                    <TableCell>
+                    <TableCell className="text-center tabular-nums">{policy.tenure ?? '—'}</TableCell>
+                    <TableCell className="whitespace-nowrap tabular-nums">{fmtCur(policy.sum_insured)}</TableCell>
+                    <TableCell className="whitespace-nowrap">
                       <div className="space-y-0.5">
-                        <p className={cn('text-sm font-medium', policy._status === 'matured' ? 'text-red-600' : policy._status === 'near' ? 'text-amber-600' : '')}>{policy._mat ? format(policy._mat, 'dd MMM yyyy') : '—'}</p>
+                        <p className={cn('font-medium', policy._status === 'matured' ? 'text-red-600' : policy._status === 'near' ? 'text-amber-600' : '')}>{policy._mat ? format(policy._mat, 'dd MMM yyyy') : '—'}</p>
                         {daysLeft !== null && Math.abs(daysLeft) <= 90 && <p className="text-[11px] text-muted-foreground">{daysLeft < 0 ? `${Math.abs(daysLeft)}d ago` : `${daysLeft}d left`}</p>}
                       </div>
                     </TableCell>
-                    <TableCell><Badge variant="outline" className={cn('text-[10px]', cfg.badgeCls)}>{cfg.label}</Badge></TableCell>
+                    <TableCell><StatusBadge status={badge.label} tone={badge.tone} /></TableCell>
                   </TableRow>
                 );
               })}
             </TableBody>
           </Table>
-        </div>
-      </Card>
+      </TableCard>
 
     </div>
   );

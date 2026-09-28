@@ -65,7 +65,7 @@ import {
   validateFieldControlRequirements,
   type RPFieldSetting,
 } from "./use-field-control";
-import { Badge } from "@/components/ui/badge";
+import { StatusBadge } from "@/components/shared/status-badge";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -85,6 +85,14 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
 import { Textarea } from "@/components/ui/textarea";
 import { useGlobalScopes } from "./use-global-scopes";
 
@@ -561,9 +569,7 @@ export default function RecurringMasterFormPage({
         }
         badge={
           masterId && draft.status ? (
-            <Badge variant={draft.status === "Active" ? "default" : "secondary"}>
-              {draft.status}
-            </Badge>
+            <StatusBadge status={draft.status} />
           ) : undefined
         }
         description="Configuration, generation, approval, notification and ownership controls"
@@ -1312,27 +1318,27 @@ function SchedulePreview({
         </p>
       </div>
       {cycles.length ? (
-        <div className="overflow-x-auto">
-          <table className="w-full min-w-[36rem] text-left text-xs">
-            <thead className="text-muted-foreground">
-              <tr>
-                <th className="pb-1.5 pr-3 font-medium">Cycle</th>
-                <th className="pb-1.5 pr-3 font-medium">Billing period</th>
-                <th className="pb-1.5 pr-3 font-medium">Obligation created</th>
-                <th className="pb-1.5 pr-3 font-medium">Bill expected</th>
-                <th className="pb-1.5 pr-3 font-medium">Payment due</th>
-                <th className="pb-1.5 font-medium">Overdue after</th>
-              </tr>
-            </thead>
-            <tbody className="align-top">
+        <div className="overflow-hidden rounded-lg border bg-background">
+          <Table className="min-w-[36rem]">
+            <TableHeader>
+              <TableRow>
+                <TableHead>Cycle</TableHead>
+                <TableHead>Billing period</TableHead>
+                <TableHead>Obligation created</TableHead>
+                <TableHead>Bill expected</TableHead>
+                <TableHead>Payment due</TableHead>
+                <TableHead>Overdue after</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
               {cycles.map((cycle) => (
-                <tr key={cycle.key} className="border-t">
-                  <td className="py-1.5 pr-3 font-medium">{cycle.label}</td>
-                  <td className="py-1.5 pr-3 text-muted-foreground">
+                <TableRow key={cycle.key}>
+                  <TableCell className="whitespace-nowrap font-medium">{cycle.label}</TableCell>
+                  <TableCell className="whitespace-nowrap">
                     {showDate(cycle.billingPeriodStart)} –{" "}
                     {showDate(cycle.billingPeriodEnd)}
-                  </td>
-                  <td className="py-1.5 pr-3 text-muted-foreground">
+                  </TableCell>
+                  <TableCell className="whitespace-nowrap">
                     {autoGenerationEnabled ? showDate(cycle.generationDate) : "Manual only"}
                     {/* A closed period whose bill has already arrived is generated on the next run;
                         without saying so, it reads as though the row shouldn't be there yet. */}
@@ -1341,18 +1347,14 @@ function SchedulePreview({
                         · due now
                       </span>
                     )}
-                  </td>
-                  <td className="py-1.5 pr-3">{showDate(cycle.expectedBillDate)}</td>
-                  <td className="py-1.5 pr-3 font-semibold">
-                    {showDate(cycle.dueDate)}
-                  </td>
-                  <td className="py-1.5 text-muted-foreground">
-                    {showDate(cycle.overdueDate)}
-                  </td>
-                </tr>
+                  </TableCell>
+                  <TableCell className="whitespace-nowrap">{showDate(cycle.expectedBillDate)}</TableCell>
+                  <TableCell className="whitespace-nowrap">{showDate(cycle.dueDate)}</TableCell>
+                  <TableCell className="whitespace-nowrap">{showDate(cycle.overdueDate)}</TableCell>
+                </TableRow>
               ))}
-            </tbody>
-          </table>
+            </TableBody>
+          </Table>
         </div>
       ) : (
         <p className="text-xs text-muted-foreground">

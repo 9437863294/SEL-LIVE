@@ -79,7 +79,6 @@ import {
   formatCurrency,
   formatDate,
   formatQuantity,
-  rfqStatusStyles,
   toNumber,
   type Rfq,
   type RfqItem,
@@ -102,6 +101,9 @@ import {
   type RfqLike,
 } from "@/lib/project-management-rfq-workflow";
 import { PageHeader } from "@/components/shared/page-header";
+import { TableCard } from "@/components/shared/table-card";
+import { StatusBadge } from "@/components/shared/status-badge";
+import { pmStatusTone } from "@/components/project-management/pm-status-tones";
 
 type ProjectMapping = {
   id: string;
@@ -638,9 +640,8 @@ export default function RfqDetailPage() {
   ];
 
   // The comparison matrix scrolls sideways on a phone with the item column pinned; the sticky
-  // cells need an opaque fill, and the tinted summary rows lay their tint over it.
+  // cells need an opaque fill.
   const stickyItemCell = "sticky left-0 z-10 bg-card";
-  const stickySummaryCell = "sticky left-0 z-10 bg-card bg-gradient-to-r from-muted/30 to-muted/30";
 
   return (
     // No sidebar: a single record's detail has no views to switch between.
@@ -655,9 +656,7 @@ export default function RfqDetailPage() {
         backLabel="Back to RFQs"
         actions={
           <>
-            <span className={`rounded-full px-2 py-0.5 text-[11px] font-medium ${rfqStatusStyles[rfq.status]}`}>
-              {rfq.status}
-            </span>
+            <StatusBadge status={rfq.status} tone={pmStatusTone(rfq.status)} />
             {rfq.status === "Draft" && canSend && (
               <Button size="sm" onClick={() => void handleSendToVendors()} disabled={isSending}>
                 {isSending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Send className="mr-2 h-4 w-4" />}
@@ -698,9 +697,7 @@ export default function RfqDetailPage() {
             <div key={quote.id} className="min-w-0 rounded-lg border p-3">
               <div className="flex items-start justify-between gap-2 sm:items-center">
                 <p className="min-w-0 break-words font-medium">{quote.vendorName}</p>
-                <span className={`shrink-0 rounded-full px-2 py-0.5 text-xs font-medium ${quote.status === "Received" ? "bg-emerald-100 text-emerald-700" : "bg-muted text-muted-foreground"}`}>
-                  {quote.status}
-                </span>
+                <StatusBadge status={quote.status} tone={pmStatusTone(quote.status)} className="shrink-0" />
               </div>
               {quote.status === "Received" ? (
                 <div className="mt-2 space-y-1 text-xs text-muted-foreground">
@@ -723,126 +720,20 @@ export default function RfqDetailPage() {
       </Card>
 
       {receivedQuotes.length > 0 && (
-        <Card className="max-sm:[--card-pad:1rem]">
-          <CardHeader>
-            <CardTitle className="text-xl sm:text-2xl">Compare Quotes</CardTitle>
-            <CardDescription>
+        <TableCard
+          title="Compare Quotes"
+          description={
+            <>
               Lowest rate per item, and lowest overall landed cost, are highlighted. BOQ benchmark for this package:{" "}
               <span className="font-semibold text-foreground">{formatCurrency(boqBenchmarkValue)}</span>. Choose an
               award for each item, then confirm.
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="p-0">
-            <p className="mb-2 px-4 text-xs text-muted-foreground sm:hidden">Swipe sideways to see all columns</p>
-            {/* The vendors are the columns, so this stays a table — scrolling sideways inside its
-                own container with the item column pinned. */}
-            <div className="overflow-x-auto">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead className={cn(stickyItemCell, "min-w-[160px] sm:min-w-[200px]")}>Item</TableHead>
-                    {receivedQuotes.map((quote) => (
-                      <TableHead key={quote.vendorId} className="min-w-[120px] text-right">{quote.vendorName}</TableHead>
-                    ))}
-                    <TableHead className="min-w-[200px]">Award To</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {rfq.items.map((item) => {
-                    const bestRate = bestRatePerItem.get(item.rfqItemId);
-                    const vendorsForItem = receivedQuotes.filter((q) => q.items.some((qi) => qi.rfqItemId === item.rfqItemId && qi.rate > 0));
-                    return (
-                      <TableRow key={item.rfqItemId}>
-                        {/* Wraps on a phone, where a truncated description in a pinned 160px
-                            column would leave nothing readable. */}
-                        <TableCell className={cn(stickyItemCell, "max-w-[160px] break-words sm:max-w-xs sm:truncate")} title={item.description}>{item.description}</TableCell>
-                        {receivedQuotes.map((quote) => {
-                          const rate = quote.items.find((qi) => qi.rfqItemId === item.rfqItemId)?.rate;
-                          const isBest = typeof rate === "number" && rate > 0 && rate === bestRate;
-                          return (
-                            <TableCell key={quote.vendorId} className={`text-right whitespace-nowrap ${isBest ? "bg-emerald-50 font-semibold text-emerald-700" : ""}`}>
-                              {typeof rate === "number" && rate > 0 ? formatCurrency(rate) : "—"}
-                            </TableCell>
-                          );
-                        })}
-                        <TableCell>
-                          {item.poId ? (
-                            <span className="text-xs text-muted-foreground">Already in PO</span>
-                          ) : (
-                            <Select
-                              value={awardSelections[item.rfqItemId] ?? ""}
-                              onValueChange={(value) => setAwardSelections((current) => ({ ...current, [item.rfqItemId]: value }))}
-                              disabled={!canAward}
-                            >
-                              <SelectTrigger className="h-9 sm:h-8"><SelectValue placeholder="Not awarded" /></SelectTrigger>
-                              <SelectContent>
-                                {vendorsForItem.map((quote) => (
-                                  <SelectItem key={quote.vendorId} value={quote.vendorId}>{quote.vendorName}</SelectItem>
-                                ))}
-                              </SelectContent>
-                            </Select>
-                          )}
-                        </TableCell>
-                      </TableRow>
-                    );
-                  })}
-                  <TableRow className="bg-muted/30">
-                    <TableCell className={cn(stickySummaryCell, "font-medium")}>Payment Terms</TableCell>
-                    {receivedQuotes.map((quote) => (
-                      <TableCell key={quote.vendorId} colSpan={1} className="text-right text-xs">{quote.paymentTerms || "—"}</TableCell>
-                    ))}
-                    <TableCell />
-                  </TableRow>
-                  <TableRow className="bg-muted/30">
-                    <TableCell className={cn(stickySummaryCell, "font-medium")}>Delivery Time</TableCell>
-                    {receivedQuotes.map((quote) => (
-                      <TableCell key={quote.vendorId} className="text-right text-xs">{quote.deliveryTime || "—"}</TableCell>
-                    ))}
-                    <TableCell />
-                  </TableRow>
-                  <TableRow className="bg-muted/30">
-                    <TableCell className={cn(stickySummaryCell, "font-medium")}>Basic Total</TableCell>
-                    {receivedQuotes.map((quote) => (
-                      <TableCell key={quote.vendorId} className="text-right text-xs">{formatCurrency(quote.totalAmount)}</TableCell>
-                    ))}
-                    <TableCell />
-                  </TableRow>
-                  <TableRow className="bg-muted/30">
-                    <TableCell className={cn(stickySummaryCell, "font-medium")}>Landed Cost (excl. GST)</TableCell>
-                    {receivedQuotes.map((quote) => {
-                      const landedCost = landedCostByVendor.get(quote.vendorId) ?? quote.totalAmount;
-                      const isBest = typeof bestLandedCost === "number" && landedCost === bestLandedCost;
-                      const overBenchmark = boqBenchmarkValue > 0 && landedCost > boqBenchmarkValue;
-                      return (
-                        <TableCell
-                          key={quote.vendorId}
-                          className={`text-right text-xs font-semibold ${isBest ? "bg-emerald-50 text-emerald-700" : overBenchmark ? "text-amber-600" : ""}`}
-                        >
-                          {formatCurrency(landedCost)}
-                          {overBenchmark && <div className="text-[10px] font-normal text-amber-600">above BOQ rate</div>}
-                        </TableCell>
-                      );
-                    })}
-                    <TableCell />
-                  </TableRow>
-                  <TableRow className="bg-muted/30">
-                    <TableCell className={cn(stickySummaryCell, "font-medium")}>Cash Outflow (incl. GST)</TableCell>
-                    {receivedQuotes.map((quote) => {
-                      const landedCost = landedCostByVendor.get(quote.vendorId) ?? quote.totalAmount;
-                      const cashOutflow = quote.cashOutflowInclGst ?? computeCashOutflow(landedCost, quote.gstPct ?? 0);
-                      return (
-                        <TableCell key={quote.vendorId} className="text-right text-xs text-muted-foreground">
-                          {formatCurrency(cashOutflow)}
-                        </TableCell>
-                      );
-                    })}
-                    <TableCell />
-                  </TableRow>
-                </TableBody>
-              </Table>
-            </div>
-            {canAward && (
-              <div className="flex flex-col items-stretch gap-1 p-4 sm:items-end">
+            </>
+          }
+          // Natural height: the pinned item column and a pinned header would overlap in one scroller.
+          scroll="natural"
+          footer={
+            canAward ? (
+              <div className="flex flex-col items-stretch gap-1 sm:items-end">
                 {rfqAwardRequiresApproval(rfq as RfqLike, awardSteps) && (
                   <p className="text-xs text-muted-foreground">
                     Awards go to {awardSteps[0]?.name} for approval. The purchase order is raised
@@ -856,9 +747,117 @@ export default function RfqDetailPage() {
                     : "Confirm Awards"}
                 </Button>
               </div>
-            )}
-          </CardContent>
-        </Card>
+            ) : undefined
+          }
+        >
+          <p className="px-4 py-2 text-xs text-muted-foreground sm:hidden">Swipe sideways to see all columns</p>
+          {/* The vendors are the columns, so this stays a table — scrolling sideways inside its
+              own container with the item column pinned. */}
+          <Table>
+            <TableHeader>
+              <TableRow>
+                {/* Pinned cells need an opaque fill; the header's matches its band. */}
+                <TableHead className="sticky left-0 z-10 min-w-[160px] bg-slate-100 sm:min-w-[200px]">Item</TableHead>
+                {receivedQuotes.map((quote) => (
+                  <TableHead key={quote.vendorId} className="min-w-[120px] text-right">{quote.vendorName}</TableHead>
+                ))}
+                <TableHead className="min-w-[200px]">Award To</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {rfq.items.map((item) => {
+                const bestRate = bestRatePerItem.get(item.rfqItemId);
+                const vendorsForItem = receivedQuotes.filter((q) => q.items.some((qi) => qi.rfqItemId === item.rfqItemId && qi.rate > 0));
+                return (
+                  <TableRow key={item.rfqItemId}>
+                    {/* Wraps on a phone, where a truncated description in a pinned 160px
+                        column would leave nothing readable. */}
+                    <TableCell className={cn(stickyItemCell, "max-w-[160px] break-words sm:max-w-xs sm:truncate")} title={item.description}>{item.description}</TableCell>
+                    {receivedQuotes.map((quote) => {
+                      const rate = quote.items.find((qi) => qi.rfqItemId === item.rfqItemId)?.rate;
+                      const isBest = typeof rate === "number" && rate > 0 && rate === bestRate;
+                      return (
+                        <TableCell key={quote.vendorId} className={`text-right whitespace-nowrap ${isBest ? "bg-emerald-50 font-semibold text-emerald-700" : ""}`}>
+                          {typeof rate === "number" && rate > 0 ? formatCurrency(rate) : "—"}
+                        </TableCell>
+                      );
+                    })}
+                    <TableCell>
+                      {item.poId ? (
+                        <span className="text-xs text-muted-foreground">Already in PO</span>
+                      ) : (
+                        <Select
+                          value={awardSelections[item.rfqItemId] ?? ""}
+                          onValueChange={(value) => setAwardSelections((current) => ({ ...current, [item.rfqItemId]: value }))}
+                          disabled={!canAward}
+                        >
+                          <SelectTrigger className="h-9 sm:h-8"><SelectValue placeholder="Not awarded" /></SelectTrigger>
+                          <SelectContent>
+                            {vendorsForItem.map((quote) => (
+                              <SelectItem key={quote.vendorId} value={quote.vendorId}>{quote.vendorName}</SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      )}
+                    </TableCell>
+                  </TableRow>
+                );
+              })}
+              <TableRow>
+                <TableCell className={cn(stickyItemCell, "font-medium")}>Payment Terms</TableCell>
+                {receivedQuotes.map((quote) => (
+                  <TableCell key={quote.vendorId} colSpan={1} className="text-right">{quote.paymentTerms || "—"}</TableCell>
+                ))}
+                <TableCell />
+              </TableRow>
+              <TableRow>
+                <TableCell className={cn(stickyItemCell, "font-medium")}>Delivery Time</TableCell>
+                {receivedQuotes.map((quote) => (
+                  <TableCell key={quote.vendorId} className="text-right">{quote.deliveryTime || "—"}</TableCell>
+                ))}
+                <TableCell />
+              </TableRow>
+              <TableRow>
+                <TableCell className={cn(stickyItemCell, "font-medium")}>Basic Total</TableCell>
+                {receivedQuotes.map((quote) => (
+                  <TableCell key={quote.vendorId} className="text-right tabular-nums">{formatCurrency(quote.totalAmount)}</TableCell>
+                ))}
+                <TableCell />
+              </TableRow>
+              <TableRow>
+                <TableCell className={cn(stickyItemCell, "font-medium")}>Landed Cost (excl. GST)</TableCell>
+                {receivedQuotes.map((quote) => {
+                  const landedCost = landedCostByVendor.get(quote.vendorId) ?? quote.totalAmount;
+                  const isBest = typeof bestLandedCost === "number" && landedCost === bestLandedCost;
+                  const overBenchmark = boqBenchmarkValue > 0 && landedCost > boqBenchmarkValue;
+                  return (
+                    <TableCell
+                      key={quote.vendorId}
+                      className={`text-right tabular-nums font-semibold ${isBest ? "bg-emerald-50 text-emerald-700" : overBenchmark ? "text-amber-600" : ""}`}
+                    >
+                      {formatCurrency(landedCost)}
+                      {overBenchmark && <div className="text-[10px] font-normal text-amber-600">above BOQ rate</div>}
+                    </TableCell>
+                  );
+                })}
+                <TableCell />
+              </TableRow>
+              <TableRow>
+                <TableCell className={cn(stickyItemCell, "font-medium")}>Cash Outflow (incl. GST)</TableCell>
+                {receivedQuotes.map((quote) => {
+                  const landedCost = landedCostByVendor.get(quote.vendorId) ?? quote.totalAmount;
+                  const cashOutflow = quote.cashOutflowInclGst ?? computeCashOutflow(landedCost, quote.gstPct ?? 0);
+                  return (
+                    <TableCell key={quote.vendorId} className="text-right tabular-nums">
+                      {formatCurrency(cashOutflow)}
+                    </TableCell>
+                  );
+                })}
+                <TableCell />
+              </TableRow>
+            </TableBody>
+          </Table>
+        </TableCard>
       )}
 
       {generatedPoIds.length > 0 && (

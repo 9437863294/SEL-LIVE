@@ -45,6 +45,7 @@ import {
 import { Skeleton } from "@/components/ui/skeleton";
 import { PmDataList, type PmListColumn } from "@/components/project-management/pm-shell";
 import { PageHeader } from "@/components/shared/page-header";
+import { TableCard } from "@/components/shared/table-card";
 import { YES_NO_OPTIONS } from "@/lib/project-management-boq-columns";
 
 const BOQ_PERMISSION = "Project Management.BOQ";
@@ -535,20 +536,19 @@ export default function AddBoqItemsPage() {
       </Card>
 
       {rows.length > 0 && (
-        // On a phone the staged rows are cards standing on the page, so this card drops its own
-        // frame there rather than boxing the cards inside a second border.
-        <Card className="overflow-hidden border-border/60 max-sm:overflow-visible max-sm:border-0 max-sm:bg-transparent max-sm:shadow-none">
-          <CardHeader className="flex-col gap-3 space-y-0 max-sm:px-0 max-sm:pt-0 sm:flex-row sm:items-center sm:justify-between">
-            <div className="min-w-0">
-              <CardTitle>Items to Save ({rows.length})</CardTitle>
-              <CardDescription>Review the staged items, then save them all at once.</CardDescription>
-            </div>
+        <TableCard
+          title="Items to Save"
+          description="Review the staged items, then save them all at once."
+          count={rows.length}
+          noun="item"
+          actions={
             <Button onClick={() => void handleSaveAll()} disabled={isSaving} className="w-full shrink-0 sm:w-auto">
               {isSaving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
               Save {rows.length} Item{rows.length === 1 ? "" : "s"}
             </Button>
-          </CardHeader>
-          <CardContent className="p-0">
+          }
+        >
+          <div className="p-3 sm:p-0">
             <PmDataList
               rows={rows.map((row) => ({ ...row, id: row.__key }))}
               columns={stagedColumns}
@@ -561,8 +561,8 @@ export default function AddBoqItemsPage() {
                 </div>
               }
             />
-          </CardContent>
-        </Card>
+          </div>
+        </TableCard>
       )}
     </main>
   );

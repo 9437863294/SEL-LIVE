@@ -108,7 +108,7 @@ export function AccessTemplateForm({
         title="Identity"
         description="A template is a shortcut, not a link. Applying it copies these roles and permissions onto a user; changing the template later does not change anybody who already has it."
       >
-        <div className="grid gap-3 sm:grid-cols-2">
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           <div className="space-y-1.5">
             <Label htmlFor="template-name">Template name *</Label>
             <Input

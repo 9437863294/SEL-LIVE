@@ -547,16 +547,16 @@ export function TowerImportDialog({
           {result ? (
             <div className="space-y-3">
               <div className="flex flex-wrap gap-2">
-                <Badge className="bg-emerald-100 text-emerald-700">
+                <Badge variant="success">
                   {result.towers.length} to create
                 </Badge>
                 {result.duplicates.length ? (
-                  <Badge className="bg-amber-100 text-amber-800">
+                  <Badge variant="warning">
                     {result.duplicates.length} already in project
                   </Badge>
                 ) : null}
                 {result.issues.length ? (
-                  <Badge className="bg-red-100 text-red-700">{result.issues.length} rejected</Badge>
+                  <Badge variant="danger">{result.issues.length} rejected</Badge>
                 ) : null}
                 {result.unmappedHeadings.length ? (
                   <Badge variant="outline">
@@ -606,9 +606,9 @@ export function TowerImportDialog({
                       header and the tower column pin to it rather than to a box that never scrolls. */}
                   <div className="max-h-72 overflow-auto rounded-md border">
                     <Table className="min-w-[640px]" containerClassName="overflow-visible">
-                      <TableHeader className="sticky top-0 z-20 bg-background">
+                      <TableHeader className="sticky top-0 z-20 bg-slate-100">
                         <TableRow>
-                          <TableHead className="sticky left-0 z-20 bg-background">Tower</TableHead>
+                          <TableHead className="sticky left-0 z-20 bg-slate-100">Tower</TableHead>
                           <TableHead>Type</TableHead>
                           <TableHead>Section</TableHead>
                           <TableHead>Location</TableHead>
@@ -623,16 +623,16 @@ export function TowerImportDialog({
                             <TableCell className="sticky left-0 z-10 bg-background font-medium">
                               {tower.towerNo}
                             </TableCell>
-                            <TableCell className="text-xs">{tower.towerType || "—"}</TableCell>
-                            <TableCell className="text-xs">{tower.section || "—"}</TableCell>
-                            <TableCell className="text-xs">{tower.location || "—"}</TableCell>
-                            <TableCell className="text-xs">
+                            <TableCell>{tower.towerType || "—"}</TableCell>
+                            <TableCell>{tower.section || "—"}</TableCell>
+                            <TableCell>{tower.location || "—"}</TableCell>
+                            <TableCell>
                               {tower.latitude !== undefined && tower.longitude !== undefined
                                 ? `${tower.latitude.toFixed(4)}, ${tower.longitude.toFixed(4)}`
                                 : "—"}
                             </TableCell>
-                            <TableCell className="text-xs">{tower.contractor || "—"}</TableCell>
-                            <TableCell className="text-right text-xs">{tower.spanToNextM ?? "—"}</TableCell>
+                            <TableCell>{tower.contractor || "—"}</TableCell>
+                            <TableCell className="text-right tabular-nums">{tower.spanToNextM ?? "—"}</TableCell>
                           </TableRow>
                         ))}
                       </TableBody>

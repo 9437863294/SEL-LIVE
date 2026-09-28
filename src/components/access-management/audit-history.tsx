@@ -22,14 +22,11 @@ import {
   Layers,
   Loader2,
   RefreshCw,
-  Search,
   ShieldMinus,
   ShieldPlus,
-  SlidersHorizontal,
 } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { CardContent } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -41,7 +38,10 @@ import { exportRowsToExcel } from '@/lib/report-excel';
 import { describeAuditEntry, formatGrantDate, type AccessAuditEntry, type AccessBatchRecord } from '@/lib/access-control';
 import { listAccessAuditEntries, listAccessBatches } from '@/lib/access-control-service';
 import type { AccessDirectoryState } from '@/hooks/useAccessDirectory';
-import { AccessCard, PermissionPairList } from './access-ui';
+import { FilterBar } from '@/components/shared/filter-bar';
+import { StatusBadge } from '@/components/shared/status-badge';
+import { TableCard } from '@/components/shared/table-card';
+import { PermissionPairList } from './access-ui';
 
 export function AuditHistory({
   state,
@@ -69,8 +69,6 @@ export function AuditHistory({
    * tab the user cannot see is indistinguishable from a button that does nothing.
    */
   const [view, setView] = useState<'timeline' | 'batches'>('timeline');
-  /** Below `lg` the four non-search filters fold away; the button carries how many are in effect. */
-  const [filtersOpen, setFiltersOpen] = useState(false);
   const activeFilterCount = [targetUserId !== 'all', changedBy !== 'all', !!from, !!to].filter(Boolean).length;
 
   const load = useCallback(async () => {
@@ -206,11 +204,7 @@ export function AuditHistory({
     {
       header: 'Source',
       className: 'hidden md:table-cell',
-      cell: ({ entry }) => (
-        <Badge variant="outline" className="text-[10px] text-slate-600">
-          {entry.sourceKind}
-        </Badge>
-      ),
+      cell: ({ entry }) => <Badge variant="outline">{entry.sourceKind}</Badge>,
     },
     {
       header: 'Permissions',
@@ -219,20 +213,8 @@ export function AuditHistory({
       mobile: 'aside',
       cell: ({ entry }) => (
         <span className="inline-flex items-center gap-1">
-          {entry.permissionsAdded.length > 0 && (
-            <Badge variant="outline" className="border-emerald-200 bg-emerald-50 text-[10px] text-emerald-700">
-              +{entry.permissionsAdded.length}
-            </Badge>
-          )}
-          <Badge
-            variant="outline"
-            className={cn(
-              'text-[10px]',
-              entry.permissionsRemoved.length
-                ? 'border-destructive/40 bg-destructive/10 text-destructive'
-                : 'border-slate-200 bg-white text-slate-500',
-            )}
-          >
+          {entry.permissionsAdded.length > 0 && <Badge variant="success">+{entry.permissionsAdded.length}</Badge>}
+          <Badge variant={entry.permissionsRemoved.length ? 'danger' : 'neutral'}>
             −{entry.permissionsRemoved.length}
           </Badge>
         </span>
@@ -286,7 +268,7 @@ export function AuditHistory({
       className: 'whitespace-nowrap',
       mobile: 'title',
       cell: ({ batch }) => (
-        <Badge variant="outline" className="border-indigo-200 bg-indigo-50 font-mono text-[10px] text-indigo-700">
+        <Badge variant="outline" className="font-mono">
           {batch.id}
         </Badge>
       ),
@@ -315,9 +297,7 @@ export function AuditHistory({
       mobile: 'aside',
       cell: ({ batch }) =>
         batch.failedCount ? (
-          <Badge variant="outline" className="border-destructive/40 bg-destructive/10 text-[10px] text-destructive">
-            {batch.failedCount} failed
-          </Badge>
+          <StatusBadge status="failed">{batch.failedCount} failed</StatusBadge>
         ) : (
           <span className="text-muted-foreground">0</span>
         ),
@@ -329,20 +309,8 @@ export function AuditHistory({
       mobile: 'aside',
       cell: ({ batch }) => (
         <span className="inline-flex items-center gap-1">
-          <Badge variant="outline" className="border-emerald-200 bg-emerald-50 text-[10px] text-emerald-700">
-            +{batch.permissionsAdded}
-          </Badge>
-          <Badge
-            variant="outline"
-            className={cn(
-              'text-[10px]',
-              batch.permissionsRemoved
-                ? 'border-destructive/40 bg-destructive/10 text-destructive'
-                : 'border-slate-200 bg-white text-slate-500',
-            )}
-          >
-            −{batch.permissionsRemoved}
-          </Badge>
+          <Badge variant="success">+{batch.permissionsAdded}</Badge>
+          <Badge variant={batch.permissionsRemoved ? 'danger' : 'neutral'}>−{batch.permissionsRemoved}</Badge>
         </span>
       ),
     },
@@ -404,145 +372,127 @@ export function AuditHistory({
       </TabsList>
 
       <TabsContent value="timeline" className="space-y-3">
-        <AccessCard>
-          <CardContent className="p-3">
-            {/* One row from `lg` up: the search stretches, the four filters sit beside it at compact
-                widths (the wrapper is `display: contents` there, so they are items of this row).
-                Below `lg` the four fold behind the "Filters" button, the same way the user picker's
-                do — otherwise they were ~200px of controls between the tab strip and the first entry
-                on a phone. */}
-            <div className="flex flex-wrap items-center gap-2">
-              <div className="relative min-w-[14rem] flex-1">
-                <Search className="pointer-events-none absolute left-3 top-2.5 h-4 w-4 text-slate-400" />
-                <Input
-                  value={term}
-                  onChange={(event) => setTerm(event.target.value)}
-                  placeholder="Search user, admin, role or reason…"
-                  className="pl-9"
-                />
-              </div>
-              <Button
-                type="button"
-                variant={activeFilterCount > 0 ? 'default' : 'outline'}
-                className="shrink-0 gap-1 lg:hidden"
-                aria-expanded={filtersOpen}
-                onClick={() => setFiltersOpen((flag) => !flag)}
-              >
-                <SlidersHorizontal className="h-4 w-4" />
-                Filters{activeFilterCount > 0 ? ` (${activeFilterCount})` : ''}
-              </Button>
-
-              <div
-                className={cn(
-                  'grid w-full grid-cols-1 gap-2 sm:grid-cols-2 lg:contents',
-                  !filtersOpen && 'hidden lg:contents',
-                )}
-              >
-                <Select value={targetUserId} onValueChange={setTargetUserId}>
-                  <SelectTrigger className="lg:w-52" aria-label="Affected user">
-                    <SelectValue placeholder="Affected user" />
-                  </SelectTrigger>
-                  <SelectContent className="max-h-72 max-w-[calc(100vw-2rem)]">
-                    <SelectItem value="all">Any affected user</SelectItem>
-                    {directory.users
-                      .slice()
-                      .sort((a, b) => (a.name || '').localeCompare(b.name || ''))
-                      .map((user) => (
-                        <SelectItem key={user.id} value={user.id}>{user.name || user.email}</SelectItem>
-                      ))}
-                  </SelectContent>
-                </Select>
-                <Select value={changedBy} onValueChange={setChangedBy}>
-                  <SelectTrigger className="lg:w-48" aria-label="Changed by">
-                    <SelectValue placeholder="Changed by" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">Any administrator</SelectItem>
-                    {administrators.map(([id, name]) => (
-                      <SelectItem key={id} value={id}>{name}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-                <div className="flex items-center gap-1.5">
-                  <Label htmlFor="audit-from" className="text-[10px] uppercase tracking-wide text-muted-foreground">
-                    From
-                  </Label>
-                  <Input
-                    id="audit-from"
-                    type="date"
-                    value={from}
-                    onChange={(event) => setFrom(event.target.value)}
-                    className="min-w-0 flex-1 lg:w-40 lg:flex-none"
-                  />
-                </div>
-                <div className="flex items-center gap-1.5">
-                  <Label htmlFor="audit-to" className="text-[10px] uppercase tracking-wide text-muted-foreground">
-                    To
-                  </Label>
-                  <Input
-                    id="audit-to"
-                    type="date"
-                    value={to}
-                    onChange={(event) => setTo(event.target.value)}
-                    className="min-w-0 flex-1 lg:w-40 lg:flex-none"
-                  />
-                </div>
-              </div>
-            </div>
-          </CardContent>
-        </AccessCard>
-
-        <div className="flex flex-wrap items-center justify-between gap-2 px-1">
-          <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-            <span>{visible.length} change(s)</span>
-            {batchFilter && (
-              <Badge variant="outline" className="gap-1 border-indigo-200 bg-indigo-50 text-indigo-700">
+        <TableCard
+          title="Access changes"
+          count={visible.length}
+          noun="change"
+          description={
+            batchFilter ? (
+              <Badge variant="neutral" className="gap-1">
                 Batch {batchFilter}
                 <button
                   type="button"
                   onClick={() => setBatchFilter(null)}
                   aria-label="Clear the batch filter"
-                  className="hr-inline-action -my-1 inline-flex items-center justify-center rounded-full px-1 hover:bg-indigo-100"
+                  className="hr-inline-action -my-1 inline-flex items-center justify-center rounded-full px-1 hover:bg-slate-200"
                 >
                   ×
                 </button>
               </Badge>
-            )}
-          </div>
-          <div className="flex gap-2">
-            <Button variant="outline" size="sm" onClick={() => void load()} disabled={loading}>
-              {loading ? <Loader2 className="mr-1.5 h-4 w-4 animate-spin" /> : <RefreshCw className="mr-1.5 h-4 w-4" />}
-              Refresh
-            </Button>
-            <Button variant="outline" size="sm" onClick={() => void handleExport()} disabled={!visible.length}>
-              <Download className="mr-1.5 h-4 w-4" />
-              Export
-            </Button>
-          </div>
-        </div>
-
-        {loading ? (
-          <AccessCard>
-            <CardContent className="flex items-center justify-center gap-2 py-14 text-sm text-muted-foreground">
+            ) : undefined
+          }
+          actions={
+            <>
+              <Button variant="outline" size="sm" onClick={() => void load()} disabled={loading}>
+                {loading ? <Loader2 className="mr-1.5 h-4 w-4 animate-spin" /> : <RefreshCw className="mr-1.5 h-4 w-4" />}
+                Refresh
+              </Button>
+              <Button variant="outline" size="sm" onClick={() => void handleExport()} disabled={!visible.length}>
+                <Download className="mr-1.5 h-4 w-4" />
+                Export
+              </Button>
+            </>
+          }
+          toolbar={
+            <FilterBar
+              search={{ value: term, onChange: setTerm, placeholder: 'Search user, admin, role or reason…' }}
+              activeCount={activeFilterCount + (batchFilter ? 1 : 0)}
+              onClear={() => {
+                setTerm('');
+                setTargetUserId('all');
+                setChangedBy('all');
+                setFrom('');
+                setTo('');
+                setBatchFilter(null);
+              }}
+            >
+              <Select value={targetUserId} onValueChange={setTargetUserId}>
+                <SelectTrigger aria-label="Affected user">
+                  <SelectValue placeholder="Affected user" />
+                </SelectTrigger>
+                <SelectContent className="max-h-72 max-w-[calc(100vw-2rem)]">
+                  <SelectItem value="all">Any affected user</SelectItem>
+                  {directory.users
+                    .slice()
+                    .sort((a, b) => (a.name || '').localeCompare(b.name || ''))
+                    .map((user) => (
+                      <SelectItem key={user.id} value={user.id}>{user.name || user.email}</SelectItem>
+                    ))}
+                </SelectContent>
+              </Select>
+              <Select value={changedBy} onValueChange={setChangedBy}>
+                <SelectTrigger aria-label="Changed by">
+                  <SelectValue placeholder="Changed by" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Any administrator</SelectItem>
+                  {administrators.map(([id, name]) => (
+                    <SelectItem key={id} value={id}>{name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <div className="flex items-center gap-1.5">
+                <Label htmlFor="audit-from" className="text-[10px] uppercase tracking-wide text-muted-foreground">
+                  From
+                </Label>
+                <Input
+                  id="audit-from"
+                  type="date"
+                  value={from}
+                  onChange={(event) => setFrom(event.target.value)}
+                  className="min-w-0 flex-1"
+                />
+              </div>
+              <div className="flex items-center gap-1.5">
+                <Label htmlFor="audit-to" className="text-[10px] uppercase tracking-wide text-muted-foreground">
+                  To
+                </Label>
+                <Input
+                  id="audit-to"
+                  type="date"
+                  value={to}
+                  onChange={(event) => setTo(event.target.value)}
+                  className="min-w-0 flex-1"
+                />
+              </div>
+            </FilterBar>
+          }
+        >
+          {loading ? (
+            <div className="flex items-center justify-center gap-2 py-14 text-sm text-muted-foreground">
               <Loader2 className="h-4 w-4 animate-spin" /> Loading the audit trail…
-            </CardContent>
-          </AccessCard>
-        ) : visible.length === 0 ? (
-          <HrEmptyState
-            icon={History}
-            title="No access changes recorded yet"
-            description="Every grant and removal made from this screen is logged here with who, what, when, why and the exact permissions involved."
-          />
-        ) : (
-          <HrDataList
-            rows={rows}
-            columns={columns}
-            onRowClick={(row) => setExpanded((current) => (current === row.id ? null : row.id))}
-            expandedId={expanded}
-            renderExpanded={(row) => <AuditEntryDetail entry={row.entry} onSelectBatch={setBatchFilter} />}
-            maxHeightClassName="sm:max-h-[30rem]"
-          />
-        )}
+            </div>
+          ) : visible.length === 0 ? (
+            <div className="p-3">
+              <HrEmptyState
+                icon={History}
+                title="No access changes recorded yet"
+                description="Every grant and removal made from this screen is logged here with who, what, when, why and the exact permissions involved."
+              />
+            </div>
+          ) : (
+            <div className="p-3 sm:p-0">
+              <HrDataList
+                rows={rows}
+                columns={columns}
+                onRowClick={(row) => setExpanded((current) => (current === row.id ? null : row.id))}
+                expandedId={expanded}
+                renderExpanded={(row) => <AuditEntryDetail entry={row.entry} onSelectBatch={setBatchFilter} />}
+                frameless
+              />
+            </div>
+          )}
+        </TableCard>
       </TabsContent>
 
       <TabsContent value="batches" className="space-y-3">
@@ -553,15 +503,19 @@ export function AuditHistory({
             description="Every assignment — one user or a thousand — gets a batch identifier so it can be reviewed as one operation."
           />
         ) : (
-          <HrDataList
-            rows={batchRows}
-            columns={batchColumns}
-            onRowClick={(row) => setExpandedBatch((current) => (current === row.id ? null : row.id))}
-            expandedId={expandedBatch}
-            renderExpanded={(row) => <BatchDetail batch={row.batch} />}
-            maxHeightClassName="sm:max-h-[30rem]"
-            dense
-          />
+          <TableCard title="Bulk operations" count={batches.length} noun="operation">
+            <div className="p-3 sm:p-0">
+              <HrDataList
+                rows={batchRows}
+                columns={batchColumns}
+                onRowClick={(row) => setExpandedBatch((current) => (current === row.id ? null : row.id))}
+                expandedId={expandedBatch}
+                renderExpanded={(row) => <BatchDetail batch={row.batch} />}
+                dense
+                frameless
+              />
+            </div>
+          </TableCard>
         )}
       </TabsContent>
     </Tabs>
@@ -597,7 +551,7 @@ function BatchDetail({ batch }: { batch: AccessBatchRecord }) {
         {batch.roleNames.length ? (
           <div className="flex flex-wrap gap-1">
             {batch.roleNames.map((name) => (
-              <Badge key={name} variant="outline" className="text-[10px] text-slate-600">
+              <Badge key={name} variant="outline">
                 {name}
               </Badge>
             ))}
@@ -636,7 +590,7 @@ function BatchBadge({ batchId, onSelect }: { batchId: string; onSelect: (batchId
   return (
     <Badge
       variant="outline"
-      className="cursor-pointer border-indigo-200 bg-indigo-50 font-mono text-[10px] text-indigo-700"
+      className="cursor-pointer font-mono"
       onClick={(event) => {
         event.stopPropagation();
         onSelect(batchId);

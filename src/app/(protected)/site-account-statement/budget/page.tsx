@@ -21,12 +21,15 @@ import { useAuthorization } from '@/hooks/useAuthorization';
 import { useActivityLogger } from '@/hooks/useActivityLogger';
 import { useToast } from '@/hooks/use-toast';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent } from '@/components/ui/card';
 import { PageHeader } from '@/components/shared/page-header';
+import { TableCard } from '@/components/shared/table-card';
+import { FilterBar } from '@/components/shared/filter-bar';
+import { StatusBadge } from '@/components/shared/status-badge';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Badge } from '@/components/ui/badge';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Textarea } from '@/components/ui/textarea';
 import { Progress } from '@/components/ui/progress';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
@@ -39,7 +42,7 @@ import {
 } from '@/components/ui/alert-dialog';
 import {
   Calendar, ChevronDown, ChevronLeft, ChevronRight, Download, FileText, Filter, Layers, Loader2,
-  Lock, Pencil, Plus, Search, ShieldAlert, Target, Trash2, TrendingDown, TrendingUp, Upload, Wallet, X,
+  Lock, Pencil, Plus, ShieldAlert, Target, Trash2, TrendingDown, TrendingUp, Upload, Wallet,
 } from 'lucide-react';
 import ExcelJS from 'exceljs';
 import { cn } from '@/lib/utils';
@@ -102,20 +105,20 @@ interface UploadRow {
 }
 
 // ── Status badge ──────────────────────────────────────────────────────────────
-function StatusBadge({ budget, spent }: { budget: SASBudget | null; spent: number }) {
-  if (!budget) return <Badge variant="outline" className="text-xs text-muted-foreground">No Budget</Badge>;
+function BudgetStatusBadge({ budget, spent }: { budget: SASBudget | null; spent: number }) {
+  if (!budget) return <StatusBadge status="No Budget" tone="neutral" />;
   const pct = budget.budgetAmount > 0 ? (spent / budget.budgetAmount) * 100 : 0;
-  if (spent > budget.budgetAmount) return <Badge variant="destructive" className="text-xs">Over Budget</Badge>;
-  if (pct >= 80) return <Badge className="text-xs bg-amber-500 hover:bg-amber-500">Warning</Badge>;
-  return <Badge className="text-xs bg-emerald-600 hover:bg-emerald-600">On Track</Badge>;
+  if (spent > budget.budgetAmount) return <StatusBadge status="Over Budget" tone="danger" />;
+  if (pct >= 80) return <StatusBadge status="Warning" tone="warning" />;
+  return <StatusBadge status="On Track" tone="success" />;
 }
 
 function CatStatusBadge({ budget, spent }: { budget: SASCategoryBudget | undefined; spent: number }) {
-  if (!budget) return <Badge variant="outline" className="text-[10px] px-1.5 text-muted-foreground">—</Badge>;
+  if (!budget) return <StatusBadge status="none" tone="neutral">—</StatusBadge>;
   const pct = budget.budgetAmount > 0 ? (spent / budget.budgetAmount) * 100 : 0;
-  if (spent > budget.budgetAmount) return <Badge variant="destructive" className="text-[10px] px-1.5">Over</Badge>;
-  if (pct >= 80) return <Badge className="text-[10px] px-1.5 bg-amber-500 hover:bg-amber-500">Near</Badge>;
-  return <Badge className="text-[10px] px-1.5 bg-emerald-600 hover:bg-emerald-600">OK</Badge>;
+  if (spent > budget.budgetAmount) return <StatusBadge status="Over" tone="danger" />;
+  if (pct >= 80) return <StatusBadge status="Near" tone="warning" />;
+  return <StatusBadge status="OK" tone="success">OK</StatusBadge>;
 }
 
 // ── Restricted-by-role placeholder (shown instead of budget figures the current
@@ -389,7 +392,6 @@ export default function SiteFundBudgetPage() {
     });
   }, [visibleProjects, filterSearch, filterFY, filterStatus, allBudgets, allExpenses, projectBudgetTotal]);
 
-  const hasActiveFilters = filterSearch !== '' || filterStatus !== 'all' || filterFY !== 'all';
 
   // ── Tree helpers ──────────────────────────────────────────────────────────────
   function getRelevantFYs(projectId: string): number[] {
@@ -1347,27 +1349,19 @@ export default function SiteFundBudgetPage() {
       </div>
 
       {/* ── Tree table ── */}
-      <Card className="bg-white/80 backdrop-blur-sm">
-
-        {/* Filter bar */}
-        <div className="flex flex-wrap items-center gap-2 border-b px-4 py-2.5">
-          <Filter className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
-          <div className="relative w-full sm:w-auto min-w-[140px]">
-            <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground pointer-events-none" />
-            <Input
-              placeholder="Search project..."
-              value={filterSearch}
-              onChange={e => setFilterSearch(e.target.value)}
-              className="h-7 pl-7 pr-6 text-xs w-full"
-            />
-            {filterSearch && (
-              <button onClick={() => setFilterSearch('')} className="absolute right-1.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground">
-                <X className="h-3 w-3" />
-              </button>
-            )}
-          </div>
+      <TableCard
+        title="Budget tree"
+        count={filteredProjects.length}
+        total={visibleProjects.length}
+        noun="project"
+        toolbar={
+          <FilterBar
+            search={{ value: filterSearch, onChange: setFilterSearch, placeholder: 'Search project...' }}
+            activeCount={(filterStatus !== 'all' ? 1 : 0) + (filterFY !== 'all' ? 1 : 0)}
+            onClear={() => { setFilterSearch(''); setFilterStatus('all'); setFilterFY('all'); }}
+          >
           <Select value={filterFY} onValueChange={v => setFilterFY(v)}>
-            <SelectTrigger className="h-7 text-xs w-full sm:w-auto min-w-[140px]">
+            <SelectTrigger aria-label="Financial year">
               <SelectValue placeholder="All FYs" />
             </SelectTrigger>
             <SelectContent>
@@ -1378,7 +1372,7 @@ export default function SiteFundBudgetPage() {
             </SelectContent>
           </Select>
           <Select value={filterStatus} onValueChange={v => setFilterStatus(v as typeof filterStatus)}>
-            <SelectTrigger className="h-7 text-xs w-full sm:w-auto min-w-[140px]">
+            <SelectTrigger aria-label="Budget status">
               <SelectValue placeholder="All Statuses" />
             </SelectTrigger>
             <SelectContent>
@@ -1389,18 +1383,9 @@ export default function SiteFundBudgetPage() {
               <SelectItem value="no-budget">No Budget Set</SelectItem>
             </SelectContent>
           </Select>
-          {hasActiveFilters && (
-            <Button variant="ghost" size="sm" className="h-7 text-xs gap-1 text-muted-foreground"
-              onClick={() => { setFilterSearch(''); setFilterStatus('all'); setFilterFY('all'); }}>
-              <X className="h-3 w-3" /> Clear filters
-            </Button>
-          )}
-          <span className="ml-auto text-xs text-muted-foreground">
-            {filteredProjects.length} of {visibleProjects.length} project{visibleProjects.length !== 1 ? 's' : ''}
-          </span>
-        </div>
-
-        <CardContent className="p-0">
+          </FilterBar>
+        }
+      >
           {visibleProjects.length === 0 ? (
             <div className="flex flex-col items-center gap-3 py-12 text-center">
               <Target className="h-10 w-10 text-muted-foreground/40" />
@@ -1415,24 +1400,23 @@ export default function SiteFundBudgetPage() {
               </Button>
             </div>
           ) : (
-            <div className="overflow-x-auto overflow-y-auto" style={{ maxHeight: 'calc(100vh - 340px)' }}>
-              <table className="w-full text-sm min-w-[800px]">
-                <thead className="sticky top-0 z-20">
-                  <tr className="border-b bg-slate-100 shadow-sm">
-                    <th className="px-4 py-2.5 text-left font-medium min-w-[220px]">Project / Period</th>
-                    <th className="px-4 py-2.5 text-right font-medium whitespace-nowrap">Budget (₹)</th>
+              <Table className="min-w-[800px]">
+                <TableHeader>
+                  <TableRow>
+                    <TableHead className="min-w-[220px]">Project / Period</TableHead>
+                    <TableHead className="text-right whitespace-nowrap">Budget (₹)</TableHead>
                     {/* Money actually received from Head Office for the period on this row. Budget
                         is what was sanctioned; Received is what has landed — a site can be well
                         inside its budget and still unable to spend, which the other columns hide. */}
-                    <th className="px-4 py-2.5 text-right font-medium whitespace-nowrap">Received (₹)</th>
-                    <th className="px-4 py-2.5 text-right font-medium whitespace-nowrap">Spent (₹)</th>
-                    <th className="px-4 py-2.5 text-right font-medium whitespace-nowrap">Remaining (₹)</th>
-                    <th className="px-4 py-2.5 text-left font-medium min-w-[130px]">Usage</th>
-                    <th className="px-4 py-2.5 text-left font-medium">Status</th>
-                    {anyRowActionPerm && <th className="px-4 py-2.5 text-right font-medium">Actions</th>}
-                  </tr>
-                </thead>
-                <tbody>
+                    <TableHead className="text-right whitespace-nowrap">Received (₹)</TableHead>
+                    <TableHead className="text-right whitespace-nowrap">Spent (₹)</TableHead>
+                    <TableHead className="text-right whitespace-nowrap">Remaining (₹)</TableHead>
+                    <TableHead className="min-w-[130px]">Usage</TableHead>
+                    <TableHead>Status</TableHead>
+                    {anyRowActionPerm && <TableHead className="text-right">Actions</TableHead>}
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
                   {(() => {
                     const filterFYStart = filterFY !== 'all' ? parseInt(filterFY) : null;
                     return filteredProjects.map(project => {
@@ -1475,21 +1459,21 @@ export default function SiteFundBudgetPage() {
                       <Fragment key={project.id}>
 
                         {/* ══ Level 0 — Project ══ */}
-                        <tr className={cn('border-b transition-colors', isExpanded ? 'bg-emerald-50/50' : 'bg-white hover:bg-muted/10')}>
-                          <td className="px-4 py-3">
+                        <TableRow className={cn(isExpanded ? 'bg-emerald-50/50' : '')}>
+                          <TableCell>
                             <button onClick={() => toggleProject(project.id)} className="flex items-center gap-2 font-semibold text-slate-800 hover:text-emerald-700 transition-colors">
                               {isExpanded
                                 ? <ChevronDown  className="h-4 w-4 text-emerald-600 shrink-0" />
                                 : <ChevronRight className="h-4 w-4 text-slate-400 shrink-0" />}
                               {project.projectName}
                               {project.projectCode && (
-                                <Badge variant="outline" className="text-[10px] px-1.5 py-0 border-emerald-200 text-emerald-600 font-normal">
+                                <Badge variant="outline" className="font-mono font-normal">
                                   {project.projectCode}
                                 </Badge>
                               )}
                             </button>
-                          </td>
-                          <td className="px-4 py-3 text-right font-semibold text-emerald-700">
+                          </TableCell>
+                          <TableCell className="text-right font-medium text-emerald-700">
                             {!totalPerm.view ? <RestrictedCell /> : tAmt > 0
                               ? <div>
                                   {formatINR(tAmt)}
@@ -1497,31 +1481,31 @@ export default function SiteFundBudgetPage() {
                                   {tBudgetSource === 'month-sum' && <p className="text-[10px] font-normal text-muted-foreground">∑ monthly budgets</p>}
                                 </div>
                               : <span className="text-muted-foreground text-xs">—</span>}
-                          </td>
-                          <td className="px-4 py-3 text-right text-blue-700 font-medium">
+                          </TableCell>
+                          <TableCell className="text-right text-blue-700 font-medium">
                             {totalPerm.view ? formatINR(tRcvd) : <RestrictedCell />}
-                          </td>
-                          <td className="px-4 py-3 text-right text-rose-700 font-medium">
+                          </TableCell>
+                          <TableCell className="text-right text-rose-700 font-medium">
                             {totalPerm.view ? formatINR(tSpent) : <RestrictedCell />}
-                          </td>
-                          <td className={cn('px-4 py-3 text-right font-semibold', tAmt === 0 ? 'text-muted-foreground' : tAmt - tSpent < 0 ? 'text-destructive' : 'text-indigo-700')}>
+                          </TableCell>
+                          <TableCell className={cn('text-right font-medium', tAmt === 0 ? 'text-muted-foreground' : tAmt - tSpent < 0 ? 'text-destructive' : 'text-indigo-700')}>
                             {!totalPerm.view ? <RestrictedCell /> : tAmt > 0 ? formatINR(tAmt - tSpent) : '—'}
-                          </td>
-                          <td className="px-4 py-3">
+                          </TableCell>
+                          <TableCell>
                             {!totalPerm.view ? <RestrictedCell /> : tAmt > 0 ? (
                               <div className="space-y-1 min-w-[110px]">
                                 <Progress value={tPct} className="h-2" />
                                 <p className="text-xs text-muted-foreground">{formatPct(tPct)}</p>
                               </div>
                             ) : <span className="text-xs text-muted-foreground">—</span>}
-                          </td>
-                          <td className="px-4 py-3">
+                          </TableCell>
+                          <TableCell>
                             {totalPerm.view
-                              ? <StatusBadge budget={tAmt > 0 ? { budgetAmount: tAmt } as SASBudget : null} spent={tSpent} />
+                              ? <BudgetStatusBadge budget={tAmt > 0 ? { budgetAmount: tAmt } as SASBudget : null} spent={tSpent} />
                               : <RestrictedCell />}
-                          </td>
+                          </TableCell>
                           {anyRowActionPerm && (
-                            <td className="px-4 py-3 text-right">
+                            <TableCell className="text-right">
                               <div className="flex justify-end items-center gap-1">
                                 {totalPerm.edit && (
                                   totalBudget
@@ -1532,9 +1516,9 @@ export default function SiteFundBudgetPage() {
                                   <DeleteConfirm label={`Remove total budget for ${project.projectName}?`} onConfirm={() => handleDelete(totalBudget)} />
                                 )}
                               </div>
-                            </td>
+                            </TableCell>
                           )}
-                        </tr>
+                        </TableRow>
 
                         {/* ══ Level 1 — FY rows ══ */}
                         {isExpanded && fys.map(fyS => {
@@ -1560,8 +1544,8 @@ export default function SiteFundBudgetPage() {
                             <Fragment key={fyKey}>
 
                               {/* FY row */}
-                              <tr className={cn('border-b transition-colors', isFYExp ? 'bg-blue-50/30' : 'bg-slate-50/60 hover:bg-muted/10')}>
-                                <td className="pl-10 pr-4 py-2.5">
+                              <TableRow className={cn(isFYExp ? 'bg-blue-50/30' : 'bg-slate-50/60')}>
+                                <TableCell className="pl-10">
                                   <button onClick={() => toggleFY(fyKey)} className="flex items-center gap-2 font-medium text-slate-700 hover:text-blue-700 transition-colors">
                                     {months.length > 0
                                       ? isFYExp
@@ -1570,41 +1554,41 @@ export default function SiteFundBudgetPage() {
                                       : <span className="w-3.5 h-3.5 shrink-0" />}
                                     <Target className="h-3 w-3 text-emerald-600 shrink-0" />
                                     <span>FY {fyLabel(fyS)}</span>
-                                    {isCurFY && <Badge className="text-[9px] px-1.5 py-0 bg-blue-100 text-blue-700 hover:bg-blue-100 font-normal">Current FY</Badge>}
+                                    {isCurFY && <Badge variant="info">Current FY</Badge>}
                                   </button>
-                                </td>
-                                <td className="px-4 py-2.5 text-right font-medium text-emerald-700">
+                                </TableCell>
+                                <TableCell className="text-right font-medium text-emerald-700">
                                   {!fyPerm.view ? <RestrictedCell /> : fAmt > 0
                                     ? <div>
                                         {formatINR(fAmt)}
                                         {fBudgetSource === 'month-sum' && <p className="text-[10px] font-normal text-muted-foreground">∑ monthly budgets</p>}
                                       </div>
                                     : <span className="text-muted-foreground text-xs">—</span>}
-                                </td>
-                                <td className="px-4 py-2.5 text-right text-blue-700">
+                                </TableCell>
+                                <TableCell className="text-right text-blue-700">
                                   {!fyPerm.view ? <RestrictedCell /> : fyRcvd > 0 ? formatINR(fyRcvd) : <span className="text-muted-foreground text-xs">—</span>}
-                                </td>
-                                <td className="px-4 py-2.5 text-right text-rose-700">
+                                </TableCell>
+                                <TableCell className="text-right text-rose-700">
                                   {!fyPerm.view ? <RestrictedCell /> : fySpent > 0 ? formatINR(fySpent) : <span className="text-muted-foreground text-xs">—</span>}
-                                </td>
-                                <td className={cn('px-4 py-2.5 text-right font-medium', fAmt === 0 ? 'text-muted-foreground' : fAmt - fySpent < 0 ? 'text-destructive' : 'text-indigo-700')}>
+                                </TableCell>
+                                <TableCell className={cn('text-right font-medium', fAmt === 0 ? 'text-muted-foreground' : fAmt - fySpent < 0 ? 'text-destructive' : 'text-indigo-700')}>
                                   {!fyPerm.view ? <RestrictedCell /> : fAmt > 0 ? formatINR(fAmt - fySpent) : '—'}
-                                </td>
-                                <td className="px-4 py-2.5">
+                                </TableCell>
+                                <TableCell>
                                   {!fyPerm.view ? <RestrictedCell /> : fAmt > 0 ? (
                                     <div className="space-y-1 min-w-[110px]">
                                       <Progress value={fyPct} className="h-1.5" />
                                       <p className="text-xs text-muted-foreground">{formatPct(fyPct)}</p>
                                     </div>
                                   ) : <span className="text-xs text-muted-foreground">—</span>}
-                                </td>
-                                <td className="px-4 py-2.5">
+                                </TableCell>
+                                <TableCell>
                                   {fyPerm.view
-                                    ? <StatusBadge budget={fAmt > 0 ? { budgetAmount: fAmt } as SASBudget : null} spent={fySpent} />
+                                    ? <BudgetStatusBadge budget={fAmt > 0 ? { budgetAmount: fAmt } as SASBudget : null} spent={fySpent} />
                                     : <RestrictedCell />}
-                                </td>
+                                </TableCell>
                                 {anyRowActionPerm && (
-                                  <td className="px-4 py-2.5 text-right">
+                                  <TableCell className="text-right">
                                     <div className="flex justify-end items-center gap-1">
                                       {fyPerm.edit && (
                                         fyB
@@ -1615,9 +1599,9 @@ export default function SiteFundBudgetPage() {
                                         <DeleteConfirm label={`Remove FY ${fyLabel(fyS)} budget for ${project.projectName}?`} onConfirm={() => handleDelete(fyB)} size="sm" />
                                       )}
                                     </div>
-                                  </td>
+                                  </TableCell>
                                 )}
-                              </tr>
+                              </TableRow>
 
                               {/* ══ Level 2 — Month rows ══ */}
                               {isFYExp && months.map(m => {
@@ -1642,8 +1626,8 @@ export default function SiteFundBudgetPage() {
 
                                 return (
                                   <Fragment key={m}>
-                                    <tr className={cn('border-b transition-colors', isCurMo ? 'bg-amber-50/40' : isMoExp ? 'bg-amber-50/20' : 'bg-white/50 hover:bg-muted/10')}>
-                                      <td className="pl-14 pr-4 py-2">
+                                    <TableRow className={cn(isCurMo ? 'bg-amber-50/40' : isMoExp ? 'bg-amber-50/20' : '')}>
+                                      <TableCell className="pl-14">
                                         <button
                                           onClick={() => toggleMonth(monthKey)}
                                           className="flex items-center gap-1.5 text-slate-600 hover:text-amber-700 transition-colors"
@@ -1653,7 +1637,7 @@ export default function SiteFundBudgetPage() {
                                             : <ChevronRight className="h-3 w-3 text-slate-400 shrink-0" />}
                                           <Calendar className="h-3 w-3 text-slate-400 shrink-0" />
                                           <span className="text-xs">{monthLabel(m)}</span>
-                                          {isCurMo && <Badge className="text-[9px] px-1.5 py-0 bg-amber-100 text-amber-700 hover:bg-amber-100 font-normal">This Month</Badge>}
+                                          {isCurMo && <Badge variant="info">This Month</Badge>}
                                           {approval && (
                                             <a
                                               href={approval.fileUrl}
@@ -1671,8 +1655,8 @@ export default function SiteFundBudgetPage() {
                                             ({catRows.length} categories)
                                           </span>
                                         </button>
-                                      </td>
-                                      <td className="px-4 py-2 text-right text-xs font-medium text-emerald-700">
+                                      </TableCell>
+                                      <TableCell className="text-right font-medium text-emerald-700">
                                         {!monthlyPerm.view ? <RestrictedCell /> : mAmt > 0
                                           ? <div>
                                               {formatINR(mAmt)}
@@ -1684,31 +1668,31 @@ export default function SiteFundBudgetPage() {
                                               )}
                                             </div>
                                           : <span className="text-muted-foreground">—</span>}
-                                      </td>
-                                      <td className="px-4 py-2 text-right text-xs text-blue-700">
+                                      </TableCell>
+                                      <TableCell className="text-right text-blue-700">
                                         {!monthlyPerm.view ? <RestrictedCell /> : mRcvd > 0 ? formatINR(mRcvd) : <span className="text-muted-foreground">—</span>}
-                                      </td>
-                                      <td className="px-4 py-2 text-right text-xs text-rose-700">
+                                      </TableCell>
+                                      <TableCell className="text-right text-rose-700">
                                         {!monthlyPerm.view ? <RestrictedCell /> : mSpent > 0 ? formatINR(mSpent) : <span className="text-muted-foreground">—</span>}
-                                      </td>
-                                      <td className={cn('px-4 py-2 text-right text-xs font-medium', mAmt === 0 ? 'text-muted-foreground' : mAmt - mSpent < 0 ? 'text-destructive' : 'text-indigo-700')}>
+                                      </TableCell>
+                                      <TableCell className={cn('text-right font-medium', mAmt === 0 ? 'text-muted-foreground' : mAmt - mSpent < 0 ? 'text-destructive' : 'text-indigo-700')}>
                                         {!monthlyPerm.view ? <RestrictedCell /> : mAmt > 0 ? formatINR(mAmt - mSpent) : '—'}
-                                      </td>
-                                      <td className="px-4 py-2">
+                                      </TableCell>
+                                      <TableCell>
                                         {!monthlyPerm.view ? <RestrictedCell /> : mAmt > 0 ? (
                                           <div className="space-y-0.5 min-w-[110px]">
                                             <Progress value={mPct} className="h-1.5" />
                                             <p className="text-[11px] text-muted-foreground">{formatPct(mPct)}</p>
                                           </div>
                                         ) : <span className="text-xs text-muted-foreground">—</span>}
-                                      </td>
-                                      <td className="px-4 py-2">
+                                      </TableCell>
+                                      <TableCell>
                                         {monthlyPerm.view
-                                          ? <StatusBadge budget={mB ?? (catBudgetSum > 0 ? { budgetAmount: catBudgetSum } as SASBudget : null)} spent={mSpent} />
+                                          ? <BudgetStatusBadge budget={mB ?? (catBudgetSum > 0 ? { budgetAmount: catBudgetSum } as SASBudget : null)} spent={mSpent} />
                                           : <RestrictedCell />}
-                                      </td>
+                                      </TableCell>
                                       {anyRowActionPerm && (
-                                        <td className="px-4 py-2 text-right">
+                                        <TableCell className="text-right">
                                           <div className="flex justify-end items-center gap-1">
                                             {monthlyPerm.edit && (
                                               mB
@@ -1769,9 +1753,9 @@ export default function SiteFundBudgetPage() {
                                               </>
                                             )}
                                           </div>
-                                        </td>
+                                        </TableCell>
                                       )}
-                                    </tr>
+                                    </TableRow>
 
                                     {/* ══ Level 3 — Category rows ══ */}
                                     {isMoExp && catRows.map(cat => {
@@ -1781,40 +1765,40 @@ export default function SiteFundBudgetPage() {
                                       const cPct    = cAmt > 0 ? Math.min((cSpent / cAmt) * 100, 100) : 0;
 
                                       return (
-                                        <tr key={`${m}:${cat}`} className="border-b bg-slate-50/30 hover:bg-muted/10 transition-colors">
-                                          <td className="pl-20 pr-4 py-1.5">
+                                        <TableRow key={`${m}:${cat}`} className="bg-slate-50/30">
+                                          <TableCell className="pl-20">
                                             <div className="flex items-center gap-1.5">
                                               <Layers className="h-2.5 w-2.5 text-teal-400 shrink-0" />
                                               <span className="text-xs text-slate-600">{cat}</span>
                                             </div>
-                                          </td>
-                                          <td className="px-4 py-1.5 text-right text-xs font-medium text-emerald-700">
+                                          </TableCell>
+                                          <TableCell className="text-right font-medium text-emerald-700">
                                             {!categoryPerm.view ? <RestrictedCell /> : catB ? formatINR(cAmt) : <span className="text-muted-foreground text-xs">—</span>}
-                                          </td>
+                                          </TableCell>
                                           {/* Receipts arrive from Head Office against the project as
                                               a whole, never against a category, so there is nothing
                                               to show here. */}
-                                          <td className="px-4 py-1.5 text-right text-xs text-muted-foreground">—</td>
-                                          <td className="px-4 py-1.5 text-right text-xs text-rose-700">
+                                          <TableCell className="text-right text-muted-foreground">—</TableCell>
+                                          <TableCell className="text-right text-rose-700">
                                             {!categoryPerm.view ? <RestrictedCell /> : cSpent > 0 ? formatINR(cSpent) : <span className="text-muted-foreground text-xs">—</span>}
-                                          </td>
-                                          <td className={cn('px-4 py-1.5 text-right text-xs font-medium',
+                                          </TableCell>
+                                          <TableCell className={cn('text-right font-medium',
                                             !catB ? 'text-muted-foreground' : cAmt - cSpent < 0 ? 'text-destructive' : 'text-indigo-700')}>
                                             {!categoryPerm.view ? <RestrictedCell /> : catB ? formatINR(cAmt - cSpent) : '—'}
-                                          </td>
-                                          <td className="px-4 py-1.5">
+                                          </TableCell>
+                                          <TableCell>
                                             {!categoryPerm.view ? <RestrictedCell /> : catB ? (
                                               <div className="space-y-0.5 min-w-[110px]">
                                                 <Progress value={cPct} className="h-1" />
                                                 <p className="text-[10px] text-muted-foreground">{formatPct(cPct)}</p>
                                               </div>
                                             ) : <span className="text-xs text-muted-foreground">—</span>}
-                                          </td>
-                                          <td className="px-4 py-1.5">
+                                          </TableCell>
+                                          <TableCell>
                                             {categoryPerm.view ? <CatStatusBadge budget={catB} spent={cSpent} /> : <RestrictedCell />}
-                                          </td>
+                                          </TableCell>
                                           {anyRowActionPerm && (
-                                            <td className="px-4 py-1.5 text-right">
+                                            <TableCell className="text-right">
                                               <div className="flex justify-end gap-1">
                                                 {categoryPerm.edit && catB && (
                                                   <Button variant="ghost" size="icon" className="h-5 w-5" title="Edit budget" onClick={() => openCatEdit(catB)}>
@@ -1825,9 +1809,9 @@ export default function SiteFundBudgetPage() {
                                                   <DeleteConfirm label={`Remove ${cat} budget for ${monthLabel(m)}?`} onConfirm={() => handleCatDelete(catB)} size="sm" />
                                                 )}
                                               </div>
-                                            </td>
+                                            </TableCell>
                                           )}
-                                        </tr>
+                                        </TableRow>
                                       );
                                     })}
                                   </Fragment>
@@ -1840,12 +1824,10 @@ export default function SiteFundBudgetPage() {
                     );
                   });
                   })()}
-                </tbody>
-              </table>
-            </div>
+                </TableBody>
+              </Table>
           )}
-        </CardContent>
-      </Card>
+      </TableCard>
 
       {/* Over-budget callout */}
       {summary.overCount > 0 && (
@@ -2144,35 +2126,35 @@ export default function SiteFundBudgetPage() {
                 <Download className="h-3 w-3" /> Download Template
               </Button>
             </div>
-            <div className="rounded-lg border overflow-x-auto max-h-[50vh]">
-              <table className="w-full text-xs">
-                <thead className="bg-slate-100 sticky top-0">
-                  <tr>
-                    <th className="px-3 py-2 text-left">#</th>
-                    <th className="px-3 py-2 text-left">Project</th>
-                    <th className="px-3 py-2 text-left">Period</th>
-                    <th className="px-3 py-2 text-right">Amount (₹)</th>
-                    <th className="px-3 py-2 text-left">Notes</th>
-                    <th className="px-3 py-2 text-left">Status</th>
-                  </tr>
-                </thead>
-                <tbody>
+            <div className="rounded-lg border">
+              <Table containerClassName="max-h-[50vh]">
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>#</TableHead>
+                    <TableHead>Project</TableHead>
+                    <TableHead>Period</TableHead>
+                    <TableHead className="text-right">Amount (₹)</TableHead>
+                    <TableHead>Notes</TableHead>
+                    <TableHead>Status</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
                   {uploadRows.map(r => (
-                    <tr key={r.rowNum} className={cn('border-t', r.valid ? 'bg-white' : 'bg-red-50/50')}>
-                      <td className="px-3 py-1.5 text-muted-foreground">{r.rowNum}</td>
-                      <td className="px-3 py-1.5">{r.projectName}</td>
-                      <td className="px-3 py-1.5 font-mono">{r.period || '—'}</td>
-                      <td className="px-3 py-1.5 text-right font-semibold text-emerald-700">{r.amount > 0 ? formatINR(r.amount) : '—'}</td>
-                      <td className="px-3 py-1.5 text-muted-foreground truncate max-w-[120px]">{r.notes || '—'}</td>
-                      <td className="px-3 py-1.5">
+                    <TableRow key={r.rowNum} className={cn(!r.valid && 'bg-rose-50/60')}>
+                      <TableCell className="tabular-nums">{r.rowNum}</TableCell>
+                      <TableCell>{r.projectName}</TableCell>
+                      <TableCell className="font-mono whitespace-nowrap">{r.period || '—'}</TableCell>
+                      <TableCell className="text-right whitespace-nowrap tabular-nums font-medium text-emerald-700">{r.amount > 0 ? formatINR(r.amount) : '—'}</TableCell>
+                      <TableCell className="truncate max-w-[120px]">{r.notes || '—'}</TableCell>
+                      <TableCell className="whitespace-nowrap">
                         {r.valid
-                          ? <Badge className="text-[10px] bg-emerald-100 text-emerald-700 hover:bg-emerald-100 px-1.5">Valid</Badge>
-                          : <Badge variant="destructive" className="text-[10px] px-1.5" title={r.error}>Error</Badge>}
-                      </td>
-                    </tr>
+                          ? <StatusBadge status="Valid" />
+                          : <StatusBadge status="Error" title={r.error} />}
+                      </TableCell>
+                    </TableRow>
                   ))}
-                </tbody>
-              </table>
+                </TableBody>
+              </Table>
             </div>
           </div>
           <DialogFooter>

@@ -5,13 +5,15 @@ import { collection, getDocs } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import { computeRenewalMeta, formatVehicleTimestamp, getVehicleComplianceRequirements, getVehicleTimestampMillis, VEHICLE_COLLECTIONS, type VehicleComplianceRequirements } from '@/lib/vehicle-management';
 import { useAuthorization } from '@/hooks/useAuthorization';
-import { Card, CardContent } from '@/components/ui/card';
 import { PageHeader } from '@/components/shared/page-header';
+import { TableCard } from '@/components/shared/table-card';
+import { FilterBar } from '@/components/shared/filter-bar';
+import { StatusBadge } from '@/components/shared/status-badge';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
 import { Skeleton } from '@/components/ui/skeleton';
 import {
+  Table,
   TableBody,
   TableCell,
   TableHead,
@@ -139,18 +141,6 @@ const toDisplay = (value: any) => {
     return new Date(value.seconds * 1000).toLocaleDateString('en-IN');
   }
   return String(value);
-};
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Category color map
-// ─────────────────────────────────────────────────────────────────────────────
-const categoryColors: Record<string, string> = {
-  Insurance: 'bg-emerald-50 text-emerald-700 border-emerald-200',
-  PUC: 'bg-lime-50 text-lime-700 border-lime-200',
-  Fitness: 'bg-violet-50 text-violet-700 border-violet-200',
-  'Road Tax': 'bg-amber-50 text-amber-700 border-amber-200',
-  Permit: 'bg-indigo-50 text-indigo-700 border-indigo-200',
-  'Driver License': 'bg-blue-50 text-blue-700 border-blue-200',
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -289,43 +279,55 @@ export default function RenewalHistoryPage() {
         ))}
       </div>
 
-      {/* ── Filters ── */}
-      <Card className="vm-panel-strong overflow-hidden">
-        <div className="h-0.5 w-full bg-gradient-to-r from-slate-400 via-zinc-400 to-gray-400" />
-        <CardContent className="flex flex-col gap-3 px-3 pb-4 pt-3 sm:flex-row sm:flex-wrap sm:items-center sm:px-6 sm:pb-6 sm:pt-4">
-          <div className="flex gap-2 overflow-x-auto pb-1">
-            {categories.map((cat) => (
-              <button
-                key={cat}
-                onClick={() => setCategoryFilter(cat)}
-                className={cn(
-                  'shrink-0 rounded-lg px-3 py-1.5 text-xs font-medium transition-all duration-200',
-                  categoryFilter === cat
-                    ? 'bg-slate-800 text-white shadow-sm'
-                    : 'bg-white/80 text-muted-foreground hover:bg-white border border-white/70'
-                )}
-              >
-                {cat}
-                {cat !== 'All' && (
-                  <span className="ml-1 text-[10px] opacity-70">
-                    ({records.filter((r) => r.category === cat).length})
-                  </span>
-                )}
-              </button>
-            ))}
+      {/* ── Register ── */}
+      <TableCard
+        title="Expired Records"
+        icon={History}
+        count={filteredRecords.length}
+        total={records.length}
+        noun="record"
+        toolbar={
+          <div className="space-y-2">
+            <div className="flex gap-2 overflow-x-auto pb-1">
+              {categories.map((cat) => (
+                <button
+                  key={cat}
+                  onClick={() => setCategoryFilter(cat)}
+                  className={cn(
+                    'shrink-0 rounded-lg px-3 py-1.5 text-xs font-medium transition-all duration-200',
+                    categoryFilter === cat
+                      ? 'bg-slate-800 text-white shadow-sm'
+                      : 'bg-white/80 text-muted-foreground hover:bg-white border border-white/70'
+                  )}
+                >
+                  {cat}
+                  {cat !== 'All' && (
+                    <span className="ml-1 text-[10px] opacity-70">
+                      ({records.filter((r) => r.category === cat).length})
+                    </span>
+                  )}
+                </button>
+              ))}
+            </div>
+            <FilterBar
+              search={{ value: query, onChange: setQuery, placeholder: 'Search by vehicle, driver, detail or date...' }}
+              activeCount={categoryFilter !== 'All' ? 1 : 0}
+              onClear={() => { setQuery(''); setCategoryFilter('All'); }}
+            />
           </div>
-          <Input
-            placeholder="Search by vehicle, driver, detail or date..."
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            className="h-11 w-full border-white/70 bg-white/80 focus-visible:ring-slate-400/40 sm:ml-auto sm:h-10 sm:max-w-xs"
-          />
-        </CardContent>
-      </Card>
-
-      {/* ── Table ── */}
-      <Card className="vm-panel-strong overflow-hidden">
-        <CardContent className="p-0">
+        }
+        footer={
+          !isLoading && filteredRecords.length > 0 ? (
+            <VehicleTablePagination
+              currentPage={historyPagination.currentPage}
+              totalPages={historyPagination.totalPages}
+              totalRows={filteredRecords.length}
+              pageSize={historyPagination.pageSize}
+              onPageChange={historyPagination.setCurrentPage}
+            />
+          ) : undefined
+        }
+      >
           {isLoading ? (
             <div className="space-y-2 p-4">
               {Array.from({ length: 5 }).map((_, i) => (
@@ -352,19 +354,13 @@ export default function RenewalHistoryPage() {
                   >
                     <div className="flex items-start justify-between gap-2">
                       <div>
-                        <Badge
-                          className={cn(
-                            'mb-1 border text-[10px]',
-                            categoryColors[rec.category] ?? 'bg-slate-50 text-slate-700'
-                          )}
-                          variant="outline"
-                        >
+                        <Badge variant="outline" className="mb-1">
                           {rec.category}
                         </Badge>
                         <p className="font-semibold text-slate-800">{rec.vehicleOrDriver}</p>
                         <p className="text-xs text-muted-foreground">{rec.detail}</p>
                       </div>
-                      <Badge variant="destructive" className="shrink-0 text-[10px]">
+                      <Badge variant="danger" className="shrink-0">
                         {rec.daysExpired}d ago
                       </Badge>
                     </div>
@@ -383,80 +379,46 @@ export default function RenewalHistoryPage() {
 
               {/* Desktop table */}
               <div className="hidden sm:block">
-                {filteredRecords.length === 0 ? (
-                  <div className="rounded-lg border border-white/70 bg-white/80 px-4 py-10 text-center text-muted-foreground">
-                    No records found.
-                  </div>
-                ) : (
-                <div className="overflow-auto rounded-lg border border-white/70 bg-white/80 h-[calc(100vh-230px)]">
-                  <table className="w-full caption-bottom text-sm">
-                    <TableHeader className="sticky top-0 z-10 bg-slate-50 shadow-sm">
-                      <TableRow>
-                        <TableHead>Category</TableHead>
-                        <TableHead>Vehicle / Driver</TableHead>
-                        <TableHead>Detail / Reference</TableHead>
-                        <TableHead>Expiry Date</TableHead>
-                        <TableHead>Days Expired</TableHead>
-                        <TableHead>Status</TableHead>
-                        <TableHead>Created Time</TableHead>
+                <Table containerClassName="overflow-visible">
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Category</TableHead>
+                      <TableHead>Vehicle / Driver</TableHead>
+                      <TableHead>Detail / Reference</TableHead>
+                      <TableHead>Expiry Date</TableHead>
+                      <TableHead>Days Expired</TableHead>
+                      <TableHead>Status</TableHead>
+                      <TableHead>Created Time</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {historyPagination.paginatedRows.map((rec) => (
+                      <TableRow key={rec.id}>
+                        <TableCell>
+                          <Badge variant="outline">{rec.category}</Badge>
+                        </TableCell>
+                        <TableCell className="font-medium">{rec.vehicleOrDriver}</TableCell>
+                        <TableCell>{rec.detail}</TableCell>
+                        <TableCell className="whitespace-nowrap font-mono">{rec.expiryDate || '—'}</TableCell>
+                        <TableCell>
+                          <Badge variant="danger">
+                            {rec.daysExpired > 0 ? `${rec.daysExpired}d ago` : 'Today'}
+                          </Badge>
+                        </TableCell>
+                        <TableCell>
+                          <StatusBadge status={toDisplay(rec.status)} />
+                        </TableCell>
+                        <TableCell className="whitespace-nowrap">
+                          {rec.createdAt || '—'}
+                        </TableCell>
                       </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {historyPagination.paginatedRows.map((rec) => (
-                        <TableRow
-                          key={rec.id}
-                          className="hover:bg-rose-50/50 transition-colors"
-                        >
-                          <TableCell>
-                            <Badge
-                              className={cn(
-                                'border text-[10px] font-semibold',
-                                categoryColors[rec.category] ?? 'bg-slate-50 text-slate-700'
-                              )}
-                              variant="outline"
-                            >
-                              {rec.category}
-                            </Badge>
-                          </TableCell>
-                          <TableCell className="font-medium">{rec.vehicleOrDriver}</TableCell>
-                          <TableCell className="text-muted-foreground">{rec.detail}</TableCell>
-                          <TableCell>
-                            <span className="font-mono text-xs">{rec.expiryDate || '—'}</span>
-                          </TableCell>
-                          <TableCell>
-                            <Badge variant="destructive" className="text-xs">
-                              {rec.daysExpired > 0 ? `${rec.daysExpired}d ago` : 'Today'}
-                            </Badge>
-                          </TableCell>
-                          <TableCell>
-                            <span className="text-xs text-rose-600 font-medium">
-                              {toDisplay(rec.status)}
-                            </span>
-                          </TableCell>
-                          <TableCell className="text-xs text-muted-foreground">
-                            {rec.createdAt || '—'}
-                          </TableCell>
-                        </TableRow>
-                      ))}
-                    </TableBody>
-                  </table>
-                </div>
-                )}
-              </div>
-
-              <div className="border-t border-white/70 px-4 py-2.5">
-                <VehicleTablePagination
-                  currentPage={historyPagination.currentPage}
-                  totalPages={historyPagination.totalPages}
-                  totalRows={filteredRecords.length}
-                  pageSize={historyPagination.pageSize}
-                  onPageChange={historyPagination.setCurrentPage}
-                />
+                    ))}
+                  </TableBody>
+                </Table>
               </div>
             </>
           )}
-        </CardContent>
-      </Card>
+      </TableCard>
     </div>
   );
 }

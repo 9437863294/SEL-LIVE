@@ -14,7 +14,6 @@ import { BarChart3, FileOutput } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { cn } from "@/lib/utils";
 import { towerProgressHref } from "@/lib/project-management-tower-progress";
 import {
   TOWER_REPORTS,
@@ -114,14 +113,7 @@ function ReportsHub() {
                             {report.title}
                           </CardTitle>
                           {count !== undefined ? (
-                            <Badge
-                              className={cn(
-                                "shrink-0 text-[10px]",
-                                count === 0
-                                  ? "bg-emerald-100 text-emerald-700"
-                                  : "bg-red-100 text-red-700",
-                              )}
-                            >
+                            <Badge variant={count === 0 ? "success" : "danger"} className="shrink-0 tabular-nums">
                               {count}
                             </Badge>
                           ) : report.clientFacing ? (

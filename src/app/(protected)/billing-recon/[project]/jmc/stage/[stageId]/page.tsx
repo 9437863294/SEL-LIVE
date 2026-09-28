@@ -10,7 +10,8 @@ import {
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { PageHeader } from '@/components/shared/page-header';
-import { Card, CardContent } from '@/components/ui/card';
+import { TableCard } from '@/components/shared/table-card';
+import { StatusBadge } from '@/components/shared/status-badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import {
   Table,
@@ -47,7 +48,6 @@ import { useParams, useRouter } from 'next/navigation';
 import { useAuth } from '@/components/auth/AuthProvider';
 import { Skeleton } from '@/components/ui/skeleton';
 import ViewJmcEntryDialog from '@/components/billing-recon/ViewJmcEntryDialog';
-import { Badge } from '@/components/ui/badge';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -465,8 +465,7 @@ export default function StagePage() {
   }
 
   const renderTable = (data: JmcEntry[], type: 'pending' | 'completed') => (
-    <Card>
-      <CardContent className="p-0 overflow-x-auto">
+    <TableCard>
         <Table className="min-w-[880px]">
           <TableHeader>
             <TableRow>
@@ -516,13 +515,7 @@ export default function StagePage() {
                       {formatINR(total)}
                     </TableCell>
                     <TableCell className="whitespace-nowrap">
-                      <Badge
-                        variant={
-                          entry.status === 'Completed' ? 'default' : 'secondary'
-                        }
-                      >
-                        {entry.status}
-                      </Badge>
+                      <StatusBadge status={entry.status} />
                     </TableCell>
                     <TableCell className="text-right">
                       {isActionLoading === entry.id ? (
@@ -594,8 +587,7 @@ export default function StagePage() {
             )}
           </TableBody>
         </Table>
-      </CardContent>
-    </Card>
+    </TableCard>
   );
 
   return (

@@ -19,6 +19,7 @@ import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Switch } from '@/components/ui/switch';
+import { StatusBadge } from '@/components/shared/status-badge';
 import { ChoiceGroup, SettingsSection } from '@/components/appearance/controls';
 import { floatingNavThemeMeta } from '@/components/navigation/themes';
 import { HexColorField } from '@/components/appearance/HexColorField';
@@ -229,10 +230,10 @@ export default function ThemeManagementPage() {
       {/* Draft status and actions */}
       <div className="flex flex-wrap items-center gap-3 rounded-xl border p-3">
         <div className="min-w-0 flex-1 text-sm">
-          <p className="font-medium">
+          <div className="font-medium">
             Live: version {data.published.version || 'built-in'} · Draft {data.draft.updatedAt ? `saved ${new Date(data.draft.updatedAt).toLocaleString()} by ${data.draft.updatedBy}` : 'not saved yet'}
-            {dirty && <span className="ml-2 rounded-full border border-warning/40 px-1.5 py-0.5 text-[11px] font-medium text-warning">Unsaved changes</span>}
-          </p>
+            {dirty && <StatusBadge tone="warning" className="ml-2">Unsaved changes</StatusBadge>}
+          </div>
           {staleDraft && (
             <p className="mt-0.5 text-xs text-warning">
               This draft started from version {data.draft.basedOnVersion}; version {data.published.version} has been published since. Review it before publishing.

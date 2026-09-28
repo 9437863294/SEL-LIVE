@@ -28,6 +28,8 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Skeleton } from '@/components/ui/skeleton';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { PageHeader } from '@/components/shared/page-header';
+import { TableCard } from '@/components/shared/table-card';
+import { StatusBadge } from '@/components/shared/status-badge';
 import { cn } from '@/lib/utils';
 
 // ─── helpers ─────────────────────────────────────────────────────────────────
@@ -40,12 +42,6 @@ const emiStatus = (emi: EMI): 'paid' | 'overdue' | 'pending' => {
   const due = emi.dueDate?.toDate?.();
   if (due && isPast(startOfDay(due))) return 'overdue';
   return 'pending';
-};
-
-const LOAN_STATUS_CFG: Record<string, { cls: string }> = {
-  Active:                { cls: 'bg-emerald-100 text-emerald-700 border-emerald-200' },
-  Closed:                { cls: 'bg-slate-100 text-slate-600 border-slate-200' },
-  'Pre-closure Pending': { cls: 'bg-amber-100 text-amber-700 border-amber-200' },
 };
 
 // ─── page ─────────────────────────────────────────────────────────────────────
@@ -154,7 +150,7 @@ export default function LoanDashboardPage() {
         description="Track loans, EMI schedules, and repayment progress"
         badge={
           stats.overdueCount > 0 && (
-            <Badge className="gap-1.5 bg-red-500/90 text-white shadow-sm text-xs">
+            <Badge variant="danger" className="gap-1.5">
               <AlertTriangle className="h-3 w-3" />
               {stats.overdueCount} EMI{stats.overdueCount !== 1 ? 's' : ''} Overdue
             </Badge>
@@ -300,26 +296,23 @@ export default function LoanDashboardPage() {
       </div>
 
       {/* ── Loans Table ──────────────────────────────────────────────────── */}
-      <Card className="overflow-hidden border-border/60">
-        <CardHeader className="flex flex-row items-center justify-between pb-3">
-          <div>
-            <CardTitle>All Loans</CardTitle>
-            <CardDescription>Click a row to view full EMI schedule</CardDescription>
-          </div>
-          {canCreate && (
-            <Link href="/loan/manage">
-              <Button variant="outline" size="sm" className="gap-1.5 text-xs">
-                <Briefcase className="h-3.5 w-3.5" /> Manage
-              </Button>
-            </Link>
-          )}
-        </CardHeader>
-        <CardContent className="p-0">
+      <TableCard
+        title="All Loans"
+        description="Click a row to view full EMI schedule"
+        count={loansWithProgress.length}
+        noun="loan"
+        actions={canCreate && (
+          <Link href="/loan/manage">
+            <Button variant="outline" size="sm" className="gap-1.5">
+              <Briefcase className="h-3.5 w-3.5" /> Manage
+            </Button>
+          </Link>
+        )}
+      >
           {/* Desktop table */}
-          <div className="hidden overflow-x-auto sm:block">
-            <Table>
+            <Table containerClassName="hidden sm:block">
               <TableHeader>
-                <TableRow className="bg-muted/40 hover:bg-muted/40">
+                <TableRow>
                   <TableHead>Lender</TableHead>
                   <TableHead>A/C No</TableHead>
                   <TableHead>Type</TableHead>
@@ -343,22 +336,21 @@ export default function LoanDashboardPage() {
                     </TableCell>
                   </TableRow>
                 ) : loansWithProgress.map((loan) => {
-                  const statusCfg = LOAN_STATUS_CFG[loan.status] ?? { cls: 'bg-slate-100 text-slate-600' };
                   const hasOverdue = loan.overdueCount > 0;
                   return (
                     <TableRow
                       key={loan.id}
-                      className={cn('cursor-pointer transition-colors', hasOverdue ? 'hover:bg-red-50/30' : 'hover:bg-muted/20')}
+                      className="cursor-pointer"
                       onClick={() => window.location.href = `/loan/${loan.id}`}
                     >
                       <TableCell className="font-medium">{loan.lenderName}</TableCell>
-                      <TableCell className="font-mono text-xs">{loan.accountNo}</TableCell>
+                      <TableCell className="font-mono whitespace-nowrap">{loan.accountNo}</TableCell>
                       <TableCell>
-                        <Badge variant="outline" className="text-[10px]">{loan.loanType || 'Loan'}</Badge>
+                        <Badge variant="outline">{loan.loanType || 'Loan'}</Badge>
                       </TableCell>
-                      <TableCell className="text-right font-semibold">{fmtCur(loan.loanAmount)}</TableCell>
-                      <TableCell className="text-right">{fmtCur(loan.emiAmount)}</TableCell>
-                      <TableCell className="text-sm text-muted-foreground">{format(new Date(loan.startDate), 'dd MMM yyyy')}</TableCell>
+                      <TableCell className="text-right whitespace-nowrap tabular-nums">{fmtCur(loan.loanAmount)}</TableCell>
+                      <TableCell className="text-right whitespace-nowrap tabular-nums">{fmtCur(loan.emiAmount)}</TableCell>
+                      <TableCell className="whitespace-nowrap">{format(new Date(loan.startDate), 'dd MMM yyyy')}</TableCell>
                       <TableCell className="min-w-[120px]">
                         <div className="space-y-1">
                           <div className="flex justify-between text-[11px] text-muted-foreground">
@@ -373,21 +365,19 @@ export default function LoanDashboardPage() {
                           </div>
                         </div>
                       </TableCell>
-                      <TableCell className="text-right font-semibold">{fmtCur(loan.balance)}</TableCell>
+                      <TableCell className="text-right whitespace-nowrap tabular-nums">{fmtCur(loan.balance)}</TableCell>
                       <TableCell>
-                        <Badge variant="outline" className={cn('text-[10px]', statusCfg.cls)}>{loan.status}</Badge>
+                        <StatusBadge status={loan.status} />
                       </TableCell>
                     </TableRow>
                   );
                 })}
               </TableBody>
             </Table>
-          </div>
 
           {/* Mobile cards */}
           <div className="space-y-2 p-3 sm:hidden">
             {loansWithProgress.map((loan) => {
-              const statusCfg = LOAN_STATUS_CFG[loan.status] ?? { cls: 'bg-slate-100 text-slate-600' };
               return (
                 <div key={loan.id} className="rounded-xl border border-border/60 p-3 cursor-pointer hover:bg-muted/30 transition-colors" onClick={() => window.location.href = `/loan/${loan.id}`}>
                   <div className="flex items-start justify-between gap-2 mb-2">
@@ -395,7 +385,7 @@ export default function LoanDashboardPage() {
                       <p className="font-semibold text-sm">{loan.lenderName}</p>
                       <p className="text-xs text-muted-foreground font-mono">{loan.accountNo}</p>
                     </div>
-                    <Badge variant="outline" className={cn('text-[10px] shrink-0', statusCfg.cls)}>{loan.status}</Badge>
+                    <StatusBadge status={loan.status} className="shrink-0" />
                   </div>
                   <div className="grid grid-cols-2 gap-1 text-xs mb-2">
                     <div><span className="text-muted-foreground">Principal: </span><span className="font-medium">{fmtCur(loan.loanAmount)}</span></div>
@@ -410,8 +400,7 @@ export default function LoanDashboardPage() {
               );
             })}
           </div>
-        </CardContent>
-      </Card>
+      </TableCard>
     </div>
   );
 }

@@ -7,6 +7,7 @@ import { Save, Loader2, Plus, Trash2, Library } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { PageHeader } from '@/components/shared/page-header';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { TableCard } from '@/components/shared/table-card';
 import { Input } from '@/components/ui/input';
 import { useToast } from '@/hooks/use-toast';
 import { db } from '@/lib/firebase';
@@ -555,20 +556,20 @@ export default function JmcEntryPage() {
           </CardContent>
         </Card>
 
-        <Card>
-          <CardHeader>
-            <div className="flex items-center justify-between">
-              <div>
-                <CardTitle>JMC Items</CardTitle>
-                <CardDescription>Add one or more items executed under this JMC.</CardDescription>
-              </div>
+        <TableCard
+          title="JMC Items"
+          description="Add one or more items executed under this JMC."
+          actions={
               <Button variant="outline" onClick={() => setIsBoqMultiSelectOpen(true)} disabled={!currentProject}>
                 <Library className="mr-2 h-4 w-4" /> Add Items from BOQ
               </Button>
-            </div>
-          </CardHeader>
-          <CardContent>
-            <div className="overflow-x-auto">
+          }
+          footer={
+            <Button variant="outline" onClick={addItem}>
+              <Plus className="mr-2 h-4 w-4" /> Add Item
+            </Button>
+          }
+        >
               <Table>
                 <TableHeader>
                   <TableRow>
@@ -640,13 +641,7 @@ export default function JmcEntryPage() {
                   ))}
                 </TableBody>
               </Table>
-            </div>
-
-            <Button variant="outline" onClick={addItem} className="mt-4">
-              <Plus className="mr-2 h-4 w-4" /> Add Item
-            </Button>
-          </CardContent>
-        </Card>
+        </TableCard>
       </div>
 
       <BoqMultiSelectDialog

@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from 'react';
 import Link from 'next/link';
-import { CheckCircle2, Loader2, Search, Wallet, XCircle } from 'lucide-react';
+import { CheckCircle2, Loader2, Wallet, XCircle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -22,14 +22,19 @@ import {
   parseTravelDateTime,
   roundMoney,
   summarizeAdvanceAgeing,
+  travelStatusLabel,
   type AdvancePaymentMode,
   type TravelAdvance,
 } from '@/lib/tour-travel';
 import { TravelControlError, approveTravelAdvance, recordAdvancePayment, rejectTravelAdvance } from '@/lib/tour-travel-service';
 import { TT_PERMISSION_MODULE } from './module-layout-shell';
 import { useTravelActor, useTravelCollection, useTravelConfig } from './use-travel-config';
-import { Money, TravelDataList, TravelEmptyState, TravelFilterCard, TravelLoader, TravelSection, TravelStatusBadge, travelDialog } from './travel-ui';
+import { Money, TravelEmptyState, TravelLoader, TravelSection, travelDialog } from './travel-ui';
 import { PageHeader } from '@/components/shared/page-header';
+import { DataList } from '@/components/shared/data-list';
+import { FilterBar } from '@/components/shared/filter-bar';
+import { StatusBadge } from '@/components/shared/status-badge';
+import { TableCard } from '@/components/shared/table-card';
 
 const todayIso = () => new Date().toISOString().slice(0, 10);
 
@@ -162,121 +167,125 @@ export default function AdvancesRegister() {
         </div>
       </TravelSection>
 
-      <TravelFilterCard summary={`${filtered.length} advance(s)`}>
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-          <div className="sm:col-span-2">
-            <Label className="text-xs">Search</Label>
-            <div className="relative">
-              <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
-              <Input className="pl-8" value={search} onChange={event => setSearch(event.target.value)} placeholder="Advance, tour, employee" />
-            </div>
-          </div>
-          <div>
-            <Label className="text-xs">Status</Label>
+      <TableCard
+        title="Advances"
+        icon={Wallet}
+        count={filtered.length}
+        total={records.length}
+        noun="advance"
+        toolbar={
+          <FilterBar
+            search={{ value: search, onChange: setSearch, placeholder: 'Advance, tour, employee' }}
+            activeCount={status !== 'all' ? 1 : 0}
+            onClear={() => { setSearch(''); setStatus('all'); }}
+          >
             <Select value={status} onValueChange={setStatus}>
-              <SelectTrigger><SelectValue /></SelectTrigger>
+              <SelectTrigger aria-label="Status"><SelectValue /></SelectTrigger>
               <SelectContent>
-                <SelectItem value="all">All</SelectItem>
+                <SelectItem value="all">All statuses</SelectItem>
                 <SelectItem value="outstanding">Outstanding</SelectItem>
                 <SelectItem value="overdue">Overdue</SelectItem>
                 {ADVANCE_STATUSES.map(value => <SelectItem key={value} value={value}>{value.replace(/_/g, ' ')}</SelectItem>)}
               </SelectContent>
             </Select>
-          </div>
-        </div>
-      </TravelFilterCard>
-
-      <TravelDataList
-        rows={filtered}
-        rowClassName={row => (row.overdue ? 'bg-rose-50/50 border-rose-200' : undefined)}
-        empty={<TravelEmptyState title="No advances match" description="Advance requests raised against approved tours appear here." icon={Wallet} />}
-        columns={[
-          {
-            header: 'Advance',
-            mobile: 'title',
-            cell: ({ advance }) => (
-              <>
-                <span className="font-medium">{advance.referenceNumber}</span>
-                {advance.outstandingOverride && (
-                  <Badge variant="outline" className="ml-1 border-amber-300 bg-amber-50 text-[10px] text-amber-800">Override</Badge>
-                )}
-              </>
-            ),
-          },
-          { header: 'Employee', mobile: 'title', cell: ({ advance }) => advance.employeeName },
-          { header: 'Status', mobile: 'aside', cell: ({ advance }) => <TravelStatusBadge status={advance.status} /> },
-          {
-            header: 'Tour',
-            className: 'hidden lg:table-cell',
-            cell: ({ advance }) => (
-              <Link href={`/tour-travel/requests/${advance.travelRequestId}`} className="text-sky-700 hover:underline">
-                {advance.travelRequestNumber}
-              </Link>
-            ),
-          },
-          { header: 'Requested', align: 'right', cell: ({ advance }) => <Money value={advance.requestedAmount} /> },
-          { header: 'Approved', align: 'right', className: 'hidden sm:table-cell', cell: ({ advance }) => <Money value={advance.approvedAmount} /> },
-          { header: 'Paid', align: 'right', cell: ({ advance }) => <Money value={advance.paidAmount} /> },
-          {
-            header: 'Outstanding',
-            align: 'right',
-            cell: ({ outstanding }) => (
-              <span className={outstanding > 0 ? 'font-medium text-rose-600' : ''}><Money value={outstanding} /></span>
-            ),
-          },
-          {
-            header: 'Age',
-            className: 'hidden md:table-cell',
-            cell: ({ advance, ageDays, overdue }) =>
-              advance.paidOn ? (
-                <span className={overdue ? 'font-medium text-rose-600' : ''}>{ageDays}d · {advanceAgeingBucket(ageDays)}</span>
-              ) : (
-                <span className="text-muted-foreground">—</span>
-              ),
-          },
-          {
-            header: 'Action',
-            mobile: 'footer',
-            cell: ({ advance }) => (
-              <div className="flex flex-1 flex-wrap gap-1.5">
-                {canApprove && advance.status === 'REQUESTED' && (
+          </FilterBar>
+        }
+      >
+        <div className="p-3 sm:p-0">
+          <DataList
+            frameless
+            rows={filtered}
+            rowClassName={row => (row.overdue ? 'bg-rose-50/50 border-rose-200' : undefined)}
+            empty={<TravelEmptyState title="No advances match" description="Advance requests raised against approved tours appear here." icon={Wallet} />}
+            columns={[
+              {
+                header: 'Advance',
+                mobile: 'title',
+                cell: ({ advance }) => (
                   <>
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      className="h-7 px-2 text-xs text-emerald-700"
-                      onClick={() => { setApproving(advance); setApprovedAmount(advance.requestedAmount); setApprovalRemarks(''); }}
-                    >
-                      <CheckCircle2 className="mr-1 h-3.5 w-3.5" /> Approve
-                    </Button>
-                    <Button size="sm" variant="ghost" className="h-7 px-2 text-xs text-rose-600" onClick={() => { setRejecting(advance); setRejectReason(''); }}>
-                      <XCircle className="mr-1 h-3.5 w-3.5" /> <span className="sm:hidden">Reject</span>
-                    </Button>
+                    <span className="font-medium">{advance.referenceNumber}</span>
+                    {advance.outstandingOverride && (
+                      <Badge variant="warning" className="ml-1">Override</Badge>
+                    )}
                   </>
-                )}
-                {canPay && ['APPROVED', 'PAYMENT_PENDING'].includes(advance.status) && (
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    className="h-7 px-2 text-xs"
-                    onClick={() => {
-                      setPaying(advance);
-                      setPayAmount(roundMoney(advance.approvedAmount - (advance.paidAmount || 0)));
-                      setPayDate(todayIso());
-                      setPayReference('');
-                      setPayCheque('');
-                      setPayBank('');
-                      setPayVoucher('');
-                    }}
-                  >
-                    Record payment
-                  </Button>
-                )}
-              </div>
-            ),
-          },
-        ]}
-      />
+                ),
+              },
+              { header: 'Employee', mobile: 'title', cell: ({ advance }) => advance.employeeName },
+              { header: 'Status', mobile: 'aside', cell: ({ advance }) => <StatusBadge status={advance.status}>{travelStatusLabel(advance.status)}</StatusBadge> },
+              {
+                header: 'Tour',
+                className: 'hidden lg:table-cell',
+                cell: ({ advance }) => (
+                  <Link href={`/tour-travel/requests/${advance.travelRequestId}`} className="text-sky-700 hover:underline">
+                    {advance.travelRequestNumber}
+                  </Link>
+                ),
+              },
+              { header: 'Requested', align: 'right', cell: ({ advance }) => <Money value={advance.requestedAmount} /> },
+              { header: 'Approved', align: 'right', className: 'hidden sm:table-cell', cell: ({ advance }) => <Money value={advance.approvedAmount} /> },
+              { header: 'Paid', align: 'right', cell: ({ advance }) => <Money value={advance.paidAmount} /> },
+              {
+                header: 'Outstanding',
+                align: 'right',
+                cell: ({ outstanding }) => (
+                  <span className={outstanding > 0 ? 'font-medium text-rose-600' : ''}><Money value={outstanding} /></span>
+                ),
+              },
+              {
+                header: 'Age',
+                className: 'hidden md:table-cell',
+                cell: ({ advance, ageDays, overdue }) =>
+                  advance.paidOn ? (
+                    <span className={overdue ? 'font-medium text-rose-600' : ''}>{ageDays}d · {advanceAgeingBucket(ageDays)}</span>
+                  ) : (
+                    <span className="text-muted-foreground">—</span>
+                  ),
+              },
+              {
+                header: 'Action',
+                mobile: 'footer',
+                cell: ({ advance }) => (
+                  <div className="flex flex-1 flex-wrap gap-1.5">
+                    {canApprove && advance.status === 'REQUESTED' && (
+                      <>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="h-7 px-2 text-xs text-emerald-700"
+                          onClick={() => { setApproving(advance); setApprovedAmount(advance.requestedAmount); setApprovalRemarks(''); }}
+                        >
+                          <CheckCircle2 className="mr-1 h-3.5 w-3.5" /> Approve
+                        </Button>
+                        <Button size="sm" variant="ghost" className="h-7 px-2 text-xs text-rose-600" onClick={() => { setRejecting(advance); setRejectReason(''); }}>
+                          <XCircle className="mr-1 h-3.5 w-3.5" /> <span className="sm:hidden">Reject</span>
+                        </Button>
+                      </>
+                    )}
+                    {canPay && ['APPROVED', 'PAYMENT_PENDING'].includes(advance.status) && (
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="h-7 px-2 text-xs"
+                        onClick={() => {
+                          setPaying(advance);
+                          setPayAmount(roundMoney(advance.approvedAmount - (advance.paidAmount || 0)));
+                          setPayDate(todayIso());
+                          setPayReference('');
+                          setPayCheque('');
+                          setPayBank('');
+                          setPayVoucher('');
+                        }}
+                      >
+                        Record payment
+                      </Button>
+                    )}
+                  </div>
+                ),
+              },
+            ]}
+          />
+        </div>
+      </TableCard>
 
       {/* ── Approve ──────────────────────────────────────────────────────────────────────────── */}
       <Dialog open={!!approving} onOpenChange={open => !open && setApproving(null)}>

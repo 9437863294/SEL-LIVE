@@ -60,6 +60,8 @@ import { logUserActivity } from '@/lib/activity-logger';
 import { cn } from '@/lib/utils';
 import { PmDataList, type PmListColumn } from '@/components/project-management/pm-shell';
 import { PageHeader } from '@/components/shared/page-header';
+import { StatusBadge } from '@/components/shared/status-badge';
+import { TableCard } from '@/components/shared/table-card';
 import {
   BOQ_COLUMN_SETTINGS_COLLECTION,
   BOQ_COLUMN_SETTINGS_DOC,
@@ -393,8 +395,8 @@ function parseNumber(value: unknown): { value: number; valid: boolean; empty: bo
   };
 }
 
-// On a phone the mapping rows are cards of their own and the preview scrolls in its own box, so a
-// step's card drops its frame and side padding there rather than boxing them in a second border.
+// On a phone the mapping rows are cards of their own, so the mapping step's card drops its frame
+// and side padding there rather than boxing them in a second border.
 const STEP_CARD = 'max-sm:border-0 max-sm:bg-transparent max-sm:shadow-none';
 const STEP_CARD_HEADER = 'max-sm:px-0 max-sm:pt-0';
 const STEP_CARD_CONTENT = 'max-sm:px-0 max-sm:pb-0';
@@ -1083,7 +1085,7 @@ export default function ImportBoqPage() {
     },
     {
       header: 'Sample value',
-      className: 'max-w-56 truncate text-sm text-muted-foreground',
+      className: 'max-w-56 truncate',
       cell: (field) => {
         const mappedColumn = columnMap[field.key] ?? '';
         return mappedColumn ? cellValueToString(rawRows[0]?.[mappedColumn]) || 'Empty' : '—';
@@ -1096,13 +1098,13 @@ export default function ImportBoqPage() {
         const mappedColumn = columnMap[field.key] ?? '';
         const duplicate = duplicateMappedColumns.has(mappedColumn);
         return duplicate ? (
-          <Badge variant="destructive">Duplicate mapping</Badge>
+          <StatusBadge status="Duplicate mapping" tone="danger" />
         ) : mappedColumn ? (
-          <Badge className="bg-emerald-100 text-emerald-700 hover:bg-emerald-100">Mapped</Badge>
+          <StatusBadge status="Mapped" tone="success" />
         ) : field.required ? (
-          <Badge variant="destructive">Required</Badge>
+          <StatusBadge status="Required" tone="danger" />
         ) : (
-          <Badge variant="outline">Skipped</Badge>
+          <StatusBadge status="Skipped" tone="neutral" />
         );
       },
     },
@@ -1215,7 +1217,7 @@ export default function ImportBoqPage() {
                   Unmapped columns will be imported with their original headings and remain configurable in BOQ settings.
                 </p>
                 <div className="mt-2 flex flex-wrap gap-1.5">
-                  {customColumns.map((column) => <Badge key={column} variant="outline" className="bg-white">{column}</Badge>)}
+                  {customColumns.map((column) => <Badge key={column} variant="neutral">{column}</Badge>)}
                 </div>
               </div>
             )}
@@ -1243,129 +1245,128 @@ export default function ImportBoqPage() {
       )}
 
       {step === 'validation' && (
-        <Card className={STEP_CARD}>
-          <CardHeader className={STEP_CARD_HEADER}>
-            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-              <div className="min-w-0">
-                <CardTitle>Data Validation</CardTitle>
-                <CardDescription>Review row-level errors before importing valid BOQ items.</CardDescription>
+        <TableCard
+          title="Data Validation"
+          description="Review row-level errors before importing valid BOQ items."
+          actions={
+            <>
+              <Badge variant="success">
+                <CheckCircle2 className="mr-1 h-3.5 w-3.5" /> {validRows.length} valid
+              </Badge>
+              <Badge variant={invalidRows.length ? 'danger' : 'neutral'}>
+                <XCircle className="mr-1 h-3.5 w-3.5" /> {invalidRows.length} invalid
+              </Badge>
+              <Badge variant="outline">{validatedRows.length} total</Badge>
+            </>
+          }
+          toolbar={
+            <div className="space-y-2">
+              <div className="flex gap-1 rounded-lg bg-muted p-1 sm:w-fit">
+                {(['all', 'valid', 'invalid'] as ValidationFilter[]).map((filter) => (
+                  <Button
+                    key={filter}
+                    size="sm"
+                    variant={validationFilter === filter ? 'default' : 'ghost'}
+                    onClick={() => setValidationFilter(filter)}
+                    className="flex-1 capitalize sm:flex-none"
+                  >
+                    {filter}
+                  </Button>
+                ))}
               </div>
-              <div className="flex flex-wrap gap-2">
-                <Badge className="bg-emerald-100 text-emerald-700 hover:bg-emerald-100">
-                  <CheckCircle2 className="mr-1 h-3.5 w-3.5" /> {validRows.length} valid
-                </Badge>
-                <Badge className={cn(invalidRows.length ? 'bg-red-100 text-red-700 hover:bg-red-100' : 'bg-muted text-muted-foreground')}>
-                  <XCircle className="mr-1 h-3.5 w-3.5" /> {invalidRows.length} invalid
-                </Badge>
-                <Badge variant="outline">{validatedRows.length} total</Badge>
-              </div>
+              <p className="text-xs text-muted-foreground sm:hidden">Swipe sideways to see all columns</p>
             </div>
-          </CardHeader>
-          <CardContent className={cn('space-y-4', STEP_CARD_CONTENT)}>
-            <div className="flex gap-1 rounded-lg bg-muted p-1 sm:w-fit">
-              {(['all', 'valid', 'invalid'] as ValidationFilter[]).map((filter) => (
-                <Button
-                  key={filter}
-                  size="sm"
-                  variant={validationFilter === filter ? 'default' : 'ghost'}
-                  onClick={() => setValidationFilter(filter)}
-                  className="flex-1 capitalize sm:flex-none"
-                >
-                  {filter}
-                </Button>
-              ))}
-            </div>
-
-            {/* A preview of the sheet itself, so it stays a sheet: scrolled in its own box, with the
-                Description pinned on a phone so each row stays identifiable while swiping. */}
-            <p className="-mb-2 text-xs text-muted-foreground sm:hidden">Swipe sideways to see all columns</p>
-            <div className="max-h-[55vh] overflow-auto rounded-lg border bg-card">
-              <Table>
-                <TableHeader className="sticky top-0 z-10 bg-background">
-                  <TableRow>
-                    <TableHead>Excel row</TableHead>
-                    <TableHead>Status</TableHead>
-                    <TableHead>ERP SL NO</TableHead>
-                    <TableHead>BOQ SL No</TableHead>
-                    <TableHead className="max-sm:sticky max-sm:left-0 max-sm:z-[1] max-sm:bg-background max-sm:shadow-[1px_0_0_0_hsl(var(--border))]">
-                      Description
-                    </TableHead>
-                    <TableHead>QTY</TableHead>
-                    <TableHead>Unit Rate</TableHead>
-                    <TableHead>Budget Price</TableHead>
-                    <TableHead>F&amp;I %</TableHead>
-                    <TableHead>Start Date</TableHead>
-                    <TableHead>End Date</TableHead>
-                    <TableHead>Validation details</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {filteredValidationRows.length ? filteredValidationRows.map((row) => (
-                    <TableRow key={row.rowNumber} className={cn(!row.valid && 'bg-red-50/60')}>
-                      <TableCell>{row.rowNumber}</TableCell>
-                      <TableCell>
-                        {row.valid ? (
-                          <CheckCircle2 className="h-5 w-5 text-emerald-600" />
-                        ) : (
-                          <XCircle className="h-5 w-5 text-red-600" />
-                        )}
-                      </TableCell>
-                      <TableCell>{String(row.data['ERP SL NO'] ?? '') || '—'}</TableCell>
-                      <TableCell>{String(row.data['BOQ SL No'] ?? '')}</TableCell>
-                      <TableCell
-                        className="max-w-64 truncate max-sm:sticky max-sm:left-0 max-sm:max-w-[10rem] max-sm:bg-background max-sm:shadow-[1px_0_0_0_hsl(var(--border))]"
-                        title={String(row.data.Description ?? '')}
-                      >
-                        {String(row.data.Description ?? '')}
-                      </TableCell>
-                      <TableCell>{String(row.data.QTY ?? '')}</TableCell>
-                      <TableCell>{String(row.data['Unit Rate'] ?? '')}</TableCell>
-                      <TableCell>{String(row.data['Budget Price'] ?? '')}</TableCell>
-                      <TableCell>{String(row.data['F&I %'] ?? '')}</TableCell>
-                      <TableCell>{String(row.data['Start Date'] ?? '') || '—'}</TableCell>
-                      <TableCell>{String(row.data['End Date'] ?? '') || '—'}</TableCell>
-                      <TableCell className="min-w-72">
-                        {row.valid ? (
-                          <span className="text-sm text-emerald-700">Passed all validations</span>
-                        ) : (
-                          <ul className="list-disc space-y-1 pl-4 text-xs text-red-700">
-                            {row.errors.map((error, index) => <li key={`${row.rowNumber}-${index}`}>{error}</li>)}
-                          </ul>
-                        )}
-                      </TableCell>
-                    </TableRow>
-                  )) : (
-                    <TableRow><TableCell colSpan={12} className="h-28 text-center">No rows match this filter.</TableCell></TableRow>
-                  )}
-                </TableBody>
-              </Table>
-            </div>
-
-            {invalidRows.length > 0 && (
-              <div className="flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">
-                <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
-                Invalid rows will be skipped. Return to column mapping or correct the Excel file to import them.
-              </div>
-            )}
-
-            {isImporting && (
-              <div className="space-y-2">
-                <div className="flex justify-between text-sm"><span>Importing valid rows…</span><span>{progress}%</span></div>
-                <div className="h-2 overflow-hidden rounded-full bg-muted">
-                  <div className="h-full bg-primary transition-all" style={{ width: `${progress}%` }} />
+          }
+          footer={
+            <div className="space-y-3 py-1.5 text-sm text-foreground">
+              {invalidRows.length > 0 && (
+                <div className="flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">
+                  <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+                  Invalid rows will be skipped. Return to column mapping or correct the Excel file to import them.
                 </div>
-              </div>
-            )}
+              )}
 
-            <div className="flex flex-col-reverse justify-between gap-3 sm:flex-row">
-              <Button variant="outline" onClick={() => setStep('mapping')} disabled={isImporting}>Back to Mapping</Button>
-              <Button onClick={() => void handleImport()} disabled={!validRows.length || isImporting}>
-                {isImporting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <UploadCloud className="mr-2 h-4 w-4" />}
-                Import {validRows.length} Valid Row{validRows.length === 1 ? '' : 's'}
-              </Button>
+              {isImporting && (
+                <div className="space-y-2">
+                  <div className="flex justify-between text-sm"><span>Importing valid rows…</span><span>{progress}%</span></div>
+                  <div className="h-2 overflow-hidden rounded-full bg-muted">
+                    <div className="h-full bg-primary transition-all" style={{ width: `${progress}%` }} />
+                  </div>
+                </div>
+              )}
+
+              <div className="flex flex-col-reverse justify-between gap-3 sm:flex-row">
+                <Button variant="outline" onClick={() => setStep('mapping')} disabled={isImporting}>Back to Mapping</Button>
+                <Button onClick={() => void handleImport()} disabled={!validRows.length || isImporting}>
+                  {isImporting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <UploadCloud className="mr-2 h-4 w-4" />}
+                  Import {validRows.length} Valid Row{validRows.length === 1 ? '' : 's'}
+                </Button>
+              </div>
             </div>
-          </CardContent>
-        </Card>
+          }
+        >
+          {/* A preview of the sheet itself, so it stays a sheet: scrolled in the card, with the
+              Description pinned on a phone so each row stays identifiable while swiping. */}
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Excel row</TableHead>
+                <TableHead>Status</TableHead>
+                <TableHead>ERP SL NO</TableHead>
+                <TableHead>BOQ SL No</TableHead>
+                <TableHead className="max-sm:sticky max-sm:left-0 max-sm:z-[1] max-sm:bg-background max-sm:shadow-[1px_0_0_0_hsl(var(--border))]">
+                  Description
+                </TableHead>
+                <TableHead>QTY</TableHead>
+                <TableHead>Unit Rate</TableHead>
+                <TableHead>Budget Price</TableHead>
+                <TableHead>F&amp;I %</TableHead>
+                <TableHead>Start Date</TableHead>
+                <TableHead>End Date</TableHead>
+                <TableHead>Validation details</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {filteredValidationRows.length ? filteredValidationRows.map((row) => (
+                <TableRow key={row.rowNumber} className={cn(!row.valid && 'bg-red-50/60')}>
+                  <TableCell>{row.rowNumber}</TableCell>
+                  <TableCell>
+                    {row.valid ? (
+                      <CheckCircle2 className="h-5 w-5 text-emerald-600" />
+                    ) : (
+                      <XCircle className="h-5 w-5 text-red-600" />
+                    )}
+                  </TableCell>
+                  <TableCell>{String(row.data['ERP SL NO'] ?? '') || '—'}</TableCell>
+                  <TableCell>{String(row.data['BOQ SL No'] ?? '')}</TableCell>
+                  <TableCell
+                    className="max-w-64 truncate max-sm:sticky max-sm:left-0 max-sm:max-w-[10rem] max-sm:bg-background max-sm:shadow-[1px_0_0_0_hsl(var(--border))]"
+                    title={String(row.data.Description ?? '')}
+                  >
+                    {String(row.data.Description ?? '')}
+                  </TableCell>
+                  <TableCell>{String(row.data.QTY ?? '')}</TableCell>
+                  <TableCell>{String(row.data['Unit Rate'] ?? '')}</TableCell>
+                  <TableCell>{String(row.data['Budget Price'] ?? '')}</TableCell>
+                  <TableCell>{String(row.data['F&I %'] ?? '')}</TableCell>
+                  <TableCell>{String(row.data['Start Date'] ?? '') || '—'}</TableCell>
+                  <TableCell>{String(row.data['End Date'] ?? '') || '—'}</TableCell>
+                  <TableCell className="min-w-72">
+                    {row.valid ? (
+                      <span className="text-emerald-700">Passed all validations</span>
+                    ) : (
+                      <ul className="list-disc space-y-1 pl-4 text-xs text-red-700">
+                        {row.errors.map((error, index) => <li key={`${row.rowNumber}-${index}`}>{error}</li>)}
+                      </ul>
+                    )}
+                  </TableCell>
+                </TableRow>
+              )) : (
+                <TableRow><TableCell colSpan={12} className="text-center">No rows match this filter.</TableCell></TableRow>
+              )}
+            </TableBody>
+          </Table>
+        </TableCard>
       )}
 
       {step === 'summary' && summary && (

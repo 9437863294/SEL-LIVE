@@ -12,7 +12,10 @@ import { useAuthorization } from '@/hooks/useAuthorization';
 import { useAuth } from '@/components/auth/AuthProvider';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
+import { Table, TableBody, TableCell, TableFooter, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { PageHeader } from '@/components/shared/page-header';
+import { TableCard } from '@/components/shared/table-card';
+import { FilterBar } from '@/components/shared/filter-bar';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -20,8 +23,8 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { cn } from '@/lib/utils';
 import {
-  ChevronDown, ChevronRight, Download, ExternalLink, File, Filter,
-  Info, Loader2, PieChart, Target, X,
+  ChevronDown, ChevronRight, Download, ExternalLink, File,
+  Info, Loader2, PieChart, Target,
 } from 'lucide-react';
 import ExcelJS from 'exceljs';
 
@@ -146,7 +149,6 @@ export default function CategoryAnalysisPage() {
   const [filterFrom,     setFilterFrom]     = useState('');
   const [filterTo,       setFilterTo]       = useState('');
   const [filterPerson,   setFilterPerson]   = useState('');
-  const [showFilters,    setShowFilters]    = useState(false);
 
   // ── UI state ──────────────────────────────────────────────────────────────────
   const [expandedCats,   setExpandedCats]   = useState<Set<string>>(new Set());
@@ -382,83 +384,55 @@ export default function CategoryAnalysisPage() {
       <PageHeader
         title="Category-wise Expense Analysis"
         description="Click a category to expand entries · Click an entry for full details"
-        actions={
-          <>
-            <Button
-              variant="outline" size="sm"
-              className={cn('gap-2 h-9', activeFilterCount > 0 && 'border-rose-300 text-rose-700 bg-rose-50')}
-              onClick={() => setShowFilters(s => !s)}
-            >
-              <Filter className="h-3.5 w-3.5" />
-              Filters
-              {activeFilterCount > 0 && (
-                <span className="flex h-4 w-4 items-center justify-center rounded-full bg-rose-600 text-[10px] font-bold text-white leading-none">
-                  {activeFilterCount}
-                </span>
-              )}
-            </Button>
-            {canExport && (
-              <Button variant="outline" size="sm" onClick={exportExcel} disabled={exporting} className="gap-2 h-9">
-                {exporting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
-                Export
-              </Button>
-            )}
-          </>
-        }
+        actions={canExport ? (
+          <Button variant="outline" size="sm" onClick={exportExcel} disabled={exporting} className="gap-2">
+            {exporting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
+            Export
+          </Button>
+        ) : undefined}
       />
 
-      {/* Filter panel */}
-      {showFilters && (
-        <Card className="bg-white/90 border-dashed">
-          <CardContent className="p-3 space-y-2">
-            <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-4">
-              <Select value={filterProject || '_all'} onValueChange={v => setFilterProject(v === '_all' ? '' : v)}>
-                <SelectTrigger className="h-8 text-xs"><SelectValue placeholder="All Projects" /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="_all">All Projects</SelectItem>
-                  {visibleProjects.map(p => <SelectItem key={p.id} value={p.id}>{p.projectName}</SelectItem>)}
-                </SelectContent>
-              </Select>
+      {/* Filters */}
+      <FilterBar activeCount={activeFilterCount} onClear={clearFilters}>
+        <Select value={filterProject || '_all'} onValueChange={v => setFilterProject(v === '_all' ? '' : v)}>
+          <SelectTrigger aria-label="Project"><SelectValue placeholder="All Projects" /></SelectTrigger>
+          <SelectContent>
+            <SelectItem value="_all">All Projects</SelectItem>
+            {visibleProjects.map(p => <SelectItem key={p.id} value={p.id}>{p.projectName}</SelectItem>)}
+          </SelectContent>
+        </Select>
 
-              <Select value={filterCategory || '_all'} onValueChange={v => setFilterCategory(v === '_all' ? '' : v)}>
-                <SelectTrigger className="h-8 text-xs"><SelectValue placeholder="All Categories" /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="_all">All Categories</SelectItem>
-                  {categories.map(c => <SelectItem key={c.id} value={c.name}>{c.name}</SelectItem>)}
-                </SelectContent>
-              </Select>
+        <Select value={filterCategory || '_all'} onValueChange={v => setFilterCategory(v === '_all' ? '' : v)}>
+          <SelectTrigger aria-label="Category"><SelectValue placeholder="All Categories" /></SelectTrigger>
+          <SelectContent>
+            <SelectItem value="_all">All Categories</SelectItem>
+            {categories.map(c => <SelectItem key={c.id} value={c.name}>{c.name}</SelectItem>)}
+          </SelectContent>
+        </Select>
 
-              <Select value={filterMonth || '_all'} onValueChange={v => setFilterMonth(v === '_all' ? '' : v)}>
-                <SelectTrigger className="h-8 text-xs"><SelectValue placeholder="All Months" /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="_all">All Months</SelectItem>
-                  {MONTH_OPTIONS.map(o => <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>)}
-                </SelectContent>
-              </Select>
+        <Select value={filterMonth || '_all'} onValueChange={v => setFilterMonth(v === '_all' ? '' : v)}>
+          <SelectTrigger aria-label="Month"><SelectValue placeholder="All Months" /></SelectTrigger>
+          <SelectContent>
+            <SelectItem value="_all">All Months</SelectItem>
+            {MONTH_OPTIONS.map(o => <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>)}
+          </SelectContent>
+        </Select>
 
-              <Select value={filterMode || '_all'} onValueChange={v => setFilterMode(v === '_all' ? '' : v)}>
-                <SelectTrigger className="h-8 text-xs"><SelectValue placeholder="All Modes" /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="_all">All Modes</SelectItem>
-                  {PAYMENT_MODES.map(m => <SelectItem key={m} value={m}>{m}</SelectItem>)}
-                </SelectContent>
-              </Select>
+        <Select value={filterMode || '_all'} onValueChange={v => setFilterMode(v === '_all' ? '' : v)}>
+          <SelectTrigger aria-label="Payment mode"><SelectValue placeholder="All Modes" /></SelectTrigger>
+          <SelectContent>
+            <SelectItem value="_all">All Modes</SelectItem>
+            {PAYMENT_MODES.map(m => <SelectItem key={m} value={m}>{m}</SelectItem>)}
+          </SelectContent>
+        </Select>
 
-              <Input value={filterFrom} onChange={e => setFilterFrom(e.target.value)} type="date" className="h-8 text-xs" />
-              <Input value={filterTo}   onChange={e => setFilterTo(e.target.value)}   type="date" className="h-8 text-xs" />
-              <Input
-                value={filterPerson} onChange={e => setFilterPerson(e.target.value)}
-                className="h-8 text-xs" placeholder="Expensed by..."
-              />
-            </div>
-            {activeFilterCount > 0 && (
-              <Button variant="ghost" size="sm" className="h-7 text-xs gap-1.5 text-muted-foreground" onClick={clearFilters}>
-                <X className="h-3 w-3" /> Clear all filters
-              </Button>
-            )}
-          </CardContent>
-        </Card>
-      )}
+        <Input value={filterFrom} onChange={e => setFilterFrom(e.target.value)} type="date" aria-label="From date" />
+        <Input value={filterTo}   onChange={e => setFilterTo(e.target.value)}   type="date" aria-label="To date" />
+        <Input
+          value={filterPerson} onChange={e => setFilterPerson(e.target.value)}
+          placeholder="Expensed by..." aria-label="Expensed by"
+        />
+      </FilterBar>
 
       {/* Summary strip */}
       <div className="flex items-center justify-between gap-2 flex-wrap">
@@ -523,29 +497,31 @@ export default function CategoryAnalysisPage() {
           </CardContent>
         </Card>
       ) : (
-        <Card className="bg-white/80 backdrop-blur-sm">
-          <CardContent className="p-0">
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm min-w-[700px]">
-                <thead className="sticky top-0 z-10">
-                  <tr className="border-b bg-slate-100">
-                    <th className="px-4 py-2.5 text-left font-medium min-w-[180px]">Category</th>
-                    <th className="px-4 py-2.5 text-right font-medium whitespace-nowrap">Entries</th>
+        <TableCard
+          title="Category breakdown"
+          // Natural height: an expanded category nests its own table, whose header must not pin.
+          scroll="natural"
+        >
+              <Table className="min-w-[700px]">
+                <TableHeader>
+                  <TableRow>
+                    <TableHead className="min-w-[180px]">Category</TableHead>
+                    <TableHead className="text-right whitespace-nowrap">Entries</TableHead>
                     {hasBudgetData && (
-                      <th className="px-4 py-2.5 text-right font-medium whitespace-nowrap text-emerald-700">
-                        <span className="flex items-center justify-end gap-1"><Target className="h-3.5 w-3.5" />Budget</span>
-                      </th>
+                      <TableHead className="text-right whitespace-nowrap">
+                        <span className="flex items-center justify-end gap-1"><Target className="h-3.5 w-3.5 text-emerald-600" />Budget</span>
+                      </TableHead>
                     )}
-                    <th className="px-4 py-2.5 text-right font-medium whitespace-nowrap">Actual</th>
+                    <TableHead className="text-right whitespace-nowrap">Actual</TableHead>
                     {hasBudgetData && (
-                      <th className="px-4 py-2.5 text-right font-medium whitespace-nowrap">Variance</th>
+                      <TableHead className="text-right whitespace-nowrap">Variance</TableHead>
                     )}
-                    <th className="px-4 py-2.5 text-left font-medium min-w-[160px]">
+                    <TableHead className="min-w-[160px]">
                       {hasBudgetData ? '% Used / Share' : 'Share'}
-                    </th>
-                  </tr>
-                </thead>
-                <tbody>
+                    </TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
                   {categoryGroups.map((grp, idx) => {
                     const isOpen   = expandedCats.has(grp.name);
                     const barColor    = BAR_COLORS[idx % BAR_COLORS.length];
@@ -557,42 +533,39 @@ export default function CategoryAnalysisPage() {
                       <Fragment key={grp.name}>
 
                         {/* ── Category summary row ── */}
-                        <tr
-                          className={cn(
-                            'border-b cursor-pointer select-none transition-colors',
-                            isOpen ? 'bg-slate-50/80' : 'bg-white hover:bg-muted/20'
-                          )}
+                        <TableRow
+                          className={cn('cursor-pointer select-none', isOpen && 'bg-slate-50/80')}
                           onClick={() => toggle(grp.name)}
                         >
-                          <td className="px-4 py-3">
+                          <TableCell>
                             <div className="flex items-center gap-2">
                               {isOpen
                                 ? <ChevronDown  className="h-4 w-4 text-slate-500 shrink-0" />
                                 : <ChevronRight className="h-4 w-4 text-slate-400 shrink-0" />}
                               <span className="text-[11px] text-muted-foreground w-4 shrink-0 tabular-nums">{idx + 1}</span>
-                              <span className="font-semibold text-slate-800">{grp.name}</span>
+                              <span className="font-medium">{grp.name}</span>
                             </div>
-                          </td>
-                          <td className="px-4 py-3 text-right text-muted-foreground tabular-nums">{grp.count}</td>
+                          </TableCell>
+                          <TableCell className="text-right tabular-nums">{grp.count}</TableCell>
                           {hasBudgetData && (
-                            <td className="px-4 py-3 text-right font-medium text-emerald-700 tabular-nums">
+                            <TableCell className="text-right whitespace-nowrap font-medium text-emerald-700 tabular-nums">
                               {grp.budget > 0 ? formatINR(grp.budget) : <span className="text-muted-foreground text-xs">—</span>}
-                            </td>
+                            </TableCell>
                           )}
-                          <td className="px-4 py-3 text-right font-bold text-rose-700 tabular-nums">
+                          <TableCell className="text-right whitespace-nowrap font-medium text-rose-700 tabular-nums">
                             {formatINR(grp.actual)}
-                          </td>
+                          </TableCell>
                           {hasBudgetData && (
-                            <td className={cn('px-4 py-3 text-right font-semibold tabular-nums',
+                            <TableCell className={cn('text-right whitespace-nowrap font-medium tabular-nums',
                               grp.variance === null ? 'text-muted-foreground'
                                 : grp.variance < 0 ? 'text-destructive'
                                 : 'text-indigo-700')}>
                               {grp.variance !== null
                                 ? (grp.variance < 0 ? '−' : '+') + formatINR(Math.abs(grp.variance))
                                 : <span className="text-xs font-normal">—</span>}
-                            </td>
+                            </TableCell>
                           )}
-                          <td className="px-4 py-3">
+                          <TableCell>
                             <div className="space-y-1">
                               {/* Budget usage bar (if budget set) */}
                               {grp.pctUsed !== null ? (
@@ -620,103 +593,101 @@ export default function CategoryAnalysisPage() {
                                 </span>
                               </div>
                             </div>
-                          </td>
-                        </tr>
+                          </TableCell>
+                        </TableRow>
 
                         {/* ── Expanded: individual entries ── */}
                         {isOpen && (
-                          <tr>
-                            <td colSpan={4 + (hasBudgetData ? 2 : 0)} className="p-0 border-b">
-                              <div className={cn('border-l-4 overflow-x-auto', borderColor)}>
-                                <table className="w-full text-xs min-w-[600px]">
-                                  <thead>
-                                    <tr className="border-b bg-slate-100/70">
-                                      <th className="pl-11 pr-3 py-1.5 text-left font-medium text-muted-foreground whitespace-nowrap">Date</th>
+                          <TableRow>
+                            <TableCell colSpan={4 + (hasBudgetData ? 2 : 0)} className="p-0">
+                              <div className={cn('border-l-4', borderColor)}>
+                                <Table className="min-w-[600px]">
+                                  <TableHeader>
+                                    <TableRow>
+                                      <TableHead className="whitespace-nowrap">Date</TableHead>
                                       {showProjectCol && (
-                                        <th className="px-3 py-1.5 text-left font-medium text-muted-foreground">Project</th>
+                                        <TableHead>Project</TableHead>
                                       )}
-                                      <th className="px-3 py-1.5 text-left font-medium text-muted-foreground whitespace-nowrap">Sub-Category</th>
-                                      <th className="px-3 py-1.5 text-left font-medium text-muted-foreground">Narration</th>
-                                      <th className="px-3 py-1.5 text-left font-medium text-muted-foreground whitespace-nowrap">Expensed By</th>
-                                      <th className="px-3 py-1.5 text-left font-medium text-muted-foreground whitespace-nowrap">Mode</th>
-                                      <th className="px-3 py-1.5 text-right font-medium text-muted-foreground whitespace-nowrap">Amount</th>
-                                    </tr>
-                                  </thead>
-                                  <tbody>
+                                      <TableHead className="whitespace-nowrap">Sub-Category</TableHead>
+                                      <TableHead>Narration</TableHead>
+                                      <TableHead className="whitespace-nowrap">Expensed By</TableHead>
+                                      <TableHead className="whitespace-nowrap">Mode</TableHead>
+                                      <TableHead className="text-right whitespace-nowrap">Amount</TableHead>
+                                    </TableRow>
+                                  </TableHeader>
+                                  <TableBody>
                                     {grp.entries.map(e => (
-                                      <tr
+                                      <TableRow
                                         key={e.id}
-                                        className="border-b hover:bg-white/80 cursor-pointer transition-colors"
+                                        className="cursor-pointer"
                                         onClick={ev => { ev.stopPropagation(); setSelectedExpense(e); }}
                                         title="Click to view full details"
                                       >
-                                        <td className="pl-11 pr-3 py-1.5 text-muted-foreground whitespace-nowrap tabular-nums">
+                                        <TableCell className="whitespace-nowrap tabular-nums">
                                           {e.expenseDate ? fmtDate(e.expenseDate) : '—'}
-                                        </td>
+                                        </TableCell>
                                         {showProjectCol && (
-                                          <td className="px-3 py-1.5 text-slate-600 max-w-[160px] truncate" title={e.projectName}>{e.projectName}</td>
+                                          <TableCell className="max-w-[160px] truncate" title={e.projectName}>{e.projectName}</TableCell>
                                         )}
-                                        <td className="px-3 py-1.5 text-slate-500 max-w-[140px] truncate">
+                                        <TableCell className="max-w-[140px] truncate">
                                           {e.expenseSubCategory || <span className="italic text-muted-foreground">—</span>}
-                                        </td>
-                                        <td className="px-3 py-1.5 text-slate-600 max-w-[200px] truncate" title={e.narration || ''}>
+                                        </TableCell>
+                                        <TableCell className="max-w-[200px] truncate" title={e.narration || ''}>
                                           {e.narration || <span className="italic text-muted-foreground">—</span>}
-                                        </td>
-                                        <td className="px-3 py-1.5 text-slate-600 whitespace-nowrap">{e.expensedBy || '—'}</td>
-                                        <td className="px-3 py-1.5">
-                                          <Badge variant="outline" className="text-[9px] px-1.5 py-0 font-normal">{e.paymentMode}</Badge>
-                                        </td>
-                                        <td className="px-3 py-1.5 text-right font-semibold text-rose-700 whitespace-nowrap tabular-nums">
+                                        </TableCell>
+                                        <TableCell className="whitespace-nowrap">{e.expensedBy || '—'}</TableCell>
+                                        <TableCell>
+                                          <Badge variant="neutral">{e.paymentMode}</Badge>
+                                        </TableCell>
+                                        <TableCell className="text-right font-medium text-rose-700 whitespace-nowrap tabular-nums">
                                           {formatINR(e.expenseAmount || 0)}
-                                        </td>
-                                      </tr>
+                                        </TableCell>
+                                      </TableRow>
                                     ))}
-                                  </tbody>
-                                  <tfoot>
-                                    <tr className="bg-slate-100/50 font-semibold border-t">
-                                      <td colSpan={detailCols} className="pl-11 pr-3 py-1.5 text-muted-foreground">
+                                  </TableBody>
+                                  <TableFooter>
+                                    <TableRow>
+                                      <TableCell colSpan={detailCols}>
                                         {grp.count} entr{grp.count !== 1 ? 'ies' : 'y'}
-                                      </td>
-                                      <td className="px-3 py-1.5 text-right text-rose-700 tabular-nums">{formatINR(grp.actual)}</td>
-                                    </tr>
-                                  </tfoot>
-                                </table>
+                                      </TableCell>
+                                      <TableCell className="text-right whitespace-nowrap text-rose-700 tabular-nums">{formatINR(grp.actual)}</TableCell>
+                                    </TableRow>
+                                  </TableFooter>
+                                </Table>
                               </div>
-                            </td>
-                          </tr>
+                            </TableCell>
+                          </TableRow>
                         )}
                       </Fragment>
                     );
                   })}
-                </tbody>
-                <tfoot>
-                  <tr className="bg-muted/30 font-bold border-t-2">
-                    <td className="px-4 py-2.5">
+                </TableBody>
+                <TableFooter>
+                  <TableRow>
+                    <TableCell>
                       Grand Total
                       <span className="ml-2 text-xs font-normal text-muted-foreground">
                         ({categoryGroups.length} categories, {filtered.length} entries)
                       </span>
-                    </td>
-                    <td className="px-4 py-2.5 text-right tabular-nums">{filtered.length}</td>
+                    </TableCell>
+                    <TableCell className="text-right tabular-nums">{filtered.length}</TableCell>
                     {hasBudgetData && (
-                      <td className="px-4 py-2.5 text-right text-emerald-700 tabular-nums">{grandBudget > 0 ? formatINR(grandBudget) : '—'}</td>
+                      <TableCell className="text-right whitespace-nowrap text-emerald-700 tabular-nums">{grandBudget > 0 ? formatINR(grandBudget) : '—'}</TableCell>
                     )}
-                    <td className="px-4 py-2.5 text-right text-rose-700 tabular-nums">{formatINR(grandTotal)}</td>
+                    <TableCell className="text-right whitespace-nowrap text-rose-700 tabular-nums">{formatINR(grandTotal)}</TableCell>
                     {hasBudgetData && (
-                      <td className={cn('px-4 py-2.5 text-right tabular-nums font-bold',
+                      <TableCell className={cn('text-right whitespace-nowrap tabular-nums',
                         grandBudget - grandTotal >= 0 ? 'text-indigo-700' : 'text-destructive')}>
                         {grandBudget > 0
                           ? (grandBudget - grandTotal >= 0 ? '+' : '−') + formatINR(Math.abs(grandBudget - grandTotal))
                           : '—'}
-                      </td>
+                      </TableCell>
                     )}
-                    <td />
-                  </tr>
-                </tfoot>
-              </table>
-            </div>
-          </CardContent>
-        </Card>
+                    <TableCell />
+                  </TableRow>
+                </TableFooter>
+              </Table>
+        </TableCard>
       )}
 
       {/* Expense detail dialog */}

@@ -21,13 +21,17 @@ import {
   CardTitle,
 } from '@/components/ui/card';
 import {
+  Table,
   TableBody,
   TableCell,
   TableHead,
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
+import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
+import { TableCard } from '@/components/shared/table-card';
+import { StatusBadge, type StatusTone } from '@/components/shared/status-badge';
 
 // ─── helpers ────────────────────────────────────────────────────────────────
 
@@ -56,25 +60,14 @@ function getTier(days: number): OverdueTier {
   return 'high';
 }
 
+// The row's left rule carries the tier colour; badges take the shared tones.
 const TIER_STYLES: Record<
   OverdueTier,
-  { badge: string; border: string; days: string }
+  { tone: StatusTone; border: string }
 > = {
-  low: {
-    badge: 'bg-amber-100 text-amber-800',
-    border: 'border-l-amber-400',
-    days: 'text-amber-700 bg-amber-50',
-  },
-  medium: {
-    badge: 'bg-orange-100 text-orange-800',
-    border: 'border-l-orange-400',
-    days: 'text-orange-700 bg-orange-50',
-  },
-  high: {
-    badge: 'bg-rose-100 text-rose-800',
-    border: 'border-l-rose-500',
-    days: 'text-rose-700 bg-rose-50',
-  },
+  low: { tone: 'warning', border: 'border-l-amber-400' },
+  medium: { tone: 'warning', border: 'border-l-orange-400' },
+  high: { tone: 'danger', border: 'border-l-rose-500' },
 };
 
 // ─── types ──────────────────────────────────────────────────────────────────
@@ -296,15 +289,12 @@ export default function OverdueAnalysisPage() {
       </div>
 
       {/* ── Table / empty state ── */}
-      <Card className="overflow-hidden border-border/60">
-        <div className="h-1 w-full bg-gradient-to-r from-rose-400 via-orange-400 to-amber-400 opacity-70" />
-        <CardHeader className="pb-2">
-          <CardTitle>Overdue EMIs</CardTitle>
-          <CardDescription>
-            Color-coded by days overdue — amber ≤7, orange 8–30, rose 30+
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="p-0">
+      <TableCard
+        title="Overdue EMIs"
+        description="Color-coded by days overdue — amber ≤7, orange 8–30, rose 30+"
+        count={rows.length}
+        noun="EMI"
+      >
           {rows.length === 0 ? (
             /* ── empty state ── */
             <div className="flex flex-col items-center justify-center gap-3 px-6 py-16 text-center">
@@ -338,11 +328,7 @@ export default function OverdueAnalysisPage() {
                             {r.loan.accountNo || r.loan.id}
                           </p>
                         </div>
-                        <span
-                          className={`shrink-0 rounded-full px-2 py-0.5 text-[10px] font-semibold ${s.badge}`}
-                        >
-                          {r.emi.status}
-                        </span>
+                        <StatusBadge status={r.emi.status} tone={s.tone} className="shrink-0" />
                       </div>
                       <div className="mt-2 grid grid-cols-3 gap-1 text-xs text-muted-foreground">
                         <div>
@@ -358,11 +344,9 @@ export default function OverdueAnalysisPage() {
                           <span>Due Date</span>
                         </div>
                         <div>
-                          <span
-                            className={`block rounded px-1.5 py-0.5 font-bold tabular-nums ${s.days}`}
-                          >
+                          <Badge variant={s.tone} className="tabular-nums">
                             {r.days}d
-                          </span>
+                          </Badge>
                           <span>Days Past</span>
                         </div>
                       </div>
@@ -375,18 +359,16 @@ export default function OverdueAnalysisPage() {
               </div>
 
               {/* ── Desktop table (hidden sm:block) ── */}
-              <div className="hidden sm:block">
-                <div className="h-[calc(100vh-380px)] overflow-auto [&::-webkit-scrollbar]:h-1.5 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-slate-200">
-                  <table className="w-full caption-bottom text-sm">
-                    <TableHeader className="[&_th]:sticky [&_th]:top-0 [&_th]:z-10 [&_th]:bg-slate-50 [&_th]:shadow-sm">
+                  <Table containerClassName="hidden sm:block">
+                    <TableHeader>
                       <TableRow>
-                        <TableHead className="pl-4 min-w-[160px]">Loan</TableHead>
+                        <TableHead className="min-w-[160px]">Loan</TableHead>
                         <TableHead className="min-w-[160px]">Lender</TableHead>
                         <TableHead className="min-w-[80px] text-center">EMI No</TableHead>
                         <TableHead className="min-w-[130px]">Due Date</TableHead>
                         <TableHead className="min-w-[140px] text-right">EMI Amount</TableHead>
                         <TableHead className="min-w-[120px] text-center">Days Overdue</TableHead>
-                        <TableHead className="min-w-[100px] pr-4 text-center">Status</TableHead>
+                        <TableHead className="min-w-[100px] text-center">Status</TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
@@ -395,9 +377,9 @@ export default function OverdueAnalysisPage() {
                         return (
                           <TableRow
                             key={`${r.loan.id}-${r.emi.id}`}
-                            className={`border-l-4 hover:bg-slate-50/60 transition-colors ${s.border}`}
+                            className={`border-l-4 ${s.border}`}
                           >
-                            <TableCell className="pl-4 font-mono text-xs text-slate-600">
+                            <TableCell className="font-mono whitespace-nowrap">
                               {r.loan.accountNo || r.loan.id}
                             </TableCell>
                             <TableCell className="font-medium">
@@ -406,37 +388,28 @@ export default function OverdueAnalysisPage() {
                             <TableCell className="text-center tabular-nums">
                               {r.emi.emiNo}
                             </TableCell>
-                            <TableCell className="text-slate-600">
+                            <TableCell className="whitespace-nowrap">
                               {fmtDate(r.dueDate)}
                             </TableCell>
-                            <TableCell className="text-right tabular-nums font-medium">
+                            <TableCell className="text-right whitespace-nowrap tabular-nums">
                               {fmt(r.emi.emiAmount)}
                             </TableCell>
                             <TableCell className="text-center">
-                              <span
-                                className={`inline-flex items-center justify-center rounded-full px-2.5 py-0.5 text-xs font-bold tabular-nums ${s.days}`}
-                              >
+                              <Badge variant={s.tone} className="tabular-nums">
                                 {r.days}
-                              </span>
+                              </Badge>
                             </TableCell>
-                            <TableCell className="pr-4 text-center">
-                              <span
-                                className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${s.badge}`}
-                              >
-                                {r.emi.status}
-                              </span>
+                            <TableCell className="text-center">
+                              <StatusBadge status={r.emi.status} tone={s.tone} />
                             </TableCell>
                           </TableRow>
                         );
                       })}
                     </TableBody>
-                  </table>
-                </div>
-              </div>
+                  </Table>
             </>
           )}
-        </CardContent>
-      </Card>
+      </TableCard>
     </div>
   );
 }

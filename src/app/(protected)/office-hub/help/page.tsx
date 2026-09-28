@@ -262,15 +262,7 @@ export default function OfficeHubGuidePage() {
               ['Edit office settings', capabilities.canEditSettings],
             ] as [string, boolean][]
           ).map(([label, allowed]) => (
-            <Badge
-              key={label}
-              variant="outline"
-              className={
-                allowed
-                  ? 'border-emerald-200 bg-emerald-50 text-[11px] text-emerald-700'
-                  : 'border-slate-200 bg-slate-50 text-[11px] text-slate-400'
-              }
-            >
+            <Badge key={label} variant={allowed ? 'success' : 'neutral'}>
               {allowed ? '✓ ' : '· '}
               {label}
             </Badge>

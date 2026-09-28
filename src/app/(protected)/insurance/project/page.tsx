@@ -15,10 +15,8 @@ import {
   MapPin,
   Plus,
   RefreshCw,
-  Search,
   Shield,
   ShieldAlert,
-  X,
 } from 'lucide-react';
 import { addDays, isWithinInterval } from 'date-fns';
 import { collection, getDocs } from 'firebase/firestore';
@@ -30,9 +28,9 @@ import type { InsuredAsset, Project, ProjectInsurancePolicy } from '@/lib/types'
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Input } from '@/components/ui/input';
 import { Skeleton } from '@/components/ui/skeleton';
 import { PageHeader } from '@/components/shared/page-header';
+import { SearchInput } from '@/components/shared/filter-bar';
 import { cn } from '@/lib/utils';
 
 // ─── types ────────────────────────────────────────────────────────────────────
@@ -214,20 +212,7 @@ export default function ProjectInsurancePage() {
 
       {/* ── Search ────────────────────────────────────────────────────────── */}
       <div className="flex items-center gap-2">
-        <div className="relative flex-1 max-w-sm">
-          <Search className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
-          <Input
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search asset, type, location…"
-            className="pl-8 h-9 text-sm"
-          />
-          {search && (
-            <button onClick={() => setSearch('')} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground">
-              <X className="h-3.5 w-3.5" />
-            </button>
-          )}
-        </div>
+        <SearchInput value={search} onChange={setSearch} placeholder="Search asset, type, location…" className="flex-1 sm:max-w-sm" />
         <span className="text-xs text-muted-foreground">{filteredAssets.length} assets</span>
       </div>
 
@@ -320,13 +305,13 @@ export default function ProjectInsurancePage() {
                   {(asset.expiringPolicies > 0 || asset.expiredPolicies > 0) && (
                     <div className="flex flex-wrap gap-1.5 pt-0.5">
                       {asset.expiringPolicies > 0 && (
-                        <Badge className="gap-1 bg-amber-100 text-amber-700 border-amber-200 text-[10px]">
+                        <Badge variant="warning" className="gap-1 text-[10px]">
                           <CalendarClock className="h-2.5 w-2.5" />
                           {asset.expiringPolicies} expiring soon
                         </Badge>
                       )}
                       {asset.expiredPolicies > 0 && (
-                        <Badge className="gap-1 bg-red-100 text-red-700 border-red-200 text-[10px]">
+                        <Badge variant="danger" className="gap-1 text-[10px]">
                           <AlertTriangle className="h-2.5 w-2.5" />
                           {asset.expiredPolicies} expired
                         </Badge>

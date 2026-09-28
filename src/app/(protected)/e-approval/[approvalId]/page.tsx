@@ -41,9 +41,9 @@ import {
   EApprovalConfidentialBadge,
   EApprovalEmptyState,
   EApprovalField,
-  EApprovalPriorityBadge,
-  EApprovalStatusBadge,
+  eApprovalPriorityTone,
 } from '@/components/e-approval/shared';
+import { StatusBadge } from '@/components/shared/status-badge';
 import { EApprovalRichText } from '@/components/e-approval/rich-text-editor';
 import { WorkflowTimeline } from '@/components/e-approval/workflow-timeline';
 import { EApprovalUndoButtons } from '@/components/e-approval/undo-button';
@@ -205,7 +205,14 @@ export default function EApprovalDetailPage() {
         backLabel="Inbox"
         meta={[
           { label: 'Reference', value: <span className="font-mono">{request.referenceNo || 'Draft'}</span> },
-          { label: 'Status', value: <EApprovalStatusBadge status={request.status} /> },
+          {
+            label: 'Status',
+            value: (
+              <StatusBadge status={request.status}>
+                {request.status === 'Superseded' ? <s>Superseded</s> : undefined}
+              </StatusBadge>
+            ),
+          },
           ...(request.amount != null
             ? [
                 {
@@ -215,7 +222,12 @@ export default function EApprovalDetailPage() {
               ]
             : []),
           ...(request.priority !== 'Normal'
-            ? [{ label: 'Priority', value: <EApprovalPriorityBadge priority={request.priority} /> }]
+            ? [
+                {
+                  label: 'Priority',
+                  value: <StatusBadge status={request.priority} tone={eApprovalPriorityTone[request.priority]} />,
+                },
+              ]
             : []),
           ...(request.confidential
             ? [{ label: 'Access', value: <EApprovalConfidentialBadge confidential /> }]

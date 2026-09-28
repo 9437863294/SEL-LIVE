@@ -47,7 +47,6 @@ import {
   PmDataList,
   PmSectionHead,
   PmShell,
-  PmStatusPill,
   PmTableFoot,
   type PmListColumn,
 } from "@/components/project-management/pm-shell";
@@ -66,6 +65,7 @@ import {
 } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { PageHeader } from "@/components/shared/page-header";
+import { StatusBadge } from "@/components/shared/status-badge";
 
 const today = () => {
   const date = new Date();
@@ -386,16 +386,16 @@ export default function NewInspectionCallPage() {
       mobile: "aside",
       cell: ({ ledger }) =>
         ledger.awaitingClearance ? (
-          <PmStatusPill label="Awaiting MC" tone="neutral" />
+          <StatusBadge status="Awaiting MC" tone="neutral" />
         ) : (
           <>
-            <PmStatusPill
-              label={ledger.status}
+            <StatusBadge
+              status={ledger.status}
               tone={
                 ledger.status === "Fully Inspected"
-                  ? "ok"
+                  ? "success"
                   : ledger.status === "Partially Inspected"
-                    ? "wait"
+                    ? "warning"
                     : "neutral"
               }
             />

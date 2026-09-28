@@ -21,7 +21,6 @@ import {
   X,
 } from "lucide-react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
@@ -69,7 +68,8 @@ import {
 } from "@/lib/project-management-tower-service";
 import { PM_DIALOG } from "@/components/project-management/pm-shell";
 import { useTowerProgress } from "./tower-progress-provider";
-import { ActivityStatusBadge } from "./tower-progress-ui";
+import { ACTIVITY_STATUS_TONE } from "./tower-progress-ui";
+import { StatusBadge } from "@/components/shared/status-badge";
 
 /** A file the user has chosen, with the evidence slot they assigned it to. */
 interface StagedPhoto {
@@ -392,7 +392,7 @@ export function ProgressUpdateDialog({
             <div className="space-y-2">
               <Label>New status</Label>
               <div className="flex items-center gap-2">
-                <ActivityStatusBadge status={fromStatus} />
+                <StatusBadge status={fromStatus} tone={ACTIVITY_STATUS_TONE[fromStatus]} />
                 <span className="text-muted-foreground">→</span>
                 <Select
                   value={toStatus}
@@ -532,21 +532,13 @@ export function ProgressUpdateDialog({
             {evidence.length ? (
               <div className="flex flex-wrap gap-1.5">
                 {evidence.map((entry) => (
-                  <Badge
+                  <StatusBadge
                     key={entry.kind}
-                    variant="outline"
-                    className={cn(
-                      "text-[11px]",
-                      entry.onRecord
-                        ? "border-emerald-200 bg-emerald-50 text-emerald-700"
-                        : entry.staged
-                          ? "border-blue-200 bg-blue-50 text-blue-700"
-                          : "border-red-200 bg-red-50 text-red-700",
-                    )}
+                    tone={entry.onRecord ? "success" : entry.staged ? "info" : "danger"}
                   >
                     {entry.onRecord || entry.staged ? "✓" : "✗"} {entry.label}
                     {entry.staged && !entry.onRecord ? " (attaching)" : ""}
-                  </Badge>
+                  </StatusBadge>
                 ))}
               </div>
             ) : null}

@@ -1,7 +1,7 @@
 'use client';
 
 import { useMemo, useState } from 'react';
-import { Check, MessageCircle, Search, UsersRound } from 'lucide-react';
+import { Check, MessageCircle, UsersRound } from 'lucide-react';
 import type { User } from '@/lib/types';
 import { personSearchText, personSubtitle } from '@/lib/people-directory';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
@@ -16,6 +16,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
+import { SearchInput } from '@/components/shared/filter-bar';
 import { Label } from '@/components/ui/label';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { getInitials } from '@/lib/chat';
@@ -222,15 +223,7 @@ export function NewConversationDialog({
 
 function UserSearch({ value, onChange }: { value: string; onChange: (value: string) => void }) {
   return (
-    <div className="relative">
-      <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-      <Input
-        value={value}
-        onChange={(event) => onChange(event.target.value)}
-        placeholder="Search people…"
-        className="pl-9"
-      />
-    </div>
+    <SearchInput value={value} onChange={onChange} placeholder="Search people…" />
   );
 }
 

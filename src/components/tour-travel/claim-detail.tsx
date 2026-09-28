@@ -31,8 +31,11 @@ import {
 } from '@/lib/tour-travel-service';
 import { TT_PERMISSION_MODULE } from './module-layout-shell';
 import { useTravelActor } from './use-travel-config';
-import { Money, TravelDataList, TravelField, TravelLoader, TravelSection, TravelStatusBadge, travelDialog } from './travel-ui';
+import { Money, TravelField, TravelLoader, TravelSection, travelDialog } from './travel-ui';
 import { PageHeader } from '@/components/shared/page-header';
+import { DataList } from '@/components/shared/data-list';
+import { StatusBadge } from '@/components/shared/status-badge';
+import { TableCard } from '@/components/shared/table-card';
 
 /**
  * Claim detail — the employee's view of their tour settlement (spec section 20).
@@ -126,16 +129,16 @@ export default function ClaimDetail({ claimId }: { claimId: string }) {
         description={`${claim.employeeName} · tour ${claim.travelRequestNumber} · claimed ${claim.claimDate}`}
         actions={
           <div className="flex flex-wrap items-center gap-2">
-            <TravelStatusBadge status={claim.status} />
+            <StatusBadge status={claim.status}>{travelStatusLabel(claim.status)}</StatusBadge>
             {claim.financePosted && (
-              <Badge variant="outline" className="gap-1 border-emerald-200 bg-emerald-50 text-emerald-700">
+              <StatusBadge status="Posted" tone="success">
                 <ShieldCheck className="h-3 w-3" /> Posted
-              </Badge>
+              </StatusBadge>
             )}
             {locked && (
-              <Badge variant="outline" className="gap-1 border-slate-300 text-slate-600">
+              <StatusBadge status="Locked" tone="neutral">
                 <Lock className="h-3 w-3" /> Locked
-              </Badge>
+              </StatusBadge>
             )}
           </div>
         }
@@ -212,7 +215,7 @@ export default function ClaimDetail({ claimId }: { claimId: string }) {
               </TableRow>
               <StatementRow label="Less: Company Direct Payment" value={summary.companyPaid} negative />
               <StatementRow label="Less: Advance" value={summary.advancePaid} negative />
-              <TableRow className="border-t-2 text-base font-bold">
+              <TableRow className="border-t-2 font-bold">
                 <TableCell>{summary.outcome === 'Recoverable from employee' ? 'Recoverable from Employee' : 'Payable to Employee'}</TableCell>
                 <TableCell className={summary.outcome === 'Recoverable from employee' ? 'text-right text-rose-600' : 'text-right text-emerald-700'}>
                   <Money value={summary.outcome === 'Recoverable from employee' ? summary.recoverableFromEmployee : summary.payableToEmployee} />
@@ -246,83 +249,91 @@ export default function ClaimDetail({ claimId }: { claimId: string }) {
         </TravelSection>
       </div>
 
-      <TravelSection title="Claim Lines" description={`${items.length} line(s). Claimed amounts are your submission and are never changed.`}>
-        <TravelDataList
-          rows={items}
-          rowClassName={item => (item.policyLimit != null && item.claimedAmount > item.policyLimit ? 'bg-amber-50/40 border-amber-200' : undefined)}
-          columns={[
-            {
-              header: 'Expense',
-              mobile: 'title',
-              cell: item => (
-                <>
-                  <p className="font-medium text-slate-800">
-                    {item.category}
-                    <span className="ml-1.5 text-xs font-normal tabular-nums text-muted-foreground">{item.expenseDate}</span>
-                  </p>
-                  {item.vendor && <p className="text-[11px] font-normal text-muted-foreground">{item.vendor}</p>}
-                  {item.description && <p className="text-[11px] font-normal text-muted-foreground">{item.description}</p>}
-                  {item.paidByCompany && (
-                    <Badge variant="outline" className="mt-0.5 border-slate-300 text-[10px] text-slate-600">Company paid — not reimbursed</Badge>
-                  )}
-                  {item.exceptionReason && <p className="mt-0.5 text-[11px] font-normal italic text-amber-800">Reason: {item.exceptionReason}</p>}
-                </>
-              ),
-            },
-            {
-              header: 'Claimed',
-              align: 'right',
-              mobile: 'aside',
-              cell: item => <span className="font-semibold tabular-nums"><Money value={item.claimedAmount} /></span>,
-            },
-            { header: 'Date', className: 'hidden lg:table-cell', mobile: 'omit', cell: item => <span className="tabular-nums">{item.expenseDate}</span> },
-            {
-              header: 'Entitlement',
-              align: 'right',
-              cell: item => (item.policyLimit == null ? <span className="text-muted-foreground">—</span> : <Money value={item.policyLimit} />),
-            },
-            {
-              header: 'Allowed',
-              align: 'right',
-              cell: item =>
-                item.approvedAmount == null ? (
-                  <span className="text-muted-foreground">Pending</span>
-                ) : (
-                  <span className={item.disallowedAmount > 0 ? 'text-rose-600' : ''}>
-                    <Money value={item.approvedAmount} />
-                  </span>
+      <TableCard
+        title="Claim Lines"
+        description="Claimed amounts are your submission and are never changed."
+        count={items.length}
+        noun="line"
+      >
+        <div className="p-3 sm:p-0">
+          <DataList
+            frameless
+            rows={items}
+            rowClassName={item => (item.policyLimit != null && item.claimedAmount > item.policyLimit ? 'bg-amber-50/40 border-amber-200' : undefined)}
+            columns={[
+              {
+                header: 'Expense',
+                mobile: 'title',
+                cell: item => (
+                  <>
+                    <p className="font-medium text-slate-800">
+                      {item.category}
+                      <span className="ml-1.5 text-xs font-normal tabular-nums text-muted-foreground">{item.expenseDate}</span>
+                    </p>
+                    {item.vendor && <p className="text-[11px] font-normal text-muted-foreground">{item.vendor}</p>}
+                    {item.description && <p className="text-[11px] font-normal text-muted-foreground">{item.description}</p>}
+                    {item.paidByCompany && (
+                      <Badge variant="outline" className="mt-0.5">Company paid — not reimbursed</Badge>
+                    )}
+                    {item.exceptionReason && <p className="mt-0.5 text-[11px] font-normal italic text-amber-800">Reason: {item.exceptionReason}</p>}
+                  </>
                 ),
-            },
-            {
-              header: 'Remarks',
-              className: 'hidden md:table-cell max-w-[14rem]',
-              cell: item => <span className="text-xs text-muted-foreground">{item.verifierRemarks || item.policyNote}</span>,
-            },
-            ...(canSubmit
-              ? [
-                  {
-                    header: 'Action',
-                    mobile: 'footer' as const,
-                    cell: (item: TravelClaimItem) =>
-                      item.policyLimit != null && item.claimedAmount > item.policyLimit ? (
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          className="h-7 px-2 text-xs"
-                          onClick={() => {
-                            setExceptionItem(item);
-                            setExceptionReason(item.exceptionReason || '');
-                          }}
-                        >
-                          {item.exceptionReason ? 'Edit reason' : 'Explain'}
-                        </Button>
-                      ) : null,
-                  },
-                ]
-              : []),
-          ]}
-        />
-      </TravelSection>
+              },
+              {
+                header: 'Claimed',
+                align: 'right',
+                mobile: 'aside',
+                cell: item => <span className="font-semibold tabular-nums"><Money value={item.claimedAmount} /></span>,
+              },
+              { header: 'Date', className: 'hidden lg:table-cell', mobile: 'omit', cell: item => <span className="tabular-nums">{item.expenseDate}</span> },
+              {
+                header: 'Entitlement',
+                align: 'right',
+                cell: item => (item.policyLimit == null ? <span className="text-muted-foreground">—</span> : <Money value={item.policyLimit} />),
+              },
+              {
+                header: 'Allowed',
+                align: 'right',
+                cell: item =>
+                  item.approvedAmount == null ? (
+                    <span className="text-muted-foreground">Pending</span>
+                  ) : (
+                    <span className={item.disallowedAmount > 0 ? 'text-rose-600' : ''}>
+                      <Money value={item.approvedAmount} />
+                    </span>
+                  ),
+              },
+              {
+                header: 'Remarks',
+                className: 'hidden md:table-cell max-w-[14rem]',
+                cell: item => <span className="text-xs text-muted-foreground">{item.verifierRemarks || item.policyNote}</span>,
+              },
+              ...(canSubmit
+                ? [
+                    {
+                      header: 'Action',
+                      mobile: 'footer' as const,
+                      cell: (item: TravelClaimItem) =>
+                        item.policyLimit != null && item.claimedAmount > item.policyLimit ? (
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            className="h-7 px-2 text-xs"
+                            onClick={() => {
+                              setExceptionItem(item);
+                              setExceptionReason(item.exceptionReason || '');
+                            }}
+                          >
+                            {item.exceptionReason ? 'Edit reason' : 'Explain'}
+                          </Button>
+                        ) : null,
+                    },
+                  ]
+                : []),
+            ]}
+          />
+        </div>
+      </TableCard>
 
       <Dialog open={!!exceptionItem} onOpenChange={open => !open && setExceptionItem(null)}>
         <DialogContent className={travelDialog.content}>
@@ -374,8 +385,8 @@ function StatementRow({ label, value, negative }: { label: string; value: number
   if (value === 0 && negative) return null;
   return (
     <TableRow>
-      <TableCell className="text-sm text-muted-foreground">{label}</TableCell>
-      <TableCell className="text-right text-sm">
+      <TableCell>{label}</TableCell>
+      <TableCell className="text-right">
         {negative ? '− ' : ''}
         <Money value={value} />
       </TableCell>

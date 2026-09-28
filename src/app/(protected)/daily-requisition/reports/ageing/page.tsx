@@ -10,9 +10,13 @@ import { useAuthorization } from '@/hooks/useAuthorization';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
-import { TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { Badge } from '@/components/ui/badge';
+import { StatusBadge, type StatusTone } from '@/components/shared/status-badge';
+import { TableCard } from '@/components/shared/table-card';
 import type { DailyRequisitionEntry } from '@/lib/types';
 import {
+  DAILY_STATUS_TONE,
   DailyMetricCard,
   dailyPageContainerClass,
   dailySurfaceCardClass,
@@ -36,7 +40,7 @@ interface AgeBracket {
   max: number;
   color: string;
   bgColor: string;
-  badgeClass: string;
+  tone: StatusTone;
   barClass: string;
 }
 
@@ -47,7 +51,7 @@ const BRACKETS: AgeBracket[] = [
     max: 3,
     color: 'text-emerald-700',
     bgColor: 'bg-emerald-50 border-emerald-200',
-    badgeClass: 'bg-emerald-100 text-emerald-700',
+    tone: 'success',
     barClass: 'bg-gradient-to-r from-emerald-400 to-emerald-500',
   },
   {
@@ -56,7 +60,7 @@ const BRACKETS: AgeBracket[] = [
     max: 7,
     color: 'text-sky-700',
     bgColor: 'bg-sky-50 border-sky-200',
-    badgeClass: 'bg-sky-100 text-sky-700',
+    tone: 'info',
     barClass: 'bg-gradient-to-r from-sky-400 to-sky-500',
   },
   {
@@ -65,7 +69,7 @@ const BRACKETS: AgeBracket[] = [
     max: 15,
     color: 'text-amber-700',
     bgColor: 'bg-amber-50 border-amber-200',
-    badgeClass: 'bg-amber-100 text-amber-700',
+    tone: 'warning',
     barClass: 'bg-gradient-to-r from-amber-400 to-amber-500',
   },
   {
@@ -74,7 +78,7 @@ const BRACKETS: AgeBracket[] = [
     max: 30,
     color: 'text-orange-700',
     bgColor: 'bg-orange-50 border-orange-200',
-    badgeClass: 'bg-orange-100 text-orange-700',
+    tone: 'warning',
     barClass: 'bg-gradient-to-r from-orange-400 to-orange-500',
   },
   {
@@ -83,7 +87,7 @@ const BRACKETS: AgeBracket[] = [
     max: Infinity,
     color: 'text-rose-700',
     bgColor: 'bg-rose-50 border-rose-200',
-    badgeClass: 'bg-rose-100 text-rose-700',
+    tone: 'danger',
     barClass: 'bg-gradient-to-r from-rose-400 to-rose-500',
   },
 ];
@@ -241,9 +245,9 @@ export default function AgeingReportPage() {
         description="Open requisitions (excluding Paid and Cancelled) sorted by age — oldest first. Live snapshot, no date filter."
         backHref="/daily-requisition/reports"
         meta={
-          <span className="rounded-full border border-white/70 bg-white/70 px-3 py-1 text-xs text-slate-600 backdrop-blur">
+          <Badge variant="neutral">
             Live — as of today
-          </span>
+          </Badge>
         }
         actions={
           <Button
@@ -292,57 +296,50 @@ export default function AgeingReportPage() {
       </div>
 
       {/* Ageing table */}
-      <Card className={dailySurfaceCardClass}>
-        <div className="h-1 w-full bg-gradient-to-r from-red-400 via-rose-400 to-pink-400 opacity-70" />
-        <CardHeader className="pb-2">
-          <CardTitle className="text-base">Open Requisitions</CardTitle>
-          <CardDescription>Sorted oldest first. Age calculated from created date to today.</CardDescription>
-        </CardHeader>
-        <CardContent className="p-0">
+      <TableCard
+        title="Open Requisitions"
+        description="Sorted oldest first. Age calculated from created date to today."
+        count={rows.length}
+      >
           {rows.length === 0 ? (
             <div className="px-6 py-12 text-center text-sm text-muted-foreground">
               No open requisitions found — everything is up to date.
             </div>
           ) : (
-            <div className="overflow-auto [&::-webkit-scrollbar]:h-1.5 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-slate-200 h-[calc(100vh-420px)]">
-              <table className="w-full caption-bottom text-sm">
-                <TableHeader className="[&_th]:sticky [&_th]:top-0 [&_th]:z-10 [&_th]:bg-slate-50 [&_th]:shadow-sm">
+              <Table>
+                <TableHeader>
                   <TableRow>
-                    <TableHead className="pl-4 min-w-[120px]">Reception No</TableHead>
+                    <TableHead className="min-w-[120px]">Reception No</TableHead>
                     <TableHead className="min-w-[160px]">Party</TableHead>
                     <TableHead className="min-w-[130px]">Department</TableHead>
                     <TableHead className="min-w-[160px]">Status</TableHead>
                     <TableHead className="min-w-[120px]">Created Date</TableHead>
                     <TableHead className="text-right min-w-[90px]">Age (days)</TableHead>
-                    <TableHead className="text-right min-w-[120px] pr-4">Net Amount</TableHead>
+                    <TableHead className="text-right min-w-[120px]">Net Amount</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {rows.map(({ entry: e, age, bracket }) => (
-                    <TableRow key={e.id} className="hover:bg-slate-50/60 transition-colors">
-                      <TableCell className="pl-4 font-mono text-xs">{e.receptionNo}</TableCell>
+                    <TableRow key={e.id}>
+                      <TableCell className="whitespace-nowrap font-mono">{e.receptionNo}</TableCell>
                       <TableCell className="font-medium">{e.partyName}</TableCell>
-                      <TableCell className="text-slate-600 text-xs">{e.departmentId || '—'}</TableCell>
-                      <TableCell>
-                        <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${bracket.badgeClass}`}>
-                          {e.status}
-                        </span>
+                      <TableCell>{e.departmentId || '—'}</TableCell>
+                      <TableCell className="whitespace-nowrap">
+                        <StatusBadge status={e.status} tone={DAILY_STATUS_TONE[e.status]}>{e.status}</StatusBadge>
                       </TableCell>
-                      <TableCell className="text-slate-600">{formatDate(e.createdAt)}</TableCell>
+                      <TableCell className="whitespace-nowrap">{formatDate(e.createdAt)}</TableCell>
                       <TableCell className="text-right">
-                        <span className={`inline-flex items-center justify-center rounded-full px-2.5 py-0.5 text-xs font-bold tabular-nums ${bracket.badgeClass}`}>
+                        <Badge variant={bracket.tone} className="tabular-nums">
                           {age}
-                        </span>
+                        </Badge>
                       </TableCell>
-                      <TableCell className="text-right tabular-nums pr-4">{fmt(e.netAmount || 0)}</TableCell>
+                      <TableCell className="whitespace-nowrap text-right tabular-nums">{fmt(e.netAmount || 0)}</TableCell>
                     </TableRow>
                   ))}
                 </TableBody>
-              </table>
-            </div>
+              </Table>
           )}
-        </CardContent>
-      </Card>
+      </TableCard>
     </div>
   );
 }

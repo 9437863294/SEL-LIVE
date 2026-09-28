@@ -10,7 +10,6 @@ import {
   Loader2,
   Plus,
   Save,
-  Search,
   ShieldAlert,
   ShoppingCart,
   Trash2,
@@ -25,7 +24,7 @@ import {
 } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import { cn } from "@/lib/utils";
-import { MDL_COLLECTION, mdlOverallStatusStyles, type MdlDrawing } from "@/lib/mdl";
+import { MDL_COLLECTION, type MdlDrawing } from "@/lib/mdl";
 import { useAuth } from "@/components/auth/AuthProvider";
 import { useAuthorization } from "@/hooks/useAuthorization";
 import { useToast } from "@/hooks/use-toast";
@@ -59,6 +58,9 @@ import {
   type PmListColumn,
 } from "@/components/project-management/pm-shell";
 import { PageHeader } from "@/components/shared/page-header";
+import { SearchInput } from "@/components/shared/filter-bar";
+import { StatusBadge } from "@/components/shared/status-badge";
+import { pmStatusTone } from "@/components/project-management/pm-status-tones";
 import {
   PO_COLLECTION,
   PO_PERMISSION_RESOURCE,
@@ -476,9 +478,7 @@ export default function NewProjectPurchaseOrderPage() {
     const isApproved = status === "Approved" || status === "Approved with Comments";
     return (
       <div className="flex flex-col items-start gap-1">
-        <span className={cn("rounded-full px-2 py-0.5 text-[10px] font-medium", mdlOverallStatusStyles[status])}>
-          {status}
-        </span>
+        <StatusBadge status={status} tone={pmStatusTone(status)} />
         {isApproved && (
           <label className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
             <Checkbox
@@ -802,7 +802,7 @@ export default function NewProjectPurchaseOrderPage() {
         </div>
       ),
     },
-    { header: "BOQ SL No", className: "whitespace-nowrap text-xs text-muted-foreground", cell: ({ item }) => item.boqSlNo || "—" },
+    { header: "BOQ SL No", className: "whitespace-nowrap", cell: ({ item }) => item.boqSlNo || "—" },
     {
       header: "Description",
       className: "min-w-[200px] max-w-xs truncate",
@@ -812,7 +812,6 @@ export default function NewProjectPurchaseOrderPage() {
     { header: "Unit", cell: ({ item }) => item.unit || "—" },
     {
       header: "BOQ Qty",
-      className: "text-muted-foreground",
       cell: ({ item }) => {
         const boqQty = boqQtyByItemId[item.boqItemId];
         return typeof boqQty === "number" ? formatQuantity(boqQty) : "—";
@@ -840,7 +839,7 @@ export default function NewProjectPurchaseOrderPage() {
         </div>
       ),
     },
-    { header: "BOQ SL No", className: "whitespace-nowrap text-xs text-muted-foreground", cell: ({ item }) => item.boqSlNo || "—" },
+    { header: "BOQ SL No", className: "whitespace-nowrap", cell: ({ item }) => item.boqSlNo || "—" },
     {
       header: "Description",
       className: "min-w-[200px] max-w-xs truncate",
@@ -850,7 +849,6 @@ export default function NewProjectPurchaseOrderPage() {
     { header: "Unit", cell: ({ item }) => item.unit || "—" },
     {
       header: "BOQ Qty",
-      className: "text-muted-foreground",
       cell: ({ item }) => {
         const boqQty = boqQtyByItemId[item.boqItemId];
         return typeof boqQty === "number" ? formatQuantity(boqQty) : "—";
@@ -873,8 +871,8 @@ export default function NewProjectPurchaseOrderPage() {
         </div>
       ),
     },
-    { header: "ERP SL No", className: "whitespace-nowrap text-xs text-muted-foreground", cell: (item) => String(item["ERP SL NO"] ?? "—") },
-    { header: "BOQ SL No", className: "whitespace-nowrap text-xs text-muted-foreground", cell: (item) => String(item["BOQ SL No"] ?? "—") },
+    { header: "ERP SL No", className: "whitespace-nowrap", cell: (item) => String(item["ERP SL NO"] ?? "—") },
+    { header: "BOQ SL No", className: "whitespace-nowrap", cell: (item) => String(item["BOQ SL No"] ?? "—") },
     {
       header: "Description",
       className: "min-w-[200px] max-w-xs truncate",
@@ -884,12 +882,11 @@ export default function NewProjectPurchaseOrderPage() {
     { header: "Units", cell: (item) => String(item.Unit ?? "—") },
     { header: "QTY", cell: (item) => formatQuantity(toNumber(item.QTY)) },
     { header: "Unit Rate", cell: (item) => formatCurrency(toNumber(item["Unit Rate"])) },
-    { header: "Budget Price", className: "text-muted-foreground", cell: (item) => formatCurrency(toNumber(item["Budget Price"])) },
+    { header: "Budget Price", cell: (item) => formatCurrency(toNumber(item["Budget Price"])) },
     // The two totals are QTY times a rate already on the card, so a phone leaves them out of a
     // picker that may list hundreds of items.
     {
       header: "Total Budget Price",
-      className: "text-muted-foreground",
       mobile: "omit",
       cell: (item) => formatCurrency(toNumber(item.QTY) * toNumber(item["Budget Price"])),
     },
@@ -899,8 +896,8 @@ export default function NewProjectPurchaseOrderPage() {
       mobile: "omit",
       cell: (item) => formatCurrency(toNumber(item["Total Amount"]) || toNumber(item.QTY) * toNumber(item["Unit Rate"])),
     },
-    { header: "Indent Qty", className: "text-muted-foreground", cell: (item) => formatQuantity(indentQtyByBoqItemId.get(item.id) ?? 0) },
-    { header: "PO Qty", className: "text-muted-foreground", cell: (item) => formatQuantity(poQtyByBoqItemId.get(item.id) ?? 0) },
+    { header: "Indent Qty", cell: (item) => formatQuantity(indentQtyByBoqItemId.get(item.id) ?? 0) },
+    { header: "PO Qty", cell: (item) => formatQuantity(poQtyByBoqItemId.get(item.id) ?? 0) },
   ];
 
   const lineRows: LineRow[] = [
@@ -1005,7 +1002,6 @@ export default function NewProjectPurchaseOrderPage() {
     },
     {
       header: "BOQ Qty",
-      className: "text-muted-foreground",
       cell: (line) => {
         if (line.source === "manual") return "—";
         if (line.source === "boq") return formatQuantity(toNumber(line.item.QTY));
@@ -1015,7 +1011,6 @@ export default function NewProjectPurchaseOrderPage() {
     },
     {
       header: "Indent Qty",
-      className: "text-muted-foreground",
       cell: (line) =>
         line.source === "rfq"
           ? formatQuantity(line.item.qty)
@@ -1037,7 +1032,6 @@ export default function NewProjectPurchaseOrderPage() {
     },
     {
       header: "Source",
-      className: "text-xs text-muted-foreground",
       mobile: "title",
       cell: (line) =>
         line.source === "rfq"
@@ -1250,10 +1244,7 @@ export default function NewProjectPurchaseOrderPage() {
             </TabsContent>
 
             <TabsContent value="boq" className="space-y-3 pt-3">
-              <div className="relative">
-                <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
-                <Input placeholder="Search ERP SL No, BOQ SL No or description..." className="pl-8" value={boqSearch} onChange={(e) => setBoqSearch(e.target.value)} />
-              </div>
+              <SearchInput placeholder="Search ERP SL No, BOQ SL No or description..." value={boqSearch} onChange={setBoqSearch} />
               <p className="text-xs text-muted-foreground">Showing Scope 2 = Supply items only.</p>
               {/* The picker scrolls inside its own box at every width, so a long BOQ does not push
                   the items table out of reach: this wrapper on a phone, the table's own wrapper

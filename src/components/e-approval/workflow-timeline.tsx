@@ -26,7 +26,8 @@ import {
   type EApprovalStepStatus,
   type EApprovalTimelineNode,
 } from '@/lib/e-approval';
-import { EApprovalOutcomeBadge, EApprovalSlaBadge } from './shared';
+import { StatusBadge } from '@/components/shared/status-badge';
+import { eApprovalOutcomeTone, EApprovalSlaBadge } from './shared';
 import { formatEApprovalAmount, formatEApprovalDateTime } from './hooks';
 
 const statusIcon: Record<EApprovalStepStatus, typeof CheckCircle2> = {
@@ -158,17 +159,13 @@ function NodeBody({ node, isLast, onSelectStep, now }: NodeProps) {
             <span className="text-sm font-semibold">{node.label}</span>
             <span className="sr-only">({step.status})</span>
             {step.type !== 'APPROVAL' && (
-              <Badge variant="outline" className="border-violet-200 bg-violet-50 text-[10px] text-violet-700">
+              <Badge variant="neutral">
                 {step.type === 'CLARIFICATION' ? 'Clarification' : step.type === 'REVIEW' ? 'Review' : 'Verification'}
               </Badge>
             )}
-            <EApprovalOutcomeBadge outcome={step.outcome} />
+            {step.outcome && <StatusBadge status={step.outcome} tone={eApprovalOutcomeTone[step.outcome]} />}
             {step.status === 'Active' && <EApprovalSlaBadge step={step} now={now} />}
-            {step.reopened && (
-              <Badge variant="outline" className="border-orange-200 bg-orange-50 text-[10px] text-orange-700">
-                Re-opened
-              </Badge>
-            )}
+            {step.reopened && <StatusBadge status="Re-opened" tone="warning" />}
             {step.groupMode && step.groupMode !== 'Single' && (
               <Badge variant="outline" className="text-[10px]">
                 {step.groupMode === 'All' ? 'All must approve' : step.groupMode === 'Any' ? 'Any one' : 'N of M'}

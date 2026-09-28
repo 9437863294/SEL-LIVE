@@ -13,8 +13,11 @@ import { useAuthorization } from '@/hooks/useAuthorization';
 import { useActivityLogger } from '@/hooks/useActivityLogger';
 import { useToast } from '@/hooks/use-toast';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent } from '@/components/ui/card';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { PageHeader } from '@/components/shared/page-header';
+import { TableCard } from '@/components/shared/table-card';
+import { SearchInput } from '@/components/shared/filter-bar';
+import { StatusBadge } from '@/components/shared/status-badge';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
@@ -344,15 +347,11 @@ export default function ExpenseCategoriesPage() {
         ) : undefined}
       />
 
-      <Input
-        placeholder="Search categories..."
-        value={search}
-        onChange={e => setSearch(e.target.value)}
-        className="max-w-xs"
-      />
-
-      <Card className="bg-white/80 backdrop-blur-sm">
-        <CardContent className="p-0">
+      <TableCard
+        title="Categories"
+        icon={Tags}
+        toolbar={<SearchInput placeholder="Search categories..." value={search} onChange={setSearch} className="sm:max-w-xs" />}
+      >
           {displayRows.length === 0 ? (
             <div className="flex flex-col items-center gap-3 py-12 text-center">
               <Tags className="h-10 w-10 text-muted-foreground/40" />
@@ -367,57 +366,51 @@ export default function ExpenseCategoriesPage() {
               )}
             </div>
           ) : (
-            <div className="overflow-x-auto overflow-y-auto max-h-[60vh]">
-              <table className="w-full min-w-[600px] text-sm">
-                <thead className="sticky top-0 z-10">
-                  <tr className="border-b bg-slate-100">
-                    <th className="px-4 py-2.5 text-left font-medium">#</th>
-                    <th className="px-4 py-2.5 text-left font-medium">Category Name</th>
-                    <th className="px-4 py-2.5 text-left font-medium">Type</th>
-                    <th className="px-4 py-2.5 text-left font-medium">Description</th>
-                    <th className="px-4 py-2.5 text-center font-medium">Status</th>
-                    {(canEdit || canDelete) && <th className="px-4 py-2.5 text-right font-medium">Actions</th>}
-                  </tr>
-                </thead>
-                <tbody>
+              <Table className="min-w-[600px]">
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>#</TableHead>
+                    <TableHead>Category Name</TableHead>
+                    <TableHead>Type</TableHead>
+                    <TableHead>Description</TableHead>
+                    <TableHead className="text-center">Status</TableHead>
+                    {(canEdit || canDelete) && <TableHead className="text-right">Actions</TableHead>}
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
                   {displayRows.map((row, idx) => (
-                    <tr
+                    <TableRow
                       key={row.id}
-                      className={`border-b transition-colors ${row.isSubDisplay ? 'bg-slate-50/60 hover:bg-slate-100/60' : 'hover:bg-muted/20'}`}
+                      className={row.isSubDisplay ? 'bg-slate-50/60' : undefined}
                     >
-                      <td className="px-4 py-2.5 text-muted-foreground">{idx + 1}</td>
-                      <td className="px-4 py-2.5">
+                      <TableCell className="tabular-nums">{idx + 1}</TableCell>
+                      <TableCell>
                         {row.isSubDisplay ? (
-                          <span className="flex items-center gap-1.5 pl-4 text-slate-600">
+                          <span className="flex items-center gap-1.5 pl-4">
                             <CornerDownRight className="h-3.5 w-3.5 text-muted-foreground/60 shrink-0" />
                             {row.name}
                           </span>
                         ) : (
-                          <span className="font-semibold text-slate-800">{row.name}</span>
+                          <span className="font-medium">{row.name}</span>
                         )}
-                      </td>
-                      <td className="px-4 py-2.5">
+                      </TableCell>
+                      <TableCell>
                         {row.isSubDisplay ? (
-                          <Badge variant="outline" className="text-xs text-purple-700 border-purple-300 bg-purple-50">
+                          <Badge variant="outline">
                             Sub-category of {row.parentName || '—'}
                           </Badge>
                         ) : (
-                          <Badge variant="outline" className="text-xs text-emerald-700 border-emerald-300 bg-emerald-50">
+                          <Badge variant="neutral">
                             Main Category
                           </Badge>
                         )}
-                      </td>
-                      <td className="px-4 py-2.5 text-muted-foreground max-w-xs truncate">{row.description || '—'}</td>
-                      <td className="px-4 py-2.5 text-center">
-                        <Badge
-                          variant={row.isActive !== false ? 'default' : 'secondary'}
-                          className={row.isActive !== false ? 'bg-emerald-100 text-emerald-700' : ''}
-                        >
-                          {row.isActive !== false ? 'Active' : 'Inactive'}
-                        </Badge>
-                      </td>
+                      </TableCell>
+                      <TableCell className="max-w-xs truncate">{row.description || '—'}</TableCell>
+                      <TableCell className="text-center">
+                        <StatusBadge status={row.isActive !== false ? 'Active' : 'Inactive'} />
+                      </TableCell>
                       {(canEdit || canDelete) && (
-                        <td className="px-4 py-2.5 text-right">
+                        <TableCell className="text-right">
                           <div className="flex justify-end gap-1">
                             {canEdit && (
                               <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => openEdit(row)}>
@@ -451,16 +444,14 @@ export default function ExpenseCategoriesPage() {
                               </AlertDialog>
                             )}
                           </div>
-                        </td>
+                        </TableCell>
                       )}
-                    </tr>
+                    </TableRow>
                   ))}
-                </tbody>
-              </table>
-            </div>
+                </TableBody>
+              </Table>
           )}
-        </CardContent>
-      </Card>
+      </TableCard>
 
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
         <DialogContent className="max-w-[95vw] sm:max-w-md overflow-y-auto max-h-[90vh]">

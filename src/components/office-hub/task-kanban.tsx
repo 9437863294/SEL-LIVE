@@ -200,7 +200,7 @@ export function TaskKanban({
                   >
                     <div className="mb-2 flex items-center justify-between px-1">
                       <p className="text-xs font-semibold uppercase tracking-wide text-slate-600">{status}</p>
-                      <Badge variant="outline" className="border-white/70 bg-white/80 text-[11px] tabular-nums">
+                      <Badge variant="neutral" className="tabular-nums">
                         {list.length}
                       </Badge>
                     </div>

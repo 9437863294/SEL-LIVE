@@ -29,6 +29,7 @@ import {
   dayDifference,
   findDuplicateRequirements,
   hrCurrency,
+  hrStatusLabel,
   type ApprovalAction,
   type CompensationApproval,
   type HrRequirement,
@@ -40,14 +41,15 @@ import {
   HrEmptyState,
   HrField,
   HrLoader,
-  HrPriorityBadge,
   HrSection,
-  HrStatusBadge,
   SensitiveMoney,
+  hrBadgeTone,
   hrDialog,
+  hrPriorityBadgeTone,
 } from './hr-ui';
 import { useHrCollection, useHrConfig, useHrPermissions } from './use-hr-config';
 import { PageHeader } from '@/components/shared/page-header';
+import { StatusBadge } from '@/components/shared/status-badge';
 
 /**
  * The approval inbox of spec section 14.
@@ -116,7 +118,7 @@ export default function ApprovalInbox() {
         <TabsList>
           <TabsTrigger value="mine">
             Awaiting me
-            <Badge variant="secondary" className="ml-1.5 tabular-nums">
+            <Badge variant="neutral" className="ml-1.5 tabular-nums">
               {requirements.filter(row => PENDING_APPROVAL_STATUSES.includes(row.status) && (row.pendingApproverIds || []).includes(actor?.userId || '')).length}
             </Badge>
           </TabsTrigger>
@@ -216,16 +218,14 @@ function ApprovalCard({
               <Link href={`/hr/requirements/${requirement.id}`} className="text-sm font-semibold text-indigo-700 hover:underline">
                 {requirement.requirementNumber}
               </Link>
-              <HrStatusBadge status={requirement.status} />
-              <HrPriorityBadge priority={requirement.priority} />
-              {requirement.fastTrack && (
-                <Badge variant="outline" className="border-rose-200 bg-rose-50 text-rose-700">Fast track</Badge>
-              )}
-              {submittedDaysAgo > 2 && (
-                <Badge variant="outline" className="border-amber-200 bg-amber-50 text-amber-800">
-                  Waiting {submittedDaysAgo}d
-                </Badge>
-              )}
+              <StatusBadge status={requirement.status} tone={hrBadgeTone(requirement.status)}>
+                {hrStatusLabel(requirement.status)}
+              </StatusBadge>
+              <StatusBadge status={requirement.priority} tone={hrPriorityBadgeTone(requirement.priority)}>
+                {requirement.priority}
+              </StatusBadge>
+              {requirement.fastTrack && <StatusBadge tone="danger">Fast track</StatusBadge>}
+              {submittedDaysAgo > 2 && <StatusBadge tone="warning">Waiting {submittedDaysAgo}d</StatusBadge>}
             </div>
             <p className="mt-1 text-sm font-medium text-slate-800">
               {requirement.requestedQuantity} × {requirement.designation} · {requirement.grade}

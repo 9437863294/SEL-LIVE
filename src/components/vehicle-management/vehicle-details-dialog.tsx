@@ -9,7 +9,9 @@ import { computeRenewalMeta, formatVehicleTimestamp, getVehicleComplianceRequire
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-import { TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { TableCard } from '@/components/shared/table-card';
+import { StatusBadge, type StatusTone } from '@/components/shared/status-badge';
 import { useAuthorization } from '@/hooks/useAuthorization';
 
 type Row = Record<string, any>;
@@ -37,6 +39,10 @@ type ActivitySection = {
 
 const firstValue = (row: Row, keys: string[]) =>
   keys.map((key) => String(row[key] || '').trim()).find(Boolean) || '-';
+
+/** Renewal alert stages are this module's own words ("7d", "Not Due"), so their tone is stated here. */
+const alertStageTone = (stage: string): StatusTone =>
+  stage === 'Expired' ? 'danger' : ['Due Today', '7d', '15d', '30d'].includes(stage) ? 'warning' : stage === 'Not Due' ? 'success' : 'neutral';
 
 const renewalHref = (base: string, row: Row, vehicle: Row) => {
   const params = new URLSearchParams({
@@ -254,7 +260,7 @@ export function VehicleDetailsDialog({
                   className={selectedSection === section.title ? 'bg-emerald-600 text-white hover:bg-emerald-700' : 'bg-white'}
                 >
                   {section.title}
-                  <Badge variant="secondary" className="ml-2 h-5 min-w-5 justify-center px-1.5">{section.count}</Badge>
+                  <Badge variant="neutral" className="ml-2 h-5 min-w-5 justify-center px-1.5">{section.count}</Badge>
                 </Button>
               ))}
             </div>
@@ -265,43 +271,33 @@ export function VehicleDetailsDialog({
           ) : loadError ? (
             <div className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-6 text-center text-sm text-rose-700">{loadError}</div>
           ) : sections.filter((section) => selectedSection === 'All' || selectedSection === section.title).map((section) => (
-            <section key={section.title} className="overflow-hidden rounded-xl border bg-white">
-              <div className="flex items-center justify-between border-b bg-slate-50 px-4 py-3">
-                <div className="flex items-center gap-2"><h3 className="font-semibold">{section.title}</h3><Badge variant="outline">{section.rows.length} record{section.rows.length === 1 ? '' : 's'}</Badge></div>
-                <Link href={section.href}><Button size="sm" variant="outline"><ExternalLink className="mr-1.5 h-3.5 w-3.5" />Open</Button></Link>
-              </div>
+            <TableCard key={section.title} title={section.title} count={section.rows.length} noun="record" scroll="natural" actions={<Link href={section.href}><Button size="sm" variant="outline"><ExternalLink className="mr-1.5 h-3.5 w-3.5" />Open</Button></Link>}>
               {section.rows.length === 0 ? <p className="px-4 py-6 text-sm text-muted-foreground">No records available.</p> : (
-                <div className="overflow-x-auto"><table className="w-full text-sm"><TableHeader><TableRow><TableHead>Reference</TableHead><TableHead>Expiry</TableHead><TableHead>Compliance</TableHead><TableHead>Record</TableHead><TableHead>Created Time</TableHead>{section.title === 'Insurance' && <TableHead className="text-right">Action</TableHead>}</TableRow></TableHeader>
+                <Table><TableHeader><TableRow><TableHead>Reference</TableHead><TableHead>Expiry</TableHead><TableHead>Compliance</TableHead><TableHead>Record</TableHead><TableHead>Created Time</TableHead>{section.title === 'Insurance' && <TableHead className="text-right">Action</TableHead>}</TableRow></TableHeader>
                   <TableBody>{section.rows.map((row) => { const expiry = firstValue(row, section.expiryKeys); const isRequired = !section.requirementKey || requirements[section.requirementKey]; const meta = isRequired ? computeRenewalMeta(expiry === '-' ? '' : expiry) : { alertStage: 'Not Applicable', complianceStatus: 'Not Applicable' }; return (
-                    <TableRow key={String(row.id)}><TableCell className="font-medium">{firstValue(row, section.referenceKeys)}</TableCell><TableCell>{expiry}</TableCell><TableCell><Badge variant={meta.alertStage === 'Expired' ? 'destructive' : 'outline'}>{meta.alertStage}</Badge></TableCell><TableCell>{row.isArchived ? <Badge variant="secondary"><History className="mr-1 h-3 w-3" />History</Badge> : <Badge className="bg-emerald-600">Current</Badge>}</TableCell><TableCell className="whitespace-nowrap"><Clock className="mr-1 inline h-3.5 w-3.5" />{formatVehicleTimestamp(row.createdAt)}</TableCell>{section.title === 'Insurance' && <TableCell className="text-right">{!row.isArchived && canRenewInsurance && isRequired ? <Link href={renewalHref(section.renewalHref || section.href, row, vehicle)}><Button size="sm" className="bg-amber-500 hover:bg-amber-600"><RefreshCw className="mr-1 h-3.5 w-3.5" />Renew</Button></Link> : '-'}</TableCell>}</TableRow>
-                  );})}</TableBody></table></div>
+                    <TableRow key={String(row.id)}><TableCell className="font-medium">{firstValue(row, section.referenceKeys)}</TableCell><TableCell>{expiry}</TableCell><TableCell><StatusBadge status={meta.alertStage} tone={alertStageTone(meta.alertStage)} /></TableCell><TableCell>{row.isArchived ? <StatusBadge status="History" tone="neutral"><History className="h-3 w-3" />History</StatusBadge> : <StatusBadge status="Current" tone="success" />}</TableCell><TableCell className="whitespace-nowrap"><Clock className="mr-1 inline h-3.5 w-3.5" />{formatVehicleTimestamp(row.createdAt)}</TableCell>{section.title === 'Insurance' && <TableCell className="text-right">{!row.isArchived && canRenewInsurance && isRequired ? <Link href={renewalHref(section.renewalHref || section.href, row, vehicle)}><Button size="sm" className="bg-amber-500 hover:bg-amber-600"><RefreshCw className="mr-1 h-3.5 w-3.5" />Renew</Button></Link> : '-'}</TableCell>}</TableRow>
+                  );})}</TableBody></Table>
               )}
-            </section>
+            </TableCard>
           ))}
 
           {!loading && !loadError && activitySections.filter((section) => selectedSection === 'All' || selectedSection === section.title).map((section) => (
-            <section key={section.title} className="overflow-hidden rounded-xl border bg-white">
-              <div className="flex items-center justify-between border-b bg-slate-50 px-4 py-3">
-                <div className="flex items-center gap-2"><h3 className="font-semibold">{section.title}</h3><Badge variant="outline">{section.rows.length} log{section.rows.length === 1 ? '' : 's'}</Badge></div>
-                <Link href={section.href}><Button size="sm" variant="outline"><ExternalLink className="mr-1.5 h-3.5 w-3.5" />Open</Button></Link>
-              </div>
+            <TableCard key={section.title} title={section.title} count={section.rows.length} noun="log" scroll="natural" actions={<Link href={section.href}><Button size="sm" variant="outline"><ExternalLink className="mr-1.5 h-3.5 w-3.5" />Open</Button></Link>}>
               {section.rows.length === 0 ? <p className="px-4 py-6 text-sm text-muted-foreground">No logs available.</p> : (
-                <div className="overflow-x-auto">
-                  <table className="w-full text-sm">
+                  <Table>
                     <TableHeader><TableRow><TableHead>Date / Time</TableHead><TableHead>Details</TableHead><TableHead>Metrics</TableHead><TableHead>Status</TableHead><TableHead>Created Time</TableHead></TableRow></TableHeader>
                     <TableBody>{section.rows.map((row) => (
                       <TableRow key={String(row.id)}>
                         <TableCell className="whitespace-nowrap">{firstValue(row, section.dateKeys)}</TableCell>
                         <TableCell className="min-w-[260px] max-w-[460px]">{section.detail(row)}</TableCell>
                         <TableCell className="whitespace-nowrap">{section.metrics(row)}</TableCell>
-                        <TableCell><Badge variant="outline">{firstValue(row, section.statusKeys)}</Badge></TableCell>
+                        <TableCell><StatusBadge status={firstValue(row, section.statusKeys)} /></TableCell>
                         <TableCell className="whitespace-nowrap">{formatVehicleTimestamp(row.createdAt)}</TableCell>
                       </TableRow>
                     ))}</TableBody>
-                  </table>
-                </div>
+                  </Table>
               )}
-            </section>
+            </TableCard>
           ))}
         </div>
       </DialogContent>

@@ -5,7 +5,6 @@ import { useState, useEffect, useMemo, useCallback } from 'react';
 import Link from 'next/link';
 import {
   Calendar as CalendarIcon,
-  Search,
   Plus,
   Trash2,
   ShieldAlert,
@@ -20,7 +19,8 @@ import {
   CardTitle,
   CardDescription,
 } from '@/components/ui/card';
-import { Input } from '@/components/ui/input';
+import { TableCard } from '@/components/shared/table-card';
+import { FilterBar } from '@/components/shared/filter-bar';
 import {
   Select,
   SelectContent,
@@ -316,11 +316,28 @@ export default function ReceiptsLogPage() {
         }
       />
 
-      {/* ── Filter Card ── */}
-      <div className="mb-4 rounded-xl border border-border/50 bg-background/80 backdrop-blur-sm p-4 shadow-sm">
-        <div className="flex flex-wrap gap-3 mb-3">
+      <TableCard
+        title="Receipts"
+        count={filteredLogEntries.length}
+        noun="receipt"
+        actions={
+          <>
+            <Button size="sm" variant={viewMode === 'current' ? 'default' : 'outline'} onClick={() => setViewMode('current')}>
+              Current View
+            </Button>
+            <Button size="sm" variant={viewMode === 'dateWise' ? 'default' : 'outline'} onClick={() => setViewMode('dateWise')}>
+              Date-wise View
+            </Button>
+          </>
+        }
+        toolbar={
+          <FilterBar
+            search={{ value: searchFilter, onChange: setSearchFilter, placeholder: 'Search...' }}
+            activeCount={(dateRange ? 1 : 0) + (bankFilter !== 'all' ? 1 : 0)}
+            onClear={clearFilters}
+          >
             <Select value={datePreset} onValueChange={handleDatePresetChange}>
-              <SelectTrigger className="w-[190px]">
+              <SelectTrigger>
                 <SelectValue placeholder="Quick filter" />
               </SelectTrigger>
               <SelectContent>
@@ -338,7 +355,7 @@ export default function ReceiptsLogPage() {
                   id="date"
                   variant="outline"
                   className={cn(
-                    'w-full sm:w-[300px] justify-start text-left font-normal',
+                    'justify-start text-left font-normal',
                     !dateRange &&
                       'text-muted-foreground'
                   )}
@@ -394,7 +411,7 @@ export default function ReceiptsLogPage() {
               value={bankFilter}
               onValueChange={setBankFilter}
             >
-              <SelectTrigger className="w-[240px]">
+              <SelectTrigger>
                 <SelectValue placeholder="All Banks" />
               </SelectTrigger>
               <SelectContent>
@@ -414,38 +431,9 @@ export default function ReceiptsLogPage() {
                 )}
               </SelectContent>
             </Select>
-
-            <div className="relative">
-              <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
-              <Input
-                placeholder="Search..."
-                className="pl-8"
-                value={searchFilter}
-                onChange={(e) =>
-                  setSearchFilter(
-                    e.target.value
-                  )
-                }
-              />
-            </div>
-
-            <Button onClick={clearFilters} variant="secondary" className="rounded-lg">
-              Clear Filters
-            </Button>
-          </div>
-
-          <div className="flex items-center gap-2">
-            <Button size="sm" variant={viewMode === 'current' ? 'default' : 'outline'} onClick={() => setViewMode('current')} className="rounded-full">
-              Current View
-            </Button>
-            <Button size="sm" variant={viewMode === 'dateWise' ? 'default' : 'outline'} onClick={() => setViewMode('dateWise')} className="rounded-full">
-              Date-wise View
-            </Button>
-          </div>
-        </div>
-
-        {/* ── Table ── */}
-        <div className="rounded-xl border border-border/50 bg-background/80 backdrop-blur-sm overflow-hidden shadow-sm">
+          </FilterBar>
+        }
+      >
           {viewMode === 'current' ? (
             <Table>
             <TableHeader>
@@ -588,11 +576,11 @@ export default function ReceiptsLogPage() {
                     <TableRow key={row.date}>
                       <TableCell>{format(new Date(row.date), 'dd MMM, yyyy')}</TableCell>
                       {visibleBankAccounts.map((acc) => (
-                        <TableCell key={`${row.date}-${acc.id}`} className="text-right">
+                        <TableCell key={`${row.date}-${acc.id}`} className="whitespace-nowrap text-right tabular-nums">
                           {row.bankTotals[acc.id] ? formatCurrency(row.bankTotals[acc.id]) : '-'}
                         </TableCell>
                       ))}
-                      <TableCell className="text-right font-semibold">{formatCurrency(row.total)}</TableCell>
+                      <TableCell className="whitespace-nowrap text-right font-medium tabular-nums">{formatCurrency(row.total)}</TableCell>
                     </TableRow>
                   ))
                 ) : (
@@ -608,7 +596,7 @@ export default function ReceiptsLogPage() {
               </TableBody>
             </Table>
           )}
-        </div>
+      </TableCard>
       </div>
     </>
   );

@@ -42,6 +42,7 @@ import {
 import TripMapView from '@/components/vehicle-management/trip-map-view';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { PageHeader } from '@/components/shared/page-header';
+import { StatusBadge } from '@/components/shared/status-badge';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -701,12 +702,12 @@ export default function DriverMobileTripsPage() {
         description="Start trip when driving begins and stop trip when ride is completed."
         meta={
           <>
-            <Badge className="bg-emerald-600 text-white">{String(driver.driverName || 'Driver')}</Badge>
+            <Badge variant="neutral">{String(driver.driverName || 'Driver')}</Badge>
             <Badge variant="outline">Vehicle: {assignedVehicleNumber || 'Not assigned'}</Badge>
             <Badge variant="outline">Tracking: {settingsIntervalSec}s</Badge>
-            <Badge variant="outline">
+            <StatusBadge status={activeTrip ? 'In Progress' : 'Idle'} tone={activeTrip ? undefined : 'neutral'} dot={Boolean(activeTrip)}>
               Status: {activeTrip ? 'In Progress' : 'Idle'}
-            </Badge>
+            </StatusBadge>
           </>
         }
       />

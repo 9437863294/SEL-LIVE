@@ -13,11 +13,12 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { formatDistanceToNow } from 'date-fns';
-import { ChevronRight, Clock, Loader2, RefreshCw, Search, Tags, X } from 'lucide-react';
+import { ChevronRight, Clock, Loader2, RefreshCw, Tags } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { Input } from '@/components/ui/input';
+import { SearchInput } from '@/components/shared/filter-bar';
+import { StatusBadge } from '@/components/shared/status-badge';
 import {
   HrEmptyState,
   HrLoader,
@@ -26,7 +27,6 @@ import {
 import { cn } from '@/lib/utils';
 import {
   EmployeePageShell,
-  EmployeeStatusPill,
   EmployeeSubNav,
   EMP_CARD_CLASS,
 } from '@/components/employee/employee-ui';
@@ -286,13 +286,15 @@ export default function ManageCategoryPage() {
         backLabel="Back to Employee Management"
         badge={
           lastSynced ? (
-            <EmployeeStatusPill tone={lastSynced.successful ? 'emerald' : 'amber'} icon={Clock}>
+            <StatusBadge tone={lastSynced.successful ? 'success' : 'warning'}>
+              <Clock className="h-3 w-3" aria-hidden="true" />
               {lastSynced.successful ? 'Synced' : 'Last attempt'} {formatDistanceToNow(lastSynced.at, { addSuffix: true })}
-            </EmployeeStatusPill>
+            </StatusBadge>
           ) : (
-            <EmployeeStatusPill tone="slate" icon={Clock}>
+            <StatusBadge tone="neutral">
+              <Clock className="h-3 w-3" aria-hidden="true" />
               No sync run recorded
-            </EmployeeStatusPill>
+            </StatusBadge>
           )
         }
         actions={syncButton}
@@ -333,25 +335,12 @@ export default function ManageCategoryPage() {
               A bare input rather than the collapsible filter card the registers use: one control
               does not need a panel with a header and a summary line around it. */}
           <div className="mb-3 flex flex-wrap items-center gap-2">
-            <div className="relative min-w-0 flex-1 sm:max-w-sm">
-              <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
-              <Input
-                placeholder="Search any value, id or type…"
-                className="bg-white/80 pl-8 pr-8"
-                value={search}
-                onChange={event => setSearch(event.target.value)}
-              />
-              {search && (
-                <button
-                  type="button"
-                  onClick={() => setSearch('')}
-                  className="hr-inline-action absolute inset-y-0 right-0 flex w-8 items-center justify-center text-muted-foreground hover:text-slate-600"
-                  aria-label="Clear search"
-                >
-                  <X className="h-4 w-4" />
-                </button>
-              )}
-            </div>
+            <SearchInput
+              value={search}
+              onChange={setSearch}
+              placeholder="Search any value, id or type…"
+              className="flex-1 sm:max-w-sm"
+            />
             <p className="text-xs text-muted-foreground">
               {term ? (
                 <>
@@ -383,7 +372,7 @@ export default function ManageCategoryPage() {
                first question a master screen should answer. On a phone the rail becomes a scrolling
                pill strip above the values — a 14rem sidebar on a 390px screen leaves no room for
                what it is pointing at. */
-            <div className="grid gap-3 lg:grid-cols-[15rem_minmax(0,1fr)]">
+            <div className="grid grid-cols-1 gap-3 lg:grid-cols-[15rem_minmax(0,1fr)]">
               <Card className={cn('overflow-hidden rounded-2xl p-1.5', EMP_CARD_CLASS)}>
                 <nav
                   aria-label="Category types"
@@ -433,7 +422,7 @@ export default function ManageCategoryPage() {
                   <div className="flex items-center gap-2">
                     <Tags className="h-4 w-4 text-teal-600" />
                     <h2 className="text-sm font-semibold text-slate-800">{selectedType || 'Select a type'}</h2>
-                    <Badge variant="outline" className="border-teal-200 bg-teal-50 text-[10px] text-teal-700">
+                    <Badge variant="neutral">
                       {term ? `${selectedValues.length} of ${selectedTotal}` : `${selectedTotal} values`}
                     </Badge>
                   </div>
@@ -448,7 +437,7 @@ export default function ManageCategoryPage() {
                   /* Wrapped across columns rather than one row per value: a list of sixty
                      designations was sixty table rows to scroll, and the only thing each row carried
                      was a name and an id. */
-                  <ul className="grid gap-x-4 gap-y-0.5 p-2 sm:grid-cols-2 xl:grid-cols-3">
+                  <ul className="grid grid-cols-1 gap-x-4 gap-y-0.5 p-2 sm:grid-cols-2 xl:grid-cols-3">
                     {selectedValues.map(row => (
                       <li
                         key={row.id}

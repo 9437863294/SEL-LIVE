@@ -1,11 +1,11 @@
 'use client';
 
 import { useState, type ReactNode } from 'react';
-import { Loader2, Plus, Save, Search, X } from 'lucide-react';
+import { Loader2, Plus, Save } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-import { Input } from '@/components/ui/input';
+import { SearchInput } from '@/components/shared/filter-bar';
 import { Skeleton } from '@/components/ui/skeleton';
 import { cn } from '@/lib/utils';
 import { eApprovalDialogClass as settingsDialogClass, eApprovalDialogGuard } from '../shared';
@@ -54,31 +54,18 @@ export function SettingsToolbar({
 }) {
   return (
     <div className="flex flex-wrap items-center gap-2">
-      <Badge variant="secondary" className="shrink-0 text-[11px] font-normal">
+      <Badge variant="neutral" className="shrink-0">
         {count} {noun}
         {count === 1 ? '' : 's'}
       </Badge>
 
       {onSearch && count > 2 && (
-        <div className="relative min-w-0 flex-1 sm:max-w-xs">
-          <Search className="absolute left-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
-          <Input
-            value={search ?? ''}
-            onChange={(event) => onSearch(event.target.value)}
-            placeholder={`Search ${noun}s…`}
-            className="h-8 pl-7 pr-7 text-xs"
-          />
-          {search && (
-            <button
-              type="button"
-              onClick={() => onSearch('')}
-              className="absolute right-1.5 top-1/2 -translate-y-1/2 rounded p-0.5 text-muted-foreground hover:bg-muted"
-              aria-label="Clear search"
-            >
-              <X className="h-3.5 w-3.5" />
-            </button>
-          )}
-        </div>
+        <SearchInput
+          value={search ?? ''}
+          onChange={onSearch}
+          placeholder={`Search ${noun}s…`}
+          className="flex-1 sm:max-w-xs"
+        />
       )}
 
       {children}

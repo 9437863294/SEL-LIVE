@@ -36,6 +36,7 @@ import {
   TowerProgressShell,
 } from "@/components/project-management/tower-progress/tower-progress-ui";
 import { PageHeader } from "@/components/shared/page-header";
+import { TableCard } from "@/components/shared/table-card";
 
 export default function TowerReportPage() {
   const { permissions } = useTowerProgress();
@@ -181,13 +182,14 @@ function ReportScreen() {
 
       <p className="text-sm text-muted-foreground">{definition.description}</p>
 
-      <ReportFilterBar definition={definition} towers={towers} state={filterState} />
-
-      <Card>
-        <CardContent className={definition.kind === "rows" || definition.kind === "matrix" || definition.kind === "photo-rows" ? "p-0" : "p-4 sm:p-6"}>
+      <TableCard
+        toolbar={<ReportFilterBar definition={definition} towers={towers} state={filterState} />}
+        scroll="natural"
+      >
+        <div className={definition.kind === "rows" || definition.kind === "matrix" || definition.kind === "photo-rows" ? undefined : "p-4 sm:p-6"}>
           {ctx ? <TowerReportBody ctx={ctx} /> : null}
-        </CardContent>
-      </Card>
+        </div>
+      </TableCard>
 
       {definition.clientFacing && settings.clientReportsRequireApprovedPhotos ? (
         <p className="flex items-start gap-2 text-xs text-muted-foreground">

@@ -10,8 +10,9 @@ import { useAuthorization } from '@/hooks/useAuthorization';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { PageHeader } from '@/components/shared/page-header';
+import { TableCard } from '@/components/shared/table-card';
 import { Skeleton } from '@/components/ui/skeleton';
-import { TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
 
 export default function ProjectVehiclesReportPage() {
@@ -181,67 +182,58 @@ export default function ProjectVehiclesReportPage() {
         </Card>
       </div>
 
-      <Card className="vm-panel-strong">
-        <CardHeader>
-          <CardTitle>Vehicles by Project</CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-3 sm:hidden">
-          {rows.length === 0 ? (
-            <div className="rounded-lg border border-white/70 bg-white/80 px-3 py-6 text-center text-muted-foreground">
-              No vehicle data.
+      <TableCard title="Vehicles by Project" icon={FolderOpen} count={rows.length} noun="project">
+        {rows.length === 0 ? (
+          <div className="px-4 py-10 text-center text-sm text-muted-foreground">
+            No vehicle data.
+          </div>
+        ) : (
+          <>
+            <div className="space-y-3 p-3 sm:hidden">
+              {rows.map((item) => (
+                <div key={item.projectName} className="rounded-xl border border-white/70 bg-white/85 p-3 shadow-sm">
+                  <div className="mb-2 flex items-center justify-between gap-2">
+                    <span className="text-sm font-semibold">
+                      {item.projectName === 'Unassigned' ? (
+                        <Badge variant="outline">Unassigned</Badge>
+                      ) : (
+                        item.projectName
+                      )}
+                    </span>
+                    <span className="text-lg font-bold text-slate-700">{item.total}</span>
+                  </div>
+                  <div className="h-2 w-full rounded-full bg-slate-100">
+                    <div
+                      className="h-2 rounded-full bg-gradient-to-r from-fuchsia-500 to-violet-500 transition-all duration-500"
+                      style={{ width: `${maxTotal > 0 ? (item.total / maxTotal) * 100 : 0}%` }}
+                    />
+                  </div>
+                  <div className="mt-2 flex flex-wrap gap-3 text-xs">
+                    <span className="font-medium text-emerald-600">{item.active} active</span>
+                    <span className="text-rose-500">{item.inactive} inactive/other</span>
+                  </div>
+                  <div className="mt-1.5 text-xs text-muted-foreground">
+                    {Object.entries(item.types)
+                      .map(([type, count]) => `${type}: ${count}`)
+                      .join(' · ')}
+                  </div>
+                </div>
+              ))}
             </div>
-          ) : (
-            rows.map((item) => (
-              <div key={item.projectName} className="rounded-xl border border-white/70 bg-white/85 p-3 shadow-sm">
-                <div className="mb-2 flex items-center justify-between gap-2">
-                  <span className="text-sm font-semibold">
-                    {item.projectName === 'Unassigned' ? (
-                      <Badge variant="outline">Unassigned</Badge>
-                    ) : (
-                      item.projectName
-                    )}
-                  </span>
-                  <span className="text-lg font-bold text-slate-700">{item.total}</span>
-                </div>
-                <div className="h-2 w-full rounded-full bg-slate-100">
-                  <div
-                    className="h-2 rounded-full bg-gradient-to-r from-fuchsia-500 to-violet-500 transition-all duration-500"
-                    style={{ width: `${maxTotal > 0 ? (item.total / maxTotal) * 100 : 0}%` }}
-                  />
-                </div>
-                <div className="mt-2 flex flex-wrap gap-3 text-xs">
-                  <span className="font-medium text-emerald-600">{item.active} active</span>
-                  <span className="text-rose-500">{item.inactive} inactive/other</span>
-                </div>
-                <div className="mt-1.5 text-xs text-muted-foreground">
-                  {Object.entries(item.types)
-                    .map(([type, count]) => `${type}: ${count}`)
-                    .join(' · ')}
-                </div>
-              </div>
-            ))
-          )}
-        </CardContent>
-        <CardContent className="hidden sm:block p-0">
-          {rows.length === 0 ? (
-            <div className="rounded-lg border border-white/70 bg-white/80 px-4 py-10 text-center text-muted-foreground">
-              No vehicle data.
-            </div>
-          ) : (
-            <div className="overflow-auto rounded-lg border border-white/70 bg-white/80 h-[calc(100vh-420px)]">
-              <table className="w-full caption-bottom text-sm">
-                <TableHeader className="sticky top-0 z-10 bg-slate-50 shadow-sm">
+            <div className="hidden sm:block">
+              <Table containerClassName="overflow-visible">
+                <TableHeader>
                   <TableRow>
                     <TableHead>Project</TableHead>
                     <TableHead>Total Vehicles</TableHead>
-                    <TableHead>Active</TableHead>
-                    <TableHead>Inactive / Other</TableHead>
+                    <TableHead className="text-right">Active</TableHead>
+                    <TableHead className="text-right">Inactive / Other</TableHead>
                     <TableHead>Vehicle Types</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {rows.map((item) => (
-                    <TableRow key={item.projectName} className="hover:bg-fuchsia-50/50 transition-colors">
+                    <TableRow key={item.projectName}>
                       <TableCell className="font-medium">
                         {item.projectName === 'Unassigned' ? (
                           <Badge variant="outline">Unassigned</Badge>
@@ -249,9 +241,9 @@ export default function ProjectVehiclesReportPage() {
                           item.projectName
                         )}
                       </TableCell>
-                      <TableCell>
+                      <TableCell className="tabular-nums">
                         <div className="space-y-1">
-                          <div className="font-semibold">{item.total}</div>
+                          <div className="font-medium">{item.total}</div>
                           <div className="h-1.5 w-40 rounded-full bg-slate-100">
                             <div
                               className="h-1.5 rounded-full bg-gradient-to-r from-fuchsia-500 to-violet-500 transition-all"
@@ -260,12 +252,12 @@ export default function ProjectVehiclesReportPage() {
                           </div>
                         </div>
                       </TableCell>
-                      <TableCell className="font-medium text-emerald-600">{item.active}</TableCell>
-                      <TableCell className="text-rose-500">{item.inactive}</TableCell>
-                      <TableCell className="text-xs text-muted-foreground">
+                      <TableCell className="text-right tabular-nums">{item.active}</TableCell>
+                      <TableCell className="text-right tabular-nums">{item.inactive}</TableCell>
+                      <TableCell>
                         {Object.entries(item.types).map(([type, count]) => (
                           <span key={type} className="mr-2 inline-flex items-center gap-1">
-                            <Badge variant="outline" className="px-1 py-0 text-[10px]">
+                            <Badge variant="outline">
                               {type}
                             </Badge>
                             <span>{count}</span>
@@ -275,11 +267,11 @@ export default function ProjectVehiclesReportPage() {
                     </TableRow>
                   ))}
                 </TableBody>
-              </table>
+              </Table>
             </div>
-          )}
-        </CardContent>
-      </Card>
+          </>
+        )}
+      </TableCard>
     </div>
   );
 }

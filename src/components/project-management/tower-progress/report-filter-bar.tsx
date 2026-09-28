@@ -12,11 +12,8 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { ChevronDown, Search, SlidersHorizontal } from "lucide-react";
-import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import {
   Select,
   SelectContent,
@@ -36,7 +33,7 @@ import {
   type TowerReportDefinition,
   type TowerReportFilters,
 } from "@/lib/project-management-tower-reports";
-import { cn } from "@/lib/utils";
+import { FilterBar } from "@/components/shared/filter-bar";
 
 /** Query-parameter names, kept short because they end up in a shared link. */
 const PARAM = {
@@ -211,10 +208,9 @@ export function ReportFilterBar({
   const isMonthly = definition.id === "monthly-progress";
   const isWeekly = definition.id === "weekly-progress";
   const isDaily = definition.kind === "daily";
-  // Phones only: the period and the search stay out, everything else folds behind a toggle, so the
-  // report is not pushed a full screen down the page. From `sm` the fold is `display: contents` and
-  // every control sits in the one wrapping row, as before.
-  const [showMore, setShowMore] = useState(false);
+  const [search, setSearch] = useDebouncedSearch(state.filters.search ?? "", (value) =>
+    state.update("search", value),
+  );
   const isSet = (value: string | undefined) => Boolean(value) && value !== "All";
   const activeCount =
     [
@@ -224,156 +220,145 @@ export function ReportFilterBar({
       String(state.filters.status ?? "All"),
     ].filter(isSet).length + (state.filters.fromTowerNo || state.filters.toTowerNo ? 1 : 0);
 
+  // The period is the report's own parameter rather than a filter, so it stays in view on a phone
+  // with the search while the filters fold behind the bar's toggle.
+  const period = isDaily ? (
+    <PeriodField label="Date">
+      <Input
+        type="date"
+        aria-label="Date"
+        value={state.dateKey}
+        max={toDateKey(new Date())}
+        onChange={(event) => state.update("date", event.target.value)}
+      />
+    </PeriodField>
+  ) : isWeekly ? (
+    <PeriodField label="Week starting (Monday)">
+      <Input
+        type="date"
+        aria-label="Week starting (Monday)"
+        value={state.weekStart}
+        onChange={(event) =>
+          state.update("week", weekStartKey(new Date(`${event.target.value}T00:00:00`)))
+        }
+      />
+    </PeriodField>
+  ) : isMonthly ? (
+    <PeriodField label="Month">
+      <Input
+        type="month"
+        aria-label="Month"
+        value={state.monthKey.slice(0, 7)}
+        onChange={(event) => state.update("month", `${event.target.value}-01`)}
+      />
+    </PeriodField>
+  ) : null;
+
   return (
-    <div className="flex flex-col gap-2 rounded-lg border p-3 print:hidden sm:flex-row sm:flex-wrap sm:items-end">
-      {isDaily ? (
-        <Field label="Date">
-          <Input
-            type="date"
-            value={state.dateKey}
-            max={toDateKey(new Date())}
-            onChange={(event) => state.update("date", event.target.value)}
-            className="h-10 w-full sm:h-9 sm:w-40"
-          />
-        </Field>
-      ) : null}
+    <div className="space-y-3 print:hidden">
+      {period}
 
-      {isWeekly ? (
-        <Field label="Week starting (Monday)">
-          <Input
-            type="date"
-            value={state.weekStart}
-            onChange={(event) =>
-              state.update("week", weekStartKey(new Date(`${event.target.value}T00:00:00`)))
-            }
-            className="h-10 w-full sm:h-9 sm:w-40"
-          />
-        </Field>
-      ) : null}
-
-      {isMonthly ? (
-        <Field label="Month">
-          <Input
-            type="month"
-            value={state.monthKey.slice(0, 7)}
-            onChange={(event) => state.update("month", `${event.target.value}-01`)}
-            className="h-10 w-full sm:h-9 sm:w-40"
-          />
-        </Field>
-      ) : null}
-
-      <Field label="Search">
-        <SearchField
-          value={state.filters.search ?? ""}
-          onCommit={(value) => state.update("search", value)}
-        />
-      </Field>
-
-      <Button
-        type="button"
-        variant="outline"
-        className="justify-between sm:hidden"
-        aria-expanded={showMore}
-        onClick={() => setShowMore((open) => !open)}
+      <FilterBar
+        search={{ value: search, onChange: setSearch, placeholder: "Tower, location, contractor" }}
+        activeCount={activeCount}
+        onClear={state.reset}
       >
-        <span className="inline-flex items-center gap-2">
-          <SlidersHorizontal className="h-4 w-4" />
-          Filters{activeCount ? ` · ${activeCount}` : ""}
-        </span>
-        <ChevronDown className={cn("h-4 w-4 transition-transform", showMore && "rotate-180")} />
-      </Button>
-
-      <div className={cn(showMore ? "grid grid-cols-2 gap-2" : "hidden", "sm:contents")}>
         {sections.length ? (
-          <Field label="Section">
-            <FilterSelect
-              value={state.filters.section ?? "All"}
-              onChange={(value) => state.update("section", value)}
-              options={sections}
-              allLabel="All sections"
-            />
-          </Field>
+          <FilterSelect
+            label="Section"
+            value={state.filters.section ?? "All"}
+            onChange={(value) => state.update("section", value)}
+            options={sections}
+            allLabel="All sections"
+          />
         ) : null}
 
         {towerTypes.length ? (
-          <Field label="Tower type">
-            <FilterSelect
-              value={state.filters.towerType ?? "All"}
-              onChange={(value) => state.update("towerType", value)}
-              options={towerTypes}
-              allLabel="All types"
-            />
-          </Field>
+          <FilterSelect
+            label="Tower type"
+            value={state.filters.towerType ?? "All"}
+            onChange={(value) => state.update("towerType", value)}
+            options={towerTypes}
+            allLabel="All types"
+          />
         ) : null}
 
         {contractors.length ? (
-          <Field label="Contractor">
-            <FilterSelect
-              value={state.filters.contractor ?? "All"}
-              onChange={(value) => state.update("contractor", value)}
-              options={contractors}
-              allLabel="All contractors"
-            />
-          </Field>
+          <FilterSelect
+            label="Contractor"
+            value={state.filters.contractor ?? "All"}
+            onChange={(value) => state.update("contractor", value)}
+            options={contractors}
+            allLabel="All contractors"
+          />
         ) : null}
 
-        <Field label="Status">
-          <FilterSelect
-            value={String(state.filters.status ?? "All")}
-            onChange={(value) => state.update("status", value)}
-            options={[...TOWER_ACTIVITY_STATUSES]}
-            allLabel="Any status"
+        <FilterSelect
+          label="Status"
+          value={String(state.filters.status ?? "All")}
+          onChange={(value) => state.update("status", value)}
+          options={[...TOWER_ACTIVITY_STATUSES]}
+          allLabel="Any status"
+        />
+
+        <div className="flex items-center gap-1.5">
+          <span className="shrink-0 text-sm text-muted-foreground">Towers</span>
+          <Input
+            aria-label="From tower"
+            value={state.filters.fromTowerNo ?? ""}
+            onChange={(event) => state.update("fromTowerNo", event.target.value)}
+            placeholder="T-001"
+            className="min-w-0 flex-1 sm:w-24 sm:flex-none"
           />
-        </Field>
-
-        <Field label="Tower range" className="col-span-2">
-          <div className="flex items-center gap-1">
-            <Input
-              value={state.filters.fromTowerNo ?? ""}
-              onChange={(event) => state.update("fromTowerNo", event.target.value)}
-              placeholder="T-001"
-              className="h-10 min-w-0 flex-1 sm:h-9 sm:w-24 sm:flex-none"
-            />
-            <span className="text-muted-foreground">–</span>
-            <Input
-              value={state.filters.toTowerNo ?? ""}
-              onChange={(event) => state.update("toTowerNo", event.target.value)}
-              placeholder="T-050"
-              className="h-10 min-w-0 flex-1 sm:h-9 sm:w-24 sm:flex-none"
-            />
-          </div>
-        </Field>
-
-        <button
-          type="button"
-          onClick={state.reset}
-          className="col-span-2 h-10 justify-self-start rounded-md px-3 text-sm text-muted-foreground underline-offset-4 hover:underline sm:h-9"
-        >
-          Clear filters
-        </button>
-
-        <div className="col-span-2 w-full border-t pt-2">
-          <p className="mb-1 text-[11px] text-muted-foreground">Include in this report</p>
-          <div className="grid grid-cols-2 gap-x-4 sm:flex sm:flex-wrap sm:gap-y-1.5">
-            {REPORT_SECTIONS.map((section) => (
-              <label
-                key={section}
-                className="flex min-h-9 cursor-pointer items-center gap-1.5 text-sm sm:min-h-0 sm:text-xs"
-              >
-                <Checkbox
-                  checked={state.include[section]}
-                  onCheckedChange={(checked) =>
-                    state.update(
-                      "exclude",
-                      encodeExclusions({ ...state.include, [section]: checked === true }),
-                    )
-                  }
-                />
-                {REPORT_SECTION_LABELS[section]}
-              </label>
-            ))}
-          </div>
+          <span className="text-muted-foreground">–</span>
+          <Input
+            aria-label="To tower"
+            value={state.filters.toTowerNo ?? ""}
+            onChange={(event) => state.update("toTowerNo", event.target.value)}
+            placeholder="T-050"
+            className="min-w-0 flex-1 sm:w-24 sm:flex-none"
+          />
         </div>
+
+        {/* Phones fold the section choices with the filters; from `sm` they get a row of their own
+            under the bar (below), so both are rendered and each hides at the other's width. */}
+        <IncludeSections state={state} className="border-t pt-2 sm:hidden" />
+      </FilterBar>
+
+      <IncludeSections state={state} className="hidden border-t pt-3 sm:block" />
+    </div>
+  );
+}
+
+/** §17's "Include" checkboxes — which optional sections the report renders. */
+function IncludeSections({
+  state,
+  className,
+}: {
+  state: ReturnType<typeof useReportFilters>;
+  className?: string;
+}) {
+  return (
+    <div className={className}>
+      <p className="mb-1 text-[11px] text-muted-foreground">Include in this report</p>
+      <div className="grid grid-cols-2 gap-x-4 sm:flex sm:flex-wrap sm:gap-y-1.5">
+        {REPORT_SECTIONS.map((section) => (
+          <label
+            key={section}
+            className="flex min-h-9 cursor-pointer items-center gap-1.5 text-sm sm:min-h-0 sm:text-xs"
+          >
+            <Checkbox
+              checked={state.include[section]}
+              onCheckedChange={(checked) =>
+                state.update(
+                  "exclude",
+                  encodeExclusions({ ...state.include, [section]: checked === true }),
+                )
+              }
+            />
+            {REPORT_SECTION_LABELS[section]}
+          </label>
+        ))}
       </div>
     </div>
   );
@@ -387,13 +372,10 @@ export function ReportFilterBar({
  * this box visibly stutter; a short debounce keeps the URL as the source of truth without re-deriving
  * the whole report six times for one word.
  */
-function SearchField({
-  value,
-  onCommit,
-}: {
-  value: string;
-  onCommit: (value: string) => void;
-}) {
+function useDebouncedSearch(
+  value: string,
+  onCommit: (value: string) => void,
+): [string, (value: string) => void] {
   const [draft, setDraft] = useState(value);
   const [lastExternal, setLastExternal] = useState(value);
   // Held in a ref so a re-rendered parent handing over a fresh closure does not restart the timer
@@ -401,8 +383,8 @@ function SearchField({
   const commitRef = useRef(onCommit);
   commitRef.current = onCommit;
 
-  // Follow the URL when it changes from elsewhere — "Clear filters", or a shared link — without
-  // fighting the user's own typing.
+  // Follow the URL when it changes from elsewhere — "Clear", or a shared link — without fighting
+  // the user's own typing.
   if (value !== lastExternal) {
     setLastExternal(value);
     setDraft(value);
@@ -414,42 +396,26 @@ function SearchField({
     return () => clearTimeout(timer);
   }, [draft, value]);
 
-  return (
-    <div className="relative w-full sm:w-52">
-      <Search className="absolute left-3 top-3 h-4 w-4 text-muted-foreground sm:top-2.5" />
-      <Input
-        value={draft}
-        onChange={(event) => setDraft(event.target.value)}
-        placeholder="Tower, location, contractor"
-        className="h-10 pl-9 sm:h-9"
-      />
-    </div>
-  );
+  return [draft, setDraft];
 }
 
-function Field({
-  label,
-  children,
-  className,
-}: {
-  label: string;
-  children: React.ReactNode;
-  className?: string;
-}) {
+function PeriodField({ label, children }: { label: string; children: React.ReactNode }) {
   return (
-    <div className={cn("min-w-0 space-y-1", className)}>
-      <Label className="text-[11px] text-muted-foreground">{label}</Label>
-      {children}
+    <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:gap-2">
+      <span className="text-sm text-muted-foreground">{label}</span>
+      <div className="sm:w-auto">{children}</div>
     </div>
   );
 }
 
 function FilterSelect({
+  label,
   value,
   onChange,
   options,
   allLabel,
 }: {
+  label: string;
   value: string;
   onChange: (value: string) => void;
   options: string[];
@@ -457,7 +423,7 @@ function FilterSelect({
 }) {
   return (
     <Select value={value} onValueChange={onChange}>
-      <SelectTrigger className="h-10 w-full sm:h-9 sm:w-40">
+      <SelectTrigger aria-label={label}>
         <SelectValue />
       </SelectTrigger>
       <SelectContent>

@@ -12,12 +12,12 @@ import { collection, query, where, getDocs, doc, getDoc } from 'firebase/firesto
 import type { ProjectInsurancePolicy, InsuredAsset, Project, ProjectPolicyRenewal } from '@/lib/types';
 import { format, isWithinInterval, addDays, isPast } from 'date-fns';
 import { useAuthorization } from '@/hooks/useAuthorization';
-import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { ProjectRenewalDialog } from '@/components/insurance/ProjectRenewalDialog';
-import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
 import { PageHeader } from '@/components/shared/page-header';
+import { TableCard } from '@/components/shared/table-card';
+import { StatusBadge } from '@/components/shared/status-badge';
 
 
 interface EnrichedPolicy extends ProjectInsurancePolicy {
@@ -167,8 +167,7 @@ export default function AssetPoliciesPage() {
         />
       </div>
       
-      <Card>
-        <CardContent className="p-0">
+      <TableCard title="Policies" count={isLoading ? undefined : policies.length}>
           <Table>
             <TableHeader>
               <TableRow>
@@ -198,17 +197,18 @@ export default function AssetPoliciesPage() {
                   return (
                     <Fragment key={policy.id}>
                       <TableRow>
-                          <TableCell className="px-2">
+                          <TableCell>
                               <Button size="icon" variant="ghost" onClick={(e) => toggleRowExpansion(e, policy.id)}>
                                 {isExpanded ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
                               </Button>
                           </TableCell>
                           <TableCell>{policy.policy_category}</TableCell>
-                          <TableCell>{policy.policy_no}</TableCell>
-                          <TableCell>{formatCurrency(policy.sum_insured)}</TableCell>
-                          <TableCell>{formatDate(policy.insurance_start_date)}</TableCell>
-                          <TableCell>{formatDate(policy.insured_until)}</TableCell>
-                          <TableCell><Badge variant={status.variant}>{status.text}</Badge></TableCell>
+                          <TableCell className="font-mono whitespace-nowrap">{policy.policy_no}</TableCell>
+                          <TableCell className="whitespace-nowrap tabular-nums">{formatCurrency(policy.sum_insured)}</TableCell>
+                          <TableCell className="whitespace-nowrap">{formatDate(policy.insurance_start_date)}</TableCell>
+                          <TableCell className="whitespace-nowrap">{formatDate(policy.insured_until)}</TableCell>
+                          {/* "Expires Soon" is not in the shared vocabulary; it is a warning here. */}
+                          <TableCell><StatusBadge status={status.text} tone={status.text === 'Expires Soon' ? 'warning' : undefined} /></TableCell>
                           <TableCell className="text-right">
                               {isRenewable && canRenewPolicy && (
                                   <Button size="sm" variant="outline" onClick={(e) => handleRenewClick(e, policy)}>
@@ -218,7 +218,7 @@ export default function AssetPoliciesPage() {
                           </TableCell>
                       </TableRow>
                       {isExpanded && (
-                          <TableRow className="bg-muted/50 hover:bg-muted/50">
+                          <TableRow>
                               <TableCell colSpan={8} className="p-0">
                                   <div className="p-4">
                                       <h4 className="font-semibold mb-2 ml-2">Renewal History</h4>
@@ -236,11 +236,11 @@ export default function AssetPoliciesPage() {
                                               <TableBody>
                                                   {policy.history.map(h => (
                                                       <TableRow key={h.id}>
-                                                          <TableCell>{formatDate(h.renewalDate)}</TableCell>
-                                                          <TableCell>{h.policyNo}</TableCell>
-                                                          <TableCell>{formatCurrency(h.premium)}</TableCell>
-                                                          <TableCell>{formatCurrency(h.sumInsured)}</TableCell>
-                                                          <TableCell>{formatDate(h.startDate)} - {formatDate(h.endDate)}</TableCell>
+                                                          <TableCell className="whitespace-nowrap">{formatDate(h.renewalDate)}</TableCell>
+                                                          <TableCell className="font-mono whitespace-nowrap">{h.policyNo}</TableCell>
+                                                          <TableCell className="whitespace-nowrap tabular-nums">{formatCurrency(h.premium)}</TableCell>
+                                                          <TableCell className="whitespace-nowrap tabular-nums">{formatCurrency(h.sumInsured)}</TableCell>
+                                                          <TableCell className="whitespace-nowrap">{formatDate(h.startDate)} - {formatDate(h.endDate)}</TableCell>
                                                       </TableRow>
                                                   ))}
                                               </TableBody>
@@ -264,8 +264,7 @@ export default function AssetPoliciesPage() {
               )}
             </TableBody>
           </Table>
-        </CardContent>
-      </Card>
+      </TableCard>
     </div>
     {selectedPolicyForRenewal && (
         <ProjectRenewalDialog 

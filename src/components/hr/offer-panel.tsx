@@ -19,6 +19,7 @@ import {
   type HrOffer,
   type HrRequirement,
   type SelectionProposal,
+  hrStatusLabel,
 } from '@/lib/hr-requirement';
 import {
   HrControlError,
@@ -35,14 +36,16 @@ import {
   HrEmptyState,
   HrField,
   HrLoader,
-  HrStatusBadge,
   SensitiveMoney,
+  hrBadgeTone,
   hrDialog,
   type HrListColumn,
 } from './hr-ui';
 import { ReasonDialog } from './interview-panel';
 import { useHrCollection, useHrConfig, useHrPermissions } from './use-hr-config';
 import { PageHeader } from '@/components/shared/page-header';
+import { StatusBadge } from '@/components/shared/status-badge';
+import { TableCard } from '@/components/shared/table-card';
 
 /**
  * Offer management, spec sections 29 and 30.
@@ -156,7 +159,15 @@ export default function OfferPanel({
         );
       },
     },
-    { header: 'Status', mobile: 'aside', cell: row => <HrStatusBadge status={row.status} /> },
+    {
+      header: 'Status',
+      mobile: 'aside',
+      cell: row => (
+        <StatusBadge status={row.status} tone={hrBadgeTone(row.status)}>
+          {hrStatusLabel(row.status)}
+        </StatusBadge>
+      ),
+    },
     {
       header: 'Actions',
       mobile: 'footer',
@@ -248,17 +259,22 @@ export default function OfferPanel({
         </div>
       )}
 
-      <HrDataList
-        rows={scoped}
-        columns={columns}
-        empty={
-          <HrEmptyState
-            icon={FileSignature}
-            title="No offers yet"
-            description="An offer becomes available once a selection proposal is approved and any compensation approval has cleared."
+      <TableCard title="Offers" count={scoped.length} noun="offer">
+        <div className="p-3 sm:p-0">
+          <HrDataList
+            frameless
+            rows={scoped}
+            columns={columns}
+            empty={
+              <HrEmptyState
+                icon={FileSignature}
+                title="No offers yet"
+                description="An offer becomes available once a selection proposal is approved and any compensation approval has cleared."
+              />
+            }
           />
-        }
-      />
+        </div>
+      </TableCard>
 
       <CreateOfferDialog
         proposal={createFor}
@@ -571,5 +587,5 @@ function AcceptOfferDialog({ offer, onClose }: { offer: HrOffer | null; onClose:
 export function OfferCountBadge({ offers }: { offers: HrOffer[] }) {
   const live = offers.filter(offer => ['SENT', 'VIEWED'].includes(offer.status)).length;
   if (live === 0) return null;
-  return <Badge variant="secondary" className="ml-1 tabular-nums">{live}</Badge>;
+  return <Badge variant="neutral" className="ml-1 tabular-nums">{live}</Badge>;
 }

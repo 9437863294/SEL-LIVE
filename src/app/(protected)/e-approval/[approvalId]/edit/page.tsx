@@ -17,7 +17,7 @@ import { ApprovalForm } from '@/components/e-approval/approval-form';
 import { AttachmentList } from '@/components/e-approval/attachment-list';
 import { DeleteApprovalButton } from '@/components/e-approval/delete-request-dialog';
 import { FormSection } from '@/components/e-approval/page-header';
-import { EApprovalStatusBadge } from '@/components/e-approval/shared';
+import { StatusBadge } from '@/components/shared/status-badge';
 import { useEApprovalActor, useEApprovalPermissions } from '@/components/e-approval/hooks';
 import { PageHeader } from '@/components/shared/page-header';
 
@@ -113,7 +113,14 @@ export default function EditEApprovalPage() {
         backLabel="Back to the approval"
         meta={[
           { label: 'Reference', value: request.referenceNo || 'not yet allotted' },
-          { label: 'Status', value: <EApprovalStatusBadge status={request.status} /> },
+          {
+            label: 'Status',
+            value: (
+              <StatusBadge status={request.status}>
+                {request.status === 'Superseded' ? <s>Superseded</s> : undefined}
+              </StatusBadge>
+            ),
+          },
           { label: 'Version', value: request.version },
         ]}
         actions={

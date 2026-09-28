@@ -26,12 +26,13 @@ import {
   getVehicleComplianceRequirements,
   VEHICLE_COLLECTIONS,
 } from '@/lib/vehicle-management';
-import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { PageHeader } from '@/components/shared/page-header';
+import { TableCard } from '@/components/shared/table-card';
+import { FilterBar } from '@/components/shared/filter-bar';
+import { StatusBadge, type StatusTone } from '@/components/shared/status-badge';
 import { Skeleton } from '@/components/ui/skeleton';
-import { Input } from '@/components/ui/input';
-import { TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { cn } from '@/lib/utils';
 
 // ─── Types ─────────────────────────────────────────────────────────────────
@@ -118,12 +119,11 @@ function gradeBg(grade: string) {
   );
 }
 
+/** Only these four document states carry a colour here; anything else (e.g. Missing) stays neutral. */
+const DOC_STATUS_TONE: Record<string, StatusTone> = { Expired: 'danger', 'Due Soon': 'warning', Valid: 'success', 'Not Applicable': 'neutral' };
+
 function statusBadge(status: string) {
-  if (status === 'Expired') return <Badge className="h-4.5 border-red-200 bg-red-100 px-1.5 text-[10px] text-red-700">{status}</Badge>;
-  if (status === 'Due Soon') return <Badge className="h-4.5 border-yellow-200 bg-yellow-100 px-1.5 text-[10px] text-yellow-700">{status}</Badge>;
-  if (status === 'Valid') return <Badge className="h-4.5 border-emerald-200 bg-emerald-100 px-1.5 text-[10px] text-emerald-700">{status}</Badge>;
-  if (status === 'Not Applicable') return <Badge className="h-4.5 border-slate-200 bg-slate-100 px-1.5 text-[10px] text-slate-600">{status}</Badge>;
-  return <Badge variant="outline" className="h-4.5 px-1.5 text-[10px]">{status}</Badge>;
+  return <StatusBadge status={status} tone={DOC_STATUS_TONE[status] ?? 'neutral'}>{status}</StatusBadge>;
 }
 
 const isTruthy = (value: unknown): boolean | null => {
@@ -405,76 +405,73 @@ export default function VehicleHealthPage() {
         ))}
       </div>
 
-      {/* Filter Bar */}
-      <div className="flex flex-col gap-2">
-        <div className="relative">
-          <Input
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search vehicle, type, fuel…"
-            className="h-9 bg-white/85 pl-9 text-sm"
-          />
-          <Activity className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
-        </div>
-
-        <div className="flex flex-wrap items-center gap-1.5">
-        {/* Grade filter pills — scrollable on mobile */}
-        <div className="flex flex-shrink-0 gap-1 overflow-x-auto">
-          {(['All', 'A', 'B', 'C', 'D', 'F'] as const).map((g) => {
-            const active = gradeFilter === g;
-            const colorMap: Record<string, string> = {
-              All: 'border-emerald-300 bg-emerald-50 text-emerald-700',
-              A: 'border-emerald-300 bg-emerald-50 text-emerald-700',
-              B: 'border-cyan-300 bg-cyan-50 text-cyan-700',
-              C: 'border-yellow-300 bg-yellow-50 text-yellow-700',
-              D: 'border-orange-300 bg-orange-50 text-orange-700',
-              F: 'border-red-300 bg-red-50 text-red-700',
-            };
-            return (
-              <button
-                key={g}
-                onClick={() => setGradeFilter(g)}
-                className={`h-7 rounded-md border px-2 text-[11px] font-semibold transition-colors ${
-                  active ? colorMap[g] : 'border-transparent bg-slate-100 text-muted-foreground hover:bg-slate-200'
-                }`}
-                title={g === 'All' ? 'All grades' : `Grade ${g}${gradeCounts[g] ? ` (${gradeCounts[g]})` : ''}`}
+      {/* Vehicle list — compact table, click a row to expand details */}
+      <TableCard
+        title="Vehicle Compliance"
+        icon={Activity}
+        count={filteredList.length}
+        noun="vehicle"
+        toolbar={
+          <FilterBar
+            search={{ value: search, onChange: setSearch, placeholder: 'Search vehicle, type, fuel…' }}
+            activeCount={gradeFilter !== 'All' ? 1 : 0}
+            onClear={() => { setSearch(''); setGradeFilter('All'); }}
+            actions={
+              <Link
+                href="/vehicle-management/renewals"
+                className="flex h-7 items-center gap-1 rounded-md bg-gradient-to-r from-rose-500 to-orange-500 px-2.5 text-[11px] font-semibold text-white shadow-sm transition-opacity hover:opacity-90"
               >
-                {g === 'All' ? 'All' : `${g}${!isLoading && gradeCounts[g] ? ` ·${gradeCounts[g]}` : ''}`}
-              </button>
-            );
-          })}
-        </div>
+                <AlertTriangle className="h-3 w-3" />
+                Renewals Hub
+              </Link>
+            }
+          >
+            {/* Grade filter pills — scrollable on mobile */}
+            <div className="flex flex-shrink-0 gap-1 overflow-x-auto">
+              {(['All', 'A', 'B', 'C', 'D', 'F'] as const).map((g) => {
+                const active = gradeFilter === g;
+                const colorMap: Record<string, string> = {
+                  All: 'border-emerald-300 bg-emerald-50 text-emerald-700',
+                  A: 'border-emerald-300 bg-emerald-50 text-emerald-700',
+                  B: 'border-cyan-300 bg-cyan-50 text-cyan-700',
+                  C: 'border-yellow-300 bg-yellow-50 text-yellow-700',
+                  D: 'border-orange-300 bg-orange-50 text-orange-700',
+                  F: 'border-red-300 bg-red-50 text-red-700',
+                };
+                return (
+                  <button
+                    key={g}
+                    onClick={() => setGradeFilter(g)}
+                    className={`h-7 rounded-md border px-2 text-[11px] font-semibold transition-colors ${
+                      active ? colorMap[g] : 'border-transparent bg-slate-100 text-muted-foreground hover:bg-slate-200'
+                    }`}
+                    title={g === 'All' ? 'All grades' : `Grade ${g}${gradeCounts[g] ? ` (${gradeCounts[g]})` : ''}`}
+                  >
+                    {g === 'All' ? 'All' : `${g}${!isLoading && gradeCounts[g] ? ` ·${gradeCounts[g]}` : ''}`}
+                  </button>
+                );
+              })}
+            </div>
 
-        {/* Sort pills */}
-        <div className="flex flex-shrink-0 gap-1 overflow-x-auto">
-          {(['score', 'vehicleNumber', 'expired'] as const).map((key) => (
-            <button
-              key={key}
-              onClick={() => setSortKey(key)}
-              className={`h-7 rounded-md border px-2 text-[11px] font-medium transition-colors ${
-                sortKey === key
-                  ? 'border-emerald-300 bg-emerald-50 text-emerald-700'
-                  : 'border-transparent bg-slate-100 text-muted-foreground hover:bg-slate-200'
-              }`}
-            >
-              {key === 'score' ? 'Score ↑' : key === 'vehicleNumber' ? 'A–Z' : 'Expired ↓'}
-            </button>
-          ))}
-        </div>
-
-        <Link
-          href="/vehicle-management/renewals"
-          className="ml-auto flex h-7 items-center gap-1 rounded-md bg-gradient-to-r from-rose-500 to-orange-500 px-2.5 text-[11px] font-semibold text-white shadow-sm transition-opacity hover:opacity-90"
-        >
-          <AlertTriangle className="h-3 w-3" />
-          Renewals Hub
-        </Link>
-        </div>
-      </div>
-
-      {/* Vehicle list — compact table, minimum row height, click a row to expand details */}
-      <Card className="vm-panel-strong overflow-hidden">
-        <CardContent className="p-0">
+            {/* Sort pills */}
+            <div className="flex flex-shrink-0 gap-1 overflow-x-auto">
+              {(['score', 'vehicleNumber', 'expired'] as const).map((key) => (
+                <button
+                  key={key}
+                  onClick={() => setSortKey(key)}
+                  className={`h-7 rounded-md border px-2 text-[11px] font-medium transition-colors ${
+                    sortKey === key
+                      ? 'border-emerald-300 bg-emerald-50 text-emerald-700'
+                      : 'border-transparent bg-slate-100 text-muted-foreground hover:bg-slate-200'
+                  }`}
+                >
+                  {key === 'score' ? 'Score ↑' : key === 'vehicleNumber' ? 'A–Z' : 'Expired ↓'}
+                </button>
+              ))}
+            </div>
+          </FilterBar>
+        }
+      >
           {isLoading ? (
             <div className="space-y-1.5 p-3">
               {[1, 2, 3, 4, 5, 6].map((i) => <Skeleton key={i} className="h-9 w-full" />)}
@@ -484,18 +481,17 @@ export default function VehicleHealthPage() {
               <p className="text-sm text-muted-foreground">No vehicles found. Add vehicles in Vehicle Master.</p>
             </div>
           ) : (
-            <div className="overflow-auto rounded-b-lg h-[calc(100vh-330px)]">
-              <table className="w-full caption-bottom text-sm">
-                <TableHeader className="sticky top-0 z-10 bg-slate-50 shadow-sm">
-                  <TableRow className="h-8">
-                    <TableHead className="w-11 px-2">Grade</TableHead>
-                    <TableHead className="px-2">Vehicle</TableHead>
-                    <TableHead className="w-36 px-2">Score</TableHead>
-                    <TableHead className="w-16 px-2 text-center">Expired</TableHead>
-                    <TableHead className="w-16 px-2 text-center">Due Soon</TableHead>
-                    <TableHead className="w-16 px-2 text-center">Missing</TableHead>
-                    <TableHead className="w-14 px-2 text-center">N/A</TableHead>
-                    <TableHead className="w-8 px-2" />
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead className="w-11">Grade</TableHead>
+                    <TableHead>Vehicle</TableHead>
+                    <TableHead className="w-36">Score</TableHead>
+                    <TableHead className="w-16 text-center">Expired</TableHead>
+                    <TableHead className="w-16 text-center">Due Soon</TableHead>
+                    <TableHead className="w-16 text-center">Missing</TableHead>
+                    <TableHead className="w-14 text-center">N/A</TableHead>
+                    <TableHead className="w-8" />
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -504,21 +500,21 @@ export default function VehicleHealthPage() {
                     return (
                       <Fragment key={v.id}>
                         <TableRow
-                          className="h-9 cursor-pointer transition-colors hover:bg-emerald-50/50"
+                          className="cursor-pointer"
                           onClick={() => setExpandedId(isExpanded ? null : v.id)}
                         >
-                          <TableCell className="px-2 py-1">
+                          <TableCell>
                             <span className={cn('inline-flex h-6 w-6 items-center justify-center rounded-md text-[11px] font-bold', gradeBg(v.grade), gradeColor(v.grade))}>
                               {v.grade}
                             </span>
                           </TableCell>
-                          <TableCell className="px-2 py-1">
+                          <TableCell>
                             <p className="truncate font-medium leading-tight">{v.vehicleNumber || '—'}</p>
                             <p className="truncate text-[11px] leading-tight text-muted-foreground">
                               {[v.vehicleType, v.fuelType].filter(Boolean).join(' · ') || '—'}
                             </p>
                           </TableCell>
-                          <TableCell className="px-2 py-1">
+                          <TableCell>
                             <div className="flex items-center gap-2">
                               <div className="h-1.5 w-16 shrink-0 overflow-hidden rounded-full bg-gray-100">
                                 <div className={cn('h-full rounded-full', progressColor(v.score))} style={{ width: `${v.score}%` }} />
@@ -526,17 +522,17 @@ export default function VehicleHealthPage() {
                               <span className={cn('text-xs font-semibold tabular-nums', gradeColor(v.grade))}>{v.score}%</span>
                             </div>
                           </TableCell>
-                          <TableCell className="px-2 py-1 text-center text-xs font-semibold text-red-600">{v.expired || '–'}</TableCell>
-                          <TableCell className="px-2 py-1 text-center text-xs font-semibold text-yellow-600">{v.dueSoon || '–'}</TableCell>
-                          <TableCell className="px-2 py-1 text-center text-xs font-semibold text-slate-500">{v.missing || '–'}</TableCell>
-                          <TableCell className="px-2 py-1 text-center text-xs text-slate-400">{v.notApplicable || '–'}</TableCell>
-                          <TableCell className="px-2 py-1 text-right">
+                          <TableCell className="text-center tabular-nums">{v.expired || '–'}</TableCell>
+                          <TableCell className="text-center tabular-nums">{v.dueSoon || '–'}</TableCell>
+                          <TableCell className="text-center tabular-nums">{v.missing || '–'}</TableCell>
+                          <TableCell className="text-center tabular-nums">{v.notApplicable || '–'}</TableCell>
+                          <TableCell className="text-right">
                             {isExpanded ? <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" /> : <ChevronRight className="h-3.5 w-3.5 text-muted-foreground" />}
                           </TableCell>
                         </TableRow>
                         {isExpanded && (
                           <TableRow className="bg-slate-50/70 hover:bg-slate-50/70">
-                            <TableCell colSpan={8} className="px-3 py-2.5">
+                            <TableCell colSpan={8}>
                               <div className="flex flex-wrap gap-1.5">
                                 {v.alerts.map((alert) => {
                                   const cat = DOC_CATEGORIES.find((c) => c.label === alert.category);
@@ -576,11 +572,9 @@ export default function VehicleHealthPage() {
                     );
                   })}
                 </TableBody>
-              </table>
-            </div>
+              </Table>
           )}
-        </CardContent>
-      </Card>
+      </TableCard>
     </div>
   );
 }

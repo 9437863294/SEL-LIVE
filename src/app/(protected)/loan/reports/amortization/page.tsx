@@ -20,7 +20,9 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { Skeleton } from '@/components/ui/skeleton';
-import { Badge } from '@/components/ui/badge';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { TableCard } from '@/components/shared/table-card';
+import { StatusBadge } from '@/components/shared/status-badge';
 import { useToast } from '@/hooks/use-toast';
 import { useAuthorization } from '@/hooks/useAuthorization';
 import { db } from '@/lib/firebase';
@@ -34,12 +36,6 @@ const fmt = (n: number) =>
     currency: 'INR',
     maximumFractionDigits: 0,
   }).format(n || 0);
-
-const statusStyle: Record<EMI['status'], string> = {
-  Paid: 'bg-emerald-50 text-emerald-700 border-emerald-200',
-  Pending: 'bg-slate-50 text-slate-600 border-slate-200',
-  Overdue: 'bg-rose-50 text-rose-700 border-rose-200',
-};
 
 export default function AmortizationReportPage() {
   const { can, isLoading: authLoading } = useAuthorization();
@@ -369,11 +365,11 @@ export default function AmortizationReportPage() {
       {/* ── Content ─────────────────────────────────────────────────────── */}
       {selectedLoanId === 'all' ? (
         /* Aggregate: loan-by-loan summary table */
-        <Card className="overflow-hidden border-border/60">
-          <CardHeader className="py-3 px-4 border-b">
-            <CardTitle>Loan-by-Loan Summary</CardTitle>
-          </CardHeader>
-          <CardContent className="p-0">
+        <TableCard
+          title="Loan-by-Loan Summary"
+          count={isLoading ? undefined : loanSummaryRows.length}
+          noun="loan"
+        >
             {isLoading ? (
               <div className="space-y-2 p-4">
                 {[...Array(4)].map((_, i) => <Skeleton key={i} className="h-10 w-full" />)}
@@ -383,48 +379,45 @@ export default function AmortizationReportPage() {
                 No loans found.
               </div>
             ) : (
-              <div className="overflow-auto h-[calc(100vh-420px)]">
-                <table className="w-full caption-bottom text-sm [&_th]:sticky [&_th]:top-0 [&_th]:z-10 [&_th]:bg-slate-50">
-                  <thead>
-                    <tr className="border-b">
-                      <th className="py-2 px-4 text-left text-xs font-semibold text-muted-foreground whitespace-nowrap">Loan</th>
-                      <th className="py-2 px-4 text-left text-xs font-semibold text-muted-foreground whitespace-nowrap">Lender</th>
-                      <th className="py-2 px-4 text-right text-xs font-semibold text-muted-foreground whitespace-nowrap">Total Principal</th>
-                      <th className="py-2 px-4 text-right text-xs font-semibold text-muted-foreground whitespace-nowrap">Total Interest</th>
-                      <th className="py-2 px-4 text-right text-xs font-semibold text-muted-foreground whitespace-nowrap">Paid</th>
-                      <th className="py-2 px-4 text-right text-xs font-semibold text-muted-foreground whitespace-nowrap">Remaining</th>
-                    </tr>
-                  </thead>
-                  <tbody>
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead className="whitespace-nowrap">Loan</TableHead>
+                      <TableHead className="whitespace-nowrap">Lender</TableHead>
+                      <TableHead className="text-right whitespace-nowrap">Total Principal</TableHead>
+                      <TableHead className="text-right whitespace-nowrap">Total Interest</TableHead>
+                      <TableHead className="text-right whitespace-nowrap">Paid</TableHead>
+                      <TableHead className="text-right whitespace-nowrap">Remaining</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
                     {loanSummaryRows.map((r) => (
-                      <tr key={r.loan.id} className="border-b last:border-0 hover:bg-muted/30 transition-colors">
-                        <td className="py-2.5 px-4 font-medium text-xs">{r.loan.accountNo}</td>
-                        <td className="py-2.5 px-4 text-xs text-muted-foreground">{r.loan.lenderName}</td>
-                        <td className="py-2.5 px-4 text-xs text-right text-blue-700">{fmt(r.totalPrincipal)}</td>
-                        <td className="py-2.5 px-4 text-xs text-right text-indigo-700">{fmt(r.totalInterest)}</td>
-                        <td className="py-2.5 px-4 text-xs text-right text-emerald-700">{fmt(r.totalPaid)}</td>
-                        <td className="py-2.5 px-4 text-xs text-right text-slate-700">{fmt(r.remaining)}</td>
-                      </tr>
+                      <TableRow key={r.loan.id}>
+                        <TableCell className="font-medium font-mono whitespace-nowrap">{r.loan.accountNo}</TableCell>
+                        <TableCell>{r.loan.lenderName}</TableCell>
+                        <TableCell className="text-right whitespace-nowrap tabular-nums">{fmt(r.totalPrincipal)}</TableCell>
+                        <TableCell className="text-right whitespace-nowrap tabular-nums">{fmt(r.totalInterest)}</TableCell>
+                        <TableCell className="text-right whitespace-nowrap tabular-nums">{fmt(r.totalPaid)}</TableCell>
+                        <TableCell className="text-right whitespace-nowrap tabular-nums">{fmt(r.remaining)}</TableCell>
+                      </TableRow>
                     ))}
-                  </tbody>
-                </table>
-              </div>
+                  </TableBody>
+                </Table>
             )}
-          </CardContent>
-        </Card>
+        </TableCard>
       ) : (
         /* Single loan: full EMI schedule table */
-        <Card className="overflow-hidden border-border/60">
-          <CardHeader className="py-3 px-4 border-b">
-            <CardTitle>EMI Schedule</CardTitle>
-            {loans.find((l) => l.id === selectedLoanId) && (
-              <CardDescription className="text-xs">
-                {loans.find((l) => l.id === selectedLoanId)?.lenderName} —{' '}
-                {loans.find((l) => l.id === selectedLoanId)?.accountNo}
-              </CardDescription>
-            )}
-          </CardHeader>
-          <CardContent className="p-0">
+        <TableCard
+          title="EMI Schedule"
+          description={loans.find((l) => l.id === selectedLoanId) && (
+            <>
+              {loans.find((l) => l.id === selectedLoanId)?.lenderName} —{' '}
+              {loans.find((l) => l.id === selectedLoanId)?.accountNo}
+            </>
+          )}
+          count={loadingEmis ? undefined : emis.length}
+          noun="EMI"
+        >
             {loadingEmis ? (
               <div className="space-y-2 p-4">
                 {[...Array(6)].map((_, i) => <Skeleton key={i} className="h-10 w-full" />)}
@@ -436,10 +429,9 @@ export default function AmortizationReportPage() {
                   : 'No EMI schedule found for this loan.'}
               </div>
             ) : (
-              <div className="overflow-auto h-[calc(100vh-380px)]">
-                <table className="w-full caption-bottom text-sm [&_th]:sticky [&_th]:top-0 [&_th]:z-10 [&_th]:bg-slate-50">
-                  <thead>
-                    <tr className="border-b">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
                       {[
                         { label: 'EMI No', align: 'text-center' },
                         { label: 'Due Date', align: 'text-left' },
@@ -450,55 +442,43 @@ export default function AmortizationReportPage() {
                         { label: 'Closing Principal', align: 'text-right' },
                         { label: 'Status', align: 'text-center' },
                       ].map((h) => (
-                        <th
-                          key={h.label}
-                          className={`py-2 px-3 ${h.align} text-xs font-semibold text-muted-foreground whitespace-nowrap border-b`}
-                        >
+                        <TableHead key={h.label} className={`${h.align} whitespace-nowrap`}>
                           {h.label}
-                        </th>
+                        </TableHead>
                       ))}
-                    </tr>
-                  </thead>
-                  <tbody>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
                     {emis.map((emi) => (
-                      <tr
-                        key={emi.id}
-                        className="border-b last:border-0 hover:bg-muted/30 transition-colors"
-                      >
-                        <td className="py-2.5 px-3 text-center text-xs font-medium text-slate-700">
+                      <TableRow key={emi.id}>
+                        <TableCell className="text-center font-medium tabular-nums">
                           {emi.emiNo}
-                        </td>
-                        <td className="py-2.5 px-3 text-xs text-muted-foreground whitespace-nowrap">
+                        </TableCell>
+                        <TableCell className="whitespace-nowrap">
                           {format(emi.dueDate.toDate(), 'dd MMM yyyy')}
-                        </td>
-                        <td className="py-2.5 px-3 text-right text-xs">{fmt(emi.emiAmount)}</td>
-                        <td className="py-2.5 px-3 text-right text-xs text-blue-700">
+                        </TableCell>
+                        <TableCell className="text-right whitespace-nowrap tabular-nums">{fmt(emi.emiAmount)}</TableCell>
+                        <TableCell className="text-right whitespace-nowrap tabular-nums">
                           {fmt(emi.principal)}
-                        </td>
-                        <td className="py-2.5 px-3 text-right text-xs text-indigo-700">
+                        </TableCell>
+                        <TableCell className="text-right whitespace-nowrap tabular-nums">
                           {fmt(emi.interest)}
-                        </td>
-                        <td className="py-2.5 px-3 text-right text-xs text-emerald-700">
+                        </TableCell>
+                        <TableCell className="text-right whitespace-nowrap tabular-nums">
                           {fmt(emi.paidAmount)}
-                        </td>
-                        <td className="py-2.5 px-3 text-right text-xs text-slate-600">
+                        </TableCell>
+                        <TableCell className="text-right whitespace-nowrap tabular-nums">
                           {fmt(emi.closingPrincipal)}
-                        </td>
-                        <td className="py-2.5 px-3 text-center">
-                          <span
-                            className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[10px] font-medium ${statusStyle[emi.status]}`}
-                          >
-                            {emi.status}
-                          </span>
-                        </td>
-                      </tr>
+                        </TableCell>
+                        <TableCell className="text-center">
+                          <StatusBadge status={emi.status} />
+                        </TableCell>
+                      </TableRow>
                     ))}
-                  </tbody>
-                </table>
-              </div>
+                  </TableBody>
+                </Table>
             )}
-          </CardContent>
-        </Card>
+        </TableCard>
       )}
     </div>
   );

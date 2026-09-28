@@ -16,14 +16,17 @@ import {
   CardTitle,
 } from '@/components/ui/card';
 import {
+  Table,
   TableBody,
   TableCell,
   TableHead,
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
+import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
 import { PageHeader } from '@/components/shared/page-header';
+import { TableCard } from '@/components/shared/table-card';
 
 // ─── helpers ────────────────────────────────────────────────────────────────
 
@@ -282,15 +285,12 @@ export default function LenderSummaryPage() {
       </div>
 
       {/* ── Table / empty state ── */}
-      <Card className="overflow-hidden border-border/60">
-        <div className="h-1 w-full bg-gradient-to-r from-amber-400 via-orange-400 to-yellow-400 opacity-70" />
-        <CardHeader className="pb-2">
-          <CardTitle>By Lender</CardTitle>
-          <CardDescription>
-            Sorted by total principal — descending. Outstanding bar shows proportion repaid.
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="p-0">
+      <TableCard
+        title="By Lender"
+        description="Sorted by total principal — descending. Outstanding bar shows proportion repaid."
+        count={lenderRows.length}
+        noun="lender"
+      >
           {lenderRows.length === 0 ? (
             <div className="px-6 py-12 text-center text-sm text-muted-foreground">
               No loan data available.
@@ -319,9 +319,9 @@ export default function LenderSummaryPage() {
                             {r.activeLoanCount} active
                           </p>
                         </div>
-                        <span className="shrink-0 rounded-full bg-amber-50 px-2 py-0.5 text-[10px] font-semibold text-amber-700">
+                        <Badge variant="neutral" className="shrink-0">
                           {fmtPct(r.avgRate)} avg
-                        </span>
+                        </Badge>
                       </div>
 
                       <div className="mt-2 grid grid-cols-2 gap-x-4 gap-y-1 text-xs text-muted-foreground">
@@ -367,12 +367,10 @@ export default function LenderSummaryPage() {
               </div>
 
               {/* ── Desktop table (hidden sm:block) ── */}
-              <div className="hidden sm:block">
-                <div className="h-[calc(100vh-380px)] overflow-auto [&::-webkit-scrollbar]:h-1.5 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-slate-200">
-                  <table className="w-full caption-bottom text-sm">
-                    <TableHeader className="[&_th]:sticky [&_th]:top-0 [&_th]:z-10 [&_th]:bg-slate-50 [&_th]:shadow-sm">
+                  <Table containerClassName="hidden sm:block">
+                    <TableHeader>
                       <TableRow>
-                        <TableHead className="pl-4 min-w-[180px]">Lender</TableHead>
+                        <TableHead className="min-w-[180px]">Lender</TableHead>
                         <TableHead className="min-w-[70px] text-center">Loans</TableHead>
                         <TableHead className="min-w-[70px] text-center">Active</TableHead>
                         <TableHead className="min-w-[160px] text-right">
@@ -387,7 +385,7 @@ export default function LenderSummaryPage() {
                         <TableHead className="min-w-[100px] text-center">
                           Avg Rate
                         </TableHead>
-                        <TableHead className="min-w-[140px] pr-4 text-right">
+                        <TableHead className="min-w-[140px] text-right">
                           Monthly EMI
                         </TableHead>
                       </TableRow>
@@ -404,25 +402,22 @@ export default function LenderSummaryPage() {
                               )
                             : 0;
                         return (
-                          <TableRow
-                            key={r.lenderName}
-                            className="hover:bg-slate-50/60 transition-colors"
-                          >
-                            <TableCell className="pl-4 font-medium">
+                          <TableRow key={r.lenderName}>
+                            <TableCell className="font-medium">
                               {r.lenderName}
                             </TableCell>
                             <TableCell className="text-center tabular-nums">
                               {r.loanCount}
                             </TableCell>
                             <TableCell className="text-center">
-                              <span className="inline-flex items-center justify-center rounded-full bg-emerald-50 px-2 py-0.5 text-xs font-medium text-emerald-700">
+                              <Badge variant="neutral" className="tabular-nums">
                                 {r.activeLoanCount}
-                              </span>
+                              </Badge>
                             </TableCell>
-                            <TableCell className="text-right tabular-nums font-medium">
+                            <TableCell className="text-right whitespace-nowrap tabular-nums">
                               {fmt(r.totalPrincipal)}
                             </TableCell>
-                            <TableCell className="text-right tabular-nums text-emerald-700">
+                            <TableCell className="text-right whitespace-nowrap tabular-nums">
                               {fmt(r.totalPaid)}
                             </TableCell>
                             <TableCell className="text-right">
@@ -441,24 +436,21 @@ export default function LenderSummaryPage() {
                               </div>
                             </TableCell>
                             <TableCell className="text-center">
-                              <span className="inline-flex items-center rounded-full bg-amber-50 px-2 py-0.5 text-xs font-medium text-amber-700">
+                              <Badge variant="neutral" className="tabular-nums">
                                 {fmtPct(r.avgRate)}
-                              </span>
+                              </Badge>
                             </TableCell>
-                            <TableCell className="pr-4 text-right tabular-nums font-medium">
+                            <TableCell className="text-right whitespace-nowrap tabular-nums">
                               {fmt(r.totalEMI)}
                             </TableCell>
                           </TableRow>
                         );
                       })}
                     </TableBody>
-                  </table>
-                </div>
-              </div>
+                  </Table>
             </>
           )}
-        </CardContent>
-      </Card>
+      </TableCard>
     </div>
   );
 }

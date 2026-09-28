@@ -196,10 +196,7 @@ export default function NotificationsPage() {
             <TabsTrigger key={entry} value={entry} className="text-xs capitalize">
               {entry}
               {counts[entry] > 0 && (
-                <Badge
-                  variant="outline"
-                  className="ml-1.5 border-indigo-200 bg-indigo-50 px-1 text-[10px] tabular-nums text-indigo-700"
-                >
+                <Badge variant="info" className="ml-1.5 tabular-nums">
                   {counts[entry]}
                 </Badge>
               )}

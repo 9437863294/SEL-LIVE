@@ -25,13 +25,9 @@ import {
 } from "@/lib/bank-guarantee";
 import { Button } from "@/components/ui/button";
 import { PageHeader } from "@/components/shared/page-header";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
+import { FilterBar } from "@/components/shared/filter-bar";
+import { TableCard } from "@/components/shared/table-card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   Select,
   SelectContent,
@@ -518,31 +514,28 @@ export default function BGReports() {
           </>
         }
       />
-      <Card>
-        <CardContent className="p-3">
-          <Select value={type} onValueChange={setType}>
-            <SelectTrigger className="max-w-md">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {reports.map(([value, label]) => (
-                <SelectItem key={value} value={value}>
-                  {label}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </CardContent>
-      </Card>
-      <Card>
-        <CardHeader>
-          <CardTitle>{dataset.label}</CardTitle>
-          <CardDescription>
-            {dataset.rows.length} rows · organization-scoped live data
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="p-0">
-          <div className="overflow-x-auto">
+      <TableCard
+        title={dataset.label}
+        description="Organization-scoped live data"
+        count={dataset.rows.length}
+        noun="row"
+        toolbar={
+          <FilterBar>
+            <Select value={type} onValueChange={setType}>
+              <SelectTrigger aria-label="Report">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {reports.map(([value, label]) => (
+                  <SelectItem key={value} value={value}>
+                    {label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </FilterBar>
+        }
+      >
             <Table>
               <TableHeader>
                 <TableRow>
@@ -583,9 +576,7 @@ export default function BGReports() {
                 )}
               </TableBody>
             </Table>
-          </div>
-        </CardContent>
-      </Card>
+      </TableCard>
     </div>
   );
 }

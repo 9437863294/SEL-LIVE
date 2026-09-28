@@ -59,14 +59,13 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { cn } from '@/lib/utils';
-import { moduleBadgeClass } from '@/lib/activity-modules';
 import { KpiCard, type Tone } from '@/components/shared/kpi-card';
 import { CellLink, DataList, type ListColumn } from '@/components/shared/data-list';
+import { StatusBadge, type StatusTone } from '@/components/shared/status-badge';
 import {
   WORK_LANES,
   WORK_LANE_HINT,
   WORK_LANE_TITLE,
-  WORK_URGENCY_BADGE,
   calendarItems,
   mergedWorkItems,
   dueLabel,
@@ -75,6 +74,7 @@ import {
   type WorkLane,
   type WorkLanes,
   type WorkSummary,
+  type WorkUrgency,
 } from '@/lib/work-dashboard';
 import { useWorkDashboard } from './hooks';
 import { useCountUp } from './use-count-up';
@@ -228,7 +228,7 @@ function workColumns(today: string): Array<ListColumn<WorkItem>> {
         <div className="flex min-w-0 items-baseline gap-2">
           <CellLink
             href={item.href}
-            className="truncate text-sm font-medium text-slate-800 hover:underline"
+            className="truncate font-medium hover:underline"
           >
             {item.title}
           </CellLink>
@@ -245,10 +245,7 @@ function workColumns(today: string): Array<ListColumn<WorkItem>> {
       mobile: 'detail',
       className: 'whitespace-nowrap',
       cell: (item) => (
-        <Badge
-          variant="outline"
-          className={cn('whitespace-nowrap px-1.5 py-0 text-[10px] font-medium', moduleBadgeClass(item.module))}
-        >
+        <Badge variant="outline" className="whitespace-nowrap">
           {item.module}
         </Badge>
       ),
@@ -257,13 +254,13 @@ function workColumns(today: string): Array<ListColumn<WorkItem>> {
       header: 'Stage',
       mobile: 'detail',
       className: 'hidden max-w-[14rem] truncate whitespace-nowrap lg:table-cell',
-      cell: (item) => <span className="text-xs text-muted-foreground">{item.stage ?? '—'}</span>,
+      cell: (item) => <span className="text-muted-foreground">{item.stage ?? '—'}</span>,
     },
     {
       header: 'With / raised by',
       mobile: 'detail',
       className: 'hidden max-w-[12rem] truncate whitespace-nowrap xl:table-cell',
-      cell: (item) => <span className="text-xs text-muted-foreground">{item.raisedBy ?? '—'}</span>,
+      cell: (item) => <span className="text-muted-foreground">{item.raisedBy ?? '—'}</span>,
     },
     {
       header: 'Amount',
@@ -271,7 +268,7 @@ function workColumns(today: string): Array<ListColumn<WorkItem>> {
       mobile: 'detail',
       className: 'hidden whitespace-nowrap md:table-cell',
       cell: (item) => (
-        <span className="text-xs tabular-nums text-slate-700">
+        <span className="tabular-nums">
           {typeof item.amount === 'number' ? formatAmount(item.amount) : '—'}
         </span>
       ),
@@ -283,7 +280,7 @@ function workColumns(today: string): Array<ListColumn<WorkItem>> {
       cell: (item) => {
         if (typeof item.count === 'number' && item.count > 0) {
           return (
-            <Badge variant="outline" className="whitespace-nowrap px-1.5 py-0 text-[11px] tabular-nums">
+            <Badge variant="neutral" className="whitespace-nowrap tabular-nums">
               {item.count} waiting
             </Badge>
           );
@@ -295,9 +292,9 @@ function workColumns(today: string): Array<ListColumn<WorkItem>> {
             {item.startTime ? (
               <span className="text-xs font-semibold tabular-nums text-slate-700">{item.startTime}</span>
             ) : null}
-            <Badge variant="outline" className={cn('whitespace-nowrap px-1.5 py-0 text-[11px] font-medium', WORK_URGENCY_BADGE[urgency])}>
+            <StatusBadge status={urgency} tone={URGENCY_TONE[urgency]}>
               {dueLabel(item, today)}
-            </Badge>
+            </StatusBadge>
           </div>
         );
       },
@@ -371,11 +368,20 @@ const COLLAPSED_ROWS = 8;
  * `compareMergedWorkItems` — lane first, urgency within — so the rows naming you stay at the top and
  * a deep shared queue can never bury them.
  */
-const LANE_BADGE: Record<WorkLane, string> = {
-  action: 'bg-indigo-50 text-indigo-700 border-indigo-200',
-  meeting: 'bg-blue-50 text-blue-700 border-blue-200',
-  shared: 'bg-violet-50 text-violet-700 border-violet-200',
-  watching: 'bg-slate-50 text-slate-600 border-slate-200',
+const LANE_TONE: Record<WorkLane, StatusTone> = {
+  action: 'warning',
+  meeting: 'info',
+  shared: 'progress',
+  watching: 'neutral',
+};
+
+/** How close a deadline is, on the shared status palette. */
+const URGENCY_TONE: Record<WorkUrgency, StatusTone> = {
+  overdue: 'danger',
+  today: 'warning',
+  soon: 'info',
+  later: 'neutral',
+  undated: 'neutral',
 };
 
 const LANE_SHORT: Record<WorkLane, string> = {
@@ -396,13 +402,9 @@ function WorkTable({ items, today }: { items: WorkItem[]; today: string }) {
         mobile: 'detail',
         className: 'whitespace-nowrap',
         cell: (item) => (
-          <Badge
-            variant="outline"
-            title={WORK_LANE_HINT[item.lane]}
-            className={cn('whitespace-nowrap px-1.5 py-0 text-[10px] font-medium', LANE_BADGE[item.lane])}
-          >
+          <StatusBadge status={item.lane} tone={LANE_TONE[item.lane]} title={WORK_LANE_HINT[item.lane]}>
             {LANE_SHORT[item.lane]}
-          </Badge>
+          </StatusBadge>
         ),
       },
       ...workColumns(today),
@@ -467,12 +469,9 @@ function LaneSummary({ lanes }: { lanes: WorkLanes }) {
     <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
       {present.map((lane) => (
         <span key={lane} className="inline-flex items-center gap-1" title={WORK_LANE_HINT[lane]}>
-          <Badge
-            variant="outline"
-            className={cn('px-1.5 py-0 text-[10px] font-medium', LANE_BADGE[lane])}
-          >
+          <StatusBadge status={lane} tone={LANE_TONE[lane]}>
             {LANE_SHORT[lane]}
-          </Badge>
+          </StatusBadge>
           <span className="tabular-nums">{lanes[lane].length}</span>
           <span className="hidden sm:inline">{WORK_LANE_TITLE[lane].toLowerCase()}</span>
         </span>

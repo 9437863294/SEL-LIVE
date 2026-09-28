@@ -10,8 +10,10 @@ import { useSortControl } from '@/components/site-account-statement/use-sort-con
 import { SortControl } from '@/components/site-account-statement/sort-control';
 import { useAuth } from '@/components/auth/AuthProvider';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Table, TableBody, TableCell, TableFooter, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { PageHeader } from '@/components/shared/page-header';
+import { TableCard } from '@/components/shared/table-card';
+import { FilterBar } from '@/components/shared/filter-bar';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -244,18 +246,26 @@ export default function ProjectSummaryPage() {
         </div>
       )}
 
-      <Card className="border-slate-200 bg-white/80">
-        <CardContent className="grid min-w-0 grid-cols-1 gap-3 p-3 sm:grid-cols-2 lg:grid-cols-3 lg:items-end 2xl:grid-cols-[minmax(180px,1fr)_minmax(220px,1.1fr)_145px_145px_170px_auto]">
-          <div className="space-y-1">
-            <label className="text-xs font-medium text-slate-600">Project</label>
-            <Input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search projects..." className="h-10 w-full" />
-            <SortControl control={sortControl} className="shrink-0" />
-          </div>
-          <div className="space-y-1">
-            <label className="text-xs font-medium text-slate-600">Month and year</label>
-            <div className="grid min-w-0 grid-cols-[minmax(0,1fr)_88px] gap-1.5">
+      <TableCard
+        title="Project summary"
+        count={filtered.length}
+        noun="project"
+        toolbar={
+          <FilterBar
+            search={{ value: search, onChange: setSearch, placeholder: 'Search projects...' }}
+            activeCount={[selectedMonthNumber, dateFrom, dateTo, budgetFilter !== 'all'].filter(Boolean).length}
+            onClear={() => {
+              setSearch('');
+              setSelectedMonthNumber('');
+              setSelectedYear(String(new Date().getFullYear()));
+              setDateFrom('');
+              setDateTo('');
+              setBudgetFilter('all');
+            }}
+          >
+            <div className="flex min-w-0 gap-1.5">
               <Select value={selectedMonthNumber || undefined} onValueChange={month => applyMonthRange(selectedYear, month)}>
-                <SelectTrigger className="h-10 min-w-0 w-full bg-white">
+                <SelectTrigger className="min-w-0 flex-1" aria-label="Month">
                   <SelectValue placeholder="Month" />
                 </SelectTrigger>
                 <SelectContent>
@@ -267,7 +277,7 @@ export default function ProjectSummaryPage() {
                 </SelectContent>
               </Select>
               <Select value={selectedYear} onValueChange={year => applyMonthRange(year, selectedMonthNumber)}>
-                <SelectTrigger className="h-10 min-w-0 w-full bg-white">
+                <SelectTrigger className="w-[88px] shrink-0" aria-label="Year">
                   <SelectValue placeholder="Year" />
                 </SelectTrigger>
                 <SelectContent>
@@ -277,37 +287,28 @@ export default function ProjectSummaryPage() {
                 </SelectContent>
               </Select>
             </div>
-          </div>
-          <div className="space-y-1">
-            <label className="text-xs font-medium text-slate-600">From date</label>
             <Input
               type="date"
+              aria-label="From date"
               value={dateFrom}
               max={dateTo || undefined}
               onChange={e => {
                 setSelectedMonthNumber('');
                 setDateFrom(e.target.value);
               }}
-              className="h-10 min-w-0 w-full bg-white"
             />
-          </div>
-          <div className="space-y-1">
-            <label className="text-xs font-medium text-slate-600">To date</label>
             <Input
               type="date"
+              aria-label="To date"
               value={dateTo}
               min={dateFrom || undefined}
               onChange={e => {
                 setSelectedMonthNumber('');
                 setDateTo(e.target.value);
               }}
-              className="h-10 min-w-0 w-full bg-white"
             />
-          </div>
-          <div className="space-y-1">
-            <label className="text-xs font-medium text-slate-600">Budget status</label>
             <Select value={budgetFilter} onValueChange={value => setBudgetFilter(value as typeof budgetFilter)}>
-              <SelectTrigger className="h-10 min-w-0 w-full bg-white">
+              <SelectTrigger aria-label="Budget status">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -317,81 +318,61 @@ export default function ProjectSummaryPage() {
                 <SelectItem value="over">Over budget</SelectItem>
               </SelectContent>
             </Select>
-          </div>
-          <Button
-            variant="outline"
-            className="h-10"
-            disabled={!search && !selectedMonthNumber && !dateFrom && !dateTo && budgetFilter === 'all'}
-            onClick={() => {
-              setSearch('');
-              setSelectedMonthNumber('');
-              setSelectedYear(String(new Date().getFullYear()));
-              setDateFrom('');
-              setDateTo('');
-              setBudgetFilter('all');
-            }}
-          >
-            Clear filters
-          </Button>
-        </CardContent>
-      </Card>
-
+            <SortControl control={sortControl} className="shrink-0" />
+          </FilterBar>
+        }
+      >
       {filtered.length === 0 ? (
-        <Card className="bg-white/80"><CardContent className="flex flex-col items-center gap-3 py-12">
+        <div className="flex flex-col items-center gap-3 py-12">
           <BarChart3 className="h-10 w-10 text-muted-foreground/40" />
           <p className="text-sm text-muted-foreground">No projects configured. Add projects in Project Settings.</p>
-        </CardContent></Card>
+        </div>
       ) : (
-        <Card className="bg-white/80 backdrop-blur-sm">
-          <CardContent className="p-0">
-            <div className="overflow-auto overflow-x-auto max-h-[60vh]">
-              <table className="w-full min-w-[760px] text-sm">
-                <thead className="sticky top-0 z-10">
-                  <tr className="border-b bg-slate-100">
-                    <th className="px-4 py-2.5 text-left font-medium">#</th>
-                    <th className="px-4 py-2.5 text-left font-medium">Project Name</th>
-                    <th className="px-4 py-2.5 text-right font-medium">Opening Balance</th>
-                    <th className="px-4 py-2.5 text-right font-medium">
+              <Table className="min-w-[760px]">
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>#</TableHead>
+                    <TableHead>Project Name</TableHead>
+                    <TableHead className="text-right">Opening Balance</TableHead>
+                    <TableHead className="text-right">
                       <span className="flex items-center justify-end gap-1"><TrendingUp className="h-3.5 w-3.5 text-blue-500" />Total Received</span>
-                    </th>
-                    <th className="px-4 py-2.5 text-right font-medium">
+                    </TableHead>
+                    <TableHead className="text-right">
                       <span className="flex items-center justify-end gap-1"><TrendingDown className="h-3.5 w-3.5 text-rose-500" />Total Expenses</span>
-                    </th>
-                    <th className="px-4 py-2.5 text-right font-medium">
+                    </TableHead>
+                    <TableHead className="text-right">
                       <span className="flex items-center justify-end gap-1"><Wallet className="h-3.5 w-3.5 text-indigo-500" />Closing Balance</span>
-                    </th>
-                  </tr>
-                </thead>
-                <tbody>
+                    </TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
                   {sorted.map((stat, idx) => (
-                    <tr key={stat.id} className="border-b hover:bg-muted/20 transition-colors">
-                      <td className="px-4 py-2.5 text-muted-foreground">{idx + 1}</td>
-                      <td className="px-4 py-2.5 font-medium">{stat.name}</td>
-                      <td className="px-4 py-2.5 text-right text-slate-600">{formatINR(stat.openingBalance)}</td>
-                      <td className="px-4 py-2.5 text-right text-blue-600">{formatINR(stat.totalReceived)}</td>
-                      <td className="px-4 py-2.5 text-right text-rose-600">{formatINR(stat.totalExpenses)}</td>
-                      <td className={cn('px-4 py-2.5 text-right font-semibold', stat.balance >= 0 ? 'text-emerald-600' : 'text-destructive')}>
+                    <TableRow key={stat.id}>
+                      <TableCell className="tabular-nums">{idx + 1}</TableCell>
+                      <TableCell className="font-medium">{stat.name}</TableCell>
+                      <TableCell className="text-right whitespace-nowrap tabular-nums">{formatINR(stat.openingBalance)}</TableCell>
+                      <TableCell className="text-right whitespace-nowrap tabular-nums text-blue-600">{formatINR(stat.totalReceived)}</TableCell>
+                      <TableCell className="text-right whitespace-nowrap tabular-nums text-rose-600">{formatINR(stat.totalExpenses)}</TableCell>
+                      <TableCell className={cn('text-right whitespace-nowrap tabular-nums font-medium', stat.balance >= 0 ? 'text-emerald-600' : 'text-destructive')}>
                         {formatINR(stat.balance)}
-                      </td>
-                    </tr>
+                      </TableCell>
+                    </TableRow>
                   ))}
-                </tbody>
-                <tfoot>
-                  <tr className="bg-muted/30 font-bold">
-                    <td colSpan={2} className="px-4 py-2.5">Overall Total ({filtered.length} projects)</td>
-                    <td className="px-4 py-2.5 text-right">{formatINR(overallOpening)}</td>
-                    <td className="px-4 py-2.5 text-right text-blue-700">{formatINR(overallReceived)}</td>
-                    <td className="px-4 py-2.5 text-right text-rose-700">{formatINR(overallExpenses)}</td>
-                    <td className={cn('px-4 py-2.5 text-right', overallBalance >= 0 ? 'text-emerald-700' : 'text-destructive')}>
+                </TableBody>
+                <TableFooter>
+                  <TableRow>
+                    <TableCell colSpan={2}>Overall Total ({filtered.length} projects)</TableCell>
+                    <TableCell className="text-right whitespace-nowrap tabular-nums">{formatINR(overallOpening)}</TableCell>
+                    <TableCell className="text-right whitespace-nowrap tabular-nums text-blue-700">{formatINR(overallReceived)}</TableCell>
+                    <TableCell className="text-right whitespace-nowrap tabular-nums text-rose-700">{formatINR(overallExpenses)}</TableCell>
+                    <TableCell className={cn('text-right whitespace-nowrap tabular-nums', overallBalance >= 0 ? 'text-emerald-700' : 'text-destructive')}>
                       {formatINR(overallBalance)}
-                    </td>
-                  </tr>
-                </tfoot>
-              </table>
-            </div>
-          </CardContent>
-        </Card>
+                    </TableCell>
+                  </TableRow>
+                </TableFooter>
+              </Table>
       )}
+      </TableCard>
     </div>
   );
 }

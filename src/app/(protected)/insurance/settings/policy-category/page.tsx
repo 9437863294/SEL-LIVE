@@ -25,8 +25,9 @@ import type { PolicyCategory } from '@/lib/types';
 import { Skeleton } from '@/components/ui/skeleton';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogHeader, AlertDialogTitle, AlertDialogDescription, AlertDialogFooter, AlertDialogTrigger } from '@/components/ui/alert-dialog';
 import { useAuthorization } from '@/hooks/useAuthorization';
-import { Badge } from '@/components/ui/badge';
 import { PageHeader } from '@/components/shared/page-header';
+import { TableCard } from '@/components/shared/table-card';
+import { StatusBadge } from '@/components/shared/status-badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 
 const initialFormState = {
@@ -156,8 +157,7 @@ export default function ManagePolicyCategoriesPage() {
         actions={<Button onClick={() => openDialog('add')} disabled={!canAdd}><Plus className="mr-2 h-4 w-4"/> Add Category</Button>}
       />
 
-      <Card>
-        <CardContent className="p-0">
+      <TableCard title="Policy categories" icon={Tags} count={isLoading ? undefined : categories.length}>
           <Table>
             <TableHeader>
               <TableRow>
@@ -176,9 +176,9 @@ export default function ManagePolicyCategoriesPage() {
                   <TableRow key={category.id}>
                     <TableCell className="font-medium">{category.name}</TableCell>
                     <TableCell>
-                       <Badge variant={category.status === 'Active' ? 'default' : 'secondary'}>{category.status}</Badge>
+                       <StatusBadge status={category.status} />
                     </TableCell>
-                    <TableCell className="text-right">
+                    <TableCell className="text-right whitespace-nowrap">
                        <Button variant="outline" size="sm" onClick={() => openDialog('edit', category)} disabled={!canEdit}><Edit className="mr-2 h-4 w-4" />Edit</Button>
                         <AlertDialog>
                             <AlertDialogTrigger asChild>
@@ -203,9 +203,8 @@ export default function ManagePolicyCategoriesPage() {
               )}
             </TableBody>
           </Table>
-        </CardContent>
-      </Card>
-      
+      </TableCard>
+
       <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
           <DialogContent className="sm:max-w-md">
             <DialogHeader>

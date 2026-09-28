@@ -332,13 +332,13 @@ export default function VehicleManagementOverviewPage() {
           <p className="mt-0.5 text-base font-semibold sm:text-xl">{isLoading ? '...' : totalAlerts}</p>
           {syncFailures > 0 && <p className="mt-0.5 text-[9px] font-medium text-amber-700 sm:text-[10px]">Partial data · retry refresh</p>}
           <div className="mt-1.5 hidden flex-wrap gap-1 text-[10px] lg:flex">
-            <Badge variant="destructive" className="shadow-sm">
+            <Badge variant="danger">
               Expired: {alertSummary.expired}
             </Badge>
-            <Badge className="bg-amber-500 text-white shadow-sm hover:bg-amber-600">
+            <Badge variant="warning">
               Due Soon: {alertSummary.dueSoon}
             </Badge>
-            <Badge variant="outline" className="bg-emerald-50 text-emerald-700">
+            <Badge variant="success">
               Valid: {alertSummary.valid}
             </Badge>
           </div>
@@ -447,7 +447,7 @@ export default function VehicleManagementOverviewPage() {
               <item.icon className="h-3.5 w-3.5 shrink-0" />
               {item.label}
               {item.label === 'Vehicle Health' && !isLoading && alertSummary.expired > 0 && (
-                <Badge variant="destructive" className="h-4 px-1 text-[9px] leading-none">{alertSummary.expired}</Badge>
+                <Badge variant="danger" className="h-4 px-1 text-[9px] leading-none">{alertSummary.expired}</Badge>
               )}
             </Link>
           ))}

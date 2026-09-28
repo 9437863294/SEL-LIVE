@@ -1,7 +1,7 @@
 'use client';
 
 import { useMemo, useState } from 'react';
-import { LogOut, Pencil, Search, ShieldCheck, UserMinus, UserPlus, UsersRound } from 'lucide-react';
+import { LogOut, Pencil, ShieldCheck, UserMinus, UserPlus, UsersRound } from 'lucide-react';
 import type { User } from '@/lib/types';
 import { personSubtitle } from '@/lib/people-directory';
 import type { ChatConversation } from '@/lib/chat';
@@ -18,6 +18,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
+import { SearchInput } from '@/components/shared/filter-bar';
 import { Label } from '@/components/ui/label';
 
 export function GroupInfoDialog({
@@ -88,7 +89,7 @@ export function GroupInfoDialog({
         <DialogContent size="default" className="h-[min(620px,90vh)] max-w-lg p-0">
           <DialogHeader className="border-b px-5 py-4 pr-12"><DialogTitle>Add members</DialogTitle><DialogDescription>Select colleagues to add to this group.</DialogDescription></DialogHeader>
           <div className="flex min-h-0 flex-1 flex-col px-5 py-4">
-            <div className="relative"><Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" /><Input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search people" className="pl-9" /></div>
+            <SearchInput value={search} onChange={setSearch} placeholder="Search people" />
             <div className="mt-3 min-h-0 flex-1 overflow-y-auto rounded-xl border">
               {candidates.map((candidate) => {
                 const selected = selectedIds.includes(candidate.id);

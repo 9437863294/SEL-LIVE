@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { FileStack, IndianRupee, Lock, Pencil, Trash2 } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
+import { StatusBadge } from '@/components/shared/status-badge';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
@@ -138,15 +139,11 @@ export function ApprovalTypesPanel({
                   </Badge>
                 )}
                 {row.confidentialByDefault && (
-                  <Badge variant="outline" className="gap-0.5 border-stone-300 bg-stone-100 text-[10px] text-stone-700">
+                  <Badge variant="neutral" className="gap-0.5 text-[10px]">
                     <Lock className="h-2.5 w-2.5" /> Confidential
                   </Badge>
                 )}
-                {row.active === false && (
-                  <Badge variant="outline" className="text-[10px]">
-                    Inactive
-                  </Badge>
-                )}
+                {row.active === false && <StatusBadge status="Inactive" />}
               </>
             }
             subtitle={

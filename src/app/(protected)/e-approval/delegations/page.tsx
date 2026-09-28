@@ -2,9 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { CalendarClock, Loader2, Plus, Trash2 } from 'lucide-react';
-import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent } from '@/components/ui/card';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -33,6 +31,8 @@ import {
   useEApprovalPermissions,
 } from '@/components/e-approval/hooks';
 import { PageHeader } from '@/components/shared/page-header';
+import { StatusBadge } from '@/components/shared/status-badge';
+import { TableCard } from '@/components/shared/table-card';
 
 /**
  * Substitute approvers (spec section 23).
@@ -185,8 +185,7 @@ export default function EApprovalDelegationsPage() {
         }
         meta={[{ label: 'Configured', value: `${rows.length}` }]}
       />
-      <Card>
-        <CardContent className="px-2 py-3 sm:px-3">
+      <TableCard title="Delegation register" count={isLoading ? undefined : rows.length} noun="delegation">
           {isLoading ? (
             <div className="space-y-2 p-2">
               {[0, 1, 2].map((row) => (
@@ -200,10 +199,9 @@ export default function EApprovalDelegationsPage() {
               description="Set one up before going on leave so approvals do not stall."
             />
           ) : (
-            <div className="overflow-x-auto rounded-lg border">
               <Table>
                 <TableHeader>
-                  <TableRow className="bg-muted/40">
+                  <TableRow>
                     <TableHead>From</TableHead>
                     <TableHead>To</TableHead>
                     <TableHead className="whitespace-nowrap">From date</TableHead>
@@ -221,37 +219,33 @@ export default function EApprovalDelegationsPage() {
                       inForce && resolveEApprovalDelegate(engineRows, row.fromUserId, new Date())?.id === row.id;
                     return (
                       <TableRow key={row.id}>
-                        <TableCell className="whitespace-nowrap text-xs font-medium">
+                        <TableCell className="whitespace-nowrap font-medium">
                           {row.fromUserName || directory.userById.get(row.fromUserId)?.name || row.fromUserId}
                         </TableCell>
-                        <TableCell className="whitespace-nowrap text-xs font-medium">
+                        <TableCell className="whitespace-nowrap font-medium">
                           {row.toUserName || directory.userById.get(row.toUserId)?.name || row.toUserId}
                         </TableCell>
-                        <TableCell className="whitespace-nowrap text-xs">{formatEApprovalDate(row.fromDate)}</TableCell>
-                        <TableCell className="whitespace-nowrap text-xs">
+                        <TableCell className="whitespace-nowrap">{formatEApprovalDate(row.fromDate)}</TableCell>
+                        <TableCell className="whitespace-nowrap">
                           {row.toDate ? formatEApprovalDate(row.toDate) : 'Open-ended'}
                         </TableCell>
-                        <TableCell className="text-xs">
+                        <TableCell>
                           {row.approvalTypeIds?.length
                             ? row.approvalTypeIds
                                 .map((typeId) => directory.types.find((type) => type.id === typeId)?.name || typeId)
                                 .join(', ')
                             : 'All approval types'}
                         </TableCell>
-                        <TableCell className="max-w-[200px] truncate text-xs text-muted-foreground">
+                        <TableCell className="max-w-[200px] truncate">
                           {row.reason || '—'}
                         </TableCell>
                         <TableCell>
                           {row.active === false ? (
-                            <Badge variant="outline" className="text-[10px]">
-                              Disabled
-                            </Badge>
+                            <StatusBadge status="Disabled" tone="neutral" />
                           ) : isThisOne ? (
-                            <Badge className="bg-emerald-600 text-[10px] hover:bg-emerald-600">In force</Badge>
+                            <StatusBadge status="In force" tone="success" />
                           ) : (
-                            <Badge variant="outline" className="text-[10px]">
-                              Scheduled / expired
-                            </Badge>
+                            <StatusBadge status="Scheduled / expired" tone="neutral" />
                           )}
                         </TableCell>
                         {canManage && (
@@ -274,10 +268,8 @@ export default function EApprovalDelegationsPage() {
                   })}
                 </TableBody>
               </Table>
-            </div>
           )}
-        </CardContent>
-      </Card>
+      </TableCard>
 
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent

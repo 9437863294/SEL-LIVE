@@ -41,6 +41,7 @@ import { useToast } from '@/hooks/use-toast';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { SearchInput } from '@/components/shared/filter-bar';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Skeleton } from '@/components/ui/skeleton';
 import {
@@ -1033,15 +1034,12 @@ export default function ChatModule() {
                 </Button>
               )}
             </div>
-            <div className="relative mt-4">
-              <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-              <Input
-                value={conversationSearch}
-                onChange={(event) => setConversationSearch(event.target.value)}
-                placeholder={showArchived ? 'Search archived' : 'Search conversations'}
-                className="h-9 bg-muted/50 pl-9"
-              />
-            </div>
+            <SearchInput
+              value={conversationSearch}
+              onChange={setConversationSearch}
+              placeholder={showArchived ? 'Search archived' : 'Search conversations'}
+              className="mt-4"
+            />
           </div>
 
           <ScrollArea className="min-h-0 flex-1">

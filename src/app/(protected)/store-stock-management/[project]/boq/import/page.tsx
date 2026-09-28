@@ -18,6 +18,7 @@ import {
 } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { PageHeader } from '@/components/shared/page-header';
+import { TableCard } from '@/components/shared/table-card';
 import { useToast } from '@/hooks/use-toast';
 import ExcelJS from 'exceljs';
 import { db } from '@/lib/firebase';
@@ -401,21 +402,19 @@ export default function ImportBoqPage() {
         </Card>
 
         {jsonData.length > 0 && (
-          <Card className="flex-1 min-h-0 flex flex-col">
-            <CardHeader className="shrink-0">
-              <CardTitle>Preview Data</CardTitle>
-              <CardDescription>
-                {`Found ${jsonData.length} row${jsonData.length === 1 ? '' : 's'}. `}{previewNote}
-              </CardDescription>
-            </CardHeader>
-
-            <CardContent className="flex-1 min-h-0 p-0">
-              <div className="h-full overflow-auto overscroll-contain">
+          <TableCard
+            className="min-h-0 self-start"
+            title="Preview Data"
+            description={previewNote || undefined}
+            count={jsonData.length}
+            noun="row"
+            footer={jsonData.length > 100 ? <p className="text-center">And {jsonData.length - 100} more rows...</p> : undefined}
+          >
                 <Table className="min-w-full table-auto">
-                  <TableHeader className="sticky top-0 bg-background z-10">
+                  <TableHeader>
                     <TableRow>
                       {headers.map((header) => (
-                        <TableHead key={header} className="whitespace-nowrap px-2 py-1">
+                        <TableHead key={header}>
                           {header}
                         </TableHead>
                       ))}
@@ -427,7 +426,7 @@ export default function ImportBoqPage() {
                         {headers.map((header) => (
                           <TableCell
                             key={`${rowIndex}-${header}`}
-                            className="whitespace-nowrap px-2 py-1 text-xs"
+                            className="whitespace-nowrap"
                             title={row[header] != null ? String(row[header]) : ''}
                           >
                             {row[header] != null ? String(row[header]) : ''}
@@ -437,14 +436,7 @@ export default function ImportBoqPage() {
                     ))}
                   </TableBody>
                 </Table>
-                {jsonData.length > 100 && (
-                  <p className="text-center text-sm text-muted-foreground p-4">
-                    And {jsonData.length - 100} more rows...
-                  </p>
-                )}
-              </div>
-            </CardContent>
-          </Card>
+          </TableCard>
         )}
       </div>
     </div>

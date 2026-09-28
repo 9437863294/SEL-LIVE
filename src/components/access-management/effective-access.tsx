@@ -25,14 +25,11 @@ import {
   FolderKanban,
   HelpCircle,
   Layers,
-  Search,
   ShieldCheck,
   UserSearch,
 } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -54,6 +51,8 @@ import {
   type RegistryNode,
 } from '@/lib/access-control';
 import type { AccessDirectoryState } from '@/hooks/useAccessDirectory';
+import { SearchInput } from '@/components/shared/filter-bar';
+import { StatusBadge, type StatusTone } from '@/components/shared/status-badge';
 import {
   AccessCard,
   PermissionPair,
@@ -63,6 +62,16 @@ import {
   StatLine,
   ModulePicker,
 } from './access-ui';
+
+/**
+ * A temporary grant's state in this module's terms — the same reading as the Temporary Access
+ * report. "Active" is a lapsing grant in force, a caution rather than a success; "Expired" and
+ * "Revoked" are kept for the audit trail, not alarms. Anything not listed reads neutral.
+ */
+export const TEMPORARY_GRANT_TONE: Record<string, StatusTone> = {
+  Active: 'warning',
+  Upcoming: 'info',
+};
 
 export function EffectiveAccessViewer({
   state,
@@ -217,16 +226,7 @@ export function UserEffectiveAccessPanel({
               </CardDescription>
             </div>
             <div className="flex flex-wrap items-center gap-1.5">
-              <Badge
-                variant="outline"
-                className={
-                  user.status === 'Inactive'
-                    ? 'border-slate-300 bg-slate-100 text-slate-600'
-                    : 'border-emerald-200 bg-emerald-50 text-emerald-700'
-                }
-              >
-                {user.status ?? 'Active'}
-              </Badge>
+              <StatusBadge status={user.status ?? 'Active'} />
               <RiskBadges privileges={privileges} conflicts={conflicts} />
             </div>
           </div>
@@ -266,7 +266,7 @@ export function UserEffectiveAccessPanel({
               {access.projectIds.length ? (
                 <span className="flex flex-wrap gap-1">
                   {access.projectIds.map((id) => (
-                    <Badge key={id} variant="outline" className="gap-1 border-emerald-200 bg-emerald-50 text-emerald-700">
+                    <Badge key={id} variant="outline" className="gap-1">
                       <FolderKanban className="h-3 w-3" />
                       {projectName(id)}
                     </Badge>
@@ -279,13 +279,13 @@ export function UserEffectiveAccessPanel({
             <HrField label="Departments / designations">
               <span className="flex flex-wrap gap-1">
                 {access.departmentIds.map((id) => (
-                  <Badge key={id} variant="outline" className="gap-1 border-cyan-200 bg-cyan-50 text-cyan-700">
+                  <Badge key={id} variant="outline" className="gap-1">
                     <Building2 className="h-3 w-3" />
                     {departmentName(id)}
                   </Badge>
                 ))}
                 {access.designations.map((designation) => (
-                  <Badge key={designation} variant="outline" className="border-teal-200 bg-teal-50 text-teal-700">
+                  <Badge key={designation} variant="outline">
                     {designation}
                   </Badge>
                 ))}
@@ -303,7 +303,7 @@ export function UserEffectiveAccessPanel({
             <div className="flex flex-wrap gap-1.5">
               {access.modules.length ? (
                 access.modules.map((moduleName) => (
-                  <Badge key={moduleName} variant="outline" className="text-[11px] text-slate-700">
+                  <Badge key={moduleName} variant="outline">
                     {moduleName}
                   </Badge>
                 ))
@@ -326,19 +326,7 @@ export function UserEffectiveAccessPanel({
                   const grantState = temporaryGrantState(grant);
                   return (
                     <div key={grant.id} className="flex flex-wrap items-center gap-1.5 text-xs">
-                      <Badge
-                        variant="outline"
-                        className={cn(
-                          'text-[10px]',
-                          grantState === 'Active'
-                            ? 'border-amber-300 bg-amber-100 text-amber-900'
-                            : grantState === 'Upcoming'
-                              ? 'border-sky-200 bg-sky-50 text-sky-700'
-                              : 'border-slate-200 bg-white text-slate-500',
-                        )}
-                      >
-                        {grantState}
-                      </Badge>
+                      <StatusBadge status={grantState} tone={TEMPORARY_GRANT_TONE[grantState] ?? 'neutral'} />
                       <span className="font-medium text-slate-800">{grant.roleName || 'Direct permissions'}</span>
                       <span className="text-muted-foreground">
                         {formatGrantDate(grant.startAt)} → {formatGrantDate(grant.expiresAt)}
@@ -364,15 +352,7 @@ export function UserEffectiveAccessPanel({
         </TabsList>
 
         <TabsContent value="permissions" className="mt-3 space-y-2">
-          <div className="relative">
-            <Search className="pointer-events-none absolute left-3 top-2.5 h-4 w-4 text-slate-400" />
-            <Input
-              value={term}
-              onChange={(event) => onTermChange(event.target.value)}
-              placeholder="Filter permissions…"
-              className="pl-9"
-            />
-          </div>
+          <SearchInput value={term} onChange={onTermChange} placeholder="Filter permissions…" />
 
           {heldByModule.length > 0 && (
             <p className="text-[11px] text-muted-foreground">
@@ -520,16 +500,11 @@ function PermissionExplainer({
           <CardContent className="space-y-2.5 p-4">
             <div className="flex flex-wrap items-center gap-2">
               <PermissionPair pair={`${resource}::${action}`} className="text-sm" />
-              <Badge
-                variant="outline"
-                className={
-                  explanation.granted
-                    ? 'border-emerald-300 bg-emerald-100 text-emerald-800'
-                    : 'border-slate-300 bg-slate-100 text-slate-600'
-                }
-              >
-                {explanation.granted ? 'Granted' : 'Not granted'}
-              </Badge>
+              {/* "Granted" is not a word the shared vocabulary knows, so its tone is given. */}
+              <StatusBadge
+                status={explanation.granted ? 'Granted' : 'Not granted'}
+                tone={explanation.granted ? 'success' : 'neutral'}
+              />
             </div>
 
             <p className="text-sm text-slate-700">{explanation.summary}</p>
@@ -640,14 +615,10 @@ function AccessSimulation({
               <div className="flex flex-wrap items-center gap-1.5">
                 <ShieldCheck className="h-3.5 w-3.5 shrink-0 text-emerald-600" />
                 <p className="text-sm font-semibold text-slate-800">{entry.moduleName}</p>
-                <Badge variant="outline" className="border-emerald-200 bg-emerald-50 text-[10px] text-emerald-700">
+                <Badge variant="neutral">
                   {entry.pages.length} page{entry.pages.length === 1 ? '' : 's'}
                 </Badge>
-                {entry.hiddenPages > 0 && (
-                  <Badge variant="outline" className="text-[10px] text-muted-foreground">
-                    {entry.hiddenPages} hidden
-                  </Badge>
-                )}
+                {entry.hiddenPages > 0 && <Badge variant="outline">{entry.hiddenPages} hidden</Badge>}
               </div>
               <div className="mt-1.5 space-y-1 pl-5">
                 {entry.pages.map((page) => (
@@ -673,7 +644,7 @@ function AccessSimulation({
               </p>
               <div className="flex flex-wrap gap-1">
                 {blocked.map((entry) => (
-                  <Badge key={entry.moduleName} variant="outline" className="text-[10px] text-slate-500">
+                  <Badge key={entry.moduleName} variant="outline">
                     {entry.moduleName}
                   </Badge>
                 ))}

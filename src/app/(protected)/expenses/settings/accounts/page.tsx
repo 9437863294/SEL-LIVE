@@ -9,6 +9,7 @@ import { PageHeader } from '@/components/shared/page-header';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { TableCard } from '@/components/shared/table-card';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter, DialogDescription, DialogClose } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -272,8 +273,14 @@ export default function ManageAccountsPage() {
                         </div>
                     </AccordionTrigger>
                     <AccordionContent>
-                      <Card>
-                        <CardContent className="p-0">
+                      <TableCard
+                        scroll="natural"
+                        footer={
+                          <Button variant="outline" size="sm" onClick={() => openDialog('addSubHead', head)}>
+                            <Plus className="mr-2 h-4 w-4" /> Add Sub-Head
+                          </Button>
+                        }
+                      >
                           <Table>
                             <TableHeader>
                               <TableRow>
@@ -311,13 +318,7 @@ export default function ManageAccountsPage() {
                               ))}
                             </TableBody>
                           </Table>
-                          <div className="p-4 border-t">
-                            <Button variant="outline" size="sm" onClick={() => openDialog('addSubHead', head)}>
-                              <Plus className="mr-2 h-4 w-4" /> Add Sub-Head
-                            </Button>
-                          </div>
-                        </CardContent>
-                      </Card>
+                      </TableCard>
                     </AccordionContent>
                   </AccordionItem>
                 );

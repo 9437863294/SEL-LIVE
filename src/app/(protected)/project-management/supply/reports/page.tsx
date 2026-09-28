@@ -383,7 +383,6 @@ export default function SupplyReportsPage() {
     { header: "Gate", className: "font-medium", mobile: "title", cell: (entry) => entry.label },
     {
       header: "Waiting on",
-      className: "text-xs text-muted-foreground",
       mobile: "title",
       cell: (entry) => entry.owner,
     },
@@ -437,7 +436,6 @@ export default function SupplyReportsPage() {
     { header: "Step", className: "font-medium", mobile: "title", cell: (step) => step.label },
     {
       header: "Owner",
-      className: "text-xs text-muted-foreground",
       mobile: "title",
       cell: (step) => step.owner,
     },

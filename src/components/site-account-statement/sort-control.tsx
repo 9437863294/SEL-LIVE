@@ -26,7 +26,7 @@ export function SortControl({
   return (
     <div className={cn('flex items-center gap-1.5', className)}>
       <Select value={sort.field} onValueChange={setField}>
-        <SelectTrigger className="h-9 text-sm" aria-label="Sort by">
+        <SelectTrigger aria-label="Sort by">
           <SelectValue placeholder="Sort by" />
         </SelectTrigger>
         <SelectContent>
@@ -40,7 +40,7 @@ export function SortControl({
         type="button"
         variant="outline"
         size="icon"
-        className="h-9 w-9 shrink-0"
+        className="shrink-0"
         onClick={toggleDirection}
         // Named rather than just arrowed: an icon alone does not say which way "down" sorts a date.
         title={ascending ? 'Ascending — click for descending' : 'Descending — click for ascending'}
@@ -56,7 +56,7 @@ export function SortControl({
           type="button"
           variant="ghost"
           size="icon"
-          className="h-9 w-9 shrink-0 text-muted-foreground"
+          className="shrink-0 text-muted-foreground"
           onClick={reset}
           title="Back to the default order"
           aria-label="Reset sort to default"

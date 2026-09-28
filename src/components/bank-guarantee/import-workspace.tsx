@@ -22,6 +22,8 @@ import {
   calculateBgMargin,
 } from "@/lib/bank-guarantee";
 import { Badge } from "@/components/ui/badge";
+import { StatusBadge } from "@/components/shared/status-badge";
+import { TableCard } from "@/components/shared/table-card";
 import { Button } from "@/components/ui/button";
 import { PageHeader } from "@/components/shared/page-header";
 import {
@@ -375,15 +377,12 @@ export default function BGImportWorkspace() {
         </CardContent>
       </Card>
       {rows.length > 0 && (
-        <Card>
-          <CardHeader>
-            <CardTitle>Validation Result</CardTitle>
-            <CardDescription>
-              {valid.length} valid · {rows.length - valid.length} exceptions
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="p-0">
-            <div className="max-h-[520px] overflow-auto">
+        <TableCard
+          title="Validation Result"
+          description={`${valid.length} valid · ${rows.length - valid.length} exceptions`}
+          count={rows.length}
+          noun="row"
+        >
               <Table>
                 <TableHeader>
                   <TableRow>
@@ -423,22 +422,20 @@ export default function BGImportWorkspace() {
                         {row.errors.length ? (
                           <div className="flex flex-wrap gap-1">
                             {row.errors.map((error) => (
-                              <Badge key={error} variant="destructive">
+                              <Badge key={error} variant="danger">
                                 {error}
                               </Badge>
                             ))}
                           </div>
                         ) : (
-                          <Badge className="bg-emerald-600">Valid</Badge>
+                          <StatusBadge status="Valid" />
                         )}
                       </TableCell>
                     </TableRow>
                   ))}
                 </TableBody>
               </Table>
-            </div>
-          </CardContent>
-        </Card>
+        </TableCard>
       )}
     </div>
   );

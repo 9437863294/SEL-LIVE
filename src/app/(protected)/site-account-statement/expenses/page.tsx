@@ -28,8 +28,11 @@ import { useAuthorization } from '@/hooks/useAuthorization';
 import { useActivityLogger } from '@/hooks/useActivityLogger';
 import { useToast } from '@/hooks/use-toast';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent } from '@/components/ui/card';
+import { Table, TableBody, TableCell, TableFooter, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { PageHeader } from '@/components/shared/page-header';
+import { TableCard } from '@/components/shared/table-card';
+import { FilterBar } from '@/components/shared/filter-bar';
+import { StatusBadge } from '@/components/shared/status-badge';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -49,7 +52,7 @@ import {
 } from '@/components/ui/alert-dialog';
 import {
   AlertTriangle, Calendar, CalendarClock, Camera, CheckCircle2, ChevronDown, ChevronLeft, ChevronRight,
-  Download, ExternalLink, File, FileText, Filter, Image, Loader2,
+  Download, ExternalLink, File, FileText, Image, Loader2,
   Paperclip, Pencil, Plus, Receipt, RotateCw, Trash2, TrendingDown, TrendingUp, Upload, Wallet, X,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
@@ -206,7 +209,6 @@ export default function SiteExpensesPage() {
   const [filterFrom,        setFilterFrom]        = useState(() => getMonthRange().start);
   const [filterTo,          setFilterTo]          = useState(() => getMonthRange().end);
   const [search,            setSearch]            = useState('');
-  const [showFilters,       setShowFilters]       = useState(false);
 
   // Load projects + categories once on mount
   useEffect(() => {
@@ -1321,75 +1323,6 @@ export default function SiteExpensesPage() {
         </Button>
       </div>
 
-      {/* Mobile filter toggle */}
-      {(() => {
-        const activeCount = [filterProject, filterCategory, filterSubCategory, filterMode, filterGstOnly, search].filter(Boolean).length;
-        return (
-          <div className="flex items-center gap-2 sm:hidden">
-            <Button variant="outline" size="sm" className="h-9 gap-2 flex-1 justify-center"
-              onClick={() => setShowFilters(s => !s)}>
-              <Filter className="h-3.5 w-3.5" />
-              {showFilters ? 'Hide Filters' : 'Filters'}
-              {activeCount > 0 && (
-                <span className="flex h-4 w-4 items-center justify-center rounded-full bg-rose-600 text-[9px] font-bold text-white">
-                  {activeCount}
-                </span>
-              )}
-            </Button>
-          </div>
-        );
-      })()}
-
-      {/* Filters (collapsible on mobile, always visible on sm+) */}
-      <div className={cn('space-y-2', !showFilters && 'hidden sm:block')}>
-        <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-4">
-          <Select value={filterProject || '_all_'} onValueChange={v => setFilterProject(v === '_all_' ? '' : v)}>
-            <SelectTrigger className="h-9 text-sm"><SelectValue placeholder="All Projects" /></SelectTrigger>
-            <SelectContent>
-              <SelectItem value="_all_">All Projects</SelectItem>
-              {visibleProjects.map(p => <SelectItem key={p.id} value={p.id}>{p.projectName}</SelectItem>)}
-            </SelectContent>
-          </Select>
-          <Select value={filterCategory || '_all_'} onValueChange={v => { setFilterCategory(v === '_all_' ? '' : v); setFilterSubCategory(''); }}>
-            <SelectTrigger className="h-9 text-sm"><SelectValue placeholder="All Categories" /></SelectTrigger>
-            <SelectContent>
-              <SelectItem value="_all_">All Categories</SelectItem>
-              {mainCategories.map(c => <SelectItem key={c.id} value={c.name}>{c.name}</SelectItem>)}
-            </SelectContent>
-          </Select>
-          <Select value={filterSubCategory || '_all_'} onValueChange={v => setFilterSubCategory(v === '_all_' ? '' : v)}>
-            <SelectTrigger className="h-9 text-sm"><SelectValue placeholder="All Sub-Categories" /></SelectTrigger>
-            <SelectContent>
-              <SelectItem value="_all_">All Sub-Categories</SelectItem>
-              {filterSubCategoryOptions.map(c => <SelectItem key={c.id} value={c.name}>{c.name}</SelectItem>)}
-            </SelectContent>
-          </Select>
-          <Select value={filterMode || '_all_'} onValueChange={v => setFilterMode(v === '_all_' ? '' : v)}>
-            <SelectTrigger className="h-9 text-sm"><SelectValue placeholder="All Modes" /></SelectTrigger>
-            <SelectContent>
-              <SelectItem value="_all_">All Modes</SelectItem>
-              {PAYMENT_MODES.map(m => <SelectItem key={m} value={m}>{m}</SelectItem>)}
-            </SelectContent>
-          </Select>
-        </div>
-        <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-4">
-          <Input type="date" value={filterFrom} onChange={e => setFilterFrom(e.target.value)} className="h-9 text-sm" />
-          <Input type="date" value={filterTo}   onChange={e => setFilterTo(e.target.value)}   className="h-9 text-sm" />
-          <Input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search..." className="h-9 text-sm" />
-          {/* Sits under All Modes — shows only expenses flagged as GST bills */}
-          <label
-            className={cn(
-              'flex h-9 cursor-pointer items-center gap-2 rounded-md border px-3 text-sm transition-colors',
-              filterGstOnly ? 'border-emerald-300 bg-emerald-50 text-emerald-700' : 'bg-white/80 hover:bg-muted/40',
-            )}
-          >
-            <Checkbox checked={filterGstOnly} onCheckedChange={v => setFilterGstOnly(v === true)} />
-            <span className="truncate">GST Bills Only</span>
-          </label>
-          <SortControl control={sortControl} className="col-span-2 sm:col-span-1" />
-        </div>
-      </div>
-
       {/* Opening / Closing balance strip — scoped to the selected period only */}
       {openingBalance !== null && (
         <div className="space-y-1.5">
@@ -1473,8 +1406,78 @@ export default function SiteExpensesPage() {
       </div>
 
       {/* Table */}
-      <Card className="bg-white/80 backdrop-blur-sm">
-        <CardContent className="p-0">
+      <TableCard
+        title="Expenses"
+        description={monthLabel}
+        count={filtered.length}
+        noun="expense"
+        toolbar={
+          <FilterBar
+            search={{ value: search, onChange: setSearch, placeholder: 'Search...' }}
+            activeCount={[filterProject, filterCategory, filterSubCategory, filterMode, filterGstOnly].filter(Boolean).length}
+            onClear={() => {
+              setFilterProject(''); setFilterCategory(''); setFilterSubCategory('');
+              setFilterMode(''); setFilterGstOnly(false); setSearch('');
+            }}
+          >
+            <Select value={filterProject || '_all_'} onValueChange={v => setFilterProject(v === '_all_' ? '' : v)}>
+              <SelectTrigger aria-label="Project"><SelectValue placeholder="All Projects" /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="_all_">All Projects</SelectItem>
+                {visibleProjects.map(p => <SelectItem key={p.id} value={p.id}>{p.projectName}</SelectItem>)}
+              </SelectContent>
+            </Select>
+            <Select value={filterCategory || '_all_'} onValueChange={v => { setFilterCategory(v === '_all_' ? '' : v); setFilterSubCategory(''); }}>
+              <SelectTrigger aria-label="Category"><SelectValue placeholder="All Categories" /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="_all_">All Categories</SelectItem>
+                {mainCategories.map(c => <SelectItem key={c.id} value={c.name}>{c.name}</SelectItem>)}
+              </SelectContent>
+            </Select>
+            <Select value={filterSubCategory || '_all_'} onValueChange={v => setFilterSubCategory(v === '_all_' ? '' : v)}>
+              <SelectTrigger aria-label="Sub-category"><SelectValue placeholder="All Sub-Categories" /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="_all_">All Sub-Categories</SelectItem>
+                {filterSubCategoryOptions.map(c => <SelectItem key={c.id} value={c.name}>{c.name}</SelectItem>)}
+              </SelectContent>
+            </Select>
+            <Select value={filterMode || '_all_'} onValueChange={v => setFilterMode(v === '_all_' ? '' : v)}>
+              <SelectTrigger aria-label="Payment mode"><SelectValue placeholder="All Modes" /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="_all_">All Modes</SelectItem>
+                {PAYMENT_MODES.map(m => <SelectItem key={m} value={m}>{m}</SelectItem>)}
+              </SelectContent>
+            </Select>
+            <Input type="date" value={filterFrom} onChange={e => setFilterFrom(e.target.value)} aria-label="From date" />
+            <Input type="date" value={filterTo}   onChange={e => setFilterTo(e.target.value)}   aria-label="To date" />
+            {/* Shows only expenses flagged as GST bills */}
+            <label
+              className={cn(
+                'flex h-[var(--control-h,2.5rem)] cursor-pointer items-center gap-2 rounded-md border px-3 text-sm transition-colors',
+                filterGstOnly ? 'border-emerald-300 bg-emerald-50 text-emerald-700' : 'bg-background hover:bg-muted/40',
+              )}
+            >
+              <Checkbox checked={filterGstOnly} onCheckedChange={v => setFilterGstOnly(v === true)} />
+              <span className="truncate">GST Bills Only</span>
+            </label>
+            <SortControl control={sortControl} />
+          </FilterBar>
+        }
+        footer={pageCursor && !needsFullScope ? (
+          // Cursor pagination — the table holds one page at a time rather than the whole
+          // collection, while the totals above come from the server-side aggregate. Hidden while
+          // refining or re-sorting, because both load the entire period up front.
+          <div className="flex items-center justify-center gap-3">
+            <span>
+              Showing {expenses.length} of {periodExpenseCount} records
+            </span>
+            <Button variant="outline" size="sm" onClick={loadMore} disabled={loadingMore} className="gap-2">
+              {loadingMore ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <ChevronDown className="h-3.5 w-3.5" />}
+              Load {Math.min(SAS_PAGE_SIZE, periodExpenseCount - expenses.length)} more
+            </Button>
+          </div>
+        ) : undefined}
+      >
           {filtered.length === 0 ? (
             <div className="flex flex-col items-center gap-3 py-12 text-center">
               {refining && scopeLoading
@@ -1489,54 +1492,53 @@ export default function SiteExpensesPage() {
               </p>
             </div>
           ) : (
-            <div className="overflow-auto max-h-[60vh]">
-              <table className="w-full text-sm min-w-[800px]">
-                <thead className="sticky top-0 z-10">
-                  <tr className="border-b bg-slate-100">
-                    <th className="px-4 py-2.5 text-left font-medium">Project</th>
-                    <th className="px-4 py-2.5 text-left font-medium">Category</th>
-                    <th className="px-4 py-2.5 text-left font-medium">Narration</th>
-                    <th className="px-4 py-2.5 text-left font-medium">Expensed By</th>
-                    <th className="px-4 py-2.5 text-left font-medium">Date</th>
-                    <th className="px-4 py-2.5 text-right font-medium">Amount</th>
-                    <th className="px-4 py-2.5 text-left font-medium">Mode</th>
-                    <th className="px-4 py-2.5 text-left font-medium">Vendor / Party</th>
-                    <th className="px-4 py-2.5 text-left font-medium">Bill No.</th>
-                    <th className="px-4 py-2.5 text-center font-medium">
-                      <Paperclip className="h-3.5 w-3.5 inline" />
-                    </th>
-                    <th className="px-4 py-2.5 text-left font-medium">Remarks</th>
-                    <th className="px-4 py-2.5 text-left font-medium whitespace-nowrap">Recorded At</th>
-                    {(effectiveCanEdit || canDelete) && <th className="px-4 py-2.5 text-right font-medium">Actions</th>}
-                  </tr>
-                </thead>
-                <tbody>
+              <Table className="min-w-[800px]">
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Project</TableHead>
+                    <TableHead>Category</TableHead>
+                    <TableHead>Narration</TableHead>
+                    <TableHead>Expensed By</TableHead>
+                    <TableHead>Date</TableHead>
+                    <TableHead className="text-right">Amount</TableHead>
+                    <TableHead>Mode</TableHead>
+                    <TableHead>Vendor / Party</TableHead>
+                    <TableHead>Bill No.</TableHead>
+                    <TableHead className="text-center">
+                      <Paperclip className="h-3.5 w-3.5 inline" aria-label="Attachments" />
+                    </TableHead>
+                    <TableHead>Remarks</TableHead>
+                    <TableHead>Recorded At</TableHead>
+                    {(effectiveCanEdit || canDelete) && <TableHead className="text-right">Actions</TableHead>}
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
                   {filtered.map(row => (
-                    <tr key={row.id} className="border-b hover:bg-muted/20 transition-colors cursor-pointer" onClick={() => setViewExpense(row)}>
-                      <td className="px-4 py-2.5 font-medium max-w-[130px] truncate">{row.projectName}</td>
-                      <td className="px-4 py-2.5">
+                    <TableRow key={row.id} className="cursor-pointer" onClick={() => setViewExpense(row)}>
+                      <TableCell className="font-medium max-w-[130px] truncate">{row.projectName}</TableCell>
+                      <TableCell>
                         <div className="flex flex-col gap-0.5">
-                          <Badge variant="outline" className="text-xs w-fit">{row.expenseCategory}</Badge>
+                          <Badge variant="outline" className="w-fit">{row.expenseCategory}</Badge>
                           {row.expenseSubCategory && (
-                            <span className="text-xs text-purple-600">↳ {row.expenseSubCategory}</span>
+                            <span className="text-xs text-muted-foreground">↳ {row.expenseSubCategory}</span>
                           )}
                         </div>
-                      </td>
-                      <td className="px-4 py-2.5 text-muted-foreground max-w-[130px] truncate">{row.narration || '—'}</td>
-                      <td className="px-4 py-2.5">{row.expensedBy}</td>
-                      <td className="px-4 py-2.5 whitespace-nowrap">{row.expenseDate}</td>
-                      <td className="px-4 py-2.5 text-right font-semibold text-rose-700">{formatINR(row.expenseAmount)}</td>
-                      <td className="px-4 py-2.5"><Badge variant="secondary">{row.paymentMode}</Badge></td>
-                      <td className="px-4 py-2.5 max-w-[110px] truncate">{row.vendorPartyName || '—'}</td>
-                      <td className="px-4 py-2.5 text-muted-foreground">
+                      </TableCell>
+                      <TableCell className="max-w-[130px] truncate">{row.narration || '—'}</TableCell>
+                      <TableCell>{row.expensedBy}</TableCell>
+                      <TableCell className="whitespace-nowrap tabular-nums">{row.expenseDate}</TableCell>
+                      <TableCell className="text-right whitespace-nowrap tabular-nums font-medium text-rose-700">{formatINR(row.expenseAmount)}</TableCell>
+                      <TableCell><Badge variant="neutral">{row.paymentMode}</Badge></TableCell>
+                      <TableCell className="max-w-[110px] truncate">{row.vendorPartyName || '—'}</TableCell>
+                      <TableCell>
                         <div className="flex items-center gap-1.5">
                           <span>{row.billNo || '—'}</span>
                           {row.isGstBill && (
-                            <Badge variant="outline" className="border-emerald-300 bg-emerald-50 text-[10px] text-emerald-700 px-1.5 py-0">GST</Badge>
+                            <Badge variant="neutral">GST</Badge>
                           )}
                         </div>
-                      </td>
-                      <td className="px-4 py-2.5 text-center">
+                      </TableCell>
+                      <TableCell className="text-center">
                         {row.attachments && row.attachments.length > 0 ? (
                           <button
                             onClick={e => { e.stopPropagation(); setViewExpense(row); }}
@@ -1548,11 +1550,11 @@ export default function SiteExpensesPage() {
                         ) : (
                           <Paperclip className="h-3.5 w-3.5 text-muted-foreground/25 mx-auto" />
                         )}
-                      </td>
-                      <td className="px-4 py-2.5 text-muted-foreground max-w-[110px] truncate">{row.remarks || '—'}</td>
-                      <td className="px-4 py-2.5 text-xs text-muted-foreground whitespace-nowrap">{formatTimestamp(row.createdAt)}</td>
+                      </TableCell>
+                      <TableCell className="max-w-[110px] truncate">{row.remarks || '—'}</TableCell>
+                      <TableCell className="whitespace-nowrap tabular-nums">{formatTimestamp(row.createdAt)}</TableCell>
                       {(effectiveCanEdit || canDelete) && (
-                        <td className="px-4 py-2.5 text-right">
+                        <TableCell className="text-right">
                           <div className="flex justify-end gap-1" onClick={e => e.stopPropagation()}>
                             {effectiveCanEdit && (
                               <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => openEdit(row)}>
@@ -1581,51 +1583,34 @@ export default function SiteExpensesPage() {
                               </AlertDialog>
                             )}
                           </div>
-                        </td>
+                        </TableCell>
                       )}
-                    </tr>
+                    </TableRow>
                   ))}
-                </tbody>
-                <tfoot>
-                  <tr className="bg-muted/30 font-semibold">
-                    <td colSpan={5} className="px-4 py-2.5">
+                </TableBody>
+                <TableFooter>
+                  <TableRow>
+                    <TableCell colSpan={5}>
                       {refining ? `Filtered total (${filtered.length} of ${periodTotals?.count ?? filtered.length})`
                         : pageCursor ? 'Total (loaded so far)'
                         : 'Total'}
-                    </td>
-                    <td className="px-4 py-2.5 text-right text-rose-700">{formatINR(totalShown)}</td>
-                    <td colSpan={(effectiveCanEdit || canDelete) ? 7 : 6} />
-                  </tr>
+                    </TableCell>
+                    <TableCell className="text-right whitespace-nowrap tabular-nums text-rose-700">{formatINR(totalShown)}</TableCell>
+                    <TableCell colSpan={(effectiveCanEdit || canDelete) ? 7 : 6} />
+                  </TableRow>
                   {/* Only meaningful while the list is a partial view of the period. Once a
                       refinement covers the whole scope, the row above already is the answer. */}
                   {!needsFullScope && pageCursor && (
-                    <tr className="bg-muted/50 font-semibold">
-                      <td colSpan={5} className="px-4 py-2.5">Period total (all {periodExpenseCount} records)</td>
-                      <td className="px-4 py-2.5 text-right text-rose-800">{formatINR(periodExpenseTotal)}</td>
-                      <td colSpan={(effectiveCanEdit || canDelete) ? 7 : 6} />
-                    </tr>
+                    <TableRow>
+                      <TableCell colSpan={5}>Period total (all {periodExpenseCount} records)</TableCell>
+                      <TableCell className="text-right whitespace-nowrap tabular-nums text-rose-800">{formatINR(periodExpenseTotal)}</TableCell>
+                      <TableCell colSpan={(effectiveCanEdit || canDelete) ? 7 : 6} />
+                    </TableRow>
                   )}
-                </tfoot>
-              </table>
-            </div>
+                </TableFooter>
+              </Table>
           )}
-
-          {/* Cursor pagination — the table holds one page at a time rather than the whole
-              collection, while the totals above come from the server-side aggregate. Hidden while
-              refining or re-sorting, because both load the entire period up front. */}
-          {pageCursor && !needsFullScope && (
-            <div className="flex items-center justify-center gap-3 border-t px-4 py-3">
-              <span className="text-xs text-muted-foreground">
-                Showing {expenses.length} of {periodExpenseCount} records
-              </span>
-              <Button variant="outline" size="sm" onClick={loadMore} disabled={loadingMore} className="gap-2">
-                {loadingMore ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <ChevronDown className="h-3.5 w-3.5" />}
-                Load {Math.min(SAS_PAGE_SIZE, periodExpenseCount - expenses.length)} more
-              </Button>
-            </div>
-          )}
-        </CardContent>
-      </Card>
+      </TableCard>
 
       {/* Import Dialog */}
       <VehicleImportDialog
@@ -1656,7 +1641,7 @@ export default function SiteExpensesPage() {
               <div className="rounded-xl border bg-rose-50 px-4 py-3 text-center">
                 <p className="text-xs font-medium uppercase tracking-wide text-rose-500">Amount</p>
                 <p className="text-2xl font-bold text-rose-700">{formatINR(viewExpense.expenseAmount)}</p>
-                <div className="text-xs text-muted-foreground mt-0.5 flex items-center justify-center gap-1.5">{viewExpense.expenseDate} &bull; <Badge variant="secondary" className="text-xs">{viewExpense.paymentMode}</Badge></div>
+                <div className="text-xs text-muted-foreground mt-0.5 flex items-center justify-center gap-1.5">{viewExpense.expenseDate} &bull; <Badge variant="neutral">{viewExpense.paymentMode}</Badge></div>
               </div>
 
               {/* Fields grid */}
@@ -1690,7 +1675,7 @@ export default function SiteExpensesPage() {
                   {/* div, not p — Badge renders a div and cannot nest inside a paragraph. */}
                   <div className="mt-0.5">
                     {viewExpense.isGstBill
-                      ? <Badge variant="outline" className="border-emerald-300 bg-emerald-50 text-xs text-emerald-700">Yes</Badge>
+                      ? <StatusBadge status="Yes" />
                       : <span className="text-muted-foreground">No</span>}
                   </div>
                 </div>
@@ -1770,7 +1755,7 @@ export default function SiteExpensesPage() {
               <Paperclip className="h-4 w-4 text-blue-500" />
               Attachments
               {viewDocExpense?.attachments?.length
-                ? <Badge variant="secondary" className="ml-1">{viewDocExpense.attachments.length}</Badge>
+                ? <Badge variant="neutral" className="ml-1">{viewDocExpense.attachments.length}</Badge>
                 : null}
             </DialogTitle>
           </DialogHeader>
@@ -2038,9 +2023,9 @@ export default function SiteExpensesPage() {
                       <span className="text-xs font-semibold text-blue-600 tabular-nums shrink-0">{u.progress}%</span>
                     )}
                     {u.status === 'done' && (
-                      <Badge variant="outline" className="text-xs text-emerald-700 border-emerald-300 shrink-0">
-                        <CheckCircle2 className="h-3 w-3 mr-1" />Uploaded
-                      </Badge>
+                      <StatusBadge status="Uploaded" tone="success" className="shrink-0">
+                        <CheckCircle2 className="h-3 w-3" />Uploaded
+                      </StatusBadge>
                     )}
                     {u.status === 'error' && (
                       <Button

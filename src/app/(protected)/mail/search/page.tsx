@@ -8,8 +8,8 @@ import { Conversation } from '@/components/mail-hub/conversation';
 import { ThreadList } from '@/components/mail-hub/thread-list';
 import { EmptyState, ErrorNotice, Spinner } from '@/components/mail-hub/ui';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
 import { Switch } from '@/components/ui/switch';
+import { SearchInput } from '@/components/shared/filter-bar';
 import { mailApi, type ThreadSummary } from '@/lib/mail-hub/client';
 import { cn } from '@/lib/utils';
 import { PageHeader } from '@/components/shared/page-header';
@@ -65,7 +65,7 @@ export default function MailSearchPage() {
           submit();
         }}
       >
-        <Input autoFocus value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search mail" className="bg-white sm:max-w-xl" aria-label="Search mail" />
+        <SearchInput autoFocus value={query} onChange={setQuery} placeholder="Search mail" className="sm:w-full sm:max-w-xl" />
         <label className="flex items-center gap-2 text-sm text-slate-600">
           <Switch checked={deep} onCheckedChange={setDeep} /> Search message text
         </label>

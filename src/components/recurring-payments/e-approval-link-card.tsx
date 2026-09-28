@@ -6,6 +6,7 @@ import { AlertTriangle, ExternalLink, Link2Off, Loader2, RefreshCw, ShieldCheck 
 import { useAuth } from '@/components/auth/AuthProvider';
 import { useToast } from '@/hooks/use-toast';
 import { Badge } from '@/components/ui/badge';
+import { StatusBadge } from '@/components/shared/status-badge';
 import { Button } from '@/components/ui/button';
 import type { PaymentObligation } from '@/lib/recurring-payments';
 import { isRecurringMirrorClosed, recurringMirrorLabel } from '@/lib/recurring-payments-e-approval';
@@ -93,11 +94,11 @@ export function PaymentEApprovalCard({
               {detached ? 'Unlinked from E-Approval' : 'Also running in E-Approval'}
             </p>
             {mirror.referenceNo && (
-              <Badge variant="outline" className="font-mono text-[10px]">{mirror.referenceNo}</Badge>
+              <Badge variant="outline" className="font-mono">{mirror.referenceNo}</Badge>
             )}
-            {label && <Badge variant={closed ? 'secondary' : 'default'} className="text-[10px]">{label}</Badge>}
+            {label && <StatusBadge status={label} />}
             {mirror.mode === 'Visibility' && !detached && (
-              <Badge variant="outline" className="text-[10px]">Complete here, not there</Badge>
+              <Badge variant="outline">Complete here, not there</Badge>
             )}
           </div>
           <p className="mt-1 text-xs text-muted-foreground">

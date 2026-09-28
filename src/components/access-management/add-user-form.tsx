@@ -611,11 +611,7 @@ export function AddUserForm({
         title="Additional roles"
         description="Optional, and added on top of the base role — never instead of it. These can also be assigned later; nothing here has to be decided now."
         badge={
-          additionalRoleIds.length > 0 ? (
-            <Badge variant="outline" className="border-indigo-200 bg-indigo-50 text-indigo-700">
-              {additionalRoleIds.length} selected
-            </Badge>
-          ) : null
+          additionalRoleIds.length > 0 ? <Badge variant="neutral">{additionalRoleIds.length} selected</Badge> : null
         }
       >
         {/* Taller than it was in the dialog: this is the control administrators spend the most time

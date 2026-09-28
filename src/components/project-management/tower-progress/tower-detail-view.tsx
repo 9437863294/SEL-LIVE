@@ -47,7 +47,6 @@ import { Progress } from "@/components/ui/progress";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { PmDataList, type PmListColumn } from "@/components/project-management/pm-shell";
 import { useToast } from "@/hooks/use-toast";
-import { cn } from "@/lib/utils";
 import {
   TOWER_ACTIVITY_LIST,
   TOWER_PHOTO_KIND_LABELS,
@@ -72,16 +71,17 @@ import { useTowerProgress } from "./tower-progress-provider";
 import { ProgressUpdateDialog } from "./progress-update-dialog";
 import { TowerFormDialog } from "./tower-dialogs";
 import {
-  ActivityStatusBadge,
+  ACTIVITY_STATUS_TONE,
   EmptyState,
   MetricCard,
   TowerProgressGuard,
   TowerProgressNav,
   TowerProgressShell,
   TowerReportPhoto,
-  VerificationBadge,
 } from "./tower-progress-ui";
 import { PageHeader } from "@/components/shared/page-header";
+import { StatusBadge } from "@/components/shared/status-badge";
+import { TableCard } from "@/components/shared/table-card";
 
 export type TowerDetailTab = "progress" | "photos" | "timeline";
 
@@ -91,7 +91,6 @@ export type TowerDetailTab = "progress" | "photos" | "timeline";
  * is back and the list drops *its* frame instead, so the desktop keeps the one box it had.
  */
 const PHONE_BARE_CARD = "max-sm:border-0 max-sm:bg-transparent max-sm:shadow-none";
-const PHONE_BARE_CARD_HEADER = "max-sm:px-0 max-sm:pt-0";
 const LIST_IN_CARD = "sm:rounded-none sm:border-0 sm:shadow-none";
 
 /** Entry point for all three tower routes. */
@@ -246,7 +245,7 @@ function TowerDetail({ defaultTab }: { defaultTab: TowerDetailTab }) {
         const days = daysInCurrentStatus(state);
         return (
           <>
-            <ActivityStatusBadge status={state.status} />
+            <StatusBadge status={state.status} tone={ACTIVITY_STATUS_TONE[state.status]} />
             {state.reason ? (
               <p className="mt-1 text-[11px] text-red-700 sm:max-w-48">{state.reason}</p>
             ) : null}
@@ -261,12 +260,12 @@ function TowerDetail({ defaultTab }: { defaultTab: TowerDetailTab }) {
     },
     {
       header: "Started",
-      className: "text-xs",
+      className: "whitespace-nowrap",
       cell: ({ state }) => formatTowerDate(state.startedDate),
     },
     {
       header: "Completed",
-      className: "text-xs",
+      className: "whitespace-nowrap",
       cell: ({ state }) => formatTowerDate(state.completedDate),
     },
     {
@@ -310,14 +309,8 @@ function TowerDetail({ defaultTab }: { defaultTab: TowerDetailTab }) {
         const missing = missingRequiredPhotoKinds(definition.key, state.presentPhotoKinds);
         return (
           <>
-            <Badge
-              variant="outline"
-              className={cn(
-                "text-[11px]",
-                missing.length
-                  ? "border-red-200 bg-red-50 text-red-700"
-                  : "border-emerald-200 bg-emerald-50 text-emerald-700",
-              )}
+            <StatusBadge
+              tone={missing.length ? "danger" : "success"}
               title={
                 missing.length
                   ? `Missing: ${missing.map((kind) => TOWER_PHOTO_KIND_LABELS[kind]).join(", ")}`
@@ -326,7 +319,7 @@ function TowerDetail({ defaultTab }: { defaultTab: TowerDetailTab }) {
             >
               {state.presentPhotoKinds.length}/
               {definition.requiredPhotoKinds.length} required
-            </Badge>
+            </StatusBadge>
             <p className="mt-1 text-right text-[11px] text-muted-foreground sm:text-left">
               {state.photoCount} photo{state.photoCount === 1 ? "" : "s"}
             </p>
@@ -474,27 +467,22 @@ function TowerDetail({ defaultTab }: { defaultTab: TowerDetailTab }) {
 
         {/* ── Progress ─────────────────────────────────────────────────────────────────────── */}
         <TabsContent value="progress" className="space-y-4">
-          <Card className={PHONE_BARE_CARD}>
-            <CardHeader className={cn("pb-3", PHONE_BARE_CARD_HEADER)}>
-              <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-                <div>
-                  <CardTitle className="text-base">Activity status</CardTitle>
-                  <CardDescription>
-                    Planned dates are what the Delayed report measures against.
-                  </CardDescription>
-                </div>
-                {permissions.updateProgress && planDirty ? (
-                  <Button size="sm" onClick={() => void handleSavePlan()} disabled={isSavingPlan}>
-                    <Save className="mr-2 h-4 w-4" />
-                    Save planned dates
-                  </Button>
-                ) : null}
-              </div>
-            </CardHeader>
-            <CardContent className="p-0">
-              <PmDataList rows={activityRows} columns={activityColumns} className={LIST_IN_CARD} />
-            </CardContent>
-          </Card>
+          <TableCard
+            title="Activity status"
+            description="Planned dates are what the Delayed report measures against."
+            scroll="natural"
+            className={PHONE_BARE_CARD}
+            actions={
+              permissions.updateProgress && planDirty ? (
+                <Button size="sm" onClick={() => void handleSavePlan()} disabled={isSavingPlan}>
+                  <Save className="mr-2 h-4 w-4" />
+                  Save planned dates
+                </Button>
+              ) : undefined
+            }
+          >
+            <PmDataList rows={activityRows} columns={activityColumns} className={LIST_IN_CARD} />
+          </TableCard>
         </TabsContent>
 
         {/* ── Photographs ──────────────────────────────────────────────────────────────────── */}
@@ -522,7 +510,7 @@ function TowerDetail({ defaultTab }: { defaultTab: TowerDetailTab }) {
                       <div key={definition.key} className="space-y-2">
                         <div className="flex items-center gap-2">
                           <h3 className="text-sm font-semibold">{definition.label}</h3>
-                          <Badge variant="outline" className="text-[10px]">
+                          <Badge variant="neutral" className="tabular-nums">
                             {group.length}
                           </Badge>
                         </div>
@@ -547,9 +535,7 @@ function TowerDetail({ defaultTab }: { defaultTab: TowerDetailTab }) {
                                     {TOWER_PHOTO_KIND_LABELS[entry.photo.kind]}
                                   </span>
                                   {entry.photo.isReportPhoto ? (
-                                    <Badge className="bg-blue-100 text-[10px] text-blue-700">
-                                      Report photo
-                                    </Badge>
+                                    <Badge variant="info">Report photo</Badge>
                                   ) : permissions.updateProgress && update ? (
                                     <Button
                                       variant="ghost"
@@ -602,8 +588,8 @@ function TowerDetail({ defaultTab }: { defaultTab: TowerDetailTab }) {
                           {formatTowerDate(entry.progressDate)}
                         </span>
                         <span className="text-sm">{entry.activityLabel}</span>
-                        <ActivityStatusBadge status={entry.status} />
-                        <VerificationBadge state={entry.verificationState} />
+                        <StatusBadge status={entry.status} tone={ACTIVITY_STATUS_TONE[entry.status]} />
+                        <StatusBadge status={entry.verificationState} />
                         {entry.quantityM ? (
                           <Badge variant="outline" className="text-[10px]">
                             {formatKm(entry.quantityM)}

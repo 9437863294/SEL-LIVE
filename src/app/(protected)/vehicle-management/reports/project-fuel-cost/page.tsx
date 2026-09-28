@@ -10,8 +10,9 @@ import { useAuthorization } from '@/hooks/useAuthorization';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { PageHeader } from '@/components/shared/page-header';
+import { TableCard } from '@/components/shared/table-card';
 import { Skeleton } from '@/components/ui/skeleton';
-import { TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 
@@ -160,7 +161,7 @@ export default function ProjectFuelCostReportPage() {
                 type="month"
                 value={month}
                 onChange={(e) => setMonth(e.target.value)}
-                className="w-full bg-white/80 border-white/70 sm:w-44"
+                className="w-full sm:w-auto"
               />
             </div>
             {canExport && (
@@ -205,90 +206,81 @@ export default function ProjectFuelCostReportPage() {
         </Card>
       </div>
 
-      <Card className="vm-panel-strong">
-        <CardHeader>
-          <CardTitle>Project Fuel Breakdown</CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-3 sm:hidden">
-          {rows.length === 0 ? (
-            <div className="rounded-lg border border-white/70 bg-white/80 px-3 py-6 text-center text-muted-foreground">
-              No data for selected month.
-            </div>
-          ) : (
-            rows.map((item) => (
-              <div key={item.projectName} className="rounded-xl border border-white/70 bg-white/85 p-3 shadow-sm">
-                <div className="mb-1.5 flex items-center justify-between gap-2">
-                  <span className="text-sm font-semibold">
-                    {item.projectName === 'Unassigned' ? (
-                      <Badge variant="outline">Unassigned</Badge>
-                    ) : (
-                      item.projectName
-                    )}
-                  </span>
-                  <span className="text-sm font-medium">{formatCurrency(item.totalCost)}</span>
-                </div>
-                <div className="h-1.5 w-full rounded-full bg-slate-100">
-                  <div
-                    className="h-1.5 rounded-full bg-gradient-to-r from-emerald-500 to-teal-600"
-                    style={{ width: `${maxCost > 0 ? (item.totalCost / maxCost) * 100 : 0}%` }}
-                  />
-                </div>
-                <div className="mt-2 text-xs text-muted-foreground">
-                  {item.totalLiters.toFixed(1)} L · {item.entries} entries · {item.vehicleCount} vehicles
-                </div>
-              </div>
-            ))
-          )}
-        </CardContent>
-      <CardContent className="hidden sm:block p-0">
+      <TableCard title="Project Fuel Breakdown" icon={Layers} count={rows.length} noun="project">
         {rows.length === 0 ? (
-          <div className="rounded-lg border border-white/70 bg-white/80 px-4 py-10 text-center text-muted-foreground">
+          <div className="px-4 py-10 text-center text-sm text-muted-foreground">
             No data for selected month.
           </div>
         ) : (
-          <div className="overflow-auto rounded-lg border border-white/70 bg-white/80 h-[calc(100vh-420px)]">
-            <table className="w-full caption-bottom text-sm">
-              <TableHeader className="sticky top-0 z-10 bg-slate-50 shadow-sm">
-                <TableRow>
-                  <TableHead>Project</TableHead>
-                  <TableHead>Total Fuel Cost</TableHead>
-                  <TableHead>Total Liters</TableHead>
-                  <TableHead>Fuel Entries</TableHead>
-                  <TableHead>Vehicles Used</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {rows.map((item) => (
-                  <TableRow key={item.projectName} className="hover:bg-cyan-50/70 transition-colors">
-                    <TableCell className="font-medium">
+          <>
+            <div className="space-y-3 p-3 sm:hidden">
+              {rows.map((item) => (
+                <div key={item.projectName} className="rounded-xl border border-white/70 bg-white/85 p-3 shadow-sm">
+                  <div className="mb-1.5 flex items-center justify-between gap-2">
+                    <span className="text-sm font-semibold">
                       {item.projectName === 'Unassigned' ? (
                         <Badge variant="outline">Unassigned</Badge>
                       ) : (
                         item.projectName
                       )}
-                    </TableCell>
-                    <TableCell>
-                      <div className="space-y-1">
-                        <div>{formatCurrency(item.totalCost)}</div>
-                        <div className="h-1.5 w-40 rounded-full bg-slate-100">
-                          <div
-                            className="h-1.5 rounded-full bg-gradient-to-r from-emerald-500 to-teal-600 transition-all"
-                            style={{ width: `${maxCost > 0 ? (item.totalCost / maxCost) * 100 : 0}%` }}
-                          />
-                        </div>
-                      </div>
-                    </TableCell>
-                    <TableCell>{item.totalLiters.toFixed(1)}</TableCell>
-                    <TableCell>{item.entries}</TableCell>
-                    <TableCell>{item.vehicleCount}</TableCell>
+                    </span>
+                    <span className="text-sm font-medium">{formatCurrency(item.totalCost)}</span>
+                  </div>
+                  <div className="h-1.5 w-full rounded-full bg-slate-100">
+                    <div
+                      className="h-1.5 rounded-full bg-gradient-to-r from-emerald-500 to-teal-600"
+                      style={{ width: `${maxCost > 0 ? (item.totalCost / maxCost) * 100 : 0}%` }}
+                    />
+                  </div>
+                  <div className="mt-2 text-xs text-muted-foreground">
+                    {item.totalLiters.toFixed(1)} L · {item.entries} entries · {item.vehicleCount} vehicles
+                  </div>
+                </div>
+              ))}
+            </div>
+            <div className="hidden sm:block">
+              <Table containerClassName="overflow-visible">
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Project</TableHead>
+                    <TableHead>Total Fuel Cost</TableHead>
+                    <TableHead className="text-right">Total Liters</TableHead>
+                    <TableHead className="text-right">Fuel Entries</TableHead>
+                    <TableHead className="text-right">Vehicles Used</TableHead>
                   </TableRow>
-                ))}
-              </TableBody>
-            </table>
-          </div>
+                </TableHeader>
+                <TableBody>
+                  {rows.map((item) => (
+                    <TableRow key={item.projectName}>
+                      <TableCell className="font-medium">
+                        {item.projectName === 'Unassigned' ? (
+                          <Badge variant="outline">Unassigned</Badge>
+                        ) : (
+                          item.projectName
+                        )}
+                      </TableCell>
+                      <TableCell className="tabular-nums">
+                        <div className="space-y-1">
+                          <div>{formatCurrency(item.totalCost)}</div>
+                          <div className="h-1.5 w-40 rounded-full bg-slate-100">
+                            <div
+                              className="h-1.5 rounded-full bg-gradient-to-r from-emerald-500 to-teal-600 transition-all"
+                              style={{ width: `${maxCost > 0 ? (item.totalCost / maxCost) * 100 : 0}%` }}
+                            />
+                          </div>
+                        </div>
+                      </TableCell>
+                      <TableCell className="text-right tabular-nums">{item.totalLiters.toFixed(1)}</TableCell>
+                      <TableCell className="text-right tabular-nums">{item.entries}</TableCell>
+                      <TableCell className="text-right tabular-nums">{item.vehicleCount}</TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
+          </>
         )}
-      </CardContent>
-      </Card>
+      </TableCard>
     </div>
   );
 }

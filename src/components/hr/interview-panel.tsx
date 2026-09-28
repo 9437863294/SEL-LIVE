@@ -3,7 +3,6 @@
 import { useMemo, useState } from 'react';
 import Link from 'next/link';
 import { CalendarCheck, CalendarPlus, Loader2, Video, X } from 'lucide-react';
-import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
@@ -21,6 +20,7 @@ import {
   type Interview,
   type InterviewMode,
   type InterviewRound,
+  hrStatusLabel,
 } from '@/lib/hr-requirement';
 import {
   HrControlError,
@@ -32,12 +32,15 @@ import {
   HrDataList,
   HrEmptyState,
   HrLoader,
-  HrStatusBadge,
+  hrBadgeTone,
   hrDialog,
   type HrListColumn,
 } from './hr-ui';
 import { useHrCollection, useHrConfig, useHrPermissions } from './use-hr-config';
 import { PageHeader } from '@/components/shared/page-header';
+import { FilterBar } from '@/components/shared/filter-bar';
+import { StatusBadge } from '@/components/shared/status-badge';
+import { TableCard } from '@/components/shared/table-card';
 
 /**
  * Interview management, spec section 24.
@@ -142,17 +145,21 @@ export default function InterviewPanel({
         row.panelRecommendation ? (
           <span className="inline-flex items-center gap-1.5">
             {row.panelRecommendation}
-            {row.hasDissent && (
-              <Badge variant="outline" className="border-rose-200 bg-rose-50 text-[10px] text-rose-700">
-                dissent
-              </Badge>
-            )}
+            {row.hasDissent && <StatusBadge tone="danger">dissent</StatusBadge>}
           </span>
         ) : (
           <span className="text-muted-foreground">—</span>
         ),
     },
-    { header: 'Status', mobile: 'aside', cell: row => <HrStatusBadge status={row.status} /> },
+    {
+      header: 'Status',
+      mobile: 'aside',
+      cell: row => (
+        <StatusBadge status={row.status} tone={hrBadgeTone(row.status)}>
+          {hrStatusLabel(row.status)}
+        </StatusBadge>
+      ),
+    },
     {
       header: 'Actions',
       mobile: 'footer',
@@ -202,45 +209,57 @@ export default function InterviewPanel({
         />
       )}
 
-      <div className="mb-3 flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
-        <div className="sm:w-56">
-          <Label className="text-xs">Show</Label>
-          <Select value={statusFilter} onValueChange={setStatusFilter}>
-            <SelectTrigger><SelectValue /></SelectTrigger>
-            <SelectContent>
-              <SelectItem value="upcoming">Upcoming</SelectItem>
-              <SelectItem value="feedback-pending">Feedback pending</SelectItem>
-              <SelectItem value="completed">Completed</SelectItem>
-              <SelectItem value="cancelled">Cancelled / no show</SelectItem>
-              <SelectItem value="all">All</SelectItem>
-            </SelectContent>
-          </Select>
-        </div>
-        {embedded && permissions.can('Schedule', 'Interviews') && (
-          <Button className="gap-2" onClick={() => setScheduleOpen(true)}>
-            <CalendarPlus className="h-4 w-4" /> Schedule
-          </Button>
-        )}
-      </div>
-
-      <HrDataList
-        rows={visible}
-        columns={columns}
-        empty={
-          <HrEmptyState
-            icon={CalendarCheck}
-            title="No interviews to show"
-            description="Shortlisted candidates can be scheduled for an interview round."
-            action={
-              permissions.can('Schedule', 'Interviews') ? (
-                <Button size="sm" className="gap-2" onClick={() => setScheduleOpen(true)}>
-                  <CalendarPlus className="h-4 w-4" /> Schedule Interview
+      <TableCard
+        title="Interviews"
+        count={visible.length}
+        noun="interview"
+        toolbar={
+          <FilterBar
+            activeCount={statusFilter !== 'upcoming' ? 1 : 0}
+            onClear={() => setStatusFilter('upcoming')}
+            actions={
+              embedded && permissions.can('Schedule', 'Interviews') ? (
+                <Button className="gap-2" onClick={() => setScheduleOpen(true)}>
+                  <CalendarPlus className="h-4 w-4" /> Schedule
                 </Button>
               ) : undefined
             }
-          />
+          >
+            <Select value={statusFilter} onValueChange={setStatusFilter}>
+              <SelectTrigger aria-label="Show"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="upcoming">Upcoming</SelectItem>
+                <SelectItem value="feedback-pending">Feedback pending</SelectItem>
+                <SelectItem value="completed">Completed</SelectItem>
+                <SelectItem value="cancelled">Cancelled / no show</SelectItem>
+                <SelectItem value="all">All</SelectItem>
+              </SelectContent>
+            </Select>
+          </FilterBar>
         }
-      />
+      >
+        <div className="p-3 sm:p-0">
+          <HrDataList
+            frameless
+            rows={visible}
+            columns={columns}
+            empty={
+              <HrEmptyState
+                icon={CalendarCheck}
+                title="No interviews to show"
+                description="Shortlisted candidates can be scheduled for an interview round."
+                action={
+                  permissions.can('Schedule', 'Interviews') ? (
+                    <Button size="sm" className="gap-2" onClick={() => setScheduleOpen(true)}>
+                      <CalendarPlus className="h-4 w-4" /> Schedule Interview
+                    </Button>
+                  ) : undefined
+                }
+              />
+            }
+          />
+        </div>
+      </TableCard>
 
       <ScheduleDialog
         open={scheduleOpen}

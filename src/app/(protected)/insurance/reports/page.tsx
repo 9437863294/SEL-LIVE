@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { BarChart3, ChevronRight, ClipboardCheck, ShieldAlert } from 'lucide-react';
 import { useAuthorization } from '@/hooks/useAuthorization';
 import { Skeleton } from '@/components/ui/skeleton';
+import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { PageHeader } from '@/components/shared/page-header';
 import { cn } from '@/lib/utils';
@@ -89,7 +90,7 @@ export default function InsuranceReportsPage() {
                   </div>
                   <div className="flex items-center gap-1.5">
                     {item.soon && (
-                      <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-medium text-slate-500">Coming Soon</span>
+                      <Badge variant="neutral">Coming Soon</Badge>
                     )}
                     {!isDisabled && <ChevronRight className="h-4 w-4 text-muted-foreground/40 group-hover:text-muted-foreground transition-colors" />}
                   </div>

@@ -11,11 +11,9 @@ import {
   Edit,
   History,
   Plus,
-  Search,
   Shield,
   ShieldAlert,
   ShieldCheck,
-  X,
 } from 'lucide-react';
 import { addDays, format, isPast, isWithinInterval, startOfDay } from 'date-fns';
 import { collection, getDocs } from 'firebase/firestore';
@@ -27,12 +25,15 @@ import type { InsurancePolicy } from '@/lib/types';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Input } from '@/components/ui/input';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Skeleton } from '@/components/ui/skeleton';
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from '@/components/ui/table';
 import { PageHeader } from '@/components/shared/page-header';
+import { TableCard } from '@/components/shared/table-card';
+import { FilterBar } from '@/components/shared/filter-bar';
+import { StatusBadge } from '@/components/shared/status-badge';
 import { cn } from '@/lib/utils';
 
 // ─── helpers ─────────────────────────────────────────────────────────────────
@@ -50,11 +51,12 @@ function getStatus(policy: InsurancePolicy): PolicyStatus {
   return 'active';
 }
 
-const STATUS_CONFIG: Record<PolicyStatus, { label: string; className: string; icon: React.ElementType }> = {
-  overdue:  { label: 'Overdue',  className: 'bg-red-100 text-red-700 border-red-200',    icon: AlertTriangle },
-  'due-soon': { label: 'Due Soon', className: 'bg-amber-100 text-amber-700 border-amber-200', icon: Clock },
-  active:   { label: 'Active',   className: 'bg-emerald-100 text-emerald-700 border-emerald-200', icon: CheckCircle2 },
-  matured:  { label: 'Matured',  className: 'bg-slate-100 text-slate-600 border-slate-200',  icon: ShieldCheck },
+// The module's labels and icons; the badge tone comes from the label.
+const STATUS_META: Record<PolicyStatus, { label: string; icon: React.ElementType }> = {
+  overdue:  { label: 'Overdue',  icon: AlertTriangle },
+  'due-soon': { label: 'Due Soon', icon: Clock },
+  active:   { label: 'Active',   icon: CheckCircle2 },
+  matured:  { label: 'Matured',  icon: ShieldCheck },
 };
 
 const fmtDate = (ts: { toDate?: () => Date } | null | undefined) => {
@@ -220,69 +222,40 @@ export default function PersonalInsurancePage() {
         </CardContent>
       </Card>
 
-      {/* ── Search + Filter bar ────────────────────────────────────────────── */}
-      <div className="flex flex-wrap items-center gap-2">
-        <div className="relative flex-1 min-w-[220px] max-w-sm">
-          <Search className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
-          <Input
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search holder, policy no, company…"
-            className="pl-8 h-9 bg-background text-sm"
-          />
-          {search && (
-            <button onClick={() => setSearch('')} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground">
-              <X className="h-3.5 w-3.5" />
-            </button>
-          )}
-        </div>
-
-        {/* Active status filter chips */}
-        {(['overdue', 'due-soon', 'active', 'matured'] as PolicyStatus[]).map((s) => {
-          const cfg = STATUS_CONFIG[s];
-          return (
-            <button
-              key={s}
-              onClick={() => setStatusFilter(statusFilter === s ? 'all' : s)}
-              className={cn(
-                'flex items-center gap-1 rounded-full border px-2.5 py-1 text-xs font-medium transition-all',
-                statusFilter === s ? cfg.className : 'border-border/60 text-muted-foreground hover:bg-muted/50'
-              )}
-            >
-              <cfg.icon className="h-3 w-3" />
-              {cfg.label}
-            </button>
-          );
-        })}
-
-        {(search || statusFilter !== 'all') && (
-          <button
-            onClick={() => { setSearch(''); setStatusFilter('all'); }}
-            className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
-          >
-            <X className="h-3 w-3" /> Clear
-          </button>
-        )}
-
-        <span className="ml-auto text-xs text-muted-foreground">
-          {filtered.length} / {enriched.length} policies
-        </span>
-      </div>
-
       {/* ── Table ─────────────────────────────────────────────────────────── */}
-
+      <TableCard
+        title="Policies"
+        icon={Shield}
+        count={filtered.length}
+        total={enriched.length}
+        toolbar={
+          <FilterBar
+            search={{ value: search, onChange: setSearch, placeholder: 'Search holder, policy no, company…' }}
+            activeCount={statusFilter !== 'all' ? 1 : 0}
+            onClear={() => { setSearch(''); setStatusFilter('all'); }}
+          >
+            <Select value={statusFilter} onValueChange={(v) => setStatusFilter(v as PolicyStatus | 'all')}>
+              <SelectTrigger aria-label="Status"><SelectValue placeholder="All Statuses" /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Statuses</SelectItem>
+                {(['overdue', 'due-soon', 'active', 'matured'] as PolicyStatus[]).map((s) => (
+                  <SelectItem key={s} value={s}>{STATUS_META[s].label}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </FilterBar>
+        }
+      >
       {/* Mobile cards */}
-      <div className="space-y-2 sm:hidden">
+      <div className="space-y-2 p-3 sm:hidden">
         {filtered.length === 0 ? (
-          <Card>
-            <CardContent className="flex flex-col items-center justify-center gap-2 py-12 text-center">
-              <Shield className="h-10 w-10 text-muted-foreground/30" />
-              <p className="text-sm text-muted-foreground">No policies match your filters.</p>
-            </CardContent>
-          </Card>
+          <div className="flex flex-col items-center justify-center gap-2 py-12 text-center">
+            <Shield className="h-10 w-10 text-muted-foreground/30" />
+            <p className="text-sm text-muted-foreground">No policies match your filters.</p>
+          </div>
         ) : (
           filtered.map((policy) => {
-            const cfg = STATUS_CONFIG[policy._status];
+            const cfg = STATUS_META[policy._status];
             return (
               <Card
                 key={policy.id}
@@ -295,9 +268,9 @@ export default function PersonalInsurancePage() {
                       <p className="font-semibold text-sm">{policy.insured_person}</p>
                       <p className="text-xs text-muted-foreground">{policy.policy_no}</p>
                     </div>
-                    <Badge variant="outline" className={cn('text-[10px] shrink-0', cfg.className)}>
-                      <cfg.icon className="h-2.5 w-2.5 mr-1" />{cfg.label}
-                    </Badge>
+                    <StatusBadge status={cfg.label} className="shrink-0">
+                      <cfg.icon className="h-2.5 w-2.5" />{cfg.label}
+                    </StatusBadge>
                   </div>
                   <div className="grid grid-cols-2 gap-1 text-xs">
                     <div><span className="text-muted-foreground">Company: </span>{policy.insurance_company}</div>
@@ -313,12 +286,9 @@ export default function PersonalInsurancePage() {
       </div>
 
       {/* Desktop table */}
-      <Card className="hidden sm:block overflow-hidden border-border/60">
-        <div className="overflow-x-auto">
-          <Table>
+          <Table containerClassName="hidden sm:block">
             <TableHeader>
-              <TableRow className="bg-muted/40 hover:bg-muted/40">
-                <TableHead className="w-8" />
+              <TableRow>
                 <TableHead>Policy Holder</TableHead>
                 <TableHead>Policy No.</TableHead>
                 <TableHead>Company</TableHead>
@@ -335,12 +305,12 @@ export default function PersonalInsurancePage() {
               {isLoading ? (
                 Array.from({ length: 5 }).map((_, i) => (
                   <TableRow key={i}>
-                    <TableCell colSpan={11}><Skeleton className="h-8 w-full" /></TableCell>
+                    <TableCell colSpan={10}><Skeleton className="h-8 w-full" /></TableCell>
                   </TableRow>
                 ))
               ) : filtered.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={11} className="h-32 text-center">
+                  <TableCell colSpan={10} className="h-32 text-center">
                     <div className="flex flex-col items-center gap-2 text-muted-foreground">
                       <Shield className="h-8 w-8 opacity-30" />
                       <span className="text-sm">No policies match your filters.</span>
@@ -349,41 +319,30 @@ export default function PersonalInsurancePage() {
                 </TableRow>
               ) : (
                 filtered.map((policy) => {
-                  const cfg = STATUS_CONFIG[policy._status];
-                  const isUrgent = policy._status === 'overdue' || policy._status === 'due-soon';
+                  const cfg = STATUS_META[policy._status];
                   return (
                     <TableRow
                       key={policy.id}
                       onClick={() => router.push(`/insurance/personal/${policy.id}`)}
-                      className={cn(
-                        'cursor-pointer transition-colors',
-                        isUrgent ? 'hover:bg-red-50/50' : 'hover:bg-muted/30'
-                      )}
+                      className="cursor-pointer"
                     >
-                      <TableCell className="pr-0">
-                        <div role="img" aria-label={cfg.label} title={cfg.label} className={cn('h-2 w-2 rounded-full mx-auto', {
-                          'bg-red-500':     policy._status === 'overdue',
-                          'bg-amber-400':   policy._status === 'due-soon',
-                          'bg-emerald-400': policy._status === 'active',
-                          'bg-slate-300':   policy._status === 'matured',
-                        })} />
-                      </TableCell>
                       <TableCell className="font-medium">{policy.insured_person}</TableCell>
-                      <TableCell className="font-mono text-xs">{policy.policy_no}</TableCell>
+                      <TableCell className="font-mono whitespace-nowrap">{policy.policy_no}</TableCell>
                       <TableCell>{policy.insurance_company}</TableCell>
                       <TableCell className="max-w-[160px] truncate">{policy.policy_name}</TableCell>
                       <TableCell>
-                        <Badge variant="outline" className="text-[10px] font-medium">{policy.payment_type}</Badge>
+                        <Badge variant="outline">{policy.payment_type}</Badge>
                       </TableCell>
-                      <TableCell className="font-medium">{fmtCur(policy.premium)}</TableCell>
+                      <TableCell className="whitespace-nowrap tabular-nums">{fmtCur(policy.premium)}</TableCell>
                       <TableCell>
-                        <Badge variant="outline" className={cn('text-[10px] gap-1', cfg.className)}>
+                        {/* The due date, toned by the policy's status. */}
+                        <StatusBadge status={cfg.label} title={cfg.label}>
                           <cfg.icon className="h-2.5 w-2.5" />
                           {fmtDate(policy.due_date)}
-                        </Badge>
+                        </StatusBadge>
                       </TableCell>
-                      <TableCell className="text-muted-foreground text-sm">{fmtDate(policy.date_of_maturity)}</TableCell>
-                      <TableCell>{fmtCur(policy.sum_insured)}</TableCell>
+                      <TableCell className="whitespace-nowrap">{fmtDate(policy.date_of_maturity)}</TableCell>
+                      <TableCell className="whitespace-nowrap tabular-nums">{fmtCur(policy.sum_insured)}</TableCell>
                       {canEdit && (
                         <TableCell className="text-right">
                           <Link href={`/insurance/personal/edit/${policy.id}`} onClick={(e) => e.stopPropagation()}>
@@ -399,8 +358,7 @@ export default function PersonalInsurancePage() {
               )}
             </TableBody>
           </Table>
-        </div>
-      </Card>
+      </TableCard>
 
     </div>
   );

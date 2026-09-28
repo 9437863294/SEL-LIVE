@@ -3,7 +3,6 @@
 import { useMemo, useState } from 'react';
 import Link from 'next/link';
 import { Handshake, Loader2, Plus } from 'lucide-react';
-import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
@@ -13,6 +12,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { useToast } from '@/hooks/use-toast';
 import {
   HR_COLLECTIONS,
+  hrStatusLabel,
   isRecruitingStatus,
   summarizeRequirementFill,
   type EmployeeReferral,
@@ -25,12 +25,15 @@ import {
   HrEmptyState,
   HrLoader,
   HrSection,
-  HrStatusBadge,
+  hrBadgeTone,
   hrDialog,
+  hrPriorityBadgeTone,
   type HrListColumn,
 } from './hr-ui';
 import { useEmployees, useHrCollection, useHrConfig, useHrPermissions } from './use-hr-config';
 import { PageHeader } from '@/components/shared/page-header';
+import { StatusBadge } from '@/components/shared/status-badge';
+import { TableCard } from '@/components/shared/table-card';
 
 /**
  * Employee referrals, spec section 46.
@@ -98,7 +101,15 @@ export default function Referrals() {
           <span className="text-xs text-muted-foreground">General</span>
         ),
     },
-    { header: 'Status', mobile: 'aside', cell: row => <HrStatusBadge status={row.status} /> },
+    {
+      header: 'Status',
+      mobile: 'aside',
+      cell: row => (
+        <StatusBadge status={row.status} tone={hrBadgeTone(row.status)}>
+          {hrStatusLabel(row.status)}
+        </StatusBadge>
+      ),
+    },
     {
       header: 'Reward',
       align: 'right',
@@ -164,7 +175,7 @@ export default function Referrals() {
                   <div className="flex flex-wrap items-center gap-1.5">
                     <p className="truncate text-sm font-medium text-slate-800">{requirement.designation}</p>
                     {requirement.priority === 'Critical' && (
-                      <Badge variant="outline" className="border-rose-200 bg-rose-50 text-[10px] text-rose-700">Critical</Badge>
+                      <StatusBadge status="Critical" tone={hrPriorityBadgeTone('Critical')}>Critical</StatusBadge>
                     )}
                   </div>
                   <p className="mt-0.5 truncate text-xs text-muted-foreground">
@@ -195,19 +206,22 @@ export default function Referrals() {
         )}
       </HrSection>
 
-      <HrSection title={canSeeAll ? 'All referrals' : 'My referrals'}>
-        <HrDataList
-          rows={visible}
-          columns={columns}
-          empty={
-            <HrEmptyState
-              icon={Handshake}
-              title="No referrals yet"
-              description="Refer someone from your network and HR will pick it up from here."
-            />
-          }
-        />
-      </HrSection>
+      <TableCard title={canSeeAll ? 'All referrals' : 'My referrals'}>
+        <div className="p-3 sm:p-0">
+          <HrDataList
+            frameless
+            rows={visible}
+            columns={columns}
+            empty={
+              <HrEmptyState
+                icon={Handshake}
+                title="No referrals yet"
+                description="Refer someone from your network and HR will pick it up from here."
+              />
+            }
+          />
+        </div>
+      </TableCard>
 
       <ReferDialog
         open={referOpen}

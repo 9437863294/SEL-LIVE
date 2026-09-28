@@ -10,8 +10,9 @@ import { useAuthorization } from '@/hooks/useAuthorization';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { PageHeader } from '@/components/shared/page-header';
+import { TableCard } from '@/components/shared/table-card';
 import { Skeleton } from '@/components/ui/skeleton';
-import { TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Input } from '@/components/ui/input';
 
 const formatCurrency = (amount: number) =>
@@ -160,7 +161,7 @@ export default function MaintenanceCostReportPage() {
                 type="month"
                 value={month}
                 onChange={(e) => setMonth(e.target.value)}
-                className="w-full bg-white/80 border-white/70 sm:w-44"
+                className="w-full sm:w-auto"
               />
             </div>
             {canExport && (
@@ -207,67 +208,58 @@ export default function MaintenanceCostReportPage() {
         </Card>
       </div>
 
-      <Card className="vm-panel-strong">
-        <CardHeader>
-          <CardTitle>Maintenance Cost by Vehicle</CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-2 sm:hidden">
-          {rows.length === 0 ? (
-            <div className="rounded-lg border border-white/70 bg-white/80 px-3 py-6 text-center text-muted-foreground">
-              No maintenance data for selected month.
+      <TableCard title="Maintenance Cost by Vehicle" icon={Wrench} count={rows.length} noun="vehicle">
+        {rows.length === 0 ? (
+          <div className="px-4 py-10 text-center text-sm text-muted-foreground">
+            No maintenance data for selected month.
+          </div>
+        ) : (
+          <>
+            <div className="space-y-2 p-3 sm:hidden">
+              {rows.map((row) => (
+                <div key={row.vehicleNumber} className="rounded-xl border border-white/70 bg-white/85 p-3 shadow-sm">
+                  <div className="mb-1.5 flex items-center justify-between">
+                    <span className="text-sm font-semibold">{row.vehicleNumber}</span>
+                    <span className="text-sm font-medium">{formatCurrency(row.totalCost)}</span>
+                  </div>
+                  <div className="mb-2 h-1.5 w-full rounded-full bg-slate-100">
+                    <div
+                      className="h-1.5 rounded-full bg-gradient-to-r from-amber-500 to-orange-500"
+                      style={{ width: `${maxCost > 0 ? (row.totalCost / maxCost) * 100 : 0}%` }}
+                    />
+                  </div>
+                  <div className="grid grid-cols-2 gap-1 text-xs text-muted-foreground">
+                    <span>Visits: {row.visits}</span>
+                    <span>Labour: {formatCurrency(row.labourCost)}</span>
+                    <span>Parts: {formatCurrency(row.partsCost)}</span>
+                    <span>Other: {formatCurrency(row.otherCost)}</span>
+                  </div>
+                </div>
+              ))}
             </div>
-          ) : (
-            rows.map((row) => (
-              <div key={row.vehicleNumber} className="rounded-xl border border-white/70 bg-white/85 p-3 shadow-sm">
-                <div className="mb-1.5 flex items-center justify-between">
-                  <span className="text-sm font-semibold">{row.vehicleNumber}</span>
-                  <span className="text-sm font-medium">{formatCurrency(row.totalCost)}</span>
-                </div>
-                <div className="mb-2 h-1.5 w-full rounded-full bg-slate-100">
-                  <div
-                    className="h-1.5 rounded-full bg-gradient-to-r from-amber-500 to-orange-500"
-                    style={{ width: `${maxCost > 0 ? (row.totalCost / maxCost) * 100 : 0}%` }}
-                  />
-                </div>
-                <div className="grid grid-cols-2 gap-1 text-xs text-muted-foreground">
-                  <span>Visits: {row.visits}</span>
-                  <span>Labour: {formatCurrency(row.labourCost)}</span>
-                  <span>Parts: {formatCurrency(row.partsCost)}</span>
-                  <span>Other: {formatCurrency(row.otherCost)}</span>
-                </div>
-              </div>
-            ))
-          )}
-        </CardContent>
-        <CardContent className="hidden sm:block p-0">
-          {rows.length === 0 ? (
-            <div className="rounded-lg border border-white/70 bg-white/80 px-4 py-10 text-center text-muted-foreground">
-              No maintenance data for selected month.
-            </div>
-          ) : (
-            <div className="overflow-auto rounded-lg border border-white/70 bg-white/80 h-[calc(100vh-420px)]">
-              <table className="w-full caption-bottom text-sm">
-                <TableHeader className="sticky top-0 z-10 bg-slate-50 shadow-sm">
+            <div className="hidden sm:block">
+              <Table containerClassName="overflow-visible">
+                <TableHeader>
                   <TableRow>
                     <TableHead>Vehicle</TableHead>
                     <TableHead>Type</TableHead>
-                    <TableHead>Visits</TableHead>
-                    <TableHead>Labour</TableHead>
-                    <TableHead>Parts</TableHead>
-                    <TableHead>Other</TableHead>
+                    <TableHead className="text-right">Visits</TableHead>
+                    <TableHead className="text-right">Labour</TableHead>
+                    <TableHead className="text-right">Parts</TableHead>
+                    <TableHead className="text-right">Other</TableHead>
                     <TableHead>Total Cost</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {rows.map((row) => (
-                    <TableRow key={row.vehicleNumber} className="hover:bg-amber-50/70 transition-colors">
+                    <TableRow key={row.vehicleNumber}>
                       <TableCell className="font-medium">{row.vehicleNumber}</TableCell>
                       <TableCell>{row.vehicleType}</TableCell>
-                      <TableCell>{row.visits}</TableCell>
-                      <TableCell>{formatCurrency(row.labourCost)}</TableCell>
-                      <TableCell>{formatCurrency(row.partsCost)}</TableCell>
-                      <TableCell>{formatCurrency(row.otherCost)}</TableCell>
-                      <TableCell>
+                      <TableCell className="text-right tabular-nums">{row.visits}</TableCell>
+                      <TableCell className="text-right tabular-nums">{formatCurrency(row.labourCost)}</TableCell>
+                      <TableCell className="text-right tabular-nums">{formatCurrency(row.partsCost)}</TableCell>
+                      <TableCell className="text-right tabular-nums">{formatCurrency(row.otherCost)}</TableCell>
+                      <TableCell className="tabular-nums">
                         <div className="space-y-1">
                           <div className="font-medium">{formatCurrency(row.totalCost)}</div>
                           <div className="h-1.5 w-32 rounded-full bg-slate-100">
@@ -281,11 +273,11 @@ export default function MaintenanceCostReportPage() {
                     </TableRow>
                   ))}
                 </TableBody>
-              </table>
+              </Table>
             </div>
-          )}
-        </CardContent>
-      </Card>
+          </>
+        )}
+      </TableCard>
     </div>
   );
 }
