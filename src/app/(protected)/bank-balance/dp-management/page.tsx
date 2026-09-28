@@ -1,146 +1,118 @@
 'use client';
 export const dynamic = 'force-dynamic';
 
-import { useState, useEffect } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import {
+  AlertTriangle,
+  CalendarDays,
+  Landmark,
   Loader2,
   Plus,
-  Trash2,
+  Save,
   ShieldAlert,
+  Trash2,
+  Wallet,
 } from 'lucide-react';
+import { collection, doc, getDocs, updateDoc } from 'firebase/firestore';
+import { format, parseISO, subDays } from 'date-fns';
+
 import { Button } from '@/components/ui/button';
-import { PageHeader, SectionHeader } from '@/components/shared/page-header';
-import {
-  Card,
-  CardContent,
-  CardHeader,
-  CardTitle,
-  CardDescription,
-} from '@/components/ui/card';
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from '@/components/ui/table';
+import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
-import { useToast } from '@/hooks/use-toast';
-import { db } from '@/lib/firebase';
-import {
-  collection,
-  getDocs,
-  doc,
-  updateDoc,
-} from 'firebase/firestore';
-import type {
-  BankAccount,
-  DpLogEntry,
-} from '@/lib/types';
+import { Label } from '@/components/ui/label';
 import { Skeleton } from '@/components/ui/skeleton';
-import { format, subDays } from 'date-fns';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import {
-  Collapsible,
-  CollapsibleContent,
-  CollapsibleTrigger,
-} from '@/components/ui/collapsible';
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
+import { PageHeader, SectionHeader } from '@/components/shared/page-header';
+import { KpiCard } from '@/components/shared/kpi-card';
+import { DataList, type ListColumn } from '@/components/shared/data-list';
+import { useToast } from '@/hooks/use-toast';
 import { useAuthorization } from '@/hooks/useAuthorization';
+import { db } from '@/lib/firebase';
 import { getEffectiveCcLimitFromEntry } from '@/lib/bank-balance-limit';
+import type { BankAccount, DpLogEntry } from '@/lib/types';
+
+type EntryForm = { fromDate: string; amount: string; todAmount: string };
+
+const EMPTY_FORM: EntryForm = { fromDate: '', amount: '', todAmount: '' };
+
+const inr = new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR' });
+const formatMoney = (value: number) => inr.format(value || 0);
+const formatDay = (iso: string | null | undefined) => (iso ? format(parseISO(iso), 'dd MMM yyyy') : '—');
+
+/**
+ * Newest first, with every entry closing the day before the next one starts and the newest left
+ * open-ended.
+ *
+ * Recomputed on every add and delete rather than patched, so a back-dated entry slots into the
+ * middle of the history and deleting a middle entry leaves no gap in the dates.
+ */
+const normaliseLog = (entries: DpLogEntry[]): DpLogEntry[] =>
+  [...entries]
+    .sort((a, b) => b.fromDate.localeCompare(a.fromDate))
+    .map((entry, index, sorted) => ({
+      ...entry,
+      toDate:
+        index === 0
+          ? null
+          : format(subDays(parseISO(sorted[index - 1].fromDate), 1), 'yyyy-MM-dd'),
+    }));
+
+const makeId = () =>
+  globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random().toString(16).slice(2)}`;
 
 export default function DpManagementPage() {
   const { toast } = useToast();
-  const { can, isLoading: authLoading } =
-    useAuthorization();
+  const { can, isLoading: authLoading } = useAuthorization();
 
-  const [accounts, setAccounts] =
-    useState<BankAccount[]>([]);
-  const [newDpEntries, setNewDpEntries] =
-    useState<
-      Record<
-        string,
-        {
-          fromDate: string;
-          amount: string;
-          todAmount: string;
-        }
-      >
-    >({});
-  const [isLoading, setIsLoading] =
-    useState(true);
-  const [isSaving, setIsSaving] =
-    useState<Record<string, boolean>>({});
-  const [openAddForm, setOpenAddForm] =
-    useState<string | null>(null);
+  const [accounts, setAccounts] = useState<BankAccount[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [savingId, setSavingId] = useState<string | null>(null);
 
-  const canView =
-    !authLoading &&
-    can(
-      'View',
-      'Bank Balance.DP Management'
-    );
-  const canAdd =
-    !authLoading &&
-    can(
-      'Add',
-      'Bank Balance.DP Management'
-    );
-  const canDelete =
-    !authLoading &&
-    can(
-      'Delete',
-      'Bank Balance.DP Management'
-    );
+  const [formAccount, setFormAccount] = useState<BankAccount | null>(null);
+  const [form, setForm] = useState<EntryForm>(EMPTY_FORM);
+  const [deleteTarget, setDeleteTarget] = useState<{ account: BankAccount; entry: DpLogEntry } | null>(null);
+
+  const canView = !authLoading && can('View', 'Bank Balance.DP Management');
+  const canAdd = !authLoading && can('Add', 'Bank Balance.DP Management');
+  const canDelete = !authLoading && can('Delete', 'Bank Balance.DP Management');
 
   const fetchAccounts = async () => {
     setIsLoading(true);
     try {
-      const snap = await getDocs(
-        collection(db, 'bankAccounts')
-      );
-      const allAccounts = snap.docs.map(
-        (d) =>
-          ({
-            id: d.id,
-            ...d.data(),
-          } as BankAccount)
-      );
-
-      const ccAccounts = allAccounts
-        .filter(
-          (acc) =>
-            acc.accountType ===
-            'Cash Credit'
-        )
+      const snap = await getDocs(collection(db, 'bankAccounts'));
+      const ccAccounts = snap.docs
+        .map((d) => ({ id: d.id, ...d.data() } as BankAccount))
+        .filter((acc) => acc.accountType === 'Cash Credit')
         .map((acc) => ({
           ...acc,
-          drawingPower: Array.isArray(
-            acc.drawingPower
-          )
-            ? [...acc.drawingPower].sort(
-                (a, b) =>
-                  new Date(
-                    b.fromDate
-                  ).getTime() -
-                  new Date(
-                    a.fromDate
-                  ).getTime()
-              )
+          drawingPower: Array.isArray(acc.drawingPower)
+            ? [...acc.drawingPower].sort((a, b) => b.fromDate.localeCompare(a.fromDate))
             : [],
-        }));
+        }))
+        .sort((a, b) => (a.shortName || a.bankName || '').localeCompare(b.shortName || b.bankName || ''));
 
       setAccounts(ccAccounts);
     } catch (error) {
-      console.error(
-        'Error fetching accounts: ',
-        error
-      );
-      toast({
-        title: 'Error',
-        description:
-          'Failed to fetch bank accounts.',
-        variant: 'destructive',
-      });
+      console.error('Error fetching accounts: ', error);
+      toast({ title: 'Error', description: 'Failed to fetch bank accounts.', variant: 'destructive' });
     } finally {
       setIsLoading(false);
     }
@@ -148,272 +120,154 @@ export default function DpManagementPage() {
 
   useEffect(() => {
     if (authLoading) return;
-
     if (!canView) {
       setIsLoading(false);
       return;
     }
-
     void fetchAccounts();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [authLoading, canView]);
 
-  const handleNewDpChange = (
-    accountId: string,
-    field:
-      | 'fromDate'
-      | 'amount'
-      | 'todAmount',
-    value: string
-  ) => {
-    setNewDpEntries((prev) => ({
-      ...prev,
-      [accountId]: {
-        ...(prev[accountId] ?? {
-          fromDate: '',
-          amount: '',
-          todAmount: '',
-        }),
-        [field]: value,
-      },
-    }));
+  const summary = useMemo(() => {
+    const current = accounts.map((acc) => acc.drawingPower.find((entry) => entry.toDate === null) ?? acc.drawingPower[0]);
+    return {
+      totalLimit: current.reduce((sum, entry) => sum + getEffectiveCcLimitFromEntry(entry), 0),
+      totalTod: current.reduce((sum, entry) => sum + (entry?.todAmount || 0), 0),
+      withoutLimit: current.filter((entry) => !entry).length,
+    };
+  }, [accounts]);
+
+  const replaceLog = async (account: BankAccount, nextLog: DpLogEntry[], successMessage: string) => {
+    setSavingId(account.id);
+    try {
+      await updateDoc(doc(db, 'bankAccounts', account.id), { drawingPower: nextLog });
+      setAccounts((prev) => prev.map((acc) => (acc.id === account.id ? { ...acc, drawingPower: nextLog } : acc)));
+      toast({ title: 'Saved', description: successMessage });
+      return true;
+    } catch (error) {
+      console.error('Error saving DP log:', error);
+      toast({ title: 'Error', description: 'Could not save the limit entry. Please try again.', variant: 'destructive' });
+      return false;
+    } finally {
+      setSavingId(null);
+    }
   };
 
-  const handleAddDp = async (
-    accountId: string
-  ) => {
-    const newEntry =
-      newDpEntries[accountId];
+  const openForm = (account: BankAccount) => {
+    setForm({ ...EMPTY_FORM, fromDate: format(new Date(), 'yyyy-MM-dd') });
+    setFormAccount(account);
+  };
 
-    if (
-      !newEntry ||
-      !newEntry.fromDate ||
-      !newEntry.amount
-    ) {
+  const handleSaveEntry = async (event: React.FormEvent) => {
+    event.preventDefault();
+    if (!formAccount) return;
+
+    const amount = Number(form.amount);
+    const todAmount = Number(form.todAmount || 0);
+
+    if (!form.fromDate || !form.amount || !Number.isFinite(amount) || amount < 0) {
+      toast({ title: 'Check the entry', description: 'Enter the effective date and a valid DP amount.', variant: 'destructive' });
+      return;
+    }
+    if (!Number.isFinite(todAmount) || todAmount < 0) {
+      toast({ title: 'Check the entry', description: 'TOD must be zero or a positive amount.', variant: 'destructive' });
+      return;
+    }
+    if (formAccount.drawingPower.some((entry) => entry.fromDate === form.fromDate)) {
       toast({
-        title: 'Validation Error',
-        description:
-          'Please provide both a date and an amount.',
+        title: 'Date already used',
+        description: `A limit already starts on ${formatDay(form.fromDate)}. Delete it first or pick another date.`,
         variant: 'destructive',
       });
       return;
     }
 
-    const account = accounts.find(
-      (acc) => acc.id === accountId
-    );
-    if (!account) return;
+    const nextLog = normaliseLog([
+      ...formAccount.drawingPower,
+      { id: makeId(), fromDate: form.fromDate, toDate: null, amount, odAmount: 0, todAmount },
+    ]);
 
-    setIsSaving((prev) => ({
-      ...prev,
-      [accountId]: true,
-    }));
-
-    const updatedDpLog: DpLogEntry[] = [
-      ...(account.drawingPower ?? []),
-    ];
-
-    // Close previous open-ended entry
-    const latestEntry =
-      updatedDpLog.find(
-        (entry) =>
-          entry.toDate === null
-      );
-    if (latestEntry) {
-      latestEntry.toDate = format(
-        subDays(
-          new Date(newEntry.fromDate),
-          1
-        ),
-        'yyyy-MM-dd'
-      );
-    }
-
-    // Add new entry
-    updatedDpLog.push({
-      id:
-        globalThis.crypto
-          ?.randomUUID?.() ??
-        `${Date.now()}-${Math.random()
-          .toString(16)
-          .slice(2)}`,
-      fromDate: newEntry.fromDate,
-      toDate: null,
-      amount: parseFloat(
-        newEntry.amount
-      ),
-      odAmount: 0,
-      todAmount: parseFloat(
-        newEntry.todAmount || '0'
-      ),
-    });
-
-    updatedDpLog.sort(
-      (a, b) =>
-        new Date(
-          b.fromDate
-        ).getTime() -
-        new Date(
-          a.fromDate
-        ).getTime()
-    );
-
-    try {
-      await updateDoc(
-        doc(
-          db,
-          'bankAccounts',
-          accountId
-        ),
-        { drawingPower: updatedDpLog }
-      );
-
-      toast({
-        title: 'Success',
-        description:
-          'Limit log updated successfully.',
-      });
-
-      setAccounts((prev) =>
-        prev.map((acc) =>
-          acc.id === accountId
-            ? {
-                ...acc,
-                drawingPower:
-                  updatedDpLog,
-              }
-            : acc
-        )
-      );
-
-      setNewDpEntries((prev) => ({
-        ...prev,
-        [accountId]: {
-          fromDate: '',
-          amount: '',
-          todAmount: '',
-        },
-      }));
-
-      setOpenAddForm(null);
-    } catch (error) {
-      console.error(
-        'Error saving new DP entry:',
-        error
-      );
-      toast({
-        title: 'Error',
-        description:
-          'Failed to save new DP entry.',
-        variant: 'destructive',
-      });
-    } finally {
-      setIsSaving((prev) => ({
-        ...prev,
-        [accountId]: false,
-      }));
-    }
+    const saved = await replaceLog(formAccount, nextLog, `Limit from ${formatDay(form.fromDate)} saved for ${formAccount.shortName || formAccount.bankName}.`);
+    if (saved) setFormAccount(null);
   };
 
-  const handleDeleteDp = async (
-    accountId: string,
-    entryToDelete: DpLogEntry
-  ) => {
-    const account = accounts.find(
-      (acc) => acc.id === accountId
-    );
-    if (!account) return;
-
-    setIsSaving((prev) => ({
-      ...prev,
-      [accountId]: true,
-    }));
-
-    let updatedDpLog =
-      (account.drawingPower ?? []).filter(
-        (entry) =>
-          entry.id !==
-          entryToDelete.id
-      );
-
-    // If deleting the latest entry, make new latest open-ended
-    if (entryToDelete.toDate === null) {
-      updatedDpLog = [
-        ...updatedDpLog,
-      ].sort(
-        (a, b) =>
-          new Date(
-            b.fromDate
-          ).getTime() -
-          new Date(
-            a.fromDate
-          ).getTime()
-      );
-      if (updatedDpLog[0]) {
-        updatedDpLog[0].toDate = null;
-      }
-    }
-
-    try {
-      await updateDoc(
-        doc(
-          db,
-          'bankAccounts',
-          accountId
-        ),
-        { drawingPower: updatedDpLog }
-      );
-
-      toast({
-        title: 'Success',
-        description:
-          'DP entry deleted.',
-      });
-
-      setAccounts((prev) =>
-        prev.map((acc) =>
-          acc.id === accountId
-            ? {
-                ...acc,
-                drawingPower:
-                  updatedDpLog,
-              }
-            : acc
-        )
-      );
-    } catch (error) {
-      console.error(
-        'Error deleting DP entry:',
-        error
-      );
-      toast({
-        title: 'Error',
-        description:
-          'Failed to delete DP entry.',
-        variant: 'destructive',
-      });
-    } finally {
-      setIsSaving((prev) => ({
-        ...prev,
-        [accountId]: false,
-      }));
-    }
+  const handleConfirmDelete = async () => {
+    if (!deleteTarget) return;
+    const { account, entry } = deleteTarget;
+    const nextLog = normaliseLog(account.drawingPower.filter((item) => item.id !== entry.id));
+    await replaceLog(account, nextLog, 'Limit entry deleted.');
+    setDeleteTarget(null);
   };
 
-  // Loading state
+  const historyColumns = (account: BankAccount): Array<ListColumn<DpLogEntry>> => [
+    {
+      header: 'Effective From',
+      mobile: 'title',
+      cell: (entry) => <span className="whitespace-nowrap font-medium">{formatDay(entry.fromDate)}</span>,
+    },
+    {
+      header: 'Effective To',
+      mobile: 'aside',
+      cell: (entry) =>
+        entry.toDate === null ? (
+          <Badge variant="success">Current</Badge>
+        ) : (
+          <span className="whitespace-nowrap text-muted-foreground">{formatDay(entry.toDate)}</span>
+        ),
+    },
+    {
+      header: 'DP',
+      align: 'right',
+      cell: (entry) => <span className="tabular-nums">{formatMoney((entry.amount || 0) + (entry.odAmount || 0))}</span>,
+    },
+    {
+      header: 'TOD',
+      align: 'right',
+      cell: (entry) => <span className="tabular-nums">{formatMoney(entry.todAmount || 0)}</span>,
+    },
+    {
+      header: 'Total Limit',
+      align: 'right',
+      cell: (entry) => <span className="font-semibold tabular-nums">{formatMoney(getEffectiveCcLimitFromEntry(entry))}</span>,
+    },
+    {
+      header: '',
+      align: 'right',
+      mobile: 'footer',
+      cell: (entry) =>
+        canDelete ? (
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-8 text-destructive hover:text-destructive"
+            onClick={() => setDeleteTarget({ account, entry })}
+            disabled={savingId === account.id}
+            aria-label={`Delete limit from ${formatDay(entry.fromDate)}`}
+          >
+            <Trash2 className="h-4 w-4 sm:mr-0" />
+            <span className="ml-1.5 sm:hidden">Delete</span>
+          </Button>
+        ) : null,
+    },
+  ];
+
   if (authLoading || (isLoading && canView)) {
     return (
       <div className="relative w-full px-4 sm:px-6 lg:px-8 py-6 space-y-4">
         <Skeleton className="h-10 w-64 rounded-xl" />
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
-          <Skeleton className="h-96 rounded-xl" />
-          <Skeleton className="h-96 rounded-xl" />
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+          <Skeleton className="h-20 rounded-xl" />
+          <Skeleton className="h-20 rounded-xl" />
+          <Skeleton className="h-20 rounded-xl" />
+        </div>
+        <div className="grid grid-cols-1 xl:grid-cols-2 gap-5">
+          <Skeleton className="h-80 rounded-xl" />
+          <Skeleton className="h-80 rounded-xl" />
         </div>
       </div>
     );
   }
 
-  // No permission
   if (!canView) {
     return (
       <div className="relative w-full px-4 sm:px-6 lg:px-8 py-6">
@@ -425,7 +279,11 @@ export default function DpManagementPage() {
     );
   }
 
-  // Page
+  const formAmount = Number(form.amount) || 0;
+  const formTod = Number(form.todAmount) || 0;
+  const formCurrent = formAccount?.drawingPower.find((entry) => entry.toDate === null);
+  const closesCurrent = !!formCurrent && !!form.fromDate && form.fromDate > formCurrent.fromDate;
+
   return (
     <>
       {/* ── Animated Background (Purple theme for DP Management) ── */}
@@ -437,350 +295,248 @@ export default function DpManagementPage() {
           style={{ backgroundImage: 'radial-gradient(circle, rgba(168,85,247,0.12) 1px, transparent 1px)', backgroundSize: '28px 28px' }}
         />
       </div>
-    <div className="relative w-full px-4 sm:px-6 lg:px-8 py-4">
+    <div className="relative w-full px-4 sm:px-6 lg:px-8 py-4 space-y-5">
       <PageHeader
         title="DP Management"
-        description="Manage dated limits for Cash Credit accounts using DP and temporary overdrawn amount."
+        description="Dated limits for Cash Credit accounts — drawing power (DP) plus temporary overdrawn (TOD)."
         backHref="/bank-balance/settings"
         backLabel="Back to settings"
       />
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {isLoading ? (
-          Array.from({ length: 2 }).map(
-            (_, i) => (
-              <Skeleton
-                key={i}
-                className="h-96"
-              />
-            )
-          )
-        ) : accounts.length >
-          0 ? (
-          accounts.map((acc) => (
-            <Collapsible
-              asChild
-              key={acc.id}
-              open={
-                openAddForm === acc.id
-              }
-              onOpenChange={(
-                isOpen
-              ) =>
-                setOpenAddForm(
-                  isOpen
-                    ? acc.id
-                    : null
-                )
-              }
-            >
-              <Card>
-                <CardHeader>
-                  <div className="flex justify-between items-start">
-                    <div>
-                      <CardTitle>
-                        {acc.bankName} (
-                        {acc.shortName})
-                      </CardTitle>
-                      <CardDescription>
-                        {
-                          acc.accountNumber
-                        }
-                      </CardDescription>
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+        <KpiCard label="Cash Credit accounts" value={accounts.length} icon={Landmark} tone="violet" accent />
+        <KpiCard
+          label="Total current limit"
+          value={formatMoney(summary.totalLimit)}
+          hint={summary.totalTod ? `Includes ${formatMoney(summary.totalTod)} TOD` : 'DP + TOD across all accounts'}
+          icon={Wallet}
+          tone="indigo"
+          accent
+        />
+        <KpiCard
+          label="Accounts without a limit"
+          value={summary.withoutLimit}
+          hint={summary.withoutLimit ? 'Add a limit entry for these' : 'Every account has a limit'}
+          icon={AlertTriangle}
+          tone={summary.withoutLimit ? 'amber' : 'emerald'}
+          accent
+        />
+      </div>
+
+      {accounts.length === 0 ? (
+        <Card>
+          <CardContent className="p-12 text-center text-muted-foreground">No Cash Credit accounts found.</CardContent>
+        </Card>
+      ) : (
+        <div className="grid grid-cols-1 xl:grid-cols-2 gap-5">
+          {accounts.map((acc) => {
+            const current = acc.drawingPower.find((entry) => entry.toDate === null);
+
+            return (
+              <Card key={acc.id} className="min-w-0 overflow-hidden">
+                <CardHeader className="pb-4">
+                  <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                    <div className="flex min-w-0 items-start gap-3">
+                      <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-violet-50 text-violet-600 ring-4 ring-violet-100">
+                        <Landmark className="h-5 w-5" />
+                      </span>
+                      <div className="min-w-0">
+                        <CardTitle className="break-words">{acc.bankName}</CardTitle>
+                        <CardDescription className="mt-1 flex flex-wrap items-center gap-2">
+                          {acc.shortName && <Badge variant="progress">{acc.shortName.trim()}</Badge>}
+                          <span className="break-all">{acc.accountNumber}</span>
+                        </CardDescription>
+                      </div>
                     </div>
-                    <CollapsibleTrigger asChild>
-                      <Button
-                        variant="outline"
-                        disabled={!canAdd}
-                      >
+                    {canAdd && (
+                      <Button className="shrink-0" onClick={() => openForm(acc)} disabled={savingId === acc.id}>
                         <Plus className="mr-2 h-4 w-4" />
-                        Add New Limit Entry
+                        Add New Limit
                       </Button>
-                    </CollapsibleTrigger>
+                    )}
                   </div>
                 </CardHeader>
-                <CardContent>
-                  <CollapsibleContent className="mb-4">
-                    <div className="grid gap-3 rounded-lg border p-4 md:grid-cols-[1.2fr_1fr_1fr_auto] md:items-end">
-                      <div className="flex-1 space-y-1">
-                        <label
-                          htmlFor={`date-${acc.id}`}
-                          className="text-xs text-muted-foreground"
-                        >
-                          Effective
-                          From
-                        </label>
-                        <Input
-                          id={`date-${acc.id}`}
-                          type="date"
-                          value={
-                            newDpEntries[
-                              acc.id
-                            ]
-                              ?.fromDate ||
-                            ''
-                          }
-                          onChange={(
-                            e
-                          ) =>
-                            handleNewDpChange(
-                              acc.id,
-                              'fromDate',
-                              e
-                                .target
-                                .value
-                            )
-                          }
-                        />
-                      </div>
-                      <div className="flex-1 space-y-1">
-                        <label
-                          htmlFor={`amount-${acc.id}`}
-                          className="text-xs text-muted-foreground"
-                        >
-                          DP
-                        </label>
-                        <Input
-                          id={`amount-${acc.id}`}
-                          type="number"
-                          placeholder="DP"
-                          value={
-                            newDpEntries[
-                              acc.id
-                            ]
-                              ?.amount ||
-                            ''
-                          }
-                          onChange={(
-                            e
-                          ) =>
-                            handleNewDpChange(
-                              acc.id,
-                              'amount',
-                              e
-                                .target
-                                .value
-                            )
-                          }
-                        />
-                      </div>
-                      <div className="flex-1 space-y-1">
-                        <label
-                          htmlFor={`tod-${acc.id}`}
-                          className="text-xs text-muted-foreground"
-                        >
-                          TOD
-                        </label>
-                        <Input
-                          id={`tod-${acc.id}`}
-                          type="number"
-                          placeholder="Temporary Overdrawn"
-                          value={
-                            newDpEntries[
-                              acc.id
-                            ]
-                              ?.todAmount ||
-                            ''
-                          }
-                          onChange={(
-                            e
-                          ) =>
-                            handleNewDpChange(
-                              acc.id,
-                              'todAmount',
-                              e
-                                .target
-                                .value
-                            )
-                          }
-                        />
-                      </div>
-                      <Button
-                        onClick={() =>
-                          handleAddDp(
-                            acc.id
-                          )
-                        }
-                        disabled={
-                          isSaving[
-                            acc.id
-                          ]
-                        }
-                      >
-                        {isSaving[
-                          acc.id
-                        ] ? (
-                          <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                        ) : (
-                          <Plus className="mr-2 h-4 w-4" />
-                        )}
-                        Add
-                      </Button>
-                    </div>
-                  </CollapsibleContent>
 
-                  <SectionHeader title="Limit History" as="h3" className="mb-2" />
-                  <div className="border rounded-md max-h-60 overflow-y-auto">
-                    <Table>
-                      <TableHeader>
-                        <TableRow>
-                          <TableHead>
-                            Effective
-                            From
-                          </TableHead>
-                          <TableHead>
-                            Effective
-                            To
-                          </TableHead>
-                          <TableHead>
-                            DP
-                          </TableHead>
-                          <TableHead>
-                            TOD
-                          </TableHead>
-                          <TableHead>
-                            Total Limit
-                          </TableHead>
-                          <TableHead className="text-right">
-                            Action
-                          </TableHead>
-                        </TableRow>
-                      </TableHeader>
-                      <TableBody>
-                        {acc.drawingPower &&
-                        acc
-                          .drawingPower
-                          .length >
-                          0 ? (
-                          acc.drawingPower.map(
-                            (
-                              dp
-                            ) => (
-                              <TableRow
-                                key={
-                                  dp.id
-                                }
-                              >
-                                <TableCell>
-                                  {dp.fromDate
-                                    ? format(
-                                        new Date(
-                                          dp.fromDate
-                                        ),
-                                        'dd MMM, yyyy'
-                                      )
-                                    : 'N/A'}
-                                </TableCell>
-                                <TableCell>
-                                  {dp.toDate
-                                    ? format(
-                                        new Date(
-                                          dp.toDate
-                                        ),
-                                        'dd MMM, yyyy'
-                                      )
-                                    : 'Current'}
-                                </TableCell>
-                                <TableCell>
-                                  {new Intl.NumberFormat(
-                                    'en-IN',
-                                    {
-                                      style:
-                                        'currency',
-                                      currency:
-                                        'INR',
-                                    }
-                                  ).format(
-                                    (dp.amount ||
-                                      0) +
-                                      (dp.odAmount ||
-                                        0)
-                                  )}
-                                </TableCell>
-                                <TableCell>
-                                  {new Intl.NumberFormat(
-                                    'en-IN',
-                                    {
-                                      style:
-                                        'currency',
-                                      currency:
-                                        'INR',
-                                    }
-                                  ).format(
-                                    dp.todAmount ||
-                                      0
-                                  )}
-                                </TableCell>
-                                <TableCell className="font-medium">
-                                  {new Intl.NumberFormat(
-                                    'en-IN',
-                                    {
-                                      style:
-                                        'currency',
-                                      currency:
-                                        'INR',
-                                    }
-                                  ).format(
-                                    getEffectiveCcLimitFromEntry(
-                                      dp
-                                    )
-                                  )}
-                                </TableCell>
-                                <TableCell className="text-right">
-                                  <Button
-                                    variant="ghost"
-                                    size="icon"
-                                    className="h-8 w-8 text-destructive"
-                                    onClick={() =>
-                                      handleDeleteDp(
-                                        acc.id,
-                                        dp
-                                      )
-                                    }
-                                    disabled={
-                                      !canDelete ||
-                                      (acc.drawingPower?.length ??
-                                        0) <=
-                                        1
-                                    }
-                                  >
-                                    <Trash2 className="h-4 w-4" />
-                                  </Button>
-                                </TableCell>
-                              </TableRow>
-                            )
-                          )
-                        ) : (
-                          <TableRow>
-                            <TableCell
-                              colSpan={
-                                6
-                              }
-                              className="text-center h-24"
-                            >
-                              No
-                              limit
-                              history.
-                            </TableCell>
-                          </TableRow>
-                        )}
-                      </TableBody>
-                    </Table>
+                <CardContent className="space-y-5">
+                  {current ? (
+                    <div className="rounded-lg border bg-muted/40 p-4">
+                      <div className="mb-3 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+                        <CalendarDays className="h-3.5 w-3.5" />
+                        Current limit, effective from
+                        <span className="font-medium text-foreground">{formatDay(current.fromDate)}</span>
+                      </div>
+                      <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+                        <div>
+                          <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">DP</p>
+                          <p className="mt-0.5 text-base font-semibold tabular-nums">
+                            {formatMoney((current.amount || 0) + (current.odAmount || 0))}
+                          </p>
+                        </div>
+                        <div>
+                          <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">TOD</p>
+                          <p className="mt-0.5 text-base font-semibold tabular-nums">{formatMoney(current.todAmount || 0)}</p>
+                        </div>
+                        <div>
+                          <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Total limit</p>
+                          <p className="mt-0.5 text-lg font-bold tabular-nums text-violet-700">
+                            {formatMoney(getEffectiveCcLimitFromEntry(current))}
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="flex items-start gap-3 rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800">
+                      <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+                      <div>
+                        <p className="font-medium">No limit set yet</p>
+                        <p className="text-xs">
+                          {canAdd
+                            ? 'Use “Add New Limit” to record the DP sanctioned for this account.'
+                            : 'Ask someone with DP Management access to record the limit.'}
+                        </p>
+                      </div>
+                    </div>
+                  )}
+
+                  <div>
+                    <SectionHeader
+                      title="Limit history"
+                      as="h3"
+                      className="mb-2"
+                      badge={acc.drawingPower.length ? <Badge variant="neutral">{acc.drawingPower.length}</Badge> : undefined}
+                    />
+                    <DataList
+                      rows={acc.drawingPower}
+                      columns={historyColumns(acc)}
+                      dense
+                      maxHeightClassName="max-h-72"
+                      empty={
+                        <div className="rounded-lg border border-dashed p-6 text-center text-sm text-muted-foreground">
+                          No limit history.
+                        </div>
+                      }
+                    />
                   </div>
                 </CardContent>
               </Card>
-            </Collapsible>
-          ))
-        ) : (
-          <Card className="col-span-full">
-            <CardContent className="text-center p-12 text-muted-foreground">
-              No Cash Credit accounts
-              found.
-            </CardContent>
-          </Card>
-        )}
-      </div>
+            );
+          })}
+        </div>
+      )}
     </div>
+
+      <Dialog open={!!formAccount} onOpenChange={(open) => { if (!open && !savingId) setFormAccount(null); }}>
+        <DialogContent className="hr-mobile-dialog sm:max-w-lg">
+          <form onSubmit={handleSaveEntry} className="contents">
+            <DialogHeader className="hr-dialog-header">
+              <DialogTitle>New limit entry</DialogTitle>
+              <DialogDescription>
+                {formAccount?.bankName}
+                {formAccount?.shortName ? ` (${formAccount.shortName.trim()})` : ''} · {formAccount?.accountNumber}
+              </DialogDescription>
+            </DialogHeader>
+
+            <div className="hr-dialog-body grid grid-cols-1 gap-4 sm:grid-cols-2">
+              <div className="space-y-1.5 sm:col-span-2">
+                <Label htmlFor="dp-from-date">Effective from</Label>
+                <Input
+                  id="dp-from-date"
+                  type="date"
+                  required
+                  value={form.fromDate}
+                  onChange={(e) => setForm((prev) => ({ ...prev, fromDate: e.target.value }))}
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="dp-amount">Drawing power (DP)</Label>
+                <Input
+                  id="dp-amount"
+                  type="number"
+                  inputMode="decimal"
+                  min={0}
+                  step="any"
+                  required
+                  placeholder="0"
+                  value={form.amount}
+                  onChange={(e) => setForm((prev) => ({ ...prev, amount: e.target.value }))}
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="dp-tod">Temporary overdrawn (TOD)</Label>
+                <Input
+                  id="dp-tod"
+                  type="number"
+                  inputMode="decimal"
+                  min={0}
+                  step="any"
+                  placeholder="0 (optional)"
+                  value={form.todAmount}
+                  onChange={(e) => setForm((prev) => ({ ...prev, todAmount: e.target.value }))}
+                />
+              </div>
+
+              <div className="rounded-lg border bg-muted/40 p-3 sm:col-span-2">
+                <div className="flex items-center justify-between gap-3">
+                  <span className="text-sm text-muted-foreground">Total limit</span>
+                  <span className="text-lg font-bold tabular-nums text-violet-700">{formatMoney(formAmount + formTod)}</span>
+                </div>
+                {closesCurrent && formCurrent && (
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    The current limit ({formatMoney(getEffectiveCcLimitFromEntry(formCurrent))} from {formatDay(formCurrent.fromDate)}) will end on{' '}
+                    {formatDay(format(subDays(parseISO(form.fromDate), 1), 'yyyy-MM-dd'))}.
+                  </p>
+                )}
+                {!!formCurrent && !!form.fromDate && form.fromDate < formCurrent.fromDate && (
+                  <p className="mt-1 text-xs text-amber-700">
+                    This date is before the current limit, so it will be added to the history as a past entry.
+                  </p>
+                )}
+              </div>
+            </div>
+
+            <DialogFooter className="hr-dialog-footer">
+              <Button type="button" variant="outline" onClick={() => setFormAccount(null)} disabled={!!savingId}>
+                Cancel
+              </Button>
+              <Button type="submit" disabled={!!savingId}>
+                {savingId ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
+                Save Entry
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
+
+      <AlertDialog open={!!deleteTarget} onOpenChange={(open) => { if (!open && !savingId) setDeleteTarget(null); }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete this limit entry?</AlertDialogTitle>
+            <AlertDialogDescription>
+              {deleteTarget && (
+                <>
+                  {deleteTarget.account.shortName || deleteTarget.account.bankName}: limit of{' '}
+                  {formatMoney(getEffectiveCcLimitFromEntry(deleteTarget.entry))} from {formatDay(deleteTarget.entry.fromDate)}.
+                  The dates of the remaining entries are adjusted so the history has no gap.
+                </>
+              )}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={!!savingId}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              disabled={!!savingId}
+              onClick={(event) => {
+                event.preventDefault();
+                void handleConfirmDelete();
+              }}
+            >
+              {savingId ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Trash2 className="mr-2 h-4 w-4" />}
+              Delete
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </>
   );
 }
