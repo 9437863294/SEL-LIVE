@@ -453,9 +453,10 @@ For a fleet, sign it:
 pwsh windows/SEL.Agent.Installer/build.ps1 -Sign -CertificateThumbprint <thumbprint>
 ```
 
-An unsigned installer is fine for a pilot. It is not fine for a rollout: the signature is what
-stops a compromised update server from running arbitrary code as SYSTEM on every PC, and an
-unsigned `.exe` also collects a SmartScreen warning on every machine it touches.
+An unsigned package is suitable only for an isolated packaging test. It cannot pass the enforced
+device-security baseline or open a work session. The signature is what stops a compromised update
+server from running arbitrary code as SYSTEM on every PC, and an unsigned `.exe` also collects a
+SmartScreen warning on every machine it touches.
 
 Other switches:
 
@@ -524,7 +525,7 @@ SEL.Agent-Setup-1.0.0.0.exe /quiet ENROLLMENTCODE=SEL-HO-2026
 ```
 
 ```
-SEL.Agent-Setup-1.0.0.0.exe /uninstall /quiet
+SEL.Agent-Setup-1.0.0.0.exe /uninstall               (interactive SEL LIVE approval)
 SEL.Agent-Setup-1.0.0.0.exe /log setup.log        (when it goes wrong)
 ```
 
@@ -696,10 +697,10 @@ Other recovery paths, in increasing order of severity:
 | Situation | Fix |
 |---|---|
 | Gate appearing when it should not | Set `requireMorningLogin` off in the policy; takes effect within one heartbeat |
-| One PC needs the gate off now | Stop the service, then end `SEL.Agent.exe` from Task Manager |
+| One PC needs the gate off now | Approve a service stop in SEL LIVE, or use the documented emergency gate release |
 | Credential broken after re-imaging | `SEL.Agent.Service.exe --reset-identity`, then restart the service |
 | PC must stop reporting entirely | Block the device in SEL LIVE — the agent stops within one heartbeat, and Windows is unaffected |
-| Remove the agent | `SEL.Agent-Setup-<version>.exe /uninstall /quiet`, or Programs and Features → "SEL LIVE Windows Agent" — removes the service, the binaries, the credential, the queue and the logs. .NET and WebView2 are left alone; they are shared Windows components and other software depends on them |
+| Remove the agent | `SEL.Agent-Setup-<version>.exe /uninstall` and obtain SEL LIVE approval. Silent removal is refused. .NET and WebView2 are left alone; they are shared Windows components and other software depends on them |
 
 There is one entry in Programs and Features, not three. The MSI installs with
 `ARPSYSTEMCOMPONENT`, so only the bundle is listed — removing it removes everything.
@@ -778,15 +779,14 @@ one action on one PC, not a sign-in.
 **Two consequences worth knowing before a rollout:**
 
 - **It needs the network.** An offline PC cannot get approval, so Exit will not work there. The
-  recovery paths in §7 — stopping the service, Task Manager, blocking the device — all still do.
+  device remains fail-closed; an outage is not treated as permission to weaken monitoring.
 - **Grant the permission to somebody before you need it.** A fresh installation where nobody holds
   `Devices / Edit` has no one who can approve an exit. That is the same set of people who can
   administer the module at all, so in practice it is already granted; check it is.
 
-The agent remains an ordinary user-mode process and Task Manager can still end it, exactly as §7
-says. What this adds is that the obvious, discoverable way to close it produces an answer to "why
-did this PC stop reporting at half past two" — and does not happen by accident on the way out at
-5 p.m.
+The interactive agent remains a user-mode process, but the LocalSystem service applies the
+per-user Task Manager policy and restarts the agent if it exits. Task Manager is opened only by an
+unexpired SEL LIVE maintenance grant.
 
 ### Stopping the Windows service needs it too
 
@@ -801,8 +801,8 @@ the Service Control Manager, **before any of this agent's code runs**, so:
 | | |
 |---|---|
 | Stop in services.msc | Greyed out. `sc stop SELLiveAgent` answers "Access is denied" |
-| SYSTEM | Keeps every right, so upgrades and uninstalls still stop and remove the service normally |
-| Administrators | Keep start, configure, delete — and `WRITE_DAC`, deliberately: the way back is one documented command |
+| SYSTEM | Keeps every right, so signed upgrades and approved service actions still work |
+| Administrators | Keep observe and start; stop, pause, configure, delete, `WRITE_DAC` and `WRITE_OWNER` are blocked |
 | Everyone | Can still see the service and its state; monitoring tools are unaffected |
 
 **The approved way to stop it** is **Shift + right-click the tray icon → Stop background service**.
@@ -818,15 +818,57 @@ monitoring is being switched off, so its word is not what the service acts on. A
 produce a real administrator's token gets a refusal, and an unreachable server is a refusal too —
 otherwise the service could be stopped by pulling out the network cable.
 
-**Recovery, for an administrator who needs the Stop button back:**
+`SEL.Agent.Service.exe --check` reports whether protection is on. The service also re-applies the
+descriptor every minute and records drift as a tamper event. Recovery that changes the service
+descriptor is a SYSTEM deployment action, not a permanent local-admin capability.
 
-```
-sc sdset SELLiveAgent "D:(A;;CCDCLCSWRPWPDTLOCRSDRCWDWO;;;SY)(A;;CCDCLCSWRPWPDTLOCRSDRCWDWO;;;BA)(A;;CCLCSWLOCRRC;;;IU)(A;;CCLCSWLOCRRC;;;SU)"
-```
+### Persistent controls per computer
 
-`SEL.Agent.Service.exe --check` reports whether the protection is on, because a machine where
-somebody ran that command looks identical from the outside. Re-running the installer, or a repair,
-puts it back.
+Open **Windows Agent â†’ Devices â†’ computer â†’ Device security** to choose what is enforced on that
+specific PC. A user with `Windows Agent / Devices / Edit` can independently configure:
+
+- Task Manager lock;
+- SEL Agent service-stop protection;
+- service reconfiguration/deletion/ACL protection;
+- uninstall approval;
+- whether monitoring policy remains server-only;
+- signed agent-binary, signed WDAC and Secure Boot requirements;
+- tamper-event monitoring.
+
+These are persistent device settings, not a maintenance window. The browser submits them to an
+authenticated API; it cannot write `securityPolicy` directly. Every change requires a reason and
+writes `DEVICE_SECURITY_POLICY_UPDATED` with the old and new values. The service caches the last
+server-issued policy under the SYSTEM-only security directory and continues enforcing it while the
+PC is offline. A device with no saved policy receives the strict baseline shown above.
+
+Audit logging remains mandatory and is intentionally not a switch. Allowing the same policy change
+to disable the record of that change would make all the other controls unauditable.
+
+### Temporary local maintenance
+
+The device page can open a 30-minute maintenance window. The grant is created by the authenticated
+SEL LIVE API, names its approver and reason, and is stored with an absolute expiry. It may:
+
+- open Task Manager for the loaded user;
+- optionally add one selected, currently loaded Windows account to local Administrators;
+- never relax service modification or uninstall protection.
+
+No administrator password is created or stored. The service records whether it added the group
+membership, removes only memberships it owns, persists the expiry across a service restart, and
+removes the membership when the local clock reaches that expiry even if SEL LIVE is unreachable.
+Grant, revoke and automatic expiry are distinct append-only audit actions. Uninstall first revokes
+any membership the product owns, so a support window cannot outlive its enforcing service.
+
+When selected for a device, the same posture report requires Secure Boot, trusted signatures on the
+installed agent binaries, and an enforced **signed Windows Defender Application Control policy**.
+The agent verifies WDAC with `CiTool -lp -json`; it does not generate or sign a WDAC policy, because
+putting the organisation's policy-signing private key on endpoints would defeat the control. Deploy
+the signed `.cip` policy through the organisation's device-management tooling before requiring it.
+
+Opening a work session requires a complete posture report no more than five minutes old. Missing,
+stale or failed checks are refused; the server does not trust the agent's own `compliant` flag and
+re-derives the result against that computer's current policy. During an active maintenance window,
+only the Task Manager finding is excused.
 
 ### Who can approve, and where you set it
 
@@ -863,7 +905,7 @@ clicks in Apps and Features. That gap is closed:
 |---|---|
 | Apps and Features | Shows the agent with **no Uninstall or Modify button** (`DisableRemove` on the bundle). The entry stays, so the fleet is still auditable from the PC |
 | `setup.exe /uninstall` | Asks for a SEL LIVE administrator, the same `Devices / Edit` permission. Cancelling stops the uninstall with the machine untouched |
-| `setup.exe /uninstall /quiet` as SYSTEM | Proceeds. No window can be shown in session 0, and a removal driven by SCCM or GPO must not hang waiting for a click nobody can see |
+| `setup.exe /uninstall /quiet` | Refused. Session 0 or a silent flag is not SEL LIVE approval |
 | An unanswered prompt | Refused after three minutes, rather than leaving msiexec waiting for ever |
 
 Approval is recorded as `AGENT_UNINSTALL_APPROVED`, deliberately a different audit action from
@@ -871,14 +913,10 @@ Approval is recorded as `AGENT_UNINSTALL_APPROVED`, deliberately a different aud
 recording on that computer, and afterwards the PC is indistinguishable from one that was never
 enrolled. "Why has this machine no data since March" needs those two to be distinguishable.
 
-Two exemptions, both intentional: a PC that is **not enrolled** and a PC that **cannot reach SEL
-LIVE** are allowed through. Blocking there would mean a machine with a dead link, or one that was
-never registered, could not have a broken agent removed without a re-image.
-
-> **This is deterrence, not enforcement**, and the distinction is the same one §7 makes about the
-> access gate. A local administrator can stop the service and delete the folder, and nothing here
-> pretends otherwise. What it removes is the casual route — two clicks, no record — and what it
-> adds is a name in the audit trail beside every PC that legitimately stopped being monitored.
+An installation that was **never enrolled** may still be cleaned up. An enrolled PC that cannot
+reach SEL LIVE is refused: network failure is not authorisation. Signed upgrades are exempt from
+the removal prompt, but the protected service ACL and package signature verification remain in
+force throughout the upgrade.
 
 ---
 
@@ -1246,7 +1284,7 @@ office work last March" stays answerable indefinitely, while "which window was o
 | The agent never appears at all | `%ProgramData%\SEL LIVE\Agent\startup.log`, then the event log's exit code. §3 has the table: 0 means the agent chose to exit, 0xC0000000-something means Windows stopped it before it ran. |
 | "started the desktop agent … but it exited within 3s", repeatedly | Read the exit code in the same entry. Historically this was the service's job object killing the child; if it recurs with a 0xC0000000 code, look for AppLocker, WDAC or an antivirus blocking `SEL.Agent.exe` when it is launched by a service. |
 | No Uninstall button in Apps and Features | Intended. Removal needs a SEL LIVE administrator's approval — run the setup .exe with `/uninstall`. §7b. |
-| Stop is greyed out in services.msc, or `sc stop` says "Access is denied" | Intended. Use Shift + right-click the tray icon → Stop background service, which asks for the same approval. The recovery command is in §7b. |
+| Stop is greyed out in services.msc, or `sc stop` says "Access is denied" | Intended. Use Shift + right-click the tray icon → Stop background service, which asks for SEL LIVE approval. Service mutation remains SYSTEM-only. |
 | The service stopped and nobody pressed Stop | An approved stop went through the control pipe. `AGENT_SERVICE_STOP_APPROVED` in the audit log names who approved it and why. |
 | "That enrolment code has reached its registration limit" | `maxRegistrations` is exhausted. Raise it, or issue a new code. The setup window warns when a code has three or fewer left, so this is usually avoidable. |
 | "That enrolment code is not recognised" on a code that looks right | Check it against the enrolment codes page: it is a document id, so `SEL-HO-2026` and `SEL-H0-2026` are different codes and both look correct on paper. |

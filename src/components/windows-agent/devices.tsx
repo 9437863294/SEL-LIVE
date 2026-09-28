@@ -3,7 +3,7 @@
 import { useMemo, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { Ban, CheckCircle2, HardDrive, KeyRound, LogOut, Plus, RotateCcw } from 'lucide-react';
+import { Ban, CheckCircle2, HardDrive, KeyRound, LogOut, Plus, RotateCcw, ShieldCheck, Wrench } from 'lucide-react';
 
 import { SearchInput } from '@/components/shared/filter-bar';
 import { StatusBadge } from '@/components/shared/status-badge';
@@ -32,7 +32,14 @@ import {
   hrDialog,
   type HrListColumn,
 } from '@/components/hr/hr-ui';
-import { WINDOWS_AGENT_ROUTES, evaluateAgentHealth, type WindowsDevice } from '@/lib/windows-agent';
+import {
+  WINDOWS_AGENT_ROUTES,
+  WINDOWS_DEVICE_SECURITY_POLICY,
+  evaluateAgentHealth,
+  resolveDeviceSecurityPolicy,
+  type WindowsDevice,
+  type WindowsDeviceSecurityPolicy,
+} from '@/lib/windows-agent';
 import {
   canAssignDeviceUsers,
   canBlockDevice,
@@ -44,6 +51,8 @@ import {
 } from '@/lib/windows-agent-permissions';
 import {
   createEnrollmentCode,
+  changeDeviceMaintenanceAccess,
+  changeDeviceSecurityPolicy,
   fetchDevice,
   fetchDevices,
   fetchEnrollmentCodes,
@@ -86,6 +95,7 @@ export function DevicesPage() {
           queuedSpanCount: 0,
           clockSkewSeconds: 0,
           heartbeatIntervalSeconds: 90,
+          securityCompliant: device.securityPosture?.compliant ?? null,
           now,
         }),
       }))
@@ -449,6 +459,7 @@ export function DeviceDetail({ deviceId }: { deviceId: string }) {
     action: (reason: string) => Promise<void>;
   }>(null);
   const [reason, setReason] = useState('');
+  const [maintenanceAccount, setMaintenanceAccount] = useState('none');
 
   if (loading || device.loading) return <HrLoader label="Loading device" />;
   if (!allowed) return <HrAccessDenied what="this device" />;
@@ -458,6 +469,9 @@ export function DeviceDetail({ deviceId }: { deviceId: string }) {
 
   const record: WindowsDevice = device.data;
   const canEdit = canManageDevices(viewer);
+  const maintenanceActive = record.maintenanceAccess?.status === 'ACTIVE'
+    && Date.parse(record.maintenanceAccess.expiresAt) > now.getTime();
+  const securityPolicy = resolveDeviceSecurityPolicy(record.securityPolicy);
 
   const ask = (
     title: string,
@@ -614,9 +628,155 @@ export function DeviceDetail({ deviceId }: { deviceId: string }) {
                 </Select>
               </div>
             ) : null}
+
+            {canEdit ? (
+              maintenanceActive ? (
+                <ActionButton
+                  icon={ShieldCheck}
+                  label="End maintenance access"
+                  disabled={pending}
+                  onClick={() =>
+                    ask(
+                      'End maintenance access?',
+                      'Task Manager will be locked again at the service’s next security sync. The revocation and reason are written to the audit log.',
+                      (note) => changeDeviceMaintenanceAccess({
+                        deviceId: record.id,
+                        action: 'REVOKE',
+                        reason: note,
+                      }).then(device.refresh),
+                    )
+                  }
+                />
+              ) : (
+                <ActionButton
+                  icon={Wrench}
+                  label="Open 30-minute maintenance"
+                  disabled={pending}
+                  onClick={() =>
+                    ask(
+                      'Open temporary maintenance access?',
+                      'SEL LIVE will temporarily unlock Task Manager on this PC for 30 minutes. Service modification and uninstall stay blocked; the device re-locks from its own clock even if it goes offline.',
+                      (note) => changeDeviceMaintenanceAccess({
+                        deviceId: record.id,
+                        action: 'GRANT',
+                        durationMinutes: 30,
+                        windowsAccount: maintenanceAccount === 'none' ? null : maintenanceAccount,
+                        reason: note,
+                      }).then(device.refresh),
+                    )
+                  }
+                />
+              )
+            ) : null}
+            {canEdit && !maintenanceActive && (record.securityPosture?.windowsAccounts?.length ?? 0) > 0 ? (
+              <div className="space-y-1.5 pt-2">
+                <Label className="text-xs">Temporary local admin (optional)</Label>
+                <Select value={maintenanceAccount} onValueChange={setMaintenanceAccount}>
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="none">None — Task Manager only</SelectItem>
+                    {(record.securityPosture?.windowsAccounts ?? []).map((account) => (
+                      <SelectItem key={account} value={account}>{account}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <p className="text-xs text-muted-foreground">
+                  SEL LIVE adds this loaded Windows account to local Administrators only until the maintenance window expires. No password is created or stored.
+                </p>
+              </div>
+            ) : null}
           </CardContent>
         </Card>
       </div>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2 text-base">
+            <ShieldCheck className="h-4 w-4" aria-hidden />
+            Device security
+          </CardTitle>
+          <CardDescription>
+            Enforced by the LocalSystem service from this computerâ€™s SEL LIVE-owned policy. Local
+            support cannot alter it; a Devices / Edit administrator can choose the controls below.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          {canEdit ? (
+            <DeviceSecurityPolicyEditor
+              key={JSON.stringify(securityPolicy)}
+              device={record}
+              initialPolicy={securityPolicy}
+              onChanged={device.refresh}
+            />
+          ) : null}
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+            <SecurityCheck
+              label="Task Manager"
+              status={!securityPolicy.taskManagerLocked ? 'ALLOWED BY POLICY' : maintenanceActive ? 'TEMPORARY ACCESS' : record.securityPosture?.taskManagerLocked ? 'LOCKED' : 'CHECK REQUIRED'}
+              warning={securityPolicy.taskManagerLocked && (maintenanceActive || record.securityPosture?.taskManagerLocked !== true)}
+            />
+            <SecurityCheck
+              label="SEL Agent stop"
+              status={!securityPolicy.agentStopBlocked ? 'ALLOWED BY POLICY' : record.securityPosture?.agentStopBlocked ? 'BLOCKED' : 'CHECK REQUIRED'}
+              warning={securityPolicy.agentStopBlocked && record.securityPosture?.agentStopBlocked !== true}
+            />
+            <SecurityCheck
+              label="Service modification"
+              status={!securityPolicy.serviceModificationBlocked ? 'ALLOWED BY POLICY' : record.securityPosture?.serviceModificationBlocked ? 'BLOCKED' : 'CHECK REQUIRED'}
+              warning={securityPolicy.serviceModificationBlocked && record.securityPosture?.serviceModificationBlocked !== true}
+            />
+            <SecurityCheck label="Agent uninstall" status={securityPolicy.uninstallBlocked ? 'BLOCKED' : 'ALLOWED BY POLICY'} />
+            <SecurityCheck label="Monitoring policy change" status={securityPolicy.monitoringPolicyLocallyMutable ? 'LOCAL CHANGES ALLOWED' : 'SERVER ONLY'} />
+            <SecurityCheck
+              label="App-control policy"
+              status={!securityPolicy.signedAppControlPolicyRequired ? 'NOT REQUIRED' : record.securityPosture?.signedAppControlPolicyActive ? 'SIGNED' : 'CHECK REQUIRED'}
+              warning={securityPolicy.signedAppControlPolicyRequired && record.securityPosture?.signedAppControlPolicyActive !== true}
+            />
+            <SecurityCheck
+              label="Agent binaries"
+              status={!securityPolicy.signedAgentBinariesRequired ? 'NOT REQUIRED' : record.securityPosture?.agentBinariesSigned ? 'SIGNED' : 'CHECK REQUIRED'}
+              warning={securityPolicy.signedAgentBinariesRequired && record.securityPosture?.agentBinariesSigned !== true}
+            />
+            <SecurityCheck
+              label="Secure Boot"
+              status={!securityPolicy.secureBootRequired ? 'NOT REQUIRED' : record.securityPosture?.secureBootEnabled === true ? 'ENABLED' : record.securityPosture?.secureBootEnabled === false ? 'REQUIRED' : 'CHECK REQUIRED'}
+              warning={securityPolicy.secureBootRequired && record.securityPosture?.secureBootEnabled !== true}
+            />
+            <SecurityCheck label="Tamper event" status={securityPolicy.tamperMonitoringEnabled ? 'MONITORED' : 'NOT MONITORED'} />
+            <SecurityCheck label="Audit log" status="MANDATORY" />
+          </div>
+
+          {record.securityPosture?.findings?.length ? (
+            <div className="rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
+              <p className="font-medium">Security attention required</p>
+              <p className="mt-1 text-xs">{record.securityPosture.findings.join(' · ')}</p>
+            </div>
+          ) : record.lastSecurityCheckAt ? (
+            <p className="text-xs text-muted-foreground">
+              Last checked <RelativeTime value={record.lastSecurityCheckAt} now={now} />. No baseline drift reported.
+            </p>
+          ) : (
+            <p className="text-xs text-muted-foreground">
+              Awaiting the first security report from the LocalSystem service. Existing agents need the updated build before these checks populate.
+            </p>
+          )}
+
+          {maintenanceActive && record.maintenanceAccess ? (
+            <div className="rounded-md border border-blue-200 bg-blue-50 p-3 text-sm text-blue-900">
+              <p className="font-medium">Temporary maintenance access is active</p>
+              <p className="mt-1 text-xs">
+                Task Manager is available until <ClockTime value={record.maintenanceAccess.expiresAt} />.
+                {' '}Approved by {record.maintenanceAccess.grantedByName}: {record.maintenanceAccess.reason}
+                {record.maintenanceAccess.temporaryLocalAdmin && record.maintenanceAccess.windowsAccount
+                  ? ` Temporary local admin: ${record.maintenanceAccess.windowsAccount}.`
+                  : ''}
+              </p>
+            </div>
+          ) : null}
+        </CardContent>
+      </Card>
 
       {canAssignDeviceUsers(viewer) ? (
         <AssignedUsersCard device={record} onChanged={device.refresh} directory={directory} />
@@ -644,7 +804,7 @@ export function DeviceDetail({ deviceId }: { deviceId: string }) {
             </Button>
             <Button
               variant={confirm?.destructive ? 'destructive' : 'default'}
-              disabled={pending}
+              disabled={pending || (confirm?.title.toLowerCase().includes('maintenance') && !reason.trim())}
               onClick={async () => {
                 const pendingAction = confirm;
                 setConfirm(null);
@@ -740,6 +900,107 @@ function AssignedUsersCard({
   );
 }
 
+const SECURITY_CONTROL_ROWS: Array<{
+  key: Exclude<keyof WindowsDeviceSecurityPolicy, 'enforcementIntervalSeconds' | 'auditRequired'>;
+  label: string;
+  description: string;
+  inverted?: boolean;
+}> = [
+  { key: 'taskManagerLocked', label: 'Lock Task Manager', description: 'Prevents local users opening Task Manager.' },
+  { key: 'agentStopBlocked', label: 'Block SEL Agent service stop', description: 'Removes the administrator SERVICE_STOP right.' },
+  { key: 'serviceModificationBlocked', label: 'Block service modification', description: 'Prevents reconfiguration, deletion and service ACL changes.' },
+  { key: 'uninstallBlocked', label: 'Block agent uninstall', description: 'Requires SEL LIVE approval before removal.' },
+  { key: 'monitoringPolicyLocallyMutable', label: 'Block local monitoring-policy changes', description: 'Keeps monitoring configuration server-only.', inverted: true },
+  { key: 'signedAgentBinariesRequired', label: 'Require signed agent binaries', description: 'Unsigned installed agent files make the device non-compliant.' },
+  { key: 'signedAppControlPolicyRequired', label: 'Require signed app-control policy', description: 'Requires an enforced signed WDAC policy.' },
+  { key: 'secureBootRequired', label: 'Require Secure Boot', description: 'Blocks SEL LIVE work login when Secure Boot is unavailable.' },
+  { key: 'tamperMonitoringEnabled', label: 'Monitor tamper events', description: 'Writes drift and restoration events to the audit trail.' },
+];
+
+function DeviceSecurityPolicyEditor({
+  device,
+  initialPolicy,
+  onChanged,
+}: {
+  device: WindowsDevice;
+  initialPolicy: WindowsDeviceSecurityPolicy;
+  onChanged: () => Promise<void> | void;
+}) {
+  const { run, pending } = useWindowsAgentAction();
+  const [policy, setPolicy] = useState(initialPolicy);
+  const [reason, setReason] = useState('');
+  const dirty = JSON.stringify(policy) !== JSON.stringify(initialPolicy);
+
+  return (
+    <div className="space-y-3 rounded-lg border bg-muted/20 p-4">
+      <div>
+        <p className="text-sm font-medium">Persistent controls for this computer</p>
+        <p className="text-xs text-muted-foreground">
+          Changes remain active until you change them again. The SYSTEM service applies them on its next security sync.
+        </p>
+      </div>
+      <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+        {SECURITY_CONTROL_ROWS.map((control) => {
+          const stored = policy[control.key];
+          const enabled = control.inverted ? !stored : stored;
+          return (
+            <label key={control.key} className="flex cursor-pointer gap-3 rounded-md border bg-background p-3">
+              <Checkbox
+                checked={enabled}
+                onCheckedChange={(checked) => {
+                  const next = checked === true;
+                  setPolicy((current) => ({
+                    ...current,
+                    [control.key]: control.inverted ? !next : next,
+                  }));
+                }}
+                disabled={pending}
+                aria-label={control.label}
+              />
+              <span>
+                <span className="block text-sm font-medium leading-none">{control.label}</span>
+                <span className="mt-1 block text-xs leading-snug text-muted-foreground">{control.description}</span>
+              </span>
+            </label>
+          );
+        })}
+      </div>
+      <div className="grid gap-2 md:grid-cols-[1fr_auto_auto] md:items-end">
+        <div className="space-y-1.5">
+          <Label htmlFor={`security-policy-reason-${device.id}`}>Reason for this policy change</Label>
+          <Input
+            id={`security-policy-reason-${device.id}`}
+            value={reason}
+            onChange={(event) => setReason(event.target.value)}
+            placeholder="Required for the audit log"
+            disabled={pending}
+          />
+        </div>
+        <Button
+          variant="outline"
+          disabled={pending}
+          onClick={() => setPolicy({ ...WINDOWS_DEVICE_SECURITY_POLICY })}
+        >
+          Strict baseline
+        </Button>
+        <Button
+          disabled={pending || !dirty || !reason.trim()}
+          onClick={() => run('Device security policy updated', async () => {
+            await changeDeviceSecurityPolicy({ deviceId: device.id, policy, reason: reason.trim() });
+            setReason('');
+            await onChanged();
+          })}
+        >
+          Save controls
+        </Button>
+      </div>
+      <p className="text-xs text-muted-foreground">
+        The append-only audit log is always mandatory and cannot be disabled from a device policy.
+      </p>
+    </div>
+  );
+}
+
 function Fact({
   label,
   value,
@@ -753,6 +1014,20 @@ function Fact({
     <div className={className}>
       <p className="text-xs uppercase tracking-wide text-muted-foreground">{label}</p>
       <div className="mt-0.5 text-sm">{value}</div>
+    </div>
+  );
+}
+
+function SecurityCheck({ label, status, warning = false }: { label: string; status: string; warning?: boolean }) {
+  const intentionallyRelaxed = status.includes('ALLOWED')
+    || status === 'NOT REQUIRED'
+    || status === 'NOT MONITORED';
+  return (
+    <div className="flex items-center justify-between gap-3 rounded-md border px-3 py-2.5">
+      <span className="text-sm">{label}</span>
+      <StatusBadge status={status} tone={warning ? 'warning' : intentionallyRelaxed ? 'neutral' : 'success'}>
+        {status.toLowerCase()}
+      </StatusBadge>
     </div>
   );
 }

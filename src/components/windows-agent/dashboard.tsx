@@ -115,6 +115,7 @@ export default function WindowsAgentDashboard() {
       pending: all.filter((device) => device.status === 'PENDING').length,
       blocked: all.filter((device) => device.status === 'BLOCKED').length,
       neverReported: all.filter((device) => !device.lastHeartbeatAt).length,
+      securityAttention: all.filter((device) => device.securityPosture?.compliant !== true).length,
     };
   }, [devices.data]);
 
@@ -261,7 +262,7 @@ export default function WindowsAgentDashboard() {
               {deviceHealth.total} enrolled {deviceHealth.total === 1 ? 'computer' : 'computers'}.
             </CardDescription>
           </CardHeader>
-          <CardContent className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+          <CardContent className="grid grid-cols-2 gap-3 lg:grid-cols-4">
             <HrKpiCard
               label="Awaiting approval"
               value={deviceHealth.pending}
@@ -279,6 +280,13 @@ export default function WindowsAgentDashboard() {
               value={deviceHealth.neverReported}
               tone={deviceHealth.neverReported ? 'amber' : 'slate'}
               hint="installed but never sent a heartbeat"
+              href={WINDOWS_AGENT_ROUTES.devices}
+            />
+            <HrKpiCard
+              label="Security attention"
+              value={deviceHealth.securityAttention}
+              tone={deviceHealth.securityAttention ? 'rose' : 'emerald'}
+              hint="Secure Boot, signatures and tamper controls"
               href={WINDOWS_AGENT_ROUTES.devices}
             />
           </CardContent>

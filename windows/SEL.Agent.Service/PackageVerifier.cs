@@ -131,6 +131,30 @@ namespace Sel.Agent.Service
             return new Result { Ok = true, Reason = "signature valid, signed by " + subject + caveat };
         }
 
+        /// <summary>
+        /// Verify an already-installed agent binary against Windows' trusted publisher chain.
+        /// Package download additionally checks the server-published signer subject; posture only
+        /// needs to detect an unsigned or modified installed file.
+        /// </summary>
+        internal static Result VerifyTrustedSignature(string path)
+        {
+            if (string.IsNullOrEmpty(path) || !File.Exists(path))
+                return new Result { Reason = "the installed binary is missing" };
+
+            uint status = WinVerifyTrustFor(path, checkRevocation: true);
+            if (IsRevocationUnavailable(status))
+            {
+                status = WinVerifyTrustFor(path, checkRevocation: false);
+            }
+            return status == 0
+                ? new Result { Ok = true, Reason = "signature valid" }
+                : new Result
+                {
+                    Reason = "Windows refused the signature (0x" + status.ToString("X8") + "): "
+                        + DescribeTrustStatus(status),
+                };
+        }
+
         /* ── WinVerifyTrust ──────────────────────────────────────────────────────────────── */
 
         private static readonly Guid WintrustActionGenericVerifyV2 =

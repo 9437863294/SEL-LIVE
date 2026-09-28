@@ -24,7 +24,7 @@
 
   <Package Name="SEL LIVE Windows Agent"
            Manufacturer="Siddhartha Engineering Limited"
-           Version="1.3.0.0"
+           Version="$(Version)"
            UpgradeCode="7E2D9A34-4C6B-4E3B-9A1D-2C7F8B5E6D41"
            Language="1033"
            Scope="perMachine"
@@ -454,16 +454,14 @@
       brings it back when somebody ends it from Task Manager.
 
       So the installer hardens the service's own security descriptor. Windows checks
-      SERVICE_STOP in the Service Control Manager, before any of this agent's code runs, so a
-      Stop that the descriptor does not permit fails there — greyed out in services.msc, "Access
-      is denied" from sc.exe, whatever the caller. SYSTEM keeps everything, so uninstalling and
-      upgrading still work, and the service can stop itself once an approval has been granted
-      through the control pipe.
+      service lifecycle rights in the Service Control Manager, before any of this agent's code
+      runs. Stop, pause, reconfigure, delete and DACL changes fail there for local administrators.
+      SYSTEM keeps everything, so signed upgrades still work and the service can stop itself once
+      an approval has been granted through the control pipe.
 
-      Return="ignore" on both: a machine where sc.exe is restricted by policy should still end
-      up with a working agent, and the check switch reports the protection as OFF so the
-      difference is visible rather than silent. ServiceSecurityRules has the descriptor and the
-      reasoning.
+      ProtectService is fail-closed: an install that cannot establish its security boundary is not
+      a successful install. Unprotect remains best-effort during removal so an already-damaged
+      descriptor does not strand Windows Installer. ServiceSecurityRules has the descriptor.
     -->
     <SetProperty Id="ProtectService"
                  Value="&quot;[INSTALLFOLDER]SEL.Agent.Service.exe&quot; --protect-service"
@@ -475,7 +473,7 @@
                   DllEntry="WixQuietExec"
                   Execute="deferred"
                   Impersonate="no"
-                  Return="ignore" />
+                  Return="check" />
 
     <SetProperty Id="UnprotectService"
                  Value="&quot;[INSTALLFOLDER]SEL.Agent.Service.exe&quot; --unprotect-service"
@@ -488,6 +486,18 @@
                   Execute="deferred"
                   Impersonate="no"
                   Return="ignore" />
+
+    <SetProperty Id="RevokeTemporaryAdmin"
+                 Value="&quot;[INSTALLFOLDER]SEL.Agent.Service.exe&quot; --revoke-temporary-admin"
+                 Before="RevokeTemporaryAdmin"
+                 Sequence="execute" />
+
+    <CustomAction Id="RevokeTemporaryAdmin"
+                  BinaryRef="Wix4UtilCA_X86"
+                  DllEntry="WixQuietExec"
+                  Execute="deferred"
+                  Impersonate="no"
+                  Return="check" />
 
     <SetProperty Id="RemoveLogonTask"
                  Value="&quot;[INSTALLFOLDER]SEL.Agent.Service.exe&quot; --remove-logon-task"
@@ -514,11 +524,9 @@
       already running, so a second copy reaching the mutex would exit 0 and be read as approval.
 
       Immediate rather than deferred, and impersonating, because it has to draw a window on the
-      desktop of whoever is uninstalling. That also fixes what it can protect: an interactive
-      removal. It is not a security boundary — a local administrator can stop the service and
-      delete the folder, and §7 says so — and a silent `/quiet` removal is exempt by the
-      condition below, because blocking on a window nobody can see would leave a fleet that
-      cannot be serviced remotely.
+      desktop of whoever is uninstalling. A silent `/quiet` removal is refused by the agent:
+      session 0 is not an approval channel. Signed upgrades skip the prompt through
+      UPGRADINGPRODUCTCODE and retain the SYSTEM-owned service boundary.
     -->
     <SetProperty Id="AuthorizeUninstall"
                  Value="&quot;[INSTALLFOLDER]SEL.Agent.exe&quot; --authorize-uninstall"
@@ -580,6 +588,10 @@
         uninstall, and the cost is one sc.exe call.
       -->
       <Custom Action="UnprotectService" Before="StopServices"
+              Condition="REMOVE~=&quot;ALL&quot;" />
+
+      <!-- A time-bounded support membership must never outlive the product that owns its expiry. -->
+      <Custom Action="RevokeTemporaryAdmin" Before="RemoveFiles"
               Condition="REMOVE~=&quot;ALL&quot;" />
 
       <!--

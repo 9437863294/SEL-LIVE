@@ -34,6 +34,8 @@ namespace Sel.Agent.Service
             if (HasFlag(args, "--remove-logon-task")) return LogonTask.Remove();
             if (HasFlag(args, "--protect-service")) return ServiceProtection.Protect();
             if (HasFlag(args, "--unprotect-service")) return ServiceProtection.Unprotect();
+            if (HasFlag(args, "--revoke-temporary-admin"))
+                return TemporaryLocalAdmin.Revoke(Console.WriteLine) ? 0 : 1;
 
             if (HasFlag(args, "--console"))
             {
@@ -150,11 +152,11 @@ namespace Sel.Agent.Service
             // because the descriptor is one command away from being put back and a machine where
             // somebody did that looks identical from the outside.
             string sddl = ServiceProtection.CurrentSddl();
-            Console.WriteLine("Stop protection  : " + (sddl == null
+            Console.WriteLine("Service protection: " + (sddl == null
                 ? "unknown - could not read the service descriptor"
                 : Core.Security.ServiceSecurityRules.IsProtected(sddl)
-                    ? "on - administrators cannot stop the service from services.msc"
-                    : "OFF - anybody with administrator rights can stop the service"));
+                    ? "on - lifecycle modification is SYSTEM-only"
+                    : "OFF - local administrators can modify or stop the service"));
 
             Console.WriteLine(new string('-', 60));
             Console.WriteLine(ok ? "All checks passed." : "One or more checks failed — see above.");

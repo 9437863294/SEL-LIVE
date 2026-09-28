@@ -42,6 +42,8 @@ import type {
   WindowsDevice,
   WindowsEnrollmentCode,
   WindowsHeartbeat,
+  WindowsDeviceMaintenanceAccess,
+  WindowsDeviceSecurityPolicy,
   WindowsNotification,
   WindowsNotificationReceipt,
   WindowsSession,
@@ -264,6 +266,56 @@ export async function requestDeviceAction(
   });
   await recordAdminAction(actor, kind, { type: 'device', id: device.id, label: device.deviceName },
     { newValue: now, reason });
+}
+
+/**
+ * Open or close the one supported local exception: Task Manager during a bounded support window.
+ * The API performs permission checks and writes the mandatory audit row; browser code never writes
+ * the grant field directly.
+ */
+export async function changeDeviceMaintenanceAccess(input: {
+  deviceId: string;
+  action: 'GRANT' | 'REVOKE';
+  durationMinutes?: number;
+  windowsAccount?: string | null;
+  reason: string;
+}): Promise<WindowsDeviceMaintenanceAccess> {
+  const token = await auth.currentUser?.getIdToken();
+  if (!token) throw new Error('Your sign-in has expired. Reload the page and try again.');
+
+  const response = await fetch('/api/windows-agent/security/maintenance', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify(input),
+  });
+  const body = await response.json();
+  if (!response.ok) throw new Error(body.error || 'Maintenance access could not be changed.');
+  return body.maintenance as WindowsDeviceMaintenanceAccess;
+}
+
+/** Save the persistent, server-owned security controls for one PC. */
+export async function changeDeviceSecurityPolicy(input: {
+  deviceId: string;
+  policy: WindowsDeviceSecurityPolicy;
+  reason: string;
+}): Promise<WindowsDeviceSecurityPolicy> {
+  const token = await auth.currentUser?.getIdToken();
+  if (!token) throw new Error('Your sign-in has expired. Reload the page and try again.');
+
+  const response = await fetch('/api/windows-agent/security/policy', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify(input),
+  });
+  const body = await response.json();
+  if (!response.ok) throw new Error(body.error || 'The device security policy could not be updated.');
+  return body.policy as WindowsDeviceSecurityPolicy;
 }
 
 export async function setDeviceAssignment(

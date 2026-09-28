@@ -972,6 +972,7 @@ export type AgentHealthFlag =
   | 'OUTDATED_VERSION'
   | 'SYNC_BACKLOG'
   | 'CLOCK_SKEW'
+  | 'SECURITY_BASELINE'
   | 'DEVICE_BLOCKED'
   | 'NEVER_REPORTED';
 
@@ -984,6 +985,7 @@ export interface AgentHealthInput {
   clockSkewSeconds: number;
   heartbeatIntervalSeconds: number;
   now: Date;
+  securityCompliant?: boolean | null;
 }
 
 /** Spans queued on a PC before the backlog is worth flagging (roughly a working day's worth). */
@@ -1014,6 +1016,7 @@ export function evaluateAgentHealth(input: AgentHealthInput): AgentHealthFlag[] 
   }
   if (input.queuedSpanCount >= SYNC_BACKLOG_THRESHOLD) flags.push('SYNC_BACKLOG');
   if (Math.abs(input.clockSkewSeconds) >= CLOCK_SKEW_THRESHOLD_SECONDS) flags.push('CLOCK_SKEW');
+  if (input.securityCompliant !== true) flags.push('SECURITY_BASELINE');
   return flags;
 }
 

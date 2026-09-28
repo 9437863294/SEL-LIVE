@@ -84,11 +84,10 @@
     is what a deployment tool uses anyway:
 
         SEL.Agent-Setup-1.0.0.0.exe /uninstall            (asks for approval)
-        SEL.Agent-Setup-1.0.0.0.exe /uninstall /quiet     (for a fleet rollback)
+        SEL.Agent-Setup-1.0.0.0.exe /uninstall            (asks for approval)
 
-    This is deterrence, not enforcement: a local administrator can still stop the service and
-    delete the folder. §7's position that the agent is not a security boundary is unchanged. What
-    it buys is that the discoverable route produces a record naming who approved it.
+    Silent removal is deliberately refused. Fleet upgrades remain unattended because MSI major
+    upgrades carry UPGRADINGPRODUCTCODE and are signed before the SYSTEM updater runs them.
   -->
   <Bundle Name="SEL LIVE Windows Agent"
           Manufacturer="Siddhartha Engineering Limited"

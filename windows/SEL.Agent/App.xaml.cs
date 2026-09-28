@@ -6,6 +6,7 @@ using System.Windows;
 using Sel.Agent.Core;
 using Sel.Agent.Core.Contracts;
 using Sel.Agent.Core.Platform.Win32;
+using Sel.Agent.Core.Security;
 
 namespace Sel.Agent
 {
@@ -181,17 +182,14 @@ namespace Sel.Agent
         /// distinguishable a year later.
         /// </para>
         /// <para>
-        /// <b>What this is not.</b> It is not a way of preventing removal. A local administrator
-        /// can stop the service, delete the folder, or uninstall silently, and §7's position that
-        /// the agent is not a security boundary is unchanged. What it removes is the *casual*
-        /// route — Apps &amp; Features, two clicks, no record — and what it adds is a name in the
-        /// audit trail beside every PC that legitimately stopped being monitored.
+        /// The per-device SEL LIVE policy owns the removal boundary. When uninstall protection is
+        /// enabled, this authorisation refuses silent/session-0 removal and requires a SEL LIVE
+        /// approver. When it is disabled, the device-authenticated server check allows local or
+        /// unattended removal. Signed upgrades are the separate unattended path.
         /// </para>
         /// <para>
-        /// A machine that cannot reach SEL LIVE, or that was never enrolled, is allowed through.
-        /// Blocking there would mean an unenrolled PC could never be cleaned up, and a site office
-        /// with a dead link could not remove a broken agent — which turns a support call into a
-        /// re-image.
+        /// A machine that was never enrolled may be cleaned up. An enrolled machine that cannot
+        /// reach SEL LIVE is refused: loss of the approval service is not an approval.
         /// </para>
         /// </remarks>
         private void AuthorizeUninstall()
@@ -199,28 +197,16 @@ namespace Sel.Agent
             AgentConfiguration config = AgentConfiguration.Load();
             _log = new AgentLog(config.VerboseLogging);
 
-            // Nobody there to ask.
-            //
-            // A removal driven by SCCM, GPO or a scheduled task runs as SYSTEM in session 0,
-            // where a window would be drawn on a desktop no human can see and this process would
-            // wait for a click that can never come — leaving msiexec hung on a machine in a site
-            // office. Those removals are allowed, and the trace says so.
-            //
-            // The installer cannot make this call: Burn runs its MSI with the UI level set to
-            // none, so from inside the package an interactive uninstall and a silent one are
-            // indistinguishable. Interactivity is a fact about this process, so it is decided
-            // here.
-            if (!Environment.UserInteractive || Process.GetCurrentProcess().SessionId == 0)
-            {
-                StartupTrace.Write("uninstall allowed: no interactive desktop to ask on");
-                Shutdown(0);
-                return;
-            }
-
+            // The server-owned policy is checked before interactivity. When uninstall is allowed
+            // for this PC, local and unattended removal may continue. When it is blocked, only a
+            // visible SEL LIVE approver can authorise this one removal.
             if (!config.IsUsable)
             {
-                StartupTrace.Write("uninstall allowed: this computer has no usable configuration");
-                Shutdown(0);
+                bool enrolled = new DeviceIdentityStore().Exists;
+                StartupTrace.Write(enrolled
+                    ? "uninstall refused: this enrolled installation cannot reach its approval service"
+                    : "uninstall allowed: the incomplete installation was never enrolled");
+                Shutdown(enrolled ? 1 : 0);
                 return;
             }
 
@@ -240,6 +226,28 @@ namespace Sel.Agent
                     // The device credential has to be loaded before the approval call: the route
                     // requires it, so that an approval cannot be manufactured from any machine.
                     host.EnsureEnrolledAsync(cancellation.Token).Wait(TimeSpan.FromSeconds(30));
+                }
+
+                DeviceSecurityActionResponse decision;
+                using (var cancellation = new CancellationTokenSource(TimeSpan.FromSeconds(30)))
+                {
+                    decision = host.CheckDeviceSecurityActionAsync("UNINSTALL", cancellation.Token)
+                        .GetAwaiter().GetResult();
+                }
+                if (decision != null && !decision.Blocked)
+                {
+                    StartupTrace.Write("uninstall allowed by this computer's SEL LIVE security policy");
+                    Shutdown(0);
+                    return;
+                }
+
+                // A blocked action needs a visible SEL LIVE approver. Silent/session-0 removal
+                // has no such channel and therefore fails closed.
+                if (!Environment.UserInteractive || Process.GetCurrentProcess().SessionId == 0)
+                {
+                    StartupTrace.Write("uninstall refused: policy requires interactive SEL LIVE approval");
+                    Shutdown(1);
+                    return;
                 }
 
                 var approval = new ExitApprovalWindow(host, ApprovalPurpose.Uninstall);
@@ -281,11 +289,10 @@ namespace Sel.Agent
             }
             catch (Exception error)
             {
-                // Allowed through, with the reason on record. See the remarks: a machine that
-                // cannot ask must still be serviceable.
+                // Fail closed: a network or configuration failure is not authorisation.
                 _log.Write("Uninstall approval could not be requested: " + error.Message);
-                StartupTrace.Write("uninstall allowed: approval could not be requested — " + error.Message);
-                Shutdown(0);
+                StartupTrace.Write("uninstall refused: approval could not be requested — " + error.Message);
+                Shutdown(1);
             }
             finally
             {

@@ -29,17 +29,19 @@ namespace Sel.Agent.Tests
         }
 
         [Fact]
-        public void Administrators_keep_everything_else_including_the_ability_to_undo_this()
+        public void Administrators_can_observe_and_start_but_cannot_modify_or_rewrite_the_acl()
         {
-            // WRITE_DAC on purpose: the documented recovery is one command, and pretending
-            // otherwise would be security theatre. §7.
+            // Recovery and signed upgrades run as SYSTEM. A local support account can inspect
+            // and start the service, but cannot turn that into permission to replace or stop it.
             string rights = ServiceSecurityRules.RightsFor(ServiceSecurityRules.ProtectedSddl(), "BA");
             Assert.Contains("RP", rights);   // start
-            Assert.Contains("DC", rights);   // change config
-            Assert.Contains("SD", rights);   // delete
-            Assert.Contains("WD", rights);   // write DAC — the way back
+            Assert.DoesNotContain("DC", rights);
+            Assert.DoesNotContain("SD", rights);
+            Assert.DoesNotContain("WD", rights);
             Assert.DoesNotContain("WP", rights);
             Assert.DoesNotContain("DT", rights);
+            Assert.DoesNotContain("WO", rights);
+            Assert.False(ServiceSecurityRules.GrantsModification(ServiceSecurityRules.ProtectedSddl(), "BA"));
         }
 
         [Fact]
@@ -56,6 +58,22 @@ namespace Sel.Agent.Tests
             string sddl = ServiceSecurityRules.DefaultSddl();
             Assert.True(ServiceSecurityRules.GrantsStop(sddl, "BA"));
             Assert.True(ServiceSecurityRules.GrantsStop(sddl, "SY"));
+            Assert.True(ServiceSecurityRules.GrantsModification(sddl, "BA"));
+        }
+
+        [Theory]
+        [InlineData(true, true)]
+        [InlineData(true, false)]
+        [InlineData(false, true)]
+        [InlineData(false, false)]
+        public void Per_device_policy_independently_controls_stop_and_modification(
+            bool stopBlocked, bool modificationBlocked)
+        {
+            string sddl = ServiceSecurityRules.PolicySddl(stopBlocked, modificationBlocked);
+            Assert.Equal(!stopBlocked, ServiceSecurityRules.GrantsStop(sddl, "BA"));
+            Assert.Equal(!modificationBlocked,
+                ServiceSecurityRules.GrantsConfigurationModification(sddl, "BA"));
+            Assert.True(ServiceSecurityRules.MatchesPolicy(sddl, stopBlocked, modificationBlocked));
         }
 
         [Fact]

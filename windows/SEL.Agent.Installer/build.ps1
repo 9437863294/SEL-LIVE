@@ -47,11 +47,11 @@ param(
     # Override to produce an MSI whose agent runs on Windows 8.0. See Directory.Build.props.
     [string]$TargetFramework = 'net48',
 
-    [string]$Version = '1.3.0.0',
+    [string]$Version = '1.4.0.0',
 
     # §43 requires the agent to verify an update's Authenticode signature before running it, which
-    # means the installer has to carry one. An unsigned MSI is fine for a pilot and is not fine
-    # for a fleet: it is the thing that stops a compromised update server owning every PC.
+    # means the installer has to carry one. An unsigned MSI is only useful on a test device whose
+    # per-device policy explicitly does not require signed agent binaries.
     [switch]$Sign,
     [string]$CertificateThumbprint,
     [string]$TimestampUrl = 'http://timestamp.digicert.com',
@@ -397,9 +397,9 @@ Write-Host "  packageSha256  $hash"
 Write-Host "  packageUrl     (wherever you host it, https only)"
 if (-not $Sign) {
     Write-Host ""
-    Write-Host "NOT SIGNED. Fine for a pilot; do not roll this out to a fleet unsigned — the" -ForegroundColor Yellow
-    Write-Host "agent's update check verifies the Authenticode subject before it runs an installer," -ForegroundColor Yellow
-    Write-Host "and an unsigned setup .exe also collects a SmartScreen warning on every PC." -ForegroundColor Yellow
+    Write-Host "NOT SIGNED. The strict device policy rejects these binaries." -ForegroundColor Yellow
+    Write-Host "Use only on a test PC whose per-device policy disables the signed-binary requirement," -ForegroundColor Yellow
+    Write-Host "or rebuild with -Sign and the organisation's certificate." -ForegroundColor Yellow
 }
 Write-Host ""
 if ($SkipBundle) {
@@ -415,7 +415,7 @@ else {
     Write-Host "Unattended, for GPO or SCCM:" -ForegroundColor Cyan
     Write-Host "  `"$([IO.Path]::GetFileName($product))`" /quiet ENROLLMENTCODE=SEL-HO-2026"
     Write-Host "  (APIBASEURL defaults to https://seltech.store; pass it only for a staging server)"
-    Write-Host "  `"$([IO.Path]::GetFileName($product))`" /uninstall /quiet"
+    Write-Host "  `"$([IO.Path]::GetFileName($product))`" /uninstall   (approval depends on that PC's policy)"
     Write-Host "  `"$([IO.Path]::GetFileName($product))`" /log setup.log        (when it goes wrong)"
     if ($KeepMsi) {
         Write-Host ""

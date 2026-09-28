@@ -44,6 +44,13 @@ import {
   sanitizePolicySettings,
   thresholdsOf,
 } from './windows-agent-policy';
+import {
+  activeMaintenanceAccess,
+  postureChanged,
+  resolveDeviceSecurityPolicy,
+  sanitizeSecurityPosture,
+  securityPostureAllowsLogin,
+} from './windows-agent-security';
 import type {
   ActivityBatchResult,
   AgentDirective,
@@ -59,6 +66,8 @@ import type {
   WindowsAgentPolicy,
   WindowsAuditAction,
   WindowsDevice,
+  WindowsDeviceSecurityPosture,
+  DeviceSecuritySyncResult,
 } from './windows-agent-model';
 
 /**
@@ -867,6 +876,17 @@ export async function openOrResumeSession(options: {
       'DEVICE_NOT_APPROVED',
     );
   }
+  if (!securityPostureAllowsLogin(
+    device.securityPosture,
+    device.maintenanceAccess,
+    device.securityPolicy,
+  )) {
+    throw new AgentRequestError(
+      'This computer has no fresh, compliant SEL LIVE device-security report. Contact IT; the device page lists the failed checks.',
+      403,
+      'DEVICE_BLOCKED',
+    );
+  }
   // Both allow-lists, each defaulting to unrestricted. See `canUserSignInOnDevice` for why one
   // list cannot express a per-person limit.
   const userAccess = await loadUserDeviceAccess(user.userId);
@@ -1650,6 +1670,111 @@ function buildDirectives(device: WindowsDevice): AgentDirective[] {
     });
   }
   return directives;
+}
+
+/* ------------------------------------------------------------------------------------------------
+ * Device security (LocalSystem service, independent of employee sessions)
+ * ---------------------------------------------------------------------------------------------- */
+
+/**
+ * Store the posture observed by the SYSTEM service and return the server-owned baseline.
+ *
+ * A device never decides that a maintenance exception is valid. It reports facts, then receives
+ * the current grant over the same authenticated channel as every other agent call. Expiry is
+ * checked on both sides: the server stops returning the grant, while the service also re-locks on
+ * its locally cached expiry if this request cannot be made.
+ */
+export async function recordDeviceSecurityPosture(options: {
+  device: WindowsDevice;
+  posture: unknown;
+  ipAddress: string | null;
+  now?: Date;
+}): Promise<DeviceSecuritySyncResult> {
+  const firestore = getFirebaseAdminFirestore();
+  const now = options.now ?? new Date();
+  const nowIso = now.toISOString();
+  const grant = options.device.maintenanceAccess ?? null;
+  const activeGrant = activeMaintenanceAccess(grant, now);
+  const policy = resolveDeviceSecurityPolicy(options.device.securityPolicy);
+  const posture = sanitizeSecurityPosture(options.posture, now, {
+    allowTaskManagerUnlocked: activeGrant?.allowTaskManager === true,
+    policy,
+  });
+  const previous = options.device.securityPosture ?? null;
+
+  const update: Record<string, unknown> = {
+    securityPosture: posture,
+    lastSecurityCheckAt: nowIso,
+    ipAddress: options.ipAddress,
+    updatedAt: FieldValue.serverTimestamp(),
+  };
+
+  const expired = grant?.status === 'ACTIVE' && !activeGrant;
+  if (expired) {
+    update.maintenanceAccess = {
+      ...grant,
+      status: 'EXPIRED',
+    };
+  }
+
+  await firestore.collection(WINDOWS_AGENT_COLLECTIONS.devices).doc(options.device.id).update(update);
+
+  const audits: Promise<void>[] = [];
+  if (policy.tamperMonitoringEnabled && postureChanged(previous, posture)) {
+    if (!posture.compliant) {
+      audits.push(writeAudit({
+        action: 'DEVICE_SECURITY_TAMPER_DETECTED',
+        actorId: 'system',
+        actorName: 'SEL LIVE device security',
+        targetType: 'device',
+        targetId: options.device.id,
+        targetLabel: options.device.deviceName,
+        oldValue: previous,
+        newValue: posture,
+        reason: posture.findings.join(', '),
+        ipAddress: options.ipAddress,
+        userAgent: null,
+      }));
+    } else if (previous && !previous.compliant) {
+      audits.push(writeAudit({
+        action: 'DEVICE_SECURITY_RESTORED',
+        actorId: 'system',
+        actorName: 'SEL LIVE device security',
+        targetType: 'device',
+        targetId: options.device.id,
+        targetLabel: options.device.deviceName,
+        oldValue: previous,
+        newValue: posture,
+        reason: 'The LocalSystem service restored the required baseline.',
+        ipAddress: options.ipAddress,
+        userAgent: null,
+      }));
+    }
+  }
+
+  if (expired && grant) {
+    audits.push(writeAudit({
+      action: 'MAINTENANCE_ACCESS_EXPIRED',
+      actorId: 'system',
+      actorName: 'SEL LIVE device security',
+      targetType: 'device',
+      targetId: options.device.id,
+      targetLabel: options.device.deviceName,
+      oldValue: grant,
+      newValue: { ...grant, status: 'EXPIRED' },
+      reason: 'The approved maintenance window reached its expiry and was automatically re-locked.',
+      ipAddress: options.ipAddress,
+      userAgent: null,
+    }));
+  }
+
+  await Promise.all(audits);
+
+  return {
+    serverTime: nowIso,
+    policy,
+    maintenance: activeGrant,
+  };
 }
 
 /** The newest published version whose rings include this device's. */

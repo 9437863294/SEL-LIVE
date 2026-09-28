@@ -15,6 +15,7 @@ export * from './windows-agent-model.ts';
 export * from './windows-agent-rules.ts';
 export * from './windows-agent-policy.ts';
 export * from './windows-agent-permissions.ts';
+export * from './windows-agent-security.ts';
 
 /**
  * Every collection this module owns.
@@ -131,6 +132,7 @@ export const WINDOWS_AGENT_API = {
   notificationAck: '/api/windows-agent/notifications/ack',
   policy: '/api/windows-agent/policy',
   version: '/api/windows-agent/version',
+  security: '/api/windows-agent/security',
 } as const;
 
 /**

@@ -432,6 +432,69 @@ namespace Sel.Agent.Core.Contracts
         [JsonProperty("availableVersion")] public AvailableVersion AvailableVersion { get; set; }
     }
 
+    /* ── Device security (LocalSystem service) ───────────────────────────────────────────── */
+
+    public sealed class DeviceSecurityPosture
+    {
+        [JsonProperty("checkedAt")] public string CheckedAt { get; set; }
+        [JsonProperty("secureBootEnabled")] public bool? SecureBootEnabled { get; set; }
+        [JsonProperty("taskManagerLocked")] public bool TaskManagerLocked { get; set; }
+        [JsonProperty("agentStopBlocked")] public bool AgentStopBlocked { get; set; }
+        [JsonProperty("serviceModificationBlocked")] public bool ServiceModificationBlocked { get; set; }
+        [JsonProperty("agentBinariesSigned")] public bool AgentBinariesSigned { get; set; }
+        [JsonProperty("signedAppControlPolicyActive")] public bool SignedAppControlPolicyActive { get; set; }
+        [JsonProperty("compliant")] public bool Compliant { get; set; }
+        [JsonProperty("findings")] public List<string> Findings { get; set; }
+        [JsonProperty("windowsAccounts")] public List<string> WindowsAccounts { get; set; }
+    }
+
+    public sealed class DeviceSecurityPolicy
+    {
+        [JsonProperty("taskManagerLocked")] public bool TaskManagerLocked { get; set; }
+        [JsonProperty("agentStopBlocked")] public bool AgentStopBlocked { get; set; }
+        [JsonProperty("serviceModificationBlocked")] public bool ServiceModificationBlocked { get; set; }
+        [JsonProperty("uninstallBlocked")] public bool UninstallBlocked { get; set; }
+        [JsonProperty("monitoringPolicyLocallyMutable")] public bool MonitoringPolicyLocallyMutable { get; set; }
+        [JsonProperty("signedAgentBinariesRequired")] public bool SignedAgentBinariesRequired { get; set; }
+        [JsonProperty("signedAppControlPolicyRequired")] public bool SignedAppControlPolicyRequired { get; set; }
+        [JsonProperty("secureBootRequired")] public bool SecureBootRequired { get; set; }
+        [JsonProperty("tamperMonitoringEnabled")] public bool TamperMonitoringEnabled { get; set; }
+        [JsonProperty("auditRequired")] public bool AuditRequired { get; set; }
+        [JsonProperty("enforcementIntervalSeconds")] public int EnforcementIntervalSeconds { get; set; }
+    }
+
+    public sealed class DeviceMaintenanceAccess
+    {
+        [JsonProperty("grantId")] public string GrantId { get; set; }
+        [JsonProperty("status")] public string Status { get; set; }
+        [JsonProperty("grantedAt")] public string GrantedAt { get; set; }
+        [JsonProperty("expiresAt")] public string ExpiresAt { get; set; }
+        [JsonProperty("grantedBy")] public string GrantedBy { get; set; }
+        [JsonProperty("grantedByName")] public string GrantedByName { get; set; }
+        [JsonProperty("reason")] public string Reason { get; set; }
+        [JsonProperty("allowTaskManager")] public bool AllowTaskManager { get; set; }
+        [JsonProperty("windowsAccount")] public string WindowsAccount { get; set; }
+        [JsonProperty("temporaryLocalAdmin")] public bool TemporaryLocalAdmin { get; set; }
+    }
+
+    public sealed class DeviceSecuritySyncRequest
+    {
+        [JsonProperty("posture")] public DeviceSecurityPosture Posture { get; set; }
+    }
+
+    public sealed class DeviceSecuritySyncResponse
+    {
+        [JsonProperty("serverTime")] public string ServerTime { get; set; }
+        [JsonProperty("policy")] public DeviceSecurityPolicy Policy { get; set; }
+        [JsonProperty("maintenance")] public DeviceMaintenanceAccess Maintenance { get; set; }
+    }
+
+    public sealed class DeviceSecurityActionResponse
+    {
+        [JsonProperty("action")] public string Action { get; set; }
+        [JsonProperty("blocked")] public bool Blocked { get; set; }
+    }
+
     /* ── Logout ──────────────────────────────────────────────────────────────────────────── */
 
     public sealed class SessionLogoutRequest

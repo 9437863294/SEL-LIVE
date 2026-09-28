@@ -77,8 +77,8 @@ export default function LiveBoard() {
   const [heartbeats, setHeartbeats] = useState<WindowsHeartbeat[]>([]);
   const [sessions, setSessions] = useState<WindowsSession[]>([]);
   const [devices, setDevices] = useState<WindowsDevice[]>([]);
-  const [subscribed, setSubscribed] = useState(false);
   const [search, setSearch] = useState('');
+  const subscribed = allowed;
 
   useEffect(() => {
     if (!allowed) return;
@@ -87,10 +87,8 @@ export default function LiveBoard() {
       listenToOpenSessions(setSessions),
       listenToDevices(setDevices),
     ];
-    setSubscribed(true);
     return () => {
       stops.forEach((stop) => stop());
-      setSubscribed(false);
     };
   }, [allowed]);
 
@@ -123,6 +121,7 @@ export default function LiveBoard() {
               queuedSpanCount: beat?.queuedSpanCount ?? 0,
               clockSkewSeconds: beat?.clockSkewSeconds ?? 0,
               heartbeatIntervalSeconds: 90,
+              securityCompliant: device.securityPosture?.compliant ?? null,
               now,
             })
           : [];

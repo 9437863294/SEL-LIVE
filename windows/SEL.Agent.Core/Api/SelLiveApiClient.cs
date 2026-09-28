@@ -209,6 +209,24 @@ namespace Sel.Agent.Core.Api
         }
 
         /// <summary>
+        /// Report service-owned posture and receive the authoritative security baseline.
+        /// No employee token is involved: this runs in session 0 before anybody signs in.
+        /// </summary>
+        public Task<DeviceSecuritySyncResponse> SyncDeviceSecurityAsync(
+            DeviceSecurityPosture posture, CancellationToken cancellation)
+        {
+            return SendAsync<DeviceSecuritySyncResponse>(HttpMethod.Post, "/api/windows-agent/security",
+                new DeviceSecuritySyncRequest { Posture = posture }, true, null, cancellation);
+        }
+
+        public Task<DeviceSecurityActionResponse> CheckDeviceSecurityActionAsync(
+            string action, CancellationToken cancellation)
+        {
+            return SendAsync<DeviceSecurityActionResponse>(HttpMethod.Post,
+                "/api/windows-agent/security/action", new { action }, true, null, cancellation);
+        }
+
+        /// <summary>
         /// A Firebase custom token so the agent's embedded ERP window opens already signed in.
         /// </summary>
         /// <remarks>

@@ -50,6 +50,14 @@ import {
 } from '../src/lib/windows-agent-policy.ts';
 
 import {
+  WINDOWS_DEVICE_SECURITY_POLICY,
+  activeMaintenanceAccess,
+  resolveDeviceSecurityPolicy,
+  sanitizeSecurityPosture,
+  securityPostureAllowsLogin,
+} from '../src/lib/windows-agent-security.ts';
+
+import {
   canBroadcastNotifications,
   canOpenWindowsAgent,
   canViewActivityOf,
@@ -492,6 +500,7 @@ test('agent health flags the four §47 problems and nothing else', () => {
       queuedSpanCount: 3,
       clockSkewSeconds: 2,
       heartbeatIntervalSeconds: 90,
+      securityCompliant: true,
       now,
     }),
     [],
@@ -505,9 +514,24 @@ test('agent health flags the four §47 problems and nothing else', () => {
     queuedSpanCount: 900,
     clockSkewSeconds: -600,
     heartbeatIntervalSeconds: 90,
+    securityCompliant: true,
     now,
   });
   assert.deepEqual(flags.sort(), ['CLOCK_SKEW', 'NO_HEARTBEAT', 'OUTDATED_VERSION', 'SYNC_BACKLOG']);
+
+  assert.ok(
+    evaluateAgentHealth({
+      status: 'ACTIVE',
+      lastHeartbeatAt: new Date('2026-09-20T09:59:00Z'),
+      agentVersion: '1.4.2',
+      latestVersion: '1.4.2',
+      queuedSpanCount: 0,
+      clockSkewSeconds: 0,
+      heartbeatIntervalSeconds: 90,
+      securityCompliant: null,
+      now,
+    }).includes('SECURITY_BASELINE'),
+  );
 
   assert.ok(
     evaluateAgentHealth({
@@ -959,4 +983,123 @@ test('filterVisibleSubjects narrows a list the same way the query would', () => 
 
 test('MAX_SPAN_SECONDS is a bound the ingest path actually enforces', () => {
   assert.equal(MAX_SPAN_SECONDS, 12 * 60 * 60);
+});
+
+test('the default device-security policy is strict and per-device overrides are bounded', () => {
+  assert.equal(WINDOWS_DEVICE_SECURITY_POLICY.taskManagerLocked, true);
+  assert.equal(WINDOWS_DEVICE_SECURITY_POLICY.agentStopBlocked, true);
+  assert.equal(WINDOWS_DEVICE_SECURITY_POLICY.serviceModificationBlocked, true);
+  assert.equal(WINDOWS_DEVICE_SECURITY_POLICY.uninstallBlocked, true);
+  assert.equal(WINDOWS_DEVICE_SECURITY_POLICY.monitoringPolicyLocallyMutable, false);
+  assert.equal(WINDOWS_DEVICE_SECURITY_POLICY.secureBootRequired, true);
+  assert.equal(WINDOWS_DEVICE_SECURITY_POLICY.signedAppControlPolicyRequired, true);
+  assert.equal(WINDOWS_DEVICE_SECURITY_POLICY.auditRequired, true);
+  const relaxed = resolveDeviceSecurityPolicy({
+    taskManagerLocked: false,
+    agentStopBlocked: false,
+    auditRequired: false,
+    enforcementIntervalSeconds: 1,
+  });
+  assert.equal(relaxed.taskManagerLocked, false);
+  assert.equal(relaxed.agentStopBlocked, false);
+  assert.equal(relaxed.auditRequired, true);
+  assert.equal(relaxed.enforcementIntervalSeconds, 30);
+});
+
+test('a maintenance grant is accepted only while active and before its server expiry', () => {
+  const grant = {
+    grantId: 'grant-1',
+    status: 'ACTIVE',
+    grantedAt: iso('2026-09-28T10:00:00Z'),
+    expiresAt: iso('2026-09-28T10:30:00Z'),
+    grantedBy: 'admin',
+    grantedByName: 'Admin',
+    reason: 'Printer driver support',
+    allowTaskManager: true,
+  };
+  assert.equal(activeMaintenanceAccess(grant, new Date('2026-09-28T10:29:59Z'))?.grantId, 'grant-1');
+  assert.equal(activeMaintenanceAccess(grant, new Date('2026-09-28T10:30:00Z')), null);
+  assert.equal(activeMaintenanceAccess({ ...grant, status: 'REVOKED' }, new Date('2026-09-28T10:10:00Z')), null);
+});
+
+test('security posture is derived server-side and a maintenance grant excuses only Task Manager', () => {
+  const raw = {
+    secureBootEnabled: true,
+    taskManagerLocked: false,
+    agentStopBlocked: true,
+    serviceModificationBlocked: true,
+    agentBinariesSigned: true,
+    signedAppControlPolicyActive: true,
+    compliant: true,
+    findings: [],
+  };
+  const ordinary = sanitizeSecurityPosture(raw, new Date('2026-09-28T10:00:00Z'));
+  assert.equal(ordinary.compliant, false);
+  assert.deepEqual(ordinary.findings, ['TASK_MANAGER_UNLOCKED']);
+
+  const maintenance = sanitizeSecurityPosture(raw, new Date('2026-09-28T10:00:00Z'), {
+    allowTaskManagerUnlocked: true,
+  });
+  assert.equal(maintenance.compliant, true);
+  assert.deepEqual(maintenance.findings, []);
+
+  const stillUnsafe = sanitizeSecurityPosture(
+    { ...raw, serviceModificationBlocked: false },
+    new Date('2026-09-28T10:00:00Z'),
+    { allowTaskManagerUnlocked: true },
+  );
+  assert.equal(stillUnsafe.compliant, false);
+  assert.deepEqual(stillUnsafe.findings, ['SERVICE_MODIFIABLE']);
+});
+
+test('work login requires a fresh complete security report', () => {
+  const now = new Date('2026-09-20T10:00:00Z');
+  const posture = sanitizeSecurityPosture({
+    secureBootEnabled: true,
+    taskManagerLocked: true,
+    agentStopBlocked: true,
+    serviceModificationBlocked: true,
+    agentBinariesSigned: true,
+    signedAppControlPolicyActive: true,
+    findings: [],
+  }, now);
+
+  assert.equal(securityPostureAllowsLogin(null, null, null, now), false);
+  assert.equal(securityPostureAllowsLogin(posture, null, null, now), true);
+  assert.equal(securityPostureAllowsLogin(
+    { ...posture, checkedAt: '2026-09-20T09:54:59Z' },
+    null,
+    null,
+    now,
+  ), false);
+  assert.equal(securityPostureAllowsLogin(
+    { ...posture, taskManagerLocked: false, findings: ['TASK_MANAGER_UNLOCKED'] },
+    {
+      grantId: 'grant-login',
+      status: 'ACTIVE',
+      grantedAt: '2026-09-20T09:55:00Z',
+      expiresAt: '2026-09-20T10:05:00Z',
+      grantedBy: 'admin',
+      grantedByName: 'Admin',
+      reason: 'Support',
+      allowTaskManager: true,
+    },
+    null,
+    now,
+  ), true);
+
+  const relaxed = resolveDeviceSecurityPolicy({
+    taskManagerLocked: false,
+    secureBootRequired: false,
+    signedAgentBinariesRequired: false,
+    signedAppControlPolicyRequired: false,
+  });
+  assert.equal(securityPostureAllowsLogin({
+    ...posture,
+    secureBootEnabled: false,
+    taskManagerLocked: false,
+    agentBinariesSigned: false,
+    signedAppControlPolicyActive: false,
+    findings: [],
+  }, null, relaxed, now), true);
 });

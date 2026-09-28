@@ -591,6 +591,12 @@ namespace Sel.Agent
             }
         }
 
+        public Task<DeviceSecurityActionResponse> CheckDeviceSecurityActionAsync(
+            string action, CancellationToken cancellation)
+        {
+            return _api.CheckDeviceSecurityActionAsync(action, cancellation);
+        }
+
         /* ── Notifications ───────────────────────────────────────────────────────────────── */
 
         private async void OnNotificationsAvailable(object sender, List<string> ids)

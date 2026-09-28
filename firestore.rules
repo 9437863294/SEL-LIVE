@@ -941,7 +941,14 @@ service cloud.firestore {
       // that machine. The agent's API rotates it through the Admin SDK.
       allow update: if waPerm('Devices', 'Edit')
         && request.resource.data.deviceSecretHash == resource.data.deviceSecretHash
-        && request.resource.data.secretVersion == resource.data.secretVersion;
+        && request.resource.data.secretVersion == resource.data.secretVersion
+        // Service-owned posture and server-issued maintenance grants are never browser writable.
+        // A Devices/Edit holder may ask the authenticated API to issue a grant, but cannot forge
+        // one in Firestore or erase a tamper finding.
+        && request.resource.data.get('securityPosture', null) == resource.data.get('securityPosture', null)
+        && request.resource.data.get('lastSecurityCheckAt', null) == resource.data.get('lastSecurityCheckAt', null)
+        && request.resource.data.get('securityPolicy', null) == resource.data.get('securityPolicy', null)
+        && request.resource.data.get('maintenanceAccess', null) == resource.data.get('maintenanceAccess', null);
       allow delete: if false;
     }
 

@@ -55,7 +55,8 @@ namespace Sel.Agent.Tests
                     return approve;
                 },
                 () => recorder.Stopped.Set(),
-                message => { });
+                message => { },
+                "SEL-LIVE-Agent-Control-Test-" + Guid.NewGuid().ToString("N"));
 
             _pipe.Start();
             // The listener thread has to reach WaitForConnection before a client can connect.
@@ -63,9 +64,9 @@ namespace Sel.Agent.Tests
             return recorder;
         }
 
-        private static AgentControlResponse Send(string json)
+        private AgentControlResponse Send(string json)
         {
-            using (var client = new NamedPipeClientStream(".", AgentControlChannel.PipeName, PipeDirection.InOut))
+            using (var client = new NamedPipeClientStream(".", _pipe.EffectivePipeName, PipeDirection.InOut))
             {
                 client.Connect(5000);
                 var writer = new StreamWriter(client) { AutoFlush = true };
@@ -167,7 +168,8 @@ namespace Sel.Agent.Tests
             _pipe = new ControlPipe(
                 (token, reason) => throw new InvalidOperationException("network is down"),
                 () => stopped.Set(),
-                message => { });
+                message => { },
+                "SEL-LIVE-Agent-Control-Test-" + Guid.NewGuid().ToString("N"));
             _pipe.Start();
             Thread.Sleep(300);
 

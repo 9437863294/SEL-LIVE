@@ -4,6 +4,7 @@ using System.IO;
 using System.ServiceProcess;
 using System.Threading;
 using Sel.Agent.Core;
+using Sel.Agent.Core.Contracts;
 using Sel.Agent.Core.Security;
 using Sel.Agent.Core.Storage;
 
@@ -108,8 +109,12 @@ namespace Sel.Agent.Service
 
         private Timer _watchdog;
         private Timer _housekeeping;
+        private Timer _security;
         private ControlPipe _controlPipe;
         private AgentUpdater _updater;
+        private int _securitySyncRunning;
+        private DateTime _maintenanceExpiresUtc = DateTime.MinValue;
+        private bool _maintenanceAllowsTaskManager;
         private readonly object _gate = new object();
         private readonly System.Collections.Generic.Dictionary<uint, LaunchRecord> _launches =
             new System.Collections.Generic.Dictionary<uint, LaunchRecord>();
@@ -152,6 +157,9 @@ namespace Sel.Agent.Service
 
             _watchdog = new Timer(OnWatchdog, null, FirstWatchdogCheck, WatchdogInterval);
             _housekeeping = new Timer(OnHousekeeping, null, TimeSpan.FromMinutes(2), HousekeepingInterval);
+            // Security starts fail-closed, then asks SEL LIVE whether a bounded maintenance
+            // exception is active. The locally cached expiry restores the lock without a network.
+            _security = new Timer(OnSecuritySync, null, TimeSpan.FromSeconds(5), TimeSpan.FromSeconds(60));
 
             // The only way to stop this service once its descriptor is hardened. See ControlPipe
             // for why the decision is the server's and not the caller's.
@@ -170,6 +178,7 @@ namespace Sel.Agent.Service
             Log("Service stopping.");
             if (_watchdog != null) { _watchdog.Dispose(); _watchdog = null; }
             if (_housekeeping != null) { _housekeeping.Dispose(); _housekeeping = null; }
+            if (_security != null) { _security.Dispose(); _security = null; }
             if (_controlPipe != null) { _controlPipe.Dispose(); _controlPipe = null; }
             if (_updater != null) { _updater.Dispose(); _updater = null; }
         }
@@ -281,6 +290,7 @@ namespace Sel.Agent.Service
                     ThreadPool.QueueUserWorkItem(_ =>
                     {
                         Thread.Sleep(4000);
+                        OnSecuritySync(null);
                         EnsureAgentInSession(sessionId);
                     });
                     break;
@@ -387,6 +397,110 @@ namespace Sel.Agent.Service
             catch (Exception error)
             {
                 Log("Housekeeping failed: " + error.Message, EventLogEntryType.Warning);
+            }
+        }
+
+        /// <summary>
+        /// Re-apply the device baseline, report posture, and consume an expiring maintenance grant.
+        /// </summary>
+        private void OnSecuritySync(object state)
+        {
+            if (Interlocked.Exchange(ref _securitySyncRunning, 1) != 0) return;
+            try
+            {
+                TemporaryLocalAdmin.EnforceCachedExpiry(DateTime.UtcNow,
+                    message => Log(message, EventLogEntryType.Warning));
+                bool maintenanceActive = _maintenanceAllowsTaskManager
+                    && _maintenanceExpiresUtc > DateTime.UtcNow;
+                if (_maintenanceAllowsTaskManager && !maintenanceActive)
+                {
+                    _maintenanceAllowsTaskManager = false;
+                    _maintenanceExpiresUtc = DateTime.MinValue;
+                    Log("The maintenance window expired; Task Manager has been locked again.");
+                }
+
+                DeviceSecurityPolicy currentPolicy = DeviceSecurityPolicyStore.Read();
+                DeviceSecurityPosture posture = DeviceSecurityEnforcer.EnforceAndInspect(
+                    currentPolicy, maintenanceActive, message => Log(message, EventLogEntryType.Warning));
+
+                AgentConfigurationProbe config = AgentConfigurationProbe.Load();
+                if (!config.Found || string.IsNullOrEmpty(config.ApiBaseUrl)) return;
+
+                var identityStore = new DeviceIdentityStore();
+                DeviceIdentity identity = identityStore.Read();
+                string secret = identityStore.ReadSecret();
+                if (identity == null || string.IsNullOrEmpty(secret)) return;
+
+                using (var client = new Core.Api.SelLiveApiClient(config.ApiBaseUrl, Core.AgentVersion.Current))
+                using (var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(30)))
+                {
+                    client.DeviceId = identity.DeviceId;
+                    client.DeviceSecret = secret;
+                    DeviceSecuritySyncResponse response = client
+                        .SyncDeviceSecurityAsync(posture, timeout.Token)
+                        .GetAwaiter()
+                        .GetResult();
+
+                    DeviceSecurityPolicy nextPolicy = response != null && response.Policy != null
+                        ? response.Policy
+                        : currentPolicy;
+                    DeviceSecurityPolicyStore.Write(nextPolicy);
+
+                    bool nextAllowed = false;
+                    DateTime nextExpiry = DateTime.MinValue;
+                    if (response != null && response.Maintenance != null
+                        && string.Equals(response.Maintenance.Status, "ACTIVE", StringComparison.OrdinalIgnoreCase)
+                        && response.Maintenance.AllowTaskManager)
+                    {
+                        nextExpiry = IsoTime.Parse(response.Maintenance.ExpiresAt);
+                        nextAllowed = nextExpiry > DateTime.UtcNow;
+                    }
+
+                    bool changed = nextAllowed != _maintenanceAllowsTaskManager
+                        || nextExpiry != _maintenanceExpiresUtc;
+                    _maintenanceAllowsTaskManager = nextAllowed;
+                    _maintenanceExpiresUtc = nextAllowed ? nextExpiry : DateTime.MinValue;
+
+                    if (nextAllowed && response.Maintenance.TemporaryLocalAdmin
+                        && !string.IsNullOrEmpty(response.Maintenance.WindowsAccount))
+                    {
+                        TemporaryLocalAdmin.Apply(response.Maintenance.WindowsAccount, nextExpiry,
+                            message => Log(message));
+                    }
+                    else
+                    {
+                        TemporaryLocalAdmin.Revoke(message => Log(message, EventLogEntryType.Warning));
+                    }
+
+                    if (changed)
+                    {
+                        Log(nextAllowed
+                            ? "SEL LIVE opened Task Manager for approved maintenance until "
+                                + nextExpiry.ToLocalTime().ToString("g") + "."
+                            : "SEL LIVE closed maintenance access; Task Manager is locked.");
+                        // Apply the new answer immediately instead of waiting another minute.
+                        DeviceSecurityEnforcer.EnforceAndInspect(nextPolicy, nextAllowed,
+                            message => Log(message, EventLogEntryType.Warning));
+                    }
+                    else
+                    {
+                        // A persistent policy change must apply immediately even when maintenance
+                        // state did not change.
+                        DeviceSecurityEnforcer.EnforceAndInspect(nextPolicy, nextAllowed,
+                            message => Log(message, EventLogEntryType.Warning));
+                    }
+                }
+            }
+            catch (Exception error)
+            {
+                // Fail closed. An already-issued grant remains valid only until its local expiry;
+                // no reply can create or extend one.
+                Log("Device security sync failed; the local baseline remains in force: " + error.Message,
+                    EventLogEntryType.Warning);
+            }
+            finally
+            {
+                Interlocked.Exchange(ref _securitySyncRunning, 0);
             }
         }
 

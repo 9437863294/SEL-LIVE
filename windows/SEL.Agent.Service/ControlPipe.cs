@@ -51,6 +51,7 @@ namespace Sel.Agent.Service
         private readonly Func<string, string, bool> _approveStop;
         private readonly Action<string> _log;
         private readonly Action _stopService;
+        private readonly string _pipeName;
 
         private Thread _listener;
         private volatile bool _running;
@@ -60,12 +61,19 @@ namespace Sel.Agent.Service
         /// Asks SEL LIVE whether this token's owner may stop the service. Takes the ID token and
         /// the reason; returns true only when the server says yes.
         /// </param>
-        internal ControlPipe(Func<string, string, bool> approveStop, Action stopService, Action<string> log)
+        internal ControlPipe(
+            Func<string, string, bool> approveStop,
+            Action stopService,
+            Action<string> log,
+            string pipeName = null)
         {
             _approveStop = approveStop ?? throw new ArgumentNullException("approveStop");
             _stopService = stopService ?? throw new ArgumentNullException("stopService");
             _log = log ?? (message => { });
+            _pipeName = string.IsNullOrWhiteSpace(pipeName) ? PipeName : pipeName;
         }
+
+        internal string EffectivePipeName { get { return _pipeName; } }
 
         internal void Start()
         {
@@ -85,7 +93,7 @@ namespace Sel.Agent.Service
             {
                 NamedPipeServerStream current = _current;
                 if (current != null && current.IsConnected) current.Disconnect();
-                using (var nudge = new NamedPipeClientStream(".", PipeName, PipeDirection.InOut))
+                using (var nudge = new NamedPipeClientStream(".", _pipeName, PipeDirection.InOut))
                 {
                     nudge.Connect(250);
                 }
@@ -106,7 +114,7 @@ namespace Sel.Agent.Service
             {
                 try
                 {
-                    using (NamedPipeServerStream server = Create())
+                    using (NamedPipeServerStream server = Create(_pipeName))
                     {
                         _current = server;
                         server.WaitForConnection();
@@ -146,7 +154,7 @@ namespace Sel.Agent.Service
             }
         }
 
-        private static NamedPipeServerStream Create()
+        private static NamedPipeServerStream Create(string pipeName)
         {
             var security = new PipeSecurity();
             security.AddAccessRule(new PipeAccessRule(
@@ -159,7 +167,7 @@ namespace Sel.Agent.Service
                 AccessControlType.Allow));
 
             return new NamedPipeServerStream(
-                PipeName,
+                pipeName,
                 PipeDirection.InOut,
                 1,
                 PipeTransmissionMode.Byte,

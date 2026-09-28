@@ -9,7 +9,7 @@ namespace Sel.Agent.Service
     /// </summary>
     /// <remarks>
     /// <para>
-    /// The rules — who keeps which right, and why administrators deliberately keep WRITE_DAC —
+    /// The rules — who keeps observation rights and why mutation remains SYSTEM-only —
     /// are in <see cref="ServiceSecurityRules"/>. This is only the part that talks to Windows.
     /// </para>
     /// <para>
@@ -25,10 +25,14 @@ namespace Sel.Agent.Service
 
         internal static int Protect()
         {
-            return Apply(ServiceSecurityRules.ProtectedSddl(),
-                "Stop is now refused to everybody but SYSTEM. An administrator who genuinely needs "
-                + "to stop the service either approves it in SEL LIVE, or restores the default "
-                + "descriptor — the recovery command is in the deployment guide.");
+            return ApplyPolicy(true, true);
+        }
+
+        internal static int ApplyPolicy(bool stopBlocked, bool serviceModificationBlocked)
+        {
+            return Apply(ServiceSecurityRules.PolicySddl(stopBlocked, serviceModificationBlocked),
+                "Applied service policy: administrator stop " + (stopBlocked ? "blocked" : "allowed")
+                + ", administrator modification " + (serviceModificationBlocked ? "blocked" : "allowed") + ".");
         }
 
         internal static int Unprotect()

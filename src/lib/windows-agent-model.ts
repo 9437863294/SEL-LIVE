@@ -121,6 +121,68 @@ export interface DeviceMachineFacts {
   timeZoneId?: string | null;
 }
 
+/**
+ * The controls owned by the LocalSystem service rather than by the interactive tray process.
+ *
+ * These settings are intentionally not part of {@link AgentPolicySettings}. They are assigned to
+ * one device by a SEL LIVE administrator and consumed only by the LocalSystem service. A browser
+ * may request a change through the authenticated API, but cannot write the stored policy directly.
+ */
+export interface WindowsDeviceSecurityPolicy {
+  taskManagerLocked: boolean;
+  agentStopBlocked: boolean;
+  serviceModificationBlocked: boolean;
+  uninstallBlocked: boolean;
+  monitoringPolicyLocallyMutable: boolean;
+  signedAgentBinariesRequired: boolean;
+  signedAppControlPolicyRequired: boolean;
+  secureBootRequired: boolean;
+  tamperMonitoringEnabled: boolean;
+  auditRequired: boolean;
+  /** How often the SYSTEM service re-checks and re-applies the baseline. */
+  enforcementIntervalSeconds: number;
+}
+
+/** What the SYSTEM service most recently observed on one PC. */
+export interface WindowsDeviceSecurityPosture {
+  checkedAt: IsoInstant;
+  secureBootEnabled: boolean | null;
+  taskManagerLocked: boolean;
+  agentStopBlocked: boolean;
+  serviceModificationBlocked: boolean;
+  agentBinariesSigned: boolean;
+  signedAppControlPolicyActive: boolean;
+  compliant: boolean;
+  /** Stable machine-readable reasons, for filtering and fleet counts. */
+  findings: string[];
+  /** Loaded interactive Windows accounts, used to target a temporary local-admin lease. */
+  windowsAccounts?: string[];
+}
+
+/**
+ * A SEL LIVE-issued exception to the normal local lockdown.
+ *
+ * The grant contains no reusable password or secret. The LocalSystem service consumes it over its
+ * authenticated device channel, opens only the named controls, and restores the baseline from its
+ * own clock when `expiresAt` passes even if the server is unreachable.
+ */
+export interface WindowsDeviceMaintenanceAccess {
+  grantId: string;
+  status: 'ACTIVE' | 'REVOKED' | 'EXPIRED';
+  grantedAt: IsoInstant;
+  expiresAt: IsoInstant;
+  grantedBy: string;
+  grantedByName: string;
+  reason: string;
+  allowTaskManager: boolean;
+  /** Optional JIT elevation target; never a password and never a permanent group assignment. */
+  windowsAccount?: string | null;
+  temporaryLocalAdmin?: boolean;
+  revokedAt?: IsoInstant | null;
+  revokedBy?: string | null;
+  revokedByName?: string | null;
+}
+
 export interface WindowsDevice extends WindowsAgentAuditStamps {
   id: string;
   /** Human label an administrator can change: `SEL-HO-PC-023`. Defaults to the hostname. */
@@ -175,6 +237,14 @@ export interface WindowsDevice extends WindowsAgentAuditStamps {
   forceReauthAt?: IsoInstant | null;
   /** Raised to sign the current user out without touching the device credential. */
   forceSignOutAt?: IsoInstant | null;
+
+  /** Last service-owned security report. Browser clients can read but never write this field. */
+  securityPosture?: WindowsDeviceSecurityPosture | null;
+  lastSecurityCheckAt?: IsoInstant | null;
+  /** Persistent, server-owned controls assigned to this individual PC. */
+  securityPolicy?: WindowsDeviceSecurityPolicy | null;
+  /** The current or most recent grant. Kept after expiry/revocation for the device history. */
+  maintenanceAccess?: WindowsDeviceMaintenanceAccess | null;
 }
 
 /**
@@ -992,6 +1062,12 @@ export type WindowsAuditAction =
   | 'AGENT_VERSION_PUBLISHED'
   | 'AGENT_VERSION_WITHDRAWN'
   | 'AGENT_UPDATE_TRIGGERED'
+  | 'MAINTENANCE_ACCESS_GRANTED'
+  | 'MAINTENANCE_ACCESS_REVOKED'
+  | 'MAINTENANCE_ACCESS_EXPIRED'
+  | 'DEVICE_SECURITY_TAMPER_DETECTED'
+  | 'DEVICE_SECURITY_RESTORED'
+  | 'DEVICE_SECURITY_POLICY_UPDATED'
   | 'ENROLLMENT_CODE_CREATED'
   | 'ENROLLMENT_CODE_DISABLED'
   | 'SESSION_EDITED'
@@ -1156,6 +1232,18 @@ export interface HeartbeatResult {
   pendingNotificationIds: string[];
   /** Set when a newer version applies to this device's ring. */
   availableVersion: { version: string; packageUrl: string; packageSha256: string } | null;
+}
+
+/** LocalSystem -> server report sent independently of an employee work session. */
+export interface DeviceSecuritySyncInput {
+  posture: WindowsDeviceSecurityPosture;
+}
+
+/** Server-owned per-device policy and any currently valid, time-bounded exception. */
+export interface DeviceSecuritySyncResult {
+  serverTime: IsoInstant;
+  policy: WindowsDeviceSecurityPolicy;
+  maintenance: WindowsDeviceMaintenanceAccess | null;
 }
 
 /** A server→agent instruction, delivered on the heartbeat because the agent may be behind a NAT. */
