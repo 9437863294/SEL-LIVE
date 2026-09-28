@@ -29,6 +29,7 @@ import {
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Skeleton } from '@/components/ui/skeleton';
+import { cn } from '@/lib/utils';
 
 // ─── types ────────────────────────────────────────────────────────────────────
 
@@ -63,6 +64,9 @@ const PAGE_SIZES = [50, 100, 250, 500] as const;
 /** "Load all" stops here so an unbounded query cannot exhaust the browser. */
 const LOAD_ALL_CAP = 10_000;
 const COLUMNS_STORAGE_KEY = 'audit-logs.hidden-columns';
+const FIXED_HEADERS = new Set([
+  '', 'Timestamp', 'User', 'Module', 'Action', 'Record', 'Changes', 'Source', 'IP Address', 'Device', 'Session',
+]);
 
 const SOURCE_OPTIONS = [
   { value: 'All', label: 'All sources' },
@@ -335,6 +339,10 @@ export default function AuditLogsPage() {
     }
   }, [logs, search, actionFilter, sourceFilter, recordFilter, ipFilter, changesOnly, sortKey]);
 
+  // Taken from the filtered rows, so narrowing to one module shows just that
+  // module's fields instead of every key any module has ever written.
+  const detailFields = useMemo(() => detailFieldsOf(filtered, FIXED_HEADERS), [filtered]);
+
   // ── load ──
   const [loadError, setLoadError] = useState<string | null>(null);
 
@@ -453,12 +461,14 @@ export default function AuditLogsPage() {
         { header: 'Record Ref', key: 'recordRef', width: 22 },
         { header: 'Record ID', key: 'recordId', width: 24 },
         { header: 'Changes', key: 'changes', width: 50 },
-        { header: 'Details', key: 'details', width: 60 },
         { header: 'Source', key: 'source', width: 10 },
         { header: 'IP Address', key: 'ipAddress', width: 16 },
         { header: 'Device', key: 'device', width: 18 },
         { header: 'User Agent', key: 'userAgent', width: 50 },
         { header: 'Session ID', key: 'sessionId', width: 36 },
+        // One column per detail field, as on screen; keys are prefixed so a detail
+        // named e.g. 'action' cannot overwrite the fixed column of that name.
+        ...detailFields.map((f) => ({ header: f.header, key: `d:${f.key}`, width: f.numeric ? 14 : 24 })),
       ];
       ws.getRow(1).font = { bold: true };
       filtered.forEach((l) =>
@@ -472,17 +482,20 @@ export default function AuditLogsPage() {
           recordRef: l.recordRef ?? '',
           recordId: l.recordId ?? '',
           changes: changesOf(l.details).map(([f, c]) => `${f}: ${displayValue(c.from)} → ${displayValue(c.to)}`).join('\n'),
-          details: formatDetails(l.details),
           // Blank for browser-written rows; 'cron'/'api' marks an automated action.
           source: sourceOf(l),
           ipAddress: l.ipAddress ?? '',
           device: shortDevice(l.userAgent),
           userAgent: l.userAgent ?? '',
           sessionId: l.sessionId ?? '',
+          ...Object.fromEntries(detailFields.map((f) => {
+            const v = l.details?.[f.key];
+            return [`d:${f.key}`, !hasValue(v) ? '' : typeof v === 'number' ? v : displayValue(v)];
+          })),
         })
       );
       ws.views = [{ state: 'frozen', ySplit: 1 }];
-      ws.autoFilter = { from: 'A1', to: 'O1' };
+      ws.autoFilter = { from: { row: 1, column: 1 }, to: { row: 1, column: ws.columns.length } };
       const buf = await wb.xlsx.writeBuffer();
       const blob = new Blob([buf], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
       const url = URL.createObjectURL(blob);
@@ -556,24 +569,38 @@ export default function AuditLogsPage() {
       ) : '—',
     },
     {
-      header: 'Details',
-      className: 'min-w-[260px] max-w-[420px]',
+      header: 'Changes',
+      className: 'min-w-[180px] max-w-[320px]',
       cell: (log) => {
         const changes = changesOf(log.details);
-        const rest = Object.entries(log.details ?? {}).filter(
-          ([k, v]) => !(k === 'changes' && changes.length) && v !== null && v !== undefined && v !== '',
-        );
-        if (!changes.length && !rest.length) return '—';
+        if (!changes.length) return '—';
         return (
-          <div className="line-clamp-3 whitespace-normal break-words text-xs text-muted-foreground">
-            {changes.length > 0 && (
-              <span className="font-medium text-amber-700">{changes.length} field{changes.length === 1 ? '' : 's'} changed: {changes.map(([f]) => f).join(', ')}. </span>
-            )}
-            {rest.map(([k, v]) => `${k}: ${displayValue(v)}`).join(' · ')}
+          <div className="line-clamp-3 whitespace-normal break-words text-xs">
+            {changes.map(([f, c], i) => (
+              <Fragment key={f}>
+                {i > 0 && <span className="text-muted-foreground"> · </span>}
+                <span className="font-medium">{humanize(f)}</span>{' '}
+                <span className="text-red-700">{displayValue(c.from)}</span>
+                <span className="text-muted-foreground"> → </span>
+                <span className="text-emerald-700">{displayValue(c.to)}</span>
+              </Fragment>
+            ))}
           </div>
         );
       },
     },
+    ...detailFields.map((f): ListColumn<AuditLog> => ({
+      header: f.header,
+      align: f.numeric ? 'right' : 'left',
+      className: cn('text-xs', f.numeric ? 'whitespace-nowrap tabular-nums' : 'min-w-[110px] max-w-[260px]'),
+      cell: (log) => {
+        const v = log.details?.[f.key];
+        if (!hasValue(v)) return <span className="text-muted-foreground">—</span>;
+        if (typeof v === 'number') return v.toLocaleString('en-IN');
+        const text = displayValue(v);
+        return <span className="line-clamp-2 whitespace-normal break-words" title={text}>{text}</span>;
+      },
+    })),
     {
       header: 'Source',
       className: 'whitespace-nowrap',
@@ -599,7 +626,7 @@ export default function AuditLogsPage() {
         : '—',
     },
   ];
-  const toggleableHeaders = allColumns.map((c) => c.header).filter((h) => h && h !== 'Action');
+  const toggleableHeaders = allColumns.map((c) => c.header).filter((h) => FIXED_HEADERS.has(h) && h && h !== 'Action');
   const columns = allColumns.filter((c) => !hiddenColumns.has(c.header));
 
   const renderExpanded = (log: AuditLog) => {
@@ -779,7 +806,7 @@ export default function AuditLogsPage() {
                       Columns
                     </Button>
                   </DropdownMenuTrigger>
-                  <DropdownMenuContent align="end">
+                  <DropdownMenuContent align="end" className="max-h-[60vh] overflow-y-auto">
                     <DropdownMenuLabel>Show columns</DropdownMenuLabel>
                     <DropdownMenuSeparator />
                     {toggleableHeaders.map((h) => (
@@ -792,6 +819,22 @@ export default function AuditLogsPage() {
                         {h}
                       </DropdownMenuCheckboxItem>
                     ))}
+                    {detailFields.length > 0 && (
+                      <>
+                        <DropdownMenuSeparator />
+                        <DropdownMenuLabel>Detail fields</DropdownMenuLabel>
+                        {detailFields.map((f) => (
+                          <DropdownMenuCheckboxItem
+                            key={f.header}
+                            checked={!hiddenColumns.has(f.header)}
+                            onCheckedChange={(v) => toggleColumn(f.header, Boolean(v))}
+                            onSelect={(e) => e.preventDefault()}
+                          >
+                            {f.header}
+                          </DropdownMenuCheckboxItem>
+                        ))}
+                      </>
+                    )}
                   </DropdownMenuContent>
                 </DropdownMenu>
               }
