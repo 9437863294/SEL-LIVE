@@ -1,12 +1,15 @@
 
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { CheckCircle2, History, RefreshCw, Shield } from 'lucide-react';
-import { collection, getDocs, orderBy, query } from 'firebase/firestore';
+import { collection, getDocs } from 'firebase/firestore';
 import { format } from 'date-fns';
 import { db } from '@/lib/firebase';
 import { useToast } from '@/hooks/use-toast';
+import { useAuthorization } from '@/hooks/useAuthorization';
+import { formatDay, formatInr, toDate } from '@/lib/insurance';
+import { AccessDenied } from '@/components/insurance/insurance-ui';
 import type { InsurancePolicy, PolicyRenewal, User } from '@/lib/types';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
@@ -18,7 +21,7 @@ import { SearchInput } from '@/components/shared/filter-bar';
 import { StatusBadge } from '@/components/shared/status-badge';
 import { cn } from '@/lib/utils';
 
-type EventType = 'Policy Created' | 'Premium Paid';
+type EventType = 'Policy Created' | 'Premium Paid' | 'Claimed';
 
 type HistoryEvent = {
   id: string;
@@ -30,52 +33,71 @@ type HistoryEvent = {
   details: string;
 };
 
-const fmtCur = (n: number) =>
-  new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 0 }).format(n || 0);
-
 export default function PersonalInsuranceHistoryPage() {
   const { toast } = useToast();
+  const { can, isLoading: authLoading } = useAuthorization();
+  const canView = can('View History', 'Insurance.Personal Insurance') || can('View', 'Insurance.Personal Insurance');
   const [events, setEvents] = useState<HistoryEvent[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [search, setSearch] = useState('');
 
-  const fetchHistory = async () => {
+  const fetchHistory = useCallback(async () => {
     setIsLoading(true);
     try {
       const [policiesSnap, usersSnap] = await Promise.all([
-        getDocs(query(collection(db, 'insurance_policies'), orderBy('date_of_comm', 'desc'))),
+        // Not ordered by a field: Firestore silently drops documents missing the ordered field.
+        getDocs(collection(db, 'insurance_policies')),
         getDocs(collection(db, 'users')),
       ]);
       const policies = policiesSnap.docs.map((d) => ({ id: d.id, ...d.data() } as InsurancePolicy));
       const usersMap = new Map(usersSnap.docs.map((d) => [d.id, (d.data() as User).name]));
 
+      const renewalSnaps = await Promise.all(policies.map((p) => getDocs(collection(db, 'insurance_policies', p.id, 'renewals'))));
       const all: HistoryEvent[] = [];
-      for (const policy of policies) {
-        if (policy.date_of_comm) {
+      policies.forEach((policy, i) => {
+        const created = toDate(policy.createdAt) ?? toDate(policy.date_of_comm);
+        if (created) {
           all.push({
             id: `create-${policy.id}`,
-            date: policy.date_of_comm.toDate(),
+            date: created,
             policyNo: policy.policy_no,
             policyHolder: policy.insured_person,
             eventType: 'Policy Created',
-            user: 'System',
-            details: `Sum Insured: ${fmtCur(policy.sum_insured)}`,
+            user: policy.createdByName || (policy.createdBy ? usersMap.get(policy.createdBy) : undefined) || 'System',
+            details: `${policy.insurance_company} · Sum assured ${formatInr(policy.sum_insured)}`,
           });
         }
-        const renewalsSnap = await getDocs(collection(db, 'insurance_policies', policy.id, 'renewals'));
-        renewalsSnap.forEach((rd) => {
+        const closedOn = toDate(policy.closed_on);
+        if (policy.status === 'Claimed' && closedOn) {
+          all.push({
+            id: `claim-${policy.id}`,
+            date: closedOn,
+            policyNo: policy.policy_no,
+            policyHolder: policy.insured_person,
+            eventType: 'Claimed',
+            user: policy.updatedByName || 'Unknown',
+            details: `Maturity claim ${formatInr(policy.closure_amount ?? 0)}`,
+          });
+        }
+        renewalSnaps[i].forEach((rd) => {
           const r = rd.data() as PolicyRenewal;
+          const due = toDate(r.instalmentDueDate);
           all.push({
             id: `renew-${rd.id}`,
-            date: r.renewalDate.toDate(),
+            date: toDate(r.renewalDate) ?? toDate(r.paymentDate) ?? new Date(0),
             policyNo: policy.policy_no,
             policyHolder: policy.insured_person,
             eventType: 'Premium Paid',
-            user: usersMap.get(r.renewedBy) || 'Unknown',
-            details: `Paid via ${r.paymentType}`,
+            user: r.renewedByName || usersMap.get(r.renewedBy) || 'Unknown',
+            details: [
+              r.amount ? formatInr(r.amount) : null,
+              `via ${r.paymentType}`,
+              due ? `for instalment ${formatDay(due)}` : null,
+              r.referenceNo ? `ref ${r.referenceNo}` : null,
+            ].filter(Boolean).join(' · '),
           });
         });
-      }
+      });
       all.sort((a, b) => b.date.getTime() - a.date.getTime());
       setEvents(all);
     } catch (err) {
@@ -83,9 +105,13 @@ export default function PersonalInsuranceHistoryPage() {
     } finally {
       setIsLoading(false);
     }
-  };
+  }, [toast]);
 
-  useEffect(() => { fetchHistory(); }, []); // eslint-disable-line
+  useEffect(() => {
+    if (authLoading) return;
+    if (canView) fetchHistory();
+    else setIsLoading(false);
+  }, [authLoading, canView, fetchHistory]);
 
   const filtered = useMemo(() => {
     if (!search.trim()) return events;
@@ -101,7 +127,9 @@ export default function PersonalInsuranceHistoryPage() {
     paid: events.filter((e) => e.eventType === 'Premium Paid').length,
   }), [events]);
 
-  if (isLoading) {
+  if (!authLoading && !canView) return <AccessDenied what="view personal insurance history" />;
+
+  if (authLoading || isLoading) {
     return (
       <div className="space-y-4">
         <Skeleton className="h-28 w-full rounded-xl" />
@@ -116,7 +144,7 @@ export default function PersonalInsuranceHistoryPage() {
       <PageHeader
         icon={History}
         title="Personal Insurance History"
-        description="Complete activity log — policy creations and premium payments"
+        description="Complete activity log — policies recorded, premiums paid and maturities claimed"
         actions={
           <Button variant="outline" size="sm" onClick={fetchHistory} className="gap-1.5">
             <RefreshCw className="h-3.5 w-3.5" /> Refresh

@@ -8,12 +8,13 @@ import { db } from '@/lib/firebase';
 import { VEHICLE_COLLECTIONS } from '@/lib/vehicle-management';
 import { useAuthorization } from '@/hooks/useAuthorization';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { PageHeader } from '@/components/shared/page-header';
 import { TableCard } from '@/components/shared/table-card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Input } from '@/components/ui/input';
+import { VmStatStrip } from '@/components/vehicle-management/vm-ui';
 
 const formatCurrency = (amount: number) =>
   new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 0 }).format(amount || 0);
@@ -179,7 +180,7 @@ export default function FuelPerVehicleReportPage() {
                 variant="outline"
                 onClick={exportExcel}
                 disabled={isExporting}
-                className="w-full bg-white/80 hover:bg-white sm:w-auto"
+                className="w-full sm:w-auto"
               >
                 <Download className="mr-2 h-4 w-4" />
                 {isExporting ? 'Exporting...' : 'Export Excel'}
@@ -189,42 +190,18 @@ export default function FuelPerVehicleReportPage() {
         }
       />
 
-      <div className="grid grid-cols-2 gap-2.5 sm:gap-4 xl:grid-cols-4">
-        <Card className="vm-panel overflow-hidden">
-          <div className="h-1 w-full bg-gradient-to-r from-cyan-500/80 to-sky-500/80" />
-          <CardHeader className="pb-2">
-            <CardDescription>Total Fuel Cost</CardDescription>
-            <CardTitle className="text-xl">{formatCurrency(totalFuelCost)}</CardTitle>
-          </CardHeader>
-          <CardContent className="text-xs text-muted-foreground">{fuelThisMonth.length} entries</CardContent>
-        </Card>
-        <Card className="vm-panel overflow-hidden">
-          <div className="h-1 w-full bg-gradient-to-r from-sky-500/80 to-blue-500/80" />
-          <CardHeader className="pb-2">
-            <CardDescription>Total Liters</CardDescription>
-            <CardTitle className="text-xl">{totalLiters.toFixed(1)} L</CardTitle>
-          </CardHeader>
-          <CardContent className="text-xs text-muted-foreground">Across {rows.length} vehicles</CardContent>
-        </Card>
-        <Card className="vm-panel overflow-hidden">
-          <div className="h-1 w-full bg-gradient-to-r from-emerald-500/80 to-teal-500/80" />
-          <CardHeader className="pb-2">
-            <CardDescription>Total Distance</CardDescription>
-            <CardTitle className="text-xl">{new Intl.NumberFormat('en-IN').format(totalDistance)} km</CardTitle>
-          </CardHeader>
-          <CardContent className="text-xs text-muted-foreground">From fuel logs</CardContent>
-        </Card>
-        <Card className="vm-panel overflow-hidden">
-          <div className="h-1 w-full bg-gradient-to-r from-indigo-500/80 to-blue-500/80" />
-          <CardHeader className="pb-2">
-            <CardDescription>Fleet Cost Per KM</CardDescription>
-            <CardTitle className="text-xl">
-              {totalDistance > 0 ? formatCurrency(totalFuelCost / totalDistance) : 'N/A'}
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="text-xs text-muted-foreground">Fuel ÷ total distance</CardContent>
-        </Card>
-      </div>
+      <VmStatStrip
+        stats={[
+          { label: 'Total Fuel Cost', value: formatCurrency(totalFuelCost), hint: `${fuelThisMonth.length} entries` },
+          { label: 'Total Liters', value: `${totalLiters.toFixed(1)} L`, hint: `Across ${rows.length} vehicles` },
+          { label: 'Total Distance', value: `${new Intl.NumberFormat('en-IN').format(totalDistance)} km`, hint: 'From fuel logs' },
+          {
+            label: 'Fleet Cost Per KM',
+            value: totalDistance > 0 ? formatCurrency(totalFuelCost / totalDistance) : 'N/A',
+            hint: 'Fuel ÷ total distance',
+          },
+        ]}
+      />
 
       <TableCard title="Fuel Breakdown by Vehicle" icon={Fuel} count={rows.length} noun="vehicle">
         {rows.length === 0 ? (
@@ -235,7 +212,7 @@ export default function FuelPerVehicleReportPage() {
           <>
             <div className="space-y-2 p-3 sm:hidden">
               {rows.map((row) => (
-                <div key={row.vehicleNumber} className="rounded-xl border border-white/70 bg-white/85 p-3 shadow-sm">
+                <div key={row.vehicleNumber} className="rounded-lg border border-slate-200 bg-white p-3">
                   <div className="mb-1.5 flex items-center justify-between">
                     <span className="text-sm font-semibold">{row.vehicleNumber}</span>
                     <span className="text-sm font-medium">{formatCurrency(row.totalFuelCost)}</span>

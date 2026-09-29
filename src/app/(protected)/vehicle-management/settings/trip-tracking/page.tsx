@@ -15,6 +15,8 @@ import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
 import { BatteryCharging, LocateFixed, Radio, RotateCcw, Save } from 'lucide-react';
 import { Switch } from '@/components/ui/switch';
+import { VM_ICON_CHIP, VM_PRIMARY_BUTTON } from '@/components/vehicle-management/vm-ui';
+import { cn } from '@/lib/utils';
 
 type TrackingSettings = {
   driverLocationUpdateIntervalSec: number;
@@ -123,28 +125,26 @@ export default function TripTrackingSettingsPage() {
       <PageHeader
         title="Trip Tracking"
         description="Applied when the driver starts a tracked trip."
+        icon={Radio}
+        badge={trackingDirty ? <Badge variant="warning">Unsaved</Badge> : undefined}
         backHref="/vehicle-management/settings"
         backLabel="Back to settings"
       />
 
       <Card className="vm-panel overflow-hidden">
-        <div className="h-0.5 w-full bg-gradient-to-r from-teal-500 to-cyan-600" />
-        <CardHeader className="border-b border-slate-100 p-4">
-          <div className="flex items-start gap-3"><div className="rounded-lg bg-teal-100 p-2"><Radio className="h-4 w-4 text-teal-700" /></div><div className="flex-1"><CardTitle>Trip Tracking Setup</CardTitle><CardDescription className="mt-0.5 text-xs">Applied when the driver starts a tracked trip.</CardDescription></div>{trackingDirty && <Badge variant="warning">Unsaved</Badge>}</div>
-        </CardHeader>
         <CardContent className="space-y-3 p-4">
           <div className="rounded-xl border border-slate-200 bg-white p-3">
-            <div className="flex items-start gap-3"><div className="rounded-lg bg-teal-50 p-2 text-teal-600"><LocateFixed className="h-4 w-4" /></div><div className="min-w-0 flex-1"><Label className="font-semibold">Location Update Interval</Label><p className="mt-0.5 text-xs text-muted-foreground">How often the driver app records location during a trip.</p><Select disabled={!canEdit} value={String(settings.driverLocationUpdateIntervalSec)} onValueChange={(value) => setSettings((prev) => ({ ...prev, driverLocationUpdateIntervalSec: Number(value) }))}><SelectTrigger className="mt-3 bg-slate-50"><SelectValue /></SelectTrigger><SelectContent>{intervalOptions.map((item) => <SelectItem key={item.value} value={String(item.value)}>{item.label}</SelectItem>)}</SelectContent></Select></div></div>
+            <div className="flex items-start gap-3"><div className={cn('rounded-lg p-2', VM_ICON_CHIP)}><LocateFixed className="h-4 w-4" /></div><div className="min-w-0 flex-1"><Label className="font-semibold">Location Update Interval</Label><p className="mt-0.5 text-xs text-muted-foreground">How often the driver app records location during a trip.</p><Select disabled={!canEdit} value={String(settings.driverLocationUpdateIntervalSec)} onValueChange={(value) => setSettings((prev) => ({ ...prev, driverLocationUpdateIntervalSec: Number(value) }))}><SelectTrigger className="mt-3 bg-slate-50"><SelectValue /></SelectTrigger><SelectContent>{intervalOptions.map((item) => <SelectItem key={item.value} value={String(item.value)}>{item.label}</SelectItem>)}</SelectContent></Select></div></div>
           </div>
 
           <SettingSwitch icon={<LocateFixed className="h-4 w-4" />} title="Road Snapping Hint" description="Suggest matching captured points to the nearest road." checked={settings.enableSnapToRoadHint} disabled={!canEdit} onCheckedChange={(checked) => setSettings((prev) => ({ ...prev, enableSnapToRoadHint: checked }))} />
           <SettingSwitch icon={<BatteryCharging className="h-4 w-4" />} title="Background Tracking Hint" description="Allow location tracking while the driver app is in the background." checked={settings.allowBackgroundTrackingHint} disabled={!canEdit} onCheckedChange={(checked) => setSettings((prev) => ({ ...prev, allowBackgroundTrackingHint: checked }))} />
 
-          <div className="rounded-xl border border-teal-100 bg-teal-50/70 p-3 text-xs leading-relaxed text-teal-900">The driver app reads these settings before tracking starts. Shorter intervals improve route detail but use more battery and mobile data.</div>
+          <div className="rounded-xl border border-slate-200 bg-slate-50 p-3 text-xs leading-relaxed text-slate-600">The driver app reads these settings before tracking starts. Shorter intervals improve route detail but use more battery and mobile data.</div>
 
           <div className="flex flex-col-reverse gap-2 border-t border-slate-100 pt-4 sm:flex-row sm:items-center sm:justify-between">
             <Button type="button" variant="ghost" onClick={resetTrackingToDefault} disabled={!canEdit} className="text-slate-600"><RotateCcw className="mr-1.5 h-4 w-4" />Restore Defaults</Button>
-            <Button onClick={save} disabled={!canEdit || isSaving || !trackingDirty} className="bg-gradient-to-r from-teal-500 to-cyan-600 text-white"><Save className="mr-1.5 h-4 w-4" />{isSaving ? 'Saving...' : trackingDirty ? 'Save Tracking Settings' : 'Settings Saved'}</Button>
+            <Button onClick={save} disabled={!canEdit || isSaving || !trackingDirty} className={VM_PRIMARY_BUTTON}><Save className="mr-1.5 h-4 w-4" />{isSaving ? 'Saving...' : trackingDirty ? 'Save Tracking Settings' : 'Settings Saved'}</Button>
           </div>
         </CardContent>
       </Card>
@@ -155,9 +155,9 @@ export default function TripTrackingSettingsPage() {
 function SettingSwitch({ icon, title, description, checked, disabled, onCheckedChange }: { icon: ReactNode; title: string; description: string; checked: boolean; disabled: boolean; onCheckedChange: (checked: boolean) => void }) {
   return (
     <div className="flex items-center gap-3 rounded-xl border border-slate-200 bg-white p-3">
-      <div className="rounded-lg bg-teal-50 p-2 text-teal-700">{icon}</div>
+      <div className={cn('rounded-lg p-2', VM_ICON_CHIP)}>{icon}</div>
       <div className="min-w-0 flex-1"><p className="text-sm font-semibold text-slate-800">{title}</p><p className="text-xs text-muted-foreground">{description}</p></div>
-      <Switch checked={checked} disabled={disabled} onCheckedChange={onCheckedChange} className="data-[state=checked]:bg-teal-600" />
+      <Switch checked={checked} disabled={disabled} onCheckedChange={onCheckedChange} />
     </div>
   );
 }

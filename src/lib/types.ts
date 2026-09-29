@@ -1216,14 +1216,32 @@ export interface InsurancePolicy {
   date_of_comm: Timestamp | null;
   date_of_maturity: Timestamp | null;
   last_premium_date: Timestamp | null;
-  payment_type: "Monthly" | "Quarterly" | "Yearly" | "One-Time";
+  payment_type: "Monthly" | "Quarterly" | "Half-Yearly" | "Yearly" | "One-Time";
   auto_debit: boolean;
   due_date: Timestamp | null;
   last_renewed_at?: Timestamp;
   last_payment_type?: string;
+  /** Premium-paying term in years. */
   tenure: number;
   policy_issue_date?: Timestamp;
   attachments?: Attachment[];
+  /** Stored lifecycle (see PERSONAL_LIFECYCLE in @/lib/insurance); absent on older rows = Active. */
+  status?: "Active" | "Paid-Up" | "Surrendered" | "Claimed" | "Closed";
+  nominee_name?: string;
+  nominee_relationship?: string;
+  agent_name?: string;
+  agent_contact?: string;
+  /** Overrides the frequency's default grace period, in days. */
+  grace_period_days?: number | null;
+  remarks?: string;
+  closed_on?: Timestamp | null;
+  closure_amount?: number | null;
+  createdBy?: string | null;
+  createdByName?: string | null;
+  createdAt?: Timestamp;
+  updatedBy?: string | null;
+  updatedByName?: string | null;
+  updatedAt?: Timestamp;
 }
 
 export interface PolicyRenewal {
@@ -1234,8 +1252,14 @@ export interface PolicyRenewal {
   receiptDate: Timestamp;
   paymentType: string;
   remarks: string;
-  renewalCopyUrl?: string;
+  renewalCopyUrl?: string | null;
   renewedBy: string;
+  renewedByName?: string | null;
+  /** The instalment this payment settled; absent on payments recorded before it was captured. */
+  instalmentDueDate?: Timestamp | null;
+  amount?: number | null;
+  /** Transaction / receipt / cheque number. */
+  referenceNo?: string | null;
 }
 
 /** ---------- Email Auth ---------- **/
@@ -1559,6 +1583,14 @@ export interface ProjectInsurancePolicy {
   tenure_months: number;
   status: "Active" | "Close" | "Not Required" | "Expired";
   attachments?: Attachment[];
+  broker_name?: string;
+  remarks?: string;
+  createdBy?: string | null;
+  createdByName?: string | null;
+  createdAt?: Timestamp;
+  updatedBy?: string | null;
+  updatedByName?: string | null;
+  updatedAt?: Timestamp;
 }
 
 export interface ProjectPolicyRenewal {
@@ -1570,7 +1602,9 @@ export interface ProjectPolicyRenewal {
   endDate: Timestamp;
   renewalDate: Timestamp;
   renewedBy: string;
-  renewalCopyUrl?: string;
+  renewedByName?: string | null;
+  renewalCopyUrl?: string | null;
+  insuranceCompany?: string;
 }
 
 /** ---------- Insurance tasks ---------- **/
@@ -1591,6 +1625,8 @@ export interface InsuranceTask {
   deadline: Timestamp | null;
   projectId?: string;
   history: ActionLog[];
+  policyKind?: "personal" | "project";
+  amount?: number;
 }
 
 /** ---------- Loans ---------- **/

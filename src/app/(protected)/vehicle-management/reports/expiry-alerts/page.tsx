@@ -14,11 +14,12 @@ import {
 } from '@/lib/vehicle-management';
 import { useAuthorization } from '@/hooks/useAuthorization';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { PageHeader } from '@/components/shared/page-header';
 import { TableCard } from '@/components/shared/table-card';
 import { FilterBar } from '@/components/shared/filter-bar';
 import { StatusBadge } from '@/components/shared/status-badge';
+import { VM_SEGMENT_TRACK, VmStatStrip, vmSegmentItem } from '@/components/vehicle-management/vm-ui';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -279,7 +280,7 @@ export default function ExpiryAlertsReportPage() {
               variant="outline"
               onClick={exportExcel}
               disabled={isExporting}
-              className="w-full bg-white/80 hover:bg-white md:w-auto"
+              className="w-full md:w-auto"
             >
               <Download className="mr-2 h-4 w-4" />
               {isExporting ? 'Exporting...' : 'Export Excel'}
@@ -288,40 +289,14 @@ export default function ExpiryAlertsReportPage() {
         }
       />
 
-      <div className="grid grid-cols-2 gap-2 sm:grid-cols-4 sm:gap-4">
-        <Card className="vm-panel overflow-hidden">
-          <div className="h-1 w-full bg-gradient-to-r from-red-600/90 to-rose-600/90" />
-          <CardHeader className="pb-2">
-            <CardDescription>Expired</CardDescription>
-            <CardTitle className="text-xl text-rose-600">{expiredCount}</CardTitle>
-          </CardHeader>
-          <CardContent className="text-xs text-muted-foreground">Immediate action needed</CardContent>
-        </Card>
-        <Card className="vm-panel overflow-hidden">
-          <div className="h-1 w-full bg-gradient-to-r from-orange-500/80 to-amber-500/80" />
-          <CardHeader className="pb-2">
-            <CardDescription>Due Today</CardDescription>
-            <CardTitle className="text-xl text-orange-500">{dueTodayCount}</CardTitle>
-          </CardHeader>
-          <CardContent className="text-xs text-muted-foreground">Expiring today</CardContent>
-        </Card>
-        <Card className="vm-panel overflow-hidden">
-          <div className="h-1 w-full bg-gradient-to-r from-amber-400/80 to-yellow-500/80" />
-          <CardHeader className="pb-2">
-            <CardDescription>Due Soon</CardDescription>
-            <CardTitle className="text-xl text-amber-600">{dueSoonCount}</CardTitle>
-          </CardHeader>
-          <CardContent className="text-xs text-muted-foreground">Within 30 days</CardContent>
-        </Card>
-        <Card className="vm-panel overflow-hidden">
-          <div className="h-1 w-full bg-gradient-to-r from-sky-500/80 to-blue-500/80" />
-          <CardHeader className="pb-2">
-            <CardDescription>Future</CardDescription>
-            <CardTitle className="text-xl text-sky-600">{futureCount}</CardTitle>
-          </CardHeader>
-          <CardContent className="text-xs text-muted-foreground">More than 30 days ahead</CardContent>
-        </Card>
-      </div>
+      <VmStatStrip
+        stats={[
+          { label: 'Expired', value: expiredCount, tone: expiredCount > 0 ? 'danger' : 'default', hint: 'Immediate action needed' },
+          { label: 'Due Today', value: dueTodayCount, tone: dueTodayCount > 0 ? 'warning' : 'default', hint: 'Expiring today' },
+          { label: 'Due Soon', value: dueSoonCount, tone: dueSoonCount > 0 ? 'warning' : 'default', hint: 'Within 30 days' },
+          { label: 'Future', value: futureCount, hint: 'More than 30 days ahead' },
+        ]}
+      />
 
       <TableCard
         title={moduleFilter === 'All' ? 'All Expiry Records' : `${moduleFilter} Expiries`}
@@ -333,20 +308,16 @@ export default function ExpiryAlertsReportPage() {
         toolbar={
           <div className="space-y-2">
             {/* Module filter tabs */}
-            <div className="flex flex-wrap gap-2">
+            <div className={VM_SEGMENT_TRACK}>
               {ALL_MODULES.map((m) => (
                 <button
                   key={m}
                   onClick={() => setModuleFilter(m)}
-                  className={`rounded-full border px-3 py-1 text-xs font-medium transition-all ${
-                    moduleFilter === m
-                      ? 'border-rose-300 bg-rose-500 text-white shadow-sm'
-                      : 'border-white/70 bg-white/80 text-slate-600 hover:bg-white'
-                  }`}
+                  className={vmSegmentItem(moduleFilter === m)}
                 >
                   {m}
                   {m !== 'All' && (
-                    <span className="ml-1.5 opacity-70">
+                    <span className="tabular-nums opacity-70">
                       {allAlerts.filter((r) => r.module === m).length}
                     </span>
                   )}
@@ -390,7 +361,7 @@ export default function ExpiryAlertsReportPage() {
               {filteredAlerts.map((item, idx) => (
                 <div
                   key={`${item.module}-${item.reference}-${idx}`}
-                  className="rounded-xl border border-white/70 bg-white/85 p-3 shadow-sm"
+                  className="rounded-lg border border-slate-200 bg-white p-3"
                 >
                   <div className="mb-1.5 flex items-center justify-between gap-2">
                     <span className="text-sm font-semibold">{item.module}</span>

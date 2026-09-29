@@ -11,6 +11,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { PageHeader } from '@/components/shared/page-header';
 import { Skeleton } from '@/components/ui/skeleton';
+import { VmStatStrip } from '@/components/vehicle-management/vm-ui';
 
 const formatCurrency = (amount: number) =>
   new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 0 }).format(amount || 0);
@@ -199,7 +200,7 @@ export default function MonthlyTrendsReportPage() {
               variant="outline"
               onClick={exportExcel}
               disabled={isExporting}
-              className="w-full bg-white/80 hover:bg-white md:w-auto"
+              className="w-full md:w-auto"
             >
               <Download className="mr-2 h-4 w-4" />
               {isExporting ? 'Exporting...' : 'Export Excel'}
@@ -208,46 +209,23 @@ export default function MonthlyTrendsReportPage() {
         }
       />
 
-      <div className="grid grid-cols-2 gap-2.5 sm:gap-4 xl:grid-cols-4">
-        <Card className="vm-panel overflow-hidden">
-          <div className="h-1 w-full bg-gradient-to-r from-violet-500/80 to-purple-500/80" />
-          <CardHeader className="pb-2">
-            <CardDescription>This Month Total</CardDescription>
-            <CardTitle className="text-xl">{formatCurrency(currentTrend.total)}</CardTitle>
-          </CardHeader>
-          <CardContent className="text-xs text-muted-foreground">{currentMonth}</CardContent>
-        </Card>
-        <Card className="vm-panel overflow-hidden">
-          <div className="h-1 w-full bg-gradient-to-r from-slate-400/80 to-slate-500/80" />
-          <CardHeader className="pb-2">
-            <CardDescription>Previous Month</CardDescription>
-            <CardTitle className="text-xl">{formatCurrency(prevTrend?.total || 0)}</CardTitle>
-          </CardHeader>
-          <CardContent className="text-xs text-muted-foreground">{prevMonth}</CardContent>
-        </Card>
-        <Card className="vm-panel overflow-hidden">
-          <div
-            className={`h-1 w-full bg-gradient-to-r ${pctChange !== null && pctChange > 0 ? 'from-rose-500/80 to-orange-500/80' : 'from-emerald-500/80 to-teal-500/80'}`}
-          />
-          <CardHeader className="pb-2">
-            <CardDescription>Month-on-Month Change</CardDescription>
-            <CardTitle className={`text-xl ${pctChange !== null && pctChange > 0 ? 'text-rose-600' : 'text-emerald-600'}`}>
-              {pctChange !== null ? `${pctChange > 0 ? '+' : ''}${pctChange.toFixed(1)}%` : 'N/A'}
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="text-xs text-muted-foreground">vs previous month</CardContent>
-        </Card>
-        <Card className="vm-panel overflow-hidden">
-          <div className="h-1 w-full bg-gradient-to-r from-cyan-500/80 to-sky-500/80" />
-          <CardHeader className="pb-2">
-            <CardDescription>This Month Fuel</CardDescription>
-            <CardTitle className="text-xl">{formatCurrency(currentTrend.fuelTotal)}</CardTitle>
-          </CardHeader>
-          <CardContent className="text-xs text-muted-foreground">
-            Maintenance: {formatCurrency(currentTrend.maintTotal)}
-          </CardContent>
-        </Card>
-      </div>
+      <VmStatStrip
+        stats={[
+          { label: 'This Month Total', value: formatCurrency(currentTrend.total), hint: currentMonth },
+          { label: 'Previous Month', value: formatCurrency(prevTrend?.total || 0), hint: prevMonth },
+          {
+            label: 'Month-on-Month Change',
+            value: pctChange !== null ? `${pctChange > 0 ? '+' : ''}${pctChange.toFixed(1)}%` : 'N/A',
+            tone: pctChange === null ? 'muted' : pctChange > 0 ? 'danger' : 'success',
+            hint: 'vs previous month',
+          },
+          {
+            label: 'This Month Fuel',
+            value: formatCurrency(currentTrend.fuelTotal),
+            hint: `Maintenance: ${formatCurrency(currentTrend.maintTotal)}`,
+          },
+        ]}
+      />
 
       <Card className="vm-panel-strong">
         <CardHeader>
@@ -259,7 +237,7 @@ export default function MonthlyTrendsReportPage() {
             <div key={row.month} className="space-y-1">
               <div className="flex items-center justify-between text-xs text-muted-foreground">
                 <span
-                  className={`w-16 font-medium ${row.month === currentMonth ? 'text-violet-600' : 'text-slate-600'}`}
+                  className={`w-16 ${row.month === currentMonth ? 'font-semibold text-slate-900' : 'font-medium text-slate-600'}`}
                 >
                   {row.month}
                 </span>

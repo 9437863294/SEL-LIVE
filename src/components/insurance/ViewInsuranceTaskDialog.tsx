@@ -22,7 +22,9 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { useAuth } from '@/components/auth/AuthProvider';
 import { Textarea } from '@/components/ui/textarea';
 import { useState, useMemo } from 'react';
-import { Loader2, Upload } from 'lucide-react';
+import Link from 'next/link';
+import { ExternalLink, Loader2 } from 'lucide-react';
+import { formatInr } from '@/lib/insurance';
 import { Input } from '@/components/ui/input';
 
 interface ViewInsuranceTaskDialogProps {
@@ -45,6 +47,15 @@ export default function ViewInsuranceTaskDialog({ isOpen, onOpenChange, task, wo
   const { user, users } = useAuth();
   const [actionComment, setActionComment] = useState('');
   const [file, setFile] = useState<File | null>(null);
+
+  // A comment typed for one task must not carry over to the next one opened, so reset on change.
+  const resetKey = `${task?.id ?? ''}:${isOpen}`;
+  const [seenKey, setSeenKey] = useState(resetKey);
+  if (seenKey !== resetKey) {
+    setSeenKey(resetKey);
+    setActionComment('');
+    setFile(null);
+  }
   
   const currentStep = useMemo(() => {
     if (!task || !workflow) return null;
@@ -108,7 +119,18 @@ export default function ViewInsuranceTaskDialog({ isOpen, onOpenChange, task, wo
             <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
                 <div><Label>Policy No</Label><p className="font-medium">{task.policyNo}</p></div>
                 <div><Label>Insured</Label><p className="font-medium">{task.insuredPerson}</p></div>
-                <div><Label>Due Date</Label><p className="font-medium">{format(task.dueDate.toDate(), 'dd MMM, yyyy')}</p></div>
+                <div><Label>{task.taskType === 'Maturity Due' ? 'Maturity Date' : 'Due Date'}</Label><p className="font-medium">{format(task.dueDate.toDate(), 'dd MMM, yyyy')}</p></div>
+                <div><Label>Task</Label><p className="font-medium">{task.taskType}</p></div>
+                {task.amount ? <div><Label>{task.taskType === 'Maturity Due' ? 'Sum Assured' : 'Premium'}</Label><p className="font-medium tabular-nums">{formatInr(task.amount)}</p></div> : null}
+                <div>
+                  <Label>Policy</Label>
+                  <Link
+                    href={task.policyKind === 'project' ? '/insurance/project/premium-due' : `/insurance/personal/${task.policyId}`}
+                    className="flex items-center gap-1 font-medium text-primary hover:underline"
+                  >
+                    Open policy <ExternalLink className="h-3 w-3" />
+                  </Link>
+                </div>
             </div>
             
             <Separator />
@@ -163,7 +185,7 @@ export default function ViewInsuranceTaskDialog({ isOpen, onOpenChange, task, wo
                       <div>
                           <Label>Action Comment</Label>
                           <Textarea 
-                              placeholder="Add a comment for your action (optional)" 
+                              placeholder="Add a comment (required to reject)" 
                               value={actionComment}
                               onChange={(e) => setActionComment(e.target.value)}
                           />
@@ -178,7 +200,12 @@ export default function ViewInsuranceTaskDialog({ isOpen, onOpenChange, task, wo
                 {currentStep?.actions.map(action => {
                     const actionName = getActionName(action);
                     return (
-                    <Button key={actionName} onClick={() => onAction?.(task.id, actionName, actionComment, file || undefined)} disabled={isActionLoading || (isUploadRequired && !file)}>
+                    <Button
+                      key={actionName}
+                      variant={actionName === 'Reject' ? 'destructive' : 'default'}
+                      onClick={() => onAction?.(task.id, actionName, actionComment, file || undefined)}
+                      disabled={isActionLoading || (isUploadRequired && !file) || (actionName === 'Reject' && !actionComment.trim())}
+                    >
                         {isActionLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
                         {actionName}
                     </Button>

@@ -66,6 +66,7 @@ import ExcelJS from 'exceljs';
 import { Check, ChevronsUpDown, Download, ExternalLink, FileCheck2, FileUp, History, Loader2, RefreshCw, Upload } from 'lucide-react';
 import { VehicleImportDialog, type ImportField } from '@/components/vehicle-management/import-dialog';
 import { VehicleTablePagination, useVehicleTablePagination } from '@/components/vehicle-management/table-pagination';
+import { VM_DIALOG_HEADER, VM_ICON_CHIP, VM_PRIMARY_BUTTON, VM_SEGMENT_TRACK, vmSegmentItem } from '@/components/vehicle-management/vm-ui';
 
 type PucRow = Record<string, any>;
 type PucForm = Record<string, string>;
@@ -543,25 +544,21 @@ export default function PucManagementPage() {
         }
         actions={
           <>
-            <Button variant="outline" onClick={() => void loadRows()} className="bg-white/80 hover:bg-white">
+            <Button variant="outline" onClick={() => void loadRows()}>
               Refresh
             </Button>
             {canExport && (
-              <Button variant="outline" onClick={() => void exportExcel()} disabled={isExporting} className="bg-white/80 hover:bg-white">
+              <Button variant="outline" onClick={() => void exportExcel()} disabled={isExporting}>
                 {isExporting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Download className="mr-2 h-4 w-4" />}
                 {isExporting ? 'Exporting…' : 'Export'}
               </Button>
             )}
             {canImport && (
-              <Button variant="outline" onClick={() => setImportDialogOpen(true)} className="bg-white/80 hover:bg-white">
+              <Button variant="outline" onClick={() => setImportDialogOpen(true)}>
                 <FileUp className="mr-2 h-4 w-4" /> Import
               </Button>
             )}
-            <Button
-              onClick={openAdd}
-              disabled={!canAdd}
-              className="bg-gradient-to-r from-emerald-500 to-teal-600 text-white hover:from-emerald-600 hover:to-teal-700"
-            >
+            <Button onClick={openAdd} disabled={!canAdd} className={VM_PRIMARY_BUTTON}>
               Add PUC
             </Button>
           </>
@@ -574,11 +571,11 @@ export default function PucManagementPage() {
         total={activeTab === 'current' ? currentCount : historyCount}
         noun="certificate"
         actions={
-            <div className="grid w-full grid-cols-2 items-center gap-1 rounded-lg border border-slate-200 bg-slate-100 p-1 sm:w-fit">
-              <button type="button" onClick={() => setActiveTab('current')} className={cn('flex min-h-10 items-center justify-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-semibold transition-all', activeTab === 'current' ? 'bg-white text-emerald-700 shadow-sm' : 'text-slate-500 hover:text-slate-700')}>
+            <div className={cn(VM_SEGMENT_TRACK, 'grid w-full grid-cols-2 sm:w-fit')}>
+              <button type="button" onClick={() => setActiveTab('current')} className={cn(vmSegmentItem(activeTab === 'current'), 'min-h-10')}>
                 <FileCheck2 className="h-3.5 w-3.5" />Current <span className="text-[10px] opacity-70">{currentCount}</span>
               </button>
-              <button type="button" onClick={() => setActiveTab('history')} className={cn('flex min-h-10 items-center justify-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-semibold transition-all', activeTab === 'history' ? 'bg-white text-emerald-700 shadow-sm' : 'text-slate-500 hover:text-slate-700')}>
+              <button type="button" onClick={() => setActiveTab('history')} className={cn(vmSegmentItem(activeTab === 'history'), 'min-h-10')}>
                 <History className="h-3.5 w-3.5" />History <span className="text-[10px] opacity-70">{historyCount}</span>
               </button>
             </div>
@@ -617,7 +614,7 @@ export default function PucManagementPage() {
               ))
             ) : (
               pucPagination.paginatedRows.map((row) => (
-                <div key={row.id} className="rounded-xl border border-white/70 bg-white/85 p-4 shadow-sm active:scale-[0.99] transition-transform">
+                <div key={row.id} className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm active:scale-[0.99] transition-transform">
                   <div className="mb-3 flex items-start justify-between gap-2">
                     <div>
                       <p className="text-sm font-semibold text-slate-800">{row.vehicleNumber || '-'}</p>
@@ -649,11 +646,11 @@ export default function PucManagementPage() {
                   </div>
                   <div className="mt-3 flex gap-2 border-t border-slate-100 pt-3">
                     {row.isMissingRecord ? (
-                      <button onClick={() => openAddForVehicle(row)} disabled={!canAdd} className="h-10 flex-1 rounded-md bg-emerald-600 text-sm font-medium text-white disabled:opacity-50">Add Certificate</button>
+                      <button onClick={() => openAddForVehicle(row)} disabled={!canAdd} className={cn('h-10 flex-1 rounded-md text-sm font-medium disabled:opacity-50', VM_PRIMARY_BUTTON)}>Add Certificate</button>
                     ) : (
                       <>
-                        {activeTab === 'current' && canAdd && row.alertStage !== 'Not Applicable' && <Link href={getRenewalHref(row)} className="flex-1"><Button size="sm" className="h-10 w-full bg-amber-500 hover:bg-amber-600"><RefreshCw className="mr-1 h-3.5 w-3.5" />Renew</Button></Link>}
-                        {canEdit && <button onClick={() => openEdit(row)} className="h-10 flex-1 rounded-md border border-slate-200 bg-white/80 text-sm font-medium text-slate-700">Edit</button>}
+                        {activeTab === 'current' && canAdd && row.alertStage !== 'Not Applicable' && <Link href={getRenewalHref(row)} className="flex-1"><Button size="sm" className={cn('h-10 w-full', VM_PRIMARY_BUTTON)}><RefreshCw className="mr-1 h-3.5 w-3.5" />Renew</Button></Link>}
+                        {canEdit && <button onClick={() => openEdit(row)} className="h-10 flex-1 rounded-md border border-slate-200 bg-white text-sm font-medium text-slate-700">Edit</button>}
                         {canDelete && <button onClick={() => setDeleteRow(row)} className="h-10 flex-1 rounded-md bg-rose-500 text-sm font-medium text-white">Delete</button>}
                       </>
                     )}
@@ -702,12 +699,12 @@ export default function PucManagementPage() {
                       <TableCell className="w-[160px] text-right">
                         <div className="flex items-center justify-end gap-2">
                           {row.isMissingRecord ? (
-                            <Button size="sm" onClick={() => openAddForVehicle(row)} disabled={!canAdd} className="h-8 bg-emerald-600 px-3 text-white hover:bg-emerald-700">
+                            <Button size="sm" onClick={() => openAddForVehicle(row)} disabled={!canAdd} className={cn('h-8 px-3', VM_PRIMARY_BUTTON)}>
                               Add Certificate
                             </Button>
                           ) : (
                             <>
-                              {activeTab === 'current' && canAdd && row.alertStage !== 'Not Applicable' && <Link href={getRenewalHref(row)}><Button size="sm" className="h-8 bg-amber-500 px-3 hover:bg-amber-600"><RefreshCw className="mr-1 h-3.5 w-3.5" />Renew</Button></Link>}
+                              {activeTab === 'current' && canAdd && row.alertStage !== 'Not Applicable' && <Link href={getRenewalHref(row)}><Button size="sm" className={cn('h-8 px-3', VM_PRIMARY_BUTTON)}><RefreshCw className="mr-1 h-3.5 w-3.5" />Renew</Button></Link>}
                               {canEdit && <Button size="sm" variant="outline" onClick={() => openEdit(row)} className="h-8 px-3">
                                 Edit
                               </Button>}
@@ -730,15 +727,15 @@ export default function PucManagementPage() {
 
       <Dialog open={dialogOpen} onOpenChange={(open) => { setDialogOpen(open); if (!open) setIsRenewalMode(false); }}>
         <DialogContent className="vm-mobile-dialog flex max-h-[92dvh] w-[calc(100vw-2rem)] max-w-5xl flex-col gap-0 overflow-hidden rounded-2xl border-slate-200 bg-slate-50 p-0 shadow-2xl">
-          <div className="vm-dialog-header shrink-0 border-b border-emerald-100 bg-gradient-to-r from-emerald-50 via-white to-teal-50 px-4 py-4 pr-12 sm:px-6 sm:py-5">
+          <div className={cn('vm-dialog-header shrink-0 px-4 py-4 pr-12 sm:px-6 sm:py-5', VM_DIALOG_HEADER)}>
             <div className="flex items-start gap-3">
-              <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-emerald-500 to-teal-600 text-white shadow-lg shadow-emerald-500/20"><FileCheck2 className="h-5 w-5" /></div>
+              <div className={cn('flex h-11 w-11 shrink-0 items-center justify-center rounded-xl', VM_ICON_CHIP)}><FileCheck2 className="h-5 w-5" /></div>
               <div className="min-w-0 flex-1">
                 {isRenewalMode && renewingFromId && !editingRow && <Badge variant="warning" className="mb-1">Renewing Existing Certificate</Badge>}
                 <DialogTitle className="text-lg text-slate-900">{editingRow ? 'Edit PUC Certificate' : isRenewalMode && renewingFromId ? 'Renew PUC Certificate' : 'Add PUC Certificate'}</DialogTitle>
                 <DialogDescription className="mt-0.5">Certificate number, testing details, validity, readings, and document.</DialogDescription>
               </div>
-              <div className="hidden items-center gap-1.5 sm:flex"><span className="rounded-full border border-emerald-200 bg-white px-2.5 py-1 text-[11px] font-semibold text-emerald-700">Certificate</span><span className="rounded-full border border-slate-200 bg-white px-2.5 py-1 text-[11px] font-semibold text-slate-600">Document</span></div>
+              <div className="hidden items-center gap-1.5 sm:flex"><span className="rounded-full border border-slate-300 bg-white px-2.5 py-1 text-[11px] font-semibold text-slate-800">Certificate</span><span className="rounded-full border border-slate-200 bg-white px-2.5 py-1 text-[11px] font-semibold text-slate-600">Document</span></div>
             </div>
           </div>
           <div className="vm-dialog-body min-h-0 flex-1 overflow-y-auto bg-slate-50/80 px-3 py-3 sm:px-6 sm:py-5">
@@ -783,7 +780,7 @@ export default function PucManagementPage() {
                         'flex h-9 w-full cursor-pointer items-center gap-2 rounded-md border px-2.5 text-sm transition-colors',
                         file
                           ? 'border-emerald-300 bg-emerald-50 text-emerald-700'
-                          : 'border-dashed border-slate-300 bg-slate-50 text-muted-foreground hover:border-emerald-400 hover:bg-emerald-50/60'
+                          : 'border-dashed border-slate-300 bg-slate-50 text-muted-foreground hover:border-slate-400 hover:bg-slate-100'
                       )}
                     >
                       <Upload className="h-3.5 w-3.5 shrink-0" />
@@ -801,7 +798,7 @@ export default function PucManagementPage() {
                         href={form.certificateDocumentUrl}
                         target="_blank"
                         rel="noreferrer"
-                        className="inline-flex items-center gap-1 text-xs font-medium text-emerald-700 underline underline-offset-2 hover:text-emerald-800"
+                        className="inline-flex items-center gap-1 text-xs font-medium text-slate-700 underline underline-offset-2 hover:text-slate-900"
                       >
                         <ExternalLink className="h-3 w-3" />
                         View current file
@@ -824,7 +821,7 @@ export default function PucManagementPage() {
             <Button variant="outline" onClick={() => { setDialogOpen(false); setIsRenewalMode(false); }} className="h-10 bg-white">
               Cancel
             </Button>
-            <Button onClick={() => void submit()} disabled={isSaving} className="h-10 bg-gradient-to-r from-emerald-500 to-teal-600 px-5 text-white shadow-sm hover:from-emerald-600 hover:to-teal-700">
+            <Button onClick={() => void submit()} disabled={isSaving} className={cn('h-10 px-5', VM_PRIMARY_BUTTON)}>
               {isSaving ? <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : null}
               {editingRow ? 'Update' : 'Save'}
             </Button>

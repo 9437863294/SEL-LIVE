@@ -13,6 +13,8 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { TableCard } from '@/components/shared/table-card';
 import { StatusBadge, type StatusTone } from '@/components/shared/status-badge';
 import { useAuthorization } from '@/hooks/useAuthorization';
+import { cn } from '@/lib/utils';
+import { VM_DIALOG_HEADER, VM_PRIMARY_BUTTON } from './vm-ui';
 
 type Row = Record<string, any>;
 
@@ -233,8 +235,8 @@ export function VehicleDetailsDialog({
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="inset-0 left-0 top-0 flex h-[100dvh] max-h-none w-screen max-w-none translate-x-0 translate-y-0 flex-col gap-0 overflow-hidden rounded-none p-0 sm:left-1/2 sm:top-1/2 sm:h-[92dvh] sm:w-[calc(100vw-3rem)] sm:max-w-7xl sm:-translate-x-1/2 sm:-translate-y-1/2 sm:rounded-2xl">
-        <DialogHeader className="shrink-0 border-b bg-gradient-to-r from-emerald-50 to-teal-50 px-5 py-4 pr-12">
-          <DialogTitle className="flex items-center gap-2"><ShieldCheck className="h-5 w-5 text-emerald-600" />{vehicle.vehicleNumber || 'Vehicle Profile'}</DialogTitle>
+        <DialogHeader className={cn('shrink-0 px-5 py-4 pr-12', VM_DIALOG_HEADER)}>
+          <DialogTitle className="flex items-center gap-2"><ShieldCheck className="h-5 w-5 text-slate-500" />{vehicle.vehicleNumber || 'Vehicle Profile'}</DialogTitle>
           <DialogDescription>Complete vehicle profile, compliance status, and old renewal history.</DialogDescription>
         </DialogHeader>
         <div className="min-h-0 flex-1 space-y-5 overflow-y-auto bg-slate-50 p-4 sm:p-6">
@@ -257,7 +259,7 @@ export function VehicleDetailsDialog({
                   size="sm"
                   variant={selectedSection === section.title ? 'default' : 'outline'}
                   onClick={() => setSelectedSection(section.title)}
-                  className={selectedSection === section.title ? 'bg-emerald-600 text-white hover:bg-emerald-700' : 'bg-white'}
+                  className={selectedSection === section.title ? VM_PRIMARY_BUTTON : 'bg-white'}
                 >
                   {section.title}
                   <Badge variant="neutral" className="ml-2 h-5 min-w-5 justify-center px-1.5">{section.count}</Badge>
@@ -275,7 +277,7 @@ export function VehicleDetailsDialog({
               {section.rows.length === 0 ? <p className="px-4 py-6 text-sm text-muted-foreground">No records available.</p> : (
                 <Table><TableHeader><TableRow><TableHead>Reference</TableHead><TableHead>Expiry</TableHead><TableHead>Compliance</TableHead><TableHead>Record</TableHead><TableHead>Created Time</TableHead>{section.title === 'Insurance' && <TableHead className="text-right">Action</TableHead>}</TableRow></TableHeader>
                   <TableBody>{section.rows.map((row) => { const expiry = firstValue(row, section.expiryKeys); const isRequired = !section.requirementKey || requirements[section.requirementKey]; const meta = isRequired ? computeRenewalMeta(expiry === '-' ? '' : expiry) : { alertStage: 'Not Applicable', complianceStatus: 'Not Applicable' }; return (
-                    <TableRow key={String(row.id)}><TableCell className="font-medium">{firstValue(row, section.referenceKeys)}</TableCell><TableCell>{expiry}</TableCell><TableCell><StatusBadge status={meta.alertStage} tone={alertStageTone(meta.alertStage)} /></TableCell><TableCell>{row.isArchived ? <StatusBadge status="History" tone="neutral"><History className="h-3 w-3" />History</StatusBadge> : <StatusBadge status="Current" tone="success" />}</TableCell><TableCell className="whitespace-nowrap"><Clock className="mr-1 inline h-3.5 w-3.5" />{formatVehicleTimestamp(row.createdAt)}</TableCell>{section.title === 'Insurance' && <TableCell className="text-right">{!row.isArchived && canRenewInsurance && isRequired ? <Link href={renewalHref(section.renewalHref || section.href, row, vehicle)}><Button size="sm" className="bg-amber-500 hover:bg-amber-600"><RefreshCw className="mr-1 h-3.5 w-3.5" />Renew</Button></Link> : '-'}</TableCell>}</TableRow>
+                    <TableRow key={String(row.id)}><TableCell className="font-medium">{firstValue(row, section.referenceKeys)}</TableCell><TableCell>{expiry}</TableCell><TableCell><StatusBadge status={meta.alertStage} tone={alertStageTone(meta.alertStage)} /></TableCell><TableCell>{row.isArchived ? <StatusBadge status="History" tone="neutral"><History className="h-3 w-3" />History</StatusBadge> : <StatusBadge status="Current" tone="success" />}</TableCell><TableCell className="whitespace-nowrap"><Clock className="mr-1 inline h-3.5 w-3.5" />{formatVehicleTimestamp(row.createdAt)}</TableCell>{section.title === 'Insurance' && <TableCell className="text-right">{!row.isArchived && canRenewInsurance && isRequired ? <Link href={renewalHref(section.renewalHref || section.href, row, vehicle)}><Button size="sm" className={VM_PRIMARY_BUTTON}><RefreshCw className="mr-1 h-3.5 w-3.5" />Renew</Button></Link> : '-'}</TableCell>}</TableRow>
                   );})}</TableBody></Table>
               )}
             </TableCard>

@@ -15,6 +15,8 @@ import { PageHeader } from '@/components/shared/page-header';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
+import { VM_PRIMARY_BUTTON } from '@/components/vehicle-management/vm-ui';
+import { cn } from '@/lib/utils';
 
 const thisMonthPrefix = () => new Date().toISOString().slice(0, 7);
 
@@ -232,7 +234,7 @@ export default function DriverMobileHubPage() {
           </CardHeader>
           <CardContent>
             <Link href="/driver-management/vehicle-details">
-              <Button className="w-full bg-gradient-to-r from-indigo-500 to-blue-600 text-white">
+              <Button className={cn('w-full', VM_PRIMARY_BUTTON)}>
                 View Full Vehicle Details
               </Button>
             </Link>
@@ -251,7 +253,7 @@ export default function DriverMobileHubPage() {
               Trips this month: {isLoading ? '...' : tripCount}
             </div>
             <Link href="/driver-management/trips">
-              <Button className="w-full bg-gradient-to-r from-emerald-500 to-cyan-600 text-white">
+              <Button className={cn('w-full', VM_PRIMARY_BUTTON)}>
                 Open Trip Tracking
               </Button>
             </Link>
@@ -265,7 +267,7 @@ export default function DriverMobileHubPage() {
           </CardHeader>
           <CardContent>
             <Link href="/driver-management/fuel">
-              <Button className="w-full bg-gradient-to-r from-cyan-500 to-blue-600 text-white">Open Fuel Entry</Button>
+              <Button className={cn('w-full', VM_PRIMARY_BUTTON)}>Open Fuel Entry</Button>
             </Link>
           </CardContent>
         </Card>
@@ -277,7 +279,7 @@ export default function DriverMobileHubPage() {
           </CardHeader>
           <CardContent>
             <Link href="/driver-management/daily-status">
-              <Button className="w-full bg-gradient-to-r from-emerald-500 to-teal-600 text-white">
+              <Button className={cn('w-full', VM_PRIMARY_BUTTON)}>
                 Open Daily Status
               </Button>
             </Link>

@@ -79,6 +79,7 @@ import {
 } from '@/components/ui/command';
 import { useActivityLogger } from '@/hooks/useActivityLogger';
 import { useFieldControl } from './use-field-control';
+import { VM_DIALOG_HEADER, VM_ICON_CHIP, VM_PRIMARY_BUTTON, VM_SEGMENT_TRACK, vmSegmentItem } from './vm-ui';
 import type { VMFormKey } from '@/lib/vehicle-management-field-registry';
 
 export type CrudFieldType = 'text' | 'textarea' | 'number' | 'date' | 'select' | 'file';
@@ -1060,12 +1061,12 @@ export default function GenericCrudPage({
         className="mb-0 sm:mb-0"
         actions={
           <>
-            <Button type="button" variant="outline" onClick={loadRows} disabled={isLoading} className="bg-white/80 hover:bg-white">
+            <Button type="button" variant="outline" onClick={loadRows} disabled={isLoading}>
               <RefreshCw className={cn('mr-2 h-4 w-4', isLoading && 'animate-spin')} />
               Refresh
             </Button>
             {allowExport && (
-              <Button variant="outline" onClick={exportExcel} disabled={isExporting} className="bg-white/80 hover:bg-white">
+              <Button variant="outline" onClick={exportExcel} disabled={isExporting}>
                 <Download className="mr-2 h-4 w-4" />
                 {isExporting ? 'Exporting...' : 'Export Excel'}
               </Button>
@@ -1079,7 +1080,7 @@ export default function GenericCrudPage({
                   onChange={importExcel}
                   className="hidden"
                 />
-                <Button variant="outline" onClick={triggerImport} disabled={isImporting} className="bg-white/80 hover:bg-white">
+                <Button variant="outline" onClick={triggerImport} disabled={isImporting}>
                   <Upload className="mr-2 h-4 w-4" />
                   {isImporting ? 'Importing...' : 'Import Excel'}
                 </Button>
@@ -1089,7 +1090,7 @@ export default function GenericCrudPage({
               <Button
                 type="button"
                 onClick={openAddDialog}
-                className="bg-gradient-to-r from-emerald-500 to-teal-600 text-white shadow-[0_16px_36px_-22px_rgba(5,150,105,0.72)] hover:from-emerald-600 hover:to-teal-700"
+                className={VM_PRIMARY_BUTTON}
               >
                 Add {itemName}
               </Button>
@@ -1109,14 +1110,11 @@ export default function GenericCrudPage({
         total={rows.length}
         noun="record"
         actions={
-            <div className="grid w-full grid-cols-2 items-center gap-1 rounded-lg border border-white/70 bg-white/50 p-1 shadow-sm sm:w-fit">
+            <div className={cn(VM_SEGMENT_TRACK, 'w-full sm:w-fit')}>
               <button
                 type="button"
                 onClick={() => setActiveTab('active')}
-                className={cn(
-                  'flex min-h-10 items-center justify-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-semibold transition-all',
-                  activeTab === 'active' ? 'bg-white shadow-sm text-emerald-700' : 'text-slate-500 hover:bg-white/50 hover:text-slate-700'
-                )}
+                className={cn(vmSegmentItem(activeTab === 'active'), 'min-h-10 flex-1 sm:min-h-8 sm:flex-none')}
               >
                 <List className="h-3.5 w-3.5" />
                 Active <span className="text-[10px] opacity-70">{activeCount}</span>
@@ -1124,10 +1122,7 @@ export default function GenericCrudPage({
               <button
                 type="button"
                 onClick={() => setActiveTab('history')}
-                className={cn(
-                  'flex min-h-10 items-center justify-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-semibold transition-all',
-                  activeTab === 'history' ? 'bg-white shadow-sm text-emerald-700' : 'text-slate-500 hover:bg-white/50 hover:text-slate-700'
-                )}
+                className={cn(vmSegmentItem(activeTab === 'history'), 'min-h-10 flex-1 sm:min-h-8 sm:flex-none')}
               >
                 <History className="h-3.5 w-3.5" />
                 History <span className="text-[10px] opacity-70">{historyCount}</span>
@@ -1175,7 +1170,7 @@ export default function GenericCrudPage({
                 const isExpanded = expandedRowId === rowId;
                 const mobileColumns = isExpanded ? columns : columns.slice(0, 4);
                 return (
-                <div key={rowId} className="rounded-xl border border-white/70 bg-white/85 p-4 shadow-sm transition-transform active:scale-[0.99]">
+                <div key={rowId} className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm transition-transform active:scale-[0.99]">
                   <div className="space-y-2.5">
                     {mobileColumns.map((column) => (
                       <div key={column.key} className="flex items-start justify-between gap-2">
@@ -1195,7 +1190,7 @@ export default function GenericCrudPage({
                       <button
                         type="button"
                         onClick={() => setExpandedRowId(isExpanded ? null : rowId)}
-                        className="w-full rounded-lg bg-slate-50 px-3 py-2 text-xs font-semibold text-emerald-700 transition-colors hover:bg-emerald-50"
+                        className="w-full rounded-lg bg-slate-50 px-3 py-2 text-xs font-semibold text-slate-700 transition-colors hover:bg-slate-100"
                       >
                         {isExpanded ? 'Show Less' : `View ${columns.length - 4} More Details`}
                       </button>
@@ -1204,10 +1199,10 @@ export default function GenericCrudPage({
                   {showActionsColumn && (
                     <div className="mt-3 flex gap-2 border-t border-slate-100 pt-3">
                       {row.isMissingRecord ? (
-                        <Button size="sm" onClick={() => openAddForVehicle(row)} disabled={!canAdd} className="h-10 flex-1 bg-emerald-600 text-white hover:bg-emerald-700">Add {itemName}</Button>
+                        <Button size="sm" onClick={() => openAddForVehicle(row)} disabled={!canAdd} className={cn('h-10 flex-1', VM_PRIMARY_BUTTON)}>Add {itemName}</Button>
                       ) : (
                         <>
-                          {canEdit && <Button variant="outline" size="sm" onClick={() => openEditDialog(row)} className="h-10 flex-1 bg-white/80">Edit</Button>}
+                          {canEdit && <Button variant="outline" size="sm" onClick={() => openEditDialog(row)} className="h-10 flex-1">Edit</Button>}
                           {canDelete && <Button variant="destructive" size="sm" onClick={() => setDeleteRow(row)} className="h-10 flex-1">Delete</Button>}
                         </>
                       )}
@@ -1251,12 +1246,12 @@ export default function GenericCrudPage({
                           {showActionsColumn && <TableCell className="w-[160px] text-right">
                             <div className="flex items-center justify-end gap-2">
                               {row.isMissingRecord ? (
-                                <Button size="sm" onClick={() => openAddForVehicle(row)} disabled={!canAdd} className="h-8 bg-emerald-600 px-3 text-white hover:bg-emerald-700">
+                                <Button size="sm" onClick={() => openAddForVehicle(row)} disabled={!canAdd} className={cn('h-8 px-3', VM_PRIMARY_BUTTON)}>
                                   Add {itemName}
                                 </Button>
                               ) : (
                                 <>
-                                  {canEdit && <Button variant="outline" size="sm" onClick={() => openEditDialog(row)} className="h-8 bg-white/80 px-3">
+                                  {canEdit && <Button variant="outline" size="sm" onClick={() => openEditDialog(row)} className="h-8 px-3">
                                     Edit
                                   </Button>}
                                   {canDelete && <Button variant="destructive" size="sm" onClick={() => setDeleteRow(row)} className="h-8 px-3">
@@ -1293,9 +1288,9 @@ export default function GenericCrudPage({
         <DialogContent className="vm-mobile-dialog flex max-h-[92dvh] w-[calc(100vw-2rem)] max-w-5xl flex-col gap-0 overflow-hidden rounded-2xl border-slate-200 bg-slate-50 p-0 shadow-2xl">
 
           {/* ── Sticky header ─────────────────────────────────── */}
-          <div className="vm-dialog-header shrink-0 border-b border-emerald-100 bg-gradient-to-r from-emerald-50 via-white to-teal-50 px-4 py-4 pr-12 sm:px-6 sm:py-5">
+          <div className={cn('vm-dialog-header shrink-0 px-4 py-4 pr-12 sm:px-6 sm:py-5', VM_DIALOG_HEADER)}>
             <div className="flex items-start gap-3">
-              <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-emerald-500 to-teal-600 text-white shadow-lg shadow-emerald-500/20">
+              <div className={cn('flex h-11 w-11 shrink-0 items-center justify-center rounded-xl', VM_ICON_CHIP)}>
                 <FilePlus2 className="h-5 w-5" />
               </div>
               <div className="min-w-0 flex-1">
@@ -1317,8 +1312,8 @@ export default function GenericCrudPage({
             </DialogDescription>
               </div>
               <div className="hidden items-center gap-1.5 sm:flex">
-                <span className="rounded-full border border-emerald-200 bg-white px-2.5 py-1 text-[11px] font-semibold text-emerald-700">Details</span>
-                <span className="rounded-full border border-slate-200 bg-white px-2.5 py-1 text-[11px] font-semibold text-slate-600">Review & Save</span>
+                <span className="rounded-full border border-slate-300 bg-white px-2.5 py-1 text-[11px] font-semibold text-slate-800">Details</span>
+                <span className="rounded-full border border-slate-200 bg-white px-2.5 py-1 text-[11px] font-semibold text-slate-500">Review & Save</span>
               </div>
             </div>
           </div>
@@ -1352,7 +1347,7 @@ export default function GenericCrudPage({
                         value={formState[field.key] ?? ''}
                         onChange={(e) => setFormState((prev) => ({ ...prev, [field.key]: e.target.value }))}
                         placeholder={field.placeholder}
-                        className="min-h-[88px] resize-none border-slate-200 bg-white transition-colors focus-visible:border-emerald-400 focus-visible:ring-1 focus-visible:ring-emerald-400/50"
+                        className="min-h-[88px] resize-none border-slate-200 bg-white transition-colors focus-visible:border-slate-400 focus-visible:ring-1 focus-visible:ring-slate-400"
                       />
                     ) : field.type === 'file' ? (
                       <div className="space-y-1.5">
@@ -1361,8 +1356,8 @@ export default function GenericCrudPage({
                           className={cn(
                             'flex h-11 w-full cursor-pointer items-center gap-2 rounded-md border px-2.5 text-sm transition-colors sm:h-9',
                             fileState[field.key]
-                              ? 'border-emerald-300 bg-emerald-50 text-emerald-700'
-                              : 'border-dashed border-slate-300 bg-slate-50 text-muted-foreground hover:border-emerald-400 hover:bg-emerald-50/60'
+                              ? 'border-slate-300 bg-white text-slate-800'
+                              : 'border-dashed border-slate-300 bg-slate-50 text-muted-foreground hover:border-slate-400 hover:bg-slate-100'
                           )}
                         >
                           <Upload className="h-3.5 w-3.5 shrink-0" />
@@ -1385,7 +1380,7 @@ export default function GenericCrudPage({
                             href={formState[field.key]}
                             target="_blank"
                             rel="noreferrer"
-                            className="inline-flex items-center gap-1 text-xs font-medium text-emerald-700 underline underline-offset-2 hover:text-emerald-800"
+                            className="inline-flex items-center gap-1 text-xs font-medium text-slate-700 underline underline-offset-2 hover:text-slate-900"
                           >
                             <ExternalLink className="h-3 w-3" />
                             View current file
@@ -1404,7 +1399,7 @@ export default function GenericCrudPage({
                         value={formState[field.key] || undefined}
                         onValueChange={(value) => setFormState((prev) => ({ ...prev, [field.key]: value }))}
                       >
-                        <SelectTrigger className="h-11 border-slate-200 bg-white text-[13px] transition-colors focus:ring-1 focus:ring-emerald-400/50 data-[state=open]:border-emerald-400 sm:h-9">
+                        <SelectTrigger className="h-11 border-slate-200 bg-white text-[13px] transition-colors focus:ring-1 focus:ring-slate-400 data-[state=open]:border-slate-400 sm:h-9">
                           <SelectValue placeholder={`Select ${field.label.toLowerCase()}`} />
                         </SelectTrigger>
                         <SelectContent>
@@ -1424,7 +1419,7 @@ export default function GenericCrudPage({
                         value={formState[field.key] ?? ''}
                         onChange={(e) => setFormState((prev) => ({ ...prev, [field.key]: e.target.value }))}
                         placeholder={field.placeholder}
-                        className="h-11 border-slate-200 bg-white text-[13px] transition-colors focus-visible:border-emerald-400 focus-visible:ring-1 focus-visible:ring-emerald-400/50 sm:h-9"
+                        className="h-11 border-slate-200 bg-white text-[13px] transition-colors focus-visible:border-slate-400 focus-visible:ring-1 focus-visible:ring-slate-400 sm:h-9"
                       />
                     )}
                     {field.helperText && <p className="text-[11px] leading-snug text-muted-foreground">{field.helperText}</p>}
@@ -1460,7 +1455,7 @@ export default function GenericCrudPage({
                   size="sm"
                   onClick={submitForm}
                   disabled={isSaving}
-                  className="h-11 bg-gradient-to-r from-emerald-500 to-teal-600 text-white shadow-sm hover:from-emerald-600 hover:to-teal-700 disabled:opacity-60 sm:h-9"
+                  className={cn('h-11 disabled:opacity-60 sm:h-9', VM_PRIMARY_BUTTON)}
                 >
                   {isSaving ? (
                     <>

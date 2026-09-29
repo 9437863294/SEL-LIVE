@@ -17,7 +17,6 @@ import {
 } from 'firebase/firestore';
 import { getDownloadURL, ref, uploadBytes } from 'firebase/storage';
 import {
-  AlertTriangle,
   BellRing,
   CheckCircle2,
   Clock3,
@@ -25,12 +24,10 @@ import {
   GitBranch,
   Loader2,
   Play,
-  RefreshCw,
   RotateCcw,
   Settings2,
   ShieldCheck,
   Upload,
-  UserRoundCheck,
   Users,
 } from 'lucide-react';
 import { db } from '@/lib/firebase';
@@ -79,6 +76,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Textarea } from '@/components/ui/textarea';
 import { VehicleTablePagination, useVehicleTablePagination } from '@/components/vehicle-management/table-pagination';
+import { VM_ACCENT_FILL, VM_DIALOG_HEADER, VM_PRIMARY_BUTTON, VM_SEGMENT_TRACK, vmSegmentItem } from '@/components/vehicle-management/vm-ui';
 
 type FilterTab = 'All' | 'My Tasks' | 'Overdue' | 'Unassigned' | 'Completed';
 const TERMINAL_STATUSES = ['Completed', 'Rejected', 'Cancelled'];
@@ -531,15 +529,14 @@ export default function InsuranceWorkflowPage() {
         title="Insurance Renewal Workflow"
         description="Dynamic ownership, stage TAT, escalation, approvals and policy activation."
         icon={GitBranch}
-        actions={<>{canConfigure && <Link href="/vehicle-management/settings/insurance-workflow"><Button variant="outline" className="w-full bg-white sm:w-auto"><Settings2 className="mr-1.5 h-4 w-4" />Configure</Button></Link>}<Button variant="outline" onClick={() => void runEscalations()} disabled={!canManage || isWorking} className="bg-white"><BellRing className="mr-1.5 h-4 w-4" />Run Escalation</Button><Button onClick={() => void runScan()} disabled={!canManage || isScanning} className="bg-gradient-to-r from-violet-600 to-indigo-600">{isScanning ? <Loader2 className="mr-1.5 h-4 w-4 animate-spin" /> : <Play className="mr-1.5 h-4 w-4" />}Run Expiry Scan</Button></>}
+        meta={[
+          { label: 'Open cases', value: metrics.open },
+          { label: 'My tasks', value: metrics.mine },
+          { label: 'TAT overdue', value: <span className={metrics.overdue > 0 ? 'text-rose-600' : undefined}>{metrics.overdue}</span> },
+          { label: 'Completed', value: metrics.completed },
+        ]}
+        actions={<>{canConfigure && <Link href="/vehicle-management/settings/insurance-workflow"><Button variant="outline" className="w-full bg-white sm:w-auto"><Settings2 className="mr-1.5 h-4 w-4" />Configure</Button></Link>}<Button variant="outline" onClick={() => void runEscalations()} disabled={!canManage || isWorking} className="bg-white"><BellRing className="mr-1.5 h-4 w-4" />Run Escalation</Button><Button onClick={() => void runScan()} disabled={!canManage || isScanning} className={VM_PRIMARY_BUTTON}>{isScanning ? <Loader2 className="mr-1.5 h-4 w-4 animate-spin" /> : <Play className="mr-1.5 h-4 w-4" />}Run Expiry Scan</Button></>}
       />
-
-      <div className="grid grid-cols-2 gap-1.5 sm:grid-cols-4">
-        <Metric label="Open Cases" value={metrics.open} icon={RefreshCw} tone="blue" />
-        <Metric label="My Tasks" value={metrics.mine} icon={UserRoundCheck} tone="violet" />
-        <Metric label="TAT Overdue" value={metrics.overdue} icon={AlertTriangle} tone="rose" />
-        <Metric label="Completed" value={metrics.completed} icon={CheckCircle2} tone="emerald" />
-      </div>
 
       <TableCard
         title="Renewal Cases"
@@ -549,7 +546,7 @@ export default function InsuranceWorkflowPage() {
         noun="case"
         toolbar={
           <div className="space-y-2">
-            <div className="flex gap-1 overflow-x-auto pb-1">{(['All', 'My Tasks', 'Overdue', 'Unassigned', 'Completed'] as FilterTab[]).map((item) => <button key={item} type="button" onClick={() => setFilter(item)} className={cn('shrink-0 rounded-lg px-3 py-2 text-xs font-semibold transition-colors', filter === item ? 'bg-violet-600 text-white' : 'border border-slate-200 bg-white text-slate-600')}>{item}</button>)}</div>
+            <div className={VM_SEGMENT_TRACK}>{(['All', 'My Tasks', 'Overdue', 'Unassigned', 'Completed'] as FilterTab[]).map((item) => <button key={item} type="button" onClick={() => setFilter(item)} className={vmSegmentItem(filter === item)}>{item}</button>)}</div>
             <FilterBar
               search={{ value: queryText, onChange: setQueryText, placeholder: 'Search vehicle, policy, insurer, stage or status...' }}
               activeCount={filter !== 'All' ? 1 : 0}
@@ -560,7 +557,7 @@ export default function InsuranceWorkflowPage() {
         footer={!isLoading && filteredCases.length > 0 ? <VehicleTablePagination currentPage={workflowPagination.currentPage} totalPages={workflowPagination.totalPages} totalRows={filteredCases.length} pageSize={workflowPagination.pageSize} onPageChange={workflowPagination.setCurrentPage} /> : undefined}
       >
       {isLoading ? <div className="space-y-2 p-3">{Array.from({ length: 5 }).map((_, index) => <Skeleton key={index} className="h-11 rounded-lg" />)}</div> : filteredCases.length === 0 ? (
-        <div className="flex flex-col items-center gap-3 py-14 text-center"><ShieldCheck className="h-11 w-11 text-emerald-400" /><div><p className="font-semibold">No matching renewal cases</p><p className="text-sm text-muted-foreground">Run the expiry scan to create cases from eligible insurance policies.</p></div></div>
+        <div className="flex flex-col items-center gap-3 py-14 text-center"><ShieldCheck className="h-11 w-11 text-slate-300" /><div><p className="font-semibold">No matching renewal cases</p><p className="text-sm text-muted-foreground">Run the expiry scan to create cases from eligible insurance policies.</p></div></div>
       ) : (
         <>
           <div className="grid grid-cols-1 gap-2 p-3 md:hidden">
@@ -568,7 +565,6 @@ export default function InsuranceWorkflowPage() {
               const tat = insuranceWorkflowDeadlineMeta(caseRow.workflowDeadline);
               const progress = insuranceWorkflowProgress(caseRow);
               return <Card key={caseRow.id} className={cn('vm-panel cursor-pointer overflow-hidden', tat.overdue && 'border-rose-200')} onClick={() => setSelectedCaseId(caseRow.id)}>
-                <div className={cn('h-0.5', caseRow.status === 'Completed' ? 'bg-emerald-500' : tat.overdue ? 'bg-rose-500' : 'bg-gradient-to-r from-violet-500 to-cyan-500')} />
                 <CardContent className="space-y-2.5 p-3">
                   <div className="flex items-start justify-between gap-2"><div className="min-w-0"><p className="truncate text-sm font-semibold text-slate-900">{caseRow.vehicleNumber || 'Unlinked Vehicle'}</p><p className="truncate text-[11px] text-muted-foreground">{caseRow.policyNumber || '-'} · {caseRow.insuranceCompany || '-'}</p></div><CaseStatusBadge status={caseRow.status} /></div>
                   <div><div className="mb-1 flex items-center justify-between gap-2 text-[11px]"><span className="truncate font-medium text-slate-700">{caseRow.currentStepName}</span><span className="shrink-0 text-muted-foreground">{progress}%</span></div><Progress value={progress} className="h-1.5" /></div>
@@ -624,27 +620,27 @@ export default function InsuranceWorkflowPage() {
       <Dialog open={!!selectedCase} onOpenChange={(open) => { if (!open) { setSelectedCaseId(''); setSelectedAction(''); setComment(''); setSupportingDocument(null); setProposedPremiumText(''); setReassignUserId(''); } }}>
         <DialogContent size="default" className="vm-mobile-dialog flex max-h-[88dvh] w-[calc(100vw-1.5rem)] flex-col gap-0 overflow-hidden p-0 sm:max-w-2xl">
           {selectedCase && <>
-            <DialogHeader className="shrink-0 border-b bg-gradient-to-r from-violet-50 via-white to-cyan-50 px-4 py-3 pr-12"><DialogTitle className="flex items-center gap-2 text-base"><GitBranch className="h-4 w-4 text-violet-600" />{selectedCase.vehicleNumber || selectedCase.policyNumber}</DialogTitle><DialogDescription className="truncate text-xs">{selectedCase.policyNumber} · {selectedCase.insuranceCompany} · expires {selectedCase.expiryDate}</DialogDescription></DialogHeader>
+            <DialogHeader className={cn('shrink-0 px-4 py-3 pr-12', VM_DIALOG_HEADER)}><DialogTitle className="flex items-center gap-2 text-base"><GitBranch className="h-4 w-4 text-slate-500" />{selectedCase.vehicleNumber || selectedCase.policyNumber}</DialogTitle><DialogDescription className="truncate text-xs">{selectedCase.policyNumber} · {selectedCase.insuranceCompany} · expires {selectedCase.expiryDate}</DialogDescription></DialogHeader>
             <div className="min-h-0 flex-1 space-y-3 overflow-y-auto bg-slate-50/70 p-3">
               <section className="rounded-xl border bg-white p-3 shadow-sm">
                 <div className="mb-2 flex items-center justify-between gap-2"><p className="text-xs font-semibold uppercase tracking-wide text-slate-600">Policy Details</p><PriorityBadge priority={selectedCase.priority} /></div>
                 <div className="grid grid-cols-2 gap-1.5 sm:grid-cols-3"><CompactInfo label="Policy Number" value={selectedCase.policyNumber || '-'} /><CompactInfo label="Insurance Company" value={selectedCase.insuranceCompany || '-'} /><CompactInfo label="Policy Type" value={selectedCase.policyType || '-'} /><CompactInfo label="Expiry Date" value={selectedCase.expiryDate || '-'} /><CompactInfo label="Vehicle Number" value={selectedCase.vehicleNumber || '-'} /><CompactInfo label="Current Premium" value={new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 0 }).format(selectedCase.currentPremium || 0)} /></div>
               </section>
 
-              <section className="rounded-xl border border-violet-100 bg-gradient-to-r from-violet-50 to-white p-3">
-                <div className="flex items-start justify-between gap-3"><div className="min-w-0"><p className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-violet-600"><Clock3 className="h-3.5 w-3.5" />Current Stage</p><p className="mt-0.5 truncate text-sm font-semibold text-slate-900">{selectedCase.currentStepName}</p>{currentStep && <p className="mt-0.5 line-clamp-2 text-[11px] text-muted-foreground">{currentStep.description}</p>}</div><CaseStatusBadge status={selectedCase.status} /></div>
+              <section className="rounded-xl border bg-white p-3 shadow-sm">
+                <div className="flex items-start justify-between gap-3"><div className="min-w-0"><p className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-slate-600"><Clock3 className="h-3.5 w-3.5" />Current Stage</p><p className="mt-0.5 truncate text-sm font-semibold text-slate-900">{selectedCase.currentStepName}</p>{currentStep && <p className="mt-0.5 line-clamp-2 text-[11px] text-muted-foreground">{currentStep.description}</p>}</div><CaseStatusBadge status={selectedCase.status} /></div>
                 <div className="mt-2 grid grid-cols-2 gap-1.5 sm:grid-cols-4"><CompactInfo label="Owner" value={selectedCase.assigneeNames.join(', ') || 'Unassigned'} /><CompactInfo label="TAT" value={insuranceWorkflowDeadlineMeta(selectedCase.workflowDeadline).label} danger={insuranceWorkflowDeadlineMeta(selectedCase.workflowDeadline).overdue} /><CompactInfo label="Expiry" value={selectedCase.expiryDate || '-'} /><CompactInfo label="Premium" value={new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 0 }).format(selectedCase.proposedPremium || selectedCase.currentPremium || 0)} /></div>
                 <div className="mt-2 flex items-center gap-2"><Progress value={insuranceWorkflowProgress(selectedCase)} className="h-1.5 flex-1" /><span className="text-[10px] font-medium text-muted-foreground">{selectedCase.currentStepIndex}/{selectedCase.totalSteps} stages</span></div>
               </section>
 
-              {selectedCase.status === 'Ready for Renewal' && <section className="flex flex-col gap-2 rounded-xl border border-emerald-200 bg-emerald-50 p-3 sm:flex-row sm:items-center sm:justify-between"><div><p className="text-sm font-semibold text-emerald-900">Approved for policy renewal</p><p className="text-[11px] text-emerald-800">Upload and save the new policy to close this workflow.</p></div><Link href={selectedCase.renewalHref || '#'}><Button size="sm" className="h-8 w-full bg-emerald-600 text-xs hover:bg-emerald-700 sm:w-auto"><ExternalLink className="mr-1.5 h-3.5 w-3.5" />Open Renewal</Button></Link></section>}
+              {selectedCase.status === 'Ready for Renewal' && <section className="flex flex-col gap-2 rounded-xl border border-emerald-200 bg-emerald-50 p-3 sm:flex-row sm:items-center sm:justify-between"><div><p className="text-sm font-semibold text-emerald-900">Approved for policy renewal</p><p className="text-[11px] text-emerald-800">Upload and save the new policy to close this workflow.</p></div><Link href={selectedCase.renewalHref || '#'}><Button size="sm" className={cn('h-8 w-full text-xs sm:w-auto', VM_PRIMARY_BUTTON)}><ExternalLink className="mr-1.5 h-3.5 w-3.5" />Open Renewal</Button></Link></section>}
 
               {canManage && currentStep && INSURANCE_WORKFLOW_OPEN_STATUSES.includes(selectedCase.status) && selectedCase.status !== 'Ready for Renewal' && <section className="rounded-xl border bg-white p-3 shadow-sm">
                 <div className="flex items-center justify-between gap-2"><p className="text-sm font-semibold">Take Action</p>{selectedCase.acknowledgedAt && <StatusBadge status="Acknowledged" tone="success" />}</div>
                 {availableActions.length ? <div className="mt-2 flex flex-wrap gap-1.5">{availableActions.map((action) => <Button key={action} size="sm" className="h-8 px-3 text-xs" variant={action === 'Reject' ? 'destructive' : action === 'Return' ? 'outline' : selectedAction === action ? 'default' : 'secondary'} onClick={() => setSelectedAction(action)}>{action}</Button>)}</div> : <div className="mt-2 flex items-center gap-2 rounded-lg bg-emerald-50 px-2.5 py-2 text-xs font-medium text-emerald-700"><CheckCircle2 className="h-4 w-4" />All actions for this stage are completed.</div>}
                 {selectedAction && <div className="mt-3 space-y-2">
                   {['Complete', 'Approve'].includes(selectedAction) && <Field label={field('proposedPremiumText').label}><Input type="number" min="0" value={proposedPremiumText} onChange={(event) => setProposedPremiumText(event.target.value)} placeholder="Enter quotation premium" className="h-9" /></Field>}
-                  {currentStep.documentRequired && ['Complete', 'Approve'].includes(selectedAction) && <Field label={`${field('supportingDocument').label} *`}><div className="space-y-1.5"><label htmlFor="workflow-supporting-document" className={cn('flex h-10 w-full cursor-pointer items-center gap-2 rounded-md border px-3 transition-colors', supportingDocument ? 'border-emerald-300 bg-emerald-50 text-emerald-700' : 'border-dashed border-slate-300 bg-slate-50 text-muted-foreground hover:border-violet-400 hover:bg-violet-50')}><Upload className="h-4 w-4 shrink-0" /><span className="truncate text-xs font-medium">{supportingDocument?.name || 'Choose a document to upload'}</span></label><input id="workflow-supporting-document" type="file" accept=".pdf,.jpg,.jpeg,.png,.webp,.doc,.docx,.xls,.xlsx" className="sr-only" onChange={(event) => setSupportingDocument(event.target.files?.[0] || null)} /><p className="text-[10px] text-muted-foreground">PDF, image, Word or Excel · Maximum 10 MB</p></div></Field>}
+                  {currentStep.documentRequired && ['Complete', 'Approve'].includes(selectedAction) && <Field label={`${field('supportingDocument').label} *`}><div className="space-y-1.5"><label htmlFor="workflow-supporting-document" className={cn('flex h-10 w-full cursor-pointer items-center gap-2 rounded-md border px-3 transition-colors', supportingDocument ? 'border-emerald-300 bg-emerald-50 text-emerald-700' : 'border-dashed border-slate-300 bg-slate-50 text-muted-foreground hover:border-slate-400 hover:bg-slate-100')}><Upload className="h-4 w-4 shrink-0" /><span className="truncate text-xs font-medium">{supportingDocument?.name || 'Choose a document to upload'}</span></label><input id="workflow-supporting-document" type="file" accept=".pdf,.jpg,.jpeg,.png,.webp,.doc,.docx,.xls,.xlsx" className="sr-only" onChange={(event) => setSupportingDocument(event.target.files?.[0] || null)} /><p className="text-[10px] text-muted-foreground">PDF, image, Word or Excel · Maximum 10 MB</p></div></Field>}
                   <Field label={['Return', 'Reject'].includes(selectedAction) ? `${field('comment').label} / reason *` : field('comment').label}><Textarea value={comment} onChange={(event) => setComment(event.target.value)} placeholder="Add remarks for the audit trail" className="min-h-16" /></Field>
                   <Button size="sm" onClick={() => void performAction()} disabled={isWorking} className="h-9 w-full">{isWorking && <Loader2 className="mr-1.5 h-4 w-4 animate-spin" />}Confirm {selectedAction}</Button>
                 </div>
@@ -652,9 +648,9 @@ export default function InsuranceWorkflowPage() {
               </section>}
 
               <Accordion type="multiple" className="rounded-xl border bg-white px-3">
-                <AccordionItem value="progress"><AccordionTrigger className="py-2.5 text-sm hover:no-underline"><span>Workflow Progress</span></AccordionTrigger><AccordionContent className="space-y-1.5 pb-3">{config.steps.map((workflowStep, index) => { const complete = index < selectedCase.currentStepIndex || selectedCase.status === 'Completed'; const active = workflowStep.id === selectedCase.currentStepId && selectedCase.status !== 'Completed'; return <div key={workflowStep.id} className={cn('flex items-center gap-2 rounded-lg border px-2.5 py-2', active ? 'border-violet-200 bg-violet-50' : complete ? 'border-emerald-100 bg-emerald-50/60' : 'border-slate-100 bg-slate-50/60')}><div className={cn('flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-[9px] font-bold', complete ? 'bg-emerald-500 text-white' : active ? 'bg-violet-600 text-white' : 'bg-slate-200 text-slate-500')}>{complete ? '✓' : index + 1}</div><p className="min-w-0 flex-1 truncate text-xs font-medium">{workflowStep.name}</p><Badge variant="outline" className="shrink-0">{workflowStep.tatHours}h</Badge></div>; })}</AccordionContent></AccordionItem>
-                <AccordionItem value="details"><AccordionTrigger className="py-2.5 text-sm hover:no-underline"><span>More Details</span></AccordionTrigger><AccordionContent className="grid grid-cols-2 gap-1.5 pb-3"><Info label="Days to Expiry" value={String(selectedCase.daysToExpiry ?? '-')} /><Info label="Proposed Premium" value={new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 0 }).format(selectedCase.proposedPremium || selectedCase.currentPremium || 0)} /><Info label="Escalation" value={`Level ${selectedCase.escalationLevel || 0}`} /><Info label="Created" value={formatVehicleTimestamp(selectedCase.createdAt)} />{!!selectedCase.documentReferences?.length && <div className="col-span-2 mt-1 rounded-lg border border-slate-100 bg-slate-50 p-2"><p className="mb-1.5 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">Uploaded Documents</p><div className="space-y-1">{selectedCase.documentReferences.map((documentItem, index) => <a key={`${documentItem.reference}-${index}`} href={documentItem.reference} target="_blank" rel="noreferrer" className="flex items-center gap-1.5 truncate text-xs font-medium text-violet-700 hover:underline"><ExternalLink className="h-3 w-3 shrink-0" /><span className="truncate">{documentItem.fileName || `Supporting document ${index + 1}`}</span></a>)}</div></div>}</AccordionContent></AccordionItem>
-                {canManage && INSURANCE_WORKFLOW_OPEN_STATUSES.includes(selectedCase.status) && selectedCase.status !== 'Ready for Renewal' && <AccordionItem value="reassign"><AccordionTrigger className="py-2.5 text-sm hover:no-underline"><span className="flex items-center gap-2"><Users className="h-3.5 w-3.5 text-indigo-600" />Reassign Task</span></AccordionTrigger><AccordionContent className="space-y-2 pb-3"><Field label={`${field('reassignUserId').label} *`}><Select value={reassignUserId} onValueChange={setReassignUserId}><SelectTrigger className="h-9"><SelectValue placeholder="Select new owner" /></SelectTrigger><SelectContent>{activeUsers.map((item) => <SelectItem key={item.id} value={item.id}>{personOptionLabel(item)}</SelectItem>)}</SelectContent></Select></Field><Field label={field('comment').label}><Input value={comment} onChange={(event) => setComment(event.target.value)} placeholder="Reason for reassignment" className="h-9" /></Field><Button size="sm" variant="outline" onClick={() => void reassign()} disabled={!reassignUserId || isWorking} className="h-9 w-full">Reassign Case</Button></AccordionContent></AccordionItem>}
+                <AccordionItem value="progress"><AccordionTrigger className="py-2.5 text-sm hover:no-underline"><span>Workflow Progress</span></AccordionTrigger><AccordionContent className="space-y-1.5 pb-3">{config.steps.map((workflowStep, index) => { const complete = index < selectedCase.currentStepIndex || selectedCase.status === 'Completed'; const active = workflowStep.id === selectedCase.currentStepId && selectedCase.status !== 'Completed'; return <div key={workflowStep.id} className={cn('flex items-center gap-2 rounded-lg border px-2.5 py-2', active ? 'border-slate-300 bg-white shadow-sm' : complete ? 'border-emerald-100 bg-emerald-50/60' : 'border-slate-100 bg-slate-50/60')}><div className={cn('flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-[9px] font-bold', complete ? 'bg-emerald-500 text-white' : active ? VM_ACCENT_FILL : 'bg-slate-200 text-slate-500')}>{complete ? '✓' : index + 1}</div><p className="min-w-0 flex-1 truncate text-xs font-medium">{workflowStep.name}</p><Badge variant="outline" className="shrink-0">{workflowStep.tatHours}h</Badge></div>; })}</AccordionContent></AccordionItem>
+                <AccordionItem value="details"><AccordionTrigger className="py-2.5 text-sm hover:no-underline"><span>More Details</span></AccordionTrigger><AccordionContent className="grid grid-cols-2 gap-1.5 pb-3"><Info label="Days to Expiry" value={String(selectedCase.daysToExpiry ?? '-')} /><Info label="Proposed Premium" value={new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 0 }).format(selectedCase.proposedPremium || selectedCase.currentPremium || 0)} /><Info label="Escalation" value={`Level ${selectedCase.escalationLevel || 0}`} /><Info label="Created" value={formatVehicleTimestamp(selectedCase.createdAt)} />{!!selectedCase.documentReferences?.length && <div className="col-span-2 mt-1 rounded-lg border border-slate-100 bg-slate-50 p-2"><p className="mb-1.5 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">Uploaded Documents</p><div className="space-y-1">{selectedCase.documentReferences.map((documentItem, index) => <a key={`${documentItem.reference}-${index}`} href={documentItem.reference} target="_blank" rel="noreferrer" className="flex items-center gap-1.5 truncate text-xs font-medium text-slate-700 hover:underline"><ExternalLink className="h-3 w-3 shrink-0" /><span className="truncate">{documentItem.fileName || `Supporting document ${index + 1}`}</span></a>)}</div></div>}</AccordionContent></AccordionItem>
+                {canManage && INSURANCE_WORKFLOW_OPEN_STATUSES.includes(selectedCase.status) && selectedCase.status !== 'Ready for Renewal' && <AccordionItem value="reassign"><AccordionTrigger className="py-2.5 text-sm hover:no-underline"><span className="flex items-center gap-2"><Users className="h-3.5 w-3.5 text-slate-500" />Reassign Task</span></AccordionTrigger><AccordionContent className="space-y-2 pb-3"><Field label={`${field('reassignUserId').label} *`}><Select value={reassignUserId} onValueChange={setReassignUserId}><SelectTrigger className="h-9"><SelectValue placeholder="Select new owner" /></SelectTrigger><SelectContent>{activeUsers.map((item) => <SelectItem key={item.id} value={item.id}>{personOptionLabel(item)}</SelectItem>)}</SelectContent></Select></Field><Field label={field('comment').label}><Input value={comment} onChange={(event) => setComment(event.target.value)} placeholder="Reason for reassignment" className="h-9" /></Field><Button size="sm" variant="outline" onClick={() => void reassign()} disabled={!reassignUserId || isWorking} className="h-9 w-full">Reassign Case</Button></AccordionContent></AccordionItem>}
                 <AccordionItem value="history" className="border-b-0"><AccordionTrigger className="py-2.5 text-sm hover:no-underline"><span>Action History ({selectedCase.history?.length || 0})</span></AccordionTrigger><AccordionContent className="space-y-1.5 pb-3">{[...(selectedCase.history || [])].reverse().map((entry, index) => <div key={`${entry.action}-${index}`} className="rounded-lg border border-slate-100 bg-slate-50 px-2.5 py-2"><div className="flex items-center justify-between gap-2"><p className="truncate text-xs font-semibold">{entry.action} · {entry.stepName}</p><span className="shrink-0 text-[9px] text-muted-foreground">{formatVehicleTimestamp(entry.timestamp)}</span></div><p className="truncate text-[10px] text-muted-foreground" title={entry.comment}>{entry.userName}{entry.comment ? ` — ${entry.comment}` : ''}</p></div>)}{!selectedCase.history?.length && <p className="py-4 text-center text-xs text-muted-foreground">No workflow activity recorded.</p>}</AccordionContent></AccordionItem>
               </Accordion>
             </div>
@@ -664,11 +660,6 @@ export default function InsuranceWorkflowPage() {
       </Dialog>
     </div>
   );
-}
-
-function Metric({ label, value, icon: Icon, tone }: { label: string; value: number; icon: typeof RefreshCw; tone: 'blue' | 'violet' | 'rose' | 'emerald' }) {
-  const tones = { blue: 'border-blue-100 bg-blue-50 text-blue-700', violet: 'border-violet-100 bg-violet-50 text-violet-700', rose: 'border-rose-100 bg-rose-50 text-rose-700', emerald: 'border-emerald-100 bg-emerald-50 text-emerald-700' };
-  return <Card className={cn('border', tones[tone])}><CardContent className="flex items-center gap-2 p-2 sm:p-2.5"><div className="rounded-md bg-white/80 p-1.5"><Icon className="h-3.5 w-3.5" /></div><div className="min-w-0"><p className="truncate text-[9px] font-semibold uppercase tracking-wide sm:text-[10px]">{label}</p><p className="text-base font-bold leading-5">{value}</p></div></CardContent></Card>;
 }
 
 function Info({ label, value, danger = false }: { label: string; value: string; danger?: boolean }) {

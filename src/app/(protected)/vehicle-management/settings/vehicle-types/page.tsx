@@ -27,6 +27,8 @@ import {
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
 import { AlertTriangle, CarFront, Plus, RotateCcw, Save, Tag, Trash2 } from 'lucide-react';
+import { VM_PRIMARY_BUTTON } from '@/components/vehicle-management/vm-ui';
+import { cn } from '@/lib/utils';
 
 export default function VehicleTypesSettingsPage() {
   const { can } = useAuthorization();
@@ -146,19 +148,11 @@ export default function VehicleTypesSettingsPage() {
         icon={Tag}
         backHref="/vehicle-management/settings"
         backLabel="Back to settings"
+        meta={[
+          { label: 'Total types', value: localTypes.length },
+          { label: 'In use', value: vehiclesLoading ? '…' : usedCount },
+        ]}
       />
-
-      {/* Stats */}
-      <div className="grid grid-cols-2 gap-2 sm:flex sm:gap-2">
-        <div className="rounded-lg border border-violet-100 bg-violet-50/50 px-3 py-2 text-center">
-          <p className="text-lg font-bold leading-tight text-violet-700">{localTypes.length}</p>
-          <p className="text-[11px] text-muted-foreground">Total types</p>
-        </div>
-        <div className="rounded-lg border border-emerald-100 bg-emerald-50/50 px-3 py-2 text-center">
-          <p className="text-lg font-bold leading-tight text-emerald-700">{vehiclesLoading ? '…' : usedCount}</p>
-          <p className="text-[11px] text-muted-foreground">In use</p>
-        </div>
-      </div>
 
       {/* List */}
       <TableCard
@@ -183,7 +177,7 @@ export default function VehicleTypesSettingsPage() {
                 disabled={!canEdit}
                 maxLength={40}
               />
-              <Button type="button" onClick={addType} disabled={!canEdit || !newTypeName.trim()} className="shrink-0 border-violet-200 bg-violet-600 text-white hover:bg-violet-700">
+              <Button type="button" onClick={addType} disabled={!canEdit || !newTypeName.trim()} className={cn('shrink-0', VM_PRIMARY_BUTTON)}>
                 <Plus className="mr-1.5 h-4 w-4" />Add
               </Button>
             </div>
@@ -211,7 +205,7 @@ export default function VehicleTypesSettingsPage() {
                       <TableRow key={type}>
                         <TableCell className="font-medium">
                           <span className="flex items-center gap-2">
-                            <CarFront className="h-3.5 w-3.5 text-violet-500" />
+                            <CarFront className="h-3.5 w-3.5 text-slate-400" />
                             {type}
                           </span>
                         </TableCell>
@@ -254,7 +248,7 @@ export default function VehicleTypesSettingsPage() {
           </Button>
           <div className="flex items-center gap-2">
             {typesDirty && <Badge variant="warning">Unsaved changes</Badge>}
-            <Button onClick={saveTypes} disabled={!canEdit || typesSaving || !typesDirty} className="bg-gradient-to-r from-violet-500 to-purple-600 text-white">
+            <Button onClick={saveTypes} disabled={!canEdit || typesSaving || !typesDirty} className={VM_PRIMARY_BUTTON}>
               <Save className="mr-1.5 h-4 w-4" />{typesSaving ? 'Saving...' : typesDirty ? 'Save Vehicle Types' : 'Types Saved'}
             </Button>
           </div>

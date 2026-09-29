@@ -17,6 +17,8 @@ import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Skeleton } from '@/components/ui/skeleton';
+import { VM_PRIMARY_BUTTON } from '@/components/vehicle-management/vm-ui';
+import { cn } from '@/lib/utils';
 
 type DailyStatusForm = {
   statusDate: string;
@@ -359,7 +361,7 @@ export default function DriverDailyStatusPage() {
             <Button
               onClick={onSubmit}
               disabled={!canAdd || isSubmitting}
-              className="w-full bg-gradient-to-r from-emerald-500 to-teal-600 text-white"
+              className={cn('w-full', VM_PRIMARY_BUTTON)}
             >
               {isSubmitting ? 'Submitting...' : 'Submit Daily Status'}
             </Button>

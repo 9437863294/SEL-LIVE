@@ -20,6 +20,8 @@ import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Skeleton } from '@/components/ui/skeleton';
+import { VM_PRIMARY_BUTTON } from '@/components/vehicle-management/vm-ui';
+import { cn } from '@/lib/utils';
 
 type FuelFormState = {
   vehicleId: string;
@@ -364,7 +366,7 @@ export default function DriverMobileFuelPage() {
               type="file"
               accept=".pdf,.jpg,.jpeg,.png,.webp"
               onChange={(e) => setBillFile(e.target.files?.[0] || null)}
-              className="bg-white/85 file:mr-3 file:rounded-md file:border-0 file:bg-emerald-600 file:px-3 file:py-1 file:text-white"
+              className="bg-white/85 file:mr-3 file:rounded-md file:border-0 file:bg-[image:var(--sel-tab-gradient)] file:px-3 file:py-1 file:text-[color:var(--sel-tab-on)]"
             />
           </ControlledField>
 
@@ -376,7 +378,7 @@ export default function DriverMobileFuelPage() {
             <Button
               onClick={onSubmit}
               disabled={!canAdd || isSubmitting}
-              className="w-full bg-gradient-to-r from-emerald-500 to-teal-600 text-white"
+              className={cn('w-full', VM_PRIMARY_BUTTON)}
             >
               {isSubmitting ? 'Submitting...' : 'Submit Fuel Entry'}
             </Button>

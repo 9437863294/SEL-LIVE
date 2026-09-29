@@ -8,13 +8,14 @@ import { db } from '@/lib/firebase';
 import { VEHICLE_COLLECTIONS } from '@/lib/vehicle-management';
 import { useAuthorization } from '@/hooks/useAuthorization';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { PageHeader } from '@/components/shared/page-header';
 import { TableCard } from '@/components/shared/table-card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
+import { VmStatStrip } from '@/components/vehicle-management/vm-ui';
 
 const formatCurrency = (amount: number) =>
   new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 0 }).format(amount || 0);
@@ -169,7 +170,7 @@ export default function ProjectFuelCostReportPage() {
                 variant="outline"
                 onClick={exportExcel}
                 disabled={isExporting}
-                className="w-full bg-white/80 hover:bg-white sm:w-auto"
+                className="w-full sm:w-auto"
               >
                 <Download className="mr-2 h-4 w-4" />
                 {isExporting ? 'Exporting...' : 'Export Excel'}
@@ -179,32 +180,17 @@ export default function ProjectFuelCostReportPage() {
         }
       />
 
-      <div className="grid grid-cols-3 gap-2 sm:gap-4">
-        <Card className="vm-panel overflow-hidden">
-          <div className="h-1 w-full bg-gradient-to-r from-emerald-500/80 to-teal-500/80" />
-          <CardHeader className="pb-2">
-            <CardDescription>Total Fuel Cost</CardDescription>
-            <CardTitle className="text-xl">{formatCurrency(totalCost)}</CardTitle>
-          </CardHeader>
-          <CardContent className="text-xs text-muted-foreground">{fuelThisMonth.length} entries this month</CardContent>
-        </Card>
-        <Card className="vm-panel overflow-hidden">
-          <div className="h-1 w-full bg-gradient-to-r from-teal-500/80 to-cyan-500/80" />
-          <CardHeader className="pb-2">
-            <CardDescription>Active Projects</CardDescription>
-            <CardTitle className="text-xl">{rows.length}</CardTitle>
-          </CardHeader>
-          <CardContent className="text-xs text-muted-foreground">Projects with fuel activity</CardContent>
-        </Card>
-        <Card className="vm-panel overflow-hidden">
-          <div className="h-1 w-full bg-gradient-to-r from-cyan-500/80 to-sky-500/80" />
-          <CardHeader className="pb-2">
-            <CardDescription>Top Project Cost</CardDescription>
-            <CardTitle className="text-xl">{rows[0] ? formatCurrency(rows[0].totalCost) : 'N/A'}</CardTitle>
-          </CardHeader>
-          <CardContent className="text-xs text-muted-foreground truncate">{rows[0]?.projectName || '-'}</CardContent>
-        </Card>
-      </div>
+      <VmStatStrip
+        stats={[
+          { label: 'Total Fuel Cost', value: formatCurrency(totalCost), hint: `${fuelThisMonth.length} entries this month` },
+          { label: 'Active Projects', value: rows.length, hint: 'Projects with fuel activity' },
+          {
+            label: 'Top Project Cost',
+            value: rows[0] ? formatCurrency(rows[0].totalCost) : 'N/A',
+            hint: <span title={rows[0]?.projectName || undefined}>{rows[0]?.projectName || '-'}</span>,
+          },
+        ]}
+      />
 
       <TableCard title="Project Fuel Breakdown" icon={Layers} count={rows.length} noun="project">
         {rows.length === 0 ? (
@@ -215,7 +201,7 @@ export default function ProjectFuelCostReportPage() {
           <>
             <div className="space-y-3 p-3 sm:hidden">
               {rows.map((item) => (
-                <div key={item.projectName} className="rounded-xl border border-white/70 bg-white/85 p-3 shadow-sm">
+                <div key={item.projectName} className="rounded-lg border border-slate-200 bg-white p-3">
                   <div className="mb-1.5 flex items-center justify-between gap-2">
                     <span className="text-sm font-semibold">
                       {item.projectName === 'Unassigned' ? (

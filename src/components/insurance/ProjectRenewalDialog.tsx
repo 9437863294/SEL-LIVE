@@ -1,31 +1,29 @@
-
-
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useEffect, useMemo, useState } from 'react';
+import { collection, doc, getDocs, query, runTransaction, Timestamp, where } from 'firebase/firestore';
+import { addDays } from 'date-fns';
+import { Loader2 } from 'lucide-react';
+import { db } from '@/lib/firebase';
+import { useAuth } from '@/components/auth/AuthProvider';
+import { useToast } from '@/hooks/use-toast';
+import { actorFromUser, withUpdateAudit } from '@/lib/audit-fields';
+import type { InsuranceCompany, ProjectInsurancePolicy } from '@/lib/types';
+import { coverEndDate, dayKey, formatDay, formatInr, toDate } from '@/lib/insurance';
+import { completeTasksForDue, PROJECT_POLICIES, uploadInsuranceFiles } from '@/lib/insurance-service';
+import { Button } from '@/components/ui/button';
 import {
   Dialog,
   DialogContent,
-  DialogHeader,
-  DialogTitle,
   DialogDescription,
   DialogFooter,
+  DialogHeader,
+  DialogTitle,
 } from '@/components/ui/dialog';
-import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { useToast } from '@/hooks/use-toast';
-import { db } from '@/lib/firebase';
-import { storage } from '@/lib/firebase-storage';
-import { doc, updateDoc, addDoc, collection, Timestamp, runTransaction } from 'firebase/firestore';
-import { Loader2, Calendar as CalendarIcon, Upload, File as FileIcon, X } from 'lucide-react';
-import type { ProjectInsurancePolicy } from '@/lib/types';
-import { format, addYears, addMonths, addDays } from 'date-fns';
-import { useAuth } from '@/components/auth/AuthProvider';
-import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
-import { Calendar } from '@/components/ui/calendar';
-import { cn } from '@/lib/utils';
-import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { DateField, PendingFiles } from '@/components/insurance/insurance-ui';
 
 interface ProjectRenewalDialogProps {
   isOpen: boolean;
@@ -34,189 +32,184 @@ interface ProjectRenewalDialogProps {
   onSuccess: () => void;
 }
 
+/**
+ * Renew a project policy for a new period.
+ *
+ * The outgoing period is archived to the policy's history and the policy document takes the new
+ * period's terms. A renewal also puts the policy back to Active — a policy stored as Expired used to
+ * stay Expired after renewal — and closes the task raised for the expiry it answers. The insurer can
+ * change at renewal, as it often does when cover is re-quoted.
+ */
 export function ProjectRenewalDialog({ isOpen, onOpenChange, policy, onSuccess }: ProjectRenewalDialogProps) {
   const { toast } = useToast();
   const { user } = useAuth();
   const [isSaving, setIsSaving] = useState(false);
-  const [renewalCopy, setRenewalCopy] = useState<File | null>(null);
-  
-  const [renewalData, setRenewalData] = useState({
-    newPolicyNo: policy.policy_no,
-    newPremium: policy.premium,
-    newSumInsured: policy.sum_insured,
-    newStartDate: policy.insured_until ? addDays(policy.insured_until.toDate(), 1) : new Date(),
-    newTenureYears: policy.tenure_years,
-    newTenureMonths: policy.tenure_months,
-  });
+  const [companies, setCompanies] = useState<string[]>([]);
+  const [renewalCopy, setRenewalCopy] = useState<File[]>([]);
 
-  const [newEndDate, setNewEndDate] = useState<Date | undefined>();
+  const oldEnd = toDate(policy.insured_until);
+  const [policyNo, setPolicyNo] = useState('');
+  const [company, setCompany] = useState('');
+  const [premium, setPremium] = useState('');
+  const [sumInsured, setSumInsured] = useState('');
+  const [startDate, setStartDate] = useState<Date | undefined>();
+  const [years, setYears] = useState('1');
+  const [months, setMonths] = useState('0');
 
   useEffect(() => {
-    if (isOpen) {
-      setRenewalData({
-        newPolicyNo: policy.policy_no,
-        newPremium: policy.premium,
-        newSumInsured: policy.sum_insured,
-        newStartDate: policy.insured_until ? addDays(policy.insured_until.toDate(), 1) : new Date(),
-        newTenureYears: policy.tenure_years,
-        newTenureMonths: policy.tenure_months,
-      });
-      setRenewalCopy(null);
-    }
-  }, [isOpen, policy]);
-  
-  useEffect(() => {
-    const { newStartDate, newTenureYears, newTenureMonths } = renewalData;
-    if (newStartDate && (newTenureYears > 0 || newTenureMonths > 0)) {
-        let endDate = addYears(newStartDate, newTenureYears);
-        endDate = addMonths(endDate, newTenureMonths);
-        setNewEndDate(endDate);
-    } else {
-        setNewEndDate(undefined);
-    }
-  }, [renewalData.newStartDate, renewalData.newTenureYears, renewalData.newTenureMonths]);
+    if (!isOpen) return;
+    setPolicyNo(policy.policy_no);
+    setCompany(policy.insurance_company);
+    setPremium(String(policy.premium ?? ''));
+    setSumInsured(String(policy.sum_insured ?? ''));
+    setStartDate(oldEnd ? addDays(oldEnd, 1) : new Date());
+    setYears(String(policy.tenure_years || (policy.tenure_months ? 0 : 1)));
+    setMonths(String(policy.tenure_months || 0));
+    setRenewalCopy([]);
+    getDocs(query(collection(db, 'insuranceCompanies'), where('status', '==', 'Active')))
+      .then((snap) => setCompanies(snap.docs.map((d) => (d.data() as InsuranceCompany).name).sort()))
+      .catch(() => setCompanies([]));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isOpen, policy.id]);
 
-
-  const handleInputChange = (field: keyof typeof renewalData, value: string | number) => {
-    setRenewalData(prev => ({ ...prev, [field]: value }));
-  };
-  
-  const handleDateChange = (date: Date | undefined) => {
-      setRenewalData(prev => ({...prev, newStartDate: date || new Date()}));
-  }
-
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (e.target.files && e.target.files[0]) {
-      setRenewalCopy(e.target.files[0]);
-    }
-  };
+  const y = Number(years) || 0;
+  const m = Number(months) || 0;
+  const newEnd = useMemo(() => (startDate ? coverEndDate(startDate, y, m) ?? undefined : undefined), [startDate, y, m]);
+  const companyOptions = company && !companies.includes(company) ? [company, ...companies] : companies;
 
   const handleSave = async () => {
-    if (!user || !newEndDate) {
-      toast({ title: "Error", description: "User not logged in or missing renewal details.", variant: "destructive" });
+    const actor = actorFromUser(user);
+    const prem = Number(premium);
+    const sum = Number(sumInsured);
+    if (!user || !actor) {
+      toast({ title: 'Not signed in', description: 'Sign in again to renew.', variant: 'destructive' });
       return;
     }
+    if (!policyNo.trim() || !company || !startDate || !newEnd || !Number.isFinite(prem) || prem < 0 || !Number.isFinite(sum) || sum < 0 || m > 11) {
+      toast({ title: 'Missing details', description: 'Enter the policy number, insurer, premium, sum insured and a period (months 0–11).', variant: 'destructive' });
+      return;
+    }
+
     setIsSaving(true);
-    
     try {
-        let renewalCopyUrl: string | undefined = undefined;
-        if (renewalCopy) {
-            const storagePath = `project-renewals/${policy.id}/${renewalCopy.name}`;
-            const storageRef = ref(storage, storagePath);
-            await uploadBytes(storageRef, renewalCopy);
-            renewalCopyUrl = await getDownloadURL(storageRef);
-        }
+      const [copy] = renewalCopy.length ? await uploadInsuranceFiles(`project-renewals/${policy.id}`, renewalCopy) : [];
+      const policyRef = doc(db, PROJECT_POLICIES, policy.id);
 
-        await runTransaction(db, async (transaction) => {
-            const policyRef = doc(db, 'project_insurance_policies', policy.id);
-            const historyRef = doc(collection(db, 'project_insurance_policies', policy.id, 'history'));
+      await runTransaction(db, async (tx) => {
+        const fresh = await tx.get(policyRef);
+        const freshEnd = toDate(fresh.data()?.insured_until);
+        if (!fresh.exists() || (oldEnd && freshEnd && dayKey(freshEnd) !== dayKey(oldEnd))) throw new Error('ALREADY_RENEWED');
 
-            // 1. Archive the current state
-            const oldPolicyData = {
-                renewalDate: Timestamp.now(),
-                renewedBy: user.id,
-                policyNo: policy.policy_no,
-                premium: policy.premium,
-                sumInsured: policy.sum_insured,
-                startDate: policy.insurance_start_date,
-                endDate: policy.insured_until,
-                renewalCopyUrl: renewalCopyUrl,
-            };
-            transaction.set(historyRef, oldPolicyData);
-            
-            // 2. Update the main policy document with new details
-            const updatedPolicyData = {
-                policy_no: renewalData.newPolicyNo,
-                premium: renewalData.newPremium,
-                sum_insured: renewalData.newSumInsured,
-                insurance_start_date: Timestamp.fromDate(renewalData.newStartDate),
-                insured_until: Timestamp.fromDate(newEndDate),
-                tenure_years: renewalData.newTenureYears,
-                tenure_months: renewalData.newTenureMonths,
-            };
-            transaction.update(policyRef, updatedPolicyData);
+        tx.set(doc(collection(db, PROJECT_POLICIES, policy.id, 'history')), {
+          renewalDate: Timestamp.now(),
+          renewedBy: user.id,
+          renewedByName: user.name ?? null,
+          policyNo: policy.policy_no,
+          insuranceCompany: policy.insurance_company,
+          premium: policy.premium,
+          sumInsured: policy.sum_insured,
+          startDate: policy.insurance_start_date,
+          endDate: policy.insured_until,
+          renewalCopyUrl: copy?.url ?? null,
         });
+        tx.update(policyRef, {
+          policy_no: policyNo.trim(),
+          insurance_company: company,
+          premium: prem,
+          sum_insured: sum,
+          insurance_start_date: Timestamp.fromDate(startDate),
+          insured_until: Timestamp.fromDate(newEnd),
+          tenure_years: y,
+          tenure_months: m,
+          status: 'Active',
+          ...(copy ? { attachments: [...(policy.attachments ?? []), { name: `Renewal ${formatDay(startDate)} — ${copy.name}`, url: copy.url }] } : {}),
+          ...withUpdateAudit(actor),
+        });
+      });
 
-        toast({ title: "Success", description: "Policy renewed successfully." });
-        onSuccess();
-        onOpenChange(false);
+      if (oldEnd) {
+        await completeTasksForDue(policy.id, oldEnd, user, `Renewed to ${formatDay(newEnd)} at ${formatInr(prem)}.`)
+          .catch((e) => console.warn('Renewal saved, but its task could not be closed:', e));
+      }
+
+      toast({ title: 'Policy renewed', description: `Cover now runs to ${formatDay(newEnd)}.` });
+      onSuccess();
+      onOpenChange(false);
     } catch (error) {
-        console.error("Error renewing policy:", error);
-        toast({ title: "Error", description: "Failed to renew policy.", variant: "destructive" });
+      const already = error instanceof Error && error.message === 'ALREADY_RENEWED';
+      console.error('Error renewing policy:', error);
+      toast({
+        title: already ? 'Already renewed' : 'Error',
+        description: already ? 'Someone has renewed this policy meanwhile. Refresh to see the latest.' : 'Failed to renew the policy.',
+        variant: 'destructive',
+      });
     } finally {
-        setIsSaving(false);
+      setIsSaving(false);
     }
   };
-  
+
   return (
-    <Dialog open={isOpen} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-lg">
+    <Dialog open={isOpen} onOpenChange={(open) => !isSaving && onOpenChange(open)}>
+      <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-lg">
         <DialogHeader>
           <DialogTitle>Renew Project Policy</DialogTitle>
           <DialogDescription>
-            Enter the details for the renewed policy period.
+            {policy.assetName} · {policy.policy_category} · current cover ends {formatDay(oldEnd)}
           </DialogDescription>
         </DialogHeader>
-        <div className="space-y-4 py-4">
-           <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-2">
-                  <Label>New Policy No.</Label>
-                  <Input value={renewalData.newPolicyNo} onChange={e => handleInputChange('newPolicyNo', e.target.value)} />
-              </div>
-              <div className="space-y-2">
-                  <Label>New Premium</Label>
-                  <Input type="number" value={renewalData.newPremium} onChange={e => handleInputChange('newPremium', e.target.valueAsNumber)} />
-              </div>
-              <div className="space-y-2">
-                  <Label>New Sum Insured</Label>
-                  <Input type="number" value={renewalData.newSumInsured} onChange={e => handleInputChange('newSumInsured', e.target.valueAsNumber)} />
-              </div>
-               <div className="space-y-2">
-                  <Label>New Start Date</Label>
-                  <Popover>
-                    <PopoverTrigger asChild>
-                      <Button variant="outline" className="w-full justify-start font-normal">
-                          <CalendarIcon className="mr-2 h-4 w-4" />
-                          {renewalData.newStartDate ? format(renewalData.newStartDate, 'PPP') : 'Select date'}
-                      </Button>
-                    </PopoverTrigger>
-                    <PopoverContent className="w-auto p-0">
-                        <Calendar mode="single" selected={renewalData.newStartDate} onSelect={handleDateChange} initialFocus />
-                    </PopoverContent>
-                  </Popover>
-               </div>
-           </div>
-           <div className="flex items-end gap-2">
-                <div className="flex-1 space-y-2">
-                    <Label>New Tenure (Years)</Label>
-                    <Input type="number" value={renewalData.newTenureYears} onChange={e => handleInputChange('newTenureYears', e.target.valueAsNumber)} />
-                </div>
-                <div className="flex-1 space-y-2">
-                    <Label>New Tenure (Months)</Label>
-                    <Input type="number" value={renewalData.newTenureMonths} onChange={e => handleInputChange('newTenureMonths', e.target.valueAsNumber)} />
-                </div>
+        <div className="grid grid-cols-1 gap-4 py-2 sm:grid-cols-2">
+          <div className="space-y-2">
+            <Label htmlFor="renew-no">New Policy No.</Label>
+            <Input id="renew-no" value={policyNo} onChange={(e) => setPolicyNo(e.target.value)} disabled={isSaving} />
+          </div>
+          <div className="space-y-2">
+            <Label>Insurer</Label>
+            <Select value={company} onValueChange={setCompany} disabled={isSaving}>
+              <SelectTrigger aria-label="Insurer"><SelectValue placeholder="Select insurer" /></SelectTrigger>
+              <SelectContent>{companyOptions.map((c) => <SelectItem key={c} value={c}>{c}</SelectItem>)}</SelectContent>
+            </Select>
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="renew-premium">Premium (₹)</Label>
+            <Input id="renew-premium" type="number" inputMode="decimal" min={0} value={premium} onChange={(e) => setPremium(e.target.value)} disabled={isSaving} />
+            {Number(premium) > 0 && policy.premium > 0 && (
+              <p className="text-xs text-muted-foreground">
+                {Number(premium) >= policy.premium ? '+' : ''}
+                {(((Number(premium) - policy.premium) / policy.premium) * 100).toFixed(1)}% vs {formatInr(policy.premium)}
+              </p>
+            )}
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="renew-sum">Sum Insured (₹)</Label>
+            <Input id="renew-sum" type="number" inputMode="decimal" min={0} value={sumInsured} onChange={(e) => setSumInsured(e.target.value)} disabled={isSaving} />
+          </div>
+          <div className="space-y-2">
+            <Label>New Start Date</Label>
+            <DateField value={startDate} onChange={setStartDate} disabled={isSaving} />
+          </div>
+          <div className="flex items-end gap-2">
+            <div className="flex-1 space-y-2">
+              <Label htmlFor="renew-years">Years</Label>
+              <Input id="renew-years" type="number" inputMode="numeric" min={0} value={years} onChange={(e) => setYears(e.target.value)} disabled={isSaving} />
             </div>
-            <div className="space-y-2">
-              <Label>New End Date (Auto-calculated)</Label>
-              <Input value={newEndDate ? format(newEndDate, 'dd MMM, yyyy') : 'N/A'} readOnly />
+            <div className="flex-1 space-y-2">
+              <Label htmlFor="renew-months">Months</Label>
+              <Input id="renew-months" type="number" inputMode="numeric" min={0} max={11} value={months} onChange={(e) => setMonths(e.target.value)} disabled={isSaving} />
             </div>
-            <div className="space-y-2">
-              <Label>Renewal Copy</Label>
-              <Input type="file" onChange={handleFileChange} />
-              {renewalCopy && (
-                  <div className="text-xs text-muted-foreground flex items-center gap-2">
-                    <FileIcon className="h-3 w-3" />
-                    <span>{renewalCopy.name}</span>
-                    <Button variant="ghost" size="icon" className="h-5 w-5" onClick={() => setRenewalCopy(null)}>
-                      <X className="h-3 w-3" />
-                    </Button>
-                  </div>
-              )}
-            </div>
+          </div>
+          <div className="space-y-2 sm:col-span-2">
+            <Label>Cover Until</Label>
+            <Input value={newEnd ? formatDay(newEnd) : '—'} readOnly className="bg-muted/40" />
+          </div>
+          <div className="space-y-2 sm:col-span-2">
+            <Label htmlFor="renew-copy">Renewed Policy Copy</Label>
+            <Input id="renew-copy" type="file" onChange={(e) => { setRenewalCopy(Array.from(e.target.files ?? []).slice(0, 1)); e.target.value = ''; }} disabled={isSaving} />
+            <PendingFiles files={renewalCopy} onRemove={() => setRenewalCopy([])} />
+          </div>
         </div>
         <DialogFooter>
-          <Button variant="outline" onClick={() => onOpenChange(false)} disabled={isSaving}>Cancel</Button>
-          <Button onClick={handleSave} disabled={isSaving}>
+          <Button type="button" variant="outline" onClick={() => onOpenChange(false)} disabled={isSaving}>Cancel</Button>
+          <Button type="button" onClick={handleSave} disabled={isSaving}>
             {isSaving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
             Save Renewal
           </Button>

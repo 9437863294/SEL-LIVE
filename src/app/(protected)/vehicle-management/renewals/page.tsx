@@ -4,210 +4,34 @@ import Link from 'next/link';
 import { useEffect, useMemo, useState } from 'react';
 import { collection, getDocs } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
-import { computeRenewalMeta, getVehicleComplianceRequirements, VEHICLE_COLLECTIONS, type VehicleComplianceRequirements } from '@/lib/vehicle-management';
+import { VEHICLE_COLLECTIONS } from '@/lib/vehicle-management';
 import { useAuthorization } from '@/hooks/useAuthorization';
-import { Card, CardContent } from '@/components/ui/card';
 import { PageHeader } from '@/components/shared/page-header';
+import { TableCard } from '@/components/shared/table-card';
 import { FilterBar } from '@/components/shared/filter-bar';
-import { StatusBadge } from '@/components/shared/status-badge';
+import { DataList } from '@/components/shared/data-list';
 import { Button } from '@/components/ui/button';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Skeleton } from '@/components/ui/skeleton';
-import {
-  Activity,
-  AlertTriangle,
-  BadgeCheck,
-  CheckCircle2,
-  Clock,
-  ExternalLink,
-  FileArchive,
-  Landmark,
-  Leaf,
-  RefreshCw,
-  ScrollText,
-  Shield,
-  Timer,
-  User,
-} from 'lucide-react';
+import { Activity, CheckCircle2, RefreshCw } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { VehicleTablePagination, useVehicleTablePagination } from '@/components/vehicle-management/table-pagination';
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Types
-// ─────────────────────────────────────────────────────────────────────────────
-type ExpiryKind = 'expired' | 'dueSoon' | 'valid';
-
-interface RenewalItem {
-  id: string;
-  category: string;
-  categoryIcon: React.ElementType;
-  vehicleOrDriver: string;
-  expiryDate: string;
-  daysLeft: number;
-  kind: ExpiryKind;
-  alertStage: string;
-  href: string;
-  details: string;
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Source definitions
-// ─────────────────────────────────────────────────────────────────────────────
-const SOURCES = [
-  {
-    category: 'Insurance',
-    icon: Shield,
-    collection: VEHICLE_COLLECTIONS.insurance,
-    dateKeys: ['expiryDate', 'validTill', 'endDate'],
-    nameKeys: ['vehicleNumber', 'registrationNo', 'vehicleRegNo'],
-    detailKeys: ['policyNumber', 'insuranceCompany'],
-    href: '/vehicle-management/insurance/workflow',
-    permission: 'Insurance Management',
-    requirementKey: 'insurance' as const,
-  },
-  {
-    category: 'PUC',
-    icon: Leaf,
-    collection: VEHICLE_COLLECTIONS.puc,
-    dateKeys: ['expiryDate', 'validTill'],
-    nameKeys: ['vehicleNumber', 'registrationNo', 'vehicleRegNo'],
-    detailKeys: ['pucCertificateNumber', 'testingCenterName'],
-    href: '/vehicle-management/puc',
-    permission: 'PUC Management',
-    requirementKey: 'puc' as const,
-  },
-  {
-    category: 'Fitness',
-    icon: BadgeCheck,
-    collection: VEHICLE_COLLECTIONS.fitness,
-    dateKeys: ['expiryDate', 'validTill'],
-    nameKeys: ['vehicleNumber', 'registrationNo', 'vehicleRegNo'],
-    detailKeys: ['fitnessCertificateNumber', 'rtoName'],
-    href: '/vehicle-management/fitness',
-    permission: 'Fitness Certificate Management',
-    requirementKey: 'fitness' as const,
-  },
-  {
-    category: 'Road Tax',
-    icon: Landmark,
-    collection: VEHICLE_COLLECTIONS.roadTax,
-    dateKeys: ['validTill', 'expiryDate'],
-    nameKeys: ['vehicleNumber', 'registrationNo', 'vehicleRegNo'],
-    detailKeys: ['receiptNumber', 'taxType', 'totalAmountPaid', 'amountPaid'],
-    href: '/vehicle-management/road-tax',
-    permission: 'Road Tax Management',
-    requirementKey: 'roadTax' as const,
-  },
-  {
-    category: 'Permits',
-    icon: ScrollText,
-    collection: VEHICLE_COLLECTIONS.permit,
-    dateKeys: ['validTill', 'expiryDate'],
-    nameKeys: ['vehicleNumber', 'registrationNo', 'vehicleRegNo'],
-    detailKeys: ['permitNumber', 'permitType'],
-    href: '/vehicle-management/permit',
-    permission: 'Permit Management',
-    requirementKey: 'permit' as const,
-  },
-  {
-    category: 'Documents',
-    icon: FileArchive,
-    collection: VEHICLE_COLLECTIONS.documents,
-    dateKeys: ['expiryDate'],
-    nameKeys: ['vehicleNumber', 'registrationNo'],
-    detailKeys: ['documentType', 'documentNumber'],
-    href: '/vehicle-management/documents',
-    permission: 'Document Management',
-    // Not covered by getVehicleComplianceRequirements — always evaluated as-is.
-    requirementKey: null,
-  },
-  {
-    category: 'Driver License',
-    icon: User,
-    collection: VEHICLE_COLLECTIONS.driver,
-    dateKeys: ['licenseExpiryDate'],
-    nameKeys: ['driverName', 'assignedVehicleNumber'],
-    detailKeys: ['licenseNumber', 'licenseClass'],
-    href: '/vehicle-management/driver',
-    permission: 'Driver Management',
-    requirementKey: null,
-  },
-] as const;
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Helpers
-// ─────────────────────────────────────────────────────────────────────────────
-const getDaysLeft = (expiryDate: string): number => {
-  if (!expiryDate) return Infinity;
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-  const target = new Date(expiryDate);
-  if (Number.isNaN(target.getTime())) {
-    const normalized = expiryDate.replace(/\//g, '-');
-    const parts = normalized.split('-');
-    if (parts.length === 3) {
-      const [a, b, c] = parts;
-      const maybeDdMmYyyy = new Date(`${c}-${b.padStart(2, '0')}-${a.padStart(2, '0')}`);
-      if (!Number.isNaN(maybeDdMmYyyy.getTime())) {
-        maybeDdMmYyyy.setHours(0, 0, 0, 0);
-        return Math.ceil((maybeDdMmYyyy.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
-      }
-    }
-    return Infinity;
-  }
-  target.setHours(0, 0, 0, 0);
-  return Math.ceil((target.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
-};
-
-const kindFromDays = (days: number): ExpiryKind => {
-  if (days < 0) return 'expired';
-  if (days <= 30) return 'dueSoon';
-  return 'valid';
-};
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Badge helpers
-// ─────────────────────────────────────────────────────────────────────────────
-function KindBadge({ kind, daysLeft }: { kind: ExpiryKind; daysLeft: number }) {
-  if (kind === 'expired') {
-    return (
-      <StatusBadge status="Expired" tone="danger">
-        <AlertTriangle className="h-3 w-3" />
-        Expired {Math.abs(daysLeft)}d ago
-      </StatusBadge>
-    );
-  }
-  if (kind === 'dueSoon') {
-    return (
-      <StatusBadge status="Due Soon" tone="warning">
-        <Timer className="h-3 w-3" />
-        {daysLeft === 0 ? 'Due Today' : `${daysLeft}d left`}
-      </StatusBadge>
-    );
-  }
-  return (
-    <StatusBadge status="Valid" tone="success">
-      <CheckCircle2 className="h-3 w-3" />
-      Valid ({daysLeft}d)
-    </StatusBadge>
-  );
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Category Icon row chip
-// ─────────────────────────────────────────────────────────────────────────────
-const categoryGradients: Record<string, string> = {
-  Insurance: 'from-emerald-500/20 to-teal-500/20',
-  PUC: 'from-lime-500/20 to-green-500/20',
-  Fitness: 'from-violet-500/20 to-indigo-500/20',
-  'Road Tax': 'from-amber-500/20 to-orange-500/20',
-  Permits: 'from-indigo-500/20 to-blue-500/20',
-  Documents: 'from-slate-500/20 to-zinc-400/20',
-};
+import { VM_SEGMENT_TRACK, vmSegmentItem } from '@/components/vehicle-management/vm-ui';
+import {
+  RENEWAL_SOURCES,
+  renewalColumns,
+  sortRenewalItems,
+  toRenewalItem,
+  type RenewalItem,
+} from '@/components/vehicle-management/renewal-items';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Filter tabs
 // ─────────────────────────────────────────────────────────────────────────────
 type FilterTab = 'all' | 'expired' | 'dueSoon';
+
+// The full register: reference and History link included.
+const columns = renewalColumns();
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Main Page
@@ -243,69 +67,13 @@ export default function RenewalsHubPage() {
     }
 
     await Promise.all(
-      SOURCES.map(async (source) => {
+      RENEWAL_SOURCES.map(async (source) => {
         if (!canViewSource(source.permission)) return;
         try {
           const snap = await getDocs(collection(db, source.collection));
           snap.docs.forEach((entry) => {
-            const data = entry.data() as Record<string, any>;
-
-            // Skip archived or already renewed items
-            if (data.isArchived === true || data.renewalStatus === 'Renewed') return;
-
-            // Skip categories not required for this vehicle (Sold/Scrapped, or manually
-            // turned off) — a stale expiry date on an old record shouldn't surface as a
-            // renewal alert once the vehicle no longer needs that compliance type.
-            if (source.requirementKey) {
-              const vehicle = vehicleMap[String(data.vehicleId || data.assignedVehicleId || '')];
-              if (vehicle) {
-                const required: VehicleComplianceRequirements = getVehicleComplianceRequirements(vehicle);
-                if (!required[source.requirementKey]) return;
-              }
-            }
-
-            const rawDate =
-              source.dateKeys
-                .map((key) => String(data[key] || '').trim())
-                .find((value) => value.length > 0) || '';
-            if (!rawDate) return;
-            const meta = computeRenewalMeta(rawDate);
-            const daysLeft = getDaysLeft(rawDate);
-            const kind = kindFromDays(daysLeft);
-            
-            // Only collect non-valid (expired or due soon within 30 days)
-            if (kind === 'valid') return;
-            
-            // Generate Renewal URL parameters
-            const params = new URLSearchParams();
-            params.set('renew', entry.id);
-            const resolvedName =
-              source.nameKeys
-                .map((key) => String(data[key] || '').trim())
-                .find((value) => value.length > 0) || '—';
-            const resolvedDetail =
-              source.detailKeys
-                .map((key) => String(data[key] || '').trim())
-                .find((value) => value.length > 0) || '—';
-
-            if (data.vehicleId || data.assignedVehicleId) params.set('vid', String(data.vehicleId || data.assignedVehicleId));
-            if (resolvedName && resolvedName !== '—') params.set('vnum', resolvedName);
-            if (data.driverName) params.set('dname', String(data.driverName));
-            
-            const renewalHref = `${source.href}?${params.toString()}`;
-
-            collected.push({
-              id: `${source.collection}-${entry.id}`,
-              category: source.category,
-              categoryIcon: source.icon,
-              vehicleOrDriver: resolvedName,
-              expiryDate: rawDate,
-              daysLeft,
-              kind,
-              alertStage: meta.alertStage,
-              href: renewalHref,
-              details: resolvedDetail,
-            });
+            const item = toRenewalItem(source, entry.id, entry.data() as Record<string, any>, vehicleMap);
+            if (item) collected.push(item);
           });
         } catch (err) {
           console.error(`Renewals: failed to fetch ${source.collection}`, err);
@@ -313,12 +81,7 @@ export default function RenewalsHubPage() {
       })
     );
 
-    // Sort: expired first, then by days ascending
-    collected.sort((a, b) => {
-      if (a.kind === 'expired' && b.kind !== 'expired') return -1;
-      if (b.kind === 'expired' && a.kind !== 'expired') return 1;
-      return a.daysLeft - b.daysLeft;
-    });
+    sortRenewalItems(collected);
 
     setItems(collected);
     setIsLoading(false);
@@ -353,250 +116,135 @@ export default function RenewalsHubPage() {
   }, [items, filter, dueSoon, expired, categoryFilter, query]);
   const renewalPagination = useVehicleTablePagination(filteredItems);
 
+  const filterTabs: Array<{ key: FilterTab; label: string; count: number }> = [
+    { key: 'all', label: 'All', count: items.length },
+    { key: 'expired', label: 'Expired', count: expired.length },
+    { key: 'dueSoon', label: 'Due Soon', count: dueSoon.length },
+  ];
+
   return (
-    <div className="space-y-3 sm:space-y-5">
-      {/* ── Header ── */}
+    <div className="space-y-3 sm:space-y-4">
+      {/* ── Header: the counts ride in the header's meta line, not a row of cards ── */}
       <PageHeader
         title="Renewals Hub"
-        description="Consolidated view of all expired and due-soon compliance items across the fleet."
-        icon={RefreshCw}
+        description="Every expired and due-soon compliance item across the fleet, most urgent first."
+        className="mb-0 sm:mb-0"
+        meta={[
+          { label: 'Expired', value: <span className="text-rose-600">{isLoading ? '…' : expired.length}</span> },
+          { label: 'Due in 30 days', value: <span className="text-amber-600">{isLoading ? '…' : dueSoon.length}</span> },
+          { label: 'Total', value: isLoading ? '…' : items.length },
+        ]}
         actions={
           <>
-            <Link
-              href="/vehicle-management/vehicle-health"
-              className="flex min-h-11 items-center justify-center gap-1.5 rounded-lg border border-emerald-300 bg-emerald-50 px-3 py-1.5 text-center text-xs font-semibold text-emerald-700 transition-colors hover:bg-emerald-100 sm:min-h-0"
-            >
-              <Activity className="h-3.5 w-3.5" />
-              Health Dashboard
-            </Link>
-            <Button
-              variant="outline"
-              onClick={load}
-              disabled={isLoading}
-              className="w-full gap-2 bg-white/80 hover:bg-white sm:w-fit"
-            >
+            <Button asChild variant="outline" className="gap-1.5">
+              <Link href="/vehicle-management/vehicle-health">
+                <Activity className="h-4 w-4" />
+                Health Dashboard
+              </Link>
+            </Button>
+            <Button variant="outline" onClick={load} disabled={isLoading} className="gap-2">
               <RefreshCw className={cn('h-4 w-4', isLoading && 'animate-spin')} />
               Refresh
             </Button>
           </>
         }
       />
-      <div className="vm-reveal grid grid-cols-3 gap-2 sm:gap-3">
-        <div className="rounded-xl border border-rose-100/80 bg-white/80 p-3 shadow-sm sm:p-4">
-          <p className="text-xs text-muted-foreground">Total Alerts</p>
-          <p className="mt-1 text-2xl font-semibold">{isLoading ? '...' : items.length}</p>
-        </div>
-        <div className="rounded-xl border border-rose-100/80 bg-white/80 p-3 shadow-sm sm:p-4">
-          <p className="text-xs text-muted-foreground">Expired</p>
-          <p className="mt-1 text-2xl font-semibold text-rose-600">
-            {isLoading ? '...' : expired.length}
-          </p>
-        </div>
-        <div className="rounded-xl border border-amber-100/80 bg-white/80 p-3 shadow-sm sm:p-4">
-          <p className="text-xs text-muted-foreground">Due Within 30 Days</p>
-          <p className="mt-1 text-2xl font-semibold text-amber-600">
-            {isLoading ? '...' : dueSoon.length}
-          </p>
-        </div>
-      </div>
 
-      {/* ── Filters ── */}
-      <Card className="space-y-2 p-3 sm:p-4">
-          {/* Kind filter */}
-          <div className="flex gap-1 overflow-x-auto pb-0.5">
-            {(['all', 'expired', 'dueSoon'] as FilterTab[]).map((tab) => (
+      {/* ── Register ── */}
+      <TableCard
+        title="Renewal Queue"
+        description="Expired items first, then by days left. Due soon means it expires within 30 days."
+        count={filteredItems.length}
+        total={items.length}
+        noun="item"
+        scroll="natural"
+        actions={
+          <div className={VM_SEGMENT_TRACK} role="group" aria-label="Filter by status">
+            {filterTabs.map((tab) => (
               <button
-                key={tab}
-                onClick={() => setFilter(tab)}
-                className={cn(
-                  'shrink-0 rounded-lg px-3 py-1.5 text-xs font-semibold transition-all duration-200',
-                  filter === tab
-                    ? tab === 'expired'
-                      ? 'bg-rose-500 text-white shadow-sm'
-                      : tab === 'dueSoon'
-                      ? 'bg-amber-500 text-white shadow-sm'
-                      : 'bg-gradient-to-r from-emerald-500 to-teal-600 text-white shadow-sm'
-                    : 'bg-white/80 text-muted-foreground hover:bg-white border border-white/70'
-                )}
+                key={tab.key}
+                type="button"
+                onClick={() => setFilter(tab.key)}
+                aria-pressed={filter === tab.key}
+                className={cn(vmSegmentItem(filter === tab.key), 'min-h-8')}
               >
-                {tab === 'all' ? `All (${items.length})` : tab === 'expired' ? `Expired (${expired.length})` : `Due Soon (${dueSoon.length})`}
+                {tab.label}
+                {/* The chosen tab sits on the accent, so its count takes the tab's own ink; the
+                    others hint at their status colour. */}
+                <span
+                  className={cn(
+                    'tabular-nums',
+                    filter === tab.key ? 'opacity-90' : tab.key === 'expired' ? 'text-rose-600' : tab.key === 'dueSoon' ? 'text-amber-600' : 'opacity-70'
+                  )}
+                >
+                  {isLoading ? '…' : tab.count}
+                </span>
               </button>
             ))}
           </div>
-
-          {/* Category filter */}
-          <div className="flex gap-1 overflow-x-auto pb-0.5">
-            {categories.map((cat) => (
-              <button
-                key={cat}
-                onClick={() => setCategoryFilter(cat)}
-                className={cn(
-                  'shrink-0 rounded-lg px-3 py-1.5 text-xs font-medium transition-all duration-200',
-                  categoryFilter === cat
-                    ? 'bg-slate-800 text-white shadow-sm'
-                    : 'bg-white/80 text-muted-foreground hover:bg-white border border-white/70'
-                )}
-              >
-                {cat}
-              </button>
-            ))}
-          </div>
-
-          {/* Search */}
+        }
+        toolbar={
           <FilterBar
-            search={{ value: query, onChange: setQuery, placeholder: 'Search vehicle, driver, details...' }}
+            search={{ value: query, onChange: setQuery, placeholder: 'Search vehicle, driver, reference...' }}
             activeCount={(filter !== 'all' ? 1 : 0) + (categoryFilter !== 'All' ? 1 : 0)}
             onClear={() => { setQuery(''); setFilter('all'); setCategoryFilter('All'); }}
-          />
-      </Card>
-
-      {/* ── Items Grid ── */}
-      {isLoading ? (
-        <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
-          {Array.from({ length: 6 }).map((_, i) => (
-            <Skeleton key={i} className="h-44 w-full rounded-xl" />
-          ))}
-        </div>
-      ) : filteredItems.length === 0 ? (
-        <Card className="vm-panel-strong">
-          <CardContent className="flex flex-col items-center justify-center gap-3 py-16 text-center">
-            <CheckCircle2 className="h-12 w-12 text-emerald-400" />
-            <p className="text-lg font-semibold text-slate-700">All Clear!</p>
-            <p className="text-sm text-muted-foreground">
-              {items.length === 0
-                ? 'No compliance data found, or you may not have access to view modules.'
-                : 'No items match your current filters.'}
-            </p>
-          </CardContent>
-        </Card>
-      ) : (
-        <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
-          {renewalPagination.paginatedRows.map((item) => {
-            const Icon = item.categoryIcon;
-            const gradient = categoryGradients[item.category] ?? 'from-slate-500/20 to-gray-500/20';
-            return (
-              <div
-                key={item.id}
-                className={cn(
-                  'group relative overflow-hidden rounded-2xl border bg-white/90 shadow-sm transition-all duration-300 hover:-translate-y-1.5 hover:shadow-lg vm-reveal',
-                  item.kind === 'expired'
-                    ? 'border-rose-200/80 hover:shadow-rose-200/50'
-                    : 'border-amber-200/80 hover:shadow-amber-200/50'
-                )}
-              >
-                {/* Gradient bg */}
-                <div className={cn('pointer-events-none absolute inset-0 bg-gradient-to-br opacity-60', gradient)} />
-
-                {/* Expired top accent */}
-                {item.kind === 'expired' && (
-                  <div className="h-1 w-full bg-gradient-to-r from-rose-500 to-red-600" />
-                )}
-                {item.kind === 'dueSoon' && (
-                  <div className="h-1 w-full bg-gradient-to-r from-amber-400 to-orange-500" />
-                )}
-
-                <div className="relative p-4">
-                  {/* Header row */}
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="flex items-center gap-2.5">
-                      <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-white/80 shadow-sm ring-1 ring-slate-100">
-                        <Icon className="h-4.5 w-4.5 text-slate-600" />
-                      </div>
-                      <div>
-                        <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                          {item.category}
-                        </p>
-                        <p className="font-semibold text-slate-800 leading-tight">
-                          {item.vehicleOrDriver}
-                        </p>
-                      </div>
-                    </div>
-                    <KindBadge kind={item.kind} daysLeft={item.daysLeft} />
-                  </div>
-
-                  {/* Details */}
-                  <div className="mt-3 space-y-1.5">
-                    <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                      <Clock className="h-3.5 w-3.5 shrink-0" />
-                      <span>
-                        Expires:{' '}
-                        <span className="font-medium text-slate-700">
-                          {item.expiryDate || '—'}
-                        </span>
-                      </span>
-                    </div>
-                    <div className="text-xs text-muted-foreground">
-                      <span className="font-medium text-slate-600">{item.details}</span>
-                    </div>
-                  </div>
-
-                  {/* Action */}
-                  <div className="mt-4 flex items-center gap-2">
-                    <Link href={item.href} className="flex-1">
-                      <Button
-                        size="sm"
-                        className={cn(
-                          'w-full gap-1.5 text-xs shadow-sm',
-                          item.kind === 'expired'
-                            ? 'bg-rose-500 text-white hover:bg-rose-600'
-                            : 'bg-amber-500 text-white hover:bg-amber-600'
-                        )}
-                      >
-                        <RefreshCw className="h-3 w-3" />
-                        Renew Now
-                      </Button>
-                    </Link>
-                    <Link href={`${item.href}?tab=history`} className="shrink-0">
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        className="gap-1.5 bg-white/80 text-xs hover:bg-white"
-                        title="View history"
-                      >
-                        <ExternalLink className="h-3 w-3" />
-                        History
-                      </Button>
-                    </Link>
-                  </div>
+          >
+            <Select value={categoryFilter} onValueChange={setCategoryFilter}>
+              <SelectTrigger className="sm:w-44" aria-label="Filter by category">
+                <SelectValue placeholder="Category" />
+              </SelectTrigger>
+              <SelectContent>
+                {categories.map((cat) => (
+                  <SelectItem key={cat} value={cat}>
+                    {cat === 'All' ? 'All categories' : cat}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </FilterBar>
+        }
+        footer={
+          !isLoading && filteredItems.length > 0 ? (
+            <VehicleTablePagination
+              currentPage={renewalPagination.currentPage}
+              totalPages={renewalPagination.totalPages}
+              totalRows={filteredItems.length}
+              pageSize={renewalPagination.pageSize}
+              onPageChange={renewalPagination.setCurrentPage}
+            />
+          ) : undefined
+        }
+      >
+        {isLoading ? (
+          <div className="space-y-2 p-3 sm:p-4">
+            {Array.from({ length: 6 }).map((_, i) => (
+              <Skeleton key={i} className="h-10 w-full rounded-md" />
+            ))}
+          </div>
+        ) : (
+          // Phone cards need an inset from the card's edge; the desktop table runs edge to edge.
+          <div className="p-3 sm:p-0">
+            <DataList
+              rows={renewalPagination.paginatedRows}
+              columns={columns}
+              dense
+              frameless
+              maxHeightClassName="sm:max-h-[min(70vh,42rem)]"
+              empty={
+                <div className="flex flex-col items-center justify-center gap-2 py-14 text-center">
+                  <CheckCircle2 className="h-10 w-10 text-slate-300" />
+                  <p className="text-base font-semibold text-slate-700">All clear</p>
+                  <p className="text-sm text-muted-foreground">
+                    {items.length === 0
+                      ? 'No compliance data found, or you may not have access to view modules.'
+                      : 'No items match your current filters.'}
+                  </p>
                 </div>
-              </div>
-            );
-          })}
-        </div>
-      )}
-
-      {!isLoading && filteredItems.length > 0 && (
-        <VehicleTablePagination
-          currentPage={renewalPagination.currentPage}
-          totalPages={renewalPagination.totalPages}
-          totalRows={filteredItems.length}
-          pageSize={renewalPagination.pageSize}
-          onPageChange={renewalPagination.setCurrentPage}
-        />
-      )}
-
-      {/* ── Legend ── */}
-      {!isLoading && items.length > 0 && (
-        <Card className="vm-panel-strong">
-          <CardContent className="pt-4">
-            <div className="flex flex-wrap gap-4 text-xs text-muted-foreground">
-              <div className="flex items-center gap-1.5">
-                <span className="inline-block h-2.5 w-2.5 rounded-full bg-rose-500" />
-                Expired — Immediate renewal required
-              </div>
-              <div className="flex items-center gap-1.5">
-                <span className="inline-block h-2.5 w-2.5 rounded-full bg-amber-500" />
-                Due Soon — Expires within 30 days
-              </div>
-              <div className="ml-auto text-right">
-                Showing{' '}
-                <span className="font-semibold text-slate-700">{filteredItems.length}</span> of{' '}
-                <span className="font-semibold text-slate-700">{items.length}</span> alerts
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-      )}
+              }
+            />
+          </div>
+        )}
+      </TableCard>
     </div>
   );
 }

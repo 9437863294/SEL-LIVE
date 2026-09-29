@@ -1,8 +1,7 @@
 'use client';
 
-import Link from 'next/link';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { collection, getCountFromServer, getDocs } from 'firebase/firestore';
+import { collection, getCountFromServer, getDocs, query, where } from 'firebase/firestore';
 import { Bar, BarChart, CartesianGrid, Cell, Legend, Pie, PieChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import { db } from '@/lib/firebase';
 import { getVehicleComplianceRequirements, VEHICLE_COLLECTIONS, type VehicleComplianceRequirements } from '@/lib/vehicle-management';
@@ -10,29 +9,16 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { PageHeader } from '@/components/shared/page-header';
 import { chartChrome } from '@/components/ui/chart';
 import { Skeleton } from '@/components/ui/skeleton';
-import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { useAuthorization } from '@/hooks/useAuthorization';
-import {
-  Activity,
-  BadgeCheck,
-  BarChart3,
-  CarFront,
-  FileArchive,
-  Fuel,
-  History,
-  Landmark,
-  Leaf,
-  LocateFixed,
-  RefreshCw,
-  ScrollText,
-  Settings,
-  Shield,
-  User,
-  Wrench,
-  type LucideIcon,
-} from 'lucide-react';
+import { RefreshCw } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { VmStatStrip, type VmStat } from '@/components/vehicle-management/vm-ui';
+import {
+  RENEWAL_SOURCES,
+  toRenewalItem,
+  type RenewalItem,
+} from '@/components/vehicle-management/renewal-items';
 
 // Reuses the status semantics already established across Insurance/PUC/Vehicle Health:
 // emerald = valid/good, amber = due soon/warning, rose = expired/critical, slate = missing/neutral.
@@ -53,35 +39,80 @@ const VEHICLE_STATUS_COLORS: Record<string, string> = {
   'Expired Documents': '#e11d48',
 };
 
-type QuickLink = {
-  label: string;
-  href: string;
-  collection?: string;
-  permission: string;
-  icon: LucideIcon;
-  color: string;
+// The registers whose sizes the fleet strip reports. Navigation is the sidebar's job (and the
+// phone's bottom bar), so the page no longer repeats it as a row of link chips.
+const registers = [
+  { label: 'Vehicles', collection: VEHICLE_COLLECTIONS.vehicleMaster, permission: 'Vehicle Master' },
+  { label: 'Drivers', collection: VEHICLE_COLLECTIONS.driver, permission: 'Driver Management' },
+] as const;
+
+const formatInr = (amount: number) =>
+  new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 0 }).format(amount || 0);
+
+/** A local calendar day as `YYYY-MM-DD` — never via toISOString, which is the UTC day. */
+const localDay = (date: Date) =>
+  `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+
+/** `null` where the user can't see that register, so its figure is left out rather than shown as 0. */
+type MonthFigures = {
+  fuelSpend: number | null;
+  maintenanceSpend: number | null;
+  trips: number | null;
+  distanceKm: number | null;
+  onTripNow: number | null;
 };
 
-const quickLinks: QuickLink[] = [
-  { label: 'Vehicle Master', href: '/vehicle-management/vehicle-master', collection: VEHICLE_COLLECTIONS.vehicleMaster, permission: 'Vehicle Master', icon: CarFront, color: 'text-cyan-700 bg-cyan-50 ring-cyan-100' },
-  { label: 'Insurance', href: '/vehicle-management/insurance', collection: VEHICLE_COLLECTIONS.insurance, permission: 'Insurance Management', icon: Shield, color: 'text-emerald-700 bg-emerald-50 ring-emerald-100' },
-  { label: 'PUC', href: '/vehicle-management/puc', collection: VEHICLE_COLLECTIONS.puc, permission: 'PUC Management', icon: Leaf, color: 'text-green-700 bg-green-50 ring-green-100' },
-  { label: 'Fitness', href: '/vehicle-management/fitness', collection: VEHICLE_COLLECTIONS.fitness, permission: 'Fitness Certificate Management', icon: BadgeCheck, color: 'text-indigo-700 bg-indigo-50 ring-indigo-100' },
-  { label: 'Road Tax', href: '/vehicle-management/road-tax', collection: VEHICLE_COLLECTIONS.roadTax, permission: 'Road Tax Management', icon: Landmark, color: 'text-amber-700 bg-amber-50 ring-amber-100' },
-  { label: 'Permit', href: '/vehicle-management/permit', collection: VEHICLE_COLLECTIONS.permit, permission: 'Permit Management', icon: ScrollText, color: 'text-orange-700 bg-orange-50 ring-orange-100' },
-  { label: 'Maintenance', href: '/vehicle-management/maintenance', collection: VEHICLE_COLLECTIONS.maintenance, permission: 'Maintenance Management', icon: Wrench, color: 'text-rose-700 bg-rose-50 ring-rose-100' },
-  { label: 'Fuel', href: '/vehicle-management/fuel', collection: VEHICLE_COLLECTIONS.fuel, permission: 'Fuel Management', icon: Fuel, color: 'text-sky-700 bg-sky-50 ring-sky-100' },
-  { label: 'Driver Master', href: '/vehicle-management/driver', collection: VEHICLE_COLLECTIONS.driver, permission: 'Driver Management', icon: User, color: 'text-blue-700 bg-blue-50 ring-blue-100' },
-  { label: 'Trips', href: '/vehicle-management/trips', collection: VEHICLE_COLLECTIONS.trips, permission: 'Trip Management', icon: LocateFixed, color: 'text-teal-700 bg-teal-50 ring-teal-100' },
-  { label: 'Documents', href: '/vehicle-management/documents', collection: VEHICLE_COLLECTIONS.documents, permission: 'Document Management', icon: FileArchive, color: 'text-slate-700 bg-slate-50 ring-slate-100' },
-  { label: 'Settings', href: '/vehicle-management/settings', collection: VEHICLE_COLLECTIONS.settings, permission: 'Settings', icon: Settings, color: 'text-violet-700 bg-violet-50 ring-violet-100' },
-];
+/**
+ * This month's running figures. Fuel and service dates are stored as `YYYY-MM-DD` and trip starts as
+ * ISO date-times, so a string range bounded by local month starts is the month — the records the
+ * reports pick with `startsWith(month)` — and only the month's documents are read, not the registers.
+ */
+async function loadMonthFigures(canView: (permission: string) => boolean) {
+  const now = new Date();
+  const from = localDay(new Date(now.getFullYear(), now.getMonth(), 1));
+  const to = localDay(new Date(now.getFullYear(), now.getMonth() + 1, 1));
+  const inMonth = (field: string) => [where(field, '>=', from), where(field, '<', to)];
+  const figures: MonthFigures = { fuelSpend: null, maintenanceSpend: null, trips: null, distanceKm: null, onTripNow: null };
+  let failures = 0;
+  const attempt = async (what: string, run: () => Promise<void>) => {
+    try {
+      await run();
+    } catch (error) {
+      console.error(`Failed to load this month's ${what}`, error);
+      failures += 1;
+    }
+  };
 
-const workflowLinks: QuickLink[] = [
-  { label: 'Renewals Hub', href: '/vehicle-management/renewals', permission: '', icon: RefreshCw, color: 'text-rose-700 bg-rose-50 ring-rose-100' },
-  { label: 'Renewal History', href: '/vehicle-management/renewals/history', permission: '', icon: History, color: 'text-slate-700 bg-slate-50 ring-slate-100' },
-  { label: 'Vehicle Health', href: '/vehicle-management/vehicle-health', permission: 'Vehicle Master', icon: Activity, color: 'text-emerald-700 bg-emerald-50 ring-emerald-100' },
-  { label: 'Reports', href: '/vehicle-management/reports', permission: 'Reports', icon: BarChart3, color: 'text-indigo-700 bg-indigo-50 ring-indigo-100' },
+  await Promise.all([
+    canView('Fuel Management') &&
+      attempt('fuel spend', async () => {
+        const snap = await getDocs(query(collection(db, VEHICLE_COLLECTIONS.fuel), ...inMonth('fuelDate')));
+        figures.fuelSpend = snap.docs.reduce((sum, entry) => sum + Number(entry.data().totalAmount || 0), 0);
+      }),
+    canView('Maintenance Management') &&
+      attempt('maintenance spend', async () => {
+        const snap = await getDocs(query(collection(db, VEHICLE_COLLECTIONS.maintenance), ...inMonth('serviceDate')));
+        figures.maintenanceSpend = snap.docs.reduce((sum, entry) => sum + Number(entry.data().totalCost || 0), 0);
+      }),
+    canView('Trip Management') &&
+      attempt('trips', async () => {
+        const [monthSnap, live] = await Promise.all([
+          getDocs(query(collection(db, VEHICLE_COLLECTIONS.trips), ...inMonth('startTimeIso'))),
+          getCountFromServer(query(collection(db, VEHICLE_COLLECTIONS.trips), where('tripStatus', '==', 'In Progress'))),
+        ]);
+        figures.trips = monthSnap.size;
+        figures.distanceKm = monthSnap.docs.reduce((sum, entry) => sum + Number(entry.data().totalDistanceKm || 0), 0);
+        figures.onTripNow = live.data().count;
+      }),
+  ]);
+  return { figures, failures };
+}
+
+// Every section a user may be granted; with none of them the page says so instead of standing empty.
+const SECTION_PERMISSIONS = [
+  'Vehicle Master', 'Insurance Management', 'PUC Management', 'Fitness Certificate Management', 'Road Tax Management',
+  'Permit Management', 'Maintenance Management', 'Fuel Management', 'Driver Management', 'Trip Management',
+  'Document Management', 'Settings',
 ];
 
 // Each entry with a requirementKey feeds the "Fleet Compliance Overview" chart (per-vehicle
@@ -119,7 +150,9 @@ export default function VehicleManagementOverviewPage() {
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [syncFailures, setSyncFailures] = useState(0);
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
-  const [alertSummary, setAlertSummary] = useState({ expired: 0, dueSoon: 0, valid: 0 });
+  // Expired and due-soon items by the Renewals Hub's own rules, so the strip's counts match that page.
+  const [urgentItems, setUrgentItems] = useState<RenewalItem[]>([]);
+  const [monthFigures, setMonthFigures] = useState<MonthFigures | null>(null);
   const [categoryBreakdown, setCategoryBreakdown] = useState<Record<string, CategoryBucket>>({});
   const [vehicleStatusBreakdown, setVehicleStatusBreakdown] = useState<Array<{ status: string; count: number }>>([]);
   const isMountedRef = useRef(true);
@@ -140,7 +173,7 @@ export default function VehicleManagementOverviewPage() {
       if (!firstLoadDoneRef.current) setIsLoading(true);
       try {
       const nextCounts: Record<string, number> = {};
-      const nextAlerts = { expired: 0, dueSoon: 0, valid: 0 };
+      const nextUrgent: RenewalItem[] = [];
       const nextCategoryBreakdown: Record<string, CategoryBucket> = {};
       const categoryVehicleIdsWithDoc: Partial<Record<keyof VehicleComplianceRequirements, Set<string>>> = {};
       const nextVehicleStatus: Record<string, number> = {};
@@ -158,9 +191,11 @@ export default function VehicleManagementOverviewPage() {
       } catch (error) {
         console.error('Failed to load vehicles for expiry alert filtering', error);
       }
+      // Started now, awaited below: independent of everything else this load reads.
+      const monthPromise = loadMonthFigures(canViewSection);
       await Promise.all(
-        quickLinks.map(async (item) => {
-          if (!item.collection || !canViewSection(item.permission)) return;
+        registers.map(async (item) => {
+          if (!canViewSection(item.permission)) return;
           try {
             const snapshot = await getCountFromServer(collection(db, item.collection));
             nextCounts[item.collection] = snapshot.data().count;
@@ -177,8 +212,14 @@ export default function VehicleManagementOverviewPage() {
           try {
             const snapshot = await getDocs(collection(db, source.collection));
             const seenVehicleIds = new Set<string>();
+            // The Renewals Hub's rules for the same collection, run on the documents already here.
+            const renewalSource = RENEWAL_SOURCES.find((entry) => entry.collection === source.collection);
             snapshot.docs.forEach((entry) => {
               const data = entry.data();
+              if (renewalSource) {
+                const item = toRenewalItem(renewalSource, entry.id, data, vehicleMap);
+                if (item) nextUrgent.push(item);
+              }
               if (data.isArchived === true || data.renewalStatus === 'Renewed') return;
               if (source.requirementKey) {
                 const vehicle = vehicleMap[String(data.vehicleId || '')];
@@ -190,9 +231,6 @@ export default function VehicleManagementOverviewPage() {
                 if (vid) seenVehicleIds.add(vid);
               }
               const kind = classifyExpiry(data?.[source.key]);
-              if (kind === 'expired') nextAlerts.expired += 1;
-              if (kind === 'dueSoon') nextAlerts.dueSoon += 1;
-              if (kind === 'valid') nextAlerts.valid += 1;
 
               if (source.requirementKey) {
                 const bucket = (nextCategoryBreakdown[source.label] ||= { valid: 0, dueSoon: 0, expired: 0, missing: 0 });
@@ -222,9 +260,12 @@ export default function VehicleManagementOverviewPage() {
           bucket.missing += 1;
         });
       });
+      const month = await monthPromise;
+      failureCount += month.failures;
       if (!isMountedRef.current) return;
       setCounts(nextCounts);
-      setAlertSummary(nextAlerts);
+      setMonthFigures(month.figures);
+      setUrgentItems(nextUrgent);
       setCategoryBreakdown(nextCategoryBreakdown);
       setVehicleStatusBreakdown(
         Object.entries(nextVehicleStatus)
@@ -266,29 +307,10 @@ export default function VehicleManagementOverviewPage() {
     };
   }, [load]);
 
-  const visibleQuickLinks = useMemo(
-    () => quickLinks.filter((item) => canViewSection(item.permission)),
-    [canViewSection]
-  );
-  const canViewReports = can('View', 'Vehicle Management.Reports');
-  const canViewHealth =
-    can('View', 'Vehicle Management.Vehicle Master') ||
-    can('Add', 'Vehicle Management.Vehicle Master') ||
-    can('Edit', 'Vehicle Management.Vehicle Master') ||
-    can('View', 'Vehicle Management.Overview');
-  const visibleWorkflowLinks = useMemo(
-    () => workflowLinks.filter((item) => {
-      if (item.label === 'Vehicle Health') return canViewHealth;
-      if (item.label === 'Reports') return canViewReports;
-      return true;
-    }),
-    [canViewHealth, canViewReports]
-  );
-  const totalVisibleRecords = useMemo(
-    () => visibleQuickLinks.reduce((sum, item) => sum + (item.collection ? counts[item.collection] ?? 0 : 0), 0),
-    [visibleQuickLinks, counts]
-  );
-  const totalAlerts = alertSummary.expired + alertSummary.dueSoon;
+  const hasAnySection = useMemo(() => SECTION_PERMISSIONS.some((permission) => canViewSection(permission)), [canViewSection]);
+  const expiredCount = useMemo(() => urgentItems.filter((item) => item.kind === 'expired').length, [urgentItems]);
+  const dueSoonCount = urgentItems.length - expiredCount;
+  const activeVehicles = vehicleStatusBreakdown.find((row) => row.status === 'Active')?.count ?? 0;
 
   const complianceChartData = useMemo(
     () =>
@@ -297,10 +319,58 @@ export default function VehicleManagementOverviewPage() {
         .map((source) => ({ category: source.label, ...categoryBreakdown[source.label] })),
     [categoryBreakdown]
   );
-  const totalMissing = useMemo(
-    () => complianceChartData.reduce((sum, row) => sum + row.missing, 0),
-    [complianceChartData]
-  );
+
+  // Compliant = every required category currently covered (valid or due soon — not yet lapsed), out of
+  // every requirement the fleet has, missing records included. Same buckets as the compliance chart.
+  const compliance = useMemo(() => {
+    const totals = complianceChartData.reduce(
+      (sum, row) => ({
+        covered: sum.covered + row.valid + row.dueSoon,
+        required: sum.required + row.valid + row.dueSoon + row.expired + row.missing,
+        missing: sum.missing + row.missing,
+      }),
+      { covered: 0, required: 0, missing: 0 }
+    );
+    return { ...totals, percent: totals.required > 0 ? Math.round((totals.covered / totals.required) * 100) : null };
+  }, [complianceChartData]);
+
+  // Only the registers this user can open; the renewal figures cover whatever they can see.
+  const pending = (value: number) => (isLoading ? '…' : value);
+  const fleetStats: VmStat[] = [
+    ...registers
+      .filter((register) => canViewSection(register.permission))
+      .map((register): VmStat => ({
+        label: register.label,
+        value: pending(counts[register.collection] ?? 0),
+        hint: register.collection === VEHICLE_COLLECTIONS.vehicleMaster && !isLoading ? `${activeVehicles} active` : undefined,
+      })),
+    ...(isLoading || compliance.percent !== null
+      ? [
+          {
+            label: 'Compliance',
+            value: isLoading ? '…' : `${compliance.percent}%`,
+            tone: isLoading || compliance.percent === null ? 'default' : compliance.percent >= 90 ? 'success' : compliance.percent >= 70 ? 'warning' : 'danger',
+            hint: isLoading ? undefined : compliance.missing > 0 ? `${compliance.missing} records missing` : 'nothing missing',
+          } satisfies VmStat,
+        ]
+      : []),
+    { label: 'Expired', value: pending(expiredCount), tone: expiredCount > 0 ? 'danger' : 'default' },
+    { label: 'Due in 30 days', value: pending(dueSoonCount), tone: dueSoonCount > 0 ? 'warning' : 'default' },
+  ];
+
+  // This month's running figures; each is left out when the user can't see its register.
+  const month = monthFigures;
+  const monthStats: VmStat[] = [
+    ...(isLoading || month?.fuelSpend != null ? [{ label: 'Fuel spend', value: isLoading ? '…' : formatInr(month?.fuelSpend ?? 0) }] : []),
+    ...(isLoading || month?.maintenanceSpend != null ? [{ label: 'Maintenance spend', value: isLoading ? '…' : formatInr(month?.maintenanceSpend ?? 0) }] : []),
+    ...(isLoading || month?.trips != null
+      ? [{ label: 'Trips', value: pending(month?.trips ?? 0), hint: !isLoading && month?.onTripNow ? `${month.onTripNow} on the road now` : undefined }]
+      : []),
+    ...(isLoading || month?.distanceKm != null
+      ? [{ label: 'Distance', value: isLoading ? '…' : `${Math.round(month?.distanceKm ?? 0).toLocaleString('en-IN')} km` }]
+      : []),
+  ];
+  const monthName = new Date().toLocaleDateString('en-IN', { month: 'long', year: 'numeric' });
 
   return (
     <div className="min-w-0 space-y-3 overflow-x-hidden sm:space-y-4">
@@ -312,50 +382,30 @@ export default function VehicleManagementOverviewPage() {
             {lastUpdated && <span className="ml-1">Updated {lastUpdated.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}</span>}
           </>
         }
+        meta={syncFailures > 0 ? [{ label: 'Sync', value: <span className="text-amber-700">Partial data · retry refresh</span> }] : undefined}
         actions={
-          <Button type="button" size="sm" variant="outline" onClick={() => void load()} disabled={isRefreshing} className="h-8 shrink-0 bg-white/80 px-2.5" aria-label="Refresh vehicle overview">
+          <Button type="button" size="sm" variant="outline" onClick={() => void load()} disabled={isRefreshing} className="h-8 shrink-0 px-2.5" aria-label="Refresh vehicle overview">
             <RefreshCw className={cn('h-3.5 w-3.5 sm:mr-1.5', isRefreshing && 'animate-spin')} /><span className="hidden sm:inline">Refresh</span>
           </Button>
         }
       />
-      <div className="vm-reveal grid grid-cols-3 gap-1.5 sm:gap-3">
-        <div className="rounded-lg border border-emerald-100/70 bg-white/80 p-2 shadow-sm">
-          <p className="text-[10px] leading-tight text-muted-foreground sm:text-xs">Modules</p>
-          <p className="mt-0.5 text-base font-semibold sm:text-xl">{visibleQuickLinks.length}</p>
-        </div>
-        <div className="rounded-lg border border-emerald-100/70 bg-white/80 p-2 shadow-sm">
-          <p className="text-[10px] leading-tight text-muted-foreground sm:text-xs">Records</p>
-          <p className="mt-0.5 text-base font-semibold sm:text-xl">{isLoading ? '...' : totalVisibleRecords}</p>
-        </div>
-        <div className="rounded-lg border border-emerald-100/70 bg-white/80 p-2 shadow-sm">
-          <p className="text-[10px] leading-tight text-muted-foreground sm:text-xs">Alerts</p>
-          <p className="mt-0.5 text-base font-semibold sm:text-xl">{isLoading ? '...' : totalAlerts}</p>
-          {syncFailures > 0 && <p className="mt-0.5 text-[9px] font-medium text-amber-700 sm:text-[10px]">Partial data · retry refresh</p>}
-          <div className="mt-1.5 hidden flex-wrap gap-1 text-[10px] lg:flex">
-            <Badge variant="danger">
-              Expired: {alertSummary.expired}
-            </Badge>
-            <Badge variant="warning">
-              Due Soon: {alertSummary.dueSoon}
-            </Badge>
-            <Badge variant="success">
-              Valid: {alertSummary.valid}
-            </Badge>
-          </div>
-          {totalAlerts > 0 && (
-            <Link
-              href="/vehicle-management/renewals"
-              className="mt-1 hidden items-center gap-1 text-xs font-semibold text-rose-600 transition-colors hover:text-rose-700 sm:mt-2 sm:flex"
-            >
-              <RefreshCw className="h-3 w-3" />
-              View Renewals Hub
-            </Link>
-          )}
-        </div>
-      </div>
+
+      {/* Essentials, before any chart: the fleet and its compliance, then this month's running figures. */}
+      <section aria-labelledby="vm-fleet-heading" className="space-y-1.5">
+        <h2 id="vm-fleet-heading" className="px-0.5 text-[11px] font-semibold uppercase tracking-wide text-slate-500">Fleet</h2>
+        <VmStatStrip stats={fleetStats} />
+      </section>
+      {monthStats.length > 0 && (
+        <section aria-labelledby="vm-month-heading" className="space-y-1.5">
+          <h2 id="vm-month-heading" className="px-0.5 text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+            This month · {monthName}
+          </h2>
+          <VmStatStrip stats={monthStats} />
+        </section>
+      )}
 
       {/* Reports & data — the dashboard leads with fleet compliance/status data, not navigation. */}
-      <div className="grid min-w-0 gap-3 xl:grid-cols-[1.5fr_1fr]">
+      <div className="grid min-w-0 grid-cols-1 gap-3 xl:grid-cols-[1.5fr_1fr]">
         <Card className="vm-panel-strong overflow-hidden vm-reveal">
           <CardHeader className="px-3 py-2.5 sm:px-4 sm:py-3">
             <CardTitle>Fleet Compliance Overview</CardTitle>
@@ -419,54 +469,7 @@ export default function VehicleManagementOverviewPage() {
         </Card>
       </div>
 
-      {(totalMissing > 0 || totalAlerts > 0) && !isLoading && (
-        <Link
-          href="/vehicle-management/renewals"
-          className="flex items-center justify-between gap-3 rounded-xl border border-rose-100 bg-rose-50/70 px-3.5 py-2.5 text-sm shadow-sm transition-colors hover:bg-rose-50 sm:px-4"
-        >
-          <span className="flex items-center gap-2 font-medium text-rose-700">
-            <RefreshCw className="h-4 w-4 shrink-0" />
-            {alertSummary.expired} expired · {alertSummary.dueSoon} due soon · {totalMissing} missing across the fleet
-          </span>
-          <span className="shrink-0 text-xs font-semibold text-rose-600 underline underline-offset-2">Open Renewals Hub →</span>
-        </Link>
-      )}
-
-      {/* Quick access — compact links, not the focal point of this page. */}
-      <Card className="vm-panel-strong">
-        <CardHeader className="px-3 py-2.5 sm:px-4 sm:py-3">
-          <CardTitle className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Quick Access</CardTitle>
-        </CardHeader>
-        <CardContent className="flex flex-wrap gap-1.5 px-3 pb-3 sm:px-4 sm:pb-4">
-          {visibleWorkflowLinks.map((item) => (
-            <Link
-              key={item.href}
-              href={item.href}
-              className={cn('inline-flex items-center gap-1.5 rounded-full px-2.5 py-1.5 text-xs font-medium shadow-sm ring-1 transition-transform hover:-translate-y-0.5', item.color)}
-            >
-              <item.icon className="h-3.5 w-3.5 shrink-0" />
-              {item.label}
-              {item.label === 'Vehicle Health' && !isLoading && alertSummary.expired > 0 && (
-                <Badge variant="danger" className="h-4 px-1 text-[9px] leading-none">{alertSummary.expired}</Badge>
-              )}
-            </Link>
-          ))}
-          <span className="mx-1 my-1 w-px self-stretch bg-border" aria-hidden />
-          {visibleQuickLinks.map((item) => (
-            <Link
-              key={item.href}
-              href={item.href}
-              className={cn('inline-flex items-center gap-1.5 rounded-full px-2.5 py-1.5 text-xs font-medium shadow-sm ring-1 transition-transform hover:-translate-y-0.5', item.color)}
-            >
-              <item.icon className="h-3.5 w-3.5 shrink-0" />
-              {item.label}
-              <span className="text-[10px] opacity-70 tabular-nums">{isLoading ? '…' : counts[item.collection ?? ''] ?? 0}</span>
-            </Link>
-          ))}
-        </CardContent>
-      </Card>
-
-      {visibleQuickLinks.length === 0 && (
+      {!hasAnySection && (
         <Card className="vm-panel-strong">
           <CardHeader>
             <CardTitle>No Section Access</CardTitle>

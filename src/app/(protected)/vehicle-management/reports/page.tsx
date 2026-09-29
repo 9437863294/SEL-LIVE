@@ -6,6 +6,7 @@ import { useAuthorization } from '@/hooks/useAuthorization';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { PageHeader } from '@/components/shared/page-header';
+import { vmToneChip, type VmTone } from '@/components/vehicle-management/vm-ui';
 
 const REPORTS = [
   {
@@ -14,8 +15,7 @@ const REPORTS = [
     description:
       'Monthly fuel spend, liters consumed, mileage efficiency, and cost per kilometer for each vehicle.',
     icon: Fuel,
-    color: 'from-cyan-500 to-sky-500',
-    iconBg: 'bg-cyan-50 text-cyan-600',
+    tone: 'cyan' as VmTone,
     scope: 'Monthly',
   },
   {
@@ -23,8 +23,7 @@ const REPORTS = [
     title: 'Project-wise Fuel Cost',
     description: 'Total fuel expenditure grouped by project with bar visualization and ranking.',
     icon: Layers,
-    color: 'from-emerald-500 to-teal-500',
-    iconBg: 'bg-emerald-50 text-emerald-600',
+    tone: 'emerald' as VmTone,
     scope: 'Monthly',
   },
   {
@@ -33,8 +32,7 @@ const REPORTS = [
     description:
       'Six-month fuel and maintenance spend overview with top expense vehicles ranked.',
     icon: TrendingUp,
-    color: 'from-violet-500 to-purple-600',
-    iconBg: 'bg-violet-50 text-violet-600',
+    tone: 'violet' as VmTone,
     scope: '6 Months',
   },
   {
@@ -43,8 +41,7 @@ const REPORTS = [
     description:
       'Maintenance expenditure per vehicle — total cost, service visit count, and labour vs parts breakdown.',
     icon: Wrench,
-    color: 'from-amber-500 to-orange-500',
-    iconBg: 'bg-amber-50 text-amber-600',
+    tone: 'amber' as VmTone,
     scope: 'Monthly',
   },
   {
@@ -53,8 +50,7 @@ const REPORTS = [
     description:
       'All compliance alerts — expired, due today, and within 7/15/30 days across insurance, PUC, fitness, road tax, permit, and driver licenses.',
     icon: AlertTriangle,
-    color: 'from-rose-500 to-red-600',
-    iconBg: 'bg-rose-50 text-rose-600',
+    tone: 'rose' as VmTone,
     scope: 'Month / Year',
   },
   {
@@ -63,8 +59,7 @@ const REPORTS = [
     description:
       'Fleet age analysis grouped into New, Moderate, Old, and Aging brackets with purchase value and project details.',
     icon: Car,
-    color: 'from-pink-500 to-rose-500',
-    iconBg: 'bg-pink-50 text-pink-600',
+    tone: 'pink' as VmTone,
     scope: 'Fleet-wide',
   },
   {
@@ -73,8 +68,7 @@ const REPORTS = [
     description:
       'Number of vehicles deployed per project with active/inactive status and vehicle type breakdown.',
     icon: FolderOpen,
-    color: 'from-fuchsia-500 to-violet-500',
-    iconBg: 'bg-fuchsia-50 text-fuchsia-600',
+    tone: 'fuchsia' as VmTone,
     scope: 'Fleet-wide',
   },
 ];
@@ -107,11 +101,10 @@ export default function VehicleReportsHubPage() {
           const Icon = report.icon;
           return (
             <Link key={report.href} href={report.href} className="group block">
-              <Card className="vm-panel h-full overflow-hidden transition-all duration-200 group-hover:-translate-y-0.5 group-hover:shadow-md">
-                <div className={`h-1 w-full bg-gradient-to-r ${report.color}`} />
+              <Card className="h-full overflow-hidden border-slate-200 bg-white transition-colors hover:border-slate-300 hover:bg-slate-50">
                 <CardHeader className="p-2.5 pb-1.5 sm:p-3 sm:pb-1.5">
                   <div className="flex items-start justify-between gap-2">
-                    <div className={`flex h-7 w-7 items-center justify-center rounded-md ${report.iconBg}`}>
+                    <div className={`flex h-7 w-7 items-center justify-center rounded-md ${vmToneChip(report.tone)}`}>
                       <Icon className="h-3.5 w-3.5" />
                     </div>
                     <Badge variant="outline" className="shrink-0">
@@ -122,7 +115,7 @@ export default function VehicleReportsHubPage() {
                 </CardHeader>
                 <CardContent className="hidden px-3 pb-3 sm:block">
                   <p className="line-clamp-1 text-[11px] leading-relaxed text-muted-foreground">{report.description}</p>
-                  <div className="mt-1.5 flex items-center gap-1 text-[11px] font-medium text-indigo-600 transition-all duration-150 group-hover:gap-2">
+                  <div className="mt-1.5 flex items-center gap-1 text-[11px] font-medium text-slate-600 transition-all duration-150 group-hover:gap-2">
                     Open Report <span>→</span>
                   </div>
                 </CardContent>

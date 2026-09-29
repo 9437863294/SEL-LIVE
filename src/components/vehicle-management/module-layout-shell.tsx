@@ -23,6 +23,7 @@ import {
   Truck,
   User,
   Wrench,
+  type LucideIcon,
 } from 'lucide-react';
 import { useAuthorization } from '@/hooks/useAuthorization';
 import { ModuleBottomNav, type ModuleNavTab } from '@/components/navigation/ModuleBottomNav';
@@ -36,31 +37,29 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { ModuleMobileHeader } from '@/components/shared/page-header';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import { cn } from '@/lib/utils';
+import { VM_ACCENT_FILL, VM_TONES, type VmTone } from './vm-ui';
 
-// ─── Per-section color config ────────────────────────────────────────────────
+// ─── Sections ─────────────────────────────────────────────────────────────────
 
-// Icon chip backgrounds use the *-100 tier (not *-50) so they stay visible against the
-// sidebar/sheet's own near-white backdrop — a *-50 chip (esp. slate) was blending into the
-// panel and made several rows look like their icon had gone missing.
-const sections = [
-  { href: '/vehicle-management',                label: 'Overview',        resource: '',                          icon: Gauge,       color: 'text-emerald-600', bg: 'bg-emerald-100', group: 'core' },
-  { href: '/vehicle-management/renewals',       label: 'Renewals Hub',    resource: '',                          icon: RefreshCw,   color: 'text-rose-600',    bg: 'bg-rose-100',    group: 'core' },
-  { href: '/vehicle-management/renewals/history', label: 'Renewal History', resource: '',                        icon: History,     color: 'text-slate-600',   bg: 'bg-slate-200',   group: 'core' },
-  { href: '/vehicle-management/vehicle-health', label: 'Vehicle Health',  resource: 'Vehicle Master',            icon: Activity,    color: 'text-emerald-600', bg: 'bg-emerald-100', group: 'core' },
-  { href: '/vehicle-management/vehicle-master', label: 'Vehicle Master',  resource: 'Vehicle Master',            icon: CarFront,    color: 'text-blue-600',    bg: 'bg-blue-100',    group: 'fleet' },
-  { href: '/vehicle-management/insurance/workflow', label: 'Insurance Workflow', resource: 'Insurance Management', icon: GitBranch, color: 'text-violet-700', bg: 'bg-violet-100', group: 'compliance' },
-  { href: '/vehicle-management/insurance',      label: 'Insurance',       resource: 'Insurance Management',     icon: Shield,      color: 'text-violet-600',  bg: 'bg-violet-100',  group: 'compliance' },
-  { href: '/vehicle-management/puc',            label: 'PUC',             resource: 'PUC Management',            icon: Leaf,        color: 'text-green-600',   bg: 'bg-green-100',   group: 'compliance' },
-  { href: '/vehicle-management/fitness',        label: 'Fitness',         resource: 'Fitness Certificate Management', icon: BadgeCheck, color: 'text-indigo-600', bg: 'bg-indigo-100', group: 'compliance' },
-  { href: '/vehicle-management/road-tax',       label: 'Road Tax',        resource: 'Road Tax Management',       icon: Landmark,    color: 'text-amber-600',   bg: 'bg-amber-100',   group: 'compliance' },
-  { href: '/vehicle-management/permit',         label: 'Permit',          resource: 'Permit Management',         icon: ScrollText,  color: 'text-orange-600',  bg: 'bg-orange-100',  group: 'compliance' },
-  { href: '/vehicle-management/maintenance',    label: 'Maintenance',     resource: 'Maintenance Management',    icon: Wrench,      color: 'text-red-600',     bg: 'bg-red-100',     group: 'ops' },
-  { href: '/vehicle-management/fuel',           label: 'Fuel',            resource: 'Fuel Management',           icon: Fuel,        color: 'text-sky-600',     bg: 'bg-sky-100',     group: 'ops' },
-  { href: '/vehicle-management/driver',         label: 'Driver Master',   resource: 'Driver Management',         icon: User,        color: 'text-teal-600',    bg: 'bg-teal-100',    group: 'ops' },
-  { href: '/vehicle-management/trips',          label: 'Trip Management', resource: 'Trip Management',           icon: LocateFixed, color: 'text-blue-600',    bg: 'bg-blue-100',    group: 'ops' },
-  { href: '/vehicle-management/documents',      label: 'Documents',       resource: 'Document Management',       icon: FileArchive, color: 'text-slate-600',   bg: 'bg-slate-200',   group: 'ops' },
-  { href: '/vehicle-management/reports',        label: 'Reports',         resource: 'Reports',                   icon: BarChart3,   color: 'text-indigo-600',  bg: 'bg-indigo-100',  group: 'ops' },
-  { href: '/vehicle-management/settings',       label: 'Settings',        resource: 'Settings',                  icon: Settings,    color: 'text-slate-600',   bg: 'bg-slate-200',   group: 'ops' },
+const sections: Array<{ href: string; label: string; resource: string; icon: LucideIcon; tone: VmTone; group: string }> = [
+  { href: '/vehicle-management',                label: 'Overview',        resource: '',                          icon: Gauge,       tone: 'emerald', group: 'core' },
+  { href: '/vehicle-management/renewals',       label: 'Renewals Hub',    resource: '',                          icon: RefreshCw,   tone: 'rose', group: 'core' },
+  { href: '/vehicle-management/renewals/history', label: 'Renewal History', resource: '',                        icon: History,     tone: 'slate', group: 'core' },
+  { href: '/vehicle-management/vehicle-health', label: 'Vehicle Health',  resource: 'Vehicle Master',            icon: Activity,    tone: 'emerald', group: 'core' },
+  { href: '/vehicle-management/vehicle-master', label: 'Vehicle Master',  resource: 'Vehicle Master',            icon: CarFront,    tone: 'blue', group: 'fleet' },
+  { href: '/vehicle-management/insurance/workflow', label: 'Insurance Workflow', resource: 'Insurance Management', icon: GitBranch, tone: 'violet', group: 'compliance' },
+  { href: '/vehicle-management/insurance',      label: 'Insurance',       resource: 'Insurance Management',     icon: Shield,      tone: 'violet', group: 'compliance' },
+  { href: '/vehicle-management/puc',            label: 'PUC',             resource: 'PUC Management',            icon: Leaf,        tone: 'green', group: 'compliance' },
+  { href: '/vehicle-management/fitness',        label: 'Fitness',         resource: 'Fitness Certificate Management', icon: BadgeCheck, tone: 'indigo', group: 'compliance' },
+  { href: '/vehicle-management/road-tax',       label: 'Road Tax',        resource: 'Road Tax Management',       icon: Landmark,    tone: 'amber', group: 'compliance' },
+  { href: '/vehicle-management/permit',         label: 'Permit',          resource: 'Permit Management',         icon: ScrollText,  tone: 'orange', group: 'compliance' },
+  { href: '/vehicle-management/maintenance',    label: 'Maintenance',     resource: 'Maintenance Management',    icon: Wrench,      tone: 'red', group: 'ops' },
+  { href: '/vehicle-management/fuel',           label: 'Fuel',            resource: 'Fuel Management',           icon: Fuel,        tone: 'sky', group: 'ops' },
+  { href: '/vehicle-management/driver',         label: 'Driver Master',   resource: 'Driver Management',         icon: User,        tone: 'teal', group: 'ops' },
+  { href: '/vehicle-management/trips',          label: 'Trip Management', resource: 'Trip Management',           icon: LocateFixed, tone: 'blue', group: 'ops' },
+  { href: '/vehicle-management/documents',      label: 'Documents',       resource: 'Document Management',       icon: FileArchive, tone: 'slate', group: 'ops' },
+  { href: '/vehicle-management/reports',        label: 'Reports',         resource: 'Reports',                   icon: BarChart3,   tone: 'indigo', group: 'ops' },
+  { href: '/vehicle-management/settings',       label: 'Settings',        resource: 'Settings',                  icon: Settings,    tone: 'slate', group: 'ops' },
 ];
 
 const groupLabels: Record<string, string> = {
@@ -137,7 +136,7 @@ export default function VehicleManagementLayoutShell({ children }: { children: R
                 <p className="sr-only">{groupLabel}</p>
               </>
             ) : (
-              <p className="px-2.5 pb-1 pt-2 text-[10px] font-bold uppercase tracking-[0.14em] text-slate-400 first:pt-1">
+              <p className="px-2.5 pb-1 pt-2 text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-400 first:pt-1">
                 {groupLabel}
               </p>
             ))}
@@ -148,23 +147,21 @@ export default function VehicleManagementLayoutShell({ children }: { children: R
               aria-current={currentSection?.href === item.href ? 'page' : undefined}
               title={compact ? item.label : undefined}
               className={cn(
-                'group relative flex items-center gap-2.5 rounded-lg px-2.5 py-2.5 lg:py-2 text-sm font-medium transition-all duration-200',
+                'group relative flex items-center gap-2.5 rounded-lg px-2.5 py-2 lg:py-1.5 text-sm font-medium transition-colors',
                 active
-                  ? 'bg-gradient-to-r from-emerald-500 to-teal-600 text-white shadow-[0_8px_24px_-8px_rgba(16,185,129,0.5)]'
-                  : 'text-slate-600 hover:bg-white/70 hover:text-slate-900',
+                  ? cn(VM_ACCENT_FILL, 'font-semibold shadow-[0_6px_16px_-8px_var(--sel-tab-glow)]')
+                  : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900',
                 compact && 'justify-center'
               )}
             >
-              {/* Icon container — colored bg when inactive, white when active */}
+              {/* Each section's own colour on its chip; the current page wears the user's accent. */}
               <span
                 className={cn(
-                  'flex h-8 w-8 shrink-0 items-center justify-center rounded-lg ring-1 transition-all duration-200',
-                  active
-                    ? 'bg-white/20 ring-white/30'
-                    : cn('ring-black/[0.03] group-hover:scale-105', item.bg)
+                  'flex h-7 w-7 shrink-0 items-center justify-center rounded-md ring-1 ring-inset transition-colors',
+                  active ? 'bg-white/20 ring-white/30' : VM_TONES[item.tone].chip
                 )}
               >
-                <Icon className={cn('h-4 w-4 transition-transform', active ? 'text-white scale-110' : item.color)} />
+                <Icon className="h-4 w-4" />
               </span>
               <span className={compact ? 'sr-only' : 'truncate'}>{item.label}</span>
             </Link>
@@ -192,9 +189,7 @@ export default function VehicleManagementLayoutShell({ children }: { children: R
 
   return (
     <div className="vm-module-root relative w-full px-2 py-2 sm:px-6 sm:py-4 lg:px-8 [&_table]:min-w-max [&_table_th]:whitespace-nowrap [&_table_td]:whitespace-nowrap">
-      <div className="pointer-events-none absolute inset-0 -z-10 overflow-hidden rounded-3xl vm-gradient-atmosphere" />
-      <div className="pointer-events-none absolute -z-10 left-[8%] top-[8%] h-56 w-56 rounded-full bg-emerald-300/20 blur-3xl vm-orb-a" />
-      <div className="pointer-events-none absolute -z-10 right-[10%] bottom-[6%] h-64 w-64 rounded-full bg-teal-300/20 blur-3xl vm-orb-b" />
+      <div className="pointer-events-none absolute inset-0 -z-10 overflow-hidden rounded-3xl vm-neutral-backdrop" />
 
       {/* Mobile header: logo, title and current section. Navigation is the bottom bar and its "More" pop-up. */}
       <ModuleMobileHeader
@@ -211,12 +206,12 @@ export default function VehicleManagementLayoutShell({ children }: { children: R
             <Card className="overflow-hidden vm-panel-strong vm-reveal">
               {/* Sidebar header */}
               <div
-                className={cn('border-b border-white/50 bg-gradient-to-r from-emerald-500/10 to-teal-500/5 px-4 py-3', iconsOnly && 'px-2')}
+                className={cn('border-b border-slate-200 px-4 py-3', iconsOnly && 'px-2')}
                 title={iconsOnly ? 'Vehicle Management' : undefined}
               >
                 <div className={cn('flex items-center gap-2.5', iconsOnly && 'justify-center')}>
-                  <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-gradient-to-br from-emerald-500 to-teal-600 shadow-sm">
-                    <Truck className="h-4 w-4 text-white" />
+                  <div className={cn('flex h-8 w-8 items-center justify-center rounded-lg shadow-sm', VM_ACCENT_FILL)}>
+                    <Truck className="h-4 w-4" />
                   </div>
                   <div className={iconsOnly ? 'sr-only' : undefined}>
                     <p className="text-sm font-semibold tracking-tight text-slate-800">Vehicle Management</p>

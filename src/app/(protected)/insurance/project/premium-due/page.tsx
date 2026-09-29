@@ -12,7 +12,8 @@ import {
   ShieldAlert,
   XCircle,
 } from 'lucide-react';
-import { addDays, format, isPast, isWithinInterval } from 'date-fns';
+import { format } from 'date-fns';
+import { projectPolicyState } from '@/lib/insurance';
 import { collection, doc, getDocs, updateDoc } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import { useAuthorization } from '@/hooks/useAuthorization';
@@ -51,12 +52,10 @@ import { cn } from '@/lib/utils';
 
 type ProjStatus = 'expired' | 'expiring' | 'active';
 
+// The shared rule: cover runs through its last day, so a policy is expired only from the day after.
 function getProjStatus(insuredUntil: any): ProjStatus {
-  if (!insuredUntil) return 'active';
-  const d = insuredUntil.toDate?.() ?? new Date(insuredUntil);
-  if (isPast(d)) return 'expired';
-  if (isWithinInterval(d, { start: new Date(), end: addDays(new Date(), 30) })) return 'expiring';
-  return 'active';
+  const state = projectPolicyState({ status: 'Active', insured_until: insuredUntil });
+  return state === 'expired' || state === 'expiring' ? state : 'active';
 }
 
 // The module's labels; "Expires Soon" is not in the shared vocabulary, so its tone is given.

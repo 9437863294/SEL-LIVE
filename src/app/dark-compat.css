@@ -37,9 +37,6 @@
   .dark :where(.bg-white\/50:not(.keep-light, .keep-light *)) {
     background-color: hsl(var(--card) / 0.5);
   }
-  .dark :where(.hover\:bg-white\/50:not(.keep-light, .keep-light *)):hover {
-    background-color: hsl(var(--dc-100) / 0.5);
-  }
   .dark :where(.bg-white\/60:not(.keep-light, .keep-light *)) {
     background-color: hsl(var(--card) / 0.6);
   }
@@ -267,9 +264,6 @@
   .dark :where(.border-stone-100:not(.keep-light, .keep-light *)),
   .dark :where(.divide-stone-100:not(.keep-light, .keep-light *)) > :not([hidden]) ~ :not([hidden]) {
     border-color: hsl(240 4% 18% / 1);
-  }
-  .dark :where(.border-slate-100\/80:not(.keep-light, .keep-light *)) {
-    border-color: hsl(240 4% 18% / 0.8);
   }
   .dark :where(.ring-slate-100:not(.keep-light, .keep-light *)),
   .dark :where(.ring-gray-100:not(.keep-light, .keep-light *)),
@@ -551,8 +545,7 @@
   .dark :where(.bg-amber-100\/60:not(.keep-light, .keep-light *)) {
     background-color: rgb(245 158 11 / 0.108);
   }
-  .dark :where(.border-amber-100:not(.keep-light, .keep-light *)),
-  .dark :where(.border-amber-100\/80:not(.keep-light, .keep-light *)) {
+  .dark :where(.border-amber-100:not(.keep-light, .keep-light *)) {
     border-color: rgb(245 158 11 / 0.320);
   }
   .dark :where(.ring-amber-100:not(.keep-light, .keep-light *)) {
@@ -766,8 +759,6 @@
   }
   .dark :where(.hover\:bg-emerald-50:not(.keep-light, .keep-light *)):hover,
   .dark :where(.hover\:bg-emerald-50\/40:not(.keep-light, .keep-light *)):hover,
-  .dark :where(.hover\:bg-emerald-50\/50:not(.keep-light, .keep-light *)):hover,
-  .dark :where(.hover\:bg-emerald-50\/60:not(.keep-light, .keep-light *)):hover,
   .dark :where(.bg-emerald-100:not(.keep-light, .keep-light *)) {
     background-color: rgb(16 185 129 / 0.180);
   }
@@ -795,8 +786,7 @@
   .dark :where(.bg-emerald-100\/70:not(.keep-light, .keep-light *)) {
     background-color: rgb(16 185 129 / 0.126);
   }
-  .dark :where(.border-emerald-100:not(.keep-light, .keep-light *)),
-  .dark :where(.border-emerald-100\/70:not(.keep-light, .keep-light *)) {
+  .dark :where(.border-emerald-100:not(.keep-light, .keep-light *)) {
     border-color: rgb(16 185 129 / 0.320);
   }
   .dark :where(.ring-emerald-100:not(.keep-light, .keep-light *)) {
@@ -1246,7 +1236,6 @@
     background-color: rgb(139 92 246 / 0.180);
   }
   .dark :where(.bg-violet-50\/40:not(.keep-light, .keep-light *)),
-  .dark :where(.bg-violet-50\/50:not(.keep-light, .keep-light *)),
   .dark :where(.bg-violet-50\/60:not(.keep-light, .keep-light *)) {
     background-color: rgb(139 92 246 / 0.072);
   }
@@ -1506,8 +1495,7 @@
   .dark :where(.hover\:bg-rose-100:not(.keep-light, .keep-light *)):hover {
     background-color: rgb(244 63 94 / 0.240);
   }
-  .dark :where(.border-rose-100:not(.keep-light, .keep-light *)),
-  .dark :where(.border-rose-100\/80:not(.keep-light, .keep-light *)) {
+  .dark :where(.border-rose-100:not(.keep-light, .keep-light *)) {
     border-color: rgb(244 63 94 / 0.320);
   }
   .dark :where(.ring-rose-100:not(.keep-light, .keep-light *)) {
@@ -1516,8 +1504,7 @@
   .dark :where(.bg-rose-200:not(.keep-light, .keep-light *)) {
     background-color: rgb(244 63 94 / 0.260);
   }
-  .dark :where(.border-rose-200:not(.keep-light, .keep-light *)),
-  .dark :where(.border-rose-200\/80:not(.keep-light, .keep-light *)) {
+  .dark :where(.border-rose-200:not(.keep-light, .keep-light *)) {
     border-color: rgb(244 63 94 / 0.400);
   }
   .dark :where(.ring-rose-200:not(.keep-light, .keep-light *)) {

@@ -33,6 +33,7 @@ import {
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { VehicleTablePagination, useVehicleTablePagination } from '@/components/vehicle-management/table-pagination';
+import { VM_SEGMENT_TRACK, vmSegmentItem } from '@/components/vehicle-management/vm-ui';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Types
@@ -250,34 +251,21 @@ export default function RenewalHistoryPage() {
         title="Renewal History"
         description="Archive of all expired compliance records across PUC, Insurance, DL, Fitness, Road Tax, and Permit."
         icon={History}
+        // The total that used to be a tile of its own; the per-category counts are on the
+        // category filter below.
+        meta={[{ label: 'Expired records', value: <span className="text-rose-600">{isLoading ? '…' : records.length}</span> }]}
         actions={
           <Button
             variant="outline"
             onClick={load}
             disabled={isLoading}
-            className="w-full gap-2 bg-white/80 hover:bg-white sm:w-fit"
+            className="w-full gap-2 sm:w-fit"
           >
             <RefreshCw className={cn('h-4 w-4', isLoading && 'animate-spin')} />
             Refresh
           </Button>
         }
       />
-      <div className="vm-reveal grid grid-cols-3 gap-2 sm:gap-3">
-        <div className="rounded-xl border border-slate-100/80 bg-white/80 p-4 shadow-sm">
-          <p className="text-xs text-muted-foreground">Total Expired Records</p>
-          <p className="mt-1 text-2xl font-semibold text-rose-600">
-            {isLoading ? '...' : records.length}
-          </p>
-        </div>
-        {categories.slice(1).slice(0, 2).map((cat) => (
-          <div key={cat} className="rounded-xl border border-slate-100/80 bg-white/80 p-4 shadow-sm">
-            <p className="text-xs text-muted-foreground">{cat}</p>
-            <p className="mt-1 text-2xl font-semibold">
-              {isLoading ? '...' : records.filter((r) => r.category === cat).length}
-            </p>
-          </div>
-        ))}
-      </div>
 
       {/* ── Register ── */}
       <TableCard
@@ -288,21 +276,16 @@ export default function RenewalHistoryPage() {
         noun="record"
         toolbar={
           <div className="space-y-2">
-            <div className="flex gap-2 overflow-x-auto pb-1">
+            <div className={VM_SEGMENT_TRACK}>
               {categories.map((cat) => (
                 <button
                   key={cat}
                   onClick={() => setCategoryFilter(cat)}
-                  className={cn(
-                    'shrink-0 rounded-lg px-3 py-1.5 text-xs font-medium transition-all duration-200',
-                    categoryFilter === cat
-                      ? 'bg-slate-800 text-white shadow-sm'
-                      : 'bg-white/80 text-muted-foreground hover:bg-white border border-white/70'
-                  )}
+                  className={vmSegmentItem(categoryFilter === cat)}
                 >
                   {cat}
                   {cat !== 'All' && (
-                    <span className="ml-1 text-[10px] opacity-70">
+                    <span className="text-[10px] tabular-nums opacity-70">
                       ({records.filter((r) => r.category === cat).length})
                     </span>
                   )}
@@ -350,7 +333,7 @@ export default function RenewalHistoryPage() {
                 {historyPagination.paginatedRows.map((rec) => (
                   <div
                     key={rec.id}
-                    className="rounded-xl border border-rose-100/80 bg-white/85 p-3 shadow-sm"
+                    className="rounded-xl border border-slate-200 bg-white p-3 shadow-sm"
                   >
                     <div className="flex items-start justify-between gap-2">
                       <div>

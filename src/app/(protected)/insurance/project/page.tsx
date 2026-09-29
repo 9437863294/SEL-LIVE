@@ -18,7 +18,6 @@ import {
   Shield,
   ShieldAlert,
 } from 'lucide-react';
-import { addDays, isWithinInterval } from 'date-fns';
 import { collection, getDocs } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import { useAuthorization } from '@/hooks/useAuthorization';
@@ -32,6 +31,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { PageHeader } from '@/components/shared/page-header';
 import { SearchInput } from '@/components/shared/filter-bar';
 import { cn } from '@/lib/utils';
+import { projectPolicyState } from '@/lib/insurance';
 
 // ─── types ────────────────────────────────────────────────────────────────────
 
@@ -90,18 +90,17 @@ export default function ProjectInsurancePage() {
 
   const enrichedAssets = useMemo((): EnrichedAsset[] => {
     const today = new Date();
+    // Standing comes from the end date: a stored "Active" past its end date is expired cover.
+    const stateOf = new Map(policies.map((p) => [p.id, projectPolicyState(p, today)]));
     return assets.map((asset) => {
       const proj = asset.type === 'Project' && asset.projectId
         ? projects.find((p) => p.id === asset.projectId)
         : null;
 
       const assetPolicies = policies.filter((p) => p.assetId === asset.id);
-      const active   = assetPolicies.filter((p) => p.status === 'Active');
-      const expired  = assetPolicies.filter((p) => p.status === 'Expired');
-      const expiring = active.filter((p) => {
-        const d = p.insured_until?.toDate?.();
-        return d && isWithinInterval(d, { start: today, end: addDays(today, 30) });
-      });
+      const expiring = assetPolicies.filter((p) => stateOf.get(p.id) === 'expiring');
+      const expired  = assetPolicies.filter((p) => stateOf.get(p.id) === 'expired');
+      const active   = assetPolicies.filter((p) => stateOf.get(p.id) === 'active' || stateOf.get(p.id) === 'expiring');
 
       return {
         ...asset,
@@ -335,17 +334,20 @@ export default function ProjectInsurancePage() {
       )}
 
       {/* Premium due quick link */}
-      {totals.expiring > 0 && (
+      {totals.expiring + totals.expired > 0 && (
         <Link href="/insurance/project/premium-due">
           <div className="flex items-center justify-between rounded-xl border border-amber-200 bg-amber-50/60 px-4 py-3 cursor-pointer hover:bg-amber-50 transition-colors">
             <div className="flex items-center gap-2.5">
               <AlertTriangle className="h-4 w-4 text-amber-600 shrink-0" />
               <span className="text-sm font-medium text-amber-800">
-                {totals.expiring} project {totals.expiring === 1 ? 'policy expires' : 'policies expire'} within 30 days
+                {[
+                  totals.expired > 0 && `${totals.expired} expired`,
+                  totals.expiring > 0 && `${totals.expiring} expiring within 30 days`,
+                ].filter(Boolean).join(' · ')} — renew to keep sites covered
               </span>
             </div>
             <div className="flex items-center gap-1 text-xs text-amber-600 font-medium">
-              View Premium Due <ChevronRight className="h-3.5 w-3.5" />
+              View Renewals Due <ChevronRight className="h-3.5 w-3.5" />
             </div>
           </div>
         </Link>

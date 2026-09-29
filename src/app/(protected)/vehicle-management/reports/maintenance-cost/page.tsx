@@ -8,12 +8,13 @@ import { db } from '@/lib/firebase';
 import { VEHICLE_COLLECTIONS } from '@/lib/vehicle-management';
 import { useAuthorization } from '@/hooks/useAuthorization';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { PageHeader } from '@/components/shared/page-header';
 import { TableCard } from '@/components/shared/table-card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Input } from '@/components/ui/input';
+import { VmStatStrip } from '@/components/vehicle-management/vm-ui';
 
 const formatCurrency = (amount: number) =>
   new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 0 }).format(amount || 0);
@@ -169,7 +170,7 @@ export default function MaintenanceCostReportPage() {
                 variant="outline"
                 onClick={exportExcel}
                 disabled={isExporting}
-                className="w-full bg-white/80 hover:bg-white sm:w-auto"
+                className="w-full sm:w-auto"
               >
                 <Download className="mr-2 h-4 w-4" />
                 {isExporting ? 'Exporting...' : 'Export Excel'}
@@ -179,34 +180,17 @@ export default function MaintenanceCostReportPage() {
         }
       />
 
-      <div className="grid grid-cols-3 gap-2 sm:gap-4">
-        <Card className="vm-panel overflow-hidden">
-          <div className="h-1 w-full bg-gradient-to-r from-amber-500/80 to-orange-500/80" />
-          <CardHeader className="pb-2">
-            <CardDescription>Total Maintenance Cost</CardDescription>
-            <CardTitle className="text-xl">{formatCurrency(totalCost)}</CardTitle>
-          </CardHeader>
-          <CardContent className="text-xs text-muted-foreground">{maintThisMonth.length} records this month</CardContent>
-        </Card>
-        <Card className="vm-panel overflow-hidden">
-          <div className="h-1 w-full bg-gradient-to-r from-orange-500/80 to-red-500/80" />
-          <CardHeader className="pb-2">
-            <CardDescription>Total Service Visits</CardDescription>
-            <CardTitle className="text-xl">{totalVisits}</CardTitle>
-          </CardHeader>
-          <CardContent className="text-xs text-muted-foreground">Across {rows.length} vehicles</CardContent>
-        </Card>
-        <Card className="vm-panel overflow-hidden">
-          <div className="h-1 w-full bg-gradient-to-r from-rose-500/80 to-pink-500/80" />
-          <CardHeader className="pb-2">
-            <CardDescription>Avg Cost Per Visit</CardDescription>
-            <CardTitle className="text-xl">
-              {totalVisits > 0 ? formatCurrency(totalCost / totalVisits) : 'N/A'}
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="text-xs text-muted-foreground">Total cost ÷ visits</CardContent>
-        </Card>
-      </div>
+      <VmStatStrip
+        stats={[
+          { label: 'Total Maintenance Cost', value: formatCurrency(totalCost), hint: `${maintThisMonth.length} records this month` },
+          { label: 'Total Service Visits', value: totalVisits, hint: `Across ${rows.length} vehicles` },
+          {
+            label: 'Avg Cost Per Visit',
+            value: totalVisits > 0 ? formatCurrency(totalCost / totalVisits) : 'N/A',
+            hint: 'Total cost ÷ visits',
+          },
+        ]}
+      />
 
       <TableCard title="Maintenance Cost by Vehicle" icon={Wrench} count={rows.length} noun="vehicle">
         {rows.length === 0 ? (
@@ -217,7 +201,7 @@ export default function MaintenanceCostReportPage() {
           <>
             <div className="space-y-2 p-3 sm:hidden">
               {rows.map((row) => (
-                <div key={row.vehicleNumber} className="rounded-xl border border-white/70 bg-white/85 p-3 shadow-sm">
+                <div key={row.vehicleNumber} className="rounded-lg border border-slate-200 bg-white p-3">
                   <div className="mb-1.5 flex items-center justify-between">
                     <span className="text-sm font-semibold">{row.vehicleNumber}</span>
                     <span className="text-sm font-medium">{formatCurrency(row.totalCost)}</span>

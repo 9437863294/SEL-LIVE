@@ -263,6 +263,13 @@ export default function TripManagementPage() {
       <PageHeader
         title="Trip Management"
         description="Monitor driver trips, live locations, and completed ride history."
+        // The counts that used to be four tiles under the header.
+        meta={[
+          { label: 'Total trips', value: summary.total },
+          { label: 'In progress', value: summary.inProgress },
+          { label: 'Completed', value: summary.completed },
+          { label: 'Total distance', value: `${summary.distance.toFixed(2)} km` },
+        ]}
         actions={
           <div className="grid w-full grid-cols-2 gap-2 sm:flex sm:w-auto sm:flex-wrap sm:justify-end">
             {canExport && (
@@ -270,7 +277,7 @@ export default function TripManagementPage() {
                 variant="outline"
                 onClick={exportTrips}
                 disabled={isExporting}
-                className="w-full bg-white/85 sm:w-auto"
+                className="w-full sm:w-auto"
               >
                 <Download className="mr-2 h-4 w-4" />
                 {isExporting ? 'Exporting...' : 'Export Excel'}
@@ -279,40 +286,13 @@ export default function TripManagementPage() {
             <Button
               variant="outline"
               onClick={loadTrips}
-              className="w-full bg-white/85 sm:w-auto"
+              className="w-full sm:w-auto"
             >
               Refresh
             </Button>
           </div>
         }
       />
-
-      <div className="grid grid-cols-2 gap-2.5 sm:gap-3 md:grid-cols-4">
-        <Card className="vm-panel">
-          <CardHeader className="pb-2">
-            <CardDescription>Total Trips</CardDescription>
-            <CardTitle className="text-xl">{summary.total}</CardTitle>
-          </CardHeader>
-        </Card>
-        <Card className="vm-panel">
-          <CardHeader className="pb-2">
-            <CardDescription>In Progress</CardDescription>
-            <CardTitle className="text-xl">{summary.inProgress}</CardTitle>
-          </CardHeader>
-        </Card>
-        <Card className="vm-panel">
-          <CardHeader className="pb-2">
-            <CardDescription>Completed</CardDescription>
-            <CardTitle className="text-xl">{summary.completed}</CardTitle>
-          </CardHeader>
-        </Card>
-        <Card className="vm-panel">
-          <CardHeader className="pb-2">
-            <CardDescription>Total Distance</CardDescription>
-            <CardTitle className="text-xl">{summary.distance.toFixed(2)} km</CardTitle>
-          </CardHeader>
-        </Card>
-      </div>
 
       <TableCard
         title="Trip List"
@@ -376,8 +356,8 @@ export default function TripManagementPage() {
                 <div
                   key={String(trip.id)}
                   onClick={() => setSelectedTripId((current) => current === String(trip.id) ? '' : String(trip.id))}
-                  className={`rounded-xl border border-white/70 bg-white/85 p-4 shadow-sm active:scale-[0.99] transition-transform cursor-pointer ${
-                    selectedTripId === String(trip.id) ? 'ring-2 ring-emerald-400/60' : ''
+                  className={`rounded-xl border border-slate-200 bg-white p-4 shadow-sm active:scale-[0.99] transition-transform cursor-pointer ${
+                    selectedTripId === String(trip.id) ? 'ring-2 ring-slate-400' : ''
                   }`}
                 >
                   <div className="mb-3 flex items-start justify-between gap-2">
@@ -455,7 +435,7 @@ export default function TripManagementPage() {
                               current === String(trip.id) ? '' : String(trip.id)
                             )
                           }
-                          className={`cursor-pointer ${isSelected ? 'bg-emerald-50/80' : ''}`}
+                          className={`cursor-pointer ${isSelected ? 'bg-slate-100' : ''}`}
                         >
                           <TableCell className="font-medium">{String(trip.id || '-')}</TableCell>
                           <TableCell>{trip.vehicleNumber || '-'}</TableCell>
@@ -474,31 +454,31 @@ export default function TripManagementPage() {
                           <TableCell className="whitespace-nowrap">{formatVehicleTimestamp(trip.createdAt)}</TableCell>
                         </TableRow>,
                         isSelected ? (
-                          <TableRow key={`${String(trip.id)}-details`} className="bg-emerald-50/50 hover:bg-emerald-50/50">
+                          <TableRow key={`${String(trip.id)}-details`} className="bg-slate-50 hover:bg-slate-50">
                             <TableCell colSpan={11} className="space-y-3">
                               <div className="grid grid-cols-1 gap-2 text-sm sm:grid-cols-2">
-                                <div className="rounded-lg border border-white/70 bg-white/85 px-3 py-2">
+                                <div className="rounded-lg border border-slate-200 bg-white px-3 py-2">
                                   Driver: <span className="font-medium">{trip.driverName || '-'}</span>
                                 </div>
-                                <div className="rounded-lg border border-white/70 bg-white/85 px-3 py-2">
+                                <div className="rounded-lg border border-slate-200 bg-white px-3 py-2">
                                   Vehicle: <span className="font-medium">{trip.vehicleNumber || '-'}</span>
                                 </div>
-                                <div className="rounded-lg border border-white/70 bg-white/85 px-3 py-2">
+                                <div className="rounded-lg border border-slate-200 bg-white px-3 py-2">
                                   Start: <span className="font-medium">{formatDateTime(String(trip.startTimeIso || ''))}</span>
                                 </div>
-                                <div className="rounded-lg border border-white/70 bg-white/85 px-3 py-2">
+                                <div className="rounded-lg border border-slate-200 bg-white px-3 py-2">
                                   End: <span className="font-medium">{formatDateTime(String(trip.endTimeIso || ''))}</span>
                                 </div>
-                                <div className="rounded-lg border border-white/70 bg-white/85 px-3 py-2 sm:col-span-2">
+                                <div className="rounded-lg border border-slate-200 bg-white px-3 py-2 sm:col-span-2">
                                   Start Address: <span className="font-medium">{String(trip.startAddress || '-')}</span>
                                 </div>
-                                <div className="rounded-lg border border-white/70 bg-white/85 px-3 py-2 sm:col-span-2">
+                                <div className="rounded-lg border border-slate-200 bg-white px-3 py-2 sm:col-span-2">
                                   End Address: <span className="font-medium">{String(trip.endAddress || '-')}</span>
                                 </div>
-                                <div className="rounded-lg border border-white/70 bg-white/85 px-3 py-2">
+                                <div className="rounded-lg border border-slate-200 bg-white px-3 py-2">
                                   Points: <span className="font-medium">{selectedTripPoints.length}</span>
                                 </div>
-                                <div className="rounded-lg border border-white/70 bg-white/85 px-3 py-2">
+                                <div className="rounded-lg border border-slate-200 bg-white px-3 py-2">
                                   Last GPS: <span className="font-medium">{Number(trip.lastLocationLat || 0).toFixed(6)}, {Number(trip.lastLocationLng || 0).toFixed(6)}</span>
                                 </div>
                               </div>

@@ -46,6 +46,7 @@ import { StatusBadge } from '@/components/shared/status-badge';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
+import { VM_PRIMARY_BUTTON } from '@/components/vehicle-management/vm-ui';
 
 const toIsoNow = () => new Date().toISOString();
 
@@ -738,14 +739,14 @@ export default function DriverMobileTripsPage() {
             <Button
               onClick={startTrip}
               disabled={!canStartStop || isStarting || Boolean(activeTrip)}
-              className="bg-gradient-to-r from-emerald-500 to-teal-600 text-white"
+              className={VM_PRIMARY_BUTTON}
             >
               {isStarting ? 'Starting Trip...' : 'Start Trip'}
             </Button>
             <Button
               onClick={stopTrip}
               disabled={!canStartStop || isStopping || !activeTrip}
-              className="bg-gradient-to-r from-rose-500 to-orange-600 text-white"
+              className="bg-rose-600 text-white hover:bg-rose-700"
             >
               {isStopping ? 'Closing Trip...' : 'Stop Trip'}
             </Button>

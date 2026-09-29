@@ -80,6 +80,7 @@ import ExcelJS from 'exceljs';
 import { Check, ChevronsUpDown, Download, ExternalLink, Eye, FileUp, History, Loader2, Pencil, RefreshCw, ShieldCheck, Trash2, Upload } from 'lucide-react';
 import { VehicleImportDialog, type ImportField } from '@/components/vehicle-management/import-dialog';
 import { VehicleTablePagination, useVehicleTablePagination } from '@/components/vehicle-management/table-pagination';
+import { VM_DIALOG_HEADER, VM_ICON_CHIP, VM_PRIMARY_BUTTON, VM_SEGMENT_TRACK, vmSegmentItem } from '@/components/vehicle-management/vm-ui';
 
 type InsuranceRow = Record<string, any>;
 type InsuranceForm = Record<string, string>;
@@ -711,37 +712,35 @@ export default function InsuranceManagementPage() {
             {rows.length} records
           </Badge>
         }
+        meta={[
+          {
+            label: 'Needs attention',
+            value: <span className={attentionCount > 0 ? 'text-amber-600' : undefined}>{attentionCount}</span>,
+            hint: `of ${currentCount} current`,
+          },
+        ]}
         actions={
           <>
-            <Button variant="outline" onClick={() => void loadRows()} className="bg-white/80 hover:bg-white">
+            <Button variant="outline" onClick={() => void loadRows()}>
               Refresh
             </Button>
             {canExport && (
-              <Button variant="outline" onClick={() => void exportExcel()} disabled={isExporting} className="bg-white/80 hover:bg-white">
+              <Button variant="outline" onClick={() => void exportExcel()} disabled={isExporting}>
                 {isExporting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Download className="mr-2 h-4 w-4" />}
                 {isExporting ? 'Exporting…' : 'Export'}
               </Button>
             )}
             {canImport && (
-              <Button variant="outline" onClick={() => setImportDialogOpen(true)} className="bg-white/80 hover:bg-white">
+              <Button variant="outline" onClick={() => setImportDialogOpen(true)}>
                 <FileUp className="mr-2 h-4 w-4" /> Import
               </Button>
             )}
-            <Button
-              onClick={openAdd}
-              disabled={!canAdd}
-              className="bg-gradient-to-r from-emerald-500 to-teal-600 text-white hover:from-emerald-600 hover:to-teal-700"
-            >
+            <Button onClick={openAdd} disabled={!canAdd} className={VM_PRIMARY_BUTTON}>
               Add Insurance
             </Button>
           </>
         }
       />
-      <div className="grid grid-cols-3 gap-2">
-        <div className="rounded-xl border border-emerald-100 bg-emerald-50/70 px-3 py-2.5"><p className="text-[11px] font-semibold uppercase tracking-wide text-emerald-700">Current</p><p className="text-xl font-bold text-emerald-800">{currentCount}</p></div>
-        <div className="rounded-xl border border-amber-100 bg-amber-50/70 px-3 py-2.5"><p className="text-[11px] font-semibold uppercase tracking-wide text-amber-700">Needs Attention</p><p className="text-xl font-bold text-amber-800">{attentionCount}</p></div>
-        <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5"><p className="text-[11px] font-semibold uppercase tracking-wide text-slate-600">History</p><p className="text-xl font-bold text-slate-700">{historyCount}</p></div>
-      </div>
 
       <TableCard
         title={activeTab === 'current' ? 'Current Policies' : 'Policy History'}
@@ -749,9 +748,9 @@ export default function InsuranceManagementPage() {
         count={filteredRows.length}
         total={activeTab === 'current' ? currentCount : historyCount}
         actions={
-          <div className="flex w-full rounded-lg border border-slate-200 bg-slate-100 p-1 sm:w-fit">
-            <button type="button" onClick={() => setActiveTab('current')} className={cn('flex-1 rounded-md px-4 py-2 text-xs font-semibold transition-colors sm:flex-none', activeTab === 'current' ? 'bg-white text-emerald-700 shadow-sm' : 'text-slate-500 hover:text-slate-700')}>Current Policies <span className="ml-1 text-[10px] opacity-70">{currentCount}</span></button>
-            <button type="button" onClick={() => setActiveTab('history')} className={cn('flex flex-1 items-center justify-center gap-1.5 rounded-md px-4 py-2 text-xs font-semibold transition-colors sm:flex-none', activeTab === 'history' ? 'bg-white text-emerald-700 shadow-sm' : 'text-slate-500 hover:text-slate-700')}><History className="h-3.5 w-3.5" />History <span className="text-[10px] opacity-70">{historyCount}</span></button>
+          <div className={cn(VM_SEGMENT_TRACK, 'flex w-full sm:w-fit')}>
+            <button type="button" onClick={() => setActiveTab('current')} className={cn(vmSegmentItem(activeTab === 'current'), 'flex-1 sm:flex-none')}>Current Policies <span className="text-[10px] opacity-70">{currentCount}</span></button>
+            <button type="button" onClick={() => setActiveTab('history')} className={cn(vmSegmentItem(activeTab === 'history'), 'flex-1 sm:flex-none')}><History className="h-3.5 w-3.5" />History <span className="text-[10px] opacity-70">{historyCount}</span></button>
           </div>
         }
         toolbar={
@@ -800,7 +799,7 @@ export default function InsuranceManagementPage() {
               ))
             ) : (
               insurancePagination.paginatedRows.map((row) => (
-                <div key={row.id} role="button" tabIndex={0} onClick={() => setViewRow(row)} onKeyDown={(event) => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); setViewRow(row); } }} className="cursor-pointer rounded-xl border border-white/70 bg-white/85 p-4 shadow-sm transition-transform active:scale-[0.99]">
+                <div key={row.id} role="button" tabIndex={0} onClick={() => setViewRow(row)} onKeyDown={(event) => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); setViewRow(row); } }} className="cursor-pointer rounded-xl border border-slate-200 bg-white p-4 shadow-sm transition-transform active:scale-[0.99]">
                   {/* Top: vehicle number + alert badge */}
                   <div className="mb-3 flex items-start justify-between gap-2">
                     <div>
@@ -827,11 +826,11 @@ export default function InsuranceManagementPage() {
                   {/* Action buttons */}
                   <div className="mt-3 flex items-center justify-end gap-1.5 border-t border-slate-100 pt-3">
                     {row.isMissingRecord ? (
-                      <Button type="button" size="sm" onClick={(event) => { event.stopPropagation(); openAddForVehicle(row); }} disabled={!canAdd} className="h-9 flex-1 bg-emerald-600 text-white hover:bg-emerald-700"><ShieldCheck className="mr-1.5 h-3.5 w-3.5" />Add Policy</Button>
+                      <Button type="button" size="sm" onClick={(event) => { event.stopPropagation(); openAddForVehicle(row); }} disabled={!canAdd} className={cn('h-9 flex-1', VM_PRIMARY_BUTTON)}><ShieldCheck className="mr-1.5 h-3.5 w-3.5" />Add Policy</Button>
                     ) : (
                       <>
-                        {row.policyDocumentUrl && <Button type="button" size="icon" variant="outline" className="h-9 w-9 border-emerald-200 bg-emerald-50 text-emerald-700" title="View uploaded policy document" aria-label="View uploaded policy document" asChild><a href={String(row.policyDocumentUrl)} target="_blank" rel="noreferrer" onClick={(event) => event.stopPropagation()}><Eye className="h-4 w-4" /></a></Button>}
-                        {activeTab === 'current' && canAdd && row.alertStage !== 'Not Applicable' && <Link href={getRenewalHref(row)} onClick={(event) => event.stopPropagation()}><Button type="button" size="icon" className="h-9 w-9 bg-amber-500 text-white hover:bg-amber-600" title="Renew policy" aria-label="Renew policy"><RefreshCw className="h-4 w-4" /></Button></Link>}
+                        {row.policyDocumentUrl && <Button type="button" size="icon" variant="outline" className="h-9 w-9 border-slate-200 bg-white text-slate-700" title="View uploaded policy document" aria-label="View uploaded policy document" asChild><a href={String(row.policyDocumentUrl)} target="_blank" rel="noreferrer" onClick={(event) => event.stopPropagation()}><Eye className="h-4 w-4" /></a></Button>}
+                        {activeTab === 'current' && canAdd && row.alertStage !== 'Not Applicable' && <Link href={getRenewalHref(row)} onClick={(event) => event.stopPropagation()}><Button type="button" size="icon" className={cn('h-9 w-9', VM_PRIMARY_BUTTON)} title="Renew policy" aria-label="Renew policy"><RefreshCw className="h-4 w-4" /></Button></Link>}
                         <Button type="button" size="icon" variant="outline" onClick={(event) => { event.stopPropagation(); openEdit(row); }} disabled={!canEdit} className="h-9 w-9 bg-white text-slate-700" title="Edit insurance" aria-label="Edit insurance"><Pencil className="h-4 w-4" /></Button>
                         <Button type="button" size="icon" variant="outline" onClick={(event) => { event.stopPropagation(); setDeleteRow(row); }} disabled={!canDelete} className="h-9 w-9 border-rose-200 bg-rose-50 text-rose-600 hover:bg-rose-100 hover:text-rose-700" title="Delete insurance" aria-label="Delete insurance"><Trash2 className="h-4 w-4" /></Button>
                       </>
@@ -879,18 +878,18 @@ export default function InsuranceManagementPage() {
                       <TableCell>{row.renewalStatus || '-'}</TableCell>
                       <TableCell>{row.complianceStatus || '-'}</TableCell>
                       <TableCell className="whitespace-nowrap">{formatVehicleTimestamp(row.createdAt)}</TableCell>
-                      <TableCell className="text-center">{row.policyDocumentUrl ? <Button type="button" size="icon" variant="ghost" className="h-8 w-8 text-emerald-700 hover:bg-emerald-50 hover:text-emerald-800" title="View uploaded policy document" aria-label="View uploaded policy document" asChild><a href={String(row.policyDocumentUrl)} target="_blank" rel="noreferrer" onClick={(event) => event.stopPropagation()}><Eye className="h-4 w-4" /></a></Button> : <span className="text-xs text-muted-foreground">-</span>}</TableCell>
+                      <TableCell className="text-center">{row.policyDocumentUrl ? <Button type="button" size="icon" variant="ghost" className="h-8 w-8 text-slate-600 hover:bg-slate-100 hover:text-slate-900" title="View uploaded policy document" aria-label="View uploaded policy document" asChild><a href={String(row.policyDocumentUrl)} target="_blank" rel="noreferrer" onClick={(event) => event.stopPropagation()}><Eye className="h-4 w-4" /></a></Button> : <span className="text-xs text-muted-foreground">-</span>}</TableCell>
                       <TableCell className="text-right">
                         <div className="flex items-center justify-end gap-1">
                           {row.isMissingRecord ? (
-                            <Button type="button" size="sm" onClick={(event) => { event.stopPropagation(); openAddForVehicle(row); }} disabled={!canAdd} className="h-8 bg-emerald-600 px-3 text-white hover:bg-emerald-700">
+                            <Button type="button" size="sm" onClick={(event) => { event.stopPropagation(); openAddForVehicle(row); }} disabled={!canAdd} className={cn('h-8 px-3', VM_PRIMARY_BUTTON)}>
                               <ShieldCheck className="mr-1.5 h-3.5 w-3.5" />Add Policy
                             </Button>
                           ) : (
                             <>
                               {activeTab === 'current' && canAdd && row.alertStage !== 'Not Applicable' && (
                                 <Link href={getRenewalHref(row)} onClick={(event) => event.stopPropagation()}>
-                                  <Button type="button" size="icon" className="h-8 w-8 bg-amber-500 text-white hover:bg-amber-600" title="Renew policy" aria-label="Renew policy"><RefreshCw className="h-3.5 w-3.5" /></Button>
+                                  <Button type="button" size="icon" className={cn('h-8 w-8', VM_PRIMARY_BUTTON)} title="Renew policy" aria-label="Renew policy"><RefreshCw className="h-3.5 w-3.5" /></Button>
                                 </Link>
                               )}
                               <Button type="button" size="icon" variant="ghost" onClick={(event) => { event.stopPropagation(); openEdit(row); }} disabled={!canEdit} className="h-8 w-8 text-slate-700 hover:bg-slate-100" title="Edit insurance" aria-label="Edit insurance">
@@ -916,8 +915,8 @@ export default function InsuranceManagementPage() {
       <Dialog open={!!viewRow} onOpenChange={(open) => { if (!open) setViewRow(null); }}>
         <DialogContent size="default" className="vm-mobile-dialog flex max-h-[88dvh] w-[calc(100vw-1.5rem)] flex-col gap-0 overflow-hidden p-0 sm:max-w-2xl">
           {viewRow && <>
-            <DialogHeader className="shrink-0 border-b border-emerald-100 bg-gradient-to-r from-emerald-50 via-white to-teal-50 px-4 py-3 pr-12">
-              <DialogTitle className="flex items-center gap-2 text-base"><ShieldCheck className="h-4 w-4 text-emerald-600" />{viewRow.vehicleNumber || 'Insurance Policy'}</DialogTitle>
+            <DialogHeader className={cn('shrink-0 px-4 py-3 pr-12', VM_DIALOG_HEADER)}>
+              <DialogTitle className="flex items-center gap-2 text-base"><ShieldCheck className="h-4 w-4 text-slate-500" />{viewRow.vehicleNumber || 'Insurance Policy'}</DialogTitle>
               <DialogDescription className="truncate text-xs">{viewRow.policyNumber || '-'} · {viewRow.insuranceCompany || '-'}</DialogDescription>
             </DialogHeader>
             {viewRow.isMissingRecord ? (
@@ -948,7 +947,7 @@ export default function InsuranceManagementPage() {
               <section className="rounded-xl border bg-white p-3 shadow-sm">
                 <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-600">Agent & Document</p>
                 <div className="grid grid-cols-2 gap-2"><InsuranceDetail label="Agent Name" value={viewRow.agentName || '-'} /><InsuranceDetail label="Agent Contact" value={viewRow.agentContact || '-'} /></div>
-                {viewRow.policyDocumentUrl ? <a href={String(viewRow.policyDocumentUrl)} target="_blank" rel="noreferrer" className="mt-2 flex items-center justify-between gap-3 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs font-semibold text-emerald-700 hover:bg-emerald-100"><span className="flex min-w-0 items-center gap-2"><Eye className="h-4 w-4 shrink-0" /><span className="truncate">View uploaded policy document</span></span><ExternalLink className="h-3.5 w-3.5 shrink-0" /></a> : <div className="mt-2 rounded-lg border border-dashed border-slate-200 bg-slate-50 px-3 py-2 text-xs text-muted-foreground">No policy document uploaded.</div>}
+                {viewRow.policyDocumentUrl ? <a href={String(viewRow.policyDocumentUrl)} target="_blank" rel="noreferrer" className="mt-2 flex items-center justify-between gap-3 rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50"><span className="flex min-w-0 items-center gap-2"><Eye className="h-4 w-4 shrink-0" /><span className="truncate">View uploaded policy document</span></span><ExternalLink className="h-3.5 w-3.5 shrink-0" /></a> : <div className="mt-2 rounded-lg border border-dashed border-slate-200 bg-slate-50 px-3 py-2 text-xs text-muted-foreground">No policy document uploaded.</div>}
               </section>
               {viewRow.remarks && <section className="rounded-xl border bg-white p-3 shadow-sm"><p className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">Remarks</p><p className="mt-1 whitespace-pre-wrap text-xs text-slate-700">{viewRow.remarks}</p></section>}
             </div>
@@ -956,11 +955,11 @@ export default function InsuranceManagementPage() {
             <DialogFooter className="shrink-0 border-t bg-white px-3 py-2">
               <Button type="button" variant="outline" size="sm" className="h-8" onClick={() => setViewRow(null)}>Close</Button>
               {viewRow.isMissingRecord ? (
-                canAdd && <Button type="button" size="sm" className="h-8 bg-emerald-600 text-white hover:bg-emerald-700" onClick={() => { const row = viewRow; setViewRow(null); openAddForVehicle(row); }}><ShieldCheck className="mr-1.5 h-3.5 w-3.5" />Add Policy</Button>
+                canAdd && <Button type="button" size="sm" className={cn('h-8', VM_PRIMARY_BUTTON)} onClick={() => { const row = viewRow; setViewRow(null); openAddForVehicle(row); }}><ShieldCheck className="mr-1.5 h-3.5 w-3.5" />Add Policy</Button>
               ) : (
                 <>
-                  {activeTab === 'current' && canAdd && viewRow.alertStage !== 'Not Applicable' && <Link href={getRenewalHref(viewRow)}><Button type="button" size="sm" className="h-8 bg-amber-500 text-white hover:bg-amber-600"><RefreshCw className="mr-1.5 h-3.5 w-3.5" />Renew</Button></Link>}
-                  {canEdit && <Button type="button" size="sm" className="h-8 bg-emerald-600 hover:bg-emerald-700" onClick={() => { const row = viewRow; setViewRow(null); openEdit(row); }}><Pencil className="mr-1.5 h-3.5 w-3.5" />Edit</Button>}
+                  {activeTab === 'current' && canAdd && viewRow.alertStage !== 'Not Applicable' && <Link href={getRenewalHref(viewRow)}><Button type="button" size="sm" className={cn('h-8', VM_PRIMARY_BUTTON)}><RefreshCw className="mr-1.5 h-3.5 w-3.5" />Renew</Button></Link>}
+                  {canEdit && <Button type="button" size="sm" className={cn('h-8', VM_PRIMARY_BUTTON)} onClick={() => { const row = viewRow; setViewRow(null); openEdit(row); }}><Pencil className="mr-1.5 h-3.5 w-3.5" />Edit</Button>}
                 </>
               )}
             </DialogFooter>
@@ -970,15 +969,15 @@ export default function InsuranceManagementPage() {
 
       <Dialog open={dialogOpen} onOpenChange={(open) => { setDialogOpen(open); if (!open) setIsRenewalMode(false); }}>
         <DialogContent className="vm-mobile-dialog flex max-h-[92dvh] w-[calc(100vw-2rem)] max-w-5xl flex-col gap-0 overflow-hidden rounded-2xl border-slate-200 bg-slate-50 p-0 shadow-2xl">
-          <div className="vm-dialog-header shrink-0 border-b border-emerald-100 bg-gradient-to-r from-emerald-50 via-white to-teal-50 px-4 py-4 pr-12 sm:px-6 sm:py-5">
+          <div className={cn('vm-dialog-header shrink-0 px-4 py-4 pr-12 sm:px-6 sm:py-5', VM_DIALOG_HEADER)}>
             <div className="flex items-start gap-3">
-              <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-emerald-500 to-teal-600 text-white shadow-lg shadow-emerald-500/20"><ShieldCheck className="h-5 w-5" /></div>
+              <div className={cn('flex h-11 w-11 shrink-0 items-center justify-center rounded-xl', VM_ICON_CHIP)}><ShieldCheck className="h-5 w-5" /></div>
               <div className="min-w-0 flex-1">
                 {isRenewalMode && renewingFromId && !editingRow && <Badge variant="warning" className="mb-1">Renewing Existing Policy</Badge>}
                 <DialogTitle className="text-lg text-slate-900">{editingRow ? 'Edit Insurance Policy' : isRenewalMode && renewingFromId ? 'Renew Insurance Policy' : 'Add Insurance Policy'}</DialogTitle>
                 <DialogDescription className="mt-0.5">Policy information, coverage dates, value, agent, and document.</DialogDescription>
               </div>
-              <div className="hidden items-center gap-1.5 sm:flex"><span className="rounded-full border border-emerald-200 bg-white px-2.5 py-1 text-[11px] font-semibold text-emerald-700">Policy Details</span><span className="rounded-full border border-slate-200 bg-white px-2.5 py-1 text-[11px] font-semibold text-slate-600">Document</span></div>
+              <div className="hidden items-center gap-1.5 sm:flex"><span className="rounded-full border border-slate-300 bg-white px-2.5 py-1 text-[11px] font-semibold text-slate-800">Policy Details</span><span className="rounded-full border border-slate-200 bg-white px-2.5 py-1 text-[11px] font-semibold text-slate-600">Document</span></div>
             </div>
           </div>
           <div className="vm-dialog-body min-h-0 flex-1 overflow-y-auto bg-slate-50/80 px-3 py-3 sm:px-6 sm:py-5">
@@ -1045,7 +1044,7 @@ export default function InsuranceManagementPage() {
                         'flex h-9 w-full cursor-pointer items-center gap-2 rounded-md border px-2.5 text-sm transition-colors',
                         file
                           ? 'border-emerald-300 bg-emerald-50 text-emerald-700'
-                          : 'border-dashed border-slate-300 bg-slate-50 text-muted-foreground hover:border-emerald-400 hover:bg-emerald-50/60'
+                          : 'border-dashed border-slate-300 bg-slate-50 text-muted-foreground hover:border-slate-400 hover:bg-slate-100'
                       )}
                     >
                       <Upload className="h-3.5 w-3.5 shrink-0" />
@@ -1063,7 +1062,7 @@ export default function InsuranceManagementPage() {
                         href={form.policyDocumentUrl}
                         target="_blank"
                         rel="noreferrer"
-                        className="inline-flex items-center gap-1 text-xs font-medium text-emerald-700 underline underline-offset-2 hover:text-emerald-800"
+                        className="inline-flex items-center gap-1 text-xs font-medium text-slate-700 underline underline-offset-2 hover:text-slate-900"
                       >
                         <ExternalLink className="h-3 w-3" />
                         View current file
@@ -1086,7 +1085,7 @@ export default function InsuranceManagementPage() {
             <Button variant="outline" onClick={() => { setDialogOpen(false); setIsRenewalMode(false); }} className="h-10 bg-white">
               Cancel
             </Button>
-            <Button onClick={() => void submit()} disabled={isSaving} className="h-10 bg-gradient-to-r from-emerald-500 to-teal-600 px-5 text-white shadow-sm hover:from-emerald-600 hover:to-teal-700">
+            <Button onClick={() => void submit()} disabled={isSaving} className={cn('h-10 px-5', VM_PRIMARY_BUTTON)}>
               {isSaving ? <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : null}
               {editingRow ? 'Update' : 'Save'}
             </Button>

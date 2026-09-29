@@ -2,7 +2,7 @@
 'use client';
 
 import Link from 'next/link';
-import { BarChart3, ChevronRight, ClipboardCheck, ShieldAlert } from 'lucide-react';
+import { BarChart3, ChevronRight, ClipboardCheck, ShieldAlert, TrendingUp } from 'lucide-react';
 import { useAuthorization } from '@/hooks/useAuthorization';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Badge } from '@/components/ui/badge';
@@ -10,7 +10,30 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { PageHeader } from '@/components/shared/page-header';
 import { cn } from '@/lib/utils';
 
-const REPORTS = [
+type ReportItem = {
+  icon: typeof BarChart3;
+  title: string;
+  description: string;
+  href: string;
+  gradient: string;
+  bg: string;
+  iconColor: string;
+  permission: string;
+  disabled?: boolean;
+  soon?: boolean;
+};
+
+const REPORTS: ReportItem[] = [
+  {
+    icon: TrendingUp,
+    title: 'Premium Forecast',
+    description: 'Personal premiums and project renewals due over the next 3–24 months, by month, with arrears carried in. Exports to Excel.',
+    href: '/insurance/reports/premium-forecast',
+    gradient: 'from-violet-500 to-purple-600',
+    bg: 'bg-violet-50',
+    iconColor: 'text-violet-600',
+    permission: 'View Reports',
+  },
   {
     icon: ClipboardCheck,
     title: 'My Tasks Summary',
@@ -20,18 +43,6 @@ const REPORTS = [
     bg: 'bg-cyan-50',
     iconColor: 'text-cyan-600',
     permission: 'View Reports',
-  },
-  {
-    icon: BarChart3,
-    title: 'Premium Analytics',
-    description: 'Monthly premium payment trends and overdue analysis across all policy holders.',
-    href: '#',
-    gradient: 'from-violet-500 to-purple-600',
-    bg: 'bg-violet-50',
-    iconColor: 'text-violet-600',
-    permission: 'View Reports',
-    disabled: true,
-    soon: true,
   },
 ];
 

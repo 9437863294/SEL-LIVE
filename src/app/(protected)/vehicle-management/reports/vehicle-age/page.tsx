@@ -8,25 +8,28 @@ import { db } from '@/lib/firebase';
 import { VEHICLE_COLLECTIONS } from '@/lib/vehicle-management';
 import { useAuthorization } from '@/hooks/useAuthorization';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { PageHeader } from '@/components/shared/page-header';
 import { TableCard } from '@/components/shared/table-card';
 import { StatusBadge, type StatusTone } from '@/components/shared/status-badge';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
+import { VmStatStrip, type VmStat, type VmStatTone } from '@/components/vehicle-management/vm-ui';
 
 const formatCurrency = (amount: number) =>
   new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 0 }).format(amount || 0);
 
 const BRACKETS = ['New (0-2 yrs)', 'Moderate (3-5 yrs)', 'Old (6-10 yrs)', 'Aging (10+ yrs)', 'Unknown'] as const;
 
-const bracketStyle: Record<string, { tone: StatusTone; card: string }> = {
-  'New (0-2 yrs)': { tone: 'success', card: 'border-emerald-200 bg-emerald-50' },
-  'Moderate (3-5 yrs)': { tone: 'info', card: 'border-sky-200 bg-sky-50' },
-  'Old (6-10 yrs)': { tone: 'warning', card: 'border-amber-200 bg-amber-50' },
-  'Aging (10+ yrs)': { tone: 'danger', card: 'border-rose-200 bg-rose-50' },
-  Unknown: { tone: 'neutral', card: 'border-white/70 bg-white/80' },
+// `tone` colours the table's badges; `stat` colours a bracket's count in the summary strip, and
+// only the brackets that call for attention (old, aging) get a colour there.
+const bracketStyle: Record<string, { tone: StatusTone; stat: VmStatTone }> = {
+  'New (0-2 yrs)': { tone: 'success', stat: 'default' },
+  'Moderate (3-5 yrs)': { tone: 'info', stat: 'default' },
+  'Old (6-10 yrs)': { tone: 'warning', stat: 'warning' },
+  'Aging (10+ yrs)': { tone: 'danger', stat: 'danger' },
+  Unknown: { tone: 'neutral', stat: 'muted' },
 };
 
 export default function VehicleAgeReportPage() {
@@ -179,7 +182,7 @@ export default function VehicleAgeReportPage() {
               variant="outline"
               onClick={exportExcel}
               disabled={isExporting}
-              className="w-full bg-white/80 hover:bg-white md:w-auto"
+              className="w-full md:w-auto"
             >
               <Download className="mr-2 h-4 w-4" />
               {isExporting ? 'Exporting...' : 'Export Excel'}
@@ -188,57 +191,35 @@ export default function VehicleAgeReportPage() {
         }
       />
 
-      <div className="grid grid-cols-2 gap-2.5 sm:gap-4 xl:grid-cols-4">
-        <Card className="vm-panel overflow-hidden">
-          <div className="h-1 w-full bg-gradient-to-r from-pink-500/80 to-rose-500/80" />
-          <CardHeader className="pb-2">
-            <CardDescription>Total Vehicles</CardDescription>
-            <CardTitle className="text-xl">{vehicles.length}</CardTitle>
-          </CardHeader>
-          <CardContent className="text-xs text-muted-foreground">Across entire fleet</CardContent>
-        </Card>
-        <Card className="vm-panel overflow-hidden">
-          <div className="h-1 w-full bg-gradient-to-r from-rose-500/80 to-red-500/80" />
-          <CardHeader className="pb-2">
-            <CardDescription>Average Fleet Age</CardDescription>
-            <CardTitle className="text-xl">{ageStats.avg !== null ? `${ageStats.avg} yrs` : 'N/A'}</CardTitle>
-          </CardHeader>
-          <CardContent className="text-xs text-muted-foreground">Based on year of manufacture</CardContent>
-        </Card>
-        <Card className="vm-panel overflow-hidden">
-          <div className="h-1 w-full bg-gradient-to-r from-emerald-500/80 to-teal-500/80" />
-          <CardHeader className="pb-2">
-            <CardDescription>Newest Vehicle</CardDescription>
-            <CardTitle className="text-base truncate" title={ageStats.newest?.vehicleNumber || 'N/A'}>{ageStats.newest?.vehicleNumber || 'N/A'}</CardTitle>
-          </CardHeader>
-          <CardContent className="text-xs text-muted-foreground">
-            {ageStats.newest?.age !== null ? `${ageStats.newest?.age} yrs old (${ageStats.newest?.yearOfManufacture})` : '-'}
-          </CardContent>
-        </Card>
-        <Card className="vm-panel overflow-hidden">
-          <div className="h-1 w-full bg-gradient-to-r from-slate-400/80 to-slate-500/80" />
-          <CardHeader className="pb-2">
-            <CardDescription>Oldest Vehicle</CardDescription>
-            <CardTitle className="text-base truncate" title={ageStats.oldest?.vehicleNumber || 'N/A'}>{ageStats.oldest?.vehicleNumber || 'N/A'}</CardTitle>
-          </CardHeader>
-          <CardContent className="text-xs text-muted-foreground">
-            {ageStats.oldest?.age !== null ? `${ageStats.oldest?.age} yrs old (${ageStats.oldest?.yearOfManufacture})` : '-'}
-          </CardContent>
-        </Card>
-      </div>
+      <VmStatStrip
+        stats={[
+          { label: 'Total Vehicles', value: vehicles.length, hint: 'Across entire fleet' },
+          {
+            label: 'Average Fleet Age',
+            value: ageStats.avg !== null ? `${ageStats.avg} yrs` : 'N/A',
+            hint: 'Based on year of manufacture',
+          },
+          {
+            label: 'Newest Vehicle',
+            value: <span title={ageStats.newest?.vehicleNumber || 'N/A'}>{ageStats.newest?.vehicleNumber || 'N/A'}</span>,
+            hint: ageStats.newest?.age !== null ? `${ageStats.newest?.age} yrs old (${ageStats.newest?.yearOfManufacture})` : '-',
+          },
+          {
+            label: 'Oldest Vehicle',
+            value: <span title={ageStats.oldest?.vehicleNumber || 'N/A'}>{ageStats.oldest?.vehicleNumber || 'N/A'}</span>,
+            hint: ageStats.oldest?.age !== null ? `${ageStats.oldest?.age} yrs old (${ageStats.oldest?.yearOfManufacture})` : '-',
+          },
+        ]}
+      />
 
       {/* Age bracket summary */}
-      <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-5 sm:gap-3">
-        {bracketCounts.map((b) => (
-          <div
-            key={b.bracket}
-            className={`rounded-lg border p-3 text-center shadow-sm ${bracketStyle[b.bracket]?.card || 'border-white/70 bg-white/80'}`}
-          >
-            <div className="text-2xl font-bold text-slate-700">{b.count}</div>
-            <div className="mt-1 text-xs leading-tight text-muted-foreground">{b.bracket}</div>
-          </div>
-        ))}
-      </div>
+      <VmStatStrip
+        stats={bracketCounts.map((b): VmStat => ({
+          label: b.bracket,
+          value: b.count,
+          tone: b.count > 0 ? bracketStyle[b.bracket]?.stat ?? 'default' : 'default',
+        }))}
+      />
 
       <TableCard title="Fleet Age Details" icon={Car} count={rows.length} noun="vehicle">
         {rows.length === 0 ? (
@@ -249,7 +230,7 @@ export default function VehicleAgeReportPage() {
           <>
             <div className="space-y-2 p-3 sm:hidden">
               {rows.map((row) => (
-                <div key={row.vehicleNumber} className="rounded-xl border border-white/70 bg-white/85 p-3 shadow-sm">
+                <div key={row.vehicleNumber} className="rounded-lg border border-slate-200 bg-white p-3">
                   <div className="mb-1.5 flex items-center justify-between gap-2">
                     <span className="text-sm font-semibold">{row.vehicleNumber}</span>
                     <StatusBadge status={row.bracket} tone={bracketStyle[row.bracket]?.tone ?? 'neutral'}>

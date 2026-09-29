@@ -14,6 +14,7 @@ import { useAuthorization } from '@/hooks/useAuthorization';
 import { Card, CardContent } from '@/components/ui/card';
 import { PageHeader } from '@/components/shared/page-header';
 import { cn } from '@/lib/utils';
+import { vmToneChip, type VmTone } from './vm-ui';
 
 const MODULE = 'Vehicle Management';
 
@@ -23,36 +24,28 @@ const SETTINGS_ITEMS = [
     text: 'Vehicle Types',
     href: '/vehicle-management/settings/vehicle-types',
     description: 'Manage the list of vehicle types offered in Vehicle Master.',
-    gradient: 'from-violet-500 to-purple-600',
-    bg: 'bg-violet-50',
-    iconColor: 'text-violet-600',
+    tone: 'violet' as VmTone,
   },
   {
     icon: Radio,
     text: 'Trip Tracking',
     href: '/vehicle-management/settings/trip-tracking',
     description: 'Location update interval and background tracking behaviour for the driver app.',
-    gradient: 'from-teal-500 to-cyan-600',
-    bg: 'bg-teal-50',
-    iconColor: 'text-teal-600',
+    tone: 'teal' as VmTone,
   },
   {
     icon: GitBranch,
     text: 'Insurance Workflow',
     href: '/vehicle-management/settings/insurance-workflow',
     description: 'Configure dynamic stages, assignment, premium-based approvals, TAT and escalation.',
-    gradient: 'from-amber-500 to-orange-600',
-    bg: 'bg-amber-50',
-    iconColor: 'text-amber-600',
+    tone: 'amber' as VmTone,
   },
   {
     icon: SlidersHorizontal,
     text: 'Field Control',
     href: '/vehicle-management/settings/field-control',
     description: 'Show, hide, require or relabel any field on every form in the module.',
-    gradient: 'from-slate-500 to-slate-700',
-    bg: 'bg-slate-50',
-    iconColor: 'text-slate-600',
+    tone: 'slate' as VmTone,
   },
 ] as const;
 
@@ -63,7 +56,7 @@ export default function VehicleManagementSettingsHub() {
   if (isLoading) {
     return (
       <div className="flex min-h-[40vh] items-center justify-center">
-        <Loader2 className="h-7 w-7 animate-spin text-emerald-600" />
+        <Loader2 className="h-7 w-7 animate-spin text-slate-400" />
       </div>
     );
   }
@@ -90,11 +83,10 @@ export default function VehicleManagementSettingsHub() {
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
         {SETTINGS_ITEMS.map((item) => (
           <Link key={item.text} href={item.href} className="no-underline">
-            <div className="group relative flex flex-col overflow-hidden rounded-xl border border-border/60 bg-background transition-all duration-200 hover:-translate-y-1 hover:shadow-md">
-              <div className={cn('h-1 w-full bg-gradient-to-r', item.gradient)} />
+            <div className="group relative flex h-full flex-col overflow-hidden rounded-xl border border-slate-200 bg-white transition-colors hover:border-slate-300 hover:bg-slate-50">
               <div className="flex items-center gap-3 p-4">
-                <div className={cn('flex h-11 w-11 shrink-0 items-center justify-center rounded-xl', item.bg)}>
-                  <item.icon className={cn('h-5 w-5', item.iconColor)} />
+                <div className={cn('flex h-11 w-11 shrink-0 items-center justify-center rounded-xl', vmToneChip(item.tone))}>
+                  <item.icon className="h-5 w-5" />
                 </div>
                 <div className="min-w-0 flex-1">
                   <p className="text-sm font-semibold leading-tight">{item.text}</p>

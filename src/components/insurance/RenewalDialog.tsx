@@ -1,231 +1,221 @@
-
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useEffect, useState } from 'react';
+import { collection, doc, runTransaction, Timestamp } from 'firebase/firestore';
+import { Loader2 } from 'lucide-react';
+import { db } from '@/lib/firebase';
+import { useAuth } from '@/components/auth/AuthProvider';
+import { useToast } from '@/hooks/use-toast';
+import { actorFromUser, withUpdateAudit } from '@/lib/audit-fields';
+import type { InsurancePolicy, PolicyRenewal } from '@/lib/types';
+import {
+  dayKey,
+  formatDay,
+  formatInr,
+  nextDueAfterPayment,
+  PAYMENT_MODES,
+  policyFrequency,
+  toDate,
+} from '@/lib/insurance';
+import { completeTasksForDue, PERSONAL_POLICIES, uploadInsuranceFiles } from '@/lib/insurance-service';
+import { Button } from '@/components/ui/button';
 import {
   Dialog,
   DialogContent,
-  DialogHeader,
-  DialogTitle,
   DialogDescription,
   DialogFooter,
+  DialogHeader,
+  DialogTitle,
 } from '@/components/ui/dialog';
-import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Textarea } from '@/components/ui/textarea';
-import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
-import { Calendar } from '@/components/ui/calendar';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { useToast } from '@/hooks/use-toast';
-import { db } from '@/lib/firebase';
-import { storage } from '@/lib/firebase-storage';
-import { doc, updateDoc, collection, addDoc, Timestamp } from 'firebase/firestore';
-import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
-import { Loader2, Calendar as CalendarIcon, Upload, File as FileIcon, X } from 'lucide-react';
-import type { InsurancePolicy, PolicyRenewal, Attachment } from '@/lib/types';
-import { format, addMonths, addQuarters, addYears } from 'date-fns';
-import { useAuth } from '@/components/auth/AuthProvider';
+import { Textarea } from '@/components/ui/textarea';
+import { DateField, PendingFiles } from '@/components/insurance/insurance-ui';
 
 interface RenewalDialogProps {
   isOpen: boolean;
   onOpenChange: (isOpen: boolean) => void;
   policy: InsurancePolicy;
   onSuccess: () => void;
-  defaultPaymentDate?: Date;
 }
 
-export function RenewalDialog({ isOpen, onOpenChange, policy, onSuccess, defaultPaymentDate }: RenewalDialogProps) {
+/**
+ * Record the payment of a personal policy's current premium.
+ *
+ * Payments are always against the instalment the policy is waiting on. The payment names that
+ * instalment, so the schedule shows it paid whatever day the money actually went — the register used
+ * to match on the payment date and left every late or early payment looking unpaid. The write is a
+ * transaction on the policy's due date, so two people recording the same premium cannot both
+ * advance it, and the premium's open task is closed once the payment is in.
+ */
+export function RenewalDialog({ isOpen, onOpenChange, policy, onSuccess }: RenewalDialogProps) {
   const { toast } = useToast();
   const { user } = useAuth();
   const [isSaving, setIsSaving] = useState(false);
-  
-  const [paymentDate, setPaymentDate] = useState<Date | undefined>(defaultPaymentDate);
+
+  const instalment = toDate(policy.due_date);
+  const [amount, setAmount] = useState<string>('');
+  const [paymentDate, setPaymentDate] = useState<Date | undefined>();
   const [receiptDate, setReceiptDate] = useState<Date | undefined>();
-  const [paymentType, setPaymentType] = useState('');
+  const [paymentMode, setPaymentMode] = useState('');
+  const [referenceNo, setReferenceNo] = useState('');
   const [remarks, setRemarks] = useState('');
-  const [renewalCopy, setRenewalCopy] = useState<File | null>(null);
+  const [receipt, setReceipt] = useState<File[]>([]);
 
   useEffect(() => {
-    if (isOpen) {
-      setPaymentDate(defaultPaymentDate || new Date());
-      setReceiptDate(undefined);
-      setPaymentType('');
-      setRemarks('');
-      setRenewalCopy(null);
-    }
-  }, [isOpen, defaultPaymentDate]);
+    if (!isOpen) return;
+    setAmount(String(policy.premium || ''));
+    setPaymentDate(new Date());
+    setReceiptDate(undefined);
+    setPaymentMode(policy.auto_debit ? 'Auto Debit' : '');
+    setReferenceNo('');
+    setRemarks('');
+    setReceipt([]);
+  }, [isOpen, policy.premium, policy.auto_debit]);
 
   const handleSave = async () => {
-    if (!paymentDate || !receiptDate || !paymentType) {
-      toast({ title: "Renewal Error: Validation", description: "Please fill all required fields.", variant: "destructive" });
+    const actor = actorFromUser(user);
+    const paid = Number(amount);
+    if (!instalment) {
+      toast({ title: 'Nothing due', description: 'This policy has no premium awaiting payment.', variant: 'destructive' });
       return;
     }
-    if (!user) {
-        toast({ title: 'Renewal Error: Authentication', description: 'You must be logged in.', variant: 'destructive' });
-        return;
+    if (!paymentDate || !paymentMode || !Number.isFinite(paid) || paid <= 0) {
+      toast({ title: 'Missing details', description: 'Enter the amount, payment date and payment mode.', variant: 'destructive' });
+      return;
     }
-    
+    if (paymentDate > new Date()) {
+      toast({ title: 'Check the date', description: 'The payment date cannot be in the future.', variant: 'destructive' });
+      return;
+    }
+    if (!user || !actor) {
+      toast({ title: 'Not signed in', description: 'Sign in again to record the payment.', variant: 'destructive' });
+      return;
+    }
+
     setIsSaving(true);
-    
     try {
-        let renewalCopyUrl: string | null = null;
-        if (renewalCopy) {
-            const storageRef = ref(storage, `insurance-renewals/${policy.id}/${renewalCopy.name}`);
-            await uploadBytes(storageRef, renewalCopy);
-            renewalCopyUrl = await getDownloadURL(storageRef);
+      const [copy] = receipt.length ? await uploadInsuranceFiles(`insurance-renewals/${policy.id}`, receipt) : [];
+      const next = nextDueAfterPayment(
+        {
+          commencement: toDate(policy.date_of_comm),
+          frequency: policyFrequency(policy),
+          termYears: policy.tenure || 0,
+          maturity: toDate(policy.date_of_maturity),
+        },
+        instalment,
+      );
+
+      const policyRef = doc(db, PERSONAL_POLICIES, policy.id);
+      await runTransaction(db, async (tx) => {
+        const fresh = await tx.get(policyRef);
+        const freshDue = toDate(fresh.data()?.due_date);
+        if (!fresh.exists() || !freshDue || dayKey(freshDue) !== dayKey(instalment)) {
+          throw new Error('ALREADY_RECORDED');
         }
-        
-        const renewalData: Omit<PolicyRenewal, 'id'> = {
-            policyId: policy.id,
-            renewalDate: Timestamp.now(),
-            paymentDate: Timestamp.fromDate(paymentDate),
-            receiptDate: Timestamp.fromDate(receiptDate),
-            paymentType,
-            remarks,
-            renewalCopyUrl,
-            renewedBy: user.id,
+        const renewal: Omit<PolicyRenewal, 'id'> = {
+          policyId: policy.id,
+          renewalDate: Timestamp.now(),
+          paymentDate: Timestamp.fromDate(paymentDate),
+          receiptDate: Timestamp.fromDate(receiptDate ?? paymentDate),
+          paymentType: paymentMode,
+          remarks: remarks.trim(),
+          renewalCopyUrl: copy?.url ?? null,
+          renewedBy: user.id,
+          renewedByName: user.name ?? null,
+          instalmentDueDate: Timestamp.fromDate(instalment),
+          amount: paid,
+          referenceNo: referenceNo.trim() || null,
         };
-
-        await addDoc(collection(db, 'insurance_policies', policy.id, 'renewals'), renewalData);
-
-        let nextDueDate: Date | null = null;
-        if (policy.due_date) {
-            const currentDueDate = policy.due_date instanceof Timestamp 
-              ? policy.due_date.toDate() 
-              : new Date(policy.due_date);
-
-            switch (policy.payment_type) {
-                case 'Monthly': nextDueDate = addMonths(currentDueDate, 1); break;
-                case 'Quarterly': nextDueDate = addQuarters(currentDueDate, 1); break;
-                case 'Yearly': nextDueDate = addYears(currentDueDate, 1); break;
-                default: break;
-            }
-        }
-        
-        const policyRef = doc(db, 'insurance_policies', policy.id);
-
-        const maturityDate = policy.date_of_maturity 
-          ? (policy.date_of_maturity instanceof Timestamp 
-             ? policy.date_of_maturity.toDate() 
-             : new Date(policy.date_of_maturity))
-          : null;
-
-        const willBeMature = nextDueDate && maturityDate && nextDueDate > maturityDate;
-
-        await updateDoc(policyRef, {
-            due_date: nextDueDate && !willBeMature ? Timestamp.fromDate(nextDueDate) : null,
-            last_renewed_at: Timestamp.now(),
-            last_payment_type: paymentType,
+        tx.set(doc(collection(db, PERSONAL_POLICIES, policy.id, 'renewals')), renewal);
+        tx.update(policyRef, {
+          due_date: next ? Timestamp.fromDate(next) : null,
+          last_renewed_at: Timestamp.now(),
+          last_payment_type: paymentMode,
+          ...withUpdateAudit(actor),
         });
+      });
 
-        toast({ title: "Success", description: "Policy renewal recorded successfully." });
-        onSuccess(); // Refresh the list in the parent component
-        onOpenChange(false);
+      await completeTasksForDue(policy.id, instalment, user, `Premium of ${formatInr(paid)} paid on ${formatDay(paymentDate)} (${paymentMode}).`)
+        .catch((e) => console.warn('Payment saved, but its task could not be closed:', e));
+
+      toast({
+        title: 'Payment recorded',
+        description: next ? `Next premium due ${formatDay(next)}.` : 'That was the final premium for this policy.',
+      });
+      onSuccess();
+      onOpenChange(false);
     } catch (error) {
-        console.error("Error saving renewal:", error);
-        toast({ title: "Error", description: "Failed to save renewal details.", variant: "destructive" });
+      const already = error instanceof Error && error.message === 'ALREADY_RECORDED';
+      console.error('Error recording premium:', error);
+      toast({
+        title: already ? 'Already recorded' : 'Error',
+        description: already ? 'Someone has already recorded this premium. Refresh to see the latest.' : 'Failed to record the payment.',
+        variant: 'destructive',
+      });
     } finally {
-        setIsSaving(false);
-    }
-  };
-
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (e.target.files && e.target.files[0]) {
-      setRenewalCopy(e.target.files[0]);
+      setIsSaving(false);
     }
   };
 
   return (
-    <Dialog open={isOpen} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-xl">
+    <Dialog open={isOpen} onOpenChange={(open) => !isSaving && onOpenChange(open)}>
+      <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-xl">
         <DialogHeader>
-          <DialogTitle>Renew Policy: {policy.policy_no}</DialogTitle>
+          <DialogTitle>Record Premium Payment</DialogTitle>
           <DialogDescription>
-            Record the payment details for this premium.
+            {policy.policy_no} · {policy.insured_person}
+            {instalment ? ` · instalment due ${formatDay(instalment)}` : ''}
           </DialogDescription>
         </DialogHeader>
-        <div className="space-y-4 py-4">
-           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <Label>Date of Payment</Label>
-                <Popover modal={false}>
-                    <PopoverTrigger asChild>
-                        <Button variant="outline" className="w-full justify-start font-normal" disabled={isSaving}>
-                            <CalendarIcon className="mr-2 h-4 w-4" />
-                            {paymentDate ? format(paymentDate, 'PPP') : 'Select date'}
-                        </Button>
-                    </PopoverTrigger>
-                    <PopoverContent className="w-auto p-0">
-                        <Calendar 
-                            mode="single" 
-                            selected={paymentDate} 
-                            onSelect={setPaymentDate} 
-                            initialFocus 
-                            captionLayout="dropdown-buttons"
-                            fromYear={1980}
-                            toYear={new Date().getFullYear() + 5}
-                        />
-                    </PopoverContent>
-                </Popover>
-              </div>
-               <div className="space-y-2">
-                <Label>Date of Receipt</Label>
-                 <Popover modal={false}>
-                    <PopoverTrigger asChild>
-                        <Button variant="outline" className="w-full justify-start font-normal" disabled={isSaving}>
-                            <CalendarIcon className="mr-2 h-4 w-4" />
-                            {receiptDate ? format(receiptDate, 'PPP') : 'Select date'}
-                        </Button>
-                    </PopoverTrigger>
-                     <PopoverContent className="w-auto p-0">
-                        <Calendar 
-                            mode="single" 
-                            selected={receiptDate} 
-                            onSelect={setReceiptDate} 
-                            initialFocus 
-                            captionLayout="dropdown-buttons"
-                            fromYear={1980}
-                            toYear={new Date().getFullYear() + 5}
-                        />
-                    </PopoverContent>
-                </Popover>
-              </div>
-              <div className="space-y-2">
-                <Label>Payment Type</Label>
-                <Select value={paymentType} onValueChange={setPaymentType} disabled={isSaving}>
-                    <SelectTrigger><SelectValue placeholder="Select payment type" /></SelectTrigger>
-                    <SelectContent>
-                        <SelectItem value="Cash">Cash</SelectItem>
-                        <SelectItem value="Card">Card</SelectItem>
-                        <SelectItem value="Net Banking">Net Banking</SelectItem>
-                        <SelectItem value="UPI">UPI</SelectItem>
-                        <SelectItem value="Auto Debit">Auto Debit</SelectItem>
-                    </SelectContent>
-                </Select>
-              </div>
-               <div className="space-y-2">
-                  <Label>Renewal Copy</Label>
-                  <Input type="file" onChange={handleFileChange} disabled={isSaving}/>
-                  {renewalCopy && (
-                     <div className="text-xs text-muted-foreground flex items-center gap-2">
-                        <FileIcon className="h-3 w-3" />
-                        <span>{renewalCopy.name}</span>
-                        <Button variant="ghost" size="icon" className="h-5 w-5" onClick={() => setRenewalCopy(null)} disabled={isSaving}><X className="h-3 w-3" /></Button>
-                     </div>
-                  )}
-               </div>
-           </div>
-            <div className="space-y-2">
-              <Label>Remarks</Label>
-              <Textarea placeholder="Add any relevant remarks..." value={remarks} onChange={(e) => setRemarks(e.target.value)} disabled={isSaving} />
-            </div>
+        <div className="grid grid-cols-1 gap-4 py-2 md:grid-cols-2">
+          <div className="space-y-2">
+            <Label htmlFor="premium-amount">Amount Paid (₹)</Label>
+            <Input id="premium-amount" type="number" inputMode="decimal" min={0} value={amount} onChange={(e) => setAmount(e.target.value)} disabled={isSaving} />
+            {Number(amount) > 0 && policy.premium > 0 && Number(amount) !== policy.premium && (
+              <p className="text-xs text-amber-600">Differs from the policy premium of {formatInr(policy.premium)}.</p>
+            )}
+          </div>
+          <div className="space-y-2">
+            <Label>Payment Mode</Label>
+            <Select value={paymentMode} onValueChange={setPaymentMode} disabled={isSaving}>
+              <SelectTrigger aria-label="Payment mode"><SelectValue placeholder="Select payment mode" /></SelectTrigger>
+              <SelectContent>{PAYMENT_MODES.map((m) => <SelectItem key={m} value={m}>{m}</SelectItem>)}</SelectContent>
+            </Select>
+          </div>
+          <div className="space-y-2">
+            <Label>Date of Payment</Label>
+            <DateField value={paymentDate} onChange={setPaymentDate} disabled={isSaving} toYear={new Date().getFullYear()} />
+          </div>
+          <div className="space-y-2">
+            <Label>Date of Receipt</Label>
+            <DateField value={receiptDate} onChange={setReceiptDate} disabled={isSaving} placeholder="Same as payment" />
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="premium-ref">Transaction / Receipt No.</Label>
+            <Input id="premium-ref" value={referenceNo} onChange={(e) => setReferenceNo(e.target.value)} disabled={isSaving} autoComplete="off" />
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="premium-receipt">Premium Receipt</Label>
+            <Input
+              id="premium-receipt"
+              type="file"
+              onChange={(e) => { setReceipt(Array.from(e.target.files ?? []).slice(0, 1)); e.target.value = ''; }}
+              disabled={isSaving}
+            />
+            <PendingFiles files={receipt} onRemove={() => setReceipt([])} />
+          </div>
+          <div className="space-y-2 md:col-span-2">
+            <Label htmlFor="premium-remarks">Remarks</Label>
+            <Textarea id="premium-remarks" rows={2} value={remarks} onChange={(e) => setRemarks(e.target.value)} disabled={isSaving} />
+          </div>
         </div>
         <DialogFooter>
-          <Button variant="outline" onClick={() => onOpenChange(false)} disabled={isSaving}>Cancel</Button>
-          <Button onClick={handleSave} disabled={isSaving}>
+          <Button type="button" variant="outline" onClick={() => onOpenChange(false)} disabled={isSaving}>Cancel</Button>
+          <Button type="button" onClick={handleSave} disabled={isSaving || !instalment}>
             {isSaving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-            Save Renewal
+            Record Payment
           </Button>
         </DialogFooter>
       </DialogContent>

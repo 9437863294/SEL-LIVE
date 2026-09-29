@@ -21,8 +21,8 @@ import { storage } from '@/lib/firebase-storage';
 import { useAuth } from '@/components/auth/AuthProvider';
 import { useAuthorization } from '@/hooks/useAuthorization';
 import { useToast } from '@/hooks/use-toast';
-import { useRouter } from 'next/navigation';
-import { syncInsuranceTasks } from '../actions';
+import { syncInsuranceTasks } from '@/lib/insurance-service';
+import { formatInr } from '@/lib/insurance';
 import { getAssigneeForStep, calculateDeadline } from '@/lib/workflow-utils';
 import type { ActionConfig, ActionLog, InsuranceTask, WorkflowStep } from '@/lib/types';
 import ViewInsuranceTaskDialog from '@/components/insurance/ViewInsuranceTaskDialog';
@@ -49,13 +49,15 @@ import { cn } from '@/lib/utils';
 const getActionName = (action: string | ActionConfig): string =>
   typeof action === 'string' ? action : action.name;
 
+/** A rejection needs its reason and some steps need a document, so those go through the dialog. */
+const needsDialog = (step: WorkflowStep | undefined, action: string) => action === 'Reject' || step?.upload === 'Required';
+
 // ─── page ─────────────────────────────────────────────────────────────────────
 
 export default function MyTasksPage() {
   const { can, isLoading: authLoading } = useAuthorization();
-  const { user, users: allUsers } = useAuth();
+  const { user } = useAuth();
   const { toast } = useToast();
-  const router = useRouter();
 
   const [allTasks, setAllTasks] = useState<InsuranceTask[]>([]);
   const [workflow, setWorkflow] = useState<WorkflowStep[] | null>(null);
@@ -85,21 +87,25 @@ export default function MyTasksPage() {
     }
   }, [toast]);
 
+  // The task list loads whether or not the sync succeeds — a failed sync used to leave the page on
+  // its loading skeleton for good, because only a successful sync went on to fetch the tasks.
   const handleSync = useCallback(async (showToast = false) => {
     if (!user) return;
     setIsSyncing(true);
     try {
-      const result = await syncInsuranceTasks(user.id);
-      if (result.success) {
-        if (showToast) toast({ title: 'Sync Complete', description: result.message });
-        await fetchData();
-      } else {
-        throw new Error(result.message);
+      const result = await syncInsuranceTasks();
+      if (showToast) {
+        const parts = [`${result.created} new task${result.created === 1 ? '' : 's'} raised`, `${result.existing} already open or done`];
+        if (result.unassigned.length) parts.push(`no assignee for ${result.unassigned.join(', ')}`);
+        toast({ title: 'Sync complete', description: parts.join(' · ') + '.' });
       }
     } catch (e: any) {
-      if (showToast) toast({ title: 'Sync Failed', description: e.message.includes('permission-denied') ? "You don't have permission to perform this action." : e.message, variant: 'destructive' });
+      const msg = String(e?.message || e);
+      if (showToast) toast({ title: 'Sync failed', description: msg.includes('permission') ? "You don't have permission to raise insurance tasks." : msg, variant: 'destructive' });
+      else console.warn('Insurance task sync failed:', e);
     } finally {
       setIsSyncing(false);
+      await fetchData();
     }
   }, [user, fetchData, toast]);
 
@@ -116,16 +122,23 @@ export default function MyTasksPage() {
     const myPending = allTasks
       .filter((t) => t.assignees?.includes(user.id) && ['Pending', 'In Progress', 'Needs Review'].includes(t.status))
       .sort((a, b) => a.dueDate.toMillis() - b.dueDate.toMillis());
+    // Closed tasks this user worked on — assignees are cleared on completion, so the history says who.
     const myCompleted = allTasks
-      .filter((t) => ['Completed', 'Rejected'].includes(t.status))
+      .filter((t) => ['Completed', 'Rejected'].includes(t.status) && (t.history ?? []).some((h) => h.userId === user.id))
       .sort((a, b) => b.createdAt.toMillis() - a.createdAt.toMillis());
     return { pendingTasks: myPending, completedTasks: myCompleted };
   }, [allTasks, user]);
 
   // ─── action handler (unchanged logic) ────────────────────────────────────
 
+  const openTask = (task: InsuranceTask) => { setSelectedTask(task); setIsViewDialogOpen(true); };
+
   const handleAction = async (taskId: string, action: string, comment: string, file?: File) => {
     if (!workflow || !user) return;
+    if (action === 'Reject' && !comment.trim()) {
+      toast({ title: 'Reason required', description: 'Add a comment explaining the rejection.', variant: 'destructive' });
+      return;
+    }
     setIsActionLoading(taskId);
     try {
       const taskRef = doc(db, 'insuranceTasks', taskId);
@@ -178,7 +191,8 @@ export default function MyTasksPage() {
         transaction.update(taskRef, { status: newStatus, currentStage: newStage, currentStepId: newCurrentStepId, assignees: newAssignees, deadline: newDeadline, history: arrayUnion(newActionLog) });
       });
 
-      toast({ title: 'Success', description: `Task has been ${action.toLowerCase()}d.` });
+      toast({ title: 'Done', description: `${action} recorded.` });
+      setIsViewDialogOpen(false);
       fetchData();
     } catch (error: any) {
       toast({ title: 'Error', description: error.message || 'Failed to perform action.', variant: 'destructive' });
@@ -222,7 +236,8 @@ export default function MyTasksPage() {
                   <StatusBadge status={task.status} className="shrink-0" />
                 </div>
                 <div className="grid grid-cols-2 gap-1 text-xs">
-                  <div><span className="text-muted-foreground">Due: </span>{format(task.dueDate.toDate(), 'dd MMM yyyy')}</div>
+                  <div><span className="text-muted-foreground">{task.taskType === 'Maturity Due' ? 'Matures' : 'Due'}: </span>{format(task.dueDate.toDate(), 'dd MMM yyyy')}</div>
+                  <div><span className="text-muted-foreground">Type: </span>{task.taskType}{task.amount ? ` · ${formatInr(task.amount)}` : ''}</div>
                   {isPending && <div><span className="text-muted-foreground">Stage: </span>{task.currentStage}</div>}
                   {task.deadline && <div className={cn('col-span-2', isOverdue && 'text-red-600 font-medium')}><span className={isOverdue ? '' : 'text-muted-foreground'}>Deadline: </span>{format(task.deadline.toDate(), 'dd MMM yyyy HH:mm')}</div>}
                 </div>
@@ -231,7 +246,7 @@ export default function MyTasksPage() {
                     {currentStep.actions.slice(0, 3).map((action) => {
                       const name = getActionName(action);
                       return (
-                        <Button key={name} size="sm" variant={name === 'Reject' ? 'destructive' : 'default'} className="h-7 text-xs gap-1" disabled={isActionLoading === task.id} onClick={() => handleAction(task.id, name, '')}>
+                        <Button key={name} size="sm" variant={name === 'Reject' ? 'destructive' : 'default'} className="h-7 text-xs gap-1" disabled={isActionLoading === task.id} onClick={() => (needsDialog(currentStep, name) ? openTask(task) : handleAction(task.id, name, ''))}>
                           {isActionLoading === task.id ? <Loader2 className="h-3 w-3 animate-spin" /> : name}
                         </Button>
                       );
@@ -248,9 +263,10 @@ export default function MyTasksPage() {
             <TableHeader>
               <TableRow>
                 <TableHead>Created</TableHead>
+                <TableHead>Type</TableHead>
                 <TableHead>Policy No.</TableHead>
                 <TableHead>Insured Person</TableHead>
-                <TableHead>Premium Due</TableHead>
+                <TableHead>Due / Maturity</TableHead>
                 <TableHead>Deadline</TableHead>
                 <TableHead>{isPending ? 'Stage' : 'Status'}</TableHead>
                 <TableHead className="text-right">Actions</TableHead>
@@ -264,6 +280,10 @@ export default function MyTasksPage() {
                 return (
                   <TableRow key={task.id} className={cn('cursor-pointer', isOverdue && 'bg-rose-50/60')} onClick={() => { setSelectedTask(task); setIsViewDialogOpen(true); }}>
                     <TableCell className="whitespace-nowrap">{format(task.createdAt.toDate(), 'dd MMM yy, HH:mm')}</TableCell>
+                    <TableCell className="whitespace-nowrap">
+                      <p className="text-xs font-medium">{task.taskType}</p>
+                      {task.amount ? <p className="text-[11px] text-muted-foreground tabular-nums">{formatInr(task.amount)}</p> : null}
+                    </TableCell>
                     <TableCell className="font-mono font-medium whitespace-nowrap">{task.policyNo}</TableCell>
                     <TableCell className="font-medium">{task.insuredPerson}</TableCell>
                     <TableCell className="whitespace-nowrap">{format(task.dueDate.toDate(), 'dd MMM yyyy')}</TableCell>
@@ -295,7 +315,7 @@ export default function MyTasksPage() {
                             {isPending && actions.length > 0 && actions.map((action) => {
                               const name = getActionName(action);
                               return (
-                                <DropdownMenuItem key={`${task.id}-${name}`} onSelect={(e) => { e.preventDefault(); handleAction(task.id, name, ''); }}>
+                                <DropdownMenuItem key={`${task.id}-${name}`} onSelect={(e) => { e.preventDefault(); if (needsDialog(currentStep, name)) openTask(task); else handleAction(task.id, name, ''); }}>
                                   {name === 'Reject' ? <XCircle className="mr-2 h-4 w-4 text-red-500" /> : <CheckCircle2 className="mr-2 h-4 w-4 text-emerald-500" />}
                                   {name}
                                 </DropdownMenuItem>
@@ -339,7 +359,7 @@ export default function MyTasksPage() {
         <PageHeader
           icon={ClipboardCheck}
           title="My Insurance Tasks"
-          description="Premium due tasks assigned to you — approve, verify, or reject"
+          description="Premium, renewal and maturity tasks assigned to you — approve, verify, or reject"
           badge={
             /* Quick stats */
             !isLoading && (

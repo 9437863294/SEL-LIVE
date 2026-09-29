@@ -31,6 +31,7 @@ import { Badge } from '@/components/ui/badge';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { TableCard } from '@/components/shared/table-card';
 import { cn } from '@/lib/utils';
+import { VM_DIALOG_HEADER, VM_PRIMARY_BUTTON, VM_SEGMENT_TRACK, VmStatStrip, vmSegmentItem } from './vm-ui';
 
 /* ------------------------------------------------------------------ */
 /* Public types                                                         */
@@ -150,7 +151,7 @@ function StepBreadcrumb({ current }: { current: Step }) {
             className={cn(
               'rounded-full px-2.5 py-0.5 text-xs font-medium',
               i === currentIdx
-                ? 'bg-emerald-100 text-emerald-700'
+                ? 'bg-slate-200 text-slate-900'
                 : i < currentIdx
                 ? 'text-slate-400 line-through decoration-slate-300'
                 : 'text-slate-400'
@@ -361,7 +362,7 @@ export function VehicleImportDialog({
     <Dialog open={open} onOpenChange={handleClose}>
       <DialogContent className="vm-mobile-dialog flex max-h-[92dvh] w-[calc(100vw-2rem)] max-w-5xl flex-col gap-0 overflow-hidden p-0 vm-panel-strong">
         {/* ── Header ── */}
-        <div className="vm-dialog-header shrink-0 border-b border-slate-100 bg-gradient-to-r from-emerald-500/5 to-teal-500/5 px-6 pb-4 pt-5 pr-12">
+        <div className={cn('vm-dialog-header shrink-0 px-6 pb-4 pt-5 pr-12', VM_DIALOG_HEADER)}>
           <DialogTitle className="text-base font-semibold text-slate-900">{title}</DialogTitle>
           <DialogDescription className="mt-0.5 text-xs text-slate-500">
             Import records from an Excel (.xlsx) file with column mapping and per-row validation.
@@ -378,15 +379,15 @@ export function VehicleImportDialog({
                 className={cn(
                   'flex cursor-pointer flex-col items-center justify-center rounded-2xl border-2 border-dashed p-7 text-center transition-colors sm:p-14',
                   isDragging
-                    ? 'border-emerald-400 bg-emerald-50'
-                    : 'border-slate-200 bg-slate-50/60 hover:border-emerald-300 hover:bg-slate-50'
+                    ? 'border-slate-400 bg-slate-100'
+                    : 'border-slate-200 bg-slate-50 hover:border-slate-300 hover:bg-slate-100'
                 )}
                 onDragOver={(e) => { e.preventDefault(); setIsDragging(true); }}
                 onDragLeave={() => setIsDragging(false)}
                 onDrop={(e) => { e.preventDefault(); setIsDragging(false); void parseFile(e.dataTransfer.files[0]); }}
                 onClick={() => fileInputRef.current?.click()}
               >
-                <FileSpreadsheet className="mb-4 h-14 w-14 text-emerald-300" />
+                <FileSpreadsheet className="mb-4 h-14 w-14 text-slate-400" />
                 <p className="text-sm font-semibold text-slate-700">Drop your .xlsx file here</p>
                 <p className="mt-1 text-xs text-slate-400">or click to browse — only .xlsx files are supported</p>
               </div>
@@ -399,12 +400,12 @@ export function VehicleImportDialog({
               />
 
               {/* Expected columns + template */}
-              <div className="rounded-xl border border-slate-200 bg-white/70 p-4">
+              <div className="rounded-xl border border-slate-200 bg-white p-4">
                 <div className="mb-3 flex flex-col items-start gap-2 sm:flex-row sm:items-center sm:justify-between">
                   <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Expected Columns</p>
                   <button
                     onClick={() => void downloadTemplate()}
-                    className="flex items-center gap-1.5 rounded-full bg-emerald-50 px-3 py-1 text-xs font-medium text-emerald-700 hover:bg-emerald-100 transition-colors"
+                    className="flex items-center gap-1.5 rounded-full bg-slate-100 px-3 py-1 text-xs font-medium text-slate-700 hover:bg-slate-200 transition-colors"
                   >
                     <Download className="h-3.5 w-3.5" /> Download Template
                   </button>
@@ -429,7 +430,7 @@ export function VehicleImportDialog({
                 <div>
                   <p className="text-sm font-semibold text-slate-800">{fileName}</p>
                   <p className="mt-0.5 text-xs text-slate-500">
-                    <span className="font-medium text-emerald-600">{rawData.length}</span> data rows detected ·{' '}
+                    <span className="font-medium text-slate-700">{rawData.length}</span> data rows detected ·{' '}
                     <span className="font-medium text-slate-600">{sourceColumns.length}</span> columns found
                   </p>
                 </div>
@@ -441,7 +442,7 @@ export function VehicleImportDialog({
                 </button>
               </div>
 
-              <div className="overflow-hidden rounded-xl border border-slate-200 bg-white/80">
+              <div className="overflow-hidden rounded-xl border border-slate-200 bg-white">
                 {/* Table header */}
                 <div className="hidden grid-cols-[1fr_1fr_auto] items-center gap-4 border-b border-slate-100 bg-slate-50 px-4 py-2.5 sm:grid">
                   <span className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Expected Field</span>
@@ -526,17 +527,12 @@ export function VehicleImportDialog({
                       </Badge>
                     </div>
                     {/* Filter pills */}
-                    <div className="flex items-center gap-1 rounded-full border border-slate-200 bg-slate-50 p-0.5">
+                    <div className={VM_SEGMENT_TRACK}>
                       {(['all', 'valid', 'invalid'] as FilterMode[]).map((f) => (
                         <button
                           key={f}
                           onClick={() => setFilter(f)}
-                          className={cn(
-                            'rounded-full px-3 py-1 text-xs font-medium capitalize transition-all',
-                            filter === f
-                              ? 'bg-white text-slate-800 shadow-sm'
-                              : 'text-slate-500 hover:text-slate-700'
-                          )}
+                          className={cn(vmSegmentItem(filter === f), 'capitalize')}
                         >
                           {f}
                         </button>
@@ -629,30 +625,14 @@ export function VehicleImportDialog({
           {/* ─── STEP 4: Summary ─── */}
           {step === 'summary' && summary && (
             <div className="space-y-5 p-3 sm:p-6">
-              {/* Stat tiles */}
-              <div className="grid grid-cols-1 gap-2 min-[380px]:grid-cols-3 sm:gap-4">
-                <div className="rounded-xl border border-slate-200 bg-slate-50 p-4 text-center">
-                  <p className="text-3xl font-bold text-slate-800">{summary.total}</p>
-                  <p className="mt-1 text-xs text-slate-500">Rows Processed</p>
-                </div>
-                <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-4 text-center">
-                  <p className="text-3xl font-bold text-emerald-700">{summary.imported}</p>
-                  <p className="mt-1 text-xs text-emerald-600">Imported Successfully</p>
-                </div>
-                <div
-                  className={cn(
-                    'rounded-xl border p-4 text-center',
-                    summary.failed.length > 0 ? 'border-rose-200 bg-rose-50' : 'border-slate-200 bg-slate-50'
-                  )}
-                >
-                  <p className={cn('text-3xl font-bold', summary.failed.length > 0 ? 'text-rose-700' : 'text-slate-300')}>
-                    {summary.failed.length}
-                  </p>
-                  <p className={cn('mt-1 text-xs', summary.failed.length > 0 ? 'text-rose-500' : 'text-slate-400')}>
-                    Failed
-                  </p>
-                </div>
-              </div>
+              {/* Run figures */}
+              <VmStatStrip
+                stats={[
+                  { label: 'Processed', value: summary.total },
+                  { label: 'Imported', value: summary.imported, tone: summary.imported > 0 ? 'success' : 'muted' },
+                  { label: 'Failed', value: summary.failed.length, tone: summary.failed.length > 0 ? 'danger' : 'muted' },
+                ]}
+              />
 
               {/* All-success message */}
               {summary.imported === summary.total && summary.total > 0 && (
@@ -713,7 +693,7 @@ export function VehicleImportDialog({
                 <Button variant="ghost" onClick={() => setStep('upload')} className="text-slate-500">
                   Back
                 </Button>
-                <Button onClick={buildPreview} disabled={rawData.length === 0}>
+                <Button onClick={buildPreview} disabled={rawData.length === 0} className={VM_PRIMARY_BUTTON}>
                   Preview &amp; Validate <ArrowRight className="ml-2 h-4 w-4" />
                 </Button>
               </>
@@ -727,7 +707,7 @@ export function VehicleImportDialog({
                 <Button
                   onClick={() => void runImport()}
                   disabled={validCount === 0 || isImporting}
-                  className="bg-gradient-to-r from-emerald-500 to-teal-600 text-white hover:from-emerald-600 hover:to-teal-700"
+                  className={VM_PRIMARY_BUTTON}
                 >
                   {isImporting ? (
                     <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Importing…</>
@@ -741,7 +721,7 @@ export function VehicleImportDialog({
             {step === 'summary' && (
               <Button
                 onClick={() => { reset(); onOpenChange(false); }}
-                className="bg-gradient-to-r from-emerald-500 to-teal-600 text-white hover:from-emerald-600 hover:to-teal-700"
+                className={VM_PRIMARY_BUTTON}
               >
                 Done
               </Button>

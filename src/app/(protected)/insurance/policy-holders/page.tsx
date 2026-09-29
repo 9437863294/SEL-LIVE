@@ -19,7 +19,10 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { useToast } from '@/hooks/use-toast';
 import { db } from '@/lib/firebase';
-import { collection, getDocs, addDoc, doc, updateDoc, deleteDoc, Timestamp } from 'firebase/firestore';
+import { collection, getDocs, addDoc, doc, updateDoc, deleteDoc, Timestamp, query, where, writeBatch } from 'firebase/firestore';
+import { useAuthorization } from '@/hooks/useAuthorization';
+import { countPolicyReferences, PERSONAL_POLICIES } from '@/lib/insurance-service';
+import { AccessDenied } from '@/components/insurance/insurance-ui';
 import type { PolicyHolder } from '@/lib/types';
 import { Skeleton } from '@/components/ui/skeleton';
 import { format } from 'date-fns';
@@ -42,6 +45,11 @@ const initialFormState = {
 
 export default function ManagePolicyHoldersPage() {
   const { toast } = useToast();
+  const { can, isLoading: authLoading } = useAuthorization();
+  const canView = can('View', 'Insurance.Settings.Holders');
+  const canAdd = can('Add', 'Insurance.Settings.Holders');
+  const canEdit = can('Edit', 'Insurance.Settings.Holders');
+  const canDelete = can('Delete', 'Insurance.Settings.Holders');
   const [holders, setHolders] = useState<PolicyHolder[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   
@@ -52,8 +60,11 @@ export default function ManagePolicyHoldersPage() {
   const [editingId, setEditingId] = useState<string | null>(null);
 
   useEffect(() => {
-    fetchPolicyHolders();
-  }, []);
+    if (authLoading) return;
+    if (canView) fetchPolicyHolders();
+    else setIsLoading(false);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [authLoading, canView]);
 
   const fetchPolicyHolders = async () => {
     setIsLoading(true);
@@ -97,20 +108,36 @@ export default function ManagePolicyHoldersPage() {
   }
 
   const handleSubmit = async () => {
-    if (!formData.name) {
+    const name = formData.name.trim();
+    if (!name) {
       toast({ title: 'Validation Error', description: 'Please enter a name.', variant: 'destructive' });
+      return;
+    }
+    if (holders.some((h) => h.id !== editingId && h.name.trim().toLowerCase() === name.toLowerCase())) {
+      toast({ title: 'Duplicate', description: `A policy holder named ${name} already exists.`, variant: 'destructive' });
       return;
     }
     
     const dataToSave = {
         ...formData,
+        name,
         date_of_birth: formData.date_of_birth ? Timestamp.fromDate(formData.date_of_birth) : null,
     };
 
     try {
       if (dialogMode === 'edit' && editingId) {
         await updateDoc(doc(db, 'policyHolders', editingId), dataToSave);
-        toast({ title: 'Success', description: 'Policy holder updated.' });
+        // Policies refer to their holder by name, so a rename has to follow through to them.
+        const previous = holders.find((h) => h.id === editingId)?.name;
+        let moved = 0;
+        if (previous && previous !== name) {
+          const linked = await getDocs(query(collection(db, PERSONAL_POLICIES), where('insured_person', '==', previous)));
+          const batch = writeBatch(db);
+          linked.docs.forEach((d) => batch.update(d.ref, { insured_person: name }));
+          if (!linked.empty) await batch.commit();
+          moved = linked.size;
+        }
+        toast({ title: 'Success', description: moved ? `Policy holder updated, and ${moved} polic${moved === 1 ? 'y' : 'ies'} renamed with it.` : 'Policy holder updated.' });
       } else {
         await addDoc(collection(db, 'policyHolders'), dataToSave);
         toast({ title: 'Success', description: 'New policy holder added.' });
@@ -123,9 +150,14 @@ export default function ManagePolicyHoldersPage() {
     }
   };
   
-   const handleDelete = async (id: string) => {
+   const handleDelete = async (holder: PolicyHolder) => {
       try {
-          await deleteDoc(doc(db, 'policyHolders', id));
+          const inUse = await countPolicyReferences('insured_person', holder.name);
+          if (inUse > 0) {
+            toast({ title: 'Holder in use', description: `${holder.name} is the insured person on ${inUse} polic${inUse === 1 ? 'y' : 'ies'}. Reassign or delete those first.`, variant: 'destructive' });
+            return;
+          }
+          await deleteDoc(doc(db, 'policyHolders', holder.id));
           toast({ title: 'Success', description: 'Policy holder deleted.'});
           fetchPolicyHolders();
       } catch (error) {
@@ -136,12 +168,16 @@ export default function ManagePolicyHoldersPage() {
 
   const formatDate = (date: Date | null) => date ? format(date, 'dd MMM, yyyy') : 'N/A';
 
+  if (!authLoading && !canView) return <AccessDenied what="manage policy holders" />;
+
   return (
     <div className="w-full">
       <PageHeader
         title="Manage Policy Holders"
-        description="Add, edit, or remove policy holders."
-        actions={<Button onClick={() => openDialog('add')}><Plus className="mr-2 h-4 w-4"/> Add Holder</Button>}
+        description="The people personal policies are held for."
+        backHref="/insurance/settings"
+        backLabel="Back to settings"
+        actions={canAdd && <Button onClick={() => openDialog('add')}><Plus className="mr-2 h-4 w-4"/> Add Holder</Button>}
       />
 
       <TableCard title="Policy holders" count={isLoading ? undefined : holders.length} noun="holder">
@@ -157,7 +193,7 @@ export default function ManagePolicyHoldersPage() {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {isLoading ? (
+              {isLoading || authLoading ? (
                 Array.from({ length: 3 }).map((_, i) => (
                   <TableRow key={i}><TableCell colSpan={6}><Skeleton className="h-8" /></TableCell></TableRow>
                 ))
@@ -170,8 +206,8 @@ export default function ManagePolicyHoldersPage() {
                     <TableCell>{holder.email || 'N/A'}</TableCell>
                     <TableCell>{holder.address || 'N/A'}</TableCell>
                     <TableCell className="text-right whitespace-nowrap">
-                       <Button variant="outline" size="sm" onClick={() => openDialog('edit', holder)}><Edit className="mr-2 h-4 w-4" />Edit</Button>
-                        <AlertDialog>
+                       {canEdit && <Button variant="outline" size="sm" onClick={() => openDialog('edit', holder)}><Edit className="mr-2 h-4 w-4" />Edit</Button>}
+                        {canDelete && <AlertDialog>
                             <AlertDialogTrigger asChild>
                                 <Button variant="destructive" size="sm" className="ml-2"><Trash2 className="mr-2 h-4 w-4" />Delete</Button>
                             </AlertDialogTrigger>
@@ -182,10 +218,10 @@ export default function ManagePolicyHoldersPage() {
                                 </AlertDialogHeader>
                                 <AlertDialogFooter>
                                     <AlertDialogCancel>Cancel</AlertDialogCancel>
-                                    <AlertDialogAction onClick={() => handleDelete(holder.id)}>Delete</AlertDialogAction>
+                                    <AlertDialogAction onClick={() => handleDelete(holder)}>Delete</AlertDialogAction>
                                 </AlertDialogFooter>
                             </AlertDialogContent>
-                        </AlertDialog>
+                        </AlertDialog>}
                     </TableCell>
                   </TableRow>
                 ))

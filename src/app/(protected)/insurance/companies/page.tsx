@@ -4,6 +4,7 @@
 import { useEffect, useState } from 'react';
 import { Building2, Edit, Plus, ShieldAlert, Trash2 } from 'lucide-react';
 import { addDoc, collection, deleteDoc, doc, getDocs, updateDoc } from 'firebase/firestore';
+import { countPolicyReferences } from '@/lib/insurance-service';
 import { db } from '@/lib/firebase';
 import { useAuthorization } from '@/hooks/useAuthorization';
 import { useToast } from '@/hooks/use-toast';
@@ -103,6 +104,13 @@ export default function ManageInsuranceCompaniesPage() {
 
   const handleDelete = async (id: string) => {
     try {
+      // Policies refer to this record, so deleting it while in use would orphan them.
+      const target = companies.find((x) => x.id === id);
+      const inUse = target ? await countPolicyReferences('insurance_company', target.name) : 0;
+      if (inUse > 0) {
+        toast({ title: 'Company in use', description: `${target?.name} is used by ${inUse} polic${inUse === 1 ? 'y' : 'ies'}. Mark it Inactive instead.`, variant: 'destructive' });
+        return;
+      }
       await deleteDoc(doc(db, 'insuranceCompanies', id));
       toast({ title: 'Deleted', description: 'Company deleted.' });
       fetchCompanies();

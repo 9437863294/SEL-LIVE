@@ -1,0 +1,16 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "incremental": false
+  },
+  "include": [
+    "next-env.d.ts",
+    "src/app/(protected)/insurance/**/*.ts",
+    "src/app/(protected)/insurance/**/*.tsx",
+    "src/components/insurance/**/*.ts",
+    "src/components/insurance/**/*.tsx",
+    "src/lib/insurance.ts",
+    "src/lib/insurance-service.ts"
+  ],
+  "exclude": ["node_modules"]
+}

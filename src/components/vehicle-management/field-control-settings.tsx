@@ -10,6 +10,7 @@ import { useToast } from '@/hooks/use-toast';
 import { VEHICLE_COLLECTIONS } from '@/lib/vehicle-management';
 import { VM_FORM_KEYS, VM_FORM_REGISTRY, type VMFormKey } from '@/lib/vehicle-management-field-registry';
 import { VEHICLE_FIELD_CONTROL_DOC_ID, type VMFieldSetting } from './use-field-control';
+import { VM_PRIMARY_BUTTON } from './vm-ui';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -113,7 +114,7 @@ export default function VehicleFieldControlSettings() {
   if (authLoading || loading) {
     return (
       <div className="flex min-h-[40vh] items-center justify-center">
-        <Loader2 className="h-7 w-7 animate-spin text-emerald-600" />
+        <Loader2 className="h-7 w-7 animate-spin text-slate-400" />
       </div>
     );
   }
@@ -144,7 +145,7 @@ export default function VehicleFieldControlSettings() {
         backLabel="Back to settings"
         actions={
           canEdit ? (
-            <Button onClick={save} disabled={saving} className="bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-600 hover:to-teal-700">
+            <Button onClick={save} disabled={saving} className={VM_PRIMARY_BUTTON}>
               {saving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
               Save changes
             </Button>

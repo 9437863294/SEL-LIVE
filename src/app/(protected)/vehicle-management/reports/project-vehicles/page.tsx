@@ -8,12 +8,13 @@ import { db } from '@/lib/firebase';
 import { VEHICLE_COLLECTIONS } from '@/lib/vehicle-management';
 import { useAuthorization } from '@/hooks/useAuthorization';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { PageHeader } from '@/components/shared/page-header';
 import { TableCard } from '@/components/shared/table-card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
+import { VmStatStrip } from '@/components/vehicle-management/vm-ui';
 
 export default function ProjectVehiclesReportPage() {
   const { can } = useAuthorization();
@@ -144,7 +145,7 @@ export default function ProjectVehiclesReportPage() {
               variant="outline"
               onClick={exportExcel}
               disabled={isExporting}
-              className="w-full bg-white/80 hover:bg-white md:w-auto"
+              className="w-full md:w-auto"
             >
               <Download className="mr-2 h-4 w-4" />
               {isExporting ? 'Exporting...' : 'Export Excel'}
@@ -153,34 +154,17 @@ export default function ProjectVehiclesReportPage() {
         }
       />
 
-      <div className="grid grid-cols-3 gap-2 sm:gap-4">
-        <Card className="vm-panel overflow-hidden">
-          <div className="h-1 w-full bg-gradient-to-r from-fuchsia-500/80 to-violet-500/80" />
-          <CardHeader className="pb-2">
-            <CardDescription>Total Fleet Size</CardDescription>
-            <CardTitle className="text-xl">{vehicles.length}</CardTitle>
-          </CardHeader>
-          <CardContent className="text-xs text-muted-foreground">{activeCount} active vehicles</CardContent>
-        </Card>
-        <Card className="vm-panel overflow-hidden">
-          <div className="h-1 w-full bg-gradient-to-r from-violet-500/80 to-purple-500/80" />
-          <CardHeader className="pb-2">
-            <CardDescription>Projects with Vehicles</CardDescription>
-            <CardTitle className="text-xl">{rows.filter((r) => r.projectName !== 'Unassigned').length}</CardTitle>
-          </CardHeader>
-          <CardContent className="text-xs text-muted-foreground">
-            {rows.length} total groups
-          </CardContent>
-        </Card>
-        <Card className="vm-panel overflow-hidden">
-          <div className="h-1 w-full bg-gradient-to-r from-slate-400/80 to-slate-500/80" />
-          <CardHeader className="pb-2">
-            <CardDescription>Unassigned Vehicles</CardDescription>
-            <CardTitle className="text-xl">{unassignedCount}</CardTitle>
-          </CardHeader>
-          <CardContent className="text-xs text-muted-foreground">No project linked</CardContent>
-        </Card>
-      </div>
+      <VmStatStrip
+        stats={[
+          { label: 'Total Fleet Size', value: vehicles.length, hint: `${activeCount} active vehicles` },
+          {
+            label: 'Projects with Vehicles',
+            value: rows.filter((r) => r.projectName !== 'Unassigned').length,
+            hint: `${rows.length} total groups`,
+          },
+          { label: 'Unassigned Vehicles', value: unassignedCount, hint: 'No project linked' },
+        ]}
+      />
 
       <TableCard title="Vehicles by Project" icon={FolderOpen} count={rows.length} noun="project">
         {rows.length === 0 ? (
@@ -191,7 +175,7 @@ export default function ProjectVehiclesReportPage() {
           <>
             <div className="space-y-3 p-3 sm:hidden">
               {rows.map((item) => (
-                <div key={item.projectName} className="rounded-xl border border-white/70 bg-white/85 p-3 shadow-sm">
+                <div key={item.projectName} className="rounded-lg border border-slate-200 bg-white p-3">
                   <div className="mb-2 flex items-center justify-between gap-2">
                     <span className="text-sm font-semibold">
                       {item.projectName === 'Unassigned' ? (

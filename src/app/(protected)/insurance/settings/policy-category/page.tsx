@@ -21,6 +21,7 @@ import { Label } from '@/components/ui/label';
 import { useToast } from '@/hooks/use-toast';
 import { db } from '@/lib/firebase';
 import { collection, getDocs, addDoc, doc, updateDoc, deleteDoc } from 'firebase/firestore';
+import { countPolicyReferences } from '@/lib/insurance-service';
 import type { PolicyCategory } from '@/lib/types';
 import { Skeleton } from '@/components/ui/skeleton';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogHeader, AlertDialogTitle, AlertDialogDescription, AlertDialogFooter, AlertDialogTrigger } from '@/components/ui/alert-dialog';
@@ -110,6 +111,13 @@ export default function ManagePolicyCategoriesPage() {
   
    const handleDelete = async (id: string) => {
       try {
+          // Policies refer to this record, so deleting it while in use would orphan them.
+          const target = categories.find((x) => x.id === id);
+          const inUse = target ? await countPolicyReferences('policy_category', target.name) : 0;
+          if (inUse > 0) {
+            toast({ title: 'Category in use', description: `${target?.name} is used by ${inUse} polic${inUse === 1 ? 'y' : 'ies'}. Mark it Inactive instead.`, variant: 'destructive' });
+            return;
+          }
           await deleteDoc(doc(db, 'policyCategories', id));
           toast({ title: 'Success', description: 'Policy category deleted.'});
           fetchCategories();

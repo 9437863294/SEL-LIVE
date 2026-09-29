@@ -9,8 +9,10 @@ import {
   RefreshCw,
   ShieldAlert,
 } from 'lucide-react';
-import { addDays, format, isPast, isWithinInterval } from 'date-fns';
-import { collection, getDocs, orderBy, query } from 'firebase/firestore';
+import { format } from 'date-fns';
+import { collection, getDocs } from 'firebase/firestore';
+import { PROJECT_STATE_LABEL, projectPolicyState, toDate } from '@/lib/insurance';
+import { ProjectStateBadge } from '@/components/insurance/insurance-ui';
 import { db } from '@/lib/firebase';
 import { useAuthorization } from '@/hooks/useAuthorization';
 import { useToast } from '@/hooks/use-toast';
@@ -24,7 +26,6 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { PageHeader } from '@/components/shared/page-header';
 import { TableCard } from '@/components/shared/table-card';
 import { FilterBar } from '@/components/shared/filter-bar';
-import { StatusBadge } from '@/components/shared/status-badge';
 import { cn } from '@/lib/utils';
 
 // ─── helpers ─────────────────────────────────────────────────────────────────
@@ -42,6 +43,7 @@ const fmtDate = (v: any) => {
 
 interface EnrichedPolicy extends ProjectInsurancePolicy {
   history: ProjectPolicyRenewal[];
+  _state: ReturnType<typeof projectPolicyState>;
 }
 
 // ─── page ─────────────────────────────────────────────────────────────────────
@@ -61,15 +63,17 @@ export default function AllProjectPoliciesPage() {
   const fetchPolicies = async () => {
     setIsLoading(true);
     try {
-      const snap = await getDocs(query(collection(db, 'project_insurance_policies'), orderBy('insurance_start_date', 'desc')));
+      // Sorted here, not by orderBy: Firestore drops documents that lack the ordered field.
+      const snap = await getDocs(collection(db, 'project_insurance_policies'));
+      const now = new Date();
       const loaded = await Promise.all(snap.docs.map(async (d) => {
         const policy = { id: d.id, ...d.data() } as ProjectInsurancePolicy;
         const hSnap = await getDocs(collection(db, 'project_insurance_policies', d.id, 'history'));
         const history = hSnap.docs.map((hd) => ({ id: hd.id, ...hd.data() } as ProjectPolicyRenewal));
-        history.sort((a, b) => b.renewalDate.toMillis() - a.renewalDate.toMillis());
-        return { ...policy, history };
+        history.sort((a, b) => (toDate(b.renewalDate)?.getTime() ?? 0) - (toDate(a.renewalDate)?.getTime() ?? 0));
+        return { ...policy, history, _state: projectPolicyState(policy, now) };
       }));
-      setPolicies(loaded);
+      setPolicies(loaded.sort((a, b) => (toDate(b.insurance_start_date)?.getTime() ?? 0) - (toDate(a.insurance_start_date)?.getTime() ?? 0)));
     } catch {
       toast({ title: 'Error', description: 'Failed to fetch policies.', variant: 'destructive' });
     } finally {
@@ -88,7 +92,7 @@ export default function AllProjectPoliciesPage() {
     assetNames: [...new Set(policies.map((p) => p.assetName))].sort(),
     companies:  [...new Set(policies.map((p) => p.insurance_company))].sort(),
     categories: [...new Set(policies.map((p) => p.policy_category))].sort(),
-    statuses:   [...new Set(policies.map((p) => p.status))].sort(),
+    statuses:   [...new Set(policies.map((p) => PROJECT_STATE_LABEL[p._state]))].sort(),
   }), [policies]);
 
   const filtered = useMemo(() => {
@@ -98,7 +102,7 @@ export default function AllProjectPoliciesPage() {
       if (assetName !== 'all' && p.assetName !== assetName) return false;
       if (insuranceCompany !== 'all' && p.insurance_company !== insuranceCompany) return false;
       if (policyCategory !== 'all' && p.policy_category !== policyCategory) return false;
-      if (status !== 'all' && p.status !== status) return false;
+      if (status !== 'all' && PROJECT_STATE_LABEL[p._state] !== status) return false;
       return true;
     });
   }, [policies, filters]);
@@ -172,8 +176,7 @@ export default function AllProjectPoliciesPage() {
                 <TableRow><TableCell colSpan={10} className="h-32 text-center text-muted-foreground">No policies match your filters.</TableCell></TableRow>
               ) : filtered.map((policy) => {
                 const expanded = expandedRows.has(policy.id);
-                const expiryDate = policy.insured_until?.toDate?.();
-                const isExpiredOrExpiring = expiryDate && (isPast(expiryDate) || isWithinInterval(expiryDate, { start: new Date(), end: addDays(new Date(), 30) }));
+                const isExpiredOrExpiring = policy._state === 'expired' || policy._state === 'expiring';
                 return (
                   <Fragment key={policy.id}>
                     <TableRow
@@ -193,7 +196,7 @@ export default function AllProjectPoliciesPage() {
                       <TableCell className="whitespace-nowrap tabular-nums">{fmtCur(policy.sum_insured)}</TableCell>
                       <TableCell className="whitespace-nowrap">{fmtDate(policy.insurance_start_date)}</TableCell>
                       <TableCell className={cn('whitespace-nowrap', isExpiredOrExpiring && 'font-medium text-red-600')}>{fmtDate(policy.insured_until)}</TableCell>
-                      <TableCell><StatusBadge status={policy.status} /></TableCell>
+                      <TableCell><ProjectStateBadge state={policy._state} /></TableCell>
                     </TableRow>
                     {expanded && (
                       <TableRow>

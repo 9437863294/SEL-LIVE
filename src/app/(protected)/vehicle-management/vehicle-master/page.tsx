@@ -64,6 +64,7 @@ import { VehicleTablePagination, useVehicleTablePagination } from '@/components/
 import { VehicleDetailsDialog } from '@/components/vehicle-management/vehicle-details-dialog';
 import { useFieldControl, validateFieldControlRequirements } from '@/components/vehicle-management/use-field-control';
 import { labelWithMark } from '@/components/vehicle-management/controlled-field';
+import { VM_DIALOG_HEADER, VM_ICON_CHIP, VM_PRIMARY_BUTTON } from '@/components/vehicle-management/vm-ui';
 
 const DRIVER_UNASSIGNED = '__unassigned__';
 
@@ -810,24 +811,24 @@ export default function VehicleMasterPage() {
         }
         actions={
           <>
-            <Button variant="outline" onClick={() => void loadRows()} className="h-11 bg-white/80 hover:bg-white sm:h-10">
+            <Button variant="outline" onClick={() => void loadRows()} className="h-11 sm:h-10">
               Refresh
             </Button>
             {canExport && (
-              <Button variant="outline" onClick={() => void exportExcel()} disabled={isExporting} className="h-11 bg-white/80 hover:bg-white sm:h-10">
+              <Button variant="outline" onClick={() => void exportExcel()} disabled={isExporting} className="h-11 sm:h-10">
                 {isExporting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Download className="mr-2 h-4 w-4" />}
                 {isExporting ? 'Exporting…' : 'Export'}
               </Button>
             )}
             {canImport && (
-              <Button variant="outline" onClick={() => setImportDialogOpen(true)} className="h-11 bg-white/80 hover:bg-white sm:h-10">
+              <Button variant="outline" onClick={() => setImportDialogOpen(true)} className="h-11 sm:h-10">
                 <FileUp className="mr-2 h-4 w-4" /> Import
               </Button>
             )}
             <Button
               onClick={openAdd}
               disabled={!canAdd}
-              className="h-11 bg-gradient-to-r from-emerald-500 to-teal-600 text-white hover:from-emerald-600 hover:to-teal-700 sm:h-10"
+              className={cn('h-11 sm:h-10', VM_PRIMARY_BUTTON)}
             >
               Add Vehicle
             </Button>
@@ -883,7 +884,7 @@ export default function VehicleMasterPage() {
               Array.from({ length: 3 }).map((_, i) => <Skeleton key={i} className="h-28 w-full rounded-xl" />)
             ) : (
               vehiclePagination.paginatedRows.map((row) => (
-                <div key={String(row.id)} onClick={() => setDetailsVehicle(row)} className="cursor-pointer rounded-xl border border-white/70 bg-white/85 p-4 shadow-sm active:scale-[0.99] transition-transform">
+                <div key={String(row.id)} onClick={() => setDetailsVehicle(row)} className="cursor-pointer rounded-xl border border-slate-200 bg-white p-4 shadow-sm active:scale-[0.99] transition-transform">
                   <div className="mb-3 flex items-start justify-between gap-2">
                     <div>
                       <p className="flex items-center gap-1.5 text-sm font-semibold text-slate-800">
@@ -919,7 +920,7 @@ export default function VehicleMasterPage() {
                     </div>
                   </div>
                   <div className="mt-3 flex gap-2 border-t border-slate-100 pt-3">
-                    <Button size="sm" variant="outline" onClick={(event) => { event.stopPropagation(); openEdit(row); }} disabled={!canEdit} className="flex-1 h-10 bg-white/80">Edit</Button>
+                    <Button size="sm" variant="outline" onClick={(event) => { event.stopPropagation(); openEdit(row); }} disabled={!canEdit} className="flex-1 h-10">Edit</Button>
                     <Button size="sm" variant="destructive" onClick={(event) => { event.stopPropagation(); setDeleteRow(row); }} disabled={!canDelete} className="flex-1 h-10">Delete</Button>
                   </div>
                 </div>
@@ -1003,10 +1004,10 @@ export default function VehicleMasterPage() {
 
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
         <DialogContent className="inset-0 left-0 top-0 flex h-[100dvh] max-h-none w-screen max-w-none translate-x-0 translate-y-0 flex-col gap-0 overflow-hidden rounded-none border-0 bg-slate-50 p-0 shadow-2xl sm:left-1/2 sm:top-1/2 sm:h-[90dvh] sm:max-h-[900px] sm:w-[calc(100vw-3rem)] sm:max-w-6xl sm:-translate-x-1/2 sm:-translate-y-1/2 sm:rounded-2xl sm:border">
-          <div className="shrink-0 border-b border-emerald-100 bg-gradient-to-r from-emerald-50 via-white to-teal-50 px-4 pb-3 pt-4 pr-12 sm:px-7 sm:py-5">
+          <div className={cn('shrink-0 px-4 pb-3 pt-4 pr-12 sm:px-7 sm:py-5', VM_DIALOG_HEADER)}>
             <div className="flex items-center gap-3">
-              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-emerald-500 to-teal-600 shadow-lg shadow-emerald-500/20 sm:h-11 sm:w-11">
-                <CarFront className="h-5 w-5 text-white" />
+              <div className={cn('flex h-10 w-10 shrink-0 items-center justify-center rounded-xl sm:h-11 sm:w-11', VM_ICON_CHIP)}>
+                <CarFront className="h-5 w-5" />
               </div>
               <div className="min-w-0 flex-1">
                 <DialogTitle className="text-lg text-slate-900 sm:text-xl">
@@ -1016,12 +1017,12 @@ export default function VehicleMasterPage() {
                   Fields marked <span className="font-semibold text-rose-500">*</span> are required
                 </DialogDescription>
               </div>
-              <div className="hidden items-center gap-1.5 sm:flex"><span className="rounded-full border border-emerald-200 bg-white px-2.5 py-1 text-[11px] font-semibold text-emerald-700">Identity</span><span className="rounded-full border border-slate-200 bg-white px-2.5 py-1 text-[11px] font-semibold text-slate-600">Assignment</span><span className="rounded-full border border-slate-200 bg-white px-2.5 py-1 text-[11px] font-semibold text-slate-600">Compliance</span></div>
+              <div className="hidden items-center gap-1.5 sm:flex"><span className="rounded-full border border-slate-300 bg-white px-2.5 py-1 text-[11px] font-semibold text-slate-800">Identity</span><span className="rounded-full border border-slate-200 bg-white px-2.5 py-1 text-[11px] font-semibold text-slate-600">Assignment</span><span className="rounded-full border border-slate-200 bg-white px-2.5 py-1 text-[11px] font-semibold text-slate-600">Compliance</span></div>
             </div>
           </div>
           <div className="min-h-0 flex-1 overflow-y-auto px-3 py-3 sm:px-7 sm:py-5">
             <div className="grid grid-cols-1 gap-3 lg:grid-cols-2 lg:items-start lg:gap-4">
-              <FormSection className="lg:col-span-2" icon={<CarFront className="h-4 w-4" />} title="Vehicle identity" description="Registration and manufacturing details" tone="emerald">
+              <FormSection className="lg:col-span-2" icon={<CarFront className="h-4 w-4" />} title="Vehicle identity" description="Registration and manufacturing details">
               <div className="grid grid-cols-1 gap-2 md:grid-cols-2 xl:grid-cols-3">
                 <Field label={`${field('vehicleNumber').label} *`}>
                   <Input
@@ -1072,7 +1073,7 @@ export default function VehicleMasterPage() {
               </div>
               </FormSection>
 
-              <FormSection icon={<Gauge className="h-4 w-4" />} title="Ownership & usage" description="Purchase, odometer and operating state" tone="blue">
+              <FormSection icon={<Gauge className="h-4 w-4" />} title="Ownership & usage" description="Purchase, odometer and operating state">
               <div className="grid grid-cols-1 gap-2 md:grid-cols-2">
                 {field('ownershipType').visible && <SelectField label={labelWithMark(field('ownershipType'))} value={form.ownershipType} onValueChange={(v) => setField('ownershipType', v)} options={ownershipTypeOptions} />}
                 {field('purchaseDate').visible && (
@@ -1095,7 +1096,7 @@ export default function VehicleMasterPage() {
               </div>
               </FormSection>
 
-              <FormSection icon={<MapPin className="h-4 w-4" />} title="Assignment" description="Connect this vehicle to its working team" tone="violet">
+              <FormSection icon={<MapPin className="h-4 w-4" />} title="Assignment" description="Connect this vehicle to its working team">
               <div className="grid grid-cols-1 gap-2">
                 {field('assignedDepartmentId').visible && <SelectField label={labelWithMark(field('assignedDepartmentId'))} value={form.assignedDepartmentId} onValueChange={(v) => setField('assignedDepartmentId', v)} options={departmentOptions} />}
                 {field('assignedProjectId').visible && <SelectField label={labelWithMark(field('assignedProjectId'))} value={form.assignedProjectId} onValueChange={(v) => setField('assignedProjectId', v)} options={projectOptions} />}
@@ -1103,7 +1104,7 @@ export default function VehicleMasterPage() {
               </div>
               </FormSection>
 
-              <FormSection className="lg:col-span-2" icon={<ShieldCheck className="h-4 w-4" />} title="Compliance & notes" description="Control documents and add useful notes" tone="amber">
+              <FormSection className="lg:col-span-2" icon={<ShieldCheck className="h-4 w-4" />} title="Compliance & notes" description="Control documents and add useful notes">
               <div className="grid grid-cols-1 gap-2 md:grid-cols-2 xl:grid-cols-3">
                 {field('complianceRuleMode').visible && (
                 <SelectField
@@ -1139,7 +1140,7 @@ export default function VehicleMasterPage() {
             <Button variant="outline" onClick={() => setDialogOpen(false)} className="h-11 sm:h-10">
               Cancel
             </Button>
-            <Button onClick={() => void submit()} disabled={isSaving || !!duplicateVehicleNumber} className="h-11 bg-gradient-to-r from-emerald-500 to-teal-600 text-white hover:from-emerald-600 hover:to-teal-700 sm:h-10">
+            <Button onClick={() => void submit()} disabled={isSaving || !!duplicateVehicleNumber} className={cn('h-11 sm:h-10', VM_PRIMARY_BUTTON)}>
               {isSaving ? <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : null}
               {editingRow ? 'Update Vehicle' : 'Register Vehicle'}
             </Button>
@@ -1186,28 +1187,20 @@ function FormSection({
   icon,
   title,
   description,
-  tone,
   className,
   children,
 }: {
   icon: ReactNode;
   title: string;
   description: string;
-  tone: 'emerald' | 'blue' | 'violet' | 'amber';
   className?: string;
   children: ReactNode;
 }) {
-  const tones = {
-    emerald: 'bg-emerald-50 text-emerald-700',
-    blue: 'bg-blue-50 text-blue-700',
-    violet: 'bg-violet-50 text-violet-700',
-    amber: 'bg-amber-50 text-amber-700',
-  };
-
   return (
     <section className={cn('overflow-hidden rounded-xl border border-slate-200 bg-white shadow-[0_1px_2px_rgba(15,23,42,0.04)]', className)}>
       <div className="flex items-center gap-2.5 border-b border-slate-100 px-3 py-2.5 sm:px-4">
-        <span className={cn('flex h-8 w-8 shrink-0 items-center justify-center rounded-lg', tones[tone])}>
+        {/* Grey in every section — each used to carry a colour of its own. */}
+        <span className={cn('flex h-8 w-8 shrink-0 items-center justify-center rounded-lg', VM_ICON_CHIP)}>
           {icon}
         </span>
         <SectionHeader title={title} description={description} as="h3" className="mb-0 min-w-0 flex-1" />

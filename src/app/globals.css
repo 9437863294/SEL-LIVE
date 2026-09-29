@@ -82,6 +82,9 @@
   }
   html {
     scroll-behavior: smooth;
+    /* Prefixed first: Safari (and so every iOS browser) reads only the -webkit- form, and
+       nothing adds it at build time — postcss.config.mjs runs Tailwind without autoprefixer. */
+    -webkit-text-size-adjust: 100%;
     text-size-adjust: 100%;
   }
   body {
@@ -566,6 +569,19 @@ main {
     @apply border border-white/70 bg-white/80 backdrop-blur-sm shadow-[0_24px_80px_-45px_rgba(2,6,23,0.55)];
   }
 
+  /* Vehicle Management's grey look: flat, solid panels on a neutral backdrop instead of frosted
+     glass over an emerald wash. Scoped to the module root because Driver Management borrows these
+     classes and keeps its own look; `:where()` keeps the specificity of the plain class, so a
+     page's own `bg-*` on a panel still wins as before. Theme tokens, so dark mode needs no rule. */
+  :where(.vm-module-root) .vm-panel,
+  :where(.vm-module-root) .vm-panel-strong {
+    @apply border-border bg-card shadow-sm backdrop-blur-none;
+  }
+
+  .vm-neutral-backdrop {
+    background-color: hsl(var(--muted) / 0.55);
+  }
+
   .vm-orb-a {
     /* Static — see .vm-gradient-atmosphere above. */
   }
@@ -897,7 +913,6 @@ main {
     flex: 1 1 auto;
     min-height: 0;
     overflow-y: auto;
-    -webkit-overflow-scrolling: touch;
     padding: 0.875rem;
   }
   /* Notices and callouts sitting between the header and the body keep their natural height and
@@ -1046,7 +1061,6 @@ main {
     flex: 1 1 auto;
     min-height: 0;
     overflow-y: auto;
-    -webkit-overflow-scrolling: touch;
     padding: 0.875rem;
   }
   .hr-mobile-dialog > *:not(.hr-dialog-header):not(.hr-dialog-body):not(.hr-dialog-footer):not(button) {
