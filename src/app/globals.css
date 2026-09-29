@@ -267,6 +267,8 @@ main {
     background-color: rgb(255 255 255 / 0.82);
     border-color: rgb(255 255 255 / 0.65);
     box-shadow: 0 1px 3px 0 rgb(15 23 42 / 0.06), 0 1px 2px -1px rgb(15 23 42 / 0.04);
+    /* Prefixed too: Safari needs it, and no autoprefixer runs on this file (see `html` above). */
+    -webkit-backdrop-filter: blur(6px);
     backdrop-filter: blur(6px);
   }
 
@@ -580,14 +582,6 @@ main {
 
   .vm-neutral-backdrop {
     background-color: hsl(var(--muted) / 0.55);
-  }
-
-  .vm-orb-a {
-    /* Static — see .vm-gradient-atmosphere above. */
-  }
-
-  .vm-orb-b {
-    /* Static — see .vm-gradient-atmosphere above. */
   }
 
   .vm-nav-active {
