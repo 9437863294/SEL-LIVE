@@ -1174,6 +1174,14 @@ type SecurityControl = {
   description: string;
   inverted?: boolean;
   /**
+   * The SYSTEM service can bring this into compliance on its own, on its next pass.
+   *
+   * Which makes a failing measurement of it temporary rather than a lockout, and is why the
+   * device page warns about the others and merely notes these. The server side of the same
+   * distinction is `securityPolicyChangedAt`, which stops the catch-up window refusing anybody.
+   */
+  selfApplied?: boolean;
+  /**
    * How this control stands on this PC right now.
    *
    * Every control has one, including the few Windows cannot measure — "enforced by the installer"
@@ -1220,6 +1228,7 @@ const SECURITY_CONTROL_ROWS: SecurityControl[] = [
   },
   {
     key: 'taskManagerLocked',
+    selfApplied: true,
     label: 'Lock Task Manager',
     description: 'Prevents local users opening Task Manager.',
     state: ({ policy, posture, maintenanceActive }) => {
@@ -1230,6 +1239,7 @@ const SECURITY_CONTROL_ROWS: SecurityControl[] = [
   },
   {
     key: 'agentStopBlocked',
+    selfApplied: true,
     label: 'Block SEL Agent service stop',
     description: 'Removes the administrator SERVICE_STOP right.',
     state: ({ policy, posture }) =>
@@ -1237,6 +1247,7 @@ const SECURITY_CONTROL_ROWS: SecurityControl[] = [
   },
   {
     key: 'serviceModificationBlocked',
+    selfApplied: true,
     label: 'Block service modification',
     description: 'Prevents reconfiguration, deletion and service ACL changes.',
     state: ({ policy, posture }) =>
@@ -1267,7 +1278,9 @@ const SECURITY_CONTROL_ROWS: SecurityControl[] = [
   {
     key: 'signedAgentBinariesRequired',
     label: 'Require signed agent binaries',
-    description: 'Unsigned installed agent files make the device non-compliant.',
+    // Says out loud that it cannot pass yet. Ticking this beside "refuse sign-in" is a permanent
+    // lockout rather than a temporary one, and the difference was invisible here.
+    description: 'Cannot pass until the installer is signed with the company code-signing certificate — no build is signed yet, so every PC reports this as failing.',
     state: ({ policy, posture }) =>
       reportedFlag(policy.signedAgentBinariesRequired, posture?.agentBinariesSigned, {
         yes: 'Signed',
@@ -1277,7 +1290,7 @@ const SECURITY_CONTROL_ROWS: SecurityControl[] = [
   {
     key: 'signedAppControlPolicyRequired',
     label: 'Require signed app-control policy',
-    description: 'Requires an enforced signed WDAC policy.',
+    description: 'Cannot pass until a signed, enforced Windows App Control (WDAC) policy is deployed to this PC. The agent deliberately does not create one — that signing key belongs in deployment infrastructure, not on every endpoint.',
     state: ({ policy, posture }) =>
       reportedFlag(policy.signedAppControlPolicyRequired, posture?.signedAppControlPolicyActive, {
         yes: 'Active',
@@ -1340,6 +1353,41 @@ function DeviceSecurityControls({
   const [reason, setReason] = useState('');
   const dirty = JSON.stringify(policy) !== JSON.stringify(initialPolicy);
 
+  /**
+   * What the *unsaved* policy would do to the next person who tries to sign in here.
+   *
+   * ── The mistake this exists to catch ─────────────────────────────────────────────────────────
+   *
+   * Ticking "Refuse sign-in when checks fail" beside a check this PC is currently failing locks
+   * every user out of it at their next sign-in, and there was nothing on the way to Save that
+   * said so — the first anybody heard of it was somebody ringing to say the agent would not let
+   * them in. Two of these checks cannot pass at all yet (the agent files are not code-signed and
+   * no signed App Control policy is deployed), so it is not a hypothetical.
+   *
+   * The same function the gate uses, run against the pending switches with `assumeEnforced`, so
+   * this warning cannot promise something different from what the server then does.
+   */
+  const { blocking, catchingUp } = useMemo(() => {
+    const failing = SECURITY_CONTROL_ROWS.filter((control) => {
+      const stored = policy[control.key];
+      const wanted = control.inverted ? !stored : stored;
+      if (!wanted) return false;
+      return control.state({ policy, posture, maintenanceActive }).ok === false;
+    });
+    return {
+      // What the PC cannot clear by itself. These refuse sign-ins for as long as they last.
+      blocking: failing.filter((control) => !control.selfApplied),
+      // What the SYSTEM service applies on its next pass, after which the check passes. The
+      // server's grace period covers exactly this window, so it is a note, not a warning —
+      // a red alert for something that fixes itself in forty seconds is how an administrator
+      // learns to click through the one that matters.
+      catchingUp: failing.filter((control) => control.selfApplied),
+    };
+  }, [policy, posture, maintenanceActive]);
+
+  const wouldLockOut = policy.loginBlockedOnFindings && blocking.length > 0;
+  const [acknowledged, setAcknowledged] = useState(false);
+
   return (
     <div className="space-y-3">
       <div className="divide-y overflow-hidden rounded-lg border">
@@ -1383,6 +1431,54 @@ function DeviceSecurityControls({
         })}
       </div>
 
+      {canEdit && wouldLockOut ? (
+        <div className="rounded-lg border border-rose-300 bg-rose-50 p-3 text-rose-900">
+          <p className="text-sm font-semibold">
+            Saving this will stop anybody signing in on this computer
+          </p>
+          <p className="mt-1 text-xs">
+            “Refuse sign-in when checks fail” is on, and this PC cannot pass{' '}
+            {blocking.length === 1 ? 'a check it is being asked for' : `${blocking.length} of the checks it is being asked for`}.
+            Everyone who uses it — including you — will be refused at the agent sign-in until{' '}
+            {blocking.length === 1 ? 'it is resolved' : 'they are resolved'}:
+          </p>
+          <ul className="mt-1.5 space-y-1 text-xs">
+            {blocking.map((control) => (
+              <li key={control.key} className="flex gap-1.5">
+                <span aria-hidden>•</span>
+                <span>
+                  <strong>{control.label}</strong> — {control.description}
+                </span>
+              </li>
+            ))}
+          </ul>
+          <label className="mt-2.5 flex cursor-pointer items-start gap-2 text-xs font-medium">
+            <Checkbox
+              className="mt-0.5 shrink-0"
+              checked={acknowledged}
+              onCheckedChange={(value) => setAcknowledged(value === true)}
+              aria-label="I understand this will refuse sign-ins on this computer"
+            />
+            <span>
+              I understand. Sign-ins here will be refused until these are resolved, and they are
+              cleared either by resolving them or by switching that control off again.
+            </span>
+          </label>
+        </div>
+      ) : null}
+
+      {canEdit && policy.loginBlockedOnFindings && !wouldLockOut && catchingUp.length > 0 ? (
+        <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900">
+          <strong>
+            {catchingUp.length === 1 ? 'One control has' : `${catchingUp.length} controls have`} not
+            been applied on this PC yet:
+          </strong>{' '}
+          {catchingUp.map((control) => control.label).join(', ')}. The SEL LIVE service applies{' '}
+          {catchingUp.length === 1 ? 'it' : 'them'} on its next security pass — within about a
+          minute — and sign-ins are not refused while it catches up.
+        </div>
+      ) : null}
+
       {canEdit ? (
         <div className="grid gap-2 rounded-lg border bg-muted/20 p-3 md:grid-cols-[1fr_auto_auto] md:items-end">
           <div className="space-y-1.5">
@@ -1405,14 +1501,19 @@ function DeviceSecurityControls({
             Strict baseline
           </Button>
           <Button
-            disabled={pending || !dirty || !reason.trim()}
+            // The acknowledgement gates the save only when the save would lock people out.
+            // Everything else stays one click, because a confirmation on every change is a
+            // confirmation nobody reads by the time it matters.
+            variant={wouldLockOut ? 'destructive' : 'default'}
+            disabled={pending || !dirty || !reason.trim() || (wouldLockOut && !acknowledged)}
             onClick={() => run('Device security policy updated', async () => {
               await changeDeviceSecurityPolicy({ deviceId: device.id, policy, reason: reason.trim() });
               setReason('');
+              setAcknowledged(false);
               await onChanged();
             })}
           >
-            {dirty ? 'Save controls' : 'Saved'}
+            {!dirty ? 'Saved' : wouldLockOut ? 'Save and refuse sign-ins' : 'Save controls'}
           </Button>
         </div>
       ) : null}

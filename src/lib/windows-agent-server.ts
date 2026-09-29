@@ -49,6 +49,7 @@ import {
   postureChanged,
   resolveDeviceSecurityPolicy,
   sanitizeSecurityPosture,
+  securityLoginRefusalReasons,
   securityPostureAllowsLogin,
 } from './windows-agent-security';
 import { emptyWebBlockingPlan, resolveWebBlockingPlan } from './website-blocking';
@@ -919,9 +920,27 @@ export async function openOrResumeSession(options: {
     device.securityPosture,
     device.maintenanceAccess,
     device.securityPolicy,
+    new Date(),
+    device.securityPolicyChangedAt ?? null,
   )) {
+    // Name the checks. "Contact IT; the device page lists the failed checks" told the person at
+    // the PC nothing they could act on and told IT nothing they did not have to go and look up —
+    // and the commonest cause is an administrator having just switched enforcement on, which the
+    // last sentence points straight at.
+    const reasons = securityLoginRefusalReasons(
+      device.securityPosture,
+      device.maintenanceAccess,
+      device.securityPolicy,
+      { policyChangedAt: device.securityPolicyChangedAt ?? null },
+    );
     throw new AgentRequestError(
-      'This computer has no fresh, compliant SEL LIVE device-security report. Contact IT; the device page lists the failed checks.',
+      reasons.length > 0
+        ? `This computer does not meet its SEL LIVE security policy, and the policy refuses a `
+          + `sign-in until it does:\n\n• ${reasons.join('\n• ')}\n\n`
+          + 'Contact IT. An administrator can clear this from the device page — either by fixing '
+          + 'the checks above or by switching off "Refuse sign-in when checks fail".'
+        : 'This computer has no fresh, compliant SEL LIVE device-security report. Contact IT; the '
+          + 'device page lists the failed checks.',
       403,
       'DEVICE_BLOCKED',
     );

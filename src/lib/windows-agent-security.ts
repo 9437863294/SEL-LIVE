@@ -7,6 +7,7 @@
  */
 
 import type {
+  IsoInstant,
   WindowsDeviceMaintenanceAccess,
   WindowsDeviceSecurityPolicy,
   WindowsDeviceSecurityPosture,
@@ -197,36 +198,87 @@ export function securityPostureAllowsLogin(
   maintenance: WindowsDeviceMaintenanceAccess | null | undefined,
   policyInput: unknown,
   now: Date = new Date(),
+  policyChangedAt: IsoInstant | null = null,
 ): boolean {
-  const policy = resolveDeviceSecurityPolicy(policyInput);
-
   // Report-only, which is the default. The checks still run on the PC, the findings are still
   // stored and still listed on the device page — they simply do not stand between an employee
   // and their work until somebody decides they should.
-  if (!policy.loginBlockedOnFindings) return true;
+  if (!resolveDeviceSecurityPolicy(policyInput).loginBlockedOnFindings) return true;
 
-  // No report at all is *unknown*, not *failing*, and the difference matters enormously: the
-  // agents already installed across the fleet predate these checks and cannot produce one, so
-  // treating absence as a failure would mean switching enforcement on locked out every machine
-  // that had not yet been updated — which is the whole reason this setting exists. The device
-  // page shows "awaiting the first security report" for exactly this state.
-  if (!posture) return true;
+  // Delegated rather than re-derived. This used to be a second copy of the same rules, whose
+  // only job was to return a boolean — and a device page that warns "this will lock people
+  // out" while the server quietly allows the sign-in, or the reverse, is worse than no warning
+  // at all. One implementation means the two cannot disagree by construction.
+  return securityLoginRefusalReasons(posture, maintenance, policyInput, { now, policyChangedAt })
+    .length === 0;
+}
+
+/**
+ * Why this device would refuse a sign-in, as sentences. Empty when it would not.
+ *
+ * ── Why this is separate from the gate ────────────────────────────────────────────────────────
+ *
+ * {@link securityPostureAllowsLogin} answers yes or no, which is all the gate needs and not
+ * nearly enough for the two people who have to deal with the answer. The employee at the PC was
+ * told "this computer has no fresh, compliant device-security report — contact IT", which names
+ * neither the check that failed nor anything they could do. And the administrator ticking the
+ * box was told nothing at all until somebody rang to say they could not sign in.
+ *
+ * So both now read from here: the API puts these sentences in the 403, and the device page runs
+ * the same function against the *unsaved* policy to warn before the tick is saved. One source, so
+ * the warning cannot promise something different from what the gate then does.
+ *
+ * Note what this deliberately reports even when enforcement is off: pass `assumeEnforced` and it
+ * answers "what would happen if you switched this on", which is exactly the question the device
+ * page needs and the gate never asks.
+ */
+export function securityLoginRefusalReasons(
+  posture: WindowsDeviceSecurityPosture | null | undefined,
+  maintenance: WindowsDeviceMaintenanceAccess | null | undefined,
+  policyInput: unknown,
+  options: {
+    now?: Date;
+    assumeEnforced?: boolean;
+    /** {@link WindowsDevice.securityPolicyChangedAt} — a report older than this is not a failure. */
+    policyChangedAt?: IsoInstant | null;
+  } = {},
+): string[] {
+  const now = options.now ?? new Date();
+  const policy = resolveDeviceSecurityPolicy(policyInput);
+  if (!policy.loginBlockedOnFindings && !options.assumeEnforced) return [];
+
+  // No report is unknown, not failing — the same judgement the gate makes, and for the same
+  // reason: an agent older than these checks cannot produce one.
+  if (!posture) return [];
 
   const checkedAt = Date.parse(posture.checkedAt);
-  if (!Number.isFinite(checkedAt)) return false;
 
-  // A device that *was* reporting and has stopped is a different matter. That is what tampering
-  // looks like, so a stale or future-dated report from a machine known to be capable of
-  // reporting is refused.
+  // A report taken before the rules changed has not been measured against them. Task Manager,
+  // the service stop right and the service ACL all read false until the SYSTEM service applies
+  // them on its next pass, so treating the last report as a failure means saving a policy the PC
+  // will satisfy in under a minute still locks everybody out of it in the meantime. The device
+  // page shows this as waiting for the first report under the new policy.
+  const changedAt = options.policyChangedAt ? Date.parse(options.policyChangedAt) : NaN;
+  if (Number.isFinite(changedAt) && Number.isFinite(checkedAt) && checkedAt < changedAt) return [];
+  if (!Number.isFinite(checkedAt)) {
+    return ['The security report from this computer cannot be read.'];
+  }
   const age = now.getTime() - checkedAt;
-  if (age < -60_000 || age > WINDOWS_DEVICE_SECURITY_POSTURE_MAX_AGE_MS) return false;
+  if (age < -60_000) return ['The security report from this computer is dated in the future.'];
+  if (age > WINDOWS_DEVICE_SECURITY_POSTURE_MAX_AGE_MS) {
+    return [
+      `This computer last reported its security ${Math.round(age / 60_000)} minutes ago; a report `
+      + 'older than 15 minutes is not trusted. Check that the SEL LIVE service is running.',
+    ];
+  }
 
   const activeGrant = activeMaintenanceAccess(maintenance, now);
   const allowTaskManagerUnlocked = activeGrant?.allowTaskManager === true;
-  if (securityFindings(posture, { allowTaskManagerUnlocked, policy }).length > 0) return false;
+  const derived = securityFindings(posture, { allowTaskManagerUnlocked, policy });
+  const reported = posture.findings.filter((finding) =>
+    !(finding === 'TASK_MANAGER_UNLOCKED' && allowTaskManagerUnlocked));
 
-  return posture.findings.every((finding) =>
-    finding === 'TASK_MANAGER_UNLOCKED' && allowTaskManagerUnlocked);
+  return [...new Set([...derived, ...reported])].map(describeSecurityFinding);
 }
 
 export function postureChanged(

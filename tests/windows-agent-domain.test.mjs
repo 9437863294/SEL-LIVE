@@ -54,6 +54,7 @@ import {
   activeMaintenanceAccess,
   resolveDeviceSecurityPolicy,
   sanitizeSecurityPosture,
+  securityLoginRefusalReasons,
   securityPostureAllowsLogin,
 } from '../src/lib/windows-agent-security.ts';
 
@@ -1154,4 +1155,194 @@ test('with enforcement switched on, a fresh complete security report is required
     signedAppControlPolicyActive: false,
     findings: [],
   }, null, relaxed, now), true);
+});
+
+test('a refusal says which checks failed, in sentences', () => {
+  // "This computer has no fresh, compliant device-security report. Contact IT" named neither the
+  // check that failed nor anything anybody could do about it, and the commonest cause — an
+  // administrator having just switched enforcement on — was invisible from both ends.
+  const now = new Date('2026-09-20T10:00:00Z');
+  const enforcing = resolveDeviceSecurityPolicy({ loginBlockedOnFindings: true });
+  const failing = sanitizeSecurityPosture({
+    secureBootEnabled: true,
+    taskManagerLocked: true,
+    agentStopBlocked: true,
+    serviceModificationBlocked: true,
+    agentBinariesSigned: false,
+    signedAppControlPolicyActive: false,
+    findings: [],
+  }, now);
+
+  const reasons = securityLoginRefusalReasons(failing, null, enforcing, { now });
+  assert.equal(reasons.length, 2);
+  assert.ok(reasons.some((line) => /no code signature/i.test(line)), reasons.join(' | '));
+  assert.ok(reasons.some((line) => /App Control/i.test(line)), reasons.join(' | '));
+  // Sentences, not codes.
+  assert.ok(!reasons.some((line) => /_/.test(line)), reasons.join(' | '));
+});
+
+test('nothing is refused, and nothing is warned about, while enforcement is off', () => {
+  const now = new Date('2026-09-20T10:00:00Z');
+  const failing = sanitizeSecurityPosture({
+    secureBootEnabled: false,
+    taskManagerLocked: false,
+    agentStopBlocked: false,
+    serviceModificationBlocked: false,
+    agentBinariesSigned: false,
+    signedAppControlPolicyActive: false,
+    findings: [],
+  }, now);
+
+  assert.deepEqual(securityLoginRefusalReasons(failing, null, null, { now }), []);
+  // But the device page asks the other question — "what would happen if I switched this on?" —
+  // which is the warning that was missing when an administrator ticked the box.
+  const ifEnforced = securityLoginRefusalReasons(failing, null, null, { now, assumeEnforced: true });
+  assert.ok(ifEnforced.length >= 4, ifEnforced.join(' | '));
+});
+
+test('the warning on the device page can never disagree with the gate', () => {
+  // The whole reason both read from one function. A warning that says "this is fine" while the
+  // server refuses the sign-in is worse than no warning at all.
+  const now = new Date('2026-09-20T10:00:00Z');
+  const enforcing = resolveDeviceSecurityPolicy({ loginBlockedOnFindings: true });
+  const flags = [true, false];
+  let checked = 0;
+
+  for (const secureBoot of flags) {
+    for (const taskManager of flags) {
+      for (const signed of flags) {
+        for (const appControl of flags) {
+          for (const stale of flags) {
+            const posture = sanitizeSecurityPosture({
+              secureBootEnabled: secureBoot,
+              taskManagerLocked: taskManager,
+              agentStopBlocked: true,
+              serviceModificationBlocked: true,
+              agentBinariesSigned: signed,
+              signedAppControlPolicyActive: appControl,
+              findings: [],
+            }, now);
+            const aged = stale ? { ...posture, checkedAt: '2026-09-20T09:40:00Z' } : posture;
+
+            const allowed = securityPostureAllowsLogin(aged, null, enforcing, now);
+            const reasons = securityLoginRefusalReasons(aged, null, enforcing, { now });
+            assert.equal(
+              allowed,
+              reasons.length === 0,
+              `gate says ${allowed ? 'allowed' : 'refused'} but reasons were ${JSON.stringify(reasons)}`,
+            );
+            checked++;
+          }
+        }
+      }
+    }
+  }
+  assert.equal(checked, 32);
+});
+
+test('an approved maintenance window is not reported as a reason to refuse', () => {
+  const now = new Date('2026-09-20T10:00:00Z');
+  const enforcing = resolveDeviceSecurityPolicy({ loginBlockedOnFindings: true });
+  const posture = sanitizeSecurityPosture({
+    secureBootEnabled: true,
+    taskManagerLocked: false,
+    agentStopBlocked: true,
+    serviceModificationBlocked: true,
+    agentBinariesSigned: true,
+    signedAppControlPolicyActive: true,
+    findings: ['TASK_MANAGER_UNLOCKED'],
+  }, now, { allowTaskManagerUnlocked: true });
+
+  assert.deepEqual(securityLoginRefusalReasons(posture, {
+    grantId: 'grant-1',
+    status: 'ACTIVE',
+    grantedAt: '2026-09-20T09:55:00Z',
+    expiresAt: '2026-09-20T10:05:00Z',
+    grantedBy: 'admin',
+    grantedByName: 'Admin',
+    reason: 'Support',
+    allowTaskManager: true,
+  }, enforcing, { now }), []);
+});
+
+test('a report taken before the policy changed is not a failure', () => {
+  // Task Manager, the service stop right and the service ACL all read false until the SYSTEM
+  // service applies them on its next pass — so without this, saving a policy the PC will satisfy
+  // in under a minute still refused every sign-in in the meantime. Which is exactly what somebody
+  // experiences as "I turned the feature on and now I cannot log in".
+  const now = new Date('2026-09-20T10:00:00Z');
+  const enforcing = resolveDeviceSecurityPolicy({ loginBlockedOnFindings: true });
+  const beforeTheChange = sanitizeSecurityPosture({
+    secureBootEnabled: true,
+    taskManagerLocked: false,
+    agentStopBlocked: false,
+    serviceModificationBlocked: false,
+    agentBinariesSigned: true,
+    signedAppControlPolicyActive: true,
+    findings: [],
+  }, now);
+
+  // Measured a minute before the administrator saved: not yet judged against the new rules.
+  assert.deepEqual(
+    securityLoginRefusalReasons(
+      { ...beforeTheChange, checkedAt: '2026-09-20T09:59:00Z' },
+      null,
+      enforcing,
+      { now, policyChangedAt: '2026-09-20T09:59:30Z' },
+    ),
+    [],
+  );
+  assert.equal(
+    securityPostureAllowsLogin(
+      { ...beforeTheChange, checkedAt: '2026-09-20T09:59:00Z' },
+      null,
+      enforcing,
+      now,
+      '2026-09-20T09:59:30Z',
+    ),
+    true,
+  );
+
+  // The first report *after* the change is the one that counts, and it does refuse.
+  const afterTheChange = { ...beforeTheChange, checkedAt: '2026-09-20T09:59:45Z' };
+  const reasons = securityLoginRefusalReasons(afterTheChange, null, enforcing, {
+    now,
+    policyChangedAt: '2026-09-20T09:59:30Z',
+  });
+  assert.ok(reasons.length >= 3, reasons.join(' | '));
+  assert.equal(
+    securityPostureAllowsLogin(afterTheChange, null, enforcing, now, '2026-09-20T09:59:30Z'),
+    false,
+  );
+
+  // An unparseable or absent stamp changes nothing — the rule only ever excuses a report, it
+  // never creates a refusal.
+  assert.ok(securityLoginRefusalReasons(afterTheChange, null, enforcing, { now }).length >= 3);
+  assert.ok(
+    securityLoginRefusalReasons(afterTheChange, null, enforcing, { now, policyChangedAt: 'nonsense' }).length >= 3,
+  );
+});
+
+test('a device that has gone quiet says so, with the age', () => {
+  const now = new Date('2026-09-20T10:00:00Z');
+  const enforcing = resolveDeviceSecurityPolicy({ loginBlockedOnFindings: true });
+  const posture = sanitizeSecurityPosture({
+    secureBootEnabled: true,
+    taskManagerLocked: true,
+    agentStopBlocked: true,
+    serviceModificationBlocked: true,
+    agentBinariesSigned: true,
+    signedAppControlPolicyActive: true,
+    findings: [],
+  }, now);
+
+  const reasons = securityLoginRefusalReasons(
+    { ...posture, checkedAt: '2026-09-20T09:20:00Z' },
+    null,
+    enforcing,
+    { now },
+  );
+  assert.equal(reasons.length, 1);
+  assert.match(reasons[0], /40 minutes ago/);
+  assert.match(reasons[0], /service is running/);
 });

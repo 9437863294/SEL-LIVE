@@ -261,6 +261,18 @@ export interface WindowsDevice extends WindowsAgentAuditStamps {
   lastSecurityCheckAt?: IsoInstant | null;
   /** Persistent, server-owned controls assigned to this individual PC. */
   securityPolicy?: WindowsDeviceSecurityPolicy | null;
+  /**
+   * When those controls were last changed.
+   *
+   * The login gate refuses a device that fails its policy, and this is how it tells that apart
+   * from a device that has simply not been measured against the policy yet. Task Manager, the
+   * service stop right and the service ACL all read false until the SYSTEM service has applied
+   * them, which happens on its next enforcement pass — so for up to one interval after an
+   * administrator saves, a PC that will satisfy the new rules reports that it does not. Refusing
+   * sign-ins in that window is how switching enforcement on locks out an office that was about to
+   * be compliant, so a report older than this stamp is treated as "not measured yet".
+   */
+  securityPolicyChangedAt?: IsoInstant | null;
   /** The current or most recent grant. Kept after expiry/revocation for the device history. */
   maintenanceAccess?: WindowsDeviceMaintenanceAccess | null;
 }

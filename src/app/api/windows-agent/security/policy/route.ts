@@ -39,6 +39,12 @@ export async function POST(request: Request) {
 
     await reference.update({
       securityPolicy: policy,
+      // Stamped so the login gate can tell a device that has *failed* the new rules from one that
+      // has not been measured against them yet. Three of these controls read false for up to one
+      // enforcement interval after being switched on — the service has to apply them before it can
+      // report them — so without this, saving a policy that the PC will satisfy in forty seconds
+      // still refuses every sign-in in the meantime.
+      securityPolicyChangedAt: now,
       updatedAt: now,
       updatedBy: actor.userId,
       updatedByName: actor.userName,
