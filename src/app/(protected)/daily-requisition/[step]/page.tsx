@@ -48,7 +48,6 @@ import {
 } from '@/components/ui/alert-dialog';
 import { GstTdsVerificationDialog } from '@/components/daily-requisition/GstTdsVerificationDialog';
 import {
-  DailyMetricCard,
   dailyPageContainerClass,
   dailySurfaceCardClass,
   dailyTabsListClass,
@@ -460,17 +459,9 @@ export default function DynamicWorkflowStepPage() {
 
     return (
       <TableCard
-        title={isVerifiedHeader ? 'Verified Entries' : tab.label}
-        description={
-          isVerifiedHeader ? (
-            <>
-              Entries successfully verified and ready to be sent for payment.
-              {showBulkHeader && <span className="block">{selectionText}</span>}
-            </>
-          ) : showBulkHeader ? (
-            selectionText
-          ) : undefined
-        }
+        // No title: the active tab above already names the list. The strip shows only when there
+        // is something to act on — the selection hint beside the bulk actions.
+        description={showBulkHeader || isVerifiedHeader ? selectionText : undefined}
         actions={
           showBulkHeader || isVerifiedHeader || (isPaymentStep && tabKey === 'pending') ? (
             <>
@@ -716,13 +707,12 @@ export default function DynamicWorkflowStepPage() {
   if (workflowLoading || isAuthLoading || (isLoading && canViewPage && stepConfig)) {
     return (
       <div className={dailyPageContainerClass}>
-        <Skeleton className="mb-6 h-10 w-80" />
-        <div className="grid gap-4 md:grid-cols-3">
-          <Skeleton className="h-24" />
-          <Skeleton className="h-24" />
-          <Skeleton className="h-24" />
+        <Skeleton className="mb-4 h-10 w-80" />
+        <div className="flex flex-col gap-3 lg:flex-row lg:justify-between">
+          <Skeleton className="h-10 w-full rounded-xl lg:w-96" />
+          <Skeleton className="h-10 w-full rounded-xl lg:w-96" />
         </div>
-        <Skeleton className="mt-6 h-96 w-full rounded-2xl" />
+        <Skeleton className="mt-3 h-96 w-full rounded-2xl" />
       </div>
     );
   }
@@ -772,58 +762,53 @@ export default function DynamicWorkflowStepPage() {
   const totalSteps = workflowSteps.length;
   const stageNumber = dynamicIndex + 1;
 
+  // What each tab holds in rupees. On the payment step's Pending tab that is what is still due,
+  // since part-paid requisitions sit there too.
+  const tabAmount = (tabKey: string) =>
+    (tabEntries[tabKey] || []).reduce((sum, entry) => {
+      const net = entry.netAmount || 0;
+      if (dynamicIndex === 2 && tabKey === 'pending') return sum + Math.max(0, net - (entry.paidAmount || 0));
+      return sum + net;
+    }, 0);
+
   return (
     <>
-      <div className={dailyPageContainerClass}>
-        <PageHeader backHref="/daily-requisition" eyebrow="Daily Requisition"
+      <div className={`${dailyPageContainerClass} space-y-4`}>
+        {/* One compact header: title, stage and a one-line purpose. The counts live on the tabs. */}
+        <PageHeader
+          backHref="/daily-requisition"
+          eyebrow="Daily Requisition"
           title={currentStep.name}
-          description={stepConfig.description}
-          meta={
-            <>
-              <Badge variant="neutral">
-                Stage {stageNumber} of {totalSteps}
-              </Badge>
-              {stepConfig.tabs.length > 1 && (
-                <Badge variant="neutral">
-                  {(tabEntries[stepConfig.tabs[1]?.key] || []).length} {stepConfig.tabs[1]?.label.toLowerCase()}
-                </Badge>
-              )}
-            </>
+          badge={
+            <Badge variant="neutral">
+              Stage {stageNumber} of {totalSteps}
+            </Badge>
           }
+          description={stepConfig.description}
         />
 
-        {/* Metric cards */}
-        <div className={`mb-6 grid gap-4 md:grid-cols-${Math.min(stepConfig.tabs.length, 4)}`}>
-          {stepConfig.tabs.map((tab, i) => (
-            <DailyMetricCard
-              key={tab.key}
-              label={tab.label}
-              value={(tabEntries[tab.key] || []).length}
-              hint={stepConfig.metricHints[i] || ''}
-            />
-          ))}
-        </div>
-
-        {/* Search */}
-        <SearchInput
-          className="mb-6"
-          placeholder="Search by Reception No, Project, or Party Name..."
-          value={searchTerm}
-          onChange={setSearchTerm}
-        />
-
-        {/* Tabbed view */}
         <Tabs defaultValue={stepConfig.tabs[0]?.key} onValueChange={() => setSelectedIds(new Set())}>
-          <TabsList className={`${dailyTabsListClass} grid-cols-${stepConfig.tabs.length}`}>
-            {stepConfig.tabs.map((tab) => (
-              <TabsTrigger key={tab.key} value={tab.key}>
-                {tab.label} ({(tabEntries[tab.key] || []).length})
-              </TabsTrigger>
-            ))}
-          </TabsList>
+          {/* Tabs (with count and amount) and search share one row */}
+          <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+            <TabsList className={`${dailyTabsListClass} flex w-full overflow-x-auto lg:inline-flex lg:w-auto`}>
+              {stepConfig.tabs.map((tab, i) => (
+                <TabsTrigger key={tab.key} value={tab.key} className="flex-1 whitespace-nowrap px-4 py-1.5 lg:flex-none" title={stepConfig.metricHints[i] || undefined}>
+                  <span>{tab.label}</span>
+                  <span className="ml-1.5 rounded-full bg-black/5 px-1.5 text-xs font-semibold tabular-nums">{(tabEntries[tab.key] || []).length}</span>
+                  <span className="ml-1.5 hidden text-xs font-normal tabular-nums opacity-80 sm:inline">{formatCurrency(tabAmount(tab.key))}</span>
+                </TabsTrigger>
+              ))}
+            </TabsList>
+            <SearchInput
+              className="w-full lg:w-96"
+              placeholder="Search reception no., project, party…"
+              value={searchTerm}
+              onChange={setSearchTerm}
+            />
+          </div>
 
           {stepConfig.tabs.map((tab) => (
-            <TabsContent key={tab.key} value={tab.key} className="mt-4">
+            <TabsContent key={tab.key} value={tab.key} className="mt-3">
               {renderTable(tab.key, tab)}
             </TabsContent>
           ))}

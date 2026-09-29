@@ -17,13 +17,14 @@ export const DAILY_STATUS_TONE: Partial<Record<string, StatusTone>> = {
   Received: 'info',
   Verified: 'info',
   'Received for Payment': 'progress',
+  'Partially Paid': 'progress',
 };
 
 export const dailyPageContainerClass = 'w-full px-3 py-4 sm:px-4 lg:px-6 xl:px-8';
 export const dailySurfaceCardClass =
   'overflow-hidden rounded-2xl border border-white/70 bg-white/70 shadow-[0_20px_70px_-55px_rgba(2,6,23,0.55)] backdrop-blur';
 export const dailyTabsListClass =
-  'grid w-full rounded-2xl border border-white/70 bg-white/70 p-1 backdrop-blur';
+  'grid h-auto w-full rounded-xl border border-white/70 bg-white/70 p-1 backdrop-blur';
 
 interface DailyWorkflowCardProps {
   item: {
@@ -91,10 +92,13 @@ export function DailyMetricCard({
   hint?: string;
 }) {
   return (
-    <div className="rounded-2xl border border-white/70 bg-white/70 px-4 py-3 shadow-sm backdrop-blur">
-      <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">{label}</p>
-      <p className="mt-2 text-2xl font-semibold text-slate-900">{value}</p>
-      {hint ? <p className="mt-1 text-xs text-slate-500">{hint}</p> : null}
+    // Compact on purpose: a row of these sits above a register, and the register is the page.
+    <div className="min-w-0 rounded-xl border border-white/70 bg-white/70 px-3 py-2 shadow-sm backdrop-blur">
+      <div className="flex items-baseline justify-between gap-3">
+        <p className="truncate text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">{label}</p>
+        <p className="shrink-0 text-lg font-semibold tabular-nums text-slate-900">{value}</p>
+      </div>
+      {hint ? <p className="truncate text-[11px] text-slate-500">{hint}</p> : null}
     </div>
   );
 }

@@ -686,7 +686,7 @@ function EntrySheetPageComponent() {
           }
         />
 
-        <div className="mb-6 grid gap-4 md:grid-cols-3">
+        <div className="mb-4 grid grid-cols-1 gap-3 sm:grid-cols-3">
           <DailyMetricCard label="Visible Entries" value={filteredEntries.length} hint="Filtered result set" />
           <DailyMetricCard label="Selected" value={selectedIds.size} hint={isSelectionMode ? 'Checklist print mode' : 'No bulk action active'} />
           <DailyMetricCard label="Unassigned DEP" value={unassignedExpenseRequests.length} hint="Expense requests available to link" />

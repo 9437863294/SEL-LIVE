@@ -19,7 +19,6 @@ import { format } from 'date-fns';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { useAuth } from '@/components/auth/AuthProvider';
 import {
-  DailyMetricCard,
   dailyPageContainerClass,
   dailySurfaceCardClass,
   dailyTabsListClass,
@@ -326,37 +325,23 @@ export default function ManageDocumentsPage() {
         <PageHeader backHref="/daily-requisition" eyebrow="Daily Requisition"
           title="Manage Documents"
           description="Keep attachments organized, highlight missing paperwork, and move resolved items back into the normal flow."
-          meta={
-            <>
-              <Badge variant="neutral">
-                Support workflow
-              </Badge>
-              <Badge variant="neutral">
-                {uploadedList.length} uploaded entries
-              </Badge>
-            </>
-          }
+          badge={<Badge variant="neutral">Support workflow</Badge>}
         />
 
-        <div className="mb-6 grid gap-4 md:grid-cols-3">
-          <DailyMetricCard label="Pending Uploads" value={pendingUploads.length} hint="Need attachment action" />
-          <DailyMetricCard label="Uploaded" value={uploadedList.length} hint="Documents already attached" />
-          <DailyMetricCard label="Missing / N.R." value={missingList.length} hint="Exceptions and follow-up" />
-        </div>
-
+        {/* The counts live on the tabs; a card row repeating them only pushed the list down. */}
         <Tabs defaultValue="pending">
-          <TabsList className={`${dailyTabsListClass} grid-cols-3`}>
+          <TabsList className={`${dailyTabsListClass} grid-cols-3 lg:inline-grid lg:w-auto`}>
             <TabsTrigger value="pending">Pending ({pendingUploads.length})</TabsTrigger>
             <TabsTrigger value="uploaded">Uploaded ({uploadedList.length})</TabsTrigger>
             <TabsTrigger value="missing">Missing / N.R. ({missingList.length})</TabsTrigger>
           </TabsList>
-          <TabsContent value="pending" className="mt-4">
+          <TabsContent value="pending" className="mt-3">
             {renderTable(pendingUploads, 'pending')}
           </TabsContent>
-          <TabsContent value="uploaded" className="mt-4">
+          <TabsContent value="uploaded" className="mt-3">
             {renderTable(uploadedList, 'uploaded')}
           </TabsContent>
-          <TabsContent value="missing" className="mt-4">
+          <TabsContent value="missing" className="mt-3">
             {renderTable(missingList, 'missing')}
           </TabsContent>
         </Tabs>
