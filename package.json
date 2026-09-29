@@ -55,7 +55,7 @@
     "migrate:mail-hub": "node scripts/mail-hub-migrate.mjs",
     "mail-hub:rotate-keys": "node --experimental-strip-types scripts/mail-hub-rotate-keys.mjs",
     "seed:office-hub": "node scripts/seed-office-hub.mjs",
-    "test:bank-balance": "node --experimental-strip-types --test tests/bank-balance-ledger.test.mjs",
+    "test:bank-balance": "node --experimental-strip-types --test tests/bank-balance-ledger.test.mjs tests/bank-payments.test.mjs",
     "test:daily-requisition": "node --experimental-strip-types --test tests/daily-requisition-import.test.mjs",
     "test:windows-agent": "node --experimental-strip-types --test tests/windows-agent-domain.test.mjs tests/windows-agent-detail.test.mjs tests/windows-agent-approvers.test.mjs tests/website-blocking.test.mjs",
     "typecheck:windows-agent": "tsc -p tsconfig.windows-agent.json",

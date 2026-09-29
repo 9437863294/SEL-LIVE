@@ -144,7 +144,7 @@ export function LimitUtilisationChart({ rows }: { rows: CcLimitRow[] }) {
 
   return (
     <ChartPanel
-      title="Limit vs utilisation"
+      title="Limit vs Utilisation"
       description="Each Cash Credit account's limit (DP + TOD), split into used and available."
       legend={<Legend items={[{ label: 'Utilised', color: series.blue }, { label: 'Available', color: series.aqua }]} />}
     >
@@ -200,7 +200,7 @@ export function UtilisationTrendChart({ points }: { points: UtilisationTrendPoin
 
   return (
     <ChartPanel
-      title="Utilisation trend"
+      title="Utilisation Trend"
       description="All Cash Credit accounts together, at each day's close — last 30 days."
       legend={<Legend items={[{ label: 'Utilised', color: series.blue }, { label: 'Total limit', color: series.orange, dashed: true }]} />}
     >
@@ -257,7 +257,7 @@ export function MonthlyFlowChart({ points }: { points: MonthlyFlowPoint[] }) {
 
   return (
     <ChartPanel
-      title="Receipts vs payments"
+      title="Receipts vs Payments"
       description="Per month across all accounts, internal transfers excluded — last 6 months."
       legend={<Legend items={[{ label: 'Receipts', color: series.blue }, { label: 'Payments', color: series.orange }]} />}
     >

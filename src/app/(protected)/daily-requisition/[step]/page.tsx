@@ -1,5 +1,6 @@
 'use client';
 
+import Link from 'next/link';
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { useParams, notFound } from 'next/navigation';
 import {
@@ -123,9 +124,10 @@ function getStepConfig(dynamicIndex: number): StepConfig {
       };
     case 2: // e.g., "Processed for Payment"
       return {
-        queryStatuses: ['Received for Payment', 'Paid'],
+        queryStatuses: ['Received for Payment', 'Partially Paid', 'Paid'],
         tabs: [
-          { key: 'pending', label: 'Pending', statuses: ['Received for Payment'], showBulkCheckbox: true },
+          // 'Partially Paid' is set by Bank Balance payment vouchers; the rest is still due, so it stays pending.
+          { key: 'pending', label: 'Pending', statuses: ['Received for Payment', 'Partially Paid'], showBulkCheckbox: true },
           { key: 'paid', label: 'Paid', statuses: ['Paid'] },
         ],
         bulkAction: { tabKey: 'pending', label: 'Mark as Paid', newStatus: 'Paid' },
@@ -470,7 +472,7 @@ export default function DynamicWorkflowStepPage() {
           ) : undefined
         }
         actions={
-          showBulkHeader || isVerifiedHeader ? (
+          showBulkHeader || isVerifiedHeader || (isPaymentStep && tabKey === 'pending') ? (
             <>
               {/* Bulk action for applicable tabs */}
               {showBulkHeader && stepConfig?.bulkAction && (
@@ -482,6 +484,12 @@ export default function DynamicWorkflowStepPage() {
                 >
                   <Check className="mr-2 h-4 w-4" />
                   {stepConfig.bulkAction.label} ({selectedIds.size})
+                </Button>
+              )}
+              {/* Payment step: pay through a Bank Balance voucher (cheque / e-cheque / RTGS), in full or part */}
+              {isPaymentStep && tabKey === 'pending' && can('Add', 'Bank Balance.Expenses') && (
+                <Button asChild variant="outline">
+                  <Link href="/bank-balance/expenses/new">Pay via voucher</Link>
                 </Button>
               )}
               {/* Verified tab action for GST step - Send for Payment */}
@@ -527,6 +535,12 @@ export default function DynamicWorkflowStepPage() {
                   <TableHead>Received By</TableHead>
                 )}
                 <TableHead className="text-right">Net Amount</TableHead>
+                {isPaymentStep && (
+                  <>
+                    <TableHead className="text-right">Paid</TableHead>
+                    <TableHead className="text-right">Balance</TableHead>
+                  </>
+                )}
                 {showRowActions && <TableHead className="text-right">Actions</TableHead>}
               </TableRow>
             </TableHeader>
@@ -575,6 +589,20 @@ export default function DynamicWorkflowStepPage() {
                       <TableCell>{entry.receivedByName || 'N/A'}</TableCell>
                     )}
                     <TableCell className="whitespace-nowrap text-right tabular-nums">{formatCurrency(entry.netAmount)}</TableCell>
+                    {isPaymentStep && (() => {
+                      // Paid through Bank Balance vouchers (paidAmount), or marked Paid here in full.
+                      const paid = entry.status === 'Paid' ? Math.max(entry.paidAmount || 0, entry.netAmount || 0) : entry.paidAmount || 0;
+                      const balance = Math.max(0, (entry.netAmount || 0) - paid);
+                      return (
+                        <>
+                          <TableCell className="whitespace-nowrap text-right tabular-nums">{paid ? formatCurrency(paid) : '—'}</TableCell>
+                          <TableCell className="whitespace-nowrap text-right tabular-nums">
+                            {formatCurrency(balance)}
+                            {entry.status === 'Partially Paid' && <span className="block text-[11px] text-sky-700">Part paid</span>}
+                          </TableCell>
+                        </>
+                      );
+                    })()}
 
                     {/* Row-level actions */}
                     {showRowActions && (

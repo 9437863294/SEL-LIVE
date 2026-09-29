@@ -561,7 +561,7 @@ export default function BankBalanceDashboard() {
           </div>
 
           {/* ── Charts ── (after the account cards: the cards are the day-to-day view, the charts the trend) */}
-          <SectionHeader title="Trends & analysis" description="Limit against utilisation, its last 30 days, and money in and out by month." />
+          <SectionHeader title="Trends & Analysis" description="Limit against utilisation, its last 30 days, and money in and out by month." />
           <div className="mb-6 grid grid-cols-1 gap-4 xl:grid-cols-2">
             <LimitUtilisationChart rows={ccPosition.rows} />
             <UtilisationTrendChart points={utilisationTrend} />

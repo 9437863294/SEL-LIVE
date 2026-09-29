@@ -907,6 +907,7 @@ export interface DailyRequisitionEntry {
     | "Cancelled"
     | "Needs Review"
     | "Received for Payment"
+    | "Partially Paid"
     | "Paid";
   receivedAt?: Timestamp;
   receivedById?: string;
@@ -925,6 +926,10 @@ export interface DailyRequisitionEntry {
   documentStatusUpdatedById?: string;
   attachments?: Attachment[];
   paidAt?: Timestamp;
+  /** Total paid so far through Bank Balance payment vouchers (part payments add up). */
+  paidAmount?: number;
+  /** Each voucher line that paid (part of) this requisition. See src/lib/bank-payments.ts. */
+  payments?: import("@/lib/bank-payments").RequisitionPaymentRef[];
 }
 
 /** ---------- User settings ---------- **/
@@ -1302,6 +1307,10 @@ export interface BankExpense {
   paymentRefNo?: string;
   approvalCopyUrl?: string;
   bankTransferCopyUrl?: string;
+  /** The payment voucher (bankPayments) this Debit belongs to, when entered through one. */
+  bankPaymentId?: string;
+  /** The Daily Requisition this Debit settles, if any. */
+  requisitionId?: string;
   createdAt: Timestamp;
 }
 

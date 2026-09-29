@@ -13,12 +13,12 @@
  * Internal transfers (contra legs) are never listed here; they have their own page.
  */
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { Fragment, useCallback, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import type { DateRange } from 'react-day-picker';
 import { compareDesc, endOfDay, startOfDay } from 'date-fns';
 import { collection, doc, getDocs, query, runTransaction, where } from 'firebase/firestore';
-import { Landmark, Loader2, Paperclip, Plus, Receipt, Trash2, TrendingUp, Wallet } from 'lucide-react';
+import { BookOpenCheck, ChevronRight, Landmark, Loader2, Paperclip, Plus, Receipt, Trash2, TrendingUp, Wallet } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -98,6 +98,13 @@ const KINDS: Record<TransactionLogKind, KindConfig> = {
 
 type DateWiseRow = { id: string; key: string; bankTotals: Record<string, number>; total: number };
 
+/** The grouped register: date → bank → payment method (instrument) → the entries themselves. */
+type MethodGroup = { key: string; method: string; instrumentNo: string; voucher: boolean; total: number; entries: BankExpense[] };
+type BankGroup = { key: string; accountId: string; total: number; count: number; methods: MethodGroup[] };
+type DateGroup = { key: string; day: string; total: number; count: number; banks: BankGroup[] };
+
+type ViewMode = 'grouped' | 'list' | 'dateWise';
+
 const plural = (count: number, noun: string) => `${count} ${noun}${count === 1 ? '' : 's'}`;
 
 /** A saved attachment, opened in a new tab. Plain anchors: the list has no card links to nest in. */
@@ -128,7 +135,9 @@ export function BankTransactionLog({ kind }: { kind: TransactionLogKind }) {
   const [datePreset, setDatePreset] = useState<DateRangePreset>('custom');
   const [bankFilter, setBankFilter] = useState('all');
   const [search, setSearch] = useState('');
-  const [viewMode, setViewMode] = useState<'current' | 'dateWise'>('current');
+  const [viewMode, setViewMode] = useState<ViewMode>('grouped');
+  /** Collapsed group keys in the grouped view; everything starts expanded. */
+  const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
 
   const [deleteTarget, setDeleteTarget] = useState<BankExpense | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
@@ -218,6 +227,55 @@ export function BankTransactionLog({ kind }: { kind: TransactionLogKind }) {
     return Array.from(grouped.values()).sort((a, b) => a.key.localeCompare(b.key));
   }, [filtered]);
 
+  // Newest day first; within a day banks by name, then methods (a cheque / RTGS batch keeps its
+  // payees together), then the entries. Receipts have no method level — one group per bank.
+  const groupedTree = useMemo<DateGroup[]>(() => {
+    const days = new Map<string, DateGroup>();
+    for (const entry of filtered) {
+      const day = dayKey(txnDate(entry));
+      const amount = Number(entry.amount) || 0;
+      const dateGroup = days.get(day) ?? { key: day, day, total: 0, count: 0, banks: [] };
+      let bank = dateGroup.banks.find((b) => b.accountId === entry.accountId);
+      if (!bank) {
+        bank = { key: `${day}|${entry.accountId}`, accountId: entry.accountId, total: 0, count: 0, methods: [] };
+        dateGroup.banks.push(bank);
+      }
+      const method = kind === 'payment' ? (entry.paymentMethod || '').trim() || 'Method not recorded' : '';
+      const instrumentNo = kind === 'payment' ? (entry.paymentRefNo || '').trim() : '';
+      const methodKey = `${bank.key}|${method}|${instrumentNo}`;
+      let methodGroup = bank.methods.find((m) => m.key === methodKey);
+      if (!methodGroup) {
+        methodGroup = { key: methodKey, method, instrumentNo, voucher: false, total: 0, entries: [] };
+        bank.methods.push(methodGroup);
+      }
+      methodGroup.entries.push(entry);
+      methodGroup.total += amount;
+      methodGroup.voucher = methodGroup.voucher || Boolean(entry.bankPaymentId);
+      bank.total += amount;
+      bank.count += 1;
+      dateGroup.total += amount;
+      dateGroup.count += 1;
+      days.set(day, dateGroup);
+    }
+    const tree = [...days.values()].sort((a, b) => b.day.localeCompare(a.day));
+    for (const dateGroup of tree) {
+      dateGroup.banks.sort((a, b) => accountLabel(accountById.get(a.accountId)).localeCompare(accountLabel(accountById.get(b.accountId))));
+      for (const bank of dateGroup.banks) {
+        bank.methods.sort((a, b) => a.method.localeCompare(b.method) || a.instrumentNo.localeCompare(b.instrumentNo));
+        for (const m of bank.methods) m.entries.sort((a, b) => (a.paymentRequestRefNo || a.description || '').localeCompare(b.paymentRequestRefNo || b.description || ''));
+      }
+    }
+    return tree;
+  }, [filtered, kind, accountById]);
+
+  const toggle = (key: string) =>
+    setCollapsed((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+
   const columnTotals = useMemo(() => {
     const totals: Record<string, number> = {};
     for (const row of dateWiseRows) {
@@ -228,6 +286,11 @@ export function BankTransactionLog({ kind }: { kind: TransactionLogKind }) {
 
   const handleConfirmDelete = async () => {
     if (!deleteTarget) return;
+    if (deleteTarget.bankPaymentId) {
+      toast({ title: 'Part of a voucher', description: 'Cancel the whole voucher from the Cheque Register instead.', variant: 'destructive' });
+      setDeleteTarget(null);
+      return;
+    }
     if (!canDelete) {
       toast({ title: 'Not allowed', description: `You do not have permission to delete ${config.noun}s.`, variant: 'destructive' });
       setDeleteTarget(null);
@@ -260,6 +323,28 @@ export function BankTransactionLog({ kind }: { kind: TransactionLogKind }) {
   if (!canView) return <BankAccessDenied title={config.title} />;
 
   const bankName = (accountId: string) => (accountById.has(accountId) ? accountLabel(accountById.get(accountId)) : 'N/A');
+
+  const actionCell = (entry: BankExpense) =>
+        // A line of a payment voucher is reversed with its whole voucher, from the Cheque Register —
+        // deleting one line here would leave the voucher and its requisitions out of step.
+        entry.bankPaymentId ? (
+          <Link href="/bank-balance/cheques" className="inline-flex h-8 items-center gap-1 px-2 text-xs text-muted-foreground hover:text-foreground">
+            <BookOpenCheck className="h-3.5 w-3.5" />
+            Voucher
+          </Link>
+        ) : canDelete ? (
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-8 text-destructive hover:text-destructive"
+            onClick={() => setDeleteTarget(entry)}
+            disabled={isDeleting}
+            aria-label={`Delete ${config.noun} of ${formatInr(entry.amount)} on ${formatDay(txnDate(entry))}`}
+          >
+            <Trash2 className="h-4 w-4" />
+            <span className="ml-1.5 sm:hidden">Delete</span>
+          </Button>
+        ) : null;
 
   const columns: Array<ListColumn<BankExpense>> = [
     {
@@ -327,20 +412,7 @@ export function BankTransactionLog({ kind }: { kind: TransactionLogKind }) {
       header: '',
       align: 'right',
       mobile: 'footer',
-      cell: (entry) =>
-        canDelete ? (
-          <Button
-            variant="ghost"
-            size="sm"
-            className="h-8 text-destructive hover:text-destructive"
-            onClick={() => setDeleteTarget(entry)}
-            disabled={isDeleting}
-            aria-label={`Delete ${config.noun} of ${formatInr(entry.amount)} on ${formatDay(txnDate(entry))}`}
-          >
-            <Trash2 className="h-4 w-4" />
-            <span className="ml-1.5 sm:hidden">Delete</span>
-          </Button>
-        ) : null,
+      cell: (entry) => actionCell(entry),
     },
   );
 
@@ -405,18 +477,43 @@ export function BankTransactionLog({ kind }: { kind: TransactionLogKind }) {
         </div>
 
         <TableCard
-          title={viewMode === 'current' ? config.title : `${config.title} by date`}
+          title={viewMode === 'dateWise' ? `${config.title} by date` : config.title}
+          description={
+            viewMode === 'grouped'
+              ? kind === 'payment'
+                ? 'Grouped by date, bank and payment method — each cheque or transfer batch with its payees.'
+                : 'Grouped by date and bank.'
+              : undefined
+          }
           count={filtered.length}
           noun={config.noun}
-          scroll={viewMode === 'dateWise' ? 'contained' : 'natural'}
+          scroll={viewMode === 'list' ? 'natural' : 'contained'}
           actions={
             <>
-              <Button size="sm" variant={viewMode === 'current' ? 'default' : 'outline'} onClick={() => setViewMode('current')}>
-                Current view
-              </Button>
-              <Button size="sm" variant={viewMode === 'dateWise' ? 'default' : 'outline'} onClick={() => setViewMode('dateWise')}>
-                Date-wise view
-              </Button>
+              {viewMode === 'grouped' && groupedTree.length > 0 && (
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  onClick={() =>
+                    setCollapsed((prev) =>
+                      prev.size ? new Set() : new Set(groupedTree.flatMap((d) => [d.key, ...d.banks.map((b) => b.key)])),
+                    )
+                  }
+                >
+                  {collapsed.size ? 'Expand all' : 'Collapse all'}
+                </Button>
+              )}
+              {(
+                [
+                  ['grouped', 'Grouped'],
+                  ['list', 'List'],
+                  ['dateWise', 'Date-wise'],
+                ] as Array<[ViewMode, string]>
+              ).map(([mode, label]) => (
+                <Button key={mode} size="sm" variant={viewMode === mode ? 'default' : 'outline'} onClick={() => setViewMode(mode)}>
+                  {label}
+                </Button>
+              ))}
             </>
           }
           toolbar={
@@ -457,7 +554,119 @@ export function BankTransactionLog({ kind }: { kind: TransactionLogKind }) {
             ) : undefined
           }
         >
-          {viewMode === 'current' ? (
+          {viewMode === 'grouped' ? (
+            groupedTree.length === 0 ? (
+              emptyMessage
+            ) : (
+              <table className="w-full border-collapse text-sm" style={{ minWidth: kind === 'payment' ? 860 : 560 }}>
+                <thead className="sticky top-0 z-10 bg-muted text-left text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                  <tr>
+                    {kind === 'payment' && <th className="w-56 px-3 py-2.5">Requisition / Ref</th>}
+                    <th className="px-3 py-2.5">Description</th>
+                    {kind === 'payment' && <th className="w-44 px-2 py-2.5">UTR</th>}
+                    {kind === 'payment' && <th className="w-40 px-2 py-2.5">Files</th>}
+                    <th className="w-40 px-3 py-2.5 text-right">Amount</th>
+                    <th className="w-24 px-3 py-2.5">
+                      <span className="sr-only">Action</span>
+                    </th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {groupedTree.map((dateGroup) => {
+                    const span = kind === 'payment' ? 4 : 1;
+                    const dateOpen = !collapsed.has(dateGroup.key);
+                    return (
+                      <Fragment key={dateGroup.key}>
+                        {/* Level 1 — the day */}
+                        <tr className="border-t bg-muted/60">
+                          <td colSpan={span} className="px-3 py-2">
+                            <button type="button" onClick={() => toggle(dateGroup.key)} className="flex items-center gap-2 font-semibold" aria-expanded={dateOpen}>
+                              <ChevronRight className={`h-4 w-4 transition-transform ${dateOpen ? 'rotate-90' : ''}`} />
+                              {formatDay(dateGroup.day)}
+                              <span className="text-xs font-normal text-muted-foreground">
+                                {plural(dateGroup.count, config.noun)} · {plural(dateGroup.banks.length, 'bank')}
+                              </span>
+                            </button>
+                          </td>
+                          <td className={`whitespace-nowrap px-3 py-2 text-right font-bold tabular-nums ${config.amountClass}`}>{formatInr(dateGroup.total)}</td>
+                          <td />
+                        </tr>
+                        {dateOpen &&
+                          dateGroup.banks.map((bank) => {
+                            const bankOpen = !collapsed.has(bank.key);
+                            return (
+                              <Fragment key={bank.key}>
+                                {/* Level 2 — the bank account */}
+                                <tr className="border-t bg-muted/25">
+                                  <td colSpan={span} className="py-1.5 pl-8 pr-3">
+                                    <button type="button" onClick={() => toggle(bank.key)} className="flex items-center gap-2 font-medium" aria-expanded={bankOpen}>
+                                      <ChevronRight className={`h-3.5 w-3.5 transition-transform ${bankOpen ? 'rotate-90' : ''}`} />
+                                      <Landmark className="h-3.5 w-3.5 text-muted-foreground" />
+                                      {bankName(bank.accountId)}
+                                      <span className="text-xs font-normal text-muted-foreground">{plural(bank.count, config.noun)}</span>
+                                    </button>
+                                  </td>
+                                  <td className="whitespace-nowrap px-3 py-1.5 text-right font-semibold tabular-nums">{formatInr(bank.total)}</td>
+                                  <td />
+                                </tr>
+                                {bankOpen &&
+                                  bank.methods.map((methodGroup) => (
+                                    <Fragment key={methodGroup.key}>
+                                      {/* Level 3 — the payment method / instrument (payments only) */}
+                                      {kind === 'payment' && (
+                                        <tr className="border-t">
+                                          <td colSpan={span} className="py-1.5 pl-16 pr-3">
+                                            <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs">
+                                              <span className="font-semibold uppercase tracking-wide text-foreground">{methodGroup.method}</span>
+                                              {methodGroup.instrumentNo && <span className="font-mono text-muted-foreground">{methodGroup.instrumentNo}</span>}
+                                              <span className="text-muted-foreground">· {plural(methodGroup.entries.length, 'payee')}</span>
+                                              {methodGroup.voucher && (
+                                                <Link href="/bank-balance/cheques" className="inline-flex items-center gap-1 text-sky-700 hover:underline">
+                                                  <BookOpenCheck className="h-3 w-3" />
+                                                  Voucher
+                                                </Link>
+                                              )}
+                                            </div>
+                                          </td>
+                                          <td className="whitespace-nowrap px-3 py-1.5 text-right text-xs font-semibold tabular-nums">{formatInr(methodGroup.total)}</td>
+                                          <td />
+                                        </tr>
+                                      )}
+                                      {/* Level 4 — each requisition / payment */}
+                                      {methodGroup.entries.map((entry) => (
+                                        <tr key={entry.id} className="border-t border-dashed hover:bg-muted/20">
+                                          {kind === 'payment' && (
+                                            <td className="py-2 pl-24 pr-3 font-mono text-xs">{entry.paymentRequestRefNo || <span className="text-muted-foreground">—</span>}</td>
+                                          )}
+                                          <td className={`py-2 pr-3 ${kind === 'payment' ? 'pl-3' : 'pl-16'}`}>
+                                            <span className="line-clamp-2 break-words">{entry.description || '—'}</span>
+                                          </td>
+                                          {kind === 'payment' && <td className="px-2 py-2 font-mono text-xs">{entry.utrNumber || <span className="text-muted-foreground">—</span>}</td>}
+                                          {kind === 'payment' && (
+                                            <td className="px-2 py-2">
+                                              <div className="flex flex-wrap gap-x-3 gap-y-1">
+                                                {entry.approvalCopyUrl && <AttachmentLink href={entry.approvalCopyUrl} label="Approval" />}
+                                                {entry.bankTransferCopyUrl && <AttachmentLink href={entry.bankTransferCopyUrl} label="Copy" />}
+                                                {!entry.approvalCopyUrl && !entry.bankTransferCopyUrl && <span className="text-xs text-muted-foreground">—</span>}
+                                              </div>
+                                            </td>
+                                          )}
+                                          <td className="whitespace-nowrap px-3 py-2 text-right tabular-nums">{formatInr(entry.amount)}</td>
+                                          <td className="px-3 py-1 text-right">{actionCell(entry)}</td>
+                                        </tr>
+                                      ))}
+                                    </Fragment>
+                                  ))}
+                              </Fragment>
+                            );
+                          })}
+                      </Fragment>
+                    );
+                  })}
+                </tbody>
+              </table>
+            )
+          ) : viewMode === 'list' ? (
             <div className="p-3 sm:p-0">
               <DataList rows={filtered} columns={columns} frameless dense maxHeightClassName="sm:max-h-[36rem]" empty={emptyMessage} />
             </div>

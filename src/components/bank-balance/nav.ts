@@ -5,6 +5,7 @@ import {
   ArrowRightLeft,
   ArrowUp,
   Banknote,
+  BookOpenCheck,
   CalendarDays,
   FileText,
   Gauge,
@@ -61,6 +62,7 @@ export function useBankBalanceNav(): { items: BankBalanceNavItem[]; isLoading: b
     { href: '/bank-balance/expenses', label: 'Payments', icon: ArrowDown, group: 'Entries', color: 'text-red-700', bg: 'bg-red-50', allowed: can('View', 'Bank Balance.Expenses') },
     { href: '/bank-balance/receipts', label: 'Receipts', icon: ArrowUp, group: 'Entries', color: 'text-green-700', bg: 'bg-green-50', allowed: can('View', 'Bank Balance.Receipts') },
     { href: '/bank-balance/internal-transaction', label: 'Transfers', icon: ArrowRightLeft, group: 'Entries', color: 'text-blue-700', bg: 'bg-blue-50', allowed: can('View', 'Bank Balance.Internal Transaction') || canViewReports },
+    { href: '/bank-balance/cheques', label: 'Cheque Register', icon: BookOpenCheck, group: 'Entries', color: 'text-indigo-700', bg: 'bg-indigo-50', allowed: can('View', 'Bank Balance.Expenses') },
 
     { href: '/bank-balance/daily-log', label: 'Daily Log', icon: CalendarDays, group: 'Reports', color: 'text-blue-700', bg: 'bg-blue-50', allowed: can('View', 'Bank Balance.Daily Log') },
     { href: '/bank-balance/reports/bank-position', label: 'Bank Position', icon: Banknote, group: 'Reports', color: 'text-blue-700', bg: 'bg-blue-50', allowed: canViewReports },
