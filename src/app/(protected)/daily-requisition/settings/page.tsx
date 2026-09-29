@@ -1,19 +1,16 @@
 'use client';
 
-import { Users, Hash, Printer, GitMerge } from 'lucide-react';
+import { Hash, Printer, GitMerge, ShieldAlert } from 'lucide-react';
 
 import { Skeleton } from '@/components/ui/skeleton';
 import { useAuthorization } from '@/hooks/useAuthorization';
 import {
-  DailyMetricCard,
   DailyWorkflowCard,
   dailyPageContainerClass,
   dailySurfaceCardClass,
 } from '@/components/daily-requisition/module-shell';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
-import { ShieldAlert } from 'lucide-react';
 import { PageHeader } from '@/components/shared/page-header';
-import { Badge } from '@/components/ui/badge';
 
 /* ---- Workflow items (new) ---- */
 const workflowItems = [
@@ -64,22 +61,18 @@ export default function DailyRequisitionSettingsPage() {
     disabled: !can(item.permission, 'Daily Requisition.Settings'),
   }));
 
-  const allItems = [...authorizedWorkflowItems, ...authorizedActionItems];
-
   if (isAuthLoading) {
     return (
       <div className={dailyPageContainerClass}>
-        <Skeleton className="mb-6 h-10 w-80" />
-        <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
-          <Skeleton className="h-24" />
-          <Skeleton className="h-24" />
-          <Skeleton className="h-24" />
+        <Skeleton className="mb-6 h-10 w-full max-w-80" />
+        <Skeleton className="mb-4 h-4 w-40" />
+        <div className="mb-8 grid grid-cols-1 gap-6 sm:grid-cols-2 xl:grid-cols-3">
+          <Skeleton className="h-28 rounded-2xl" />
         </div>
-        <div className="mt-6 grid grid-cols-1 gap-6 sm:grid-cols-2 xl:grid-cols-3">
-          <Skeleton className="h-28" />
-          <Skeleton className="h-28" />
-          <Skeleton className="h-28" />
-          <Skeleton className="h-28" />
+        <Skeleton className="mb-4 h-4 w-40" />
+        <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 xl:grid-cols-3">
+          <Skeleton className="h-28 rounded-2xl" />
+          <Skeleton className="h-28 rounded-2xl" />
         </div>
       </div>
     );
@@ -105,30 +98,12 @@ export default function DailyRequisitionSettingsPage() {
     );
   }
 
-  const enabledCount = allItems.filter((item) => !item.disabled).length;
-
   return (
     <div className={dailyPageContainerClass}>
       <PageHeader backHref="/daily-requisition" eyebrow="Daily Requisition"
         title="Settings"
-        description="Configure workflow steps, numbering, printing, and access-related controls."
-        meta={
-          <>
-            <Badge variant="neutral">
-              Administrative controls
-            </Badge>
-            <Badge variant="neutral">
-              {enabledCount} visible options
-            </Badge>
-          </>
-        }
+        description="Configure workflow steps, numbering, and printing for the module."
       />
-
-      <div className="mb-6 grid gap-4 md:grid-cols-3">
-        <DailyMetricCard label="Workflow" value={workflowItems.length} hint="Process configuration" />
-        <DailyMetricCard label="Actions" value={actionItems.length} hint="Module controls" />
-        <DailyMetricCard label="Your Access" value={enabledCount} hint="Cards enabled for your role" />
-      </div>
 
       {/* ---- Workflow Section ---- */}
       <div className="mb-2">
@@ -144,7 +119,7 @@ export default function DailyRequisitionSettingsPage() {
       {/* ---- Actions Section ---- */}
       <div className="mb-2">
         <h2 className="mb-1 text-sm font-semibold uppercase tracking-[0.18em] text-slate-500">Actions</h2>
-        <p className="mb-4 text-xs text-slate-400">Serial numbering, roles, and output configuration.</p>
+        <p className="mb-4 text-xs text-slate-400">Serial numbering and print output.</p>
       </div>
       <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 xl:grid-cols-3">
         {authorizedActionItems.map((item) => (

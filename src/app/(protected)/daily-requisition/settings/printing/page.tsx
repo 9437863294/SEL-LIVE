@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { Save, Loader2 } from 'lucide-react';
+import { Save, Loader2, ShieldAlert } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -11,16 +11,15 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { Textarea } from '@/components/ui/textarea';
 import { useToast } from '@/hooks/use-toast';
+import { useAuthorization } from '@/hooks/useAuthorization';
 import { db } from '@/lib/firebase';
 import { doc, getDoc, setDoc } from 'firebase/firestore';
 import { Skeleton } from '@/components/ui/skeleton';
 import {
-  DailyMetricCard,
   dailyPageContainerClass,
   dailySurfaceCardClass,
 } from '@/components/daily-requisition/module-shell';
 import { PageHeader } from '@/components/shared/page-header';
-import { Badge } from '@/components/ui/badge';
 
 interface PrintingSettings {
   paperSize: string;
@@ -45,6 +44,9 @@ const initialSettings: PrintingSettings = {
 
 export default function PrintingSetupPage() {
   const { toast } = useToast();
+  const { can, isLoading: isAuthLoading } = useAuthorization();
+  // The Settings page's "Printing Setup" card is gated on this, and so is the menu entry.
+  const canViewPage = can('View', 'Daily Requisition.Settings');
   const [settings, setSettings] = useState<PrintingSettings>(initialSettings);
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
@@ -84,16 +86,37 @@ export default function PrintingSetupPage() {
     setIsSaving(false);
   };
 
-  if (isLoading) {
+  if (isAuthLoading || (isLoading && canViewPage)) {
     return (
       <div className={`${dailyPageContainerClass} mx-auto max-w-5xl`}>
-        <Skeleton className="mb-6 h-10 w-64" />
-        <div className="grid gap-4 md:grid-cols-3">
-          <Skeleton className="h-24" />
-          <Skeleton className="h-24" />
-          <Skeleton className="h-24" />
+        <Skeleton className="mb-6 h-10 w-full max-w-64" />
+        <div className="space-y-6">
+          <Skeleton className="h-40 w-full rounded-2xl" />
+          <Skeleton className="h-40 w-full rounded-2xl" />
+          <Skeleton className="h-48 w-full rounded-2xl" />
         </div>
-        <Skeleton className="mt-6 h-96 w-full rounded-2xl" />
+      </div>
+    );
+  }
+
+  if (!canViewPage) {
+    return (
+      <div className={`${dailyPageContainerClass} mx-auto max-w-5xl`}>
+        <PageHeader
+          eyebrow="Daily Requisition"
+          title="Printing Setup"
+          description="Control page setup, margins, and header text for daily requisition print outputs."
+          backHref="/daily-requisition/settings"
+        />
+        <Card className={dailySurfaceCardClass}>
+          <CardHeader>
+            <CardTitle>Access Denied</CardTitle>
+            <CardDescription>You do not have permission to view this page.</CardDescription>
+          </CardHeader>
+          <CardContent className="flex justify-center p-8">
+            <ShieldAlert className="h-16 w-16 text-destructive" />
+          </CardContent>
+        </Card>
       </div>
     );
   }
@@ -104,13 +127,6 @@ export default function PrintingSetupPage() {
         title="Printing Setup"
         description="Control page setup, margins, and header text for daily requisition print outputs."
         backHref="/daily-requisition/settings"
-        meta={
-          <>
-            <Badge variant="neutral">
-              Output settings
-            </Badge>
-          </>
-        }
         actions={
           <Button onClick={handleSave} disabled={isSaving}>
             {isSaving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
@@ -118,12 +134,6 @@ export default function PrintingSetupPage() {
           </Button>
         }
       />
-
-      <div className="mb-6 grid gap-4 md:grid-cols-3">
-        <DailyMetricCard label="Paper" value={settings.paperSize.toUpperCase()} hint="Current print size" />
-        <DailyMetricCard label="Orientation" value={settings.orientation} hint="Page direction" />
-        <DailyMetricCard label="Unit" value={settings.marginUnit} hint="Margin measurement" />
-      </div>
 
       <div className="space-y-6">
         <Card className={dailySurfaceCardClass}>
@@ -188,7 +198,7 @@ export default function PrintingSetupPage() {
               </div>
             </div>
           </CardHeader>
-          <CardContent className="grid grid-cols-2 gap-4 md:grid-cols-4">
+          <CardContent className="grid grid-cols-1 gap-4 sm:grid-cols-2 md:grid-cols-4">
             <div className="space-y-2">
               <Label htmlFor="margin-top">Top</Label>
               <Input id="margin-top" type="number" value={settings.margins.top} onChange={(e) => handleMarginChange('top', e.target.value)} placeholder="e.g., 20" className="border-white/70 bg-white/80" />

@@ -528,7 +528,20 @@ export type PermissionProbe = (action: string, resource: string) => boolean;
  * is "and you are one of the people who could take it".
  */
 
-/** Each stage of the Daily Requisition pipeline, and what it takes to move an entry out of it. */
+/**
+ * Each stage of the Daily Requisition pipeline, and what it takes to move an entry out of it.
+ *
+ * `label` is the workflow step whose page shows the entry, which is where somebody has to go to act
+ * on it. `resource` and `actions` are the permission that moves it on. They usually name the same
+ * step but not always: a Verified entry waits on the GST & TDS Verification page (its Verified tab),
+ * and that page's Send for Payment button checks 'Mark as Received for Payment' on Processed for
+ * Payment.
+ *
+ * Needs Review belongs to verification. The GST & TDS dialog sets it on an amount mismatch, and
+ * only the GST step's Needs Review tab shows it, where Review & Verify needs 'Verify'. It used to be
+ * mapped to Receiving at Finance, which never shows it. That counted it for receivers, who could not
+ * act on it, and left it out for the verifiers who had to.
+ */
 export const REQUISITION_STAGES: ReadonlyArray<{
   status: string;
   label: string;
@@ -542,20 +555,20 @@ export const REQUISITION_STAGES: ReadonlyArray<{
     actions: ['Mark as Received', 'Reject', 'Cancel'],
   },
   {
-    status: 'Needs Review',
-    label: 'Receiving at Finance',
-    resource: 'Daily Requisition.Receiving at Finance',
-    actions: ['Mark as Received', 'Return to Pending'],
-  },
-  {
     status: 'Received',
     label: 'GST & TDS Verification',
     resource: 'Daily Requisition.GST & TDS Verification',
     actions: ['Verify', 'Re-verify', 'Send for Payment'],
   },
   {
+    status: 'Needs Review',
+    label: 'GST & TDS Verification',
+    resource: 'Daily Requisition.GST & TDS Verification',
+    actions: ['Verify'],
+  },
+  {
     status: 'Verified',
-    label: 'Processed for Payment',
+    label: 'GST & TDS Verification',
     resource: 'Daily Requisition.Processed for Payment',
     actions: ['Mark as Received for Payment', 'Approve'],
   },
@@ -563,7 +576,14 @@ export const REQUISITION_STAGES: ReadonlyArray<{
     status: 'Received for Payment',
     label: 'Processed for Payment',
     resource: 'Daily Requisition.Processed for Payment',
-    actions: ['Approve'],
+    actions: ['Approve', 'Mark as Received for Payment'],
+  },
+  {
+    // Part-paid by a Bank Balance voucher. The rest is still due, so it stays on the payment page.
+    status: 'Partially Paid',
+    label: 'Processed for Payment',
+    resource: 'Daily Requisition.Processed for Payment',
+    actions: ['Approve', 'Mark as Received for Payment'],
   },
 ];
 

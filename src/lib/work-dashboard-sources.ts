@@ -864,7 +864,7 @@ export const WORK_SOURCES: WorkSource[] = [
           title: `${open} entr${open === 1 ? 'y' : 'ies'} awaiting action`,
           reference: null,
           // Names the stages counted, so the row cannot imply the whole pipeline is this person's.
-          stage: statuses.map((status) => REQUISITION_STAGE_LABEL[status] ?? status).join(', '),
+          stage: [...new Set(statuses.map((status) => REQUISITION_STAGE_LABEL[status] ?? status))].join(', '),
           href: '/daily-requisition',
           dueAt: null,
           count: open,

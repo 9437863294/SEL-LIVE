@@ -13,8 +13,10 @@ import { BANK_PAGE, BankAccessDenied, BankBalanceBackground, BankPageSkeleton, a
 import { DateBankBar, EntryCard, EntryFooter, EntryTable, TD, TH, cellInput, type FooterNote } from '@/components/bank-balance/entry-grid';
 import { useToast } from '@/hooks/use-toast';
 import { useAuthorization } from '@/hooks/useAuthorization';
+import { useActivityLogger } from '@/hooks/useActivityLogger';
+import { ACTIVITY_MODULES } from '@/lib/activity-modules';
 import { db } from '@/lib/firebase';
-import { formatDay, formatInr, parseDay } from '@/lib/bank-balance-ledger';
+import { dayKey, formatDay, formatInr, parseDay } from '@/lib/bank-balance-ledger';
 import type { BankAccount, BankExpense } from '@/lib/types';
 
 type ReceiptLine = {
@@ -41,6 +43,7 @@ const amountOf = (line: ReceiptLine) => {
 export default function NewReceiptPage() {
   const { toast } = useToast();
   const { can, isLoading: authLoading } = useAuthorization();
+  const { log } = useActivityLogger(ACTIVITY_MODULES.BANK_BALANCE);
   // A form that writes receipts is gated on Add, not View.
   const canAdd = !authLoading && can('Add', 'Bank Balance.Receipts');
 
@@ -122,9 +125,11 @@ export default function NewReceiptPage() {
     }
 
     setIsSaving(true);
+    // Ids fixed up front, so the activity log can name the documents written.
+    const planned = lines.map((line) => ({ line, ref: doc(collection(db, 'bankExpenses')) }));
     try {
       await runTransaction(db, async (transaction) => {
-        for (const line of lines) {
+        for (const { line, ref } of planned) {
           const receiptData: Omit<BankExpense, 'id'> = {
             date: Timestamp.fromDate(date),
             accountId: selectedBank,
@@ -134,13 +139,28 @@ export default function NewReceiptPage() {
             isContra: false,
             createdAt: Timestamp.now(),
           };
-          transaction.set(doc(collection(db, 'bankExpenses')), receiptData);
+          transaction.set(ref, receiptData);
         }
       });
       toast({
         title: 'Saved',
         description: `${lines.length} receipt${lines.length === 1 ? '' : 's'} of ${formatInr(total)} into ${accountLabel(selectedAccount)} saved.`,
       });
+      void log(
+        'Add Receipts',
+        {
+          count: planned.length,
+          total,
+          accountId: selectedBank,
+          account: accountLabel(selectedAccount),
+          date: dayKey(date),
+          receipts: planned.map(({ line, ref }) => ({ id: ref.id, description: line.description.trim(), amount: amountOf(line) })),
+        },
+        {
+          ...(planned.length === 1 ? { recordId: planned[0].ref.id } : {}),
+          recordRef: `${accountLabel(selectedAccount)} · ${dayKey(date)}`,
+        },
+      );
       // Keep the date and account: the next batch is usually for the same day and bank.
       setLines([newLine()]);
       setShowErrors(false);

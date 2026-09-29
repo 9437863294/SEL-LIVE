@@ -11,17 +11,25 @@
  *    `Bank Balance.Receipts`.
  *
  * Internal transfers (contra legs) are never listed here; they have their own page.
+ *
+ * Post-dated entries: a voucher's Debits are dated on the cheque date, which can be after today.
+ * They have not gone through the bank yet, so they stay out of the list, the KPIs and the totals
+ * until asked for — the "Show post-dated" switch, or a date range that runs past today — and carry
+ * a badge when shown. A voucher line links to its voucher in the Cheque Register (the only place it
+ * can be changed or reversed) and to the requisition it settles, and shows the day it cleared.
  */
 
-import { Fragment, useCallback, useEffect, useMemo, useState } from 'react';
+import { Fragment, useCallback, useEffect, useId, useMemo, useState, type ReactNode } from 'react';
 import Link from 'next/link';
 import type { DateRange } from 'react-day-picker';
-import { compareDesc, endOfDay, startOfDay } from 'date-fns';
+import { compareDesc, endOfDay, format, startOfDay } from 'date-fns';
 import { collection, doc, getDocs, query, runTransaction, where } from 'firebase/firestore';
-import { BookOpenCheck, ChevronRight, Landmark, Loader2, Paperclip, Plus, Receipt, Trash2, TrendingUp, Wallet } from 'lucide-react';
+import { BookOpenCheck, CheckCircle2, ChevronRight, Landmark, Loader2, Paperclip, Plus, Receipt, Trash2, TrendingUp, Wallet } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
+import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Switch } from '@/components/ui/switch';
 import { Table, TableBody, TableCell, TableFooter, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import {
   AlertDialog,
@@ -35,7 +43,8 @@ import {
 } from '@/components/ui/alert-dialog';
 import { PageHeader } from '@/components/shared/page-header';
 import { KpiCard, type Tone } from '@/components/shared/kpi-card';
-import { DataList, type ListColumn } from '@/components/shared/data-list';
+import { DataList, useInsideLink, type ListColumn } from '@/components/shared/data-list';
+import { StatusBadge } from '@/components/shared/status-badge';
 import { TableCard } from '@/components/shared/table-card';
 import { FilterBar } from '@/components/shared/filter-bar';
 import {
@@ -50,9 +59,11 @@ import {
 import { useToast } from '@/hooks/use-toast';
 import { useAuthorization } from '@/hooks/useAuthorization';
 import { db } from '@/lib/firebase';
-import { dayKey, formatDay, formatInr, txnDate } from '@/lib/bank-balance-ledger';
+import { compactInr, dayKey, formatDay, formatInr, parseDay, txnDate } from '@/lib/bank-balance-ledger';
 import type { DateRangePreset } from '@/lib/date-range-presets';
+import { requisitionHref, voucherHref } from '@/lib/requisition-progress';
 import type { BankAccount, BankExpense } from '@/lib/types';
+import { cn } from '@/lib/utils';
 
 export type TransactionLogKind = 'payment' | 'receipt';
 
@@ -80,7 +91,7 @@ const KINDS: Record<TransactionLogKind, KindConfig> = {
     background: 'red',
     tone: 'rose',
     amountClass: 'text-rose-700',
-    searchPlaceholder: 'Search description, Ref No., UTR…',
+    searchPlaceholder: 'Search description, Ref No., UTR, voucher…',
   },
   receipt: {
     title: 'Receipts',
@@ -98,14 +109,36 @@ const KINDS: Record<TransactionLogKind, KindConfig> = {
 
 type DateWiseRow = { id: string; key: string; bankTotals: Record<string, number>; total: number };
 
+/** A voucher in a method group. `no` is blank on lines written before voucher numbers were copied onto them. */
+type VoucherRef = { id: string; no: string };
+
 /** The grouped register: date → bank → payment method (instrument) → the entries themselves. */
-type MethodGroup = { key: string; method: string; instrumentNo: string; voucher: boolean; total: number; entries: BankExpense[] };
+type MethodGroup = { key: string; method: string; instrumentNo: string; vouchers: VoucherRef[]; total: number; entries: BankExpense[] };
 type BankGroup = { key: string; accountId: string; total: number; count: number; methods: MethodGroup[] };
-type DateGroup = { key: string; day: string; total: number; count: number; banks: BankGroup[] };
+type DateGroup = { key: string; day: string; postDated: boolean; total: number; count: number; banks: BankGroup[] };
 
 type ViewMode = 'grouped' | 'list' | 'dateWise';
 
 const plural = (count: number, noun: string) => `${count} ${noun}${count === 1 ? '' : 's'}`;
+
+const amountOf = (entry: BankExpense) => Number(entry.amount) || 0;
+
+const sumOf = (rows: BankExpense[]) => rows.reduce((sum, entry) => sum + amountOf(entry), 0);
+
+/** A voucher line the bank has not cleared (yet) — what is left to reconcile. */
+const isUncleared = (entry: BankExpense) => Boolean(entry.bankPaymentId) && !entry.clearedDate;
+
+/** What each voucher of a method group is called: its number, else "Voucher" (numbered when several lack one). */
+function voucherLabels(vouchers: VoucherRef[]): string[] {
+  const unnamed = vouchers.filter((voucher) => !voucher.no).length;
+  let n = 0;
+  return vouchers.map((voucher) => voucher.no || (unnamed > 1 ? `Voucher ${(n += 1)}` : 'Voucher'));
+}
+
+function voucherTitle(voucherNo?: string) {
+  const no = voucherNo?.trim();
+  return no ? `Open voucher ${no} in the Cheque Register` : 'Open this voucher in the Cheque Register';
+}
 
 /** A saved attachment, opened in a new tab. Plain anchors: the list has no card links to nest in. */
 function AttachmentLink({ href, label }: { href: string; label: string }) {
@@ -122,10 +155,87 @@ function AttachmentLink({ href, label }: { href: string; label: string }) {
   );
 }
 
+/**
+ * A link out of a row — to its voucher, or to the requisition it settles. Not prefetched: every row
+ * has its own URL, and a register of a few hundred rows would prefetch them all. Plain text when the
+ * row is itself a link card (see `CellLink` in data-list), so one anchor never nests in another.
+ */
+function RowLink({ href, title, className, children }: { href: string; title?: string; className?: string; children: ReactNode }) {
+  const insideLink = useInsideLink();
+  if (insideLink) {
+    return (
+      <span className={className} title={title}>
+        {children}
+      </span>
+    );
+  }
+  return (
+    <Link href={href} prefetch={false} title={title} className={className}>
+      {children}
+    </Link>
+  );
+}
+
+/** The Reception No. an entry settles — linked to that requisition in Daily Requisition when it came from one. */
+function ReceptionRef({ entry }: { entry: BankExpense }) {
+  const ref = (entry.paymentRequestRefNo || '').trim();
+  if (!ref) return <span className="text-muted-foreground">—</span>;
+  if (!entry.requisitionId) return <>{ref}</>;
+  return (
+    <RowLink
+      href={requisitionHref(ref)}
+      title={`Open requisition ${ref} in Daily Requisition`}
+      className="font-medium text-sky-700 underline-offset-2 hover:underline"
+    >
+      {ref}
+    </RowLink>
+  );
+}
+
+/** A payment voucher, by number, opened in the Cheque Register. */
+function VoucherLink({ bankPaymentId, voucherNo, label }: { bankPaymentId: string; voucherNo?: string; label?: string }) {
+  const no = voucherNo?.trim();
+  return (
+    <RowLink
+      href={voucherHref(bankPaymentId)}
+      title={voucherTitle(no)}
+      className={cn('inline-flex items-center gap-1 whitespace-nowrap text-sky-700 underline-offset-2 hover:underline', no && 'font-mono')}
+    >
+      <BookOpenCheck className="h-3 w-3 shrink-0" aria-hidden="true" />
+      {label ?? (no || 'Voucher')}
+    </RowLink>
+  );
+}
+
+/** The day the bank cleared a voucher line — the reconciliation tick. */
+function ClearedChip({ day }: { day: string }) {
+  const date = parseDay(day);
+  if (!date) return null;
+  return (
+    <span
+      className="inline-flex shrink-0 items-center gap-1 whitespace-nowrap rounded-full border border-emerald-200 bg-emerald-50 px-1.5 text-[11px] font-medium leading-5 text-emerald-700"
+      title={`Cleared by the bank on ${formatDay(date)}`}
+    >
+      <CheckCircle2 className="h-3 w-3 shrink-0" aria-hidden="true" />
+      Cleared {format(date, 'dd MMM')}
+    </span>
+  );
+}
+
+/** An entry dated after today: on the books, not yet through the bank. */
+function PostDatedBadge() {
+  return (
+    <StatusBadge tone="info" className="shrink-0" title="Dated after today — not yet through the bank">
+      Post-dated
+    </StatusBadge>
+  );
+}
+
 export function BankTransactionLog({ kind }: { kind: TransactionLogKind }) {
   const config = KINDS[kind];
   const { toast } = useToast();
   const { can, isLoading: authLoading } = useAuthorization();
+  const switchId = useId();
 
   const [bankAccounts, setBankAccounts] = useState<BankAccount[]>([]);
   const [entries, setEntries] = useState<BankExpense[]>([]);
@@ -135,6 +245,10 @@ export function BankTransactionLog({ kind }: { kind: TransactionLogKind }) {
   const [datePreset, setDatePreset] = useState<DateRangePreset>('custom');
   const [bankFilter, setBankFilter] = useState('all');
   const [search, setSearch] = useState('');
+  /** Post-dated entries are left out unless this is on — or the date range itself runs past today. */
+  const [includePostDated, setIncludePostDated] = useState(false);
+  /** Only voucher lines the bank has not cleared yet. */
+  const [unclearedOnly, setUnclearedOnly] = useState(false);
   const [viewMode, setViewMode] = useState<ViewMode>('grouped');
   /** Collapsed group keys in the grouped view; everything starts expanded. */
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
@@ -145,6 +259,11 @@ export function BankTransactionLog({ kind }: { kind: TransactionLogKind }) {
   const canView = !authLoading && can('View', config.permission);
   const canAdd = !authLoading && can('Add', config.permission);
   const canDelete = !authLoading && can('Delete', config.permission);
+
+  // Where post-dated begins: the end of today. Read on every render, so a tab left open past
+  // midnight moves on with the clock; memoised by the day, so the lists are not rebuilt each time.
+  const todayKey = dayKey(new Date());
+  const todayEnd = useMemo(() => endOfDay(parseDay(todayKey) ?? new Date()), [todayKey]);
 
   const load = useCallback(async () => {
     setIsLoading(true);
@@ -182,7 +301,8 @@ export function BankTransactionLog({ kind }: { kind: TransactionLogKind }) {
 
   const accountById = useMemo(() => new Map(bankAccounts.map((account) => [account.id, account])), [bankAccounts]);
 
-  const filtered = useMemo(() => {
+  // What the date, bank and search filters let through — post-dated entries still in.
+  const inScope = useMemo(() => {
     const term = search.trim().toLowerCase();
     const from = dateRange?.from ? startOfDay(dateRange.from) : null;
     const to = dateRange?.to ? endOfDay(dateRange.to) : null;
@@ -192,21 +312,46 @@ export function BankTransactionLog({ kind }: { kind: TransactionLogKind }) {
       if (to && at > to) return false;
       if (bankFilter !== 'all' && entry.accountId !== bankFilter) return false;
       if (!term) return true;
-      return [entry.description, entry.paymentRequestRefNo, entry.utrNumber, entry.paymentRefNo].some((value) =>
+      return [entry.description, entry.paymentRequestRefNo, entry.utrNumber, entry.paymentRefNo, entry.voucherNo].some((value) =>
         (value || '').toLowerCase().includes(term),
       );
     });
   }, [entries, dateRange, bankFilter, search]);
 
+  // A date range that reaches past today asks for post-dated entries by itself.
+  const rangeEnd = dateRange?.to ?? dateRange?.from;
+  const rangeReachesFuture = Boolean(rangeEnd && endOfDay(rangeEnd) > todayEnd);
+  const showPostDated = includePostDated || rangeReachesFuture;
+
+  /** What the post-dated switch holds back — or, when on, adds. */
+  const postDated = useMemo(() => {
+    const rows = inScope.filter((entry) => txnDate(entry) > todayEnd && (!unclearedOnly || isUncleared(entry)));
+    return { count: rows.length, total: sumOf(rows) };
+  }, [inScope, todayEnd, unclearedOnly]);
+
+  const shown = useMemo(
+    () => (showPostDated ? inScope : inScope.filter((entry) => txnDate(entry) <= todayEnd)),
+    [inScope, showPostDated, todayEnd],
+  );
+
+  /** Voucher lines among those shown that the bank has not cleared yet. Receipts never have any. */
+  const unclearedCount = useMemo(() => shown.filter(isUncleared).length, [shown]);
+
+  const filtered = useMemo(() => (unclearedOnly ? shown.filter(isUncleared) : shown), [shown, unclearedOnly]);
+
   const summary = useMemo(() => {
-    const total = filtered.reduce((sum, entry) => sum + (Number(entry.amount) || 0), 0);
-    const largest = filtered.reduce<BankExpense | null>(
-      (best, entry) => (!best || (Number(entry.amount) || 0) > (Number(best.amount) || 0) ? entry : best),
-      null,
-    );
+    const total = sumOf(filtered);
+    const largest = filtered.reduce<BankExpense | null>((best, entry) => (!best || amountOf(entry) > amountOf(best) ? entry : best), null);
     const accountIds = new Set(filtered.map((entry) => entry.accountId));
-    return { total, largest, accounts: accountIds.size, average: filtered.length ? total / filtered.length : 0 };
-  }, [filtered]);
+    const future = filtered.filter((entry) => txnDate(entry) > todayEnd);
+    return {
+      total,
+      largest,
+      accounts: accountIds.size,
+      average: filtered.length ? total / filtered.length : 0,
+      postDated: { count: future.length, total: sumOf(future) },
+    };
+  }, [filtered, todayEnd]);
 
   const visibleAccounts = useMemo(() => {
     if (bankFilter !== 'all') return bankAccounts.filter((account) => account.id === bankFilter);
@@ -219,7 +364,7 @@ export function BankTransactionLog({ kind }: { kind: TransactionLogKind }) {
     for (const entry of filtered) {
       const key = dayKey(txnDate(entry));
       const row = grouped.get(key) ?? { id: key, key, bankTotals: {}, total: 0 };
-      const amount = Number(entry.amount) || 0;
+      const amount = amountOf(entry);
       row.bankTotals[entry.accountId] = (row.bankTotals[entry.accountId] || 0) + amount;
       row.total += amount;
       grouped.set(key, row);
@@ -233,8 +378,8 @@ export function BankTransactionLog({ kind }: { kind: TransactionLogKind }) {
     const days = new Map<string, DateGroup>();
     for (const entry of filtered) {
       const day = dayKey(txnDate(entry));
-      const amount = Number(entry.amount) || 0;
-      const dateGroup = days.get(day) ?? { key: day, day, total: 0, count: 0, banks: [] };
+      const amount = amountOf(entry);
+      const dateGroup = days.get(day) ?? { key: day, day, postDated: day > todayKey, total: 0, count: 0, banks: [] };
       let bank = dateGroup.banks.find((b) => b.accountId === entry.accountId);
       if (!bank) {
         bank = { key: `${day}|${entry.accountId}`, accountId: entry.accountId, total: 0, count: 0, methods: [] };
@@ -245,12 +390,18 @@ export function BankTransactionLog({ kind }: { kind: TransactionLogKind }) {
       const methodKey = `${bank.key}|${method}|${instrumentNo}`;
       let methodGroup = bank.methods.find((m) => m.key === methodKey);
       if (!methodGroup) {
-        methodGroup = { key: methodKey, method, instrumentNo, voucher: false, total: 0, entries: [] };
+        methodGroup = { key: methodKey, method, instrumentNo, vouchers: [], total: 0, entries: [] };
         bank.methods.push(methodGroup);
       }
       methodGroup.entries.push(entry);
       methodGroup.total += amount;
-      methodGroup.voucher = methodGroup.voucher || Boolean(entry.bankPaymentId);
+      // Usually one voucher per instrument; transfers without a batch reference can share a group.
+      if (entry.bankPaymentId) {
+        const no = (entry.voucherNo || '').trim();
+        const known = methodGroup.vouchers.find((voucher) => voucher.id === entry.bankPaymentId);
+        if (!known) methodGroup.vouchers.push({ id: entry.bankPaymentId, no });
+        else if (!known.no && no) known.no = no;
+      }
       bank.total += amount;
       bank.count += 1;
       dateGroup.total += amount;
@@ -262,11 +413,14 @@ export function BankTransactionLog({ kind }: { kind: TransactionLogKind }) {
       dateGroup.banks.sort((a, b) => accountLabel(accountById.get(a.accountId)).localeCompare(accountLabel(accountById.get(b.accountId))));
       for (const bank of dateGroup.banks) {
         bank.methods.sort((a, b) => a.method.localeCompare(b.method) || a.instrumentNo.localeCompare(b.instrumentNo));
-        for (const m of bank.methods) m.entries.sort((a, b) => (a.paymentRequestRefNo || a.description || '').localeCompare(b.paymentRequestRefNo || b.description || ''));
+        for (const m of bank.methods) {
+          m.entries.sort((a, b) => (a.paymentRequestRefNo || a.description || '').localeCompare(b.paymentRequestRefNo || b.description || ''));
+          m.vouchers.sort((a, b) => a.no.localeCompare(b.no));
+        }
       }
     }
     return tree;
-  }, [filtered, kind, accountById]);
+  }, [filtered, kind, accountById, todayKey]);
 
   const toggle = (key: string) =>
     setCollapsed((prev) => {
@@ -317,21 +471,28 @@ export function BankTransactionLog({ kind }: { kind: TransactionLogKind }) {
     setDatePreset('custom');
     setBankFilter('all');
     setSearch('');
+    setIncludePostDated(false);
+    setUnclearedOnly(false);
   };
 
   if (authLoading || (isLoading && canView)) return <BankPageSkeleton kpis={4} />;
   if (!canView) return <BankAccessDenied title={config.title} />;
 
   const bankName = (accountId: string) => (accountById.has(accountId) ? accountLabel(accountById.get(accountId)) : 'N/A');
+  const isPostDated = (entry: BankExpense) => txnDate(entry) > todayEnd;
 
   const actionCell = (entry: BankExpense) =>
         // A line of a payment voucher is reversed with its whole voucher, from the Cheque Register —
         // deleting one line here would leave the voucher and its requisitions out of step.
         entry.bankPaymentId ? (
-          <Link href="/bank-balance/cheques" className="inline-flex h-8 items-center gap-1 px-2 text-xs text-muted-foreground hover:text-foreground">
+          <RowLink
+            href={voucherHref(entry.bankPaymentId)}
+            title={voucherTitle(entry.voucherNo)}
+            className="inline-flex h-8 items-center gap-1 whitespace-nowrap px-2 text-xs text-muted-foreground hover:text-foreground"
+          >
             <BookOpenCheck className="h-3.5 w-3.5" />
             Voucher
-          </Link>
+          </RowLink>
         ) : canDelete ? (
           <Button
             variant="ghost"
@@ -350,7 +511,12 @@ export function BankTransactionLog({ kind }: { kind: TransactionLogKind }) {
     {
       header: 'Date',
       mobile: 'title',
-      cell: (entry) => <span className="whitespace-nowrap font-medium">{formatDay(txnDate(entry))}</span>,
+      cell: (entry) => (
+        <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+          <span className="whitespace-nowrap font-medium">{formatDay(txnDate(entry))}</span>
+          {isPostDated(entry) && <PostDatedBadge />}
+        </div>
+      ),
     },
     {
       header: 'Description',
@@ -370,7 +536,11 @@ export function BankTransactionLog({ kind }: { kind: TransactionLogKind }) {
         cell: (entry) =>
           entry.paymentRequestRefNo || entry.utrNumber ? (
             <div className="space-y-0.5 text-xs">
-              {entry.paymentRequestRefNo && <div className="truncate">Ref: {entry.paymentRequestRefNo}</div>}
+              {entry.paymentRequestRefNo && (
+                <div className="truncate">
+                  Ref: <ReceptionRef entry={entry} />
+                </div>
+              )}
               {entry.utrNumber && <div className="truncate text-muted-foreground">UTR: {entry.utrNumber}</div>}
             </div>
           ) : (
@@ -382,10 +552,17 @@ export function BankTransactionLog({ kind }: { kind: TransactionLogKind }) {
         cell: (entry) => {
           const method = [entry.paymentMethod, entry.paymentRefNo].filter(Boolean).join(' · ');
           const hasFiles = Boolean(entry.approvalCopyUrl || entry.bankTransferCopyUrl);
-          if (!method && !hasFiles) return <span className="text-muted-foreground">—</span>;
+          const hasVoucher = Boolean(entry.bankPaymentId || entry.clearedDate);
+          if (!method && !hasFiles && !hasVoucher) return <span className="text-muted-foreground">—</span>;
           return (
             <div className="space-y-1 text-xs">
               {method && <div className="truncate">{method}</div>}
+              {hasVoucher && (
+                <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                  {entry.bankPaymentId && <VoucherLink bankPaymentId={entry.bankPaymentId} voucherNo={entry.voucherNo} />}
+                  {entry.clearedDate && <ClearedChip day={entry.clearedDate} />}
+                </div>
+              )}
               {hasFiles && (
                 <div className="flex flex-wrap gap-x-3 gap-y-1">
                   {entry.approvalCopyUrl && <AttachmentLink href={entry.approvalCopyUrl} label="Approval" />}
@@ -416,10 +593,31 @@ export function BankTransactionLog({ kind }: { kind: TransactionLogKind }) {
     },
   );
 
-  const activeFilters = (dateRange ? 1 : 0) + (bankFilter !== 'all' ? 1 : 0);
+  const hiddenPostDated = !showPostDated && postDated.count > 0;
+  const activeFilters =
+    (dateRange ? 1 : 0) +
+    (bankFilter !== 'all' ? 1 : 0) +
+    (includePostDated && !rangeReachesFuture && postDated.count > 0 ? 1 : 0) +
+    (unclearedOnly ? 1 : 0);
+  const entriesHint = [
+    filtered.length === entries.length ? `All ${config.noun}s` : `of ${entries.length} recorded`,
+    unclearedCount > 0 ? `${unclearedCount} uncleared` : '',
+  ]
+    .filter(Boolean)
+    .join(' · ');
+  const totalHint =
+    summary.postDated.count > 0
+      ? `Incl. ${summary.postDated.count} post-dated · ${formatInr(summary.postDated.total)}`
+      : hiddenPostDated
+        ? `Excl. ${postDated.count} post-dated · ${formatInr(postDated.total)}`
+        : undefined;
   const emptyMessage = (
     <div className="px-6 py-10 text-center text-sm text-muted-foreground">
-      {entries.length === 0 ? `No ${config.noun} records yet.` : `No ${config.noun}s match these filters.`}
+      {entries.length === 0
+        ? `No ${config.noun} records yet.`
+        : hiddenPostDated
+          ? `Only post-dated ${config.noun}s match these filters — turn on “Show post-dated” to see them.`
+          : `No ${config.noun}s match these filters.`}
     </div>
   );
 
@@ -445,15 +643,8 @@ export function BankTransactionLog({ kind }: { kind: TransactionLogKind }) {
         />
 
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
-          <KpiCard
-            label="Entries in range"
-            value={filtered.length}
-            hint={filtered.length === entries.length ? `All ${config.noun}s` : `of ${entries.length} recorded`}
-            icon={Receipt}
-            tone={config.tone}
-            accent
-          />
-          <KpiCard label="Total amount" value={formatInr(summary.total)} icon={Wallet} tone={config.tone} accent />
+          <KpiCard label="Entries in range" value={filtered.length} hint={entriesHint} icon={Receipt} tone={config.tone} accent />
+          <KpiCard label="Total amount" value={formatInr(summary.total)} hint={totalHint} icon={Wallet} tone={config.tone} accent />
           <KpiCard
             label="Average per entry"
             value={formatInr(summary.average)}
@@ -543,12 +734,48 @@ export function BankTransactionLog({ kind }: { kind: TransactionLogKind }) {
                   ))}
                 </SelectContent>
               </Select>
+              {/* Only offered when post-dated entries exist in what the other filters let through. */}
+              {postDated.count > 0 && (
+                <div
+                  className="flex h-10 items-center gap-2 rounded-md border px-3"
+                  title={
+                    rangeReachesFuture
+                      ? 'The date range runs past today, so post-dated entries are included.'
+                      : `Entries dated after today — not yet ${kind === 'payment' ? 'paid' : 'received'} by the bank.`
+                  }
+                >
+                  <Switch
+                    id={`${switchId}-post-dated`}
+                    checked={showPostDated}
+                    onCheckedChange={setIncludePostDated}
+                    disabled={rangeReachesFuture}
+                  />
+                  <Label htmlFor={`${switchId}-post-dated`} className="text-sm font-normal leading-tight sm:whitespace-nowrap">
+                    Show post-dated{' '}
+                    <span className="text-muted-foreground">
+                      ({postDated.count} · {compactInr(postDated.total)})
+                    </span>
+                  </Label>
+                </div>
+              )}
+              {kind === 'payment' && (unclearedCount > 0 || unclearedOnly) && (
+                <div className="flex h-10 items-center gap-2 rounded-md border px-3" title="Voucher payments the bank has not cleared yet.">
+                  <Switch id={`${switchId}-uncleared`} checked={unclearedOnly} onCheckedChange={setUnclearedOnly} />
+                  <Label htmlFor={`${switchId}-uncleared`} className="text-sm font-normal leading-tight sm:whitespace-nowrap">
+                    Uncleared only <span className="text-muted-foreground">({unclearedCount})</span>
+                  </Label>
+                </div>
+              )}
             </FilterBar>
           }
           footer={
             filtered.length > 0 ? (
               <div className="flex flex-wrap items-center justify-between gap-2">
-                <span>Total of {plural(filtered.length, config.noun)}</span>
+                <span>
+                  Total of {plural(filtered.length, config.noun)}
+                  {summary.postDated.count > 0 &&
+                    ` · incl. ${summary.postDated.count} post-dated (${formatInr(summary.postDated.total)})`}
+                </span>
                 <span className="font-semibold tabular-nums text-foreground">{formatInr(summary.total)}</span>
               </div>
             ) : undefined
@@ -580,13 +807,16 @@ export function BankTransactionLog({ kind }: { kind: TransactionLogKind }) {
                         {/* Level 1 — the day */}
                         <tr className="border-t bg-muted/60">
                           <td colSpan={span} className="px-3 py-2">
-                            <button type="button" onClick={() => toggle(dateGroup.key)} className="flex items-center gap-2 font-semibold" aria-expanded={dateOpen}>
-                              <ChevronRight className={`h-4 w-4 transition-transform ${dateOpen ? 'rotate-90' : ''}`} />
-                              {formatDay(dateGroup.day)}
-                              <span className="text-xs font-normal text-muted-foreground">
-                                {plural(dateGroup.count, config.noun)} · {plural(dateGroup.banks.length, 'bank')}
-                              </span>
-                            </button>
+                            <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                              <button type="button" onClick={() => toggle(dateGroup.key)} className="flex items-center gap-2 font-semibold" aria-expanded={dateOpen}>
+                                <ChevronRight className={`h-4 w-4 transition-transform ${dateOpen ? 'rotate-90' : ''}`} />
+                                {formatDay(dateGroup.day)}
+                                <span className="text-xs font-normal text-muted-foreground">
+                                  {plural(dateGroup.count, config.noun)} · {plural(dateGroup.banks.length, 'bank')}
+                                </span>
+                              </button>
+                              {dateGroup.postDated && <PostDatedBadge />}
+                            </div>
                           </td>
                           <td className={`whitespace-nowrap px-3 py-2 text-right font-bold tabular-nums ${config.amountClass}`}>{formatInr(dateGroup.total)}</td>
                           <td />
@@ -610,53 +840,59 @@ export function BankTransactionLog({ kind }: { kind: TransactionLogKind }) {
                                   <td />
                                 </tr>
                                 {bankOpen &&
-                                  bank.methods.map((methodGroup) => (
-                                    <Fragment key={methodGroup.key}>
-                                      {/* Level 3 — the payment method / instrument (payments only) */}
-                                      {kind === 'payment' && (
-                                        <tr className="border-t">
-                                          <td colSpan={span} className="py-1.5 pl-16 pr-3">
-                                            <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs">
-                                              <span className="font-semibold uppercase tracking-wide text-foreground">{methodGroup.method}</span>
-                                              {methodGroup.instrumentNo && <span className="font-mono text-muted-foreground">{methodGroup.instrumentNo}</span>}
-                                              <span className="text-muted-foreground">· {plural(methodGroup.entries.length, 'payee')}</span>
-                                              {methodGroup.voucher && (
-                                                <Link href="/bank-balance/cheques" className="inline-flex items-center gap-1 text-sky-700 hover:underline">
-                                                  <BookOpenCheck className="h-3 w-3" />
-                                                  Voucher
-                                                </Link>
-                                              )}
-                                            </div>
-                                          </td>
-                                          <td className="whitespace-nowrap px-3 py-1.5 text-right text-xs font-semibold tabular-nums">{formatInr(methodGroup.total)}</td>
-                                          <td />
-                                        </tr>
-                                      )}
-                                      {/* Level 4 — each requisition / payment */}
-                                      {methodGroup.entries.map((entry) => (
-                                        <tr key={entry.id} className="border-t border-dashed hover:bg-muted/20">
-                                          {kind === 'payment' && (
-                                            <td className="py-2 pl-24 pr-3 font-mono text-xs">{entry.paymentRequestRefNo || <span className="text-muted-foreground">—</span>}</td>
-                                          )}
-                                          <td className={`py-2 pr-3 ${kind === 'payment' ? 'pl-3' : 'pl-16'}`}>
-                                            <span className="line-clamp-2 break-words">{entry.description || '—'}</span>
-                                          </td>
-                                          {kind === 'payment' && <td className="px-2 py-2 font-mono text-xs">{entry.utrNumber || <span className="text-muted-foreground">—</span>}</td>}
-                                          {kind === 'payment' && (
-                                            <td className="px-2 py-2">
-                                              <div className="flex flex-wrap gap-x-3 gap-y-1">
-                                                {entry.approvalCopyUrl && <AttachmentLink href={entry.approvalCopyUrl} label="Approval" />}
-                                                {entry.bankTransferCopyUrl && <AttachmentLink href={entry.bankTransferCopyUrl} label="Copy" />}
-                                                {!entry.approvalCopyUrl && !entry.bankTransferCopyUrl && <span className="text-xs text-muted-foreground">—</span>}
+                                  bank.methods.map((methodGroup) => {
+                                    const voucherNames = voucherLabels(methodGroup.vouchers);
+                                    return (
+                                      <Fragment key={methodGroup.key}>
+                                        {/* Level 3 — the payment method / instrument (payments only), with its voucher(s) */}
+                                        {kind === 'payment' && (
+                                          <tr className="border-t">
+                                            <td colSpan={span} className="py-1.5 pl-16 pr-3">
+                                              <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs">
+                                                <span className="font-semibold uppercase tracking-wide text-foreground">{methodGroup.method}</span>
+                                                {methodGroup.instrumentNo && <span className="font-mono text-muted-foreground">{methodGroup.instrumentNo}</span>}
+                                                <span className="text-muted-foreground">· {plural(methodGroup.entries.length, 'payee')}</span>
+                                                {methodGroup.vouchers.map((voucher, index) => (
+                                                  <VoucherLink key={voucher.id} bankPaymentId={voucher.id} voucherNo={voucher.no} label={voucherNames[index]} />
+                                                ))}
                                               </div>
                                             </td>
-                                          )}
-                                          <td className="whitespace-nowrap px-3 py-2 text-right tabular-nums">{formatInr(entry.amount)}</td>
-                                          <td className="px-3 py-1 text-right">{actionCell(entry)}</td>
-                                        </tr>
-                                      ))}
-                                    </Fragment>
-                                  ))}
+                                            <td className="whitespace-nowrap px-3 py-1.5 text-right text-xs font-semibold tabular-nums">{formatInr(methodGroup.total)}</td>
+                                            <td />
+                                          </tr>
+                                        )}
+                                        {/* Level 4 — each requisition / payment */}
+                                        {methodGroup.entries.map((entry) => (
+                                          <tr key={entry.id} className="border-t border-dashed hover:bg-muted/20">
+                                            {kind === 'payment' && (
+                                              <td className="py-2 pl-24 pr-3 font-mono text-xs">
+                                                <ReceptionRef entry={entry} />
+                                              </td>
+                                            )}
+                                            <td className={`py-2 pr-3 ${kind === 'payment' ? 'pl-3' : 'pl-16'}`}>
+                                              <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                                                <span className="line-clamp-2 min-w-0 break-words">{entry.description || '—'}</span>
+                                                {dateGroup.postDated && <PostDatedBadge />}
+                                                {entry.clearedDate && <ClearedChip day={entry.clearedDate} />}
+                                              </div>
+                                            </td>
+                                            {kind === 'payment' && <td className="px-2 py-2 font-mono text-xs">{entry.utrNumber || <span className="text-muted-foreground">—</span>}</td>}
+                                            {kind === 'payment' && (
+                                              <td className="px-2 py-2">
+                                                <div className="flex flex-wrap gap-x-3 gap-y-1">
+                                                  {entry.approvalCopyUrl && <AttachmentLink href={entry.approvalCopyUrl} label="Approval" />}
+                                                  {entry.bankTransferCopyUrl && <AttachmentLink href={entry.bankTransferCopyUrl} label="Copy" />}
+                                                  {!entry.approvalCopyUrl && !entry.bankTransferCopyUrl && <span className="text-xs text-muted-foreground">—</span>}
+                                                </div>
+                                              </td>
+                                            )}
+                                            <td className="whitespace-nowrap px-3 py-2 text-right tabular-nums">{formatInr(entry.amount)}</td>
+                                            <td className="px-3 py-1 text-right">{actionCell(entry)}</td>
+                                          </tr>
+                                        ))}
+                                      </Fragment>
+                                    );
+                                  })}
                               </Fragment>
                             );
                           })}
@@ -688,7 +924,10 @@ export function BankTransactionLog({ kind }: { kind: TransactionLogKind }) {
               <TableBody>
                 {dateWiseRows.map((row) => (
                   <TableRow key={row.id}>
-                    <TableCell className="whitespace-nowrap font-medium">{formatDay(row.key)}</TableCell>
+                    <TableCell className="whitespace-nowrap font-medium">
+                      {formatDay(row.key)}
+                      {row.key > todayKey && <span className="ml-1.5 text-xs font-normal text-sky-700">(post-dated)</span>}
+                    </TableCell>
                     {visibleAccounts.map((account) => (
                       <TableCell key={account.id} className="whitespace-nowrap text-right tabular-nums">
                         {row.bankTotals[account.id] ? formatInr(row.bankTotals[account.id]) : '-'}

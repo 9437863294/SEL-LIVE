@@ -117,6 +117,34 @@ export function balanceAt(ledger: AccountLedger, day: Date = new Date()): number
   return figure;
 }
 
+/**
+ * The tightest point from `fromDay` on: what can be spent at the end of `fromDay`, and again after
+ * each later day that has entries (post-dated cheques already on the books included). A payment on
+ * `fromDay` must fit under the lowest of these, or a cheque dated later would bounce.
+ *
+ * `availableOn(day, figure)` turns the running figure into spendable funds — the balance itself for
+ * a current account; limit in force on `day` less utilisation for Cash Credit.
+ */
+export function lowestAvailableFrom(
+  ledger: AccountLedger,
+  fromDay: Date,
+  availableOn: (day: Date, figure: number) => number,
+): { amount: number; day: Date } {
+  const first = endOfDay(fromDay);
+  let figure = balanceAt(ledger, fromDay);
+  let lowest = { amount: availableOn(startOfDay(fromDay), figure), day: startOfDay(fromDay) };
+  const later = ledger.entries.filter((entry) => entry.at > first);
+  for (let i = 0; i < later.length; i += 1) {
+    figure += later[i].effect;
+    const day = startOfDay(later[i].at);
+    const lastOfDay = i === later.length - 1 || startOfDay(later[i + 1].at).getTime() !== day.getTime();
+    if (!lastOfDay) continue;
+    const amount = availableOn(day, figure);
+    if (amount < lowest.amount) lowest = { amount, day };
+  }
+  return lowest;
+}
+
 /** Each account's figure at the end of `day`. */
 export function balancesAt(ledgers: Map<string, AccountLedger>, day: Date = new Date()): Record<string, number> {
   const out: Record<string, number> = {};

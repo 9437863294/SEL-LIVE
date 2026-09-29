@@ -15,10 +15,16 @@
  * transaction rather than 300, and cannot interleave with somebody using the create form at the
  * same time. In `file` mode the numbers come from the sheet, for history that already has them, and
  * the counter is left alone.
+ *
+ * Two checks need more than this department's register, so the dialog reads what the whole module
+ * has on record once, when the preview is first built (`loadRecordedNumbers`): request numbers are
+ * compared against every department's — a number is the module-wide key Daily Requisition finds a
+ * request by, and a generated block steps over any already in use — and a Reception No from the
+ * sheet is written only if Daily Requisition has that requisition and no other request carries it.
  */
 
 import { useCallback, useMemo, useRef, useState } from 'react';
-import { collection, doc, runTransaction, writeBatch } from 'firebase/firestore';
+import { collection, doc, getDocs, runTransaction, writeBatch } from 'firebase/firestore';
 import {
   AlertTriangle,
   ArrowRight,
@@ -39,6 +45,7 @@ import { logUserActivity } from '@/lib/activity-logger';
 import { exportWorkbook } from '@/lib/report-excel';
 import type {
   AccountHead,
+  DailyRequisitionEntry,
   Department,
   ExpenseRequest,
   Project,
@@ -60,6 +67,7 @@ import {
   type ExpenseImportFieldKey,
   type ExpenseImportResult,
   type ExpenseSheet,
+  type ReceptionClaim,
   type RequestNoSource,
 } from '@/lib/expenses-import';
 import { Button } from '@/components/ui/button';
@@ -172,6 +180,41 @@ async function readWorkbookGrid(file: File): Promise<string[][]> {
   return grid;
 }
 
+/* ── what the module already has ─────────────────────────────────────────── */
+
+/** What the whole module has on record — more than the one department's register passed in. */
+interface RecordedNumbers {
+  /** Every expense request's number, in every department. */
+  requestNos: string[];
+  /** Reception numbers expense requests already carry, and which request carries each. */
+  receptionClaims: ReceptionClaim[];
+  /** Every reception number Daily Requisition has. */
+  requisitionReceptionNos: string[];
+}
+
+async function loadRecordedNumbers(): Promise<RecordedNumbers> {
+  const [requestsSnap, requisitionsSnap] = await Promise.all([
+    getDocs(collection(db, 'expenseRequests')),
+    getDocs(collection(db, 'dailyRequisitions')),
+  ]);
+
+  const requestNos: string[] = [];
+  const receptionClaims: ReceptionClaim[] = [];
+  requestsSnap.forEach((snapshot) => {
+    const request = snapshot.data() as Partial<ExpenseRequest>;
+    const requestNo = String(request.requestNo ?? '').trim();
+    const receptionNo = String(request.receptionNo ?? '').trim();
+    if (requestNo) requestNos.push(requestNo);
+    if (receptionNo) receptionClaims.push({ receptionNo, requestNo });
+  });
+
+  const requisitionReceptionNos = requisitionsSnap.docs
+    .map((snapshot) => String((snapshot.data() as Partial<DailyRequisitionEntry>).receptionNo ?? '').trim())
+    .filter(Boolean);
+
+  return { requestNos, receptionClaims, requisitionReceptionNos };
+}
+
 /* ── component ───────────────────────────────────────────────────────────── */
 
 export function ExpenseImportDialog({
@@ -192,7 +235,10 @@ export function ExpenseImportDialog({
   projects: Project[];
   accountHeads: AccountHead[];
   subAccountHeads: SubAccountHead[];
-  /** This department's existing requests — what duplicate detection compares against. */
+  /**
+   * This department's existing requests — what the same-expense (fingerprint) check compares
+   * against. Request and reception numbers are checked against the whole module, read here.
+   */
   existingExpenses: ExpenseRequest[];
   onImported: () => void;
   /** From the module data rules; off means a re-import creates the rows again. */
@@ -216,6 +262,13 @@ export function ExpenseImportDialog({
   const [isImporting, setIsImporting] = useState(false);
   const [progress, setProgress] = useState(0);
   const [summary, setSummary] = useState<ImportSummary | null>(null);
+  /** Reading the module's request and reception numbers before the first preview. */
+  const [isChecking, setIsChecking] = useState(false);
+
+  /** Read once per session of the dialog and reused by every preview and by the import itself. */
+  const recordedRef = useRef<RecordedNumbers | null>(null);
+  /** Bumped by `reset`, so a read still in flight when the file is changed or the dialog closed is dropped. */
+  const sessionRef = useRef(0);
 
   const masters = useMemo(
     () => ({ projects, accountHeads, subAccountHeads }),
@@ -249,6 +302,9 @@ export function ExpenseImportDialog({
     setFilter('all');
     setProgress(0);
     setSummary(null);
+    setIsChecking(false);
+    recordedRef.current = null;
+    sessionRef.current += 1;
     if (fileInputRef.current) fileInputRef.current.value = '';
   }, []);
 
@@ -358,15 +414,45 @@ export function ExpenseImportDialog({
 
   /* ---- validate ---- */
 
-  const buildPreview = () => {
+  const buildPreview = async () => {
     if (!sheet) return;
+    const session = sessionRef.current;
+    let recorded = recordedRef.current;
+    if (!recorded) {
+      setIsChecking(true);
+      const loaded = await loadRecordedNumbers().catch((error: unknown) => {
+        console.error('Failed to read existing request and reception numbers:', error);
+        return null;
+      });
+      // The file was changed or the dialog closed while this was reading; `reset` has cleared up.
+      if (session !== sessionRef.current) return;
+      setIsChecking(false);
+      if (!loaded) {
+        toast({
+          title: 'Could not check existing records',
+          description:
+            'The request and reception numbers already on record could not be read, so the file cannot be validated yet. Try again.',
+          variant: 'destructive',
+        });
+        return;
+      }
+      recordedRef.current = loaded;
+      recorded = loaded;
+    }
+
     setResult(
       parseExpenseImportRows(sheet, columnMap, masters, {
         requestNoSource,
         // Duplicate detection is a module data rule. With it off, nothing is compared against what
-        // is already recorded and a re-import creates the rows a second time.
-        existingRequestNos: duplicateDetection ? existing.requestNos : [],
+        // is already recorded and a re-import creates the rows a second time. With it on, request
+        // numbers are compared against every department's, not only this register's.
+        existingRequestNos: duplicateDetection ? [...recorded.requestNos, ...existing.requestNos] : [],
         existingFingerprints: duplicateDetection ? existing.fingerprints : [],
+        // Not a duplicate rule, so not switched off with it: a Reception No claims a Daily
+        // Requisition, and one Daily Requisition does not have — or another request already
+        // carries — is dropped and the row imported as pending reception.
+        requisitionReceptionNos: recorded.requisitionReceptionNos,
+        claimedReceptionNos: recorded.receptionClaims,
       }),
     );
     setFilter('all');
@@ -409,6 +495,11 @@ export function ExpenseImportDialog({
         requestNos = result.rows.map((row) => row.draft.requestNo as string);
       } else {
         const configRef = doc(db, 'departmentSerialConfigs', department.id);
+        // Numbers already in use anywhere in the module — typically history imported with its own
+        // numbers, which leaves the counter behind them — are stepped over rather than reused.
+        // Always, not only with duplicate detection on: that rule decides whether a repeated *row*
+        // is skipped, and handing out a number another request already has is never wanted.
+        const takenRequestNos = [...(recordedRef.current?.requestNos ?? []), ...existing.requestNos];
         // One transaction for the whole block: the create form's per-request transaction run
         // hundreds of times is both slow and a way to leave an import half-numbered.
         requestNos = await runTransaction(db, async (transaction) => {
@@ -419,7 +510,7 @@ export function ExpenseImportDialog({
             );
           }
           const config = snapshot.data() as SerialNumberConfig;
-          const allocated = allocateRequestNos(config, result.rows.length);
+          const allocated = allocateRequestNos(config, result.rows.length, takenRequestNos);
           transaction.update(configRef, { startingIndex: allocated.nextIndex });
           return allocated.requestNos;
         });
@@ -973,11 +1064,24 @@ export function ExpenseImportDialog({
           <div className="flex items-center gap-2">
             {step === 'mapping' && (
               <>
-                <Button variant="ghost" size="sm" onClick={() => setStep('upload')}>
+                <Button variant="ghost" size="sm" onClick={() => setStep('upload')} disabled={isChecking}>
                   Back
                 </Button>
-                <Button size="sm" className="gap-2" onClick={buildPreview} disabled={unmappedRequired.length > 0}>
-                  Preview &amp; validate <ArrowRight className="h-3.5 w-3.5" />
+                <Button
+                  size="sm"
+                  className="gap-2"
+                  onClick={() => void buildPreview()}
+                  disabled={unmappedRequired.length > 0 || isChecking}
+                >
+                  {isChecking ? (
+                    <>
+                      <Loader2 className="h-3.5 w-3.5 animate-spin" /> Checking records…
+                    </>
+                  ) : (
+                    <>
+                      Preview &amp; validate <ArrowRight className="h-3.5 w-3.5" />
+                    </>
+                  )}
                 </Button>
               </>
             )}

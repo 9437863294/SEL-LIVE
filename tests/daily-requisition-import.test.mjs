@@ -4,9 +4,11 @@ import {
   allocateReceptionNos,
   buildRequisitionColumnMap,
   formatReceptionNo,
+  importedPaymentFields,
   parseDelimitedGrid,
   parseRequisitionDateTime,
   parseRequisitionImportRows,
+  planExpenseRequestLinks,
   readRequisitionSheet,
   requisitionFingerprint,
   resolveRequisitionDepartment,
@@ -426,4 +428,94 @@ test('an empty sheet is an empty result, not a crash', () => {
   assert.deepEqual(result.rows, []);
   assert.deepEqual(result.issues, []);
   assert.equal(result.totalGross, 0);
+});
+
+/* ── history imported as Paid ────────────────────────────────────────────────────────────────── */
+
+test('an entry imported as Paid is paid in full, and marked as paid outside Bank Balance', () => {
+  const rows = runImport(PASTED, { status: 'Paid' }).rows;
+  for (const row of rows) {
+    assert.deepEqual(importedPaymentFields(row.draft), { paidAmount: row.draft.netAmount, manualPaid: true });
+  }
+  assert.equal(importedPaymentFields(rows[8].draft).paidAmount, 1392283, 'the net figure, not the gross');
+});
+
+test('the paid amount follows net, not gross, when a deduction was made', () => {
+  assert.deepEqual(importedPaymentFields({ status: 'Paid', netAmount: 3600.456 }), { paidAmount: 3600.46, manualPaid: true });
+});
+
+test('every other status adds no payment fields at all — nothing undefined reaches Firestore', () => {
+  for (const status of ['Pending', 'Received', 'Verified', 'Received for Payment', 'Needs Review', 'Cancelled']) {
+    assert.deepEqual(importedPaymentFields({ status, netAmount: 4000 }), {}, status);
+  }
+});
+
+/* ── linking to the expense requests the rows were raised as ─────────────────────────────────── */
+
+test('a row whose Dep No names an unreceived expense request links to it', () => {
+  const links = planExpenseRequestLinks(['PR NO-01', 'AD NO-01'], [
+    { id: 'e-1', requestNo: 'PR NO-01', receptionNo: '' },
+    { id: 'e-2', requestNo: 'AD NO-01' },
+  ]);
+  assert.deepEqual(links, [
+    { kind: 'link', expenseRequestId: 'e-1' },
+    { kind: 'link', expenseRequestId: 'e-2' },
+  ]);
+});
+
+test('a request already received is left alone, and says under which reception number', () => {
+  const [link] = planExpenseRequestLinks(['PR NO-01'], [{ id: 'e-1', requestNo: 'PR NO-01', receptionNo: 'SEL/2026-27/40' }]);
+  assert.deepEqual(link, { kind: 'received', receptionNo: 'SEL/2026-27/40' });
+});
+
+test('a row with no Dep No, or one no request carries, links nothing', () => {
+  const requests = [{ id: 'e-1', requestNo: 'PR NO-01', receptionNo: '' }];
+  assert.deepEqual(planExpenseRequestLinks(['', '   ', 'PR NO-99'], requests), [
+    { kind: 'none' },
+    { kind: 'none' },
+    { kind: 'none' },
+  ]);
+  assert.deepEqual(planExpenseRequestLinks(['PR NO-01'], []), [{ kind: 'none' }]);
+});
+
+test('one request is claimed once — the first row naming it wins, the next is told which row did', () => {
+  const links = planExpenseRequestLinks(['AD NO-01', 'PR NO-01', 'PR NO-01'], [{ id: 'e-1', requestNo: 'PR NO-01', receptionNo: '' }]);
+  assert.deepEqual(links[1], { kind: 'link', expenseRequestId: 'e-1' });
+  assert.deepEqual(links[2], { kind: 'claimed', index: 1 });
+});
+
+test('two unreceived requests sharing a number are claimed one each', () => {
+  const links = planExpenseRequestLinks(['PR NO-01', 'PR NO-01'], [
+    { id: 'e-received', requestNo: 'PR NO-01', receptionNo: 'SEL/1' },
+    { id: 'e-a', requestNo: 'PR NO-01', receptionNo: '' },
+    { id: 'e-b', requestNo: 'PR NO-01', receptionNo: '' },
+  ]);
+  assert.deepEqual(links.map((link) => link.expenseRequestId), ['e-a', 'e-b']);
+});
+
+test('the match is exact apart from surrounding spaces — the join every other module makes', () => {
+  const requests = [{ id: 'e-1', requestNo: ' PR NO-01 ', receptionNo: '  ' }];
+  assert.deepEqual(planExpenseRequestLinks(['PR NO-01'], requests), [{ kind: 'link', expenseRequestId: 'e-1' }]);
+  assert.deepEqual(
+    planExpenseRequestLinks(['pr no-01'], requests),
+    [{ kind: 'none' }],
+    'a differently spelt Dep No would link a request to an entry the Expenses module cannot find',
+  );
+});
+
+test('the real register links the rows whose requests are still waiting, and only those', () => {
+  const rows = runImport().rows;
+  const links = planExpenseRequestLinks(
+    rows.map((row) => row.draft.depNo),
+    [
+      { id: 'e-pr1', requestNo: 'PR NO-01', receptionNo: '' },
+      { id: 'e-ad1', requestNo: 'AD NO-01', receptionNo: 'SEL/2025-26/9' },
+      { id: 'e-tnd1', requestNo: 'TND NO-01' },
+    ],
+  );
+  assert.equal(links.length, rows.length, 'one outcome per imported row');
+  assert.deepEqual(links[0], { kind: 'link', expenseRequestId: 'e-pr1' });
+  assert.deepEqual(links[2], { kind: 'received', receptionNo: 'SEL/2025-26/9' });
+  assert.deepEqual(links[7], { kind: 'link', expenseRequestId: 'e-tnd1' });
+  assert.equal(links.filter((link) => link.kind === 'link').length, 2);
 });

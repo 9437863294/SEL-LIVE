@@ -1,11 +1,12 @@
 'use client';
 export const dynamic = 'force-dynamic';
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
-import { AlertTriangle, BookOpenCheck, CalendarClock, History, Link2, ListPlus, Search, Trash2, X } from 'lucide-react';
-import { collection, doc, getDoc, getDocs, query, runTransaction, Timestamp, where } from 'firebase/firestore';
-import { getDownloadURL, ref, uploadBytes } from 'firebase/storage';
+import { useSearchParams } from 'next/navigation';
+import { AlertTriangle, BookOpenCheck, CalendarClock, CheckCircle2, History, Link2, ListPlus, Printer, Search, Trash2, X } from 'lucide-react';
+import { collection, doc, getDoc, getDocs, query, runTransaction, Timestamp, where, type DocumentReference } from 'firebase/firestore';
+import { deleteObject, getDownloadURL, ref, uploadBytes, type StorageReference } from 'firebase/storage';
 import { format } from 'date-fns';
 
 import { Button } from '@/components/ui/button';
@@ -19,13 +20,16 @@ import { BANK_PAGE, BankAccessDenied, BankBalanceBackground, BankPageSkeleton, a
 import { EntryCard, EntryFooter, EntryTable, FileCell, TD, TH, cellInput, fileSize, type FooterFigure, type FooterNote } from '@/components/bank-balance/entry-grid';
 import { useAuth } from '@/components/auth/AuthProvider';
 import { useToast } from '@/hooks/use-toast';
+import { useActivityLogger } from '@/hooks/useActivityLogger';
 import { useAuthorization } from '@/hooks/useAuthorization';
+import { ACTIVITY_MODULES } from '@/lib/activity-modules';
 import { db } from '@/lib/firebase';
 import { storage } from '@/lib/firebase-storage';
 import { getApplicableCcLimit } from '@/lib/bank-balance-limit';
-import { balanceAt, buildLedger, formatDay, formatInr, isCashCredit, parseDay } from '@/lib/bank-balance-ledger';
+import { balanceAt, buildLedger, formatDay, formatInr, isCashCredit, lowestAvailableFrom, parseDay } from '@/lib/bank-balance-ledger';
 import {
-  applyPayment,
+  applyPayments,
+  instrumentKey,
   modeConfig,
   nextVoucherNo,
   paymentModes,
@@ -34,6 +38,7 @@ import {
   type RequisitionPaymentRef,
   type VoucherLine,
 } from '@/lib/bank-payments';
+import { voucherHref } from '@/lib/requisition-progress';
 import type { BankAccount, BankExpense, DailyRequisitionEntry } from '@/lib/types';
 import { cn } from '@/lib/utils';
 
@@ -88,21 +93,79 @@ const reqDateText = (value: DailyRequisitionEntry['date']) => {
   }
 };
 
+/** A voucher row paying what is still due on a requisition. */
+const lineFromPayable = (payable: Payable, id = makeId()): Line => ({
+  id,
+  requisitionId: payable.id,
+  ref: payable.receptionNo,
+  partyName: payable.partyName || '',
+  projectId: payable.projectId,
+  projectName: payable.projectName,
+  description: payable.description || '',
+  amount: String(payable.balance),
+  utr: '',
+  approvalCopy: null,
+});
+
+/** What can be spent on `day` from the account's running figure: the balance, or for Cash Credit the limit in force that day less what is drawn. */
+const spendable = (account: BankAccount) => (day: Date, figure: number) =>
+  isCashCredit(account) ? getApplicableCcLimit(account, day) - figure : figure;
+
+/** The printable voucher, opened from the success panel. */
+const voucherPrintHref = (voucherId: string) => `/bank-balance/cheques/${encodeURIComponent(voucherId)}/print`;
+
+/** The note shown when some requisitions sent by "Pay via voucher" could not go on the voucher. */
+const skippedNote = (skipped: number, asked: number) =>
+  `${skipped} of ${asked} requisition${asked === 1 ? '' : 's'} sent to this voucher ${skipped === 1 ? 'is' : 'are'} not waiting for payment ` +
+  `(already paid, cancelled or not yet processed for payment) and ${skipped === 1 ? 'was' : 'were'} left off.`;
+
+/**
+ * Every line of one voucher paying the same requisition, applied in line order to ONE running copy — so the
+ * second line is checked against what the first leaves due and the requisition gets a single update. Throws,
+ * naming the rows, if together they pay more than is due.
+ */
+function foldPayments(req: DailyRequisitionEntry, receptionNo: string, rows: number[], refs: RequisitionPaymentRef[]) {
+  try {
+    return applyPayments(req, refs);
+  } catch (error) {
+    throw new Error(`Row${rows.length === 1 ? '' : 's'} ${rows.join(', ')} (${receptionNo}): ${error instanceof Error ? error.message : String(error)}`);
+  }
+}
+
+/** The voucher just issued, for the success panel. */
+interface IssuedVoucher {
+  id: string;
+  voucherNo: string;
+  total: number;
+  payees: number;
+  mode: string;
+  instrumentNo: string;
+  instrumentDate: string;
+  postDated: boolean;
+}
+
 /**
  * New Payment — a payment VOUCHER: one instrument (cheque, e-cheque, RTGS/NEFT batch, DD) drawn on
  * one bank account, paying one or many payees. Payees are picked from the Daily Requisitions
  * waiting for payment (or found by typing a Reception No.); each line may pay all or part of what
  * is still due. A cheque may be post-dated: it enters the balance from the date written on it.
  *
- * Saving writes the voucher, one bankExpenses Debit per line (dated on the instrument date) and the
- * requisitions' paid amounts in ONE transaction, re-reading each requisition first so two people
+ * Saving writes the voucher, one bankExpenses Debit per line (dated on the instrument date), the
+ * requisitions' paid amounts and — for a cheque, e-cheque or DD — a reservation of the instrument
+ * number (bankInstrumentNos) in ONE transaction, re-reading each requisition first so two people
  * cannot pay the same balance twice. See src/lib/bank-payments.ts.
+ *
+ * Daily Requisition's "Pay via voucher" opens this page with ?requisitions=<id,id,…>; those
+ * requisitions start on the voucher for what is still due.
  */
-export default function NewPaymentPage() {
+function NewPaymentForm() {
   const { toast } = useToast();
   const { user } = useAuth();
   const { can, isLoading: authLoading } = useAuthorization();
   const canAdd = !authLoading && can('Add', 'Bank Balance.Expenses');
+  const { log } = useActivityLogger(ACTIVITY_MODULES.BANK_BALANCE);
+  const searchParams = useSearchParams();
+  const requestedIds = searchParams.get('requisitions') ?? '';
 
   // Voucher header.
   const [mode, setMode] = useState('Cheque');
@@ -122,7 +185,15 @@ export default function NewPaymentPage() {
   const [mandatory, setMandatory] = useState<MandatoryFields>(NO_MANDATORY);
   const [customMethods, setCustomMethods] = useState<string[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  /** The first load has finished; later reloads (after a save) refresh in place instead of blanking the form. */
+  const [hasLoaded, setHasLoaded] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
+  const [lastIssued, setLastIssued] = useState<IssuedVoucher | null>(null);
+  const issuedRef = useRef<HTMLDivElement>(null);
+
+  // Requisitions sent by "Pay via voucher": which ?requisitions= value has been applied, and what was left off.
+  const preloadedFor = useRef<string | null>(null);
+  const [preloadNote, setPreloadNote] = useState('');
 
   // Requisition picker.
   const [pickerOpen, setPickerOpen] = useState(false);
@@ -143,27 +214,48 @@ export default function NewPaymentPage() {
         getDocs(collection(db, 'paymentMethods')),
       ]);
       const projectNames = new Map(projectSnap.docs.map((d) => [d.id, String(d.data().projectName ?? '')]));
+      const payable: Payable[] = reqSnap.docs
+        .map((d) => {
+          const entry = { id: d.id, ...d.data() } as DailyRequisitionEntry;
+          return { ...entry, projectName: projectNames.get(entry.projectId) || '—', balance: requisitionBalance(entry), dateText: reqDateText(entry.date) };
+        })
+        .filter((entry) => entry.balance > 0)
+        .sort((a, b) => (a.receptionNo || '').localeCompare(b.receptionNo || ''));
       setAccounts(accountSnap.docs.map((d) => ({ id: d.id, ...d.data() } as BankAccount)).sort((a, b) => accountLabel(a).localeCompare(accountLabel(b))));
       setTransactions(txnSnap.docs.map((d) => ({ id: d.id, ...d.data() } as BankExpense)));
       setVouchers(voucherSnap.docs.map((d) => ({ id: d.id, ...d.data() } as BankPaymentVoucher)));
-      setPayables(
-        reqSnap.docs
-          .map((d) => {
-            const entry = { id: d.id, ...d.data() } as DailyRequisitionEntry;
-            return { ...entry, projectName: projectNames.get(entry.projectId) || '—', balance: requisitionBalance(entry), dateText: reqDateText(entry.date) };
-          })
-          .filter((entry) => entry.balance > 0)
-          .sort((a, b) => (a.receptionNo || '').localeCompare(b.receptionNo || '')),
-      );
+      setPayables(payable);
       setMandatory({ ...NO_MANDATORY, ...(settingsSnap.exists() ? settingsSnap.data().mandatoryFields || {} : {}) });
       setCustomMethods(methodSnap.docs.map((d) => String(d.data().name ?? '')));
+      setHasLoaded(true);
+
+      // Requisitions sent by "Pay via voucher" (?requisitions=<id,id,…>) go on the voucher for what is still due —
+      // once, not again each time the data reloads (after a save, say). Ids not waiting for payment are left off.
+      if (requestedIds && preloadedFor.current !== requestedIds) {
+        preloadedFor.current = requestedIds;
+        const ids = [...new Set(requestedIds.split(',').map((id) => id.trim()).filter(Boolean))];
+        const byId = new Map(payable.map((p) => [p.id, p]));
+        const found = ids.flatMap((id) => {
+          const match = byId.get(id);
+          return match ? [match] : [];
+        });
+        if (found.length) {
+          setLines((prev) => {
+            const onVoucher = new Set(prev.map((line) => line.requisitionId));
+            const add = found.filter((p) => !onVoucher.has(p.id));
+            return add.length ? [...prev.filter(hasContent), ...add.map((p) => lineFromPayable(p))] : prev;
+          });
+        }
+        const skipped = ids.length - found.length;
+        setPreloadNote(skipped > 0 ? skippedNote(skipped, ids.length) : '');
+      }
     } catch (error) {
       console.error('Error loading payment data:', error);
       toast({ title: 'Error', description: 'Failed to load accounts, requisitions and payment settings.', variant: 'destructive' });
     } finally {
       setIsLoading(false);
     }
-  }, [toast]);
+  }, [toast, requestedIds]);
 
   useEffect(() => {
     if (authLoading) return;
@@ -199,17 +291,34 @@ export default function NewPaymentPage() {
     if (!cfg.allowsFutureDate && instrumentDate > today) setInstrumentDate(today);
   }, [cfg.allowsFutureDate, instrumentDate, today]);
 
-  // Funds on the instrument date — everything already dated up to then, post-dated cheques included.
   const instrumentDay = useMemo(() => parseDay(instrumentDate), [instrumentDate]);
-  const available = useMemo(() => {
-    if (!account || !instrumentDay) return null;
-    const figure = balanceAt(buildLedger(account, transactions), instrumentDay);
-    return isCashCredit(account) ? getApplicableCcLimit(account, instrumentDay) - figure : figure;
-  }, [account, transactions, instrumentDay]);
+  const dateLabel = cfg.kind === 'cheque' ? 'Cheque date' : cfg.kind === 'draft' ? 'DD date' : 'Transfer date';
+
+  // An entry dated before the account's opening date is already inside its opening figure, so the ledger
+  // ignores it: a payment dated then would never count toward the balance.
+  const accountStart = account ? parseDay(account.openingDate) : null;
+  const beforeOpening = Boolean(accountStart && instrumentDay && instrumentDay < accountStart);
+  const openingNote =
+    beforeOpening && account
+      ? `${dateLabel} ${formatDay(instrumentDate)} is before the account's opening date ${formatDay(account.openingDate)}; the payment would not count toward its balance.`
+      : '';
+
+  // Funds from the instrument date on — everything already dated up to then, post-dated cheques included. The
+  // voucher must fit under the LOWEST point from that date onward: cheques already booked for later dates draw
+  // on the same money, and one of them would bounce if this voucher took it.
+  const funds = useMemo(() => {
+    if (!account || !instrumentDay || beforeOpening) return null;
+    const ledger = buildLedger(account, transactions);
+    const availableOn = spendable(account);
+    const onDate = availableOn(instrumentDay, balanceAt(ledger, instrumentDay));
+    const lowest = lowestAvailableFrom(ledger, instrumentDay, availableOn);
+    return { onDate, lowest: lowest.amount, lowestDay: lowest.day, lowestAhead: lowest.day > instrumentDay && lowest.amount < onDate };
+  }, [account, transactions, instrumentDay, beforeOpening]);
+  const fundsLabel = account && isCashCredit(account) ? 'Available limit' : 'Available balance';
 
   const total = lines.reduce((sum, line) => sum + amountOf(line), 0);
-  const remaining = available === null ? null : available - total;
-  const overBy = remaining !== null && remaining < 0 ? -remaining : 0;
+  const remaining = funds ? funds.lowest - total : null;
+  const overBy = remaining !== null && remaining < -0.004 ? -remaining : 0;
 
   const duplicateInstrument =
     instrumentNo.trim() && cfg.kind !== 'transfer'
@@ -243,19 +352,6 @@ export default function NewPaymentPage() {
       const rest = prev.filter((line) => line.id !== id);
       return rest.length ? rest : [newLine()];
     });
-
-  const lineFromPayable = (payable: Payable, id = makeId()): Line => ({
-    id,
-    requisitionId: payable.id,
-    ref: payable.receptionNo,
-    partyName: payable.partyName || '',
-    projectId: payable.projectId,
-    projectName: payable.projectName,
-    description: payable.description || '',
-    amount: String(payable.balance),
-    utr: '',
-    approvalCopy: null,
-  });
 
   const linkedIds = new Set(lines.map((line) => line.requisitionId).filter(Boolean) as string[]);
 
@@ -305,47 +401,85 @@ export default function NewPaymentPage() {
       });
       return;
     }
-    if (available !== null && total > available) {
-      toast({ title: 'Insufficient funds', description: `The voucher totals ${formatInr(total)}; ${accountLabel(account)} has ${formatInr(available)} available on ${formatDay(instrumentDate)}.`, variant: 'destructive' });
+    if (beforeOpening) {
+      toast({ title: 'Date before the account opened', description: openingNote, variant: 'destructive' });
+      return;
+    }
+    if (funds && total > funds.lowest + 0.004) {
+      toast({
+        title: 'Insufficient funds',
+        description: funds.lowestAhead
+          ? `The voucher totals ${formatInr(total)}. ${accountLabel(account)} has ${formatInr(funds.onDate)} on ${formatDay(instrumentDate)}, but payments already booked for later dates (post-dated cheques) bring that down to ${formatInr(funds.lowest)} on ${formatDay(funds.lowestDay)} — paying more now would leave too little for them.`
+          : `The voucher totals ${formatInr(total)}; ${accountLabel(account)} has ${formatInr(funds.onDate)} available on ${formatDay(instrumentDate)}.`,
+        variant: 'destructive',
+      });
       return;
     }
 
     const day = instrumentDay;
+    // "Today" as of this click, not as of the last render: the page may have been open since yesterday, and the
+    // voucher number restarts each financial year.
+    const issueDay = todayKey();
+    const instrument = instrumentNo.trim();
+    const reservationKey = instrumentKey(accountId, mode, instrument);
+    const voucherTotal = Math.round(total * 100) / 100;
+    const payees = lines.length;
+    const reqIds = [...new Set(lines.flatMap((line) => (line.requisitionId ? [line.requisitionId] : [])))];
+
     setIsSaving(true);
+    setLastIssued(null);
+    // Every file uploaded for this voucher, so a save that fails can take them back out of Storage.
+    const uploaded: StorageReference[] = [];
+    let issued: IssuedVoucher | null = null;
     try {
       const voucherRef = doc(collection(db, 'bankPayments'));
       const counterRef = doc(db, 'bankBalanceCounters', 'paymentVoucher');
+      // A cheque, e-cheque or DD reserves its number on the account; a transfer's batch reference is free text.
+      const reservationRef = reservationKey ? doc(db, 'bankInstrumentNos', reservationKey) : null;
       const stamp = Date.now();
 
-      // 1) Uploads first — Storage is outside the transaction.
-      const transferCopyUrl = transferCopy
-        ? await (async () => {
-            const fileRef = ref(storage, `bank-payments/${voucherRef.id}/${stamp}-transfer-${transferCopy.name}`);
-            await uploadBytes(fileRef, transferCopy);
-            return getDownloadURL(fileRef);
-          })()
-        : '';
-      const approvalUrls = await Promise.all(
-        lines.map(async (line) => {
-          if (!line.approvalCopy) return '';
-          const fileRef = ref(storage, `bank-payments/${voucherRef.id}/${line.id}-approval-${line.approvalCopy.name}`);
-          await uploadBytes(fileRef, line.approvalCopy);
-          return getDownloadURL(fileRef);
-        }),
-      );
+      // 1) Uploads first — Storage is outside the transaction. allSettled, so every upload has finished (and is
+      //    on the clean-up list) before a failure is reported.
+      const upload = async (path: string, file: File) => {
+        const fileRef = ref(storage, path);
+        await uploadBytes(fileRef, file);
+        uploaded.push(fileRef);
+        return getDownloadURL(fileRef);
+      };
+      const settled = await Promise.allSettled([
+        transferCopy ? upload(`bank-payments/${voucherRef.id}/${stamp}-transfer-${transferCopy.name}`, transferCopy) : Promise.resolve(''),
+        ...lines.map((line) =>
+          line.approvalCopy ? upload(`bank-payments/${voucherRef.id}/${line.id}-approval-${line.approvalCopy.name}`, line.approvalCopy) : Promise.resolve(''),
+        ),
+      ]);
+      const failedUpload = settled.find((result): result is PromiseRejectedResult => result.status === 'rejected');
+      if (failedUpload) throw failedUpload.reason;
+      const [transferCopyUrl, ...approvalUrls] = settled.map((result) => (result.status === 'fulfilled' ? result.value : ''));
 
-      // 2) One transaction: re-read every requisition and the counter, then write everything.
+      // 2) One transaction. Every read first — the voucher itself, the counter, the instrument number's
+      //    reservation and each requisition once — then every write.
       const voucherNo = await runTransaction(db, async (tx) => {
+        const existingSnap = await tx.get(voucherRef);
         const counterSnap = await tx.get(counterRef);
-        const reqRefs = lines.filter((l) => l.requisitionId).map((l) => doc(db, 'dailyRequisitions', l.requisitionId as string));
-        const reqSnaps = await Promise.all(reqRefs.map((r) => tx.get(r)));
+        const reservationSnap = reservationRef ? await tx.get(reservationRef) : null;
+        const reqSnaps = await Promise.all(reqIds.map((id) => tx.get(doc(db, 'dailyRequisitions', id))));
+
+        // A retry after a commit that did land (only its reply was lost) must not book the voucher twice.
+        if (existingSnap.exists()) return String(existingSnap.data().voucherNo ?? '');
+        if (reservationSnap?.exists()) {
+          const taken = reservationSnap.data() as { voucherNo?: string };
+          throw new Error(`${cfg.instrumentLabel} ${instrument} is already used on voucher ${taken.voucherNo || '(number not recorded)'}.`);
+        }
+
         const reqById = new Map(reqSnaps.map((snap) => [snap.id, snap]));
-
-        const { voucherNo: number, counter } = nextVoucherNo(counterSnap.exists() ? (counterSnap.data() as { fy?: string; next?: number }) : undefined, today);
+        const { voucherNo: number, counter } = nextVoucherNo(counterSnap.exists() ? (counterSnap.data() as { fy?: string; next?: number }) : undefined, issueDay);
         const instrumentTs = Timestamp.fromDate(day);
+        const now = Timestamp.now();
 
+        // Build everything first; nothing is written until every line and requisition has checked out.
+        const expenses: Array<{ docRef: DocumentReference; data: Omit<BankExpense, 'id'> }> = [];
         const voucherLines: VoucherLine[] = [];
-        const reqUpdates: Array<{ id: string; data: Record<string, unknown> }> = [];
+        const byRequisition = new Map<string, { req: DailyRequisitionEntry; receptionNo: string; rows: number[]; refs: RequisitionPaymentRef[] }>();
 
         lines.forEach((line, index) => {
           const expenseRef = doc(collection(db, 'bankExpenses'));
@@ -360,41 +494,34 @@ export default function NewPaymentPage() {
             if (req.status !== 'Received for Payment' && req.status !== 'Partially Paid') {
               throw new Error(`Row ${index + 1}: ${line.ref} is now "${req.status}" and can no longer be paid here.`);
             }
-            const paymentRef: RequisitionPaymentRef = {
-              bankPaymentId: voucherRef.id,
-              voucherNo: number,
-              lineId: line.id,
-              amount,
-              mode,
-              instrumentNo: instrumentNo.trim(),
-              instrumentDate,
-              accountId,
-            };
-            const next = applyPayment(req, paymentRef); // throws if more than the balance
-            reqUpdates.push({
-              id: line.requisitionId,
-              data: { ...next, lastPaidAt: Timestamp.now(), ...(next.status === 'Paid' ? { paidAt: Timestamp.now() } : {}) },
-            });
+            // Lines grouped by requisition, in line order — folded into one update below.
+            const group = byRequisition.get(line.requisitionId) ?? { req, receptionNo: line.ref.trim(), rows: [], refs: [] };
+            group.rows.push(index + 1);
+            group.refs.push({ bankPaymentId: voucherRef.id, voucherNo: number, lineId: line.id, amount, mode, instrumentNo: instrument, instrumentDate, accountId });
+            byRequisition.set(line.requisitionId, group);
           }
 
-          const expense: Omit<BankExpense, 'id'> = {
-            date: instrumentTs,
-            accountId,
-            description: party && !description.toLowerCase().includes(party.toLowerCase()) ? `${party} — ${description}` : description,
-            amount,
-            type: 'Debit',
-            isContra: false,
-            paymentRequestRefNo: line.ref.trim(),
-            utrNumber: line.utr.trim(),
-            paymentMethod: mode,
-            paymentRefNo: instrumentNo.trim(),
-            approvalCopyUrl: approvalUrls[index],
-            bankTransferCopyUrl: transferCopyUrl,
-            bankPaymentId: voucherRef.id,
-            ...(line.requisitionId ? { requisitionId: line.requisitionId } : {}),
-            createdAt: Timestamp.now(),
-          };
-          tx.set(expenseRef, expense);
+          expenses.push({
+            docRef: expenseRef,
+            data: {
+              date: instrumentTs,
+              accountId,
+              description: party && !description.toLowerCase().includes(party.toLowerCase()) ? `${party} — ${description}` : description,
+              amount,
+              type: 'Debit',
+              isContra: false,
+              paymentRequestRefNo: line.ref.trim(),
+              utrNumber: line.utr.trim(),
+              paymentMethod: mode,
+              paymentRefNo: instrument,
+              approvalCopyUrl: approvalUrls[index] ?? '',
+              bankTransferCopyUrl: transferCopyUrl,
+              bankPaymentId: voucherRef.id,
+              voucherNo: number,
+              ...(line.requisitionId ? { requisitionId: line.requisitionId } : {}),
+              createdAt: now,
+            },
+          });
 
           voucherLines.push({
             lineId: line.id,
@@ -405,55 +532,105 @@ export default function NewPaymentPage() {
             description,
             amount,
             utrNumber: line.utr.trim(),
-            approvalCopyUrl: approvalUrls[index],
+            approvalCopyUrl: approvalUrls[index] ?? '',
             expenseId: expenseRef.id,
           });
+        });
+
+        // ONE update per requisition, however many lines pay it (throws if together they pay more than is due).
+        const reqUpdates = [...byRequisition].map(([id, group]) => {
+          const next = foldPayments(group.req, group.receptionNo, group.rows, group.refs);
+          return { id, data: { ...next, lastPaidAt: now, ...(next.status === 'Paid' ? { paidAt: now } : {}) } };
         });
 
         const voucher: Omit<BankPaymentVoucher, 'id'> & { createdAt: Timestamp } = {
           voucherNo: number,
           mode,
           accountId,
-          instrumentNo: instrumentNo.trim(),
+          instrumentNo: instrument,
           instrumentDate,
-          issueDate: today,
+          issueDate: issueDay,
           lines: voucherLines,
-          total: Math.round(total * 100) / 100,
+          total: voucherTotal,
           status: 'Issued',
           transferCopyUrl,
           remarks: remarks.trim(),
           createdById: user?.id || '',
           createdByName: user?.name || '',
-          createdAt: Timestamp.now(),
+          createdAt: now,
         };
+
+        expenses.forEach(({ docRef, data }) => tx.set(docRef, data));
         tx.set(voucherRef, voucher);
         reqUpdates.forEach(({ id, data }) => tx.update(doc(db, 'dailyRequisitions', id), data));
+        if (reservationRef) {
+          tx.set(reservationRef, { voucherId: voucherRef.id, voucherNo: number, accountId, mode, instrumentNo: instrument, createdAt: now });
+        }
         tx.set(counterRef, counter);
         return number;
       });
 
-      toast({
-        title: `Voucher ${voucherNo} issued`,
-        description: `${lines.length} payment${lines.length === 1 ? '' : 's'} of ${formatInr(total)} by ${mode}${instrumentNo ? ` ${instrumentNo}` : ''}${
-          postDated ? ` — post-dated to ${formatDay(instrumentDate)}` : ''
-        }.`,
-      });
-      // Keep the account and mode for the next voucher; clear the rest.
-      setLines([newLine()]);
-      setInstrumentNo('');
-      setRemarks('');
-      setTransferCopy(null);
-      setShowErrors(false);
-      void load();
+      issued = {
+        id: voucherRef.id,
+        voucherNo,
+        total: voucherTotal,
+        payees,
+        mode,
+        instrumentNo: instrument,
+        instrumentDate,
+        postDated: cfg.allowsFutureDate && instrumentDate > issueDay,
+      };
     } catch (error) {
       console.error('Error issuing payment voucher:', error);
+      // Nothing was saved, so the files uploaded for it belong to nothing: take them back out (best effort).
+      if (uploaded.length) void Promise.allSettled(uploaded.map((fileRef) => deleteObject(fileRef)));
       toast({ title: 'Voucher not saved', description: error instanceof Error ? error.message : 'Nothing was saved. Please try again.', variant: 'destructive' });
     } finally {
       setIsSaving(false);
     }
+    if (!issued) return;
+
+    const paidBy = `${mode}${instrument ? ` ${instrument}` : ''}`;
+    toast({
+      title: `Voucher ${issued.voucherNo} issued`,
+      description: `${payees} payment${payees === 1 ? '' : 's'} of ${formatInr(voucherTotal)} by ${paidBy}${
+        issued.postDated ? ` — post-dated to ${formatDay(instrumentDate)}` : ''
+      }.`,
+    });
+    void log(
+      'Issue Payment Voucher',
+      {
+        summary: `${issued.voucherNo}: ${payees} payee${payees === 1 ? '' : 's'}, ${formatInr(voucherTotal)} by ${paidBy}`,
+        voucherNo: issued.voucherNo,
+        account: accountLabel(account),
+        accountId,
+        mode,
+        instrumentNo: instrument,
+        instrumentDate,
+        payees,
+        total: voucherTotal,
+        requisitions: reqIds.length,
+      },
+      { recordId: issued.id, recordRef: issued.voucherNo },
+    );
+    setLastIssued(issued);
+    // Keep the account and mode for the next voucher; clear the rest.
+    setLines([newLine()]);
+    setInstrumentNo('');
+    setRemarks('');
+    setTransferCopy(null);
+    setShowErrors(false);
+    setPreloadNote('');
+    void load();
   };
 
-  if (authLoading || (isLoading && canAdd)) return <BankPageSkeleton kpis={0} blocks={1} />;
+  // Bring the success panel into view — Save sits at the foot of what can be a long form.
+  useEffect(() => {
+    if (lastIssued) issuedRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  }, [lastIssued]);
+
+  // Only the first load blanks the page; a reload after a save refreshes the figures in place (Save waits for it).
+  if (authLoading || (isLoading && canAdd && !hasLoaded)) return <BankPageSkeleton kpis={0} blocks={1} />;
   if (!canAdd) return <BankAccessDenied title="New Payment" backHref="/bank-balance/expenses" backLabel="Back to payments" what="the payment entry form" />;
 
   const err = (flag: boolean | undefined) => Boolean(showErrors && flag);
@@ -466,13 +643,29 @@ export default function NewPaymentPage() {
   const pickedTotal = payables.filter((p) => picked.has(p.id)).reduce((sum, p) => sum + p.balance, 0);
 
   const figures: FooterFigure[] = [
-    ...(available !== null ? [{ label: `${account && isCashCredit(account) ? 'Available limit' : 'Available balance'} on ${formatDay(instrumentDate)}`, value: formatInr(available) }] : []),
+    ...(funds ? [{ label: `${fundsLabel} on ${formatDay(instrumentDate)}`, value: formatInr(funds.onDate) }] : []),
+    ...(funds?.lowestAhead ? [{ label: `Lowest ahead on ${formatDay(funds.lowestDay)} (post-dated cheques)`, value: formatInr(funds.lowest) }] : []),
     { label: `Voucher total (${lines.length} payee${lines.length === 1 ? '' : 's'})`, value: formatInr(total) },
-    ...(remaining !== null ? [{ label: 'Left after this voucher', value: formatInr(remaining), tone: overBy > 0 ? ('bad' as const) : ('good' as const) }] : []),
+    ...(remaining !== null
+      ? [
+          {
+            label: funds?.lowestAhead ? `Left on ${formatDay(funds.lowestDay)}` : 'Left after this voucher',
+            value: formatInr(remaining),
+            tone: overBy > 0 ? ('bad' as const) : ('good' as const),
+          },
+        ]
+      : []),
   ];
 
   const notes: FooterNote[] = [];
-  if (overBy > 0) notes.push({ tone: 'error', text: `Over the funds available on ${formatDay(instrumentDate)} by ${formatInr(overBy)}.` });
+  if (openingNote) notes.push({ tone: 'error', text: openingNote });
+  if (overBy > 0 && funds)
+    notes.push({
+      tone: 'error',
+      text: funds.lowestAhead
+        ? `Over by ${formatInr(overBy)}. ${formatInr(funds.onDate)} is available on ${formatDay(instrumentDate)}, but payments already booked for later dates (post-dated cheques) bring it down to ${formatInr(funds.lowest)} on ${formatDay(funds.lowestDay)} — this voucher has to fit under that, or one of them would bounce.`
+        : `Over the funds available on ${formatDay(instrumentDate)} by ${formatInr(overBy)}.`,
+    });
   if (showErrors && incomplete.length)
     notes.push({ tone: 'error', text: `Incomplete rows (marked in red): ${incomplete.map((line) => lines.indexOf(line) + 1).join(', ')}.` });
   if (duplicateInstrument)
@@ -505,6 +698,52 @@ export default function NewPaymentPage() {
             </>
           }
         />
+
+        {lastIssued && (
+          <div
+            ref={issuedRef}
+            role="status"
+            className="flex flex-col gap-3 rounded-lg border border-emerald-200 bg-emerald-50 p-4 text-emerald-900 sm:flex-row sm:items-center sm:justify-between"
+          >
+            <div className="flex min-w-0 items-start gap-3">
+              <CheckCircle2 className="mt-0.5 h-5 w-5 shrink-0 text-emerald-600" />
+              <div className="min-w-0">
+                <p className="font-semibold">
+                  Voucher <span className="font-mono">{lastIssued.voucherNo}</span> issued
+                </p>
+                <p className="break-words text-sm text-emerald-800">
+                  {formatInr(lastIssued.total)} to {lastIssued.payees} payee{lastIssued.payees === 1 ? '' : 's'} by {lastIssued.mode}
+                  {lastIssued.instrumentNo ? ` ${lastIssued.instrumentNo}` : ''}
+                  {lastIssued.postDated ? ` — post-dated to ${formatDay(lastIssued.instrumentDate)}` : ''}.
+                </p>
+              </div>
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
+              <Button asChild size="sm">
+                <Link href={voucherHref(lastIssued.id)}>
+                  <BookOpenCheck className="mr-2 h-4 w-4" />
+                  View in Cheque Register
+                </Link>
+              </Button>
+              <Button asChild size="sm" variant="outline">
+                <Link href={voucherPrintHref(lastIssued.id)} target="_blank" rel="noopener noreferrer" prefetch={false}>
+                  <Printer className="mr-2 h-4 w-4" />
+                  Print voucher
+                </Link>
+              </Button>
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                className="h-8 w-8 text-emerald-800 hover:bg-emerald-100"
+                aria-label="Dismiss"
+                onClick={() => setLastIssued(null)}
+              >
+                <X className="h-4 w-4" />
+              </Button>
+            </div>
+          </div>
+        )}
 
         <EntryCard>
           {/* The instrument */}
@@ -553,17 +792,21 @@ export default function NewPaymentPage() {
             </div>
             <div className="space-y-1.5">
               <Label htmlFor="pay-date">
-                {cfg.kind === 'cheque' ? 'Cheque date' : cfg.kind === 'draft' ? 'DD date' : 'Transfer date'}
+                {dateLabel}
                 <span className="text-destructive"> *</span>
               </Label>
               <Input
                 id="pay-date"
                 type="date"
                 value={instrumentDate}
+                min={accountStart ? format(accountStart, 'yyyy-MM-dd') : undefined}
                 max={cfg.allowsFutureDate ? undefined : today}
-                className={cn(err(headerErrors.instrumentDate) && 'border-destructive')}
+                className={cn((err(headerErrors.instrumentDate) || beforeOpening) && 'border-destructive')}
                 onChange={(e) => setInstrumentDate(e.target.value)}
               />
+              {beforeOpening && account && (
+                <p className="text-[11px] leading-snug text-destructive">Before the account&apos;s opening date, {formatDay(account.openingDate)}.</p>
+              )}
             </div>
             <div className="space-y-1.5 sm:col-span-2">
               <Label htmlFor="pay-remarks">Remarks</Label>
@@ -607,6 +850,16 @@ export default function NewPaymentPage() {
               Add from requisitions ({payables.filter((p) => !linkedIds.has(p.id)).length})
             </Button>
           </div>
+
+          {preloadNote && (
+            <div className="flex items-start gap-2 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+              <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+              <span className="min-w-0 flex-1">{preloadNote}</span>
+              <button type="button" className="shrink-0 rounded p-0.5 hover:bg-amber-100" aria-label="Dismiss note" onClick={() => setPreloadNote('')}>
+                <X className="h-3.5 w-3.5" />
+              </button>
+            </div>
+          )}
 
           <EntryTable
             minWidth={cfg.utrPerLine ? 1420 : 1260}
@@ -784,7 +1037,7 @@ export default function NewPaymentPage() {
             notes={notes}
             saveLabel={`Issue Voucher${lines.length > 1 ? ` (${lines.length} payees)` : ''}`}
             saving={isSaving}
-            saveDisabled={activeAccounts.length === 0 || overBy > 0}
+            saveDisabled={activeAccounts.length === 0 || overBy > 0 || isLoading}
             onSave={() => void handleSave()}
           />
         </EntryCard>
@@ -933,5 +1186,14 @@ export default function NewPaymentPage() {
         </DialogContent>
       </Dialog>
     </>
+  );
+}
+
+/** The form reads ?requisitions= with useSearchParams, which needs a Suspense boundary above it. */
+export default function NewPaymentPage() {
+  return (
+    <Suspense fallback={<BankPageSkeleton kpis={0} blocks={1} />}>
+      <NewPaymentForm />
+    </Suspense>
   );
 }

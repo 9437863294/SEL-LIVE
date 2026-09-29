@@ -16,14 +16,14 @@ import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { useToast } from '@/hooks/use-toast';
 import { db } from '@/lib/firebase';
-import { collection, addDoc, getDocs, doc, runTransaction, getDoc } from 'firebase/firestore';
+import { collection, getDocs, doc, runTransaction, getDoc } from 'firebase/firestore';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import type { Department, Project, SerialNumberConfig, AccountHead, SubAccountHead, ExpenseRequest, DailyRequisitionEntry } from '@/lib/types';
 import { useAuth } from '@/components/auth/AuthProvider';
 import { useAuthorization } from '@/hooks/useAuthorization';
 import { format } from 'date-fns';
-import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from '@/components/ui/form';
+import { Form, FormControl, FormDescription, FormField, FormItem, FormLabel, FormMessage } from '@/components/ui/form';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from '@/components/ui/command';
 import { cn } from '@/lib/utils';
@@ -37,16 +37,29 @@ import {
   resolveFormField,
   type ExpensesModuleSettings,
 } from '@/lib/expenses-settings';
+import { allocateRequestNos } from '@/lib/expenses-import';
 import { PageHeader } from '@/components/shared/page-header';
 
+
+/** How two spellings of a party name are compared: case and spacing do not make a new party. */
+const partyKey = (name: unknown) => String(name ?? '').trim().replace(/\s+/g, ' ').toLowerCase();
+
+/** The on-record spelling of a party name, or undefined when it is not on record. */
+const findRecordedParty = (name: string, recorded: readonly string[]): string | undefined => {
+  const key = partyKey(name);
+  return key ? recorded.find(candidate => partyKey(candidate) === key) : undefined;
+};
 
 /**
  * Built from the module's field configuration rather than fixed, so making Remarks mandatory (or
  * Party optional) under Settings actually changes what the form will accept. Project, amount and
  * sub-head stay required whatever the configuration says — the record is meaningless without them,
  * which is why the settings screen will not let them be relaxed either.
+ *
+ * With "Restrict parties to existing names" on, a party must be one already on an expense request
+ * or a requisition (`recordedParties`). Blank is still governed by the field's own required setting.
  */
-const buildExpenseFormSchema = (settings: ExpensesModuleSettings) => {
+const buildExpenseFormSchema = (settings: ExpensesModuleSettings, recordedParties: readonly string[] = []) => {
   const text = (key: Parameters<typeof resolveFormField>[1]) => {
     const field = resolveFormField(settings, key);
     return field.visible && field.required
@@ -54,16 +67,28 @@ const buildExpenseFormSchema = (settings: ExpensesModuleSettings) => {
       : z.string().optional();
   };
 
-  return z.object({
-    departmentId: z.string().min(1, 'Department is required.'),
-    projectId: z.string().min(1, 'Project is required.'),
-    amount: z.coerce.number().gte(0, 'Amount must be a non-negative number.'),
-    headOfAccount: z.string().min(1, 'Head of Account is required.'),
-    subHeadOfAccount: z.string().min(1, 'Sub-Head of Account is required.'),
-    remarks: text('remarks'),
-    description: text('description'),
-    partyName: text('partyName'),
-  });
+  return z
+    .object({
+      departmentId: z.string().min(1, 'Department is required.'),
+      projectId: z.string().min(1, 'Project is required.'),
+      amount: z.coerce.number().gte(0, 'Amount must be a non-negative number.'),
+      headOfAccount: z.string().min(1, 'Head of Account is required.'),
+      subHeadOfAccount: z.string().min(1, 'Sub-Head of Account is required.'),
+      remarks: text('remarks'),
+      description: text('description'),
+      partyName: text('partyName'),
+    })
+    .superRefine((values, ctx) => {
+      if (!settings.data.restrictPartyToExisting) return;
+      const name = values.partyName?.trim();
+      if (name && !findRecordedParty(name, recordedParties)) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['partyName'],
+          message: `"${name}" is not a party on record. Choose one from the list — adding new parties is turned off in Expenses › Settings.`,
+        });
+      }
+    });
 };
 
 const expenseFormSchema = buildExpenseFormSchema(defaultExpensesSettings());
@@ -109,7 +134,12 @@ function NewExpenseRequestForm() {
   const [projects, setProjects] = useState<Project[]>([]);
   const [accountHeads, setAccountHeads] = useState<AccountHead[]>([]);
   const [subAccountHeads, setSubAccountHeads] = useState<SubAccountHead[]>([]);
+  /** The picker's suggestions: the names on record plus any typed in this session. */
   const [partyNames, setPartyNames] = useState<string[]>([]);
+  /** Party names already on an expense request or a requisition — what "existing" means for the party rule. */
+  const [recordedPartyNames, setRecordedPartyNames] = useState<string[]>([]);
+  /** Every request number in use in any department, so a new one never repeats one imported from a file. */
+  const [recordedRequestNos, setRecordedRequestNos] = useState<string[]>([]);
   const [previewRequestNo, setPreviewRequestNo] = useState('Generating...');
   const [timestamp, setTimestamp] = useState('');
 
@@ -117,7 +147,7 @@ function NewExpenseRequestForm() {
   const [partyPopoverOpen, setPartyPopoverOpen] = useState(false);
 
   const form = useForm<ExpenseFormValues>({
-    resolver: zodResolver(buildExpenseFormSchema(settings)),
+    resolver: zodResolver(buildExpenseFormSchema(settings, recordedPartyNames)),
     defaultValues: {
       departmentId: departmentIdFromUrl || '',
       projectId: projectIdFromUrl || '',
@@ -169,10 +199,13 @@ function NewExpenseRequestForm() {
         setSubAccountHeads(
           subHeadsSnap.docs.map(doc => ({ id: doc.id, ...doc.data() } as SubAccountHead)).sort((a, b) => a.name.localeCompare(b.name))
         );
-        const existingExpenseParties = expensesSnap.docs.map(doc => (doc.data() as ExpenseRequest).partyName);
+        const existingExpenses = expensesSnap.docs.map(doc => doc.data() as ExpenseRequest);
+        const existingExpenseParties = existingExpenses.map(expense => expense.partyName);
         const existingRequisitionParties = requisitionsSnap.docs.map(doc => (doc.data() as DailyRequisitionEntry).partyName);
-        const uniquePartyNames = [...new Set([...existingExpenseParties, ...existingRequisitionParties].filter(Boolean))];
-        setPartyNames(uniquePartyNames.sort());
+        const uniquePartyNames = [...new Set([...existingExpenseParties, ...existingRequisitionParties].filter(Boolean))].sort();
+        setPartyNames(uniquePartyNames);
+        setRecordedPartyNames(uniquePartyNames);
+        setRecordedRequestNos(existingExpenses.map(expense => expense.requestNo).filter(Boolean));
       } catch (error) {
         toast({ title: 'Error', description: 'Failed to load required data.', variant: 'destructive' });
       }
@@ -200,11 +233,9 @@ function NewExpenseRequestForm() {
         const configRef = doc(db, 'departmentSerialConfigs', deptId);
         const configDoc = await getDoc(configRef);
         if (configDoc.exists()) {
-          const configData = configDoc.data() as SerialNumberConfig;
-          const newIndex = configData.startingIndex;
-          const formattedIndex = String(newIndex).padStart(4, '0');
-          const requestNo = `${configData.prefix || ''}${configData.format || ''}${formattedIndex}${configData.suffix || ''}`;
-          setPreviewRequestNo(requestNo);
+          // Formatted exactly as the save will format it, stepping over numbers already in use.
+          const { requestNos } = allocateRequestNos(configDoc.data() as SerialNumberConfig, 1, recordedRequestNos);
+          setPreviewRequestNo(requestNos[0]);
         } else {
           setPreviewRequestNo('Config not found');
         }
@@ -214,7 +245,7 @@ function NewExpenseRequestForm() {
     };
     generatePreviewId();
     setTimestamp(format(new Date(), 'PPpp'));
-  }, [form, form.watch('departmentId')]);
+  }, [form, form.watch('departmentId'), recordedRequestNos]);
 
   const handleSubHeadChange = (subHeadName: string) => {
     const selectedSubHead = subAccountHeads.find(sh => sh.name === subHeadName);
@@ -243,26 +274,20 @@ function NewExpenseRequestForm() {
       const selectedDept = departments.find(d => d.id === data.departmentId);
       if (!selectedDept) throw new Error('Selected department not found.');
 
-      const configRef = doc(db, 'departmentSerialConfigs', data.departmentId);
-      const newRequestNo = await runTransaction(db, async (transaction) => {
-        const configDoc = await transaction.get(configRef);
-        if (!configDoc.exists()) throw new Error(`Serial number configuration for ${selectedDept.name} not found!`);
-        const configData = configDoc.data() as SerialNumberConfig;
-        const newIndex = configData.startingIndex;
-        const formattedIndex = String(newIndex).padStart(4, '0');
-        const requestNo = `${configData.prefix || ''}${configData.format || ''}${formattedIndex}${configData.suffix || ''}`;
-        transaction.update(configRef, { startingIndex: newIndex + 1 });
-        return requestNo;
-      });
+      // With parties restricted, a name typed in another case or spacing is saved in the spelling
+      // already on record, so the party ledger does not split one party in two.
+      const partyName =
+        (settings.data.restrictPartyToExisting && data.partyName
+          ? findRecordedParty(data.partyName, recordedPartyNames)
+          : undefined) ?? data.partyName ?? '';
 
       // A field the configuration has made optional arrives as undefined, which Firestore rejects
       // — and a request whose remarks are missing should read as empty, not as absent.
-      const newExpenseRequest = {
+      const requestFields = {
         ...data,
-        partyName: data.partyName ?? '',
+        partyName,
         description: data.description ?? '',
         remarks: data.remarks ?? '',
-        requestNo: newRequestNo,
         generatedByDepartment: selectedDept.name,
         generatedByUser: user?.name || 'Unknown',
         generatedByUserId: user?.id || 'Unknown',
@@ -271,7 +296,25 @@ function NewExpenseRequestForm() {
         createdAt: new Date().toISOString(),
       };
 
-      await addDoc(collection(db, 'expenseRequests'), newExpenseRequest);
+      const configRef = doc(db, 'departmentSerialConfigs', data.departmentId);
+      // The id is fixed outside the transaction, so a retried attempt writes the same document.
+      const requestRef = doc(collection(db, 'expenseRequests'));
+      // The number and the request that carries it commit together: a failed write no longer burns
+      // a number, and a write that did land cannot be followed by a retry that creates a second copy.
+      const newRequestNo = await runTransaction(db, async (transaction) => {
+        const configDoc = await transaction.get(configRef);
+        if (!configDoc.exists()) throw new Error(`Serial number configuration for ${selectedDept.name} not found!`);
+        const { requestNos, nextIndex } = allocateRequestNos(
+          configDoc.data() as SerialNumberConfig,
+          1,
+          recordedRequestNos,
+        );
+        const requestNo = requestNos[0];
+        transaction.update(configRef, { startingIndex: nextIndex });
+        transaction.set(requestRef, { ...requestFields, requestNo });
+        return requestNo;
+      });
+
       await logUserActivity({
         userId: user.id,
         userName: user.name,
@@ -279,10 +322,14 @@ function NewExpenseRequestForm() {
         module: 'Expenses',
         action: 'Create Expense Request',
         details: { requestNo: newRequestNo, department: selectedDept.name, amount: data.amount },
+        recordId: requestRef.id,
+        recordRef: newRequestNo,
       });
 
-      if (newExpenseRequest.partyName && !partyNames.includes(newExpenseRequest.partyName)) {
-        setPartyNames(prev => [...prev, newExpenseRequest.partyName].sort());
+      setRecordedRequestNos(prev => [...prev, newRequestNo]);
+      if (partyName) {
+        if (!partyNames.includes(partyName)) setPartyNames(prev => [...prev, partyName].sort());
+        if (!recordedPartyNames.includes(partyName)) setRecordedPartyNames(prev => [...prev, partyName].sort());
       }
 
       toast({ title: 'Request Created', description: `Expense request ${newRequestNo} has been successfully created.` });
@@ -306,6 +353,10 @@ function NewExpenseRequestForm() {
   };
 
   const selectedDepartmentName = departments.find(d => d.id === form.getValues('departmentId'))?.name || '';
+
+  /** Settings › Table & Field Configuration › "Restrict parties to existing names". */
+  const restrictParty = settings.data.restrictPartyToExisting;
+  const partyOptions = restrictParty ? recordedPartyNames : partyNames;
 
   return (
     <div className="w-full space-y-4">
@@ -445,7 +496,7 @@ function NewExpenseRequestForm() {
                                   role="combobox"
                                   className={cn('h-9 w-full justify-between font-normal text-sm', !field.value && 'text-muted-foreground')}
                                 >
-                                  {field.value || 'Select or type a party name'}
+                                  {field.value || (restrictParty ? 'Select a party on record' : 'Select or type a party name')}
                                   <ChevronsUpDown className="ml-2 h-3.5 w-3.5 shrink-0 opacity-50" />
                                 </Button>
                               </FormControl>
@@ -454,9 +505,9 @@ function NewExpenseRequestForm() {
                               <Command>
                                 <CommandInput placeholder="Search party name..." value={partySearch} onValueChange={setPartySearch} />
                                 <CommandList>
-                                  <CommandEmpty>No party found.</CommandEmpty>
+                                  <CommandEmpty>{restrictParty ? 'No party on record matches.' : 'No party found.'}</CommandEmpty>
                                   <CommandGroup>
-                                    {partyNames.filter(p => p.toLowerCase().includes(partySearch.toLowerCase())).map(name => (
+                                    {partyOptions.filter(p => p.toLowerCase().includes(partySearch.toLowerCase())).map(name => (
                                       <CommandItem
                                         value={name}
                                         key={name}
@@ -471,7 +522,7 @@ function NewExpenseRequestForm() {
                                         {name}
                                       </CommandItem>
                                     ))}
-                                    {partySearch && !partyNames.some(n => n.toLowerCase() === partySearch.toLowerCase()) && (
+                                    {!restrictParty && partySearch && !partyNames.some(n => n.toLowerCase() === partySearch.toLowerCase()) && (
                                       <CommandItem
                                         value={partySearch}
                                         onSelect={currentValue => {
@@ -491,6 +542,11 @@ function NewExpenseRequestForm() {
                               </Command>
                             </PopoverContent>
                           </Popover>
+                          {restrictParty && (
+                            <FormDescription className="text-[11px]">
+                              Only parties already on record can be chosen.
+                            </FormDescription>
+                          )}
                           <FormMessage />
                         </FormItem>
                       )}

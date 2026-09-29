@@ -3,19 +3,19 @@
 
 'use client';
 
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useCallback } from 'react';
 import { useParams } from 'next/navigation';
 import Link from 'next/link';
 import {
   Plus, ShieldAlert, SlidersHorizontal,
-  Calendar as CalendarIcon, Edit, Save, Loader2,
+  Calendar as CalendarIcon, Edit, Save, Loader2, Lock,
   Receipt, IndianRupee, FileText, TrendingUp, Upload, X, Building2, BarChart3,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import { db } from '@/lib/firebase';
-import { doc, getDoc, collection, query, where, getDocs, updateDoc } from 'firebase/firestore';
-import type { Department, ExpenseRequest, Project, AccountHead, SubAccountHead } from '@/lib/types';
+import { doc, getDoc, collection, query, where, getDocs, runTransaction } from 'firebase/firestore';
+import type { AccountHead, DailyRequisitionEntry, Department, ExpenseRequest, Project, SubAccountHead } from '@/lib/types';
 import { useToast } from '@/hooks/use-toast';
 import { Card, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { TableCard } from '@/components/shared/table-card';
@@ -27,7 +27,6 @@ import {
   DialogContent,
   DialogHeader,
   DialogTitle,
-  DialogTrigger,
   DialogFooter,
   DialogClose,
   DialogDescription,
@@ -43,19 +42,99 @@ import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover
 import { Calendar } from '@/components/ui/calendar';
 import { cn } from '@/lib/utils';
 import { Label } from '@/components/ui/label';
-import { logUserActivity } from '@/lib/activity-logger';
+import { diffFields, logUserActivity } from '@/lib/activity-logger';
 import { ExpenseImportDialog } from '@/components/expenses/import-dialog';
 import {
   ExpenseDetailsDialog,
+  PaidBalanceCell,
   RemarksCell,
   RequestNoCell,
+  StageCell,
+  StageFilterSelect,
   formatExpenseTimestamp,
   formatReceptionDate,
+  matchesStageFilter,
+  receptionOf,
+  requisitionOf,
+  withProgressColumns,
+  type StageFilter,
 } from '@/components/expenses/expense-details-dialog';
 import { useExpensesSettings } from '@/components/expenses/use-expenses-settings';
 import { applyColumnSettings, resolveDatePreset } from '@/lib/expenses-settings';
+import { formatInr } from '@/lib/bank-balance-ledger';
+import { isPaymentLocked, requisitionsByRequestNo } from '@/lib/requisition-progress';
 import { PageHeader } from '@/components/shared/page-header';
 
+/* ── editing ─────────────────────────────────────────────────────────────── */
+
+/**
+ * What the edit dialog may change. Everything else on a request belongs to someone else — its
+ * number, department and author to whoever raised it, the reception fields to Daily Requisition —
+ * and writing it back from the copy taken when the dialog opened could undo their change: a request
+ * received while the dialog was open would lose its Reception No and drop out of the link.
+ */
+type EditableField = 'projectId' | 'amount' | 'partyName' | 'headOfAccount' | 'subHeadOfAccount' | 'description' | 'remarks';
+type EditableValues = Pick<ExpenseRequest, EditableField>;
+
+const TEXT_FIELDS = ['projectId', 'partyName', 'headOfAccount', 'subHeadOfAccount', 'description', 'remarks'] as const;
+
+/** Once money has gone out against the requisition, these belong to the payment record. */
+const PAYMENT_LOCKED_FIELDS: readonly EditableField[] = ['amount', 'partyName', 'projectId'];
+
+const FIELD_LABELS: Record<EditableField, string> = {
+  projectId: 'project',
+  amount: 'amount',
+  partyName: 'party',
+  headOfAccount: 'head of account',
+  subHeadOfAccount: 'sub-head of account',
+  description: 'description',
+  remarks: 'remarks',
+};
+
+/** The dialog's inputs. Amount stays text while typing, so a cleared box reads as empty, not ₹0. */
+type EditForm = Record<EditableField, string>;
+
+const asText = (value: unknown) => (value === undefined || value === null ? '' : String(value));
+
+const editFormFrom = (expense: ExpenseRequest): EditForm => ({
+  projectId: asText(expense.projectId),
+  amount: asText(expense.amount),
+  partyName: asText(expense.partyName),
+  headOfAccount: asText(expense.headOfAccount),
+  subHeadOfAccount: asText(expense.subHeadOfAccount),
+  description: asText(expense.description),
+  remarks: asText(expense.remarks),
+});
+
+interface EditLock {
+  /** Nothing may change: received, and the data rules keep received requests closed. */
+  locked: boolean;
+  /** Amount, party and project may not change: the requisition has been paid, in part or in full. */
+  paymentLocked: boolean;
+  /** Why, in the words the row's button and the dialog show. */
+  reason: string;
+  receptionNo: string;
+}
+
+function editLockOf(
+  expense: ExpenseRequest,
+  requisition: DailyRequisitionEntry | undefined,
+  allowEditAfterReception: boolean,
+): EditLock {
+  const { receptionNo } = receptionOf(expense, requisition);
+  const locked = !!receptionNo && !allowEditAfterReception;
+  const paymentLocked = !!requisition && isPaymentLocked(requisition);
+  const reason = locked
+    ? `Locked — received in Daily Requisition as ${receptionNo}`
+    : paymentLocked
+      ? `Paid against ${requisition?.receptionNo || receptionNo || 'its requisition'} — the amount, party and project can no longer change`
+      : '';
+  return { locked, paymentLocked, reason, receptionNo };
+}
+
+/** A save the lock rules turned down: its message is shown as is, unlike an unexpected failure. */
+const refusal = (message: string) => Object.assign(new Error(message), { name: 'EditRefused' });
+const isRefusal = (error: unknown): error is Error => error instanceof Error && error.name === 'EditRefused';
 
 export default function DepartmentExpensesPage() {
   const { departmentId } = useParams() as { departmentId: string };
@@ -70,6 +149,9 @@ export default function DepartmentExpensesPage() {
   const [department, setDepartment] = useState<Department | null>(null);
   const [projects, setProjects] = useState<Project[]>([]);
   const [expenses, setExpenses] = useState<ExpenseRequest[]>([]);
+  const [requisitions, setRequisitions] = useState<DailyRequisitionEntry[]>([]);
+  // "Could not read Daily Requisition" — progress is unknown, which must not read as "Not received".
+  const [requisitionsUnavailable, setRequisitionsUnavailable] = useState(false);
   const [accountHeads, setAccountHeads] = useState<AccountHead[]>([]);
   const [subAccountHeads, setSubAccountHeads] = useState<SubAccountHead[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -77,7 +159,7 @@ export default function DepartmentExpensesPage() {
   const [detailsExpense, setDetailsExpense] = useState<ExpenseRequest | null>(null);
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
   const [editingExpense, setEditingExpense] = useState<ExpenseRequest | null>(null);
-  const [editFormData, setEditFormData] = useState<ExpenseRequest | null>(null);
+  const [editForm, setEditForm] = useState<EditForm | null>(null);
   const [isSaving, setIsSaving] = useState(false);
 
   /**
@@ -92,6 +174,7 @@ export default function DepartmentExpensesPage() {
     requestNo: '',
     projectName: 'all',
     partyName: '',
+    stage: 'all' as StageFilter,
     dateRange: undefined as DateRange | undefined,
   });
   const [hasTouchedDate, setHasTouchedDate] = useState(false);
@@ -112,7 +195,10 @@ export default function DepartmentExpensesPage() {
   const canCreate = can('Create', 'Expenses.Departments', departmentId);
   const canEdit = can('Edit', 'Expenses.Departments', departmentId);
 
-  const handleFilterChange = (field: keyof Omit<typeof filters, 'dateRange'>, value: string) => {
+  const handleFilterChange = <K extends 'requestNo' | 'projectName' | 'partyName' | 'stage'>(
+    field: K,
+    value: (typeof filters)[K],
+  ) => {
     setFilters(prev => ({ ...prev, [field]: value }));
   };
 
@@ -120,6 +206,9 @@ export default function DepartmentExpensesPage() {
     setHasTouchedDate(true);
     setFilters(prev => ({ ...prev, dateRange }));
   };
+
+  /** Each request's requisition, by Request No = Dep No — the link every module uses. */
+  const requisitionByRequestNo = useMemo(() => requisitionsByRequestNo(requisitions), [requisitions]);
 
   const filteredExpenses = useMemo(() => {
     const from = filters.dateRange?.from ? startOfDay(filters.dateRange.from) : null;
@@ -135,41 +224,45 @@ export default function DepartmentExpensesPage() {
       }
       return (
         isDateMatch &&
-        (filters.requestNo === '' || exp.requestNo.toLowerCase().includes(filters.requestNo.toLowerCase())) &&
-        (filters.partyName === '' || exp.partyName.toLowerCase().includes(filters.partyName.toLowerCase())) &&
-        (filters.projectName === 'all' || exp.projectId === filters.projectName)
+        (filters.requestNo === '' || (exp.requestNo || '').toLowerCase().includes(filters.requestNo.toLowerCase())) &&
+        (filters.partyName === '' || (exp.partyName || '').toLowerCase().includes(filters.partyName.toLowerCase())) &&
+        (filters.projectName === 'all' || exp.projectId === filters.projectName) &&
+        (requisitionsUnavailable || matchesStageFilter(filters.stage, requisitionOf(requisitionByRequestNo, exp)))
       );
     });
-  }, [expenses, filters]);
+  }, [expenses, filters, requisitionByRequestNo, requisitionsUnavailable]);
 
   const activeFilterCount =
     (filters.requestNo !== '' ? 1 : 0) +
     (filters.partyName !== '' ? 1 : 0) +
     (filters.projectName !== 'all' ? 1 : 0) +
+    (filters.stage !== 'all' ? 1 : 0) +
     (filters.dateRange?.from && filters.dateRange?.to ? 1 : 0);
 
   const clearFilters = () =>
-    setFilters({ requestNo: '', projectName: 'all', partyName: '', dateRange: undefined });
+    setFilters({ requestNo: '', projectName: 'all', partyName: '', stage: 'all', dateRange: undefined });
 
   const totalAmount = useMemo(() =>
-    filteredExpenses.reduce((sum, e) => sum + (e.amount || 0), 0),
+    filteredExpenses.reduce((sum, e) => sum + (Number(e.amount) || 0), 0),
     [filteredExpenses]
   );
 
-  const fetchData = async () => {
-    setIsLoading(true);
+  /** `silent` refreshes in place (after a save or an import) instead of blanking the page. */
+  const fetchData = useCallback(async ({ silent = false }: { silent?: boolean } = {}) => {
+    if (!silent) setIsLoading(true);
     try {
-      const deptDocRef = doc(db, 'departments', departmentId);
-      const projectsSnap = await getDocs(collection(db, 'projects'));
-      const expensesQuery = query(collection(db, 'expenseRequests'), where('departmentId', '==', departmentId));
-      const headsSnap = await getDocs(collection(db, 'accountHeads'));
-      const subHeadsSnap = await getDocs(collection(db, 'subAccountHeads'));
-
-      const [deptDocSnap, expensesSnap, headsData, subHeadsData] = await Promise.all([
-        getDoc(deptDocRef),
-        getDocs(expensesQuery),
-        headsSnap,
-        subHeadsSnap,
+      const [deptDocSnap, projectsSnap, expensesSnap, headsSnap, subHeadsSnap, requisitionsSnap] = await Promise.all([
+        getDoc(doc(db, 'departments', departmentId)),
+        getDocs(collection(db, 'projects')),
+        getDocs(query(collection(db, 'expenseRequests'), where('departmentId', '==', departmentId))),
+        getDocs(collection(db, 'accountHeads')),
+        getDocs(collection(db, 'subAccountHeads')),
+        // Where each request has got to lives in Daily Requisition. Someone who cannot read it
+        // still gets the register; only its progress goes blank.
+        getDocs(collection(db, 'dailyRequisitions')).catch(error => {
+          console.error('Could not read Daily Requisition:', error);
+          return null;
+        }),
       ]);
 
       if (deptDocSnap.exists()) {
@@ -179,13 +272,19 @@ export default function DepartmentExpensesPage() {
       }
 
       setProjects(projectsSnap.docs.map(doc => ({ id: doc.id, ...doc.data() } as Project)));
-      setAccountHeads(headsData.docs.map(d => ({ id: d.id, ...d.data() } as AccountHead)));
-      setSubAccountHeads(subHeadsData.docs.map(d => ({ id: d.id, ...d.data() } as SubAccountHead)));
+      setAccountHeads(headsSnap.docs.map(d => ({ id: d.id, ...d.data() } as AccountHead)));
+      setSubAccountHeads(subHeadsSnap.docs.map(d => ({ id: d.id, ...d.data() } as SubAccountHead)));
 
       const fetchedExpenses = expensesSnap.docs.map(doc => ({ id: doc.id, ...doc.data() } as ExpenseRequest));
       fetchedExpenses.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
       setExpenses(fetchedExpenses);
 
+      setRequisitions(
+        requisitionsSnap
+          ? requisitionsSnap.docs.map(d => ({ ...(d.data() as DailyRequisitionEntry), id: d.id }))
+          : [],
+      );
+      setRequisitionsUnavailable(!requisitionsSnap);
     } catch (error: any) {
       console.error('Error fetching data:', error);
       if (error.code === 'failed-precondition') {
@@ -200,35 +299,29 @@ export default function DepartmentExpensesPage() {
       }
     }
     setIsLoading(false);
-  };
+  }, [departmentId, toast]);
 
   useEffect(() => {
     if (!departmentId || isAuthLoading) return;
     if (!canViewPage) { setIsLoading(false); return; }
     fetchData();
-  }, [departmentId, toast, isAuthLoading, canViewPage]);
+  }, [departmentId, isAuthLoading, canViewPage, fetchData]);
 
   const getProjectName = (projectId: string) =>
     projects.find(p => p.id === projectId)?.projectName || 'Unknown Project';
 
-  const { order, visibility } = useMemo(
-    () => applyColumnSettings(settings.registers.department),
-    [settings],
-  );
-  const visibleHeaders = order.filter(header => visibility[header]);
+  const visibleHeaders = useMemo(() => {
+    const { order, visibility } = applyColumnSettings(settings.registers.department);
+    return withProgressColumns(order, visibility);
+  }, [settings]);
 
-  const getCellContent = (header: string, expense: ExpenseRequest) => {
+  const getCellContent = (header: string, expense: ExpenseRequest, requisition: DailyRequisitionEntry | undefined) => {
     switch (header) {
       case 'Request No': return <RequestNoCell expense={expense} onOpen={setDetailsExpense} />;
       case 'Timestamp': return formatExpenseTimestamp(expense.createdAt);
       case 'Department': return expense.generatedByDepartment;
       case 'Project Name': return getProjectName(expense.projectId);
-      case 'Amount':
-        return (
-          <span className="tabular-nums">
-            ₹{(expense.amount || 0).toLocaleString('en-IN')}
-          </span>
-        );
+      case 'Amount': return <span className="tabular-nums">{formatInr(expense.amount)}</span>;
       case 'Head of A/c': return expense.headOfAccount;
       case 'Sub-Head of A/c': return expense.subHeadOfAccount;
       case 'Remarks': return <RemarksCell remarks={expense.remarks} />;
@@ -237,59 +330,154 @@ export default function DepartmentExpensesPage() {
           <TooltipProvider>
             <Tooltip>
               <TooltipTrigger>
-                <p className="truncate max-w-[200px]">{expense.description}</p>
+                <span className="block truncate max-w-[200px]">{expense.description}</span>
               </TooltipTrigger>
               <TooltipContent><p className="max-w-md">{expense.description}</p></TooltipContent>
             </Tooltip>
           </TooltipProvider>
         );
       case 'Name of the party': return expense.partyName;
-      case 'Reception No': return expense.receptionNo || 'N/A';
-      case 'Reception Date': return formatReceptionDate(expense.receptionDate);
+      case 'Reception No': return receptionOf(expense, requisition).receptionNo || '—';
+      case 'Reception Date': return formatReceptionDate(receptionOf(expense, requisition).receptionDate);
+      case 'Stage': return <StageCell requisition={requisition} unavailable={requisitionsUnavailable} />;
+      case 'Paid / Balance': return <PaidBalanceCell requisition={requisition} unavailable={requisitionsUnavailable} />;
       default: return '';
     }
   };
 
+  const lockFor = (expense: ExpenseRequest) =>
+    editLockOf(expense, requisitionOf(requisitionByRequestNo, expense), settings.data.allowEditAfterReception);
+
   const openEditDialog = (expense: ExpenseRequest) => {
+    if (!canEdit) return;
+    const lock = lockFor(expense);
+    if (lock.locked) {
+      toast({
+        title: 'This request is locked',
+        description: `${lock.reason}. An administrator can allow edits after reception in Expenses › Settings.`,
+      });
+      return;
+    }
     setEditingExpense(expense);
-    setEditFormData(expense);
+    setEditForm(editFormFrom(expense));
     setIsEditDialogOpen(true);
   };
 
+  /**
+   * The requisition as it stands now rather than when the page loaded — it may have been received
+   * or paid since. Falls back to the loaded copy when Daily Requisition cannot be read.
+   */
+  const currentRequisitionFor = async (expense: ExpenseRequest): Promise<DailyRequisitionEntry | undefined> => {
+    const loaded = requisitionOf(requisitionByRequestNo, expense);
+    const requestNo = (expense.requestNo || '').trim();
+    if (!requestNo) return loaded;
+    try {
+      const snap = await getDocs(query(collection(db, 'dailyRequisitions'), where('depNo', '==', requestNo)));
+      const fresh = requisitionsByRequestNo(snap.docs.map(d => ({ ...(d.data() as DailyRequisitionEntry), id: d.id })));
+      return fresh.get(requestNo) ?? loaded;
+    } catch (error) {
+      console.error('Could not re-read Daily Requisition:', error);
+      return loaded;
+    }
+  };
+
   const handleUpdateExpense = async () => {
-    if (!editFormData || !user) return;
+    if (!editingExpense || !editForm || !user) return;
+    if (!canEdit) {
+      toast({ title: 'Not allowed', description: 'You cannot edit requests of this department.', variant: 'destructive' });
+      return;
+    }
+
+    const before = editingExpense;
+    const openedWith = editFormFrom(before);
+    const shownLock = lockFor(before);
+
+    // Checked whenever the amount is the user's to set. An untouched amount is compared as typed, so
+    // rounding an old value does not count as changing it.
+    const amountText = editForm.amount.trim();
+    const amountTouched = amountText !== openedWith.amount.trim();
+    const parsedAmount = Number(amountText);
+    const amountValid = amountText !== '' && Number.isFinite(parsedAmount) && parsedAmount > 0;
+    if ((amountTouched || !shownLock.paymentLocked) && !amountValid) {
+      toast({ title: 'Check the amount', description: 'Enter an amount above zero.', variant: 'destructive' });
+      return;
+    }
+
+    // Only what the user changed — a field someone else edited meanwhile is not overwritten.
+    const changes: Partial<EditableValues> = {};
+    if (amountTouched) {
+      const amount = Math.round(parsedAmount * 100) / 100;
+      if (amount !== Number(before.amount)) changes.amount = amount;
+    }
+    for (const key of TEXT_FIELDS) {
+      const next = editForm[key].trim();
+      if (next !== openedWith[key].trim()) changes[key] = next;
+    }
+    const changed = Object.keys(changes) as EditableField[];
+    if (!changed.length) {
+      toast({ title: 'Nothing to save', description: 'No field was changed.' });
+      setIsEditDialogOpen(false);
+      return;
+    }
+
     setIsSaving(true);
     try {
-      const expenseRef = doc(db, 'expenseRequests', editFormData.id);
-      const { id, ...dataToUpdate } = editFormData;
-      await updateDoc(expenseRef, dataToUpdate);
+      const requisition = await currentRequisitionFor(before);
+      const expenseRef = doc(db, 'expenseRequests', before.id);
+      await runTransaction(db, async transaction => {
+        const snap = await transaction.get(expenseRef);
+        if (!snap.exists()) throw refusal('This request no longer exists.');
+        // Judged on the request as it is now: it may have been received while the dialog was open.
+        const live = { ...(snap.data() as ExpenseRequest), id: snap.id };
+        const lock = editLockOf(live, requisition, settings.data.allowEditAfterReception);
+        if (lock.locked) throw refusal(`${lock.reason}. Nothing was saved.`);
+        const blocked = changed.filter(key => PAYMENT_LOCKED_FIELDS.includes(key));
+        if (lock.paymentLocked && blocked.length) {
+          throw refusal(
+            `${lock.reason}. Undo the change to the ${blocked.map(key => FIELD_LABELS[key]).join(', ')} — the description and remarks can still be edited.`,
+          );
+        }
+        transaction.update(expenseRef, changes);
+      });
       await logUserActivity({
         userId: user.id,
         userName: user.name,
         userEmail: user.email,
         module: 'Expenses',
         action: 'Update Expense Request',
-        details: { requestNo: editFormData.requestNo, department: department?.name || 'N/A' },
+        recordId: before.id,
+        recordRef: before.requestNo || undefined,
+        details: {
+          requestNo: before.requestNo || '',
+          department: department?.name || 'N/A',
+          changes: diffFields(before, changes),
+        },
       });
       toast({ title: 'Success', description: 'Expense request updated successfully.' });
       setIsEditDialogOpen(false);
       setEditingExpense(null);
-      setEditFormData(null);
-      fetchData();
+      setEditForm(null);
+      void fetchData({ silent: true });
     } catch (error) {
-      console.error('Error updating expense:', error);
-      toast({ title: 'Update Failed', description: 'An error occurred while updating the request.', variant: 'destructive' });
+      if (isRefusal(error)) {
+        toast({ title: 'Not saved', description: error.message, variant: 'destructive' });
+        // Show the register as it is now, so the lock that refused the save is visible on the row.
+        void fetchData({ silent: true });
+      } else {
+        console.error('Error updating expense:', error);
+        toast({ title: 'Update Failed', description: 'An error occurred while updating the request.', variant: 'destructive' });
+      }
     } finally {
       setIsSaving(false);
     }
   };
 
   const handleSubHeadChange = (subHeadName: string) => {
-    if (!editFormData) return;
+    if (!editForm) return;
     const selectedSubHead = subAccountHeads.find(sh => sh.name === subHeadName);
     const parentHead = accountHeads.find(h => h.id === selectedSubHead?.headId);
-    setEditFormData({
-      ...editFormData,
+    setEditForm({
+      ...editForm,
       subHeadOfAccount: subHeadName,
       headOfAccount: parentHead ? parentHead.name : '',
     });
@@ -325,6 +513,10 @@ export default function DepartmentExpensesPage() {
       </div>
     );
   }
+
+  const editLock = editingExpense ? lockFor(editingExpense) : null;
+  const fieldsLocked = !!editLock?.paymentLocked;
+  const amountInvalid = !!editForm && !fieldsLocked && !(Number(editForm.amount.trim()) > 0);
 
   return (
     <>
@@ -375,31 +567,31 @@ export default function DepartmentExpensesPage() {
           }
         />
 
-        {/* Stats ribbon */}
-        <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+        {/* Stats ribbon — whole rupees here; the rows carry the paise. */}
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
           <div className="flex items-center gap-2.5 px-4 py-2.5 rounded-lg border border-blue-500/20 bg-blue-500/5 text-blue-600 dark:text-blue-400">
             <FileText className="h-4 w-4 flex-shrink-0" />
-            <div>
+            <div className="min-w-0">
               <span className="text-xs text-muted-foreground block leading-tight">Total Requests</span>
               <span className="font-bold leading-tight">{filteredExpenses.length}</span>
             </div>
           </div>
           <div className="flex items-center gap-2.5 px-4 py-2.5 rounded-lg border border-emerald-500/20 bg-emerald-500/5 text-emerald-600 dark:text-emerald-400">
             <IndianRupee className="h-4 w-4 flex-shrink-0" />
-            <div>
+            <div className="min-w-0">
               <span className="text-xs text-muted-foreground block leading-tight">Total Amount</span>
-              <span className="font-bold leading-tight text-sm">
-                ₹{totalAmount.toLocaleString('en-IN')}
+              <span className="font-bold leading-tight text-sm tabular-nums break-words">
+                {formatInr(totalAmount, 0)}
               </span>
             </div>
           </div>
-          <div className="flex items-center gap-2.5 px-4 py-2.5 rounded-lg border border-purple-500/20 bg-purple-500/5 text-purple-600 dark:text-purple-400 col-span-2 sm:col-span-1">
+          <div className="flex items-center gap-2.5 px-4 py-2.5 rounded-lg border border-purple-500/20 bg-purple-500/5 text-purple-600 dark:text-purple-400">
             <TrendingUp className="h-4 w-4 flex-shrink-0" />
-            <div>
+            <div className="min-w-0">
               <span className="text-xs text-muted-foreground block leading-tight">Avg per Request</span>
-              <span className="font-bold leading-tight text-sm">
+              <span className="font-bold leading-tight text-sm tabular-nums break-words">
                 {filteredExpenses.length > 0
-                  ? `₹${Math.round(totalAmount / filteredExpenses.length).toLocaleString('en-IN')}`
+                  ? formatInr(totalAmount / filteredExpenses.length, 0)
                   : '—'}
               </span>
             </div>
@@ -409,6 +601,11 @@ export default function DepartmentExpensesPage() {
         {/* Data Table */}
         <TableCard
           title="Expense requests"
+          description={
+            requisitionsUnavailable
+              ? 'Stage and payments could not be loaded from Daily Requisition.'
+              : undefined
+          }
           count={filteredExpenses.length}
           total={expenses.length}
           noun="request"
@@ -432,6 +629,11 @@ export default function DepartmentExpensesPage() {
                   {projects.map(p => <SelectItem key={p.id} value={p.id}>{p.projectName}</SelectItem>)}
                 </SelectContent>
               </Select>
+              <StageFilterSelect
+                value={filters.stage}
+                onChange={value => handleFilterChange('stage', value)}
+                disabled={requisitionsUnavailable}
+              />
               <Popover>
                 <PopoverTrigger asChild>
                   <Button
@@ -441,8 +643,8 @@ export default function DepartmentExpensesPage() {
                     <CalendarIcon className="mr-2 h-3.5 w-3.5" />
                     {filters.dateRange?.from
                       ? filters.dateRange.to
-                        ? <>{format(filters.dateRange.from, 'LLL dd, y')} – {format(filters.dateRange.to, 'LLL dd, y')}</>
-                        : format(filters.dateRange.from, 'LLL dd, y')
+                        ? <>{format(filters.dateRange.from, 'dd MMM yyyy')} – {format(filters.dateRange.to, 'dd MMM yyyy')}</>
+                        : format(filters.dateRange.from, 'dd MMM yyyy')
                       : <span>Pick a date range</span>}
                   </Button>
                 </PopoverTrigger>
@@ -488,56 +690,53 @@ export default function DepartmentExpensesPage() {
                         {header}
                       </TableHead>
                     ))}
-                    <TableHead className="text-right">Actions</TableHead>
+                    {canEdit && <TableHead className="text-right">Actions</TableHead>}
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {isLoading ? (
-                    Array.from({ length: 5 }).map((_, i) => (
-                      <TableRow key={i}>
-                        {visibleHeaders.map(header => (
-                          <TableCell key={header}><Skeleton className="h-4 w-full" /></TableCell>
-                        ))}
-                        <TableCell><Skeleton className="h-7 w-16" /></TableCell>
-                      </TableRow>
-                    ))
-                  ) : filteredExpenses.length > 0 ? (
-                    filteredExpenses.map(expense => (
-                      // The whole row opens the details. Keyboard access is the Request No button
-                      // inside it, so the row keeps its table semantics.
-                      <TableRow
-                        key={expense.id}
-                        onClick={() => setDetailsExpense(expense)}
-                        className="cursor-pointer group"
-                      >
-                        {visibleHeaders.map(header => (
-                          <TableCell key={header} className="whitespace-nowrap">
-                            {getCellContent(header, expense)}
-                          </TableCell>
-                        ))}
-                        {/* Edit is a different intent from "show me this record", so the click
-                            stops here rather than also opening the details dialog behind it. */}
-                        <TableCell className="text-right" onClick={event => event.stopPropagation()}>
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            className="h-7 text-xs gap-1 opacity-0 group-hover:opacity-100 transition-opacity duration-150"
-                            onClick={() => openEditDialog(expense)}
-                            // A received request is normally closed to edits; the data rules can
-                            // reopen it for organisations that correct after the fact.
-                            disabled={
-                              !canEdit ||
-                              (!!expense.receptionNo && !settings.data.allowEditAfterReception)
-                            }
-                          >
-                            <Edit className="h-3 w-3" /> Edit
-                          </Button>
-                        </TableCell>
-                      </TableRow>
-                    ))
+                  {filteredExpenses.length > 0 ? (
+                    filteredExpenses.map(expense => {
+                      const requisition = requisitionOf(requisitionByRequestNo, expense);
+                      const lock = editLockOf(expense, requisition, settings.data.allowEditAfterReception);
+                      return (
+                        // The whole row opens the details. Keyboard access is the Request No button
+                        // inside it, so the row keeps its table semantics.
+                        <TableRow
+                          key={expense.id}
+                          onClick={() => setDetailsExpense(expense)}
+                          className="cursor-pointer"
+                        >
+                          {visibleHeaders.map(header => (
+                            <TableCell key={header} className="whitespace-nowrap">
+                              {getCellContent(header, expense, requisition)}
+                            </TableCell>
+                          ))}
+                          {canEdit && (
+                            // Edit is a different intent from "show me this record", so the click
+                            // stops here rather than also opening the details dialog behind it.
+                            <TableCell className="text-right" onClick={event => event.stopPropagation()}>
+                              {/* Always visible — a button that only appears on hover does not exist
+                                  on a phone. A locked row keeps a live button (aria-disabled, not
+                                  disabled) so a tap can say why it is locked. */}
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                className={cn('h-7 gap-1 text-xs', lock.locked && 'text-muted-foreground')}
+                                aria-disabled={lock.locked || undefined}
+                                title={lock.reason || `Edit ${expense.requestNo || 'this request'}`}
+                                onClick={() => openEditDialog(expense)}
+                              >
+                                {lock.locked ? <Lock className="h-3 w-3" /> : <Edit className="h-3 w-3" />}
+                                {lock.locked ? 'Locked' : 'Edit'}
+                              </Button>
+                            </TableCell>
+                          )}
+                        </TableRow>
+                      );
+                    })
                   ) : (
                     <TableRow>
-                      <TableCell colSpan={visibleHeaders.length + 1}>
+                      <TableCell colSpan={visibleHeaders.length + (canEdit ? 1 : 0)}>
                         {/* "Nothing here" and "nothing here *because of a filter you set*" are very
                             different messages, and conflating them is how a full register reads as
                             an empty one. */}
@@ -571,6 +770,8 @@ export default function DepartmentExpensesPage() {
       <ExpenseDetailsDialog
         expense={detailsExpense}
         projectName={detailsExpense ? getProjectName(detailsExpense.projectId) : ''}
+        requisition={detailsExpense ? requisitionOf(requisitionByRequestNo, detailsExpense) : undefined}
+        requisitionsUnavailable={requisitionsUnavailable}
         open={!!detailsExpense}
         onOpenChange={open => { if (!open) setDetailsExpense(null); }}
       />
@@ -585,84 +786,122 @@ export default function DepartmentExpensesPage() {
           accountHeads={accountHeads}
           subAccountHeads={subAccountHeads}
           existingExpenses={expenses}
-          onImported={fetchData}
+          onImported={() => { void fetchData({ silent: true }); }}
           duplicateDetection={settings.data.importDuplicateDetection}
           defaultRequestNoSource={settings.data.importRequestNoSource}
         />
       )}
 
       {/* Edit Dialog */}
-      <Dialog open={isEditDialogOpen} onOpenChange={setIsEditDialogOpen}>
-        <DialogContent className="sm:max-w-3xl">
+      <Dialog open={isEditDialogOpen} onOpenChange={open => { if (!isSaving) setIsEditDialogOpen(open); }}>
+        <DialogContent className="max-h-[90dvh] overflow-y-auto sm:max-w-3xl">
           <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
+            <DialogTitle className="flex flex-wrap items-center gap-2">
               <Edit className="h-4 w-4 text-primary" />
               Edit Expense: <span className="text-primary">{editingExpense?.requestNo}</span>
             </DialogTitle>
             <DialogDescription>Update the details of this expense request.</DialogDescription>
           </DialogHeader>
-          {editFormData && (
+
+          {editLock?.locked ? (
+            <div className="mt-3 flex items-start gap-2 rounded-lg border border-destructive/30 bg-destructive/5 px-3 py-2 text-xs text-destructive">
+              <Lock className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+              <span>{editLock.reason}. Nothing here can be saved.</span>
+            </div>
+          ) : editLock?.paymentLocked ? (
+            <div className="mt-3 flex items-start gap-2 rounded-lg border border-amber-500/20 bg-amber-500/5 px-3 py-2 text-xs text-amber-700 dark:text-amber-400">
+              <Lock className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+              <span>{editLock.reason}. Reverse the payment in Bank Balance first to change them.</span>
+            </div>
+          ) : editLock?.receptionNo ? (
+            <div className="mt-3 rounded-lg border border-border/60 bg-muted/30 px-3 py-2 text-xs text-muted-foreground">
+              Received in Daily Requisition as <span className="font-medium text-foreground">{editLock.receptionNo}</span>.
+              Changes made here do not update the requisition — correct it in Daily Requisition as well.
+            </div>
+          ) : null}
+
+          {editForm && (
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 py-4">
               <div className="space-y-1.5">
                 <Label className="text-xs font-semibold">Project Name</Label>
-                <Select value={editFormData.projectId} onValueChange={value => setEditFormData({ ...editFormData, projectId: value })}>
-                  <SelectTrigger className="h-9"><SelectValue /></SelectTrigger>
+                <Select
+                  value={editForm.projectId}
+                  onValueChange={value => setEditForm({ ...editForm, projectId: value })}
+                  disabled={fieldsLocked}
+                >
+                  <SelectTrigger className="h-9" aria-label="Project Name"><SelectValue /></SelectTrigger>
                   <SelectContent>{projects.map(p => <SelectItem key={p.id} value={p.id}>{p.projectName}</SelectItem>)}</SelectContent>
                 </Select>
               </div>
               <div className="space-y-1.5">
-                <Label className="text-xs font-semibold">Amount</Label>
+                <Label htmlFor="edit-expense-amount" className="text-xs font-semibold">Amount</Label>
                 <Input
+                  id="edit-expense-amount"
                   type="number"
+                  inputMode="decimal"
+                  min={0}
+                  step="0.01"
                   className="h-9"
-                  value={editFormData.amount}
-                  onChange={e => setEditFormData({ ...editFormData, amount: e.target.valueAsNumber || 0 })}
+                  value={editForm.amount}
+                  disabled={fieldsLocked}
+                  aria-invalid={amountInvalid || undefined}
+                  onChange={e => setEditForm({ ...editForm, amount: e.target.value })}
                 />
+                {amountInvalid && <p className="text-xs text-destructive">Enter an amount above zero.</p>}
               </div>
               <div className="space-y-1.5">
-                <Label className="text-xs font-semibold">Name of the party</Label>
+                <Label htmlFor="edit-expense-party" className="text-xs font-semibold">Name of the party</Label>
                 <Input
+                  id="edit-expense-party"
                   className="h-9"
-                  value={editFormData.partyName}
-                  onChange={e => setEditFormData({ ...editFormData, partyName: e.target.value })}
+                  value={editForm.partyName}
+                  disabled={fieldsLocked}
+                  onChange={e => setEditForm({ ...editForm, partyName: e.target.value })}
                 />
               </div>
               <div className="space-y-1.5">
-                <Label className="text-xs font-semibold">Head of A/c</Label>
-                <Select value={editFormData.headOfAccount} disabled>
-                  <SelectTrigger className="h-9"><SelectValue /></SelectTrigger>
-                </Select>
+                {/* Derived from the sub-head. A Select with no items can never show its value, so
+                    this is a read-only box. */}
+                <Label htmlFor="edit-expense-head" className="text-xs font-semibold">Head of A/c</Label>
+                <Input id="edit-expense-head" className="h-9" value={editForm.headOfAccount} readOnly disabled />
               </div>
               <div className="space-y-1.5">
                 <Label className="text-xs font-semibold">Sub-Head of A/c</Label>
-                <Select value={editFormData.subHeadOfAccount} onValueChange={handleSubHeadChange}>
-                  <SelectTrigger className="h-9"><SelectValue /></SelectTrigger>
+                <Select value={editForm.subHeadOfAccount} onValueChange={handleSubHeadChange}>
+                  <SelectTrigger className="h-9" aria-label="Sub-Head of A/c"><SelectValue /></SelectTrigger>
                   <SelectContent>
                     {subAccountHeads.map(s => <SelectItem key={s.id} value={s.name}>{s.name}</SelectItem>)}
                   </SelectContent>
                 </Select>
               </div>
               <div className="space-y-1.5 col-span-1 md:col-span-2 lg:col-span-3">
-                <Label className="text-xs font-semibold">Description</Label>
+                <Label htmlFor="edit-expense-description" className="text-xs font-semibold">Description</Label>
                 <Textarea
+                  id="edit-expense-description"
                   rows={2}
-                  value={editFormData.description}
-                  onChange={e => setEditFormData({ ...editFormData, description: e.target.value })}
+                  value={editForm.description}
+                  onChange={e => setEditForm({ ...editForm, description: e.target.value })}
                 />
               </div>
               <div className="space-y-1.5 col-span-1 md:col-span-2 lg:col-span-3">
-                <Label className="text-xs font-semibold">Remarks</Label>
+                <Label htmlFor="edit-expense-remarks" className="text-xs font-semibold">Remarks</Label>
                 <Textarea
+                  id="edit-expense-remarks"
                   rows={2}
-                  value={editFormData.remarks}
-                  onChange={e => setEditFormData({ ...editFormData, remarks: e.target.value })}
+                  value={editForm.remarks}
+                  onChange={e => setEditForm({ ...editForm, remarks: e.target.value })}
                 />
               </div>
             </div>
           )}
           <DialogFooter>
-            <DialogClose asChild><Button variant="outline" size="sm">Cancel</Button></DialogClose>
-            <Button size="sm" onClick={handleUpdateExpense} disabled={isSaving} className="gap-2 min-w-[120px]">
+            <DialogClose asChild><Button variant="outline" size="sm" disabled={isSaving}>Cancel</Button></DialogClose>
+            <Button
+              size="sm"
+              onClick={handleUpdateExpense}
+              disabled={isSaving || !!editLock?.locked}
+              className="gap-2 min-w-[120px]"
+            >
               {isSaving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Save className="h-3.5 w-3.5" />}
               {isSaving ? 'Saving...' : 'Save Changes'}
             </Button>

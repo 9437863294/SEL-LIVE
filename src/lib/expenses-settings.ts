@@ -31,6 +31,10 @@ export const EXPENSE_REGISTER_COLUMNS = [
   'Name of the party',
   'Reception No',
   'Reception Date',
+  // Where the request stands downstream (Daily Requisition stage, Bank Balance payments) — read
+  // live from the linked requisition by the registers, never stored on the request.
+  'Stage',
+  'Paid / Balance',
 ] as const;
 
 export type ExpenseRegisterColumnKey = (typeof EXPENSE_REGISTER_COLUMNS)[number];

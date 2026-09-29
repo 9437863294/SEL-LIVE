@@ -3,43 +3,40 @@
 import { useEffect, useMemo, useState } from 'react';
 import ExcelJS from 'exceljs';
 import { collection, getDocs } from 'firebase/firestore';
-import { Download, ShieldAlert } from 'lucide-react';
-import { Timestamp } from 'firebase/firestore';
+import { Banknote, Download, FileText, Receipt, Wallet } from 'lucide-react';
 import { db } from '@/lib/firebase';
 import { useAuthorization } from '@/hooks/useAuthorization';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
-import { Skeleton } from '@/components/ui/skeleton';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { FilterBar } from '@/components/shared/filter-bar';
+import { KpiCard } from '@/components/shared/kpi-card';
 import { TableCard } from '@/components/shared/table-card';
 import type { DailyRequisitionEntry } from '@/lib/types';
 import {
-  DailyMetricCard,
   dailyPageContainerClass,
   dailySurfaceCardClass,
 } from '@/components/daily-requisition/module-shell';
 import { PageHeader } from '@/components/shared/page-header';
+import {
+  KpiRow,
+  ReportAccessDenied,
+  ReportSkeleton,
+  dateKeyOf,
+  inDateRange,
+  inr,
+  inrWhole,
+  pctOf,
+} from '../_components/report-kit';
 
-const VERIFIED_STATUSES: DailyRequisitionEntry['status'][] = [
+/** Verified and on: GST / TDS have been checked, and the entry is payable, part paid or paid. */
+const VERIFIED_STATUSES: readonly string[] = [
   'Verified',
   'Received for Payment',
+  'Partially Paid',
   'Paid',
 ];
-
-const fmt = (n: number) =>
-  new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 0 }).format(n);
-
-const fmtPct = (n: number, total: number) =>
-  total > 0 ? `${((n / total) * 100).toFixed(1)}%` : '0.0%';
-
-function entryDate(entry: DailyRequisitionEntry): Date {
-  const d = entry.date;
-  if (!d) return new Date(0);
-  if (d instanceof Timestamp) return d.toDate();
-  return new Date(d as string);
-}
 
 export default function FinancialBreakdownReportPage() {
   const { can, isLoading: isAuthLoading } = useAuthorization();
@@ -52,20 +49,23 @@ export default function FinancialBreakdownReportPage() {
   const [dateTo, setDateTo] = useState('');
 
   useEffect(() => {
-    if (isAuthLoading) return;
-    if (!canView) { setIsLoading(false); return; }
+    // Until permissions load `can` answers false — wait for them rather than fetch without them.
+    if (isAuthLoading || !canView) return;
+    let active = true;
     const load = async () => {
-      setIsLoading(true);
       try {
         const snap = await getDocs(collection(db, 'dailyRequisitions'));
-        setEntries(snap.docs.map((d) => ({ id: d.id, ...d.data() } as DailyRequisitionEntry)));
+        if (active) setEntries(snap.docs.map((d) => ({ id: d.id, ...d.data() } as DailyRequisitionEntry)));
       } catch (err) {
         console.error('Failed to load daily requisitions for financial breakdown', err);
       } finally {
-        setIsLoading(false);
+        if (active) setIsLoading(false);
       }
     };
     load();
+    return () => {
+      active = false;
+    };
   }, [isAuthLoading, canView]);
 
   const verified = useMemo(
@@ -73,19 +73,10 @@ export default function FinancialBreakdownReportPage() {
     [entries]
   );
 
-  const filtered = useMemo(() => {
-    let items = verified;
-    if (dateFrom) {
-      const from = new Date(dateFrom);
-      items = items.filter((e) => entryDate(e) >= from);
-    }
-    if (dateTo) {
-      const to = new Date(dateTo);
-      to.setHours(23, 59, 59, 999);
-      items = items.filter((e) => entryDate(e) <= to);
-    }
-    return items;
-  }, [verified, dateFrom, dateTo]);
+  const filtered = useMemo(
+    () => verified.filter((e) => inDateRange(dateKeyOf(e.date), dateFrom, dateTo)),
+    [verified, dateFrom, dateTo]
+  );
 
   const totals = useMemo(() => {
     const t = {
@@ -107,6 +98,7 @@ export default function FinancialBreakdownReportPage() {
   }, [filtered]);
 
   const totalDeductions = totals.gross - totals.net;
+  const partPaid = useMemo(() => filtered.filter((e) => e.status === 'Partially Paid').length, [filtered]);
 
   const deductionRows = [
     { label: 'IGST', value: totals.igst },
@@ -131,18 +123,19 @@ export default function FinancialBreakdownReportPage() {
         { header: '% of Gross', key: 'pct', width: 14 },
       ];
       deductionRows.forEach((r) =>
-        wsSummary.addRow({ label: r.label, value: r.value, pct: fmtPct(r.value, totals.gross) })
+        wsSummary.addRow({ label: r.label, value: r.value, pct: pctOf(r.value, totals.gross) })
       );
       wsSummary.addRow({});
       wsSummary.addRow({ label: 'Total Gross', value: totals.gross, pct: '100.0%' });
-      wsSummary.addRow({ label: 'Total Net', value: totals.net, pct: fmtPct(totals.net, totals.gross) });
-      wsSummary.addRow({ label: 'Total Deductions', value: totalDeductions, pct: fmtPct(totalDeductions, totals.gross) });
+      wsSummary.addRow({ label: 'Total Net', value: totals.net, pct: pctOf(totals.net, totals.gross) });
+      wsSummary.addRow({ label: 'Total Deductions', value: totalDeductions, pct: pctOf(totalDeductions, totals.gross) });
 
       // Sheet 2: Detail
       const wsDetail = wb.addWorksheet('Entries');
       wsDetail.columns = [
         { header: 'Reception No', key: 'receptionNo', width: 18 },
         { header: 'Party Name', key: 'partyName', width: 26 },
+        { header: 'Status', key: 'status', width: 20 },
         { header: 'Gross (INR)', key: 'gross', width: 16 },
         { header: 'Net (INR)', key: 'net', width: 16 },
         { header: 'IGST (INR)', key: 'igst', width: 14 },
@@ -156,6 +149,7 @@ export default function FinancialBreakdownReportPage() {
         wsDetail.addRow({
           receptionNo: e.receptionNo,
           partyName: e.partyName,
+          status: e.status,
           gross: e.grossAmount || 0,
           net: e.netAmount || 0,
           igst: e.igstAmount || 0,
@@ -185,38 +179,14 @@ export default function FinancialBreakdownReportPage() {
     }
   };
 
-  if (isAuthLoading || (isLoading && canView)) {
-    return (
-      <div className={dailyPageContainerClass}>
-        <Skeleton className="mb-6 h-10 w-72" />
-        <Skeleton className="mb-4 h-16 w-full rounded-2xl" />
-        <div className="mb-6 grid grid-cols-2 gap-4 sm:grid-cols-4">
-          {Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} className="h-20 rounded-2xl" />)}
-        </div>
-        <Skeleton className="mb-4 h-64 w-full rounded-2xl" />
-        <Skeleton className="h-96 w-full rounded-2xl" />
-      </div>
-    );
-  }
+  if (isAuthLoading || (isLoading && canView)) return <ReportSkeleton panel />;
 
   if (!canView) {
     return (
-      <div className={dailyPageContainerClass}>
-        <PageHeader eyebrow="Daily Requisition"
-          title="Financial Breakdown"
-          description="Gross vs net with full deduction split across verified entries."
-          backHref="/daily-requisition/reports"
-        />
-        <Card className={dailySurfaceCardClass}>
-          <CardHeader>
-            <CardTitle>Access Denied</CardTitle>
-            <CardDescription>You do not have permission to view this report.</CardDescription>
-          </CardHeader>
-          <CardContent className="flex justify-center p-8">
-            <ShieldAlert className="h-16 w-16 text-destructive" />
-          </CardContent>
-        </Card>
-      </div>
+      <ReportAccessDenied
+        title="Financial Breakdown"
+        description="Gross vs net with full deduction split across verified entries."
+      />
     );
   }
 
@@ -224,7 +194,7 @@ export default function FinancialBreakdownReportPage() {
     <div className={dailyPageContainerClass}>
       <PageHeader eyebrow="Daily Requisition"
         title="Financial Breakdown"
-        description="Gross vs net analysis with full deduction split — GST, TDS, retention, and other charges. Only Verified, Received for Payment, and Paid entries."
+        description="Gross vs net analysis with full deduction split — GST, TDS, retention, and other charges. Only Verified, Received for Payment, Partially Paid and Paid entries."
         backHref="/daily-requisition/reports"
         actions={
           <Button
@@ -264,17 +234,26 @@ export default function FinancialBreakdownReportPage() {
         </label>
       </FilterBar>
 
-      {/* Stat cards */}
-      <div className="mb-6 grid grid-cols-2 gap-4 sm:grid-cols-4">
-        <DailyMetricCard label="Total Entries" value={filtered.length} />
-        <DailyMetricCard label="Total Gross" value={fmt(totals.gross)} />
-        <DailyMetricCard label="Total Net" value={fmt(totals.net)} />
-        <DailyMetricCard
-          label="Total Deductions"
-          value={fmt(totalDeductions)}
-          hint={fmtPct(totalDeductions, totals.gross) + ' of gross'}
+      <KpiRow>
+        <KpiCard
+          label="Verified entries"
+          value={filtered.length}
+          hint={partPaid > 0 ? `${partPaid} part paid` : 'Verified through paid'}
+          icon={FileText}
+          tone="indigo"
+          accent
         />
-      </div>
+        <KpiCard label="Total gross" value={inrWhole(totals.gross)} icon={Wallet} tone="blue" accent />
+        <KpiCard label="Total net" value={inrWhole(totals.net)} hint={`${pctOf(totals.net, totals.gross)} of gross`} icon={Banknote} tone="emerald" accent />
+        <KpiCard
+          label="Total deductions"
+          value={inrWhole(totalDeductions)}
+          hint={`${pctOf(totalDeductions, totals.gross)} of gross`}
+          icon={Receipt}
+          tone="rose"
+          accent
+        />
+      </KpiRow>
 
       {/* Deduction breakdown */}
       <Card className={`${dailySurfaceCardClass} mb-6`}>
@@ -288,16 +267,21 @@ export default function FinancialBreakdownReportPage() {
             {deductionRows.map((row) => {
               const pct = totals.gross > 0 ? (row.value / totals.gross) * 100 : 0;
               return (
-                <div key={row.label} className="grid grid-cols-[140px_1fr_80px_80px] items-center gap-3">
-                  <span className="text-sm font-medium text-slate-700">{row.label}</span>
-                  <div className="h-2 w-full rounded-full bg-slate-100">
+                // A phone gets two lines — label and amount, then the bar and its share; from `sm`
+                // one line: label, bar, share, amount.
+                <div
+                  key={row.label}
+                  className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-3 gap-y-1 sm:grid-cols-[140px_minmax(0,1fr)_64px_144px]"
+                >
+                  <span className="min-w-0 truncate text-sm font-medium text-slate-700 sm:order-1">{row.label}</span>
+                  <span className="whitespace-nowrap text-right text-sm tabular-nums font-medium sm:order-4">{inr(row.value)}</span>
+                  <div className="h-2 w-full rounded-full bg-slate-100 sm:order-2">
                     <div
                       className="h-2 rounded-full bg-gradient-to-r from-indigo-400 to-blue-500 transition-all"
                       style={{ width: `${Math.min(pct, 100)}%` }}
                     />
                   </div>
-                  <span className="text-right text-xs tabular-nums text-slate-500">{fmtPct(row.value, totals.gross)}</span>
-                  <span className="text-right text-sm tabular-nums font-medium">{fmt(row.value)}</span>
+                  <span className="text-right text-xs tabular-nums text-slate-500 sm:order-3">{pctOf(row.value, totals.gross)}</span>
                 </div>
               );
             })}
@@ -320,14 +304,14 @@ export default function FinancialBreakdownReportPage() {
                   <TableRow>
                     <TableHead className="min-w-[120px]">Reception No</TableHead>
                     <TableHead className="min-w-[160px]">Party</TableHead>
-                    <TableHead className="text-right min-w-[110px]">Gross</TableHead>
-                    <TableHead className="text-right min-w-[110px]">Net</TableHead>
-                    <TableHead className="text-right min-w-[90px]">IGST</TableHead>
-                    <TableHead className="text-right min-w-[90px]">CGST</TableHead>
-                    <TableHead className="text-right min-w-[90px]">SGST</TableHead>
-                    <TableHead className="text-right min-w-[90px]">TDS</TableHead>
-                    <TableHead className="text-right min-w-[100px]">Retention</TableHead>
-                    <TableHead className="text-right min-w-[90px]">Other</TableHead>
+                    <TableHead className="text-right min-w-[120px]">Gross</TableHead>
+                    <TableHead className="text-right min-w-[120px]">Net</TableHead>
+                    <TableHead className="text-right min-w-[100px]">IGST</TableHead>
+                    <TableHead className="text-right min-w-[100px]">CGST</TableHead>
+                    <TableHead className="text-right min-w-[100px]">SGST</TableHead>
+                    <TableHead className="text-right min-w-[100px]">TDS</TableHead>
+                    <TableHead className="text-right min-w-[110px]">Retention</TableHead>
+                    <TableHead className="text-right min-w-[100px]">Other</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -335,27 +319,27 @@ export default function FinancialBreakdownReportPage() {
                     <TableRow key={e.id}>
                       <TableCell className="whitespace-nowrap font-mono">{e.receptionNo}</TableCell>
                       <TableCell className="font-medium">{e.partyName}</TableCell>
-                      <TableCell className="whitespace-nowrap text-right tabular-nums">{fmt(e.grossAmount || 0)}</TableCell>
-                      <TableCell className="whitespace-nowrap text-right tabular-nums">{fmt(e.netAmount || 0)}</TableCell>
-                      <TableCell className="whitespace-nowrap text-right tabular-nums">{fmt(e.igstAmount || 0)}</TableCell>
-                      <TableCell className="whitespace-nowrap text-right tabular-nums">{fmt(e.cgstAmount || 0)}</TableCell>
-                      <TableCell className="whitespace-nowrap text-right tabular-nums">{fmt(e.sgstAmount || 0)}</TableCell>
-                      <TableCell className="whitespace-nowrap text-right tabular-nums">{fmt(e.tdsAmount || 0)}</TableCell>
-                      <TableCell className="whitespace-nowrap text-right tabular-nums">{fmt(e.retentionAmount || 0)}</TableCell>
-                      <TableCell className="whitespace-nowrap text-right tabular-nums">{fmt(e.otherDeduction || 0)}</TableCell>
+                      <TableCell className="whitespace-nowrap text-right tabular-nums">{inr(e.grossAmount)}</TableCell>
+                      <TableCell className="whitespace-nowrap text-right tabular-nums">{inr(e.netAmount)}</TableCell>
+                      <TableCell className="whitespace-nowrap text-right tabular-nums">{inr(e.igstAmount)}</TableCell>
+                      <TableCell className="whitespace-nowrap text-right tabular-nums">{inr(e.cgstAmount)}</TableCell>
+                      <TableCell className="whitespace-nowrap text-right tabular-nums">{inr(e.sgstAmount)}</TableCell>
+                      <TableCell className="whitespace-nowrap text-right tabular-nums">{inr(e.tdsAmount)}</TableCell>
+                      <TableCell className="whitespace-nowrap text-right tabular-nums">{inr(e.retentionAmount)}</TableCell>
+                      <TableCell className="whitespace-nowrap text-right tabular-nums">{inr(e.otherDeduction)}</TableCell>
                     </TableRow>
                   ))}
                   {/* Totals row */}
                   <TableRow className="bg-muted/50 font-medium">
                     <TableCell colSpan={2}>Total ({filtered.length} entries)</TableCell>
-                    <TableCell className="text-right tabular-nums">{fmt(totals.gross)}</TableCell>
-                    <TableCell className="text-right tabular-nums">{fmt(totals.net)}</TableCell>
-                    <TableCell className="text-right tabular-nums">{fmt(totals.igst)}</TableCell>
-                    <TableCell className="text-right tabular-nums">{fmt(totals.cgst)}</TableCell>
-                    <TableCell className="text-right tabular-nums">{fmt(totals.sgst)}</TableCell>
-                    <TableCell className="text-right tabular-nums">{fmt(totals.tds)}</TableCell>
-                    <TableCell className="text-right tabular-nums">{fmt(totals.retention)}</TableCell>
-                    <TableCell className="text-right tabular-nums">{fmt(totals.other)}</TableCell>
+                    <TableCell className="whitespace-nowrap text-right tabular-nums">{inr(totals.gross)}</TableCell>
+                    <TableCell className="whitespace-nowrap text-right tabular-nums">{inr(totals.net)}</TableCell>
+                    <TableCell className="whitespace-nowrap text-right tabular-nums">{inr(totals.igst)}</TableCell>
+                    <TableCell className="whitespace-nowrap text-right tabular-nums">{inr(totals.cgst)}</TableCell>
+                    <TableCell className="whitespace-nowrap text-right tabular-nums">{inr(totals.sgst)}</TableCell>
+                    <TableCell className="whitespace-nowrap text-right tabular-nums">{inr(totals.tds)}</TableCell>
+                    <TableCell className="whitespace-nowrap text-right tabular-nums">{inr(totals.retention)}</TableCell>
+                    <TableCell className="whitespace-nowrap text-right tabular-nums">{inr(totals.other)}</TableCell>
                   </TableRow>
                 </TableBody>
               </Table>

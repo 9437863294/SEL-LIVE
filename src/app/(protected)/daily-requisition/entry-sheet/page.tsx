@@ -3,6 +3,8 @@
 export const dynamic = 'force-dynamic';
 
 import React, { Suspense } from 'react';
+import Link from 'next/link';
+import { useSearchParams } from 'next/navigation';
 import { DailyRequisitionImportDialog } from '@/components/daily-requisition/import-dialog';
 import { requisitionFingerprint } from '@/lib/daily-requisition-import';
 import {
@@ -20,6 +22,7 @@ import {
   Upload,
   File as FileIcon,
   X,
+  Lock,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
@@ -60,7 +63,6 @@ import {
   getDocs,
   doc,
   getDoc,
-  updateDoc,
   runTransaction,
   Timestamp,
   query,
@@ -92,7 +94,17 @@ import {
   dailyPageContainerClass,
   dailySurfaceCardClass,
 } from '@/components/daily-requisition/module-shell';
-import { logUserActivity } from '@/lib/activity-logger';
+import { diffFields } from '@/lib/activity-logger';
+import { useActivityLogger } from '@/hooks/useActivityLogger';
+import { ACTIVITY_MODULES } from '@/lib/activity-modules';
+import { StatusBadge } from '@/components/shared/status-badge';
+import {
+  balanceOf,
+  isPaymentLocked,
+  paidOf,
+  requisitionProgress,
+  voucherHref,
+} from '@/lib/requisition-progress';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
@@ -108,7 +120,85 @@ const toDate = (v: any): Date | undefined =>
     ? new Date(v)
     : undefined;
 
-const fmt = (d?: Date, f = 'dd MMM, yyyy') => (d ? format(d, f) : '');
+const fmt = (d?: Date, f = 'dd MMM yyyy') => (d && !Number.isNaN(d.getTime()) ? format(d, f) : '');
+
+const inr = new Intl.NumberFormat('en-IN', {
+  style: 'currency',
+  currency: 'INR',
+  minimumFractionDigits: 2,
+  maximumFractionDigits: 2,
+});
+const formatCurrency = (amount: unknown) => inr.format(Number(amount) || 0);
+
+const round2 = (n: number) => Math.round(n * 100) / 100;
+
+/** Why a requisition with money paid against it cannot be deleted, or have its figures changed. */
+function paymentLockReason(entry: Pick<DailyRequisitionEntry, 'payments'>): string {
+  const vouchers = Array.from(new Set((entry.payments ?? []).map((p) => p.voucherNo).filter(Boolean)));
+  return vouchers.length
+    ? `Paid through Bank Balance (${vouchers.join(', ')}). Reverse the voucher in the Cheque Register before changing or deleting it.`
+    : 'Recorded as paid, so its figures belong to the payment record and it cannot be deleted.';
+}
+
+const lockedError = (message: string) => Object.assign(new Error(message), { locked: true });
+const isLockedError = (error: unknown) => Boolean((error as { locked?: boolean } | null)?.locked);
+
+/** The fields the edit form owns, in comparable form: the date as a day, amounts to the paisa. */
+const editableFields = (source: {
+  date?: unknown;
+  projectId?: string;
+  departmentId?: string;
+  partyName?: string;
+  description?: string;
+  grossAmount?: unknown;
+  netAmount?: unknown;
+}) => ({
+  date: fmt(toDate(source.date), 'yyyy-MM-dd'),
+  projectId: source.projectId ?? '',
+  departmentId: source.departmentId ?? '',
+  partyName: source.partyName ?? '',
+  description: source.description ?? '',
+  grossAmount: round2(Number(source.grossAmount) || 0),
+  netAmount: round2(Number(source.netAmount) || 0),
+});
+type EditableFields = ReturnType<typeof editableFields>;
+
+/** Everything but the description is fixed once a payment is recorded. */
+const LOCKED_FIELD_LABELS: Record<string, string> = {
+  date: 'date',
+  projectId: 'project',
+  departmentId: 'department',
+  partyName: 'party',
+  grossAmount: 'gross amount',
+  netAmount: 'net amount',
+};
+
+/**
+ * The expense request(s) a requisition received: its DEP No *and* its reception number. Matching on
+ * the request number alone could release a request since received under another entry.
+ */
+async function linkedExpenseRefs(entry: Pick<DailyRequisitionEntry, 'depNo' | 'receptionNo'>) {
+  const receptionNo = String(entry.receptionNo ?? '').trim();
+  if (!String(entry.depNo ?? '').trim() || !receptionNo) return [];
+  const snap = await getDocs(query(collection(db, 'expenseRequests'), where('requestNo', '==', entry.depNo)));
+  return snap.docs
+    .filter((d) => String(d.data().receptionNo ?? '').trim() === receptionNo)
+    .map((d) => d.ref);
+}
+
+function EntrySheetSkeleton() {
+  return (
+    <div className={dailyPageContainerClass}>
+      <Skeleton className="mb-4 h-10 w-72 max-w-full" />
+      <div className="mb-4 grid grid-cols-1 gap-3 sm:grid-cols-3">
+        <Skeleton className="h-14 rounded-xl" />
+        <Skeleton className="h-14 rounded-xl" />
+        <Skeleton className="h-14 rounded-xl" />
+      </div>
+      <Skeleton className="h-96 w-full rounded-2xl" />
+    </div>
+  );
+}
 
 type EnrichedDailyRequisitionEntry = DailyRequisitionEntry & {
   id: string;
@@ -133,18 +223,28 @@ const formSchema = z.object({
   netAmount: z.string(),
 });
 
-type SortKey = keyof DailyRequisitionEntry | '';
+type SortKey = keyof DailyRequisitionEntry | 'paid' | 'balance' | '';
 
 function EntrySheetPageComponent() {
   const { toast } = useToast();
   const { user } = useAuth();
   const { can, isLoading: isAuthLoading } = useAuthorization();
+  const { log } = useActivityLogger(ACTIVITY_MODULES.DAILY_REQUISITION);
+
+  // Other modules link here as `?q=<receptionNo>`: the sheet opens filtered to that requisition, and
+  // a later link to another one (this page staying mounted) replaces the filter.
+  const searchParams = useSearchParams();
+  const queryParam = searchParams.get('q');
 
   const [entries, setEntries] = React.useState<EnrichedDailyRequisitionEntry[]>([]);
   const [sortKey, setSortKey] = React.useState<SortKey>('createdAt');
   const [sortDirection, setSortDirection] = React.useState<'asc' | 'desc'>('desc');
-  const [filterText, setFilterText] = React.useState('');
+  const [filterText, setFilterText] = React.useState(() => queryParam ?? '');
   const [dateFilter, setDateFilter] = React.useState<Date>();
+
+  React.useEffect(() => {
+    if (queryParam !== null) setFilterText(queryParam);
+  }, [queryParam]);
 
   const [isAddDialogOpen, setIsAddDialogOpen] = React.useState(false);
   const [isEditDialogOpen, setIsEditDialogOpen] = React.useState(false);
@@ -260,13 +360,13 @@ function EntrySheetPageComponent() {
           return {
             ...(data as DailyRequisitionEntry),
             id: docSnap.id,
-            originalDate: dateD ? dateD.toISOString() : '',
-            createdAtText: fmt(crAtD, 'dd MMM, yyyy HH:mm'),
-            dateText: fmt(dateD, 'dd MMM, yyyy'),
-            receivedAtText: fmt(recAtD, 'PPpp') || undefined,
-            verifiedAtText: fmt(verAtD, 'PPpp') || undefined,
-            paidAtText: fmt(paidAtD, 'PPpp') || undefined,
-            documentStatusUpdatedAtText: fmt(updAtD, 'PPpp') || undefined,
+            originalDate: dateD && !Number.isNaN(dateD.getTime()) ? dateD.toISOString() : '',
+            createdAtText: fmt(crAtD, 'dd MMM yyyy HH:mm'),
+            dateText: fmt(dateD, 'dd MMM yyyy'),
+            receivedAtText: fmt(recAtD, 'dd MMM yyyy HH:mm') || undefined,
+            verifiedAtText: fmt(verAtD, 'dd MMM yyyy HH:mm') || undefined,
+            paidAtText: fmt(paidAtD, 'dd MMM yyyy HH:mm') || undefined,
+            documentStatusUpdatedAtText: fmt(updAtD, 'dd MMM yyyy HH:mm') || undefined,
           } as EnrichedDailyRequisitionEntry;
         }),
       );
@@ -332,9 +432,25 @@ function EntrySheetPageComponent() {
     }
     setIsSaving(true);
     const configRef = doc(db, 'serialNumberConfigs', 'daily-requisition');
-    const selectedExpenseRequest = expenseRequests.find((req) => req.requestNo === data.depNo);
+    // Only a request not yet received can be picked — never another copy of the number already linked.
+    const selectedExpenseRequest = unassignedExpenseRequests.find((req) => req.requestNo === data.depNo);
 
     try {
+      if (selectedExpenseRequest) {
+        // Re-read before a number is allocated: someone may have received it since the page loaded.
+        const fresh = await getDoc(doc(db, 'expenseRequests', selectedExpenseRequest.id));
+        const receivedAs = fresh.exists() ? String(fresh.data().receptionNo ?? '').trim() : '';
+        if (receivedAs) {
+          toast({
+            title: 'Already received',
+            description: `${selectedExpenseRequest.requestNo} was received as ${receivedAs} while this form was open.`,
+            variant: 'destructive',
+          });
+          fetchAllData();
+          return;
+        }
+      }
+
       let generatedReceptionNo = '';
 
       await runTransaction(db, async (transaction) => {
@@ -385,18 +501,16 @@ function EntrySheetPageComponent() {
 
       await batch.commit();
 
-      await logUserActivity({
-        userId: user.id,
-        userName: user.name,
-        userEmail: user.email,
-        module: 'Daily Requisition',
-        action: 'Create Daily Requisition',
-        details: {
+      await log(
+        'Create Daily Requisition',
+        {
           receptionNo: generatedReceptionNo,
-          partyName: data.partyName,
-          amount: data.netAmount,
+          depNo: data.depNo || null,
+          partyName: data.partyName ?? '',
+          amount: parseFloat(data.netAmount) || 0,
         },
-      });
+        { recordId: newEntryRef.id, recordRef: generatedReceptionNo },
+      );
 
       toast({ title: 'Success', description: 'New entry added to the database.' });
       setIsAddDialogOpen(false);
@@ -432,21 +546,63 @@ function EntrySheetPageComponent() {
     setIsEditDialogOpen(true);
   };
 
+  const lockedFieldsMessage = (keys: string[]) =>
+    `The ${keys.map((key) => LOCKED_FIELD_LABELS[key] ?? key).join(', ')} of a paid requisition cannot be changed — only its description.`;
+
   const handleUpdateEntry = async (data: z.infer<typeof formSchema>) => {
     if (!editingEntry) return;
+    const entry = editingEntry;
+    const next = editableFields({
+      ...data,
+      grossAmount: parseFloat(data.grossAmount),
+      netAmount: parseFloat(data.netAmount),
+    });
+    // What this form changed, against the entry as it was opened — not whatever else has moved since.
+    const changes = diffFields(editableFields(entry), next);
+    const changed = Object.keys(changes);
+    if (!changed.length) {
+      toast({ title: 'No changes', description: 'Nothing was changed on this entry.' });
+      setIsEditDialogOpen(false);
+      setEditingEntry(null);
+      return;
+    }
+    const lockedChanges = changed.filter((key) => key !== 'description');
+    if (isPaymentLocked(entry) && lockedChanges.length) {
+      toast({ title: 'Payment recorded', description: lockedFieldsMessage(lockedChanges), variant: 'destructive' });
+      return;
+    }
+
     setIsSaving(true);
     try {
-      const entryRef = doc(db, 'dailyRequisitions', editingEntry.id);
-      const updatedData = {
-        date: Timestamp.fromDate(data.date),
-        projectId: data.projectId,
-        departmentId: data.departmentId,
-        description: data.description,
-        partyName: data.partyName,
-        grossAmount: parseFloat(data.grossAmount) || 0,
-        netAmount: parseFloat(data.netAmount) || 0,
-      };
-      await updateDoc(entryRef, updatedData);
+      const entryRef = doc(db, 'dailyRequisitions', entry.id);
+      // The linked expense request carries the reception date, so a date change follows it there.
+      const expenseRefs = changed.includes('date') ? await linkedExpenseRefs(entry) : [];
+      await runTransaction(db, async (transaction) => {
+        const snap = await transaction.get(entryRef);
+        if (!snap.exists()) throw new Error('This entry no longer exists.');
+        // Re-checked here: a voucher may have paid it while the dialog was open.
+        if (isPaymentLocked(snap.data() as DailyRequisitionEntry) && lockedChanges.length) {
+          throw lockedError(lockedFieldsMessage(lockedChanges));
+        }
+        const expenseSnaps = await Promise.all(expenseRefs.map((ref) => transaction.get(ref)));
+
+        const update: Record<string, unknown> = {};
+        for (const key of changed) {
+          update[key] = key === 'date' ? Timestamp.fromDate(data.date) : next[key as keyof EditableFields];
+        }
+        transaction.update(entryRef, update);
+        for (const expenseSnap of expenseSnaps) {
+          if (!expenseSnap.exists()) continue;
+          if (String(expenseSnap.data().receptionNo ?? '').trim() !== String(entry.receptionNo ?? '').trim()) continue;
+          transaction.update(expenseSnap.ref, { receptionDate: next.date });
+        }
+      });
+
+      await log(
+        'Update Daily Requisition',
+        { receptionNo: entry.receptionNo ?? '', changes },
+        { recordId: entry.id, recordRef: entry.receptionNo ?? '' },
+      );
       toast({ title: 'Success', description: 'Entry updated successfully.' });
       setIsEditDialogOpen(false);
       setEditingEntry(null);
@@ -454,8 +610,10 @@ function EntrySheetPageComponent() {
     } catch (error) {
       console.error('Error updating entry:', error);
       toast({
-        title: 'Update Failed',
-        description: 'An error occurred while updating the entry.',
+        title: isLockedError(error) ? 'Payment recorded' : 'Update Failed',
+        description: isLockedError(error)
+          ? (error as Error).message
+          : 'An error occurred while updating the entry.',
         variant: 'destructive',
       });
     } finally {
@@ -464,44 +622,101 @@ function EntrySheetPageComponent() {
   };
 
   const handleDeleteEntry = async (entry: EnrichedDailyRequisitionEntry) => {
+    if (!canDelete) return;
+    if (isPaymentLocked(entry)) {
+      toast({ title: 'Cannot delete a paid requisition', description: paymentLockReason(entry), variant: 'destructive' });
+      return;
+    }
     try {
-      const batch = writeBatch(db);
-
-      if (entry.depNo) {
-        const expenseQuery = query(collection(db, 'expenseRequests'), where('requestNo', '==', entry.depNo));
-        const expenseSnap = await getDocs(expenseQuery);
-        if (!expenseSnap.empty) {
-          const expenseDocRef = expenseSnap.docs[0].ref;
-          batch.update(expenseDocRef, {
-            receptionNo: '',
-            receptionDate: '',
-          });
-        }
-      }
-
+      const expenseRefs = await linkedExpenseRefs(entry);
       const entryRef = doc(db, 'dailyRequisitions', entry.id);
-      batch.delete(entryRef);
+      const receptionNo = String(entry.receptionNo ?? '').trim();
 
-      await batch.commit();
+      const released = await runTransaction(db, async (transaction) => {
+        const snap = await transaction.get(entryRef);
+        if (!snap.exists()) throw new Error('This entry has already been deleted.');
+        const current = snap.data() as DailyRequisitionEntry;
+        // Re-checked here: a voucher may have paid it since the list was loaded.
+        if (isPaymentLocked(current)) throw lockedError(paymentLockReason(current));
 
-      toast({ title: 'Success', description: 'Entry deleted and expense request updated.' });
+        const expenseSnaps = await Promise.all(expenseRefs.map((ref) => transaction.get(ref)));
+        let count = 0;
+        for (const expenseSnap of expenseSnaps) {
+          if (!expenseSnap.exists()) continue;
+          if (String(expenseSnap.data().receptionNo ?? '').trim() !== receptionNo) continue;
+          transaction.update(expenseSnap.ref, { receptionNo: '', receptionDate: '' });
+          count += 1;
+        }
+        transaction.delete(entryRef);
+        return count;
+      });
+
+      await log(
+        'Delete Daily Requisition',
+        {
+          receptionNo: entry.receptionNo ?? '',
+          depNo: entry.depNo || null,
+          partyName: entry.partyName ?? '',
+          netAmount: Number(entry.netAmount) || 0,
+          status: entry.status ?? '',
+          releasedExpenseRequests: released,
+        },
+        { recordId: entry.id, recordRef: entry.receptionNo ?? '' },
+      );
+      toast({
+        title: 'Entry deleted',
+        description: released
+          ? `${entry.receptionNo} was deleted, and expense request ${entry.depNo} can be received again.`
+          : `${entry.receptionNo} was deleted.`,
+      });
       fetchAllData();
     } catch (error) {
       console.error('Error deleting entry:', error);
       toast({
-        title: 'Delete Failed',
-        description: 'An error occurred while deleting the entry.',
+        title: isLockedError(error) ? 'Cannot delete a paid requisition' : 'Delete Failed',
+        description: isLockedError(error)
+          ? (error as Error).message
+          : error instanceof Error && error.message
+            ? error.message
+            : 'An error occurred while deleting the entry.',
         variant: 'destructive',
       });
     }
   };
 
+  const projectNameById = React.useMemo(
+    () => new Map(projects.map((p) => [p.id, p.projectName ?? ''])),
+    [projects],
+  );
+  const departmentNameById = React.useMemo(
+    () => new Map(departments.map((d) => [d.id, d.name ?? ''])),
+    [departments],
+  );
+
   const filteredEntries = React.useMemo(() => {
-    let sortedEntries = [...entries];
+    const valueOf = (entry: EnrichedDailyRequisitionEntry, key: SortKey): unknown => {
+      switch (key) {
+        case '':
+          return undefined;
+        case 'paid':
+          return paidOf(entry);
+        case 'balance':
+          return balanceOf(entry);
+        case 'status':
+          return requisitionProgress(entry).label;
+        case 'projectId':
+          return projectNameById.get(entry.projectId) || entry.projectId;
+        case 'departmentId':
+          return departmentNameById.get(entry.departmentId) || entry.departmentId;
+        default:
+          return entry[key];
+      }
+    };
+    const sortedEntries = [...entries];
     if (sortKey) {
       sortedEntries.sort((a, b) => {
-        const valA = a[sortKey] as any;
-        const valB = b[sortKey] as any;
+        const valA = valueOf(a, sortKey) as any;
+        const valB = valueOf(b, sortKey) as any;
 
         if (valA === undefined || valA === null) return 1;
         if (valB === undefined || valB === null) return -1;
@@ -534,21 +749,42 @@ function EntrySheetPageComponent() {
         return 0;
       });
     }
-    return sortedEntries.filter((entry) => {
-      const originalDate = new Date(entry.originalDate);
-      return (
-        Object.values(entry).some((value) => String(value).toLowerCase().includes(filterText.toLowerCase())) &&
-        (!dateFilter || isSameDay(originalDate, dateFilter))
-      );
-    });
-  }, [entries, sortKey, sortDirection, filterText, dateFilter]);
+    const onDay = (entry: EnrichedDailyRequisitionEntry) =>
+      !dateFilter || isSameDay(new Date(entry.originalDate), dateFilter);
+    const needle = filterText.trim().toLowerCase();
+    if (!needle) return sortedEntries.filter(onDay);
+
+    // A whole reception or DEP number — what another module's `?q=` link carries — picks out exactly
+    // that entry, not every number it is the start of (SEL/2026-27/1 is not also /10 to /19).
+    const exact = sortedEntries.filter(
+      (entry) =>
+        String(entry.receptionNo ?? '').trim().toLowerCase() === needle ||
+        String(entry.depNo ?? '').trim().toLowerCase() === needle,
+    );
+    const matches = exact.length
+      ? exact
+      : sortedEntries.filter((entry) =>
+          [
+            ...Object.values(entry).filter((value) => typeof value === 'string' || typeof value === 'number'),
+            projectNameById.get(entry.projectId) ?? '',
+            departmentNameById.get(entry.departmentId) ?? '',
+            requisitionProgress(entry).label,
+          ].some((value) => String(value).toLowerCase().includes(needle)),
+        );
+    return matches.filter(onDay);
+  }, [entries, sortKey, sortDirection, filterText, dateFilter, projectNameById, departmentNameById]);
+
+  // A narrower filter must not leave the table on a page that no longer exists.
+  React.useEffect(() => {
+    setCurrentPage(1);
+  }, [filterText, dateFilter]);
 
   const paginatedEntries = React.useMemo(() => {
     const startIndex = (currentPage - 1) * itemsPerPage;
     return filteredEntries.slice(startIndex, startIndex + itemsPerPage);
   }, [filteredEntries, currentPage, itemsPerPage]);
 
-  const totalPages = Math.ceil(filteredEntries.length / itemsPerPage);
+  const totalPages = Math.max(1, Math.ceil(filteredEntries.length / itemsPerPage));
 
   const handleSort = (key: SortKey) => {
     if (sortKey === key) {
@@ -573,20 +809,19 @@ function EntrySheetPageComponent() {
     window.open(`/daily-requisition/entry-sheet/print?ids=${idsToPrint}`, '_blank');
   };
 
-  const formatCurrency = (amount: number) => {
-    return new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR' }).format(amount);
-  };
-
-  const headers: { key: SortKey; label: string }[] = [
+  const headers: { key: SortKey; label: string; numeric?: boolean }[] = [
     { key: 'createdAt', label: 'Created At' },
     { key: 'receptionNo', label: 'Reception No.' },
+    { key: 'status', label: 'Status' },
     { key: 'date', label: 'Date' },
     { key: 'projectId', label: 'Project' },
     { key: 'departmentId', label: 'Department' },
     { key: 'partyName', label: 'Party Name' },
     { key: 'description', label: 'Description' },
-    { key: 'grossAmount', label: 'Gross Amount' },
-    { key: 'netAmount', label: 'Net Amount' },
+    { key: 'grossAmount', label: 'Gross Amount', numeric: true },
+    { key: 'netAmount', label: 'Net Amount', numeric: true },
+    { key: 'paid', label: 'Paid', numeric: true },
+    { key: 'balance', label: 'Balance', numeric: true },
   ];
 
   const handleSelectAll = (checked: boolean | 'indeterminate') => {
@@ -608,18 +843,21 @@ function EntrySheetPageComponent() {
   };
 
   if (isAuthLoading || isLoading) {
-    return (
-      <div className={dailyPageContainerClass}>
-        <Skeleton className="mb-6 h-10 w-72" />
-        <div className="grid gap-4 md:grid-cols-3">
-          <Skeleton className="h-24" />
-          <Skeleton className="h-24" />
-          <Skeleton className="h-24" />
-        </div>
-        <Skeleton className="mt-6 h-96 w-full rounded-2xl" />
-      </div>
-    );
+    return <EntrySheetSkeleton />;
   }
+
+  // Once money is paid against an entry its figures belong to the payment record (the save handler
+  // enforces the same); the form shows those fields read-only and says which voucher holds them.
+  const editLocked = editingEntry ? isPaymentLocked(editingEntry) : false;
+  const lockedFieldClass = 'cursor-not-allowed bg-muted text-muted-foreground';
+  const editVouchers = Array.from(
+    new Map(
+      (editingEntry?.payments ?? [])
+        .filter((payment) => payment.bankPaymentId)
+        .map((payment) => [payment.bankPaymentId, payment.voucherNo || 'the voucher'] as const),
+    ),
+    ([id, no]) => ({ id, no }),
+  );
 
   if (!canViewPage) {
     return (
@@ -649,9 +887,7 @@ function EntrySheetPageComponent() {
           description="Create new entries, bulk-print checklists, and keep the front door of the workflow organized."
           meta={
             <>
-              <Badge variant="neutral">
-                Stage 1 of 4
-              </Badge>
+              <Badge variant="neutral">Entry</Badge>
               <Badge variant="neutral">
                 {filteredEntries.length} visible entries
               </Badge>
@@ -708,7 +944,7 @@ function EntrySheetPageComponent() {
                     className={cn('justify-start text-left font-normal', !dateFilter && 'text-muted-foreground')}
                   >
                     <CalendarIcon className="mr-2 h-4 w-4" />
-                    {dateFilter ? format(dateFilter, 'PPP') : 'Filter by date'}
+                    {dateFilter ? format(dateFilter, 'dd MMM yyyy') : 'Filter by date'}
                   </Button>
                 </PopoverTrigger>
                 <PopoverContent className="w-auto p-0" align="start">
@@ -735,7 +971,7 @@ function EntrySheetPageComponent() {
                   variant="outline"
                   size="sm"
                   onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
-                  disabled={currentPage === totalPages}
+                  disabled={currentPage >= totalPages}
                 >
                   Next
                 </Button>
@@ -756,8 +992,12 @@ function EntrySheetPageComponent() {
                       </TableHead>
                     )}
                     {headers.map((header) => (
-                      <TableHead key={header.key} onClick={() => handleSort(header.key)}>
-                        <div className="flex items-center cursor-pointer">
+                      <TableHead
+                        key={header.key}
+                        onClick={() => handleSort(header.key)}
+                        className={cn('whitespace-nowrap', header.numeric && 'text-right')}
+                      >
+                        <div className={cn('flex cursor-pointer items-center', header.numeric && 'justify-end')}>
                           {header.label}
                           {sortKey === header.key && <ArrowUpDown className="ml-2 h-4 w-4" />}
                         </div>
@@ -768,108 +1008,151 @@ function EntrySheetPageComponent() {
                 </TableHeader>
                 <TableBody>
                   <TooltipProvider>
-                    {paginatedEntries.map((entry) => (
-                      <TableRow key={entry.id} data-state={selectedIds.has(entry.id) ? 'selected' : ''}>
-                        {isSelectionMode && (
+                    {paginatedEntries.map((entry) => {
+                      const progress = requisitionProgress(entry);
+                      const locked = isPaymentLocked(entry);
+                      return (
+                        <TableRow key={entry.id} data-state={selectedIds.has(entry.id) ? 'selected' : ''}>
+                          {isSelectionMode && (
+                            <TableCell>
+                              <Checkbox
+                                checked={selectedIds.has(entry.id)}
+                                onCheckedChange={(checked) => handleSelectRow(entry.id, !!checked)}
+                              />
+                            </TableCell>
+                          )}
+                          <TableCell className="whitespace-nowrap">{entry.createdAtText}</TableCell>
+                          <TableCell className="whitespace-nowrap font-medium">{entry.receptionNo}</TableCell>
                           <TableCell>
-                            <Checkbox
-                              checked={selectedIds.has(entry.id)}
-                              onCheckedChange={(checked) => handleSelectRow(entry.id, !!checked)}
-                            />
+                            <StatusBadge
+                              tone={progress.tone}
+                              title={entry.manualPaid ? 'Recorded as paid outside Bank Balance' : entry.status}
+                            >
+                              {progress.label}
+                            </StatusBadge>
                           </TableCell>
-                        )}
-                        <TableCell className="whitespace-nowrap">{entry.createdAtText}</TableCell>
-                        <TableCell className="whitespace-nowrap font-medium">{entry.receptionNo}</TableCell>
-                        <TableCell className="whitespace-nowrap">{entry.dateText}</TableCell>
-                        <TableCell>{projects.find((p) => p.id === entry.projectId)?.projectName || entry.projectId}</TableCell>
-                        <TableCell>
-                          {departments.find((d) => d.id === entry.departmentId)?.name || entry.departmentId}
-                        </TableCell>
-                        <TableCell>{entry.partyName}</TableCell>
-                        <TableCell>
-                          <Tooltip>
-                            <TooltipTrigger>
-                              <p className="truncate max-w-xs">{entry.description}</p>
-                            </TooltipTrigger>
-                            <TooltipContent>
-                              <p className="max-w-md">{entry.description}</p>
-                            </TooltipContent>
-                          </Tooltip>
-                        </TableCell>
-                        <TableCell className="whitespace-nowrap tabular-nums">{formatCurrency(entry.grossAmount)}</TableCell>
-                        <TableCell className="whitespace-nowrap tabular-nums">{formatCurrency(entry.netAmount)}</TableCell>
-                        <TableCell>
-                          <AlertDialog>
-                            <DropdownMenu>
-                              <DropdownMenuTrigger asChild>
-                                <Button
-                                  variant="ghost"
-                                  size="icon"
-                                  className="h-8 w-8"
-                                  onClick={(e) => e.stopPropagation()}
-                                >
-                                  <MoreHorizontal className="h-4 w-4" />
-                                </Button>
-                              </DropdownMenuTrigger>
-                              <DropdownMenuContent align="end">
-                                <DropdownMenuItem
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    handleViewDetails(entry);
-                                  }}
-                                >
-                                  <Eye className="mr-2 h-4 w-4" /> View Details
-                                </DropdownMenuItem>
-                                {canViewChecklist && (
+                          <TableCell className="whitespace-nowrap">{entry.dateText}</TableCell>
+                          <TableCell>{projectNameById.get(entry.projectId) || entry.projectId}</TableCell>
+                          <TableCell>{departmentNameById.get(entry.departmentId) || entry.departmentId}</TableCell>
+                          <TableCell>{entry.partyName}</TableCell>
+                          <TableCell>
+                            <Tooltip>
+                              <TooltipTrigger>
+                                <span className="block max-w-xs truncate">{entry.description}</span>
+                              </TooltipTrigger>
+                              <TooltipContent>
+                                <p className="max-w-md">{entry.description}</p>
+                              </TooltipContent>
+                            </Tooltip>
+                          </TableCell>
+                          <TableCell className="whitespace-nowrap text-right tabular-nums">
+                            {formatCurrency(entry.grossAmount)}
+                          </TableCell>
+                          <TableCell className="whitespace-nowrap text-right tabular-nums">
+                            {formatCurrency(entry.netAmount)}
+                          </TableCell>
+                          <TableCell className="whitespace-nowrap text-right tabular-nums">
+                            {progress.paid > 0 ? formatCurrency(progress.paid) : <span className="text-muted-foreground">—</span>}
+                          </TableCell>
+                          <TableCell className="whitespace-nowrap text-right tabular-nums">
+                            {progress.balance > 0 ? (
+                              formatCurrency(progress.balance)
+                            ) : (
+                              <span className="text-muted-foreground">—</span>
+                            )}
+                          </TableCell>
+                          <TableCell>
+                            <AlertDialog>
+                              <DropdownMenu>
+                                <DropdownMenuTrigger asChild>
+                                  <Button
+                                    variant="ghost"
+                                    size="icon"
+                                    className="h-8 w-8"
+                                    onClick={(e) => e.stopPropagation()}
+                                  >
+                                    <MoreHorizontal className="h-4 w-4" />
+                                  </Button>
+                                </DropdownMenuTrigger>
+                                <DropdownMenuContent align="end">
                                   <DropdownMenuItem
                                     onClick={(e) => {
                                       e.stopPropagation();
-                                      handleViewChecklist(entry);
+                                      handleViewDetails(entry);
                                     }}
                                   >
-                                    <FileText className="mr-2 h-4 w-4" /> View Checklist
+                                    <Eye className="mr-2 h-4 w-4" /> View Details
                                   </DropdownMenuItem>
-                                )}
-                                {canEdit && (
-                                  <DropdownMenuItem
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      handleOpenEditDialog(entry);
-                                    }}
-                                  >
-                                    <Edit className="mr-2 h-4 w-4" /> Edit
-                                  </DropdownMenuItem>
-                                )}
-                                {canDelete && (
-                                  <AlertDialogTrigger asChild>
+                                  {canViewChecklist && (
                                     <DropdownMenuItem
-                                      className="text-destructive"
-                                      onClick={(e) => e.stopPropagation()}
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        handleViewChecklist(entry);
+                                      }}
                                     >
-                                      <Trash2 className="mr-2 h-4 w-4" /> Delete
+                                      <FileText className="mr-2 h-4 w-4" /> View Checklist
                                     </DropdownMenuItem>
-                                  </AlertDialogTrigger>
-                                )}
-                              </DropdownMenuContent>
-                            </DropdownMenu>
-                            <AlertDialogContent>
-                              <AlertDialogHeader>
-                                <AlertDialogTitle>Are you sure?</AlertDialogTitle>
-                                <AlertDialogDescription>
-                                  This will permanently delete the entry. This action cannot be undone.
-                                </AlertDialogDescription>
-                              </AlertDialogHeader>
-                              <AlertDialogFooter>
-                                <AlertDialogCancel>Cancel</AlertDialogCancel>
-                                <AlertDialogAction onClick={() => handleDeleteEntry(entry)}>
-                                  Delete
-                                </AlertDialogAction>
-                              </AlertDialogFooter>
-                            </AlertDialogContent>
-                          </AlertDialog>
-                        </TableCell>
-                      </TableRow>
-                    ))}
+                                  )}
+                                  {canEdit && (
+                                    <DropdownMenuItem
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        handleOpenEditDialog(entry);
+                                      }}
+                                    >
+                                      <Edit className="mr-2 h-4 w-4" /> {locked ? 'Edit description' : 'Edit'}
+                                    </DropdownMenuItem>
+                                  )}
+                                  {canDelete &&
+                                    (locked ? (
+                                      // A disabled item takes no pointer events, so the wrapper carries the reason.
+                                      <Tooltip>
+                                        <TooltipTrigger asChild>
+                                          <span className="block cursor-not-allowed">
+                                            <DropdownMenuItem disabled className="text-destructive">
+                                              <Lock className="mr-2 h-4 w-4" /> Delete
+                                            </DropdownMenuItem>
+                                          </span>
+                                        </TooltipTrigger>
+                                        <TooltipContent side="left" className="max-w-xs text-xs">
+                                          {paymentLockReason(entry)}
+                                        </TooltipContent>
+                                      </Tooltip>
+                                    ) : (
+                                      <AlertDialogTrigger asChild>
+                                        <DropdownMenuItem
+                                          className="text-destructive"
+                                          onClick={(e) => e.stopPropagation()}
+                                        >
+                                          <Trash2 className="mr-2 h-4 w-4" /> Delete
+                                        </DropdownMenuItem>
+                                      </AlertDialogTrigger>
+                                    ))}
+                                </DropdownMenuContent>
+                              </DropdownMenu>
+                              <AlertDialogContent>
+                                <AlertDialogHeader>
+                                  <AlertDialogTitle>Delete {entry.receptionNo}?</AlertDialogTitle>
+                                  <AlertDialogDescription>
+                                    This permanently deletes the entry.
+                                    {entry.depNo
+                                      ? ` Its expense request ${entry.depNo} is released, so it can be received again.`
+                                      : ''}{' '}
+                                    This action cannot be undone.
+                                  </AlertDialogDescription>
+                                </AlertDialogHeader>
+                                <AlertDialogFooter>
+                                  <AlertDialogCancel>Cancel</AlertDialogCancel>
+                                  <AlertDialogAction onClick={() => handleDeleteEntry(entry)}>
+                                    Delete
+                                  </AlertDialogAction>
+                                </AlertDialogFooter>
+                              </AlertDialogContent>
+                            </AlertDialog>
+                          </TableCell>
+                        </TableRow>
+                      );
+                    })}
                   </TooltipProvider>
                 </TableBody>
               </Table>
@@ -901,7 +1184,7 @@ function EntrySheetPageComponent() {
                       </SelectContent>
                     </Select>
                   </div>
-                   <FormField control={form.control} name="date" render={({ field }) => (<FormItem className="space-y-2 flex flex-col"><FormLabel>Reception Date</FormLabel><Popover><PopoverTrigger asChild><FormControl><Button variant={'outline'} className={cn('w-full justify-start text-left font-normal', !field.value && 'text-muted-foreground')}><CalendarIcon className="mr-2 h-4 w-4" />{field.value ? format(field.value, 'PPP') : <span>Pick a date</span>}</Button></FormControl></PopoverTrigger><PopoverContent className="w-auto p-0" align="start"><Calendar mode="single" selected={field.value} onSelect={field.onChange} initialFocus /></PopoverContent></Popover><FormMessage /></FormItem>)}/>
+                   <FormField control={form.control} name="date" render={({ field }) => (<FormItem className="space-y-2 flex flex-col"><FormLabel>Reception Date</FormLabel><Popover><PopoverTrigger asChild><FormControl><Button variant={'outline'} className={cn('w-full justify-start text-left font-normal', !field.value && 'text-muted-foreground')}><CalendarIcon className="mr-2 h-4 w-4" />{field.value ? format(field.value, 'dd MMM yyyy') : <span>Pick a date</span>}</Button></FormControl></PopoverTrigger><PopoverContent className="w-auto p-0" align="start"><Calendar mode="single" selected={field.value} onSelect={field.onChange} initialFocus /></PopoverContent></Popover><FormMessage /></FormItem>)}/>
                    <FormField control={form.control} name="partyName" render={({ field }) => (<FormItem className="space-y-2"><FormLabel>Party Name</FormLabel><FormControl><Input {...field} /></FormControl><FormMessage /></FormItem>)}/>
                    <FormField control={form.control} name="projectId" render={({ field }) => (<FormItem className="space-y-2"><FormLabel>Project Name</FormLabel><Select onValueChange={field.onChange} value={field.value}><FormControl><SelectTrigger><SelectValue placeholder="Select Project"/></SelectTrigger></FormControl><SelectContent>{projects.map((p) => (<SelectItem key={p.id} value={p.id}>{p.projectName}</SelectItem>))}</SelectContent></Select><FormMessage /></FormItem>)}/>
                    <FormField control={form.control} name="description" render={({ field }) => (<FormItem className="space-y-2"><FormLabel>Description</FormLabel><FormControl><Textarea {...field}/></FormControl><FormMessage/></FormItem>)}/>
@@ -950,18 +1233,45 @@ function EntrySheetPageComponent() {
             <DialogTitleShad>Edit Entry: {editingEntry?.receptionNo}</DialogTitleShad>
             <DialogDescriptionShad>Update the details of the requisition entry.</DialogDescriptionShad>
           </DialogHeader>
+          {editLocked && (
+            <div className="flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
+              <Lock className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+              <div className="min-w-0 space-y-0.5">
+                <p className="font-semibold">Payment recorded — only the description can be changed.</p>
+                <p>
+                  The amounts, party, project, department and date belong to the payment record.
+                  {editVouchers.length > 0 ? (
+                    <>
+                      {' '}Reverse{' '}
+                      {editVouchers.map((voucher, index) => (
+                        <React.Fragment key={voucher.id}>
+                          {index > 0 && ', '}
+                          <Link href={voucherHref(voucher.id)} className="font-medium underline underline-offset-2">
+                            {voucher.no}
+                          </Link>
+                        </React.Fragment>
+                      ))}{' '}
+                      in the Cheque Register to change them.
+                    </>
+                  ) : (
+                    ' It was recorded as paid outside Bank Balance.'
+                  )}
+                </p>
+              </div>
+            </div>
+          )}
           <Form {...editForm}>
             <form onSubmit={editForm.handleSubmit(handleUpdateEntry)}>
               <div className="grid grid-cols-1 md:grid-cols-3 gap-6 py-4">
                  <FormField control={editForm.control} name="receptionNo" render={({ field }) => (<FormItem className="space-y-2"><FormLabel>Reception No.</FormLabel><FormControl><Input {...field} readOnly /></FormControl><FormMessage /></FormItem>)}/>
                  <FormField control={editForm.control} name="depNo" render={({ field }) => (<FormItem className="space-y-2"><FormLabel>DEP No.</FormLabel><FormControl><Input {...field} readOnly /></FormControl><FormMessage /></FormItem>)}/>
-                 <FormField control={editForm.control} name="date" render={({ field }) => (<FormItem className="space-y-2 flex flex-col"><FormLabel>Reception Date</FormLabel><Popover><PopoverTrigger asChild><FormControl><Button variant={'outline'} className={cn('w-full justify-start text-left font-normal', !field.value && 'text-muted-foreground')}><CalendarIcon className="mr-2 h-4 w-4" />{field.value ? format(field.value, 'PPP') : <span>Pick a date</span>}</Button></FormControl></PopoverTrigger><PopoverContent className="w-auto p-0" align="start"><Calendar mode="single" selected={field.value} onSelect={field.onChange} initialFocus /></PopoverContent></Popover><FormMessage /></FormItem>)}/>
-                 <FormField control={editForm.control} name="partyName" render={({ field }) => (<FormItem className="space-y-2"><FormLabel>Party Name</FormLabel><FormControl><Input {...field} /></FormControl><FormMessage /></FormItem>)}/>
-                 <FormField control={editForm.control} name="projectId" render={({ field }) => (<FormItem className="space-y-2"><FormLabel>Project Name</FormLabel><Select onValueChange={field.onChange} value={field.value}><FormControl><SelectTrigger><SelectValue/></SelectTrigger></FormControl><SelectContent>{projects.map((p) => (<SelectItem key={p.id} value={p.id}>{p.projectName}</SelectItem>))}</SelectContent></Select><FormMessage /></FormItem>)}/>
+                 <FormField control={editForm.control} name="date" render={({ field }) => (<FormItem className="space-y-2 flex flex-col"><FormLabel>Reception Date</FormLabel><Popover><PopoverTrigger asChild><FormControl><Button variant={'outline'} disabled={editLocked} className={cn('w-full justify-start text-left font-normal', !field.value && 'text-muted-foreground')}><CalendarIcon className="mr-2 h-4 w-4" />{field.value ? format(field.value, 'dd MMM yyyy') : <span>Pick a date</span>}</Button></FormControl></PopoverTrigger><PopoverContent className="w-auto p-0" align="start"><Calendar mode="single" selected={field.value} onSelect={field.onChange} initialFocus /></PopoverContent></Popover><FormMessage /></FormItem>)}/>
+                 <FormField control={editForm.control} name="partyName" render={({ field }) => (<FormItem className="space-y-2"><FormLabel>Party Name</FormLabel><FormControl><Input {...field} readOnly={editLocked} className={cn(editLocked && lockedFieldClass)} /></FormControl><FormMessage /></FormItem>)}/>
+                 <FormField control={editForm.control} name="projectId" render={({ field }) => (<FormItem className="space-y-2"><FormLabel>Project Name</FormLabel><Select onValueChange={field.onChange} value={field.value} disabled={editLocked}><FormControl><SelectTrigger><SelectValue/></SelectTrigger></FormControl><SelectContent>{projects.map((p) => (<SelectItem key={p.id} value={p.id}>{p.projectName}</SelectItem>))}</SelectContent></Select><FormMessage /></FormItem>)}/>
                  <FormField control={editForm.control} name="description" render={({ field }) => (<FormItem className="space-y-2"><FormLabel>Description</FormLabel><FormControl><Textarea {...field}/></FormControl><FormMessage/></FormItem>)}/>
-                 <FormField control={editForm.control} name="departmentId" render={({ field }) => (<FormItem className="space-y-2"><FormLabel>Department</FormLabel><Select onValueChange={field.onChange} value={field.value}><FormControl><SelectTrigger><SelectValue/></SelectTrigger></FormControl><SelectContent>{departments.map((d) => (<SelectItem key={d.id} value={d.id}>{d.name}</SelectItem>))}</SelectContent></Select><FormMessage /></FormItem>)}/>
-                 <FormField control={editForm.control} name="grossAmount" render={({ field }) => (<FormItem className="space-y-2"><FormLabel>Gross Amount</FormLabel><FormControl><Input type="number" {...field} /></FormControl><FormMessage /></FormItem>)}/>
-                 <FormField control={editForm.control} name="netAmount" render={({ field }) => (<FormItem className="space-y-2"><FormLabel>Net Amount</FormLabel><FormControl><Input type="number" {...field} /></FormControl><FormMessage /></FormItem>)}/>
+                 <FormField control={editForm.control} name="departmentId" render={({ field }) => (<FormItem className="space-y-2"><FormLabel>Department</FormLabel><Select onValueChange={field.onChange} value={field.value} disabled={editLocked}><FormControl><SelectTrigger><SelectValue/></SelectTrigger></FormControl><SelectContent>{departments.map((d) => (<SelectItem key={d.id} value={d.id}>{d.name}</SelectItem>))}</SelectContent></Select><FormMessage /></FormItem>)}/>
+                 <FormField control={editForm.control} name="grossAmount" render={({ field }) => (<FormItem className="space-y-2"><FormLabel>Gross Amount</FormLabel><FormControl><Input type="number" {...field} readOnly={editLocked} className={cn(editLocked && lockedFieldClass)} /></FormControl><FormMessage /></FormItem>)}/>
+                 <FormField control={editForm.control} name="netAmount" render={({ field }) => (<FormItem className="space-y-2"><FormLabel>Net Amount</FormLabel><FormControl><Input type="number" {...field} readOnly={editLocked} className={cn(editLocked && lockedFieldClass)} /></FormControl><FormMessage /></FormItem>)}/>
               </div>
               <DialogFooter>
                 <DialogClose asChild>
@@ -984,7 +1294,12 @@ function EntrySheetPageComponent() {
           entry={selectedEntry}
           projects={projects}
           departments={departments}
-          expenseRequest={expenseRequests.find((req) => req.requestNo === selectedEntry.depNo)}
+          expenseRequest={
+            // The request this entry received, before any other copy of the same number.
+            expenseRequests.find(
+              (req) => req.requestNo === selectedEntry.depNo && req.receptionNo === selectedEntry.receptionNo,
+            ) ?? expenseRequests.find((req) => req.requestNo === selectedEntry.depNo)
+          }
           onActionComplete={fetchAllData}
         />
       )}
@@ -995,6 +1310,7 @@ function EntrySheetPageComponent() {
         projects={projects}
         departments={departments}
         existing={importExisting}
+        expenseRequests={expenseRequests}
         onImported={fetchAllData}
       />
     </>
@@ -1003,7 +1319,8 @@ function EntrySheetPageComponent() {
 
 export default function EntrySheetPage() {
     return (
-        <Suspense fallback={<div className="w-full px-4 sm:px-6 lg:px-8"><Skeleton className="h-[80vh] w-full"/></div>}>
+        // useSearchParams (the `?q=` filter) needs this boundary for the route to prerender.
+        <Suspense fallback={<EntrySheetSkeleton />}>
             <EntrySheetPageComponent />
         </Suspense>
     )

@@ -260,6 +260,32 @@ of the people who could take it".
   viewer can move**. A verifier sees the entries awaiting verification, not the whole pipeline
   including the ones sitting with Finance. The row's `stage` names which stages were counted, so it
   cannot imply more than it means. No actionable stage → the source is skipped entirely.
+
+  The map is `REQUISITION_STAGES`. Its label is the step whose page lists the entry, which is where
+  you go to act on it. Its resource and actions are the permission that moves the entry on:
+
+  | Status | Label (page that lists it) | Admitted by (on `Daily Requisition.…`) |
+  | --- | --- | --- |
+  | Pending | Receiving at Finance | Receiving at Finance: Mark as Received, Reject, Cancel |
+  | Received | GST & TDS Verification | GST & TDS Verification: Verify, Re-verify, Send for Payment |
+  | Needs Review | GST & TDS Verification | GST & TDS Verification: Verify |
+  | Verified | GST & TDS Verification | Processed for Payment: Mark as Received for Payment, Approve |
+  | Received for Payment | Processed for Payment | Processed for Payment: Approve, Mark as Received for Payment (the grant Mark as Paid checks) |
+  | Partially Paid | Processed for Payment | Processed for Payment: Approve, Mark as Received for Payment (the grant Mark as Paid checks) |
+
+  Three rows are easy to get wrong:
+
+  - **Verified** waits on the GST page's Verified tab. That page's Send for Payment button checks
+    `Mark as Received for Payment` on *Processed for Payment*, so the label and the resource name
+    different steps on purpose. It used to be labelled Processed for Payment, a page that never
+    lists it.
+  - **Needs Review** is set by the GST & TDS dialog on an amount mismatch. Only the GST step's Needs
+    Review tab lists it, and its Review & Verify button needs `Verify`. It used to be mapped to
+    Receiving at Finance. That counted it for receivers, who can't see it, and left it out for the
+    verifiers who have to act on it.
+  - **Partially Paid** means a Bank Balance voucher has paid part of it. The rest is still due, so
+    it stays on the payment page's Pending tab and in the payer's count. Paid and Cancelled
+    requisitions are nobody's work and never appear.
 - **Store & Stock** requires one of `STOCK_POSTING_ACTIONS` (Post Receipt, Post Issue, Approve
   Transfer, …) on `Store & Stock Management.Inventory`.
 
@@ -270,8 +296,10 @@ module".
 
 This logic lives in `work-dashboard.ts`, not in the sources file, specifically so it can be tested
 without Firestore. `tests/work-dashboard.test.mjs` asserts that a view-only permission set yields no
-actionable stages, that a verifier gets exactly `['Received']`, and that no member of
-`STOCK_POSTING_ACTIONS` is a `View*` permission.
+actionable stages. It also checks that a receiver gets exactly `['Pending']`, that a verifier gets
+exactly `['Received', 'Needs Review']`, and that a payer's stages include `Partially Paid` while a
+receiver's don't. Each stage must carry the label of the page that lists it, and no member of
+`STOCK_POSTING_ACTIONS` may be a `View*` permission.
 
 ## The lanes
 

@@ -17,7 +17,17 @@
  */
 
 import { useCallback, useMemo, useRef, useState } from 'react';
-import { collection, doc, runTransaction, writeBatch, Timestamp } from 'firebase/firestore';
+import {
+  collection,
+  doc,
+  getDocs,
+  query,
+  runTransaction,
+  where,
+  writeBatch,
+  Timestamp,
+} from 'firebase/firestore';
+import { format } from 'date-fns';
 import {
   AlertTriangle,
   ArrowRight,
@@ -25,20 +35,25 @@ import {
   ClipboardPaste,
   Download,
   FileSpreadsheet,
+  Link2,
   Loader2,
   Upload,
 } from 'lucide-react';
 import { db } from '@/lib/firebase';
 import { useAuth } from '@/components/auth/AuthProvider';
 import { useToast } from '@/hooks/use-toast';
-import { logUserActivity } from '@/lib/activity-logger';
+import { useActivityLogger } from '@/hooks/useActivityLogger';
+import { ACTIVITY_MODULES } from '@/lib/activity-modules';
 import { exportWorkbook } from '@/lib/report-excel';
 import type { Department, Project, SerialNumberConfig } from '@/lib/types';
 import {
   allocateReceptionNos,
   buildRequisitionColumnMap,
+  importedPaymentFields,
+  localDateKeyOf,
   parseDelimitedGrid,
   parseRequisitionImportRows,
+  planExpenseRequestLinks,
   readRequisitionSheet,
   REQUISITION_IMPORT_COLUMNS,
   REQUISITION_IMPORT_TEMPLATE_HEADERS,
@@ -46,6 +61,8 @@ import {
   requisitionImportColumn,
   type ReceptionNoSource,
   type RequisitionColumnMap,
+  type RequisitionExpenseLink,
+  type RequisitionImportExpenseRequest,
   type RequisitionImportFieldKey,
   type RequisitionImportResult,
   type RequisitionStatus,
@@ -68,7 +85,14 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Textarea } from '@/components/ui/textarea';
 import { cn } from '@/lib/utils';
 
-const ROWS_PER_BATCH = 400;
+/**
+ * Writes per batch, under Firestore's 500. A row is one write, or two when it also receives its
+ * expense request — the pair always shares a batch, so neither can land without the other.
+ */
+const WRITES_PER_BATCH = 400;
+
+/** Firestore caps an `in` filter at 30 values. */
+const IN_QUERY_LIMIT = 30;
 
 const STATUSES: RequisitionStatus[] = [
   'Pending',
@@ -80,12 +104,43 @@ const STATUSES: RequisitionStatus[] = [
   'Cancelled',
 ];
 
-const money = (value: number) => `₹${value.toLocaleString('en-IN', { maximumFractionDigits: 2 })}`;
+const money = (value: number) =>
+  `₹${value.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
 /** An existing entry's key material, so a re-import can be recognised. */
 export interface RequisitionImportExisting {
   receptionNos: readonly string[];
   fingerprints?: readonly string[];
+}
+
+/**
+ * The expense requests carrying these Dep Nos, read fresh at import time. The page's copy is only
+ * good enough for the preview: a request received since the page loaded must not be claimed twice.
+ */
+async function fetchExpenseRequestsFor(depNos: readonly string[]): Promise<RequisitionImportExpenseRequest[]> {
+  const numbers = Array.from(new Set(depNos.map((value) => value.trim()).filter(Boolean)));
+  const chunks: string[][] = [];
+  for (let index = 0; index < numbers.length; index += IN_QUERY_LIMIT) {
+    chunks.push(numbers.slice(index, index + IN_QUERY_LIMIT));
+  }
+  const snapshots = await Promise.all(
+    chunks.map((chunk) => getDocs(query(collection(db, 'expenseRequests'), where('requestNo', 'in', chunk)))),
+  );
+  return snapshots.flatMap((snapshot) =>
+    snapshot.docs.map((entry) => {
+      const data = entry.data() as { requestNo?: string; receptionNo?: string };
+      return { id: entry.id, requestNo: data.requestNo ?? '', receptionNo: data.receptionNo ?? '' };
+    }),
+  );
+}
+
+/** Why a row that names an expense request will not receive it, for the preview. */
+function linkNote(link: RequisitionExpenseLink | undefined, depNo: string, rowOf: (index: number) => number): string {
+  if (link?.kind === 'received') {
+    return `Dep No ${depNo} is already received as ${link.receptionNo}; this entry will not be linked to it.`;
+  }
+  if (link?.kind === 'claimed') return `Dep No ${depNo} is linked to row ${rowOf(link.index)}'s entry instead.`;
+  return '';
 }
 
 /* ── workbook reading ────────────────────────────────────────────────────── */
@@ -145,6 +200,7 @@ export function DailyRequisitionImportDialog({
   projects,
   departments,
   existing,
+  expenseRequests = [],
   onImported,
 }: {
   open: boolean;
@@ -152,10 +208,13 @@ export function DailyRequisitionImportDialog({
   projects: Project[];
   departments: Department[];
   existing: RequisitionImportExisting;
+  /** The page's expense requests, so the preview can show which rows will receive theirs. */
+  expenseRequests?: readonly RequisitionImportExpenseRequest[];
   onImported: () => void;
 }) {
   const { user } = useAuth();
   const { toast } = useToast();
+  const { log } = useActivityLogger(ACTIVITY_MODULES.DAILY_REQUISITION);
   const fileInput = useRef<HTMLInputElement>(null);
 
   const [step, setStep] = useState<'input' | 'preview' | 'summary'>('input');
@@ -168,7 +227,12 @@ export function DailyRequisitionImportDialog({
   const [partyFromDescription, setPartyFromDescription] = useState(true);
   const [isImporting, setIsImporting] = useState(false);
   const [progress, setProgress] = useState(0);
-  const [summary, setSummary] = useState<{ imported: number; skipped: number; gross: number } | null>(null);
+  const [summary, setSummary] = useState<{
+    imported: number;
+    skipped: number;
+    gross: number;
+    linked: number;
+  } | null>(null);
 
   /**
    * The template is the sheet this dialog will accept, rather than a description of it: the data
@@ -311,6 +375,13 @@ export function DailyRequisitionImportDialog({
     );
   }, [sheet, columnMap, projects, departments, receptionNoSource, existing, partyFromDescription, status]);
 
+  /** Which rows will receive their expense request, by the page's copy — re-read at import time. */
+  const previewLinks = useMemo<RequisitionExpenseLink[]>(
+    () => (result ? planExpenseRequestLinks(result.rows.map((row) => row.draft.depNo), expenseRequests) : []),
+    [result, expenseRequests],
+  );
+  const previewLinkCount = previewLinks.filter((link) => link.kind === 'link').length;
+
   const readPaste = () => {
     const parsed = parseDelimitedGrid(pasted);
     if (parsed.length < 2) {
@@ -361,9 +432,16 @@ export function DailyRequisitionImportDialog({
     setIsImporting(true);
     setProgress(0);
     try {
+      const rows = result.rows;
+      // Read before any number is allocated, so a failed read cannot leave a gap in the counter.
+      const links = planExpenseRequestLinks(
+        rows.map((row) => row.draft.depNo),
+        await fetchExpenseRequestsFor(rows.map((row) => row.draft.depNo)),
+      );
+
       let receptionNos: string[];
       if (receptionNoSource === 'file') {
-        receptionNos = result.rows.map((row) => row.draft.receptionNo as string);
+        receptionNos = rows.map((row) => row.draft.receptionNo as string);
       } else {
         const configRef = doc(db, 'serialNumberConfigs', 'daily-requisition');
         // One transaction for the whole block. The entry sheet's per-entry transaction run hundreds
@@ -377,57 +455,75 @@ export function DailyRequisitionImportDialog({
             );
           }
           const config = snapshot.data() as SerialNumberConfig;
-          const allocated = allocateReceptionNos(config, result.rows.length);
+          const allocated = allocateReceptionNos(config, rows.length);
           transaction.update(configRef, { startingIndex: allocated.nextIndex });
           return allocated.receptionNos;
         });
       }
 
-      for (let offset = 0; offset < result.rows.length; offset += ROWS_PER_BATCH) {
-        const batch = writeBatch(db);
-        result.rows.slice(offset, offset + ROWS_PER_BATCH).forEach((row, index) => {
-          const { draft } = row;
-          batch.set(doc(collection(db, 'dailyRequisitions')), {
-            receptionNo: receptionNos[offset + index],
-            depNo: draft.depNo,
-            date: Timestamp.fromDate(new Date(draft.date)),
-            projectId: draft.projectId,
-            departmentId: draft.departmentId,
-            description: draft.description,
-            partyName: draft.partyName,
-            grossAmount: draft.grossAmount,
-            netAmount: draft.netAmount,
-            // The keying time from the sheet, not the import time — otherwise a year of history all
-            // lands today and every monthly-trend report shows one enormous spike.
-            createdAt: Timestamp.fromDate(new Date(draft.createdAt)),
-            status: draft.status,
-            documentStatus: 'Pending' as const,
-            attachments: [],
-          });
+      let batch = writeBatch(db);
+      let writes = 0;
+      let linked = 0;
+      for (let index = 0; index < rows.length; index += 1) {
+        const { draft } = rows[index];
+        const link = links[index];
+        const needed = link.kind === 'link' ? 2 : 1;
+        if (writes + needed > WRITES_PER_BATCH) {
+          await batch.commit();
+          setProgress(index);
+          batch = writeBatch(db);
+          writes = 0;
+        }
+
+        const receptionNo = receptionNos[index];
+        batch.set(doc(collection(db, 'dailyRequisitions')), {
+          receptionNo,
+          depNo: draft.depNo,
+          date: Timestamp.fromDate(new Date(draft.date)),
+          projectId: draft.projectId,
+          departmentId: draft.departmentId,
+          description: draft.description,
+          partyName: draft.partyName,
+          grossAmount: draft.grossAmount,
+          netAmount: draft.netAmount,
+          // The keying time from the sheet, not the import time — otherwise a year of history all
+          // lands today and every monthly-trend report shows one enormous spike.
+          createdAt: Timestamp.fromDate(new Date(draft.createdAt)),
+          status: draft.status,
+          documentStatus: 'Pending' as const,
+          attachments: [],
+          // History imported as Paid was paid outside Bank Balance: paid in full, by hand.
+          ...importedPaymentFields(draft),
         });
-        await batch.commit();
-        setProgress(Math.min(offset + ROWS_PER_BATCH, result.rows.length));
+        writes += 1;
+
+        // The expense request this row was raised as is received by it, exactly as when the DEP No
+        // is picked on the entry sheet — otherwise it stays in the unassigned list for ever.
+        if (link.kind === 'link') {
+          batch.update(doc(db, 'expenseRequests', link.expenseRequestId), {
+            receptionNo,
+            receptionDate: localDateKeyOf(draft.date),
+          });
+          writes += 1;
+          linked += 1;
+        }
       }
+      if (writes > 0) await batch.commit();
+      setProgress(rows.length);
 
       const skipped = result.issues.length + result.duplicates.length;
-      await logUserActivity({
-        userId: user.id,
-        userName: user.name,
-        userEmail: user.email,
-        module: 'Daily Requisition',
-        action: 'Import Daily Requisitions',
-        details: {
-          source: sourceLabel,
-          imported: result.rows.length,
-          skipped,
-          totalGross: result.totalGross,
-          totalNet: result.totalNet,
-          receptionNoSource,
-          status,
-        },
+      await log('Import Daily Requisitions', {
+        source: sourceLabel,
+        imported: rows.length,
+        skipped,
+        totalGross: result.totalGross,
+        totalNet: result.totalNet,
+        receptionNoSource,
+        status,
+        linkedExpenseRequests: linked,
       });
 
-      setSummary({ imported: result.rows.length, skipped, gross: result.totalGross });
+      setSummary({ imported: rows.length, skipped, gross: result.totalGross, linked });
       setStep('summary');
       onImported();
     } catch (error: unknown) {
@@ -641,7 +737,9 @@ export function DailyRequisitionImportDialog({
                       </SelectContent>
                     </Select>
                     <p className="mt-1 text-[11px] text-muted-foreground">
-                      History that has already been paid should not land in the Finance queue as Pending.
+                      {status === 'Paid'
+                        ? 'Recorded as paid in full outside Bank Balance — no payment voucher will be expected for these.'
+                        : 'History that has already been paid should not land in the Finance queue as Pending.'}
                     </p>
                   </div>
                   {!columnMap.partyName && (
@@ -676,6 +774,12 @@ export function DailyRequisitionImportDialog({
                     {result.duplicates.length} already recorded
                   </Badge>
                 )}
+                {previewLinkCount > 0 && (
+                  <Badge variant="info" className="gap-1">
+                    <Link2 className="h-3 w-3" aria-hidden="true" />
+                    {previewLinkCount} receive{previewLinkCount === 1 ? 's' : ''} its expense request
+                  </Badge>
+                )}
                 <span className="ml-auto text-xs">
                   Gross <span className="font-semibold tabular-nums">{money(result.totalGross)}</span>
                   {result.totalNet !== result.totalGross && (
@@ -704,34 +808,50 @@ export function DailyRequisitionImportDialog({
                       </TableRow>
                     </TableHeader>
                     <TableBody>
-                      {result.rows.map((row) => (
-                        <TableRow key={row.row}>
-                          <TableCell className="tabular-nums">{row.row}</TableCell>
-                          <TableCell className="whitespace-nowrap font-mono">
-                            {row.draft.receptionNo || <span className="text-muted-foreground">allocated</span>}
-                          </TableCell>
-                          <TableCell className="whitespace-nowrap">{row.draft.depNo || '—'}</TableCell>
-                          <TableCell className="whitespace-nowrap">
-                            {new Date(row.draft.date).toLocaleDateString('en-IN')}
-                          </TableCell>
-                          <TableCell className="max-w-[240px]">
-                            <span className="line-clamp-1">{row.draft.description}</span>
-                            {row.warnings.map((warning) => (
-                              <span key={warning} className="block text-[10px] text-amber-700">
-                                {warning}
-                              </span>
-                            ))}
-                          </TableCell>
-                          <TableCell className="whitespace-nowrap">{row.draft.projectName}</TableCell>
-                          <TableCell className="whitespace-nowrap">{row.draft.departmentName}</TableCell>
-                          <TableCell className="whitespace-nowrap text-right tabular-nums">
-                            {money(row.draft.grossAmount)}
-                          </TableCell>
-                          <TableCell className="whitespace-nowrap text-right tabular-nums">
-                            {money(row.draft.netAmount)}
-                          </TableCell>
-                        </TableRow>
-                      ))}
+                      {result.rows.map((row, index) => {
+                        const link = previewLinks[index];
+                        const note = linkNote(link, row.draft.depNo, (claimant) => result.rows[claimant]?.row ?? 0);
+                        return (
+                          <TableRow key={row.row}>
+                            <TableCell className="tabular-nums">{row.row}</TableCell>
+                            <TableCell className="whitespace-nowrap font-mono">
+                              {row.draft.receptionNo || <span className="text-muted-foreground">allocated</span>}
+                            </TableCell>
+                            <TableCell className="whitespace-nowrap">
+                              {row.draft.depNo || '—'}
+                              {link?.kind === 'link' && (
+                                <span
+                                  className="ml-1 inline-flex align-middle text-emerald-600"
+                                  title="Receives its expense request"
+                                >
+                                  <Link2 className="h-3 w-3" aria-hidden="true" />
+                                  <span className="sr-only">Receives its expense request</span>
+                                </span>
+                              )}
+                            </TableCell>
+                            <TableCell className="whitespace-nowrap">
+                              {format(new Date(row.draft.date), 'dd MMM yyyy')}
+                            </TableCell>
+                            <TableCell className="max-w-[240px]">
+                              <span className="line-clamp-1">{row.draft.description}</span>
+                              {row.warnings.map((warning) => (
+                                <span key={warning} className="block text-[10px] text-amber-700">
+                                  {warning}
+                                </span>
+                              ))}
+                              {note && <span className="block text-[10px] text-amber-700">{note}</span>}
+                            </TableCell>
+                            <TableCell className="whitespace-nowrap">{row.draft.projectName}</TableCell>
+                            <TableCell className="whitespace-nowrap">{row.draft.departmentName}</TableCell>
+                            <TableCell className="whitespace-nowrap text-right tabular-nums">
+                              {money(row.draft.grossAmount)}
+                            </TableCell>
+                            <TableCell className="whitespace-nowrap text-right tabular-nums">
+                              {money(row.draft.netAmount)}
+                            </TableCell>
+                          </TableRow>
+                        );
+                      })}
                     </TableBody>
                   </Table>
                 </section>
@@ -775,6 +895,8 @@ export function DailyRequisitionImportDialog({
               </p>
               <p className="text-xs text-muted-foreground">
                 {money(summary.gross)} gross
+                {summary.linked > 0 &&
+                  ` · ${summary.linked} expense request${summary.linked === 1 ? '' : 's'} received`}
                 {summary.skipped > 0 && ` · ${summary.skipped} row${summary.skipped === 1 ? '' : 's'} skipped`}
               </p>
             </div>

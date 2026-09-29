@@ -75,12 +75,13 @@ const GROUP_LABELS: Record<string, string> = {
 };
 
 /** Sub-routes with a nav entry of their own; anything else under /expenses belongs to Overview. */
-const NAMED_SUB_ROUTES = ['/expenses/all', '/expenses/reports', '/expenses/settings'];
+const NAMED_SUB_ROUTES = ['/expenses/new-request', '/expenses/all', '/expenses/reports', '/expenses/settings'];
 
 function matchesPath(pathname: string, href: string) {
   if (href === '/expenses') {
-    // Department registers (/expenses/<id>) and the create form are reached from Overview and read
-    // as part of it, so Overview stays lit rather than the menu going blank on those pages.
+    // Department registers (/expenses/<id>) are reached from Overview and read as part of it, so
+    // Overview stays lit rather than the menu going blank on those pages. The create form has an
+    // entry of its own now, and lights that instead.
     return pathname === '/expenses' || !NAMED_SUB_ROUTES.some(route => pathname.startsWith(route));
   }
   return pathname === href || pathname.startsWith(`${href}/`);
@@ -98,6 +99,18 @@ export default function ExpensesLayoutShell({ children }: { children: React.Reac
   /** Icons mode has no room for the report list under Reports, so it opens beside the rail instead. */
   const [childFlyoutOpen, setChildFlyoutOpen] = useState(false);
 
+  /**
+   * Raising a request is granted per department (`Expenses.Departments.<deptId>`), and the shell
+   * does not load the department list, so this asks whether any department grant carries Create —
+   * the grants Overview's "New Request" card reads — without repeating Overview's Firestore read.
+   * The sidebar entry and the bottom bar's New tab both hang off it, so they appear together.
+   */
+  const canCreateAnywhere =
+    can('Create', 'Expenses.Departments') ||
+    Object.entries(permissions).some(
+      ([key, actions]) => key.startsWith('Expenses.Departments.') && Array.isArray(actions) && actions.includes('Create'),
+    );
+
   const navItems: NavItem[] = [
     {
       href: '/expenses',
@@ -110,6 +123,18 @@ export default function ExpensesLayoutShell({ children }: { children: React.Reac
       glow: 'shadow-[0_8px_24px_-8px_rgba(59,130,246,0.55)]',
       group: 'overview',
       permitted: true,
+    },
+    {
+      href: '/expenses/new-request',
+      label: 'New Request',
+      caption: 'Raise a payment request',
+      icon: Plus,
+      color: 'text-emerald-600',
+      bg: 'bg-emerald-50',
+      gradient: 'from-emerald-500 to-teal-600',
+      glow: 'shadow-[0_8px_24px_-8px_rgba(16,185,129,0.55)]',
+      group: 'overview',
+      permitted: !authLoading && canCreateAnywhere,
     },
     {
       href: '/expenses/all',
@@ -126,7 +151,7 @@ export default function ExpensesLayoutShell({ children }: { children: React.Reac
     {
       href: '/expenses/reports',
       label: 'Reports',
-      caption: 'Pivot analysis',
+      caption: 'Payments, trends & pivot',
       icon: BarChart3,
       color: 'text-fuchsia-600',
       bg: 'bg-fuchsia-50',
@@ -150,17 +175,6 @@ export default function ExpensesLayoutShell({ children }: { children: React.Reac
       permitted: can('View', 'Expenses.Settings'),
     },
   ].filter(item => item.permitted);
-
-  /**
-   * Raising a request is granted per department (`Expenses.Departments.<deptId>`), and the shell
-   * does not load the department list, so this asks whether any department grant carries Create —
-   * the grants Overview's "New Request" card reads — without repeating Overview's Firestore read.
-   */
-  const canCreateAnywhere =
-    can('Create', 'Expenses.Departments') ||
-    Object.entries(permissions).some(
-      ([key, actions]) => key.startsWith('Expenses.Departments.') && Array.isArray(actions) && actions.includes('Create'),
-    );
 
   // The phone's bottom bar: Overview and the consolidated register, raising a request in the
   // middle, and "More" opening the bar's pop-up of every page (and, on Reports, the report list —

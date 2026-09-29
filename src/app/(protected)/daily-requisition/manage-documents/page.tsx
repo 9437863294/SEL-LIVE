@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useCallback } from 'react';
 import { Upload, Files, ShieldAlert, MoreHorizontal } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
@@ -8,7 +8,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/com
 import { useToast } from '@/hooks/use-toast';
 import { db } from '@/lib/firebase';
 import { collection, getDocs, orderBy, query, doc, updateDoc, Timestamp } from 'firebase/firestore';
-import type { DailyRequisitionEntry, User } from '@/lib/types';
+import type { DailyRequisitionEntry, Project, User } from '@/lib/types';
 import { withDesignations } from '@/lib/people-directory-client';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useAuthorization } from '@/hooks/useAuthorization';
@@ -27,9 +27,13 @@ import { PageHeader } from '@/components/shared/page-header';
 import { Badge } from '@/components/ui/badge';
 import { StatusBadge } from '@/components/shared/status-badge';
 import { TableCard } from '@/components/shared/table-card';
+import { SearchInput } from '@/components/shared/filter-bar';
+
+type DocumentsTab = 'pending' | 'uploaded' | 'missing';
 
 type EnrichedDailyRequisitionEntry = DailyRequisitionEntry & {
   id: string;
+  projectName: string;
   dateText?: string;
   createdAtText?: string;
   documentStatusUpdatedAtText?: string;
@@ -43,6 +47,11 @@ export default function ManageDocumentsPage() {
   const [requisitions, setRequisitions] = useState<EnrichedDailyRequisitionEntry[]>([]);
   const [users, setUsers] = useState<User[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  // The whole-page skeleton is for the first load only; a refresh after an action shows skeleton
+  // rows inside the table, so the chosen tab and search stay on screen.
+  const [hasLoaded, setHasLoaded] = useState(false);
+  const [activeTab, setActiveTab] = useState<DocumentsTab>('pending');
+  const [searchTerm, setSearchTerm] = useState('');
   const [selectedRequisition, setSelectedRequisition] = useState<DailyRequisitionEntry | null>(null);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
 
@@ -53,13 +62,16 @@ export default function ManageDocumentsPage() {
   const canMarkNotRequired = can('Mark as Not Required', 'Daily Requisition.Manage Documents');
   const canMoveToPending = can('Move to Pending', 'Daily Requisition.Manage Documents');
 
-  const fetchRequisitions = async () => {
-    setIsLoading(true);
+  // Every state update here follows an await, so calling it from the effect below does not set
+  // state synchronously inside the effect. `refreshRequisitions` is the one that shows the spinner.
+  const fetchRequisitions = useCallback(async () => {
     try {
-      const [qSnap, usersSnap] = await Promise.all([
+      const [qSnap, usersSnap, projectsSnap] = await Promise.all([
         getDocs(query(collection(db, 'dailyRequisitions'), orderBy('createdAt', 'desc'))),
         getDocs(collection(db, 'users')),
+        getDocs(collection(db, 'projects')),
       ]);
+      const projectNames = new Map(projectsSnap.docs.map((d) => [d.id, (d.data() as Project).projectName || '']));
 
       const entries: EnrichedDailyRequisitionEntry[] = qSnap.docs.map((d) => {
         const data = d.data() as Omit<DailyRequisitionEntry, 'id'> & {
@@ -82,6 +94,7 @@ export default function ManageDocumentsPage() {
         return {
           ...(data as DailyRequisitionEntry),
           id: d.id,
+          projectName: projectNames.get(data.projectId) || '',
           documentStatus,
           dateText: dateObj ? format(dateObj, 'dd MMM, yyyy') : data.date ? String(data.date) : '',
           createdAtText: createdAtObj ? format(createdAtObj, 'dd MMM, yyyy HH:mm') : data.createdAt ? String(data.createdAt) : '',
@@ -96,24 +109,34 @@ export default function ManageDocumentsPage() {
       toast({ title: 'Error', description: 'Failed to load requisition entries.', variant: 'destructive' });
     }
     setIsLoading(false);
-  };
+    setHasLoaded(true);
+  }, [toast]);
 
+  const refreshRequisitions = useCallback(() => {
+    setIsLoading(true);
+    void fetchRequisitions();
+  }, [fetchRequisitions]);
+
+  // Without access the page renders its Access Denied card, whatever `isLoading` says.
   useEffect(() => {
-    if (!isAuthLoading) {
-      if (canViewPage) {
-        fetchRequisitions();
-      } else {
-        setIsLoading(false);
-      }
-    }
-  }, [isAuthLoading, canViewPage, toast]);
+    if (!isAuthLoading && canViewPage) void fetchRequisitions();
+  }, [isAuthLoading, canViewPage, fetchRequisitions]);
 
   const { pendingUploads, uploadedList, missingList } = useMemo(() => {
     const pending: EnrichedDailyRequisitionEntry[] = [];
     const uploaded: EnrichedDailyRequisitionEntry[] = [];
     const missing: EnrichedDailyRequisitionEntry[] = [];
+    const needle = searchTerm.trim().toLowerCase();
 
     requisitions.forEach((req) => {
+      if (
+        needle &&
+        !(req.receptionNo || '').toLowerCase().includes(needle) &&
+        !req.projectName.toLowerCase().includes(needle) &&
+        !(req.partyName || '').toLowerCase().includes(needle)
+      ) {
+        return;
+      }
       switch (req.documentStatus) {
         case 'Uploaded':
           uploaded.push(req);
@@ -129,7 +152,7 @@ export default function ManageDocumentsPage() {
       }
     });
     return { pendingUploads: pending, uploadedList: uploaded, missingList: missing };
-  }, [requisitions]);
+  }, [requisitions, searchTerm]);
 
   const openDialog = (req: DailyRequisitionEntry) => {
     setSelectedRequisition(req);
@@ -149,7 +172,7 @@ export default function ManageDocumentsPage() {
         documentStatusUpdatedAt: Timestamp.now(),
       });
       toast({ title: 'Status Updated', description: `Entry marked as ${status}.` });
-      fetchRequisitions();
+      refreshRequisitions();
     } catch (error) {
       console.error('Error updating status:', error);
       toast({ title: 'Error', description: 'Failed to update status.', variant: 'destructive' });
@@ -158,6 +181,7 @@ export default function ManageDocumentsPage() {
 
   const renderTable = (data: EnrichedDailyRequisitionEntry[], type: 'pending' | 'uploaded' | 'missing') => {
     const usersMap = new Map(users.map((u) => [u.id, u.name]));
+    const columnCount = type === 'pending' ? 5 : type === 'uploaded' ? 7 : 8;
 
     return (
       <TableCard>
@@ -165,6 +189,7 @@ export default function ManageDocumentsPage() {
             <TableHeader>
               <TableRow>
                 <TableHead>Reception No.</TableHead>
+                <TableHead>Project</TableHead>
                 <TableHead>Party Name</TableHead>
                 <TableHead>Date</TableHead>
                 {type === 'uploaded' && <TableHead>Attachments</TableHead>}
@@ -178,7 +203,7 @@ export default function ManageDocumentsPage() {
               {isLoading ? (
                 Array.from({ length: 5 }).map((_, i) => (
                   <TableRow key={i}>
-                    <TableCell colSpan={type === 'pending' ? 4 : type === 'missing' ? 8 : 7}>
+                    <TableCell colSpan={columnCount}>
                       <Skeleton className="h-6 w-full" />
                     </TableCell>
                   </TableRow>
@@ -189,6 +214,7 @@ export default function ManageDocumentsPage() {
                     <TableCell className="whitespace-nowrap font-medium" onClick={() => openDialog(req)}>
                       {req.receptionNo}
                     </TableCell>
+                    <TableCell onClick={() => openDialog(req)}>{req.projectName || '—'}</TableCell>
                     <TableCell onClick={() => openDialog(req)}>{req.partyName}</TableCell>
                     <TableCell className="whitespace-nowrap" onClick={() => openDialog(req)}>{req.dateText}</TableCell>
                     {type === 'uploaded' && <TableCell className="tabular-nums" onClick={() => openDialog(req)}>{req.attachments?.length || 0}</TableCell>}
@@ -272,7 +298,7 @@ export default function ManageDocumentsPage() {
               ) : (
                 <TableRow>
                   <TableCell
-                    colSpan={type === 'pending' ? 4 : type === 'missing' ? 8 : 7}
+                    colSpan={columnCount}
                     className="h-24 text-center"
                   >
                     No entries found.
@@ -285,16 +311,16 @@ export default function ManageDocumentsPage() {
     );
   };
 
-  if (isAuthLoading || (isLoading && canViewPage)) {
+  // Header, then the tabs-and-search row, then the register: the page's real layout.
+  if (isAuthLoading || (canViewPage && !hasLoaded)) {
     return (
       <div className={dailyPageContainerClass}>
-        <Skeleton className="mb-6 h-10 w-80" />
-        <div className="grid gap-4 md:grid-cols-3">
-          <Skeleton className="h-24" />
-          <Skeleton className="h-24" />
-          <Skeleton className="h-24" />
+        <Skeleton className="mb-4 h-10 w-full max-w-80" />
+        <div className="flex flex-col gap-3 lg:flex-row lg:justify-between">
+          <Skeleton className="h-10 w-full rounded-xl lg:w-96" />
+          <Skeleton className="h-10 w-full rounded-xl lg:w-96" />
         </div>
-        <Skeleton className="mt-6 h-96 w-full rounded-2xl" />
+        <Skeleton className="mt-3 h-96 w-full rounded-2xl" />
       </div>
     );
   }
@@ -329,12 +355,31 @@ export default function ManageDocumentsPage() {
         />
 
         {/* The counts live on the tabs; a card row repeating them only pushed the list down. */}
-        <Tabs defaultValue="pending">
-          <TabsList className={`${dailyTabsListClass} grid-cols-3 lg:inline-grid lg:w-auto`}>
-            <TabsTrigger value="pending">Pending ({pendingUploads.length})</TabsTrigger>
-            <TabsTrigger value="uploaded">Uploaded ({uploadedList.length})</TabsTrigger>
-            <TabsTrigger value="missing">Missing / N.R. ({missingList.length})</TabsTrigger>
-          </TabsList>
+        <Tabs value={activeTab} onValueChange={(value) => setActiveTab(value as DocumentsTab)}>
+          {/* Tabs (with their counts) and search share one row, as on the workflow stage pages. On
+              a phone the strip scrolls sideways instead of squeezing three labels into thirds. */}
+          <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+            <TabsList className={`${dailyTabsListClass} flex w-full overflow-x-auto lg:inline-flex lg:w-auto`}>
+              {(
+                [
+                  { value: 'pending', label: 'Pending', count: pendingUploads.length, hint: 'Documents still to upload' },
+                  { value: 'uploaded', label: 'Uploaded', count: uploadedList.length, hint: 'Documents on file' },
+                  { value: 'missing', label: 'Missing / N.R.', count: missingList.length, hint: 'Marked missing or not required' },
+                ] as const
+              ).map((tab) => (
+                <TabsTrigger key={tab.value} value={tab.value} className="flex-1 whitespace-nowrap px-4 py-1.5 lg:flex-none" title={tab.hint}>
+                  <span>{tab.label}</span>
+                  <span className="ml-1.5 rounded-full bg-black/5 px-1.5 text-xs font-semibold tabular-nums">{tab.count}</span>
+                </TabsTrigger>
+              ))}
+            </TabsList>
+            <SearchInput
+              className="w-full lg:w-96"
+              placeholder="Search reception no., project, party…"
+              value={searchTerm}
+              onChange={setSearchTerm}
+            />
+          </div>
           <TabsContent value="pending" className="mt-3">
             {renderTable(pendingUploads, 'pending')}
           </TabsContent>
@@ -351,7 +396,7 @@ export default function ManageDocumentsPage() {
         isOpen={isDialogOpen}
         onOpenChange={setIsDialogOpen}
         requisition={selectedRequisition}
-        onUploadComplete={fetchRequisitions}
+        onUploadComplete={refreshRequisitions}
         canEdit={canUpload}
         canDownload={canDownload}
       />

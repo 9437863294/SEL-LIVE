@@ -27,6 +27,8 @@ export default function BankBalanceLayoutShell({ children }: { children: ReactNo
   const iconsOnly = useSidebarIconsOnly();
   const { items, isLoading, canViewModule } = useBankBalanceNav();
 
+  // Print pages (e.g. a payment voucher) render on their own, like AppShell and the bottom nav do.
+  if (pathname.includes('/print')) return <>{children}</>;
   if (isLoading || !canViewModule || items.length === 0) return <>{children}</>;
 
   const activeHref = activeBankBalanceHref(pathname, items);

@@ -8,7 +8,7 @@ import {
   Plus, Scale, ArrowDown, ArrowUp,
   ArrowRightLeft, ShieldAlert, Activity, TrendingUp,
   RefreshCw, CreditCard, Building2, Percent, Calendar,
-  Gauge, Landmark, Wallet,
+  Gauge, Landmark, Wallet, CalendarClock, Hourglass, CalendarX, CheckCircle2,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { PageHeader, SectionHeader } from '@/components/shared/page-header';
@@ -19,8 +19,9 @@ import { db } from '@/lib/firebase';
 import { collection, getDocs } from 'firebase/firestore';
 import type { BankAccount, BankExpense } from '@/lib/types';
 import { useAuthorization } from '@/hooks/useAuthorization';
-import { format, isToday, subDays, startOfMonth, subMonths } from 'date-fns';
-import { balancesAt, buildLedgers, dailyRows, formatInr } from '@/lib/bank-balance-ledger';
+import { endOfDay, format, isToday, subDays, startOfMonth, subMonths } from 'date-fns';
+import { balancesAt, buildLedgers, dailyRows, formatDay, formatInr } from '@/lib/bank-balance-ledger';
+import { CHEQUE_VALIDITY_MONTHS, displayStatus, type BankPaymentVoucher } from '@/lib/bank-payments';
 import { Badge } from '@/components/ui/badge';
 import { StatusBadge } from '@/components/shared/status-badge';
 import { KpiCard } from '@/components/shared/kpi-card';
@@ -29,17 +30,22 @@ import {
   MonthlyFlowChart,
   UtilisationTrendChart,
   compactInr,
+  type FlowDatedAhead,
   type MonthlyFlowPoint,
   type UtilisationTrendPoint,
 } from '@/components/bank-balance/dashboard-charts';
 import { cn } from '@/lib/utils';
 import { getApplicableCcLimit } from '@/lib/bank-balance-limit';
 
+const voucherCount = (n: number) => `${n} voucher${n === 1 ? '' : 's'}`;
+
 export default function BankBalanceDashboard() {
   const { toast } = useToast();
   const { can, isLoading: authLoading } = useAuthorization();
   const [accounts, setAccounts] = useState<BankAccount[]>([]);
   const [allTransactions, setAllTransactions] = useState<BankExpense[]>([]);
+  // Payment vouchers for the cheque tiles; null when not loaded (no register access, or the read failed).
+  const [vouchers, setVouchers] = useState<BankPaymentVoucher[] | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [lastRefreshed, setLastRefreshed] = useState<Date>(new Date());
   const [refreshing, setRefreshing] = useState(false);
@@ -47,17 +53,28 @@ export default function BankBalanceDashboard() {
   const canView = can('View Module', 'Bank Balance');
   const canViewReports = can('View', 'Bank Balance.Reports');
   const canViewAccounts = can('View', 'Bank Balance.Accounts');
+  // The Cheque Register's own permission: without it the vouchers are neither read nor shown.
+  const canViewCheques = can('View', 'Bank Balance.Expenses');
 
   const fetchData = async (silent = false) => {
     if (!silent) setIsLoading(true);
     else setRefreshing(true);
     try {
-      const [accountsSnap, expensesSnap] = await Promise.all([
+      const [accountsSnap, expensesSnap, vouchersSnap] = await Promise.all([
         getDocs(collection(db, 'bankAccounts')),
         getDocs(collection(db, 'bankExpenses')),
+        // Caught on its own: a failed voucher read drops the cheque tiles, never the balances.
+        canViewCheques
+          ? getDocs(collection(db, 'bankPayments')).catch(error => {
+              console.error('Error fetching payment vouchers:', error);
+              toast({ title: 'Cheque figures unavailable', description: 'Failed to load payment vouchers.', variant: 'destructive' });
+              return null;
+            })
+          : Promise.resolve(null),
       ]);
       setAccounts(accountsSnap.docs.map(doc => ({ id: doc.id, ...doc.data() } as BankAccount)));
       setAllTransactions(expensesSnap.docs.map(doc => ({ id: doc.id, ...doc.data() } as BankExpense)));
+      setVouchers(vouchersSnap ? vouchersSnap.docs.map(doc => ({ id: doc.id, ...doc.data() } as BankPaymentVoucher)) : null);
       setLastRefreshed(new Date());
     } catch (error) {
       console.error('Error fetching data:', error);
@@ -73,7 +90,7 @@ export default function BankBalanceDashboard() {
     if (!canView) { setIsLoading(false); return; }
     void fetchData();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [canView, authLoading]);
+  }, [canView, canViewCheques, authLoading]);
 
   const formatCurrency = (amount: number) => formatInr(amount);
 
@@ -212,19 +229,61 @@ export default function BankBalanceDashboard() {
     });
   }, [ccAccounts, ledgers]);
 
-  const monthlyFlows = useMemo<MonthlyFlowPoint[]>(() => {
-    const months = Array.from({ length: 6 }, (_, i) => startOfMonth(subMonths(new Date(), 5 - i)));
+  // Only entries dated up to today count, as in the balances above: a post-dated cheque's Debit sits
+  // on its instrument date and must not swell this month before then. What is dated ahead is
+  // totalled for the note under the chart.
+  const monthlyFlow = useMemo<{ points: MonthlyFlowPoint[]; datedAhead: FlowDatedAhead }>(() => {
+    const now = new Date();
+    const cutoff = endOfDay(now);
+    const months = Array.from({ length: 6 }, (_, i) => startOfMonth(subMonths(now, 5 - i)));
     const points = months.map(month => ({ key: format(month, 'yyyy-MM'), month: format(month, 'MMM yy'), receipts: 0, payments: 0 }));
     const byKey = new Map(points.map(point => [point.key, point]));
+    const datedAhead: FlowDatedAhead = { payments: 0, paymentCount: 0, receipts: 0, receiptCount: 0 };
     allTransactions.forEach(t => {
       if (t.isContra) return;
-      const point = byKey.get(format(t.date.toDate(), 'yyyy-MM'));
+      const at = t.date.toDate();
+      const amount = Number(t.amount) || 0;
+      if (at > cutoff) {
+        if (t.type === 'Credit') { datedAhead.receipts += amount; datedAhead.receiptCount += 1; }
+        else { datedAhead.payments += amount; datedAhead.paymentCount += 1; }
+        return;
+      }
+      const point = byKey.get(format(at, 'yyyy-MM'));
       if (!point) return;
-      if (t.type === 'Credit') point.receipts += t.amount;
-      else point.payments += t.amount;
+      if (t.type === 'Credit') point.receipts += amount;
+      else point.payments += amount;
     });
-    return points.map(({ key: _key, ...point }) => point);
+    return { points: points.map(({ key: _key, ...point }) => point), datedAhead };
   }, [allTransactions]);
+
+  // The Cheque Register's buckets, read through the same displayStatus, so these tiles and the
+  // register always agree: post-dated, issued (awaiting clearing), stale, cleared this month.
+  const chequeSummary = useMemo(() => {
+    if (!vouchers) return null;
+    const now = new Date();
+    const today = format(now, 'yyyy-MM-dd');
+    const monthStart = format(startOfMonth(now), 'yyyy-MM-dd');
+    const bucket = () => ({ count: 0, amount: 0 });
+    const postDated = bucket();
+    const issued = bucket();
+    const stale = bucket();
+    const cleared = bucket();
+    let nextDue: string | undefined;
+    for (const v of vouchers) {
+      const status = displayStatus(v, today);
+      const target =
+        status === 'Post-dated' ? postDated
+        : status === 'Issued' ? issued
+        : status === 'Stale' ? stale
+        : status === 'Cleared' && (v.clearedDate || '') >= monthStart ? cleared
+        : null;
+      if (!target) continue;
+      target.count += 1;
+      target.amount += Number(v.total) || 0;
+      if (status === 'Post-dated' && (!nextDue || v.instrumentDate < nextDue)) nextDue = v.instrumentDate;
+    }
+    return { postDated: { ...postDated, nextDue }, issued, stale, cleared };
+  }, [vouchers]);
 
   if (authLoading || (isLoading && canView)) {
     return (
@@ -560,13 +619,68 @@ export default function BankBalanceDashboard() {
             )}
           </div>
 
+          {/* ── Cheques & payments ── (the Cheque Register's figures. A row of four is too tall on a
+              phone to sit inside DP & utilisation, so it comes after the accounts, keeping the order
+              DP & utilisation → accounts → trends) */}
+          {canViewCheques && chequeSummary && (
+            <>
+              <SectionHeader title="Cheques & payments" description="Payment vouchers in the Cheque Register — dated ahead, awaiting clearing, past validity, and cleared." />
+              <div className="mb-4 grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                <KpiCard
+                  label="Post-dated"
+                  value={formatCurrency(chequeSummary.postDated.amount)}
+                  hint={
+                    chequeSummary.postDated.nextDue
+                      ? `${voucherCount(chequeSummary.postDated.count)} · next ${formatDay(chequeSummary.postDated.nextDue)}`
+                      : 'None dated ahead'
+                  }
+                  icon={CalendarClock}
+                  tone="blue"
+                  accent
+                  href="/bank-balance/cheques"
+                />
+                <KpiCard
+                  label="Issued, not cleared"
+                  value={formatCurrency(chequeSummary.issued.amount)}
+                  hint={voucherCount(chequeSummary.issued.count)}
+                  icon={Hourglass}
+                  tone="violet"
+                  accent
+                  href="/bank-balance/cheques"
+                />
+                <KpiCard
+                  label="Stale cheques"
+                  value={chequeSummary.stale.count}
+                  hint={
+                    chequeSummary.stale.count
+                      ? `${formatCurrency(chequeSummary.stale.amount)} past ${CHEQUE_VALIDITY_MONTHS}-month validity`
+                      : `None past ${CHEQUE_VALIDITY_MONTHS}-month validity`
+                  }
+                  icon={CalendarX}
+                  tone={chequeSummary.stale.count ? 'amber' : 'slate'}
+                  accent
+                  href="/bank-balance/cheques"
+                />
+                <KpiCard
+                  label="Cleared this month"
+                  value={formatCurrency(chequeSummary.cleared.amount)}
+                  hint={voucherCount(chequeSummary.cleared.count)}
+                  icon={CheckCircle2}
+                  tone="emerald"
+                  accent
+                  href="/bank-balance/cheques"
+                />
+              </div>
+            </>
+          )}
+
           {/* ── Charts ── (after the account cards: the cards are the day-to-day view, the charts the trend) */}
           <SectionHeader title="Trends & Analysis" description="Limit against utilisation, its last 30 days, and money in and out by month." />
           <div className="mb-6 grid grid-cols-1 gap-4 xl:grid-cols-2">
             <LimitUtilisationChart rows={ccPosition.rows} />
             <UtilisationTrendChart points={utilisationTrend} />
             <div className="min-w-0 xl:col-span-2">
-              <MonthlyFlowChart points={monthlyFlows} />
+              <MonthlyFlowChart points={monthlyFlow.points} datedAhead={monthlyFlow.datedAhead} />
             </div>
           </div>
 

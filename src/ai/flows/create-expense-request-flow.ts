@@ -6,7 +6,7 @@
 
 import { ai } from '@/ai/genkit';
 import { db } from '@/lib/firebase';
-import { collection, addDoc, doc, runTransaction, getDoc, serverTimestamp, query, where, getDocs } from 'firebase/firestore';
+import { collection, doc, runTransaction, getDoc, serverTimestamp, query, where, getDocs } from 'firebase/firestore';
 import type { SerialNumberConfig, Department, CreateExpenseRequestInput, CreateExpenseRequestOutput } from '@/lib/types';
 import { CreateExpenseRequestInputSchema, CreateExpenseRequestOutputSchema } from '@/lib/types';
 
@@ -28,6 +28,9 @@ const createExpenseRequestFlow = ai.defineFlow(
       const selectedDept = deptSnap.data() as Department;
 
       const configRef = doc(db, 'departmentSerialConfigs', data.departmentId);
+      // The request is written in the same transaction that takes its number, so a failed write can
+      // never burn a number (or leave one handed out with no request behind it).
+      const requestRef = doc(collection(db, 'expenseRequests'));
       const newRequestNo = await runTransaction(db, async (transaction) => {
         const configDoc = await transaction.get(configRef);
         if (!configDoc.exists()) {
@@ -38,12 +41,14 @@ const createExpenseRequestFlow = ai.defineFlow(
         const formattedIndex = String(newIndex).padStart(4, '0');
         const requestNo = `${configData.prefix || ''}${configData.format || ''}${formattedIndex}${configData.suffix || ''}`;
         transaction.update(configRef, { startingIndex: newIndex + 1 });
+        transaction.set(requestRef, buildRequest(requestNo));
         return requestNo;
       });
 
-      const newExpenseRequest = {
+      function buildRequest(requestNo: string) {
+        return {
         ...data,
-        requestNo: newRequestNo,
+        requestNo,
         generatedByDepartment: selectedDept.name,
         // In a real app, you'd pass the current user's details. For this flow, we'll mark as system-generated.
         generatedByUser: 'System (Auto-generated)',
@@ -51,9 +56,8 @@ const createExpenseRequestFlow = ai.defineFlow(
         receptionNo: '',
         receptionDate: '',
         createdAt: new Date().toISOString(),
-      };
-
-      await addDoc(collection(db, 'expenseRequests'), newExpenseRequest);
+        };
+      }
 
       // Send Email Notification via SMTP
       try {

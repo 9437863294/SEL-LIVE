@@ -2,6 +2,10 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   applyPayment,
+  applyPayments,
+  canBounce,
+  instrumentKey,
+  monthsBefore,
   displayStatus,
   financialYear,
   modeConfig,
@@ -76,4 +80,36 @@ test('custom payment methods join the standard modes once', () => {
   assert.equal(modes.filter((m) => m.mode.toLowerCase() === 'cheque').length, 1);
   assert.equal(modeConfig('e-Cheque').allowsFutureDate, true);
   assert.equal(modeConfig('RTGS').utrPerLine, true);
+});
+
+test('two voucher lines for one requisition add up, and overpaying across them is refused', () => {
+  const after = applyPayments({ netAmount: 1000 }, [ref(300), ref(200, { lineId: 'l2' })]);
+  assert.equal(after.paidAmount, 500);
+  assert.equal(after.payments.length, 2);
+  assert.equal(after.status, 'Partially Paid');
+  assert.throws(() => applyPayments({ netAmount: 1000 }, [ref(600), ref(600, { lineId: 'l2' })]), /still due/);
+});
+
+test('a reversal never un-cancels a requisition moved on in Daily Requisition', () => {
+  const paid = applyPayment({ netAmount: 1000 }, ref(1000));
+  assert.equal(reversePayment({ netAmount: 1000, ...paid, status: 'Cancelled' }, 'v1', 'l1').status, 'Cancelled');
+  assert.equal(reversePayment({ netAmount: 1000, ...paid, status: 'Paid' }, 'v1', 'l1').status, 'Received for Payment');
+});
+
+test('stale cheques and bounce rules', () => {
+  assert.equal(monthsBefore('2026-09-29', 3), '2026-06-29');
+  assert.equal(monthsBefore('2026-05-31', 3), '2026-02-28');
+  assert.equal(displayStatus({ status: 'Issued', instrumentDate: '2026-06-01', mode: 'Cheque' }, '2026-09-29'), 'Stale');
+  assert.equal(displayStatus({ status: 'Issued', instrumentDate: '2026-06-01', mode: 'RTGS' }, '2026-09-29'), 'Issued');
+  assert.equal(canBounce('Cheque'), true);
+  assert.equal(canBounce('Demand Draft'), true);
+  assert.equal(canBounce('NEFT'), false);
+});
+
+test('instrument numbers are reserved per account and series', () => {
+  assert.equal(instrumentKey('acc', 'Cheque', ' 000451 '), 'acc_cheque_000451');
+  assert.equal(instrumentKey('acc', 'e-Cheque', '000451'), 'acc_cheque_000451');
+  assert.equal(instrumentKey('acc', 'Demand Draft', '451'), 'acc_draft_451');
+  assert.equal(instrumentKey('acc', 'RTGS', 'BATCH-1'), null);
+  assert.equal(instrumentKey('acc', 'Cheque', ''), null);
 });

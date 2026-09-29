@@ -15,8 +15,11 @@
  *
  * Request numbers are deliberately not invented here. They come either from the file (migrating
  * history that already has its numbers) or from the department's `departmentSerialConfigs` counter,
- * and `allocateRequestNos` formats a contiguous block from that counter in exactly the way the
- * create form formats a single one.
+ * and `allocateRequestNos` formats the next block from that counter in exactly the way the create
+ * form formats a single one, stepping over any number already in use anywhere in the module.
+ *
+ * A Reception No from the sheet is checked too: it claims a Daily Requisition, so it is written only
+ * when Daily Requisition has that requisition and no other request carries it (`buildReceptionRegister`).
  *
  * Pure — no Firebase, no exceljs, no DOM — so every rule above is unit-testable with `node --test`.
  * Reading the workbook and writing to Firestore live in the import dialog component.
@@ -133,15 +136,15 @@ export const EXPENSE_IMPORT_COLUMNS: ExpenseImportColumn[] = [
     key: "receptionNo",
     label: "Reception No",
     aliases: ["receptionno", "recno", "receiptno", "acknowledgementno", "acknowledgmentno"],
-    hint: "Optional. A request that carries one is treated as already received and can no longer be edited.",
-    accepted: "Text",
+    hint: "Optional. Must be a reception number Daily Requisition already has and no other request carries — anything else is dropped and the row imports as pending reception. A request that carries one is treated as already received and can no longer be edited.",
+    accepted: "A Reception No recorded in Daily Requisition",
     sample: "",
   },
   {
     key: "receptionDate",
     label: "Reception Date",
     aliases: ["receptiondate", "recdate", "receiptdate", "acknowledgementdate", "acknowledgmentdate"],
-    hint: "Optional, and expected alongside a Reception No.",
+    hint: "Optional, and expected alongside a Reception No. Dropped with it when the Reception No is.",
     accepted: "DD-MM-YYYY, DD-MMM-YYYY or YYYY-MM-DD",
     sample: "",
   },
@@ -413,6 +416,80 @@ export function resolveSubAccountHead(
   return subAccountHeads.find((subHead) => normaliseToken(subHead.name) === token);
 }
 
+/* ── reception numbers ───────────────────────────────────────────────────── */
+
+/** A reception number an expense request already carries, and the request that carries it. */
+export interface ReceptionClaim {
+  receptionNo: string;
+  requestNo: string;
+}
+
+export type ReceptionNoVerdict =
+  /** Daily Requisition has it and nothing claims it yet. `receptionNo` is its spelling there. */
+  | { status: "linked"; receptionNo: string }
+  /** Daily Requisition has no requisition with this number. */
+  | { status: "not-found" }
+  /** Already carried by another request, or by an earlier row of the same file. */
+  | { status: "claimed"; by: string };
+
+export interface ReceptionRegister {
+  /** Whether a row may carry this Reception No. */
+  check(receptionNo: string): ReceptionNoVerdict;
+  /** Records that a row being imported now carries it, so a later row cannot claim it again. */
+  claim(receptionNo: string, by: string): void;
+}
+
+/**
+ * What an imported Reception No is checked against.
+ *
+ * A Reception No on an expense request says "Daily Requisition has received this" — the request
+ * then reads as received and is locked against editing. Taken on trust from a sheet, it can point
+ * at a requisition that was never created, or at one another request already carries, and nothing
+ * afterwards tells you which requests were really received. So a number must be one Daily
+ * Requisition has, and must not be claimed yet. Compared the way request numbers are
+ * (`normaliseToken`), so `SEL/REC/7` in a sheet finds `SEL\REC\7`, and handed back in Daily
+ * Requisition's own spelling so the two modules store the same key.
+ */
+export function buildReceptionRegister(
+  requisitionReceptionNos: readonly string[],
+  claims: readonly ReceptionClaim[] = [],
+): ReceptionRegister {
+  const recorded = new Map<string, string>();
+  for (const receptionNo of requisitionReceptionNos) {
+    const token = normaliseToken(receptionNo);
+    if (token && !recorded.has(token)) recorded.set(token, String(receptionNo).trim());
+  }
+
+  const claimedBy = new Map<string, string>();
+  const claim = (receptionNo: string, by: string) => {
+    const token = normaliseToken(receptionNo);
+    if (token && !claimedBy.has(token)) claimedBy.set(token, by);
+  };
+  for (const entry of claims) {
+    claim(entry.receptionNo, entry.requestNo ? `request ${entry.requestNo}` : "another request");
+  }
+
+  return {
+    check(receptionNo) {
+      const token = normaliseToken(receptionNo);
+      const spelling = token ? recorded.get(token) : undefined;
+      if (spelling === undefined) return { status: "not-found" };
+      const by = claimedBy.get(token);
+      return by ? { status: "claimed", by } : { status: "linked", receptionNo: spelling };
+    },
+    claim,
+  };
+}
+
+/** The preview warning for a Reception No the import will not write. */
+export const receptionNoWarning = (
+  receptionNo: string,
+  verdict: Exclude<ReceptionNoVerdict, { status: "linked" }>,
+): string =>
+  verdict.status === "not-found"
+    ? `Reception No "${receptionNo}" not found in Daily Requisition — imported as pending reception.`
+    : `Reception No "${receptionNo}" is already used by ${verdict.by} — imported as pending reception.`;
+
 /* ── validation ──────────────────────────────────────────────────────────── */
 
 export type RequestNoSource = "generate" | "file";
@@ -424,10 +501,23 @@ export interface ExpenseImportOptions {
    * numbers.
    */
   requestNoSource?: RequestNoSource;
-  /** Request numbers already recorded, so a re-import cannot mint a second request with one. */
+  /**
+   * Request numbers already recorded, so a re-import cannot mint a second request with one. Every
+   * department's, not only the importing one's: the number is the module-wide key Daily Requisition
+   * finds a request by.
+   */
   existingRequestNos?: readonly string[];
   /** Fingerprints of requests already recorded for this department — see `expenseFingerprint`. */
   existingFingerprints?: readonly string[];
+  /**
+   * Every reception number Daily Requisition has. When given, a row's Reception No must be one of
+   * them and not already claimed (see `buildReceptionRegister`); otherwise it is dropped, reception
+   * date with it, and the row imports as pending reception with a warning. When omitted, reception
+   * numbers are not checked at all — a caller that writes the rows should always pass it.
+   */
+  requisitionReceptionNos?: readonly string[];
+  /** Reception numbers expense requests already carry, in any department. Read only alongside the above. */
+  claimedReceptionNos?: readonly ReceptionClaim[];
   /** Stands in for "now": blank dates and the future-date warning both read it. */
   today?: Date;
 }
@@ -560,6 +650,9 @@ export function parseExpenseImportRows(
 
   const seenRequestNos = new Set((options.existingRequestNos ?? []).map((value) => normaliseToken(value)));
   const seenFingerprints = new Set(options.existingFingerprints ?? []);
+  const receptions = options.requisitionReceptionNos
+    ? buildReceptionRegister(options.requisitionReceptionNos, options.claimedReceptionNos)
+    : undefined;
   const endOfToday = new Date(today.getFullYear(), today.getMonth(), today.getDate(), 23, 59, 59, 999);
 
   sheet.rows.forEach((row) => {
@@ -608,12 +701,25 @@ export function parseExpenseImportRows(
     if (parsedDate && parsedDate > endOfToday) warnings.push("Expense date is in the future.");
     const createdAt = (parsedDate ?? today).toISOString();
 
-    const receptionNo = cell(row, "receptionNo");
+    let receptionNo = cell(row, "receptionNo");
     const receptionDateRaw = cell(row, "receptionDate");
     const receptionDate = parseExpenseDate(receptionDateRaw);
     if (receptionDate === null) return reject(`Reception date "${receptionDateRaw}" is not a date.`, "receptionDate");
-    if (receptionNo && !receptionDate) warnings.push("Reception No has no reception date.");
-    if (!receptionNo && receptionDate) warnings.push("Reception date has no Reception No.");
+    let receptionDateKey = receptionDate ? toDateKey(receptionDate) : "";
+
+    // A Reception No claims a Daily Requisition, so it is written only when Daily Requisition has
+    // that requisition and nothing else claims it. Otherwise the row still imports — as pending
+    // reception, to be received through Daily Requisition like any other request.
+    const reception = receptionNo && receptions ? receptions.check(receptionNo) : undefined;
+    if (reception && reception.status !== "linked") {
+      warnings.push(receptionNoWarning(receptionNo, reception));
+      receptionNo = "";
+      receptionDateKey = "";
+    } else {
+      if (reception) receptionNo = reception.receptionNo;
+      if (receptionNo && !receptionDate) warnings.push("Reception No has no reception date.");
+      if (!receptionNo && receptionDate) warnings.push("Reception date has no Reception No.");
+    }
 
     let requestNo: string | undefined;
     if (requestNoSource === "file") {
@@ -643,7 +749,7 @@ export function parseExpenseImportRows(
       description,
       remarks: cell(row, "remarks"),
       receptionNo,
-      receptionDate: receptionDate ? toDateKey(receptionDate) : "",
+      receptionDate: receptionDateKey,
     };
 
     const fingerprint = expenseFingerprint(draft);
@@ -659,6 +765,9 @@ export function parseExpenseImportRows(
     }
     seenFingerprints.add(fingerprint);
 
+    // Claimed only once the row is certain to be written, so a row skipped above as a duplicate
+    // does not take the number away from a later row that is imported.
+    if (receptionNo && receptions) receptions.claim(receptionNo, `row ${row.row} of this file`);
     result.rows.push({ row: row.row, draft, warnings, fingerprint });
     result.totalAmount += amount;
   });
@@ -685,18 +794,30 @@ export const formatRequestNo = (config: ExpenseSerialConfig, index: number): str
  * One block rather than one number per row: the create form bumps `startingIndex` inside a
  * transaction per request, and running that a few hundred times over an import is both slow and a
  * way to end up with a half-numbered import if one of them fails. The caller bumps the counter once,
- * by `count`, in a single transaction and then writes the rows.
+ * to `nextIndex`, in a single transaction and then writes the rows.
+ *
+ * A number in `taken` — compared the way file-mode duplicates are — is stepped over rather than
+ * handed out again, and the counter lands past it. That happens after history was imported with
+ * its numbers from the file, which leaves the counter where it was: the next requests would
+ * otherwise repeat those numbers, and Daily Requisition, which finds a request by its number,
+ * would find the wrong one.
  */
 export function allocateRequestNos(
   config: ExpenseSerialConfig,
   count: number,
+  taken: readonly string[] = [],
 ): { requestNos: string[]; nextIndex: number } {
   const start = Number.isFinite(config.startingIndex) ? Number(config.startingIndex) : 1;
+  const wanted = Math.max(0, count);
+  const takenTokens = new Set(taken.map((value) => normaliseToken(value)).filter(Boolean));
   const requestNos: string[] = [];
-  for (let offset = 0; offset < Math.max(0, count); offset += 1) {
-    requestNos.push(formatRequestNo(config, start + offset));
+  let index = start;
+  while (requestNos.length < wanted) {
+    const requestNo = formatRequestNo(config, index);
+    index += 1;
+    if (!takenTokens.has(normaliseToken(requestNo))) requestNos.push(requestNo);
   }
-  return { requestNos, nextIndex: start + Math.max(0, count) };
+  return { requestNos, nextIndex: index };
 }
 
 /* ── template ────────────────────────────────────────────────────────────── */

@@ -1,5 +1,12 @@
+import type { Metadata } from 'next';
 import type { ReactNode } from 'react';
 import { DailyRequisitionBottomNav } from '@/components/daily-requisition/bottom-nav';
+import DailyRequisitionLayoutShell from '@/components/daily-requisition/module-layout-shell';
+
+export const metadata: Metadata = {
+  title: 'Daily Requisition | SEL Live',
+  description: 'Record daily requisitions and follow them from receiving at finance through verification to payment.',
+};
 
 export default function DailyRequisitionLayout({
   children,
@@ -7,8 +14,11 @@ export default function DailyRequisitionLayout({
   children: ReactNode;
 }) {
   return (
-    <div className="relative w-full overflow-hidden">
-      <div className="pointer-events-none absolute inset-0 -z-10">
+    // `overflow-x-clip`, not `overflow-hidden`: a hidden box is a scroll container, and the
+    // sidebar's `position: sticky` would stick to it (a box that never scrolls) instead of the page.
+    // Clip trims the same sideways overflow without that; the glows are trimmed by their own layer.
+    <div className="relative w-full overflow-x-clip">
+      <div className="pointer-events-none absolute inset-0 -z-10 overflow-hidden">
         <div className="absolute inset-0 bg-gradient-to-br from-slate-50 via-white to-slate-50" />
         <div className="absolute inset-0 aurora-noise opacity-70" />
         <div className="absolute inset-0 bg-aurora-grid opacity-40" />
@@ -28,7 +38,10 @@ export default function DailyRequisitionLayout({
         />
       </div>
 
-      <div className="relative">{children}</div>
+      {/* The desktop sidebar beside the page. Print routes get the page alone. */}
+      <div className="relative">
+        <DailyRequisitionLayoutShell>{children}</DailyRequisitionLayoutShell>
+      </div>
 
       {/* The phone's bottom bar. It builds its own tabs: a server layout cannot pass icons to a client component. */}
       <DailyRequisitionBottomNav />

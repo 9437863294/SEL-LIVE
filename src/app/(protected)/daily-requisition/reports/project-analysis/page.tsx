@@ -3,42 +3,36 @@
 import { useEffect, useMemo, useState } from 'react';
 import ExcelJS from 'exceljs';
 import { collection, getDocs } from 'firebase/firestore';
-import { Download, FolderOpen } from 'lucide-react';
+import { Download, FileText, FolderOpen, Hourglass, Wallet } from 'lucide-react';
 import { db } from '@/lib/firebase';
 import type { DailyRequisitionEntry } from '@/lib/types';
 import { useAuthorization } from '@/hooks/useAuthorization';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
-import { Skeleton } from '@/components/ui/skeleton';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { FilterBar } from '@/components/shared/filter-bar';
+import { KpiCard } from '@/components/shared/kpi-card';
 import { TableCard } from '@/components/shared/table-card';
-import {
-  dailyPageContainerClass,
-  dailySurfaceCardClass,
-} from '@/components/daily-requisition/module-shell';
+import { dailyPageContainerClass } from '@/components/daily-requisition/module-shell';
 import { PageHeader } from '@/components/shared/page-header';
+import {
+  KpiRow,
+  ReportAccessDenied,
+  ReportSkeleton,
+  dateKeyOf,
+  groupTotals,
+  inDateRange,
+  inr,
+  inrWhole,
+  localDateKey,
+  round2,
+  totalsOf,
+} from '../_components/report-kit';
 
-const formatCurrency = (amount: number) =>
-  new Intl.NumberFormat('en-IN', {
-    style: 'currency',
-    currency: 'INR',
-    maximumFractionDigits: 0,
-  }).format(amount || 0);
-
-interface ProjectRow {
-  projectId: string;
-  name: string;
-  count: number;
-  totalGross: number;
-  totalNet: number;
-  paid: number;
-  pendingOther: number;
-}
+const NO_PROJECT = '__unknown__';
 
 export default function ProjectAnalysisPage() {
-  const { can } = useAuthorization();
+  const { can, isLoading: isAuthLoading } = useAuthorization();
   const canView = can('View', 'Daily Requisition.Reports') || can('View', 'Daily Requisition.Entry Sheet');
   const canExport = can('Export', 'Daily Requisition.Reports') || can('Export', 'Daily Requisition.Entry Sheet') || canView;
 
@@ -48,25 +42,24 @@ export default function ProjectAnalysisPage() {
   const [entries, setEntries] = useState<DailyRequisitionEntry[]>([]);
   const [projectNameMap, setProjectNameMap] = useState<Record<string, string>>({});
 
-  const today = new Date().toISOString().slice(0, 10);
-  const firstOfMonth = new Date(new Date().getFullYear(), new Date().getMonth(), 1)
-    .toISOString()
-    .slice(0, 10);
-  const [fromDate, setFromDate] = useState(firstOfMonth);
-  const [toDate, setToDate] = useState(today);
+  // This month so far, in local days (toISOString would give the UTC day — a day early here).
+  const [fromDate, setFromDate] = useState(() => {
+    const now = new Date();
+    return localDateKey(new Date(now.getFullYear(), now.getMonth(), 1));
+  });
+  const [toDate, setToDate] = useState(() => localDateKey(new Date()));
 
   useEffect(() => {
-    if (!canView) {
-      setIsLoading(false);
-      return;
-    }
+    // Until permissions load `can` answers false — wait for them rather than fetch without them.
+    if (isAuthLoading || !canView) return;
+    let active = true;
     const load = async () => {
-      setIsLoading(true);
       try {
         const [entriesSnap, projectsSnap] = await Promise.all([
           getDocs(collection(db, 'dailyRequisitions')),
           getDocs(collection(db, 'projects')),
         ]);
+        if (!active) return;
 
         const nameMap: Record<string, string> = {};
         projectsSnap.docs.forEach((d) => {
@@ -81,51 +74,32 @@ export default function ProjectAnalysisPage() {
       } catch (err) {
         console.error('Failed to load project analysis', err);
       } finally {
-        setIsLoading(false);
+        if (active) setIsLoading(false);
       }
     };
     load();
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [canView]);
+    return () => {
+      active = false;
+    };
+  }, [isAuthLoading, canView]);
 
-  const filtered = useMemo(() => {
-    return entries.filter((e) => {
-      const d = String(e.date || '').slice(0, 10);
-      return d >= fromDate && d <= toDate;
-    });
-  }, [entries, fromDate, toDate]);
+  // `date` is a Firestore Timestamp on entries from the entry sheet and the importer.
+  const filtered = useMemo(
+    () => entries.filter((e) => inDateRange(dateKeyOf(e.date), fromDate, toDate)),
+    [entries, fromDate, toDate]
+  );
 
-  const rows = useMemo((): ProjectRow[] => {
-    const map: Record<string, ProjectRow> = {};
-    filtered.forEach((e) => {
-      const key = e.projectId || '__unknown__';
-      if (!map[key]) {
-        map[key] = {
-          projectId: key,
-          name: projectNameMap[key] || key,
-          count: 0,
-          totalGross: 0,
-          totalNet: 0,
-          paid: 0,
-          pendingOther: 0,
-        };
-      }
-      const row = map[key];
-      row.count += 1;
-      row.totalGross += Number(e.grossAmount || 0);
-      row.totalNet += Number(e.netAmount || 0);
-      if (e.status === 'Paid') {
-        row.paid += 1;
-      } else {
-        row.pendingOther += 1;
-      }
-    });
-    return Object.values(map).sort((a, b) => b.count - a.count);
-  }, [filtered, projectNameMap]);
+  const rows = useMemo(
+    () =>
+      groupTotals(
+        filtered,
+        (e) => e.projectId || NO_PROJECT,
+        (key) => (key === NO_PROJECT ? '(No project)' : projectNameMap[key] || key)
+      ).sort((a, b) => b.count - a.count),
+    [filtered, projectNameMap]
+  );
 
-  const activeProjects = rows.length;
-  const totalEntries = rows.reduce((s, r) => s + r.count, 0);
-  const totalNet = rows.reduce((s, r) => s + r.totalNet, 0);
+  const totals = useMemo(() => totalsOf(filtered), [filtered]);
   const topProject = rows[0] ?? null;
   const maxCount = rows.reduce((m, r) => Math.max(m, r.count), 0);
 
@@ -140,17 +114,19 @@ export default function ProjectAnalysisPage() {
         { header: 'Count', key: 'count', width: 10 },
         { header: 'Total Gross (INR)', key: 'totalGross', width: 22 },
         { header: 'Total Net (INR)', key: 'totalNet', width: 20 },
-        { header: 'Paid', key: 'paid', width: 10 },
-        { header: 'Pending / Other', key: 'pendingOther', width: 16 },
+        { header: 'Paid (INR)', key: 'paid', width: 18 },
+        { header: 'Outstanding (INR)', key: 'outstanding', width: 20 },
+        { header: 'Part Paid', key: 'partPaid', width: 12 },
       ];
       rows.forEach((r) =>
         ws.addRow({
           name: r.name,
           count: r.count,
-          totalGross: r.totalGross,
-          totalNet: r.totalNet,
-          paid: r.paid,
-          pendingOther: r.pendingOther,
+          totalGross: round2(r.gross),
+          totalNet: round2(r.net),
+          paid: round2(r.paid),
+          outstanding: round2(r.outstanding),
+          partPaid: r.partPaid,
         })
       );
       const buffer = await wb.xlsx.writeBuffer();
@@ -160,7 +136,7 @@ export default function ProjectAnalysisPage() {
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = `project-analysis-${fromDate}-to-${toDate}.xlsx`;
+      a.download = `project-analysis-${fromDate || 'all'}-to-${toDate || 'all'}.xlsx`;
       a.click();
       URL.revokeObjectURL(url);
     } catch (e) {
@@ -170,45 +146,17 @@ export default function ProjectAnalysisPage() {
     }
   };
 
-  if (!canView) {
-    return (
-      <div className={dailyPageContainerClass}>
-        <PageHeader eyebrow="Daily Requisition"
-          title="Project Analysis"
-          description="Requisitions grouped by project."
-          backHref="/daily-requisition/reports"
-        />
-        <Card className={dailySurfaceCardClass}>
-          <CardHeader>
-            <CardTitle>Access Restricted</CardTitle>
-            <CardDescription>You do not have permission to view this report.</CardDescription>
-          </CardHeader>
-        </Card>
-      </div>
-    );
-  }
+  if (isAuthLoading || (isLoading && canView)) return <ReportSkeleton />;
 
-  if (isLoading) {
-    return (
-      <div className={dailyPageContainerClass}>
-        <Skeleton className="mb-6 h-20 w-full rounded-2xl" />
-        <div className="mb-4 grid grid-cols-2 gap-3 sm:grid-cols-4">
-          {Array.from({ length: 4 }).map((_, i) => (
-            <Skeleton key={i} className="h-24 rounded-2xl" />
-          ))}
-        </div>
-        <Skeleton className="h-72 w-full rounded-2xl" />
-      </div>
-    );
-  }
+  if (!canView) return <ReportAccessDenied title="Project Analysis" description="Requisitions grouped by project." />;
 
   return (
     <div className={dailyPageContainerClass}>
       <PageHeader
         title="Project Analysis"
-        description="Requisitions grouped by project for the selected date range."
+        description="Requisitions grouped by project for the selected date range — net, paid and still outstanding."
         backHref="/daily-requisition/reports"
-        eyebrow="Daily Requisition — Reports"
+        eyebrow="Daily Requisition"
         actions={
           canExport ? (
             <Button
@@ -225,7 +173,7 @@ export default function ProjectAnalysisPage() {
       />
 
       {/* Date filters */}
-      <FilterBar className="mb-4">
+      <FilterBar className="mb-4" summary={`${filtered.length} entr${filtered.length === 1 ? 'y' : 'ies'} in range`}>
         <label className="flex items-center gap-2">
           <span className="text-sm text-muted-foreground">From</span>
           <Input
@@ -244,56 +192,39 @@ export default function ProjectAnalysisPage() {
         </label>
       </FilterBar>
 
-      {/* Stat cards */}
-      <div className="mb-4 grid grid-cols-2 gap-3 sm:grid-cols-4">
-        {[
-          {
-            label: 'Active Projects',
-            value: activeProjects,
-            gradient: 'from-amber-500 to-orange-500',
-          },
-          {
-            label: 'Total Entries',
-            value: totalEntries,
-            gradient: 'from-sky-500 to-cyan-500',
-          },
-          {
-            label: 'Total Net Amount',
-            value: formatCurrency(totalNet),
-            gradient: 'from-violet-500 to-purple-600',
-          },
-          {
-            label: 'Top Project',
-            value: topProject ? topProject.name : '—',
-            hint: topProject ? `${topProject.count} entries` : undefined,
-            gradient: 'from-emerald-500 to-teal-500',
-          },
-        ].map((card) => (
-          <Card
-            key={card.label}
-            className="overflow-hidden border border-white/70 bg-white/70 shadow-sm backdrop-blur"
-          >
-            <div className={`h-1 w-full bg-gradient-to-r ${card.gradient}`} />
-            <CardHeader className="pb-1 pt-3">
-              <CardDescription className="text-[11px] font-semibold uppercase tracking-[0.18em]">
-                {card.label}
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="pb-3">
-              <p className="truncate text-xl font-semibold text-slate-900">{card.value}</p>
-              {(card as { hint?: string }).hint ? (
-                <p className="mt-0.5 text-xs text-slate-500">{(card as { hint?: string }).hint}</p>
-              ) : null}
-            </CardContent>
-          </Card>
-        ))}
-      </div>
+      <KpiRow>
+        <KpiCard
+          label="Active projects"
+          value={rows.length}
+          hint={topProject ? `Top: ${topProject.name} (${topProject.count})` : undefined}
+          icon={FolderOpen}
+          tone="orange"
+          accent
+        />
+        <KpiCard
+          label="Entries"
+          value={totals.count}
+          hint={totals.partPaid > 0 ? `${totals.partPaid} part paid` : 'In range'}
+          icon={FileText}
+          tone="cyan"
+          accent
+        />
+        <KpiCard label="Net amount" value={inrWhole(totals.net)} hint={`Gross ${inrWhole(totals.gross)}`} icon={Wallet} tone="violet" accent />
+        <KpiCard
+          label="Outstanding"
+          value={inrWhole(totals.outstanding)}
+          hint={`${inrWhole(totals.paid)} paid`}
+          icon={Hourglass}
+          tone="amber"
+          accent
+        />
+      </KpiRow>
 
       {/* Table */}
       <TableCard
         icon={FolderOpen}
         title="Project Breakdown"
-        description={<>{rows.length} project{rows.length !== 1 ? 's' : ''} · {totalEntries} entries in range</>}
+        description={<>{rows.length} project{rows.length !== 1 ? 's' : ''} · {totals.count} entries in range</>}
       >
           {rows.length === 0 ? (
             <div className="px-6 py-12 text-center text-sm text-muted-foreground">
@@ -303,17 +234,18 @@ export default function ProjectAnalysisPage() {
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead>Project</TableHead>
+                    <TableHead className="min-w-[10rem]">Project</TableHead>
                     <TableHead className="text-right">Count</TableHead>
                     <TableHead className="text-right">Total Gross</TableHead>
                     <TableHead className="text-right">Total Net</TableHead>
                     <TableHead className="text-right">Paid</TableHead>
-                    <TableHead className="text-right">Pending / Other</TableHead>
+                    <TableHead className="text-right">Outstanding</TableHead>
+                    <TableHead className="text-right">Part paid</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {rows.map((row) => (
-                    <TableRow key={row.projectId}>
+                    <TableRow key={row.key}>
                       <TableCell className="font-medium">{row.name}</TableCell>
                       <TableCell className="text-right">
                         <div className="space-y-1">
@@ -329,15 +261,26 @@ export default function ProjectAnalysisPage() {
                         </div>
                       </TableCell>
                       <TableCell className="whitespace-nowrap text-right tabular-nums">
-                        {formatCurrency(row.totalGross)}
+                        {inr(row.gross)}
                       </TableCell>
                       <TableCell className="whitespace-nowrap text-right font-medium tabular-nums">
-                        {formatCurrency(row.totalNet)}
+                        {inr(row.net)}
                       </TableCell>
-                      <TableCell className="text-right tabular-nums">{row.paid}</TableCell>
-                      <TableCell className="text-right tabular-nums">{row.pendingOther}</TableCell>
+                      <TableCell className="whitespace-nowrap text-right tabular-nums">{inr(row.paid)}</TableCell>
+                      <TableCell className="whitespace-nowrap text-right tabular-nums">{inr(row.outstanding)}</TableCell>
+                      <TableCell className="text-right tabular-nums">{row.partPaid}</TableCell>
                     </TableRow>
                   ))}
+                  {/* Totals row */}
+                  <TableRow className="bg-muted/50 font-medium">
+                    <TableCell>Total</TableCell>
+                    <TableCell className="text-right tabular-nums">{totals.count}</TableCell>
+                    <TableCell className="whitespace-nowrap text-right tabular-nums">{inr(totals.gross)}</TableCell>
+                    <TableCell className="whitespace-nowrap text-right tabular-nums">{inr(totals.net)}</TableCell>
+                    <TableCell className="whitespace-nowrap text-right tabular-nums">{inr(totals.paid)}</TableCell>
+                    <TableCell className="whitespace-nowrap text-right tabular-nums">{inr(totals.outstanding)}</TableCell>
+                    <TableCell className="text-right tabular-nums">{totals.partPaid}</TableCell>
+                  </TableRow>
                 </TableBody>
               </Table>
           )}

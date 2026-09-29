@@ -5,6 +5,7 @@ import Link from 'next/link';
 import type { LucideIcon } from 'lucide-react';
 
 import { Card, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Skeleton } from '@/components/ui/skeleton';
 import type { StatusTone } from '@/components/shared/status-badge';
 import { cn } from '@/lib/utils';
 
@@ -17,7 +18,7 @@ export const DAILY_STATUS_TONE: Partial<Record<string, StatusTone>> = {
   Received: 'info',
   Verified: 'info',
   'Received for Payment': 'progress',
-  'Partially Paid': 'progress',
+  'Partially Paid': 'warning',
 };
 
 export const dailyPageContainerClass = 'w-full px-3 py-4 sm:px-4 lg:px-6 xl:px-8';
@@ -35,6 +36,12 @@ interface DailyWorkflowCardProps {
     disabled?: boolean;
     accentClassName?: string;
     badge?: string;
+    /**
+     * A live figure under the description ("12 waiting"). `null` while it loads (a placeholder
+     * holds the line so the grid does not jump); leave it out for no line at all.
+     */
+    count?: number | null;
+    countLabel?: string;
   };
 }
 
@@ -66,6 +73,14 @@ export function DailyWorkflowCard({ item }: DailyWorkflowCardProps) {
             ) : null}
           </div>
           <CardDescription className="mt-1 text-xs text-slate-600">{item.description}</CardDescription>
+          {item.count === null ? (
+            <Skeleton className="mt-2 h-4 w-24" />
+          ) : typeof item.count === 'number' ? (
+            <p className="mt-2 text-xs text-slate-600">
+              <span className="font-semibold tabular-nums text-slate-900">{item.count.toLocaleString('en-IN')}</span>{' '}
+              {item.countLabel ?? 'waiting'}
+            </p>
+          ) : null}
         </div>
       </CardHeader>
     </Card>

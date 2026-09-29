@@ -31,7 +31,7 @@ import {
 } from '@/components/ui/popover';
 import { Calendar } from '@/components/ui/calendar';
 import { cn } from '@/lib/utils';
-import { format } from 'date-fns';
+import { endOfDay, format } from 'date-fns';
 import { useToast } from '@/hooks/use-toast';
 import { db } from '@/lib/firebase';
 import {
@@ -43,8 +43,10 @@ import {
 } from 'firebase/firestore';
 import type { BankAccount, BankExpense } from '@/lib/types';
 import { useAuthorization } from '@/hooks/useAuthorization';
+import { useActivityLogger } from '@/hooks/useActivityLogger';
+import { ACTIVITY_MODULES } from '@/lib/activity-modules';
 import { getApplicableCcLimit } from '@/lib/bank-balance-limit';
-import { balanceAt, buildLedger, formatInr, isCashCredit } from '@/lib/bank-balance-ledger';
+import { balanceAt, buildLedger, dayKey, formatInr, isCashCredit } from '@/lib/bank-balance-ledger';
 import {
   BANK_PAGE,
   BankAccessDenied,
@@ -83,6 +85,7 @@ const availableOn = (account: BankAccount, txns: BankExpense[], day: Date) => {
 export default function NewInternalTransactionPage() {
   const { toast } = useToast();
   const { can, isLoading: authLoading } = useAuthorization();
+  const { log } = useActivityLogger(ACTIVITY_MODULES.BANK_BALANCE);
 
   const [date, setDate] = useState<Date | undefined>(new Date());
   const [isDatePickerOpen, setIsDatePickerOpen] = useState(false);
@@ -208,6 +211,16 @@ export default function NewInternalTransactionPage() {
       return;
     }
 
+    // A transfer is money that has moved: it cannot be dated ahead (the calendar blocks it too).
+    if (date > endOfDay(new Date())) {
+      toast({
+        title: 'Validation Error',
+        description: 'A transfer cannot be dated after today.',
+        variant: 'destructive',
+      });
+      return;
+    }
+
     // Balance / DP validation, per source account across every row.
     if (transactions.some((item) => !bankAccounts.some((acc) => acc.id === item.fromAccountId))) {
       toast({
@@ -233,16 +246,22 @@ export default function NewInternalTransactionPage() {
 
     setIsSaving(true);
 
+    // Each transfer's shared contraId, fixed up front so a retried transaction writes the same ids
+    // and the activity log can name them.
+    const planned = transactions.map((item) => ({ item, contraId: doc(collection(db, 'contraIds')).id }));
+
     try {
       await runTransaction(db, async (tx) => {
-        for (const item of transactions) {
-          const fromRef = doc(db, 'bankAccounts', item.fromAccountId);
-          const toRef = doc(db, 'bankAccounts', item.toAccountId);
+        // Firestore needs every read before the first write: each account once, then the legs.
+        const accountIds = Array.from(new Set(transactions.flatMap((item) => [item.fromAccountId, item.toAccountId])));
+        const snaps = await Promise.all(accountIds.map((id) => tx.get(doc(db, 'bankAccounts', id))));
+        const accountById = new Map(snaps.map((snap) => [snap.id, snap]));
 
-          const fromSnap = await tx.get(fromRef);
-          const toSnap = await tx.get(toRef);
+        for (const { item, contraId } of planned) {
+          const fromSnap = accountById.get(item.fromAccountId);
+          const toSnap = accountById.get(item.toAccountId);
 
-          if (!fromSnap.exists() || !toSnap.exists()) {
+          if (!fromSnap || !toSnap || !fromSnap.exists() || !toSnap.exists()) {
             throw new Error(
               'One or both bank accounts in a transaction not found.'
             );
@@ -250,9 +269,6 @@ export default function NewInternalTransactionPage() {
 
           const from = fromSnap.data() as BankAccount;
           const to = toSnap.data() as BankAccount;
-
-          // Generate a shared contraId
-          const contraId = doc(collection(db, 'contraIds')).id;
 
           const baseData = {
             date: Timestamp.fromDate(date),
@@ -285,6 +301,28 @@ export default function NewInternalTransactionPage() {
         title: 'Success',
         description: `${transactions.length} transaction(s) totalling ${formatInr(totalAmount)} saved successfully.`,
       });
+
+      const nameOf = (accountId: string) => accountLabel(bankAccounts.find((acc) => acc.id === accountId));
+      const first = planned[0];
+      void log(
+        'Add Transfer',
+        {
+          date: dayKey(date),
+          count: planned.length,
+          total: totalAmount,
+          transfers: planned.map(({ item, contraId }) => ({
+            contraId,
+            fromAccountId: item.fromAccountId,
+            from: nameOf(item.fromAccountId),
+            toAccountId: item.toAccountId,
+            to: nameOf(item.toAccountId),
+            amount: item.amount,
+          })),
+        },
+        planned.length === 1
+          ? { recordId: first.contraId, recordRef: `${nameOf(first.item.fromAccountId)} → ${nameOf(first.item.toAccountId)}` }
+          : { recordRef: `${planned.length} transfers on ${dayKey(date)}` },
+      );
 
       setTransactions([createTransactionItem()]);
       setDate(new Date());
@@ -363,6 +401,7 @@ export default function NewInternalTransactionPage() {
                         setDate(selectedDate);
                         setIsDatePickerOpen(false);
                       }}
+                      disabled={{ after: new Date() }}
                       initialFocus
                     />
                   </PopoverContent>

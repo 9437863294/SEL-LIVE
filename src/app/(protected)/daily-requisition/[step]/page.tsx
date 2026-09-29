@@ -1,8 +1,8 @@
 'use client';
 
 import Link from 'next/link';
-import React, { useState, useEffect, useMemo, useCallback } from 'react';
-import { useParams, notFound } from 'next/navigation';
+import React, { Suspense, useState, useEffect, useMemo, useCallback } from 'react';
+import { useParams, useSearchParams } from 'next/navigation';
 import {
   MoreHorizontal,
   ShieldAlert,
@@ -23,8 +23,11 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useToast } from '@/hooks/use-toast';
 import { db } from '@/lib/firebase';
-import { collection, getDocs, doc, getDoc, writeBatch, Timestamp, query, where, updateDoc } from 'firebase/firestore';
+import { collection, getDocs, doc, getDoc, runTransaction, Timestamp, query, where, type DocumentReference } from 'firebase/firestore';
 import type { DailyRequisitionEntry, Project, User, WorkflowStep } from '@/lib/types';
+import { balanceOf, isPaymentLocked, paidOf, payRequisitionsHref, voucherHref } from '@/lib/requisition-progress';
+import { useActivityLogger } from '@/hooks/useActivityLogger';
+import { ACTIVITY_MODULES } from '@/lib/activity-modules';
 import { format } from 'date-fns';
 import { useAuthorization } from '@/hooks/useAuthorization';
 import { useAuth } from '@/components/auth/AuthProvider';
@@ -66,6 +69,118 @@ function toSlug(name: string): string {
 
 const formatCurrency = (amount: number) =>
   new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR' }).format(amount);
+
+/**
+ * Only a requisition awaiting payment with nothing paid on it yet can be marked Paid by hand. Once a
+ * voucher has paid part of it, the rest has to be paid by voucher too.
+ */
+const isManuallyPayable = (entry: Pick<DailyRequisitionEntry, 'status' | 'paidAmount' | 'payments'>) =>
+  entry.status === 'Received for Payment' && !isPaymentLocked(entry);
+
+/** Requisitions per transaction. Each can write itself and its expense request, within the limit of 500. */
+const MOVE_CHUNK = 200;
+
+/** Reception Nos for an activity log's record reference: the first few, then how many more. */
+const REF_CAP = 10;
+const refList = (receptionNos: string[]) =>
+  receptionNos.length > REF_CAP
+    ? `${receptionNos.slice(0, REF_CAP).join(', ')} +${receptionNos.length - REF_CAP} more`
+    : receptionNos.join(', ');
+
+/** An expense request's `receptionDate` (`yyyy-MM-dd`) for a requisition, as the entry sheet writes it. */
+function receptionDateOf(entry: { date?: unknown; createdAt?: unknown }): string {
+  const asDate = (value: any): Date | null =>
+    value?.toDate instanceof Function
+      ? value.toDate()
+      : typeof value === 'string' || typeof value === 'number'
+        ? new Date(value)
+        : null;
+  const date = asDate(entry.date) ?? asDate(entry.createdAt);
+  return format(date && !Number.isNaN(date.getTime()) ? date : new Date(), 'yyyy-MM-dd');
+}
+
+interface MoveOptions {
+  /** Extra fields, worked out from the requisition as it stands when the write happens. */
+  fields?: (current: DailyRequisitionEntry) => Record<string, unknown>;
+  /** Leave alone any requisition with money paid against it. Used when sending back or cancelling. */
+  refusePaid?: boolean;
+  /** Cancelling frees the linked expense request. Returning a cancelled requisition takes it back. */
+  expenseLink?: 'release' | 'restore';
+  /** Added to the activity log's details. */
+  logDetails?: Record<string, string | number | boolean>;
+}
+
+interface MoveSkips {
+  /** Money has been paid against it. */
+  paid: number;
+  /** Its status changed after this page loaded, or it is gone. */
+  changed: number;
+  /** A cancelled entry whose expense request has since been received as another requisition. */
+  reReceived: number;
+  /** For the toast: the last such request, and the Reception No it is linked to now. */
+  reReceivedAs?: { depNo: string; receptionNo: string };
+}
+
+/** The toast after a move: what moved, and how many were skipped and why. */
+function moveToast(
+  targets: Array<{ receptionNo: string }>,
+  movedCount: number,
+  to: string,
+  skipped: MoveSkips,
+  failed: boolean,
+): { title: string; description: string; variant?: 'destructive' } {
+  const skippedCount = skipped.paid + skipped.changed + skipped.reReceived;
+
+  // A single row that was refused: name it and say why.
+  if (targets.length === 1 && skippedCount === 1) {
+    const no = targets[0].receptionNo;
+    const description = skipped.paid
+      ? `${no} has payments against it, so it was left as it is. Reverse its voucher in the Bank Balance Cheque Register first.`
+      : skipped.reReceived
+        ? skipped.reReceivedAs
+          ? `DEP ${skipped.reReceivedAs.depNo} was received again as ${skipped.reReceivedAs.receptionNo} — cannot restore ${no}.`
+          : `${no} can't be reopened: its expense request has been received again as another requisition.`
+        : `${no} was left as it is: it changed after this page loaded.`;
+    return { title: 'Not updated', description, variant: 'destructive' };
+  }
+
+  const reasons = [
+    skipped.paid ? `${skipped.paid} with payments against ${skipped.paid === 1 ? 'it' : 'them'} (reverse the voucher in the Cheque Register first)` : '',
+    skipped.changed ? `${skipped.changed} changed after this page loaded` : '',
+    skipped.reReceived ? `${skipped.reReceived} whose expense request has been received again` : '',
+  ].filter(Boolean);
+  const skippedText = skippedCount > 0 ? `Skipped ${skippedCount}: ${reasons.join('; ')}.` : '';
+  const movedText =
+    movedCount === 0
+      ? ''
+      : targets.length === 1
+        ? `${targets[0].receptionNo} updated to "${to}".`
+        : `${movedCount} ${movedCount === 1 ? 'entry' : 'entries'} updated to "${to}".`;
+  const sentence = (...parts: string[]) => parts.filter(Boolean).join(' ');
+
+  if (failed) {
+    return {
+      title: 'Error',
+      description: sentence('Failed to update entries.', movedCount > 0 ? `${movedCount} were updated before the error.` : '', skippedText),
+      variant: 'destructive',
+    };
+  }
+  if (movedCount === 0) return { title: 'Nothing updated', description: skippedText, variant: 'destructive' };
+  return { title: skippedCount > 0 ? 'Partly updated' : 'Success', description: sentence(movedText, skippedText) };
+}
+
+function StepPageSkeleton() {
+  return (
+    <div className={dailyPageContainerClass}>
+      <Skeleton className="mb-4 h-10 w-80" />
+      <div className="flex flex-col gap-3 lg:flex-row lg:justify-between">
+        <Skeleton className="h-10 w-full rounded-xl lg:w-96" />
+        <Skeleton className="h-10 w-full rounded-xl lg:w-96" />
+      </div>
+      <Skeleton className="mt-3 h-96 w-full rounded-2xl" />
+    </div>
+  );
+}
 
 /* ──────────────────── tab / status config per step position ──────────────────── */
 
@@ -159,12 +274,14 @@ type EnrichedEntry = DailyRequisitionEntry & {
    MAIN COMPONENT
    ══════════════════════════════════════════════════════════════ */
 
-export default function DynamicWorkflowStepPage() {
+function DynamicWorkflowStepContent() {
   const params = useParams();
   const stepSlug = (params?.step as string) ?? '';
+  const searchParams = useSearchParams();
   const { toast } = useToast();
   const { user } = useAuth();
   const { can, isLoading: isAuthLoading } = useAuthorization();
+  const { log } = useActivityLogger(ACTIVITY_MODULES.DAILY_REQUISITION);
 
   /* ── workflow state ── */
   const [workflowSteps, setWorkflowSteps] = useState<WorkflowStep[]>([]);
@@ -176,8 +293,20 @@ export default function DynamicWorkflowStepPage() {
   /* ── entries state ── */
   const [entries, setEntries] = useState<EnrichedEntry[]>([]);
   const [isLoading, setIsLoading] = useState(true);
-  const [searchTerm, setSearchTerm] = useState('');
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [isUpdating, setIsUpdating] = useState(false);
+  const [isMarkPaidOpen, setIsMarkPaidOpen] = useState(false);
+  const [activeTab, setActiveTab] = useState('');
+
+  // A `?q=` in the URL, from a link in another module, fills the search. A later link to this page
+  // with a different `?q=` replaces it. This is adjusted during render, not in an effect.
+  const urlQuery = searchParams?.get('q') ?? '';
+  const [searchTerm, setSearchTerm] = useState(urlQuery);
+  const [appliedUrlQuery, setAppliedUrlQuery] = useState(urlQuery);
+  if (appliedUrlQuery !== urlQuery) {
+    setAppliedUrlQuery(urlQuery);
+    setSearchTerm(urlQuery);
+  }
 
   /* ── GST dialog state ── */
   const [isVerifyDialogOpen, setIsVerifyDialogOpen] = useState(false);
@@ -322,67 +451,207 @@ export default function DynamicWorkflowStepPage() {
 
   /* ──────────── 3 ─ action handlers ──────────── */
 
-  /** Generic batch status update */
-  const handleBatchStatusUpdate = async (ids: string[], newStatus: string, extraFields?: Record<string, any>) => {
-    if (ids.length === 0) return;
+  const selectedEntries = useMemo(() => entries.filter((entry) => selectedIds.has(entry.id)), [entries, selectedIds]);
+  /** The selected rows Mark as Paid would take. Part-paid ones stay selectable for Pay via voucher. */
+  const markPaidTargets = useMemo(() => selectedEntries.filter(isManuallyPayable), [selectedEntries]);
+
+  /** Fields a move to `status` always stamps. */
+  const stampFor = (status: string): Record<string, unknown> => {
+    if (status === 'Received') return { receivedAt: Timestamp.now(), receivedById: user?.id ?? null };
+    if (status === 'Paid') return { paidAt: Timestamp.now() };
+    if (status === 'Pending') return { receivedAt: null, receivedById: null };
+    return {};
+  };
+
+  /** The expense requests these requisitions were raised from (`requestNo` = `depNo`), by depNo. */
+  const expenseRequestsFor = async (targets: EnrichedEntry[]) => {
+    const depNos = [...new Set(targets.map((entry) => entry.depNo).filter((depNo) => Boolean(depNo?.trim())))];
+    const snaps = await Promise.all(
+      depNos.map((depNo) => getDocs(query(collection(db, 'expenseRequests'), where('requestNo', '==', depNo)))),
+    );
+    return new Map<string, DocumentReference[]>(depNos.map((depNo, i) => [depNo, snaps[i].docs.map((d) => d.ref)]));
+  };
+
+  /**
+   * Every status change on this page goes through here. Each requisition is re-read inside a
+   * transaction, so an out-of-date page can't overwrite what has happened since it loaded. A
+   * requisition whose status has changed is left alone. With `refusePaid`, so is one with money paid
+   * against it, since a voucher may have paid it in the meantime. The toast says how many were
+   * skipped and why, and the move is written to the activity log.
+   */
+  const moveRequisitions = async (targets: EnrichedEntry[], to: string, options: MoveOptions = {}) => {
+    if (targets.length === 0 || isUpdating) return;
+    setIsUpdating(true);
+    const moved: EnrichedEntry[] = [];
+    const skipped: MoveSkips = { paid: 0, changed: 0, reReceived: 0 };
+    const requests = { released: 0, relinked: 0 };
+    let failed = false;
     try {
-      const batch = writeBatch(db);
-      ids.forEach((id) => {
-        const docRef = doc(db, 'dailyRequisitions', id);
-        const updateData: Record<string, any> = { status: newStatus, ...extraFields };
+      const requestsByDepNo = options.expenseLink
+        ? await expenseRequestsFor(targets)
+        : new Map<string, DocumentReference[]>();
 
-        // Auto-populate timestamp fields based on status
-        if (newStatus === 'Received') {
-          updateData.receivedAt = Timestamp.now();
-          updateData.receivedById = user?.id;
-        } else if (newStatus === 'Paid') {
-          updateData.paidAt = Timestamp.now();
-        } else if (newStatus === 'Pending') {
-          updateData.receivedAt = null;
-          updateData.receivedById = null;
-        }
+      for (let start = 0; start < targets.length; start += MOVE_CHUNK) {
+        const chunk = targets.slice(start, start + MOVE_CHUNK);
+        const result = await runTransaction(db, async (tx) => {
+          const out = {
+            moved: [] as EnrichedEntry[],
+            paid: 0,
+            changed: 0,
+            reReceived: 0,
+            reReceivedAs: undefined as MoveSkips['reReceivedAs'],
+            released: 0,
+            relinked: 0,
+          };
 
-        batch.update(docRef, updateData);
-      });
-      await batch.commit();
-      toast({ title: 'Success', description: `${ids.length} entries updated to "${newStatus}".` });
-      setSelectedIds(new Set());
-      fetchData();
+          // Every read comes before any write, as a transaction requires.
+          const requisitionSnaps = await Promise.all(chunk.map((entry) => tx.get(doc(db, 'dailyRequisitions', entry.id))));
+          const requestRefs = new Map<string, DocumentReference>();
+          chunk.forEach((entry) => (requestsByDepNo.get(entry.depNo) ?? []).forEach((ref) => requestRefs.set(ref.path, ref)));
+          const requestSnaps = await Promise.all([...requestRefs.values()].map((ref) => tx.get(ref)));
+          // Each expense request's Reception No, as this transaction leaves it.
+          const linkOf = new Map<string, string>();
+          requestSnaps.forEach((snap) => {
+            if (snap.exists()) linkOf.set(snap.ref.path, String(snap.data().receptionNo ?? '').trim());
+          });
+
+          chunk.forEach((entry, i) => {
+            const snap = requisitionSnaps[i];
+            const current = snap.exists() ? (snap.data() as DailyRequisitionEntry) : null;
+            if (!current || current.status !== entry.status) {
+              out.changed += 1;
+              return;
+            }
+            if (options.refusePaid && isPaymentLocked(current)) {
+              out.paid += 1;
+              return;
+            }
+
+            const receptionNo = (current.receptionNo || '').trim();
+            const linkedRequests = (requestsByDepNo.get(entry.depNo) ?? []).filter((ref) => linkOf.has(ref.path));
+            const requestUpdates: Array<[DocumentReference, { receptionNo: string; receptionDate: string }]> = [];
+            if (options.expenseLink === 'release') {
+              linkedRequests
+                .filter((ref) => linkOf.get(ref.path) === receptionNo)
+                .forEach((ref) => requestUpdates.push([ref, { receptionNo: '', receptionDate: '' }]));
+            } else if (options.expenseLink === 'restore' && linkedRequests.length > 0) {
+              const links = linkedRequests.map((ref) => linkOf.get(ref.path) ?? '');
+              if (!links.includes(receptionNo)) {
+                // Received again as another requisition since this one was cancelled. Reopening
+                // this one would give the request two live requisitions.
+                if (links.some(Boolean)) {
+                  out.reReceived += 1;
+                  out.reReceivedAs = { depNo: entry.depNo, receptionNo: links.find(Boolean) ?? '' };
+                  return;
+                }
+                requestUpdates.push([linkedRequests[0], { receptionNo, receptionDate: receptionDateOf(current) }]);
+              }
+            }
+
+            const update: Record<string, any> = { status: to, ...stampFor(to), ...(options.fields?.(current) ?? {}) };
+            tx.update(snap.ref, update);
+            requestUpdates.forEach(([ref, data]) => {
+              tx.update(ref, data);
+              linkOf.set(ref.path, data.receptionNo);
+              if (data.receptionNo) out.relinked += 1;
+              else out.released += 1;
+            });
+            out.moved.push(entry);
+          });
+          return out;
+        });
+
+        moved.push(...result.moved);
+        skipped.paid += result.paid;
+        skipped.changed += result.changed;
+        skipped.reReceived += result.reReceived;
+        if (result.reReceivedAs) skipped.reReceivedAs = result.reReceivedAs;
+        requests.released += result.released;
+        requests.relinked += result.relinked;
+      }
     } catch (error) {
       console.error('Error updating entries:', error);
-      toast({ title: 'Error', description: `Failed to update entries.`, variant: 'destructive' });
+      failed = true;
     }
+
+    const skippedCount = skipped.paid + skipped.changed + skipped.reReceived;
+    if (moved.length > 0) {
+      void log(
+        'Update Requisition Status',
+        {
+          step: currentStep?.name ?? '',
+          from: [...new Set(moved.map((entry) => entry.status))].join(' / '),
+          to,
+          count: moved.length,
+          ...(skippedCount > 0 ? { skipped: skippedCount } : {}),
+          ...(requests.released > 0 ? { expenseRequestsReleased: requests.released } : {}),
+          ...(requests.relinked > 0 ? { expenseRequestsRelinked: requests.relinked } : {}),
+          ...(options.logDetails ?? {}),
+        },
+        {
+          recordId: moved.length === 1 ? moved[0].id : undefined,
+          recordRef: refList(moved.map((entry) => entry.receptionNo)),
+        },
+      );
+    }
+
+    toast(moveToast(targets, moved.length, to, skipped, failed));
+    setSelectedIds(new Set());
+    setIsUpdating(false);
+    fetchData();
   };
 
-  /** Return to previous step status (step-position aware) */
-  const handleReturnToPending = async (entry: EnrichedEntry) => {
-    try {
-      const updateData: Record<string, any> =
-        dynamicIndex === 0
-          ? { status: 'Pending', receivedAt: null, receivedById: null }
-          : dynamicIndex === 1
-            ? {
-                status: 'Received',
-                verifiedAt: null,
-                igstAmount: 0,
-                tdsAmount: 0,
-                cgstAmount: 0,
-                sgstAmount: 0,
-                retentionAmount: 0,
-                otherDeduction: 0,
-                verificationNotes: '',
-                gstNo: '',
-              }
-            : { status: 'Pending' };
-
-      await updateDoc(doc(db, 'dailyRequisitions', entry.id), updateData);
-      toast({ title: 'Success', description: `${entry.receptionNo} returned to previous stage.` });
-      fetchData();
-    } catch (error) {
-      console.error('Error returning entry:', error);
-      toast({ title: 'Error', description: 'Failed to return the entry.', variant: 'destructive' });
-    }
+  /** The step's bulk action (Mark as Received, Send for Payment) on the selected rows of its tab. */
+  const handleBulkAction = () => {
+    const bulk = stepConfig?.bulkAction;
+    if (!bulk) return;
+    const tab = stepConfig.tabs.find((t) => t.key === bulk.tabKey);
+    void moveRequisitions(selectedEntries.filter((entry) => tab?.statuses.includes(entry.status)), bulk.newStatus);
   };
+
+  /** Manual Mark as Paid, once confirmed: paid outside Bank Balance, so no bank entry is made. */
+  const handleMarkPaid = () =>
+    void moveRequisitions(markPaidTargets, 'Paid', {
+      refusePaid: true,
+      fields: (current) => ({
+        paidAmount: Number(current.netAmount) || 0,
+        manualPaid: true,
+        paidById: user?.id ?? null,
+        paidByName: user?.name ?? null,
+      }),
+      logDetails: { manualPaid: true },
+    });
+
+  /** Receiving at Finance: return a received or cancelled entry to Pending. */
+  const handleReturnToFinance = (entry: EnrichedEntry) =>
+    void moveRequisitions([entry], 'Pending', {
+      refusePaid: true,
+      // Cancelling freed its expense request, so reopening takes the request back.
+      expenseLink: entry.status === 'Cancelled' ? 'restore' : undefined,
+    });
+
+  /** Receiving at Finance: cancel a received entry and free its expense request to be received again. */
+  const handleCancel = (entry: EnrichedEntry) =>
+    void moveRequisitions([entry], 'Cancelled', { refusePaid: true, expenseLink: 'release' });
+
+  /** Return to the previous stage. On GST & TDS Verification that also clears the verification. */
+  const handleReturnToPending = (entry: EnrichedEntry) =>
+    void (dynamicIndex === 1
+      ? moveRequisitions([entry], 'Received', {
+          refusePaid: true,
+          fields: () => ({
+            verifiedAt: null,
+            igstAmount: 0,
+            tdsAmount: 0,
+            cgstAmount: 0,
+            sgstAmount: 0,
+            retentionAmount: 0,
+            otherDeduction: 0,
+            verificationNotes: '',
+            gstNo: '',
+          }),
+        })
+      : moveRequisitions([entry], 'Pending', { refusePaid: true }));
 
   /** Open GST/TDS verification dialog */
   const handleOpenVerifyDialog = (entry: EnrichedEntry) => {
@@ -403,33 +672,38 @@ export default function DynamicWorkflowStepPage() {
     stepActions.has('Send for Payment') && can('Mark as Received for Payment', 'Daily Requisition.Processed for Payment');
   const canMarkAsPaid =
     stepActions.has('Mark as Received for Payment') && can('Mark as Received for Payment', permissionScope);
+  const canPayViaVoucher = can('Add', 'Bank Balance.Expenses');
 
-  /** Whether the user can perform the current step's bulk action */
+  /** Whether the user can select rows for the current step's bulk action */
   const canBulkAction = useMemo(() => {
     if (!stepConfig?.bulkAction) return false;
     switch (dynamicIndex) {
       case 0: return canMarkAsReceived;
       case 1: return canSendForPayment;
-      case 2: return canMarkAsPaid;
+      // The payment step's selection feeds both Mark as Paid and Pay via voucher.
+      case 2: return canMarkAsPaid || canPayViaVoucher;
       default: return true;
     }
-  }, [dynamicIndex, canMarkAsReceived, canSendForPayment, canMarkAsPaid, stepConfig]);
+  }, [dynamicIndex, canMarkAsReceived, canSendForPayment, canMarkAsPaid, canPayViaVoucher, stepConfig]);
 
   /* ──────────── 5 ─ filtered entry sets per tab ──────────── */
 
   const tabEntries = useMemo(() => {
     if (!stepConfig) return {};
     const map: Record<string, EnrichedEntry[]> = {};
-    const t = searchTerm.toLowerCase();
+    const t = searchTerm.trim().toLowerCase();
 
     stepConfig.tabs.forEach((tab) => {
       map[tab.key] = entries.filter(
         (entry) =>
           tab.statuses.includes(entry.status) &&
-          (entry.receptionNo.toLowerCase().includes(t) ||
+          ((entry.receptionNo || '').toLowerCase().includes(t) ||
+            // The Expenses request no., so a link from a request finds its requisition.
+            (entry.depNo || '').toLowerCase().includes(t) ||
             entry.projectName.toLowerCase().includes(t) ||
             (entry.partyName || '').toLowerCase().includes(t) ||
-            (entry.receivedByName || '').toLowerCase().includes(t))
+            (entry.receivedByName || '').toLowerCase().includes(t) ||
+            (entry.payments ?? []).some((payment) => (payment.voucherNo || '').toLowerCase().includes(t)))
       );
     });
     return map;
@@ -453,48 +727,51 @@ export default function DynamicWorkflowStepPage() {
       else setSelectedIds(new Set());
     };
 
-    const isVerifiedHeader = isVerificationStep && tabKey === 'verified';
     const showBulkHeader = Boolean(isBulkTab && stepConfig?.bulkAction);
-    const selectionText = selectedIds.size > 0 ? `${selectedIds.size} selected` : 'Select entries for bulk action';
+    // On the payment step a selection can hold part-paid rows. Pay via voucher takes them, but
+    // Mark as Paid doesn't.
+    const selectedHere = selectedEntries.filter((entry) => tab.statuses.includes(entry.status));
+    const voucherIds = isPaymentStep ? selectedHere.filter((entry) => balanceOf(entry) > 0).map((entry) => entry.id) : [];
+    const voucherOnly = isPaymentStep ? selectedHere.filter((entry) => !isManuallyPayable(entry)).length : 0;
+    const selectionText =
+      selectedIds.size > 0
+        ? `${selectedIds.size} selected${voucherOnly > 0 ? ` · ${voucherOnly} part paid, voucher only` : ''}`
+        : 'Select entries for bulk action';
+    const actionIcon = isUpdating ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Check className="mr-2 h-4 w-4" />;
 
     return (
       <TableCard
         // No title: the active tab above already names the list. The strip shows only when there
         // is something to act on — the selection hint beside the bulk actions.
-        description={showBulkHeader || isVerifiedHeader ? selectionText : undefined}
+        description={showBulkHeader ? selectionText : undefined}
         actions={
-          showBulkHeader || isVerifiedHeader || (isPaymentStep && tabKey === 'pending') ? (
-            <>
-              {/* Bulk action for applicable tabs */}
-              {showBulkHeader && stepConfig?.bulkAction && (
+          showBulkHeader && stepConfig?.bulkAction ? (
+            isPaymentStep ? (
+              <>
+                {/* Paid outside Bank Balance. No bank entry is made, so it is confirmed first. */}
                 <Button
-                  onClick={() =>
-                    handleBatchStatusUpdate(Array.from(selectedIds), stepConfig.bulkAction!.newStatus)
-                  }
-                  disabled={selectedIds.size === 0 || !canBulkAction}
+                  variant="outline"
+                  onClick={() => setIsMarkPaidOpen(true)}
+                  disabled={markPaidTargets.length === 0 || !canMarkAsPaid || isUpdating}
                 >
-                  <Check className="mr-2 h-4 w-4" />
-                  {stepConfig.bulkAction.label} ({selectedIds.size})
+                  {actionIcon}
+                  Mark as Paid ({markPaidTargets.length})
                 </Button>
-              )}
-              {/* Payment step: pay through a Bank Balance voucher (cheque / e-cheque / RTGS), in full or part */}
-              {isPaymentStep && tabKey === 'pending' && can('Add', 'Bank Balance.Expenses') && (
-                <Button asChild variant="outline">
-                  <Link href="/bank-balance/expenses/new">Pay via voucher</Link>
-                </Button>
-              )}
-              {/* Verified tab action for GST step - Send for Payment */}
-              {isVerifiedHeader && (
-                <Button
-                  onClick={() =>
-                    handleBatchStatusUpdate(Array.from(selectedIds), 'Received for Payment')
-                  }
-                  disabled={selectedIds.size === 0 || !canSendForPayment}
-                >
-                  Send for Payment ({selectedIds.size})
-                </Button>
-              )}
-            </>
+                {/* Pay through a Bank Balance voucher (cheque / e-cheque / RTGS), in full or in part */}
+                {canPayViaVoucher && (
+                  <Button asChild>
+                    <Link href={payRequisitionsHref(voucherIds)}>
+                      {voucherIds.length > 0 ? `Pay selected via voucher (${voucherIds.length})` : 'Pay via voucher'}
+                    </Link>
+                  </Button>
+                )}
+              </>
+            ) : (
+              <Button onClick={handleBulkAction} disabled={selectedIds.size === 0 || !canBulkAction || isUpdating}>
+                {actionIcon}
+                {stepConfig.bulkAction.label} ({selectedIds.size})
+              </Button>
+            )
           ) : undefined
         }
       >
@@ -519,6 +796,7 @@ export default function DynamicWorkflowStepPage() {
                       ? 'Date'
                       : 'Received At'}
                 </TableHead>
+                {isPaymentStep && tabKey === 'paid' && <TableHead>Paid via</TableHead>}
                 <TableHead>Project</TableHead>
                 <TableHead>Party Name</TableHead>
                 {/* Show "Received By" for GST step and non-pending tabs of step 0 */}
@@ -574,6 +852,11 @@ export default function DynamicWorkflowStepPage() {
                           ? entry.dateText
                           : entry.receivedAtText ?? '—'}
                     </TableCell>
+                    {isPaymentStep && tabKey === 'paid' && (
+                      <TableCell className="whitespace-nowrap">
+                        <PaidVia entry={entry} />
+                      </TableCell>
+                    )}
                     <TableCell>{entry.projectName}</TableCell>
                     <TableCell>{entry.partyName}</TableCell>
                     {(isVerificationStep || (dynamicIndex === 0 && tabKey !== 'pending')) && (
@@ -582,8 +865,8 @@ export default function DynamicWorkflowStepPage() {
                     <TableCell className="whitespace-nowrap text-right tabular-nums">{formatCurrency(entry.netAmount)}</TableCell>
                     {isPaymentStep && (() => {
                       // Paid through Bank Balance vouchers (paidAmount), or marked Paid here in full.
-                      const paid = entry.status === 'Paid' ? Math.max(entry.paidAmount || 0, entry.netAmount || 0) : entry.paidAmount || 0;
-                      const balance = Math.max(0, (entry.netAmount || 0) - paid);
+                      const paid = paidOf(entry);
+                      const balance = balanceOf(entry);
                       return (
                         <>
                           <TableCell className="whitespace-nowrap text-right tabular-nums">{paid ? formatCurrency(paid) : '—'}</TableCell>
@@ -663,7 +946,7 @@ export default function DynamicWorkflowStepPage() {
             <DropdownMenuContent align="end">
               {canReturnToPending && (
                 <DropdownMenuItem
-                  onSelect={() => handleBatchStatusUpdate([entry.id], 'Pending')}
+                  onSelect={() => handleReturnToFinance(entry)}
                 >
                   <RotateCcw className="mr-2 h-4 w-4" /> Return
                 </DropdownMenuItem>
@@ -682,12 +965,14 @@ export default function DynamicWorkflowStepPage() {
             <AlertDialogHeader>
               <AlertDialogTitle>Are you sure?</AlertDialogTitle>
               <AlertDialogDescription>
-                This will mark the entry as <b>Cancelled</b>. You can move it back to Pending later.
+                This will mark the entry as <b>Cancelled</b> and release its expense request so it can be
+                received again. You can move it back to Pending later, unless that request has been
+                received again by then.
               </AlertDialogDescription>
             </AlertDialogHeader>
             <AlertDialogFooter>
               <AlertDialogCancel>Close</AlertDialogCancel>
-              <AlertDialogAction onClick={() => handleBatchStatusUpdate([entry.id], 'Cancelled')}>
+              <AlertDialogAction onClick={() => handleCancel(entry)}>
                 Confirm
               </AlertDialogAction>
             </AlertDialogFooter>
@@ -705,16 +990,7 @@ export default function DynamicWorkflowStepPage() {
 
   // Loading skeleton
   if (workflowLoading || isAuthLoading || (isLoading && canViewPage && stepConfig)) {
-    return (
-      <div className={dailyPageContainerClass}>
-        <Skeleton className="mb-4 h-10 w-80" />
-        <div className="flex flex-col gap-3 lg:flex-row lg:justify-between">
-          <Skeleton className="h-10 w-full rounded-xl lg:w-96" />
-          <Skeleton className="h-10 w-full rounded-xl lg:w-96" />
-        </div>
-        <Skeleton className="mt-3 h-96 w-full rounded-2xl" />
-      </div>
-    );
+    return <StepPageSkeleton />;
   }
 
   // Workflow step not found
@@ -766,10 +1042,16 @@ export default function DynamicWorkflowStepPage() {
   // since part-paid requisitions sit there too.
   const tabAmount = (tabKey: string) =>
     (tabEntries[tabKey] || []).reduce((sum, entry) => {
-      const net = entry.netAmount || 0;
-      if (dynamicIndex === 2 && tabKey === 'pending') return sum + Math.max(0, net - (entry.paidAmount || 0));
-      return sum + net;
+      if (dynamicIndex === 2 && tabKey === 'pending') return sum + balanceOf(entry);
+      return sum + (entry.netAmount || 0);
     }, 0);
+
+  // Kept across the refresh after an action, which re-mounts the tabs behind the loading skeleton.
+  const tabValue = stepConfig.tabs.some((tab) => tab.key === activeTab) ? activeTab : stepConfig.tabs[0]?.key;
+  const markPaidTotal = markPaidTargets.reduce((sum, entry) => sum + (entry.netAmount || 0), 0);
+  const markPaidLeftOut = selectedEntries.filter(
+    (entry) => entry.status === 'Partially Paid' || (entry.status === 'Received for Payment' && !isManuallyPayable(entry)),
+  ).length;
 
   return (
     <>
@@ -787,7 +1069,13 @@ export default function DynamicWorkflowStepPage() {
           description={stepConfig.description}
         />
 
-        <Tabs defaultValue={stepConfig.tabs[0]?.key} onValueChange={() => setSelectedIds(new Set())}>
+        <Tabs
+          value={tabValue}
+          onValueChange={(value) => {
+            setActiveTab(value);
+            setSelectedIds(new Set());
+          }}
+        >
           {/* Tabs (with count and amount) and search share one row */}
           <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
             <TabsList className={`${dailyTabsListClass} flex w-full overflow-x-auto lg:inline-flex lg:w-auto`}>
@@ -801,7 +1089,7 @@ export default function DynamicWorkflowStepPage() {
             </TabsList>
             <SearchInput
               className="w-full lg:w-96"
-              placeholder="Search reception no., project, party…"
+              placeholder="Search reception or request no., project, party…"
               value={searchTerm}
               onChange={setSearchTerm}
             />
@@ -824,6 +1112,80 @@ export default function DynamicWorkflowStepPage() {
           onSuccess={fetchData}
         />
       )}
+
+      {/* Manual Mark as Paid (payment step): no bank entry is made, so it is confirmed first */}
+      {dynamicIndex === 2 && (
+        <AlertDialog open={isMarkPaidOpen} onOpenChange={setIsMarkPaidOpen}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>
+                Mark {markPaidTargets.length} {markPaidTargets.length === 1 ? 'requisition' : 'requisitions'} as paid (
+                {formatCurrency(markPaidTotal)})?
+              </AlertDialogTitle>
+              <AlertDialogDescription>
+                Marked paid outside Bank Balance — no bank entry is made. Use Pay via voucher to pay from a bank account.
+              </AlertDialogDescription>
+              {markPaidLeftOut > 0 && (
+                <p className="text-sm text-muted-foreground">
+                  {markPaidLeftOut} selected {markPaidLeftOut === 1 ? 'requisition has' : 'requisitions have'} already been
+                  part paid by voucher and {markPaidLeftOut === 1 ? 'is' : 'are'} left out. The rest can only be paid by
+                  voucher.
+                </p>
+              )}
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel>Cancel</AlertDialogCancel>
+              <AlertDialogAction onClick={handleMarkPaid} disabled={markPaidTargets.length === 0 || isUpdating}>
+                Mark as Paid ({markPaidTargets.length})
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
+      )}
     </>
+  );
+}
+
+/** How a paid requisition was paid: by voucher (the first linked, then how many more), or marked paid by hand. */
+function PaidVia({ entry }: { entry: Pick<DailyRequisitionEntry, 'payments' | 'manualPaid' | 'paidByName'> }) {
+  // One voucher can pay a requisition over several lines. Count vouchers, not lines.
+  const vouchers = [...new Map((entry.payments ?? []).map((payment) => [payment.bankPaymentId, payment])).values()];
+  if (vouchers.length > 0) {
+    const [first, ...more] = vouchers;
+    return (
+      <span className="inline-flex items-center gap-1.5">
+        <span className="text-muted-foreground">Voucher</span>
+        <Link href={voucherHref(first.bankPaymentId)} className="font-medium text-primary underline-offset-4 hover:underline">
+          {first.voucherNo || 'View'}
+        </Link>
+        {more.length > 0 && (
+          <span className="text-xs text-muted-foreground" title={more.map((payment) => payment.voucherNo).filter(Boolean).join(', ')}>
+            +{more.length}
+          </span>
+        )}
+      </span>
+    );
+  }
+  if (entry.manualPaid) {
+    return (
+      <span>
+        Marked paid
+        {entry.paidByName && <span className="block text-[11px] text-muted-foreground">by {entry.paidByName}</span>}
+      </span>
+    );
+  }
+  return (
+    <span className="text-muted-foreground" title="No voucher on record">
+      —
+    </span>
+  );
+}
+
+/** `useSearchParams` (for the `?q=` search) needs a Suspense boundary above it. */
+export default function DynamicWorkflowStepPage() {
+  return (
+    <Suspense fallback={<StepPageSkeleton />}>
+      <DynamicWorkflowStepContent />
+    </Suspense>
   );
 }

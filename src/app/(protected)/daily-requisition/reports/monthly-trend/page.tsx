@@ -3,27 +3,32 @@
 import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import ExcelJS from 'exceljs';
-import { collection, getDocs, Timestamp } from 'firebase/firestore';
-import { ChevronLeft, Download, TrendingUp } from 'lucide-react';
+import { collection, getDocs } from 'firebase/firestore';
+import { CalendarClock, CalendarDays, ChevronLeft, Download, Minus, TrendingDown, TrendingUp, Wallet } from 'lucide-react';
 import { db } from '@/lib/firebase';
 import type { DailyRequisitionEntry } from '@/lib/types';
 import { useAuthorization } from '@/hooks/useAuthorization';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Skeleton } from '@/components/ui/skeleton';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
+import { KpiCard } from '@/components/shared/kpi-card';
 import { TableCard } from '@/components/shared/table-card';
 import { dailyPageContainerClass } from '@/components/daily-requisition/module-shell';
 import { PageHeader } from '@/components/shared/page-header';
+import {
+  KpiRow,
+  ReportAccessDenied,
+  ReportSkeleton,
+  dateKeyOf,
+  inr,
+  inrWhole,
+  localDateKey,
+  round2,
+} from '../_components/report-kit';
 
-const formatCurrency = (n: number) =>
-  new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 0 }).format(n || 0);
-
-function entryMonth(entry: DailyRequisitionEntry): string {
-  if (entry.date instanceof Timestamp) return entry.date.toDate().toISOString().slice(0, 7);
-  return String(entry.date || '').slice(0, 7);
-}
+/** yyyy-MM of a local day. (`toISOString` gives the UTC day — for an Indian midnight on the 1st, the month before.) */
+const monthKeyOf = (d: Date): string => localDateKey(d).slice(0, 7);
 
 function formatMonthLabel(ym: string): string {
   const [y, m] = ym.split('-');
@@ -31,8 +36,10 @@ function formatMonthLabel(ym: string): string {
   return d.toLocaleString('en-IN', { month: 'short', year: '2-digit' });
 }
 
+const DESCRIPTION = 'Volume and value of requisitions month-over-month — last 6 months.';
+
 export default function MonthlyTrendReportPage() {
-  const { can } = useAuthorization();
+  const { can, isLoading: isAuthLoading } = useAuthorization();
   const canView = can('View', 'Daily Requisition.Reports') || can('View', 'Daily Requisition.Entry Sheet');
   const canExport = can('Export', 'Daily Requisition.Reports') || can('Export', 'Daily Requisition.Entry Sheet') || canView;
 
@@ -40,36 +47,47 @@ export default function MonthlyTrendReportPage() {
   const [isExporting, setIsExporting] = useState(false);
   const [entries, setEntries] = useState<DailyRequisitionEntry[]>([]);
 
+  // Last 6 calendar months (oldest → newest), fixed when the page opens.
+  const [months] = useState(() => {
+    const base = new Date();
+    return Array.from({ length: 6 }, (_, i) => monthKeyOf(new Date(base.getFullYear(), base.getMonth() - (5 - i), 1)));
+  });
+
   useEffect(() => {
+    // Until permissions load `can` answers false — wait for them rather than fetch without them.
+    if (isAuthLoading || !canView) return;
+    let active = true;
     const load = async () => {
-      setIsLoading(true);
       try {
         const snap = await getDocs(collection(db, 'dailyRequisitions'));
-        setEntries(snap.docs.map((d) => ({ id: d.id, ...d.data() } as DailyRequisitionEntry)));
+        if (active) setEntries(snap.docs.map((d) => ({ id: d.id, ...d.data() } as DailyRequisitionEntry)));
       } catch (err) {
         console.error('Failed to load monthly trend report', err);
       } finally {
-        setIsLoading(false);
+        if (active) setIsLoading(false);
       }
     };
     load();
-  }, []);
-
-  // Last 6 calendar months (oldest → newest)
-  const months = useMemo(() => {
-    const base = new Date();
-    return Array.from({ length: 6 }, (_, i) => {
-      const d = new Date(base.getFullYear(), base.getMonth() - (5 - i), 1);
-      return d.toISOString().slice(0, 7);
-    });
-  }, []);
+    return () => {
+      active = false;
+    };
+  }, [isAuthLoading, canView]);
 
   const currentMonth = months[months.length - 1];
   const prevMonth = months[months.length - 2];
 
   const trends = useMemo(() => {
+    const byMonth = new Map<string, DailyRequisitionEntry[]>();
+    for (const e of entries) {
+      // `date` is a Firestore Timestamp on entries from the entry sheet and the importer.
+      const month = dateKeyOf(e.date).slice(0, 7);
+      if (!month) continue;
+      const list = byMonth.get(month);
+      if (list) list.push(e);
+      else byMonth.set(month, [e]);
+    }
     return months.map((m) => {
-      const monthEntries = entries.filter((e) => entryMonth(e) === m);
+      const monthEntries = byMonth.get(m) ?? [];
       const count = monthEntries.length;
       const totalGross = monthEntries.reduce((s, e) => s + Number(e.grossAmount || 0), 0);
       const totalNet = monthEntries.reduce((s, e) => s + Number(e.netAmount || 0), 0);
@@ -103,7 +121,15 @@ export default function MonthlyTrendReportPage() {
         { header: 'Total Net (INR)', key: 'totalNet', width: 20 },
         { header: 'Avg Net (INR)', key: 'avgNet', width: 18 },
       ];
-      trends.forEach((r) => ws.addRow({ ...r, avgNet: Math.round(r.avgNet) }));
+      trends.forEach((r) =>
+        ws.addRow({
+          month: r.month,
+          count: r.count,
+          totalGross: round2(r.totalGross),
+          totalNet: round2(r.totalNet),
+          avgNet: round2(r.avgNet),
+        })
+      );
       const buffer = await wb.xlsx.writeBuffer();
       const blob = new Blob([buffer], {
         type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
@@ -121,43 +147,20 @@ export default function MonthlyTrendReportPage() {
     }
   };
 
-  if (!canView) {
-    return (
-      <div className={dailyPageContainerClass}>
-        <Card className="border border-white/70 bg-white/70 backdrop-blur">
-          <CardHeader>
-            <CardTitle>Access Restricted</CardTitle>
-            <CardDescription>You do not have permission to view reports.</CardDescription>
-          </CardHeader>
-        </Card>
-      </div>
-    );
-  }
+  if (isAuthLoading || (isLoading && canView)) return <ReportSkeleton filters={false} panel />;
 
-  if (isLoading) {
-    return (
-      <div className={dailyPageContainerClass}>
-        <div className="space-y-4">
-          <Skeleton className="h-24 w-full rounded-2xl" />
-          <div className="grid grid-cols-2 gap-4 xl:grid-cols-4">
-            {[1, 2, 3, 4].map((i) => (
-              <Skeleton key={i} className="h-28 w-full rounded-2xl" />
-            ))}
-          </div>
-          <Skeleton className="h-64 w-full rounded-2xl" />
-          <Skeleton className="h-72 w-full rounded-2xl" />
-        </div>
-      </div>
-    );
-  }
+  if (!canView) return <ReportAccessDenied title="Monthly Trend" description={DESCRIPTION} />;
+
+  const rising = pctChange !== null && pctChange > 0;
+  const falling = pctChange !== null && pctChange < 0;
 
   return (
     <div className={dailyPageContainerClass}>
       <PageHeader
         title="Monthly Trend"
-        description="Volume and value of requisitions month-over-month — last 6 months."
+        description={DESCRIPTION}
         backHref="/daily-requisition/reports"
-        eyebrow="Reports"
+        eyebrow="Daily Requisition"
         actions={
           canExport ? (
             <Button
@@ -173,58 +176,40 @@ export default function MonthlyTrendReportPage() {
         }
       />
 
-      {/* Stat cards */}
-      <div className="mb-5 grid grid-cols-2 gap-4 xl:grid-cols-4">
-        <Card className="overflow-hidden border border-white/70 bg-white/70 backdrop-blur shadow-sm">
-          <div className="h-1 w-full bg-gradient-to-r from-violet-500/80 to-purple-500/80" />
-          <CardHeader className="pb-2">
-            <CardDescription>This Month Count</CardDescription>
-            <CardTitle className="text-xl">{currentTrend.count}</CardTitle>
-          </CardHeader>
-          <CardContent className="text-xs text-muted-foreground">{currentMonth}</CardContent>
-        </Card>
-
-        <Card className="overflow-hidden border border-white/70 bg-white/70 backdrop-blur shadow-sm">
-          <div className="h-1 w-full bg-gradient-to-r from-cyan-500/80 to-sky-500/80" />
-          <CardHeader className="pb-2">
-            <CardDescription>This Month Net Amount</CardDescription>
-            <CardTitle className="text-xl">{formatCurrency(currentTrend.totalNet)}</CardTitle>
-          </CardHeader>
-          <CardContent className="text-xs text-muted-foreground">{currentMonth}</CardContent>
-        </Card>
-
-        <Card className="overflow-hidden border border-white/70 bg-white/70 backdrop-blur shadow-sm">
-          <div className="h-1 w-full bg-gradient-to-r from-slate-400/80 to-slate-500/80" />
-          <CardHeader className="pb-2">
-            <CardDescription>Prev Month Amount</CardDescription>
-            <CardTitle className="text-xl">{formatCurrency(prevTrend.totalNet)}</CardTitle>
-          </CardHeader>
-          <CardContent className="text-xs text-muted-foreground">{prevMonth}</CardContent>
-        </Card>
-
-        <Card className="overflow-hidden border border-white/70 bg-white/70 backdrop-blur shadow-sm">
-          <div
-            className={`h-1 w-full bg-gradient-to-r ${
-              pctChange !== null && pctChange > 0
-                ? 'from-rose-500/80 to-orange-500/80'
-                : 'from-emerald-500/80 to-teal-500/80'
-            }`}
-          />
-          <CardHeader className="pb-2">
-            <CardDescription>Month-on-Month Change</CardDescription>
-            <CardTitle
-              className={`text-xl ${
-                pctChange !== null && pctChange > 0 ? 'text-rose-600' : 'text-emerald-600'
-              }`}
-            >
-              {pctChange !== null
-                ? `${pctChange > 0 ? '+' : ''}${pctChange.toFixed(1)}%`
-                : 'N/A'}
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="text-xs text-muted-foreground">vs previous month</CardContent>
-        </Card>
-      </div>
+      <KpiRow>
+        <KpiCard
+          label="This month entries"
+          value={currentTrend.count}
+          hint={formatMonthLabel(currentMonth)}
+          icon={CalendarDays}
+          tone="violet"
+          accent
+        />
+        <KpiCard
+          label="This month net"
+          value={inrWhole(currentTrend.totalNet)}
+          hint={formatMonthLabel(currentMonth)}
+          icon={Wallet}
+          tone="cyan"
+          accent
+        />
+        <KpiCard
+          label="Previous month net"
+          value={inrWhole(prevTrend.totalNet)}
+          hint={formatMonthLabel(prevMonth)}
+          icon={CalendarClock}
+          tone="slate"
+          accent
+        />
+        <KpiCard
+          label="Month-on-month"
+          value={pctChange !== null ? `${pctChange > 0 ? '+' : ''}${pctChange.toFixed(1)}%` : 'N/A'}
+          hint="Net vs previous month"
+          icon={rising ? TrendingUp : falling ? TrendingDown : Minus}
+          tone={rising ? 'rose' : 'emerald'}
+          accent
+        />
+      </KpiRow>
 
       {/* 6-month bar visualisation */}
       <Card className="mb-5 overflow-hidden border border-white/70 bg-white/70 backdrop-blur shadow-sm">
@@ -240,17 +225,17 @@ export default function MonthlyTrendReportPage() {
         <CardContent className="space-y-4">
           {trends.map((row) => (
             <div key={row.month} className="space-y-1.5">
-              <div className="flex items-center justify-between text-xs">
+              <div className="flex items-center justify-between gap-3 text-xs">
                 <span
-                  className={`w-16 font-semibold ${
+                  className={`w-16 shrink-0 font-semibold ${
                     row.month === currentMonth ? 'text-violet-600' : 'text-slate-500'
                   }`}
                 >
                   {formatMonthLabel(row.month)}
                 </span>
-                <div className="flex gap-3 text-muted-foreground">
+                <div className="flex min-w-0 flex-wrap justify-end gap-x-3 text-muted-foreground">
                   <span>{row.count} entries</span>
-                  <span>{formatCurrency(row.totalNet)}</span>
+                  <span className="tabular-nums">{inrWhole(row.totalNet)}</span>
                 </div>
               </div>
               {/* Count bar */}
@@ -316,10 +301,10 @@ export default function MonthlyTrendReportPage() {
                         )}
                       </TableCell>
                       <TableCell className="text-right tabular-nums">{row.count}</TableCell>
-                      <TableCell className="whitespace-nowrap text-right tabular-nums">{formatCurrency(row.totalGross)}</TableCell>
+                      <TableCell className="whitespace-nowrap text-right tabular-nums">{inr(row.totalGross)}</TableCell>
                       <TableCell className="whitespace-nowrap text-right font-medium tabular-nums">
                         <div className="space-y-1">
-                          <div>{formatCurrency(row.totalNet)}</div>
+                          <div>{inr(row.totalNet)}</div>
                           <div className="h-1.5 w-28 rounded-full bg-slate-100 ml-auto">
                             <div
                               className="h-1.5 rounded-full bg-gradient-to-r from-cyan-500 to-sky-500 transition-all"
@@ -329,7 +314,7 @@ export default function MonthlyTrendReportPage() {
                         </div>
                       </TableCell>
                       <TableCell className="whitespace-nowrap text-right tabular-nums">
-                        {row.count > 0 ? formatCurrency(row.avgNet) : '—'}
+                        {row.count > 0 ? inr(row.avgNet) : '—'}
                       </TableCell>
                     </TableRow>
                   ))}

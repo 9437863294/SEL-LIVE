@@ -45,6 +45,9 @@ import {
 } from '@/components/bank-balance/page-kit';
 import { useToast } from '@/hooks/use-toast';
 import { useAuthorization } from '@/hooks/useAuthorization';
+import { useActivityLogger } from '@/hooks/useActivityLogger';
+import { diffFields } from '@/lib/activity-logger';
+import { ACTIVITY_MODULES } from '@/lib/activity-modules';
 import { db } from '@/lib/firebase';
 import { getApplicableCcLimit } from '@/lib/bank-balance-limit';
 import { balanceAt, buildLedger, dayKey, formatDay, formatInr, isCashCredit, parseDay, txnDate } from '@/lib/bank-balance-ledger';
@@ -105,6 +108,7 @@ function groupTransfers(expenses: BankExpense[]): Transfer[] {
 export default function InternalTransactionPage() {
   const { toast } = useToast();
   const { can, isLoading: authLoading } = useAuthorization();
+  const { log } = useActivityLogger(ACTIVITY_MODULES.BANK_BALANCE);
 
   const [bankAccounts, setBankAccounts] = useState<BankAccount[]>([]);
   const [allTransactions, setAllTransactions] = useState<BankExpense[]>([]);
@@ -278,6 +282,11 @@ export default function InternalTransactionPage() {
       toast({ title: 'Validation Error', description: 'Enter the transfer date.', variant: 'destructive' });
       return;
     }
+    // As on New Transfer, a transfer cannot be dated ahead. One already dated ahead keeps its day.
+    if (form.day !== dayKey(editingEntry.at) && editDate > endOfDay(new Date())) {
+      toast({ title: 'Validation Error', description: 'A transfer cannot be dated after today.', variant: 'destructive' });
+      return;
+    }
     if (
       !form.fromAccountId ||
       !form.toAccountId ||
@@ -325,11 +334,19 @@ export default function InternalTransactionPage() {
         batch.delete(docSnap.ref);
       });
 
+      // The legs are rewritten, but the transfer keeps the time it was first entered.
+      const createdStamps = existingContraSnap.docs
+        .map((docSnap) => docSnap.data().createdAt)
+        .filter((value): value is Timestamp => value instanceof Timestamp);
+      const createdAt = createdStamps.length
+        ? createdStamps.reduce((earliest, stamp) => (stamp.toMillis() < earliest.toMillis() ? stamp : earliest))
+        : Timestamp.now();
+
       const baseData = {
         date: Timestamp.fromDate(editDate),
         isContra: true,
         contraId: editingEntry.contraId,
-        createdAt: Timestamp.now(),
+        createdAt,
       };
 
       batch.set(doc(collection(db, 'bankExpenses')), {
@@ -351,6 +368,24 @@ export default function InternalTransactionPage() {
       await batch.commit();
 
       toast({ title: 'Success', description: 'Internal transaction updated.' });
+      const before = {
+        date: dayKey(editingEntry.at),
+        fromAccount: nameOf(editingEntry.fromAccountId),
+        toAccount: nameOf(editingEntry.toAccountId),
+        amount: Number(editingEntry.amount) || 0,
+      };
+      const after = { date: dayKey(editDate), fromAccount: accountLabel(fromAccount), toAccount: accountLabel(toAccount), amount };
+      void log(
+        'Edit Transfer',
+        {
+          contraId: editingEntry.contraId,
+          fromAccountId: form.fromAccountId,
+          toAccountId: form.toAccountId,
+          ...after,
+          changes: diffFields(before, after),
+        },
+        { recordId: editingEntry.contraId, recordRef: `${after.fromAccount} → ${after.toAccount}` },
+      );
       resetEditDialog();
       void load(true);
     } catch (error) {
@@ -385,6 +420,24 @@ export default function InternalTransactionPage() {
       await batch.commit();
 
       toast({ title: 'Success', description: 'Internal transaction deleted.' });
+      // The legs are gone, so the log row is the only trace of the transfer: record what it was.
+      const fromName = nameOf(deleteTarget.fromAccountId);
+      const toName = nameOf(deleteTarget.toAccountId);
+      void log(
+        'Delete Transfer',
+        {
+          contraId: deleteTarget.contraId,
+          date: dayKey(deleteTarget.at),
+          fromAccountId: deleteTarget.fromAccountId,
+          fromAccount: fromName,
+          toAccountId: deleteTarget.toAccountId,
+          toAccount: toName,
+          amount: Number(deleteTarget.amount) || 0,
+          description: deleteTarget.description || '',
+          legs: snapshot.size,
+        },
+        { recordId: deleteTarget.contraId, recordRef: `${fromName} → ${toName}` },
+      );
       setDeleteTarget(null);
       void load(true);
     } catch (error) {
@@ -480,6 +533,9 @@ export default function InternalTransactionPage() {
   );
   const topRoute = summary.topRoute;
   const editAmount = Number(form.amount) || 0;
+  // Transfers cannot be dated ahead; one already dated ahead (entered before that rule) keeps its day.
+  const todayKey = dayKey(new Date());
+  const editMaxDay = editingEntry && dayKey(editingEntry.at) > todayKey ? undefined : todayKey;
 
   return (
     <>
@@ -652,6 +708,7 @@ export default function InternalTransactionPage() {
                 id="transfer-edit-date"
                 type="date"
                 required
+                max={editMaxDay}
                 value={form.day}
                 onChange={(event) => setForm((prev) => ({ ...prev, day: event.target.value }))}
               />

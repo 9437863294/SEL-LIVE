@@ -3,93 +3,55 @@
 import { useEffect, useMemo, useState } from 'react';
 import ExcelJS from 'exceljs';
 import { collection, getDocs } from 'firebase/firestore';
-import { Download, ShieldAlert } from 'lucide-react';
-import { Timestamp } from 'firebase/firestore';
+import { AlertTriangle, Clock, Download, FileText, Hourglass } from 'lucide-react';
 import { db } from '@/lib/firebase';
 import { useAuthorization } from '@/hooks/useAuthorization';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Skeleton } from '@/components/ui/skeleton';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
+import { KpiCard } from '@/components/shared/kpi-card';
 import { StatusBadge, type StatusTone } from '@/components/shared/status-badge';
 import { TableCard } from '@/components/shared/table-card';
 import type { DailyRequisitionEntry } from '@/lib/types';
-import {
-  DAILY_STATUS_TONE,
-  DailyMetricCard,
-  dailyPageContainerClass,
-  dailySurfaceCardClass,
-} from '@/components/daily-requisition/module-shell';
+import { balanceOf, paidOf } from '@/lib/requisition-progress';
+import { DAILY_STATUS_TONE, dailyPageContainerClass } from '@/components/daily-requisition/module-shell';
 import { PageHeader } from '@/components/shared/page-header';
+import {
+  ChipStrip,
+  KpiRow,
+  ReportAccessDenied,
+  ReportSkeleton,
+  formatDay,
+  inr,
+  inrWhole,
+  localDateKey,
+  pctOf,
+  toJsDate,
+} from '../_components/report-kit';
 
-const CLOSED_STATUSES: DailyRequisitionEntry['status'][] = ['Paid', 'Cancelled'];
+/** Settled: nothing more will be paid. Partially Paid stays open — its balance is what ages. */
+const CLOSED_STATUSES: readonly string[] = ['Paid', 'Cancelled'];
 
-const fmt = (n: number) =>
-  new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 0 }).format(n);
+const DAY_MS = 1000 * 60 * 60 * 24;
 
-const ageInDays = (ts: Timestamp | string | undefined): number => {
-  if (!ts) return 0;
-  const d = ts instanceof Timestamp ? ts.toDate() : new Date(ts as string);
-  return Math.floor((Date.now() - d.getTime()) / (1000 * 60 * 60 * 24));
+const ageInDays = (value: unknown, now: number): number => {
+  const d = toJsDate(value);
+  return d ? Math.max(0, Math.floor((now - d.getTime()) / DAY_MS)) : 0;
 };
 
 interface AgeBracket {
   label: string;
   min: number;
   max: number;
-  color: string;
-  bgColor: string;
   tone: StatusTone;
-  barClass: string;
 }
 
 const BRACKETS: AgeBracket[] = [
-  {
-    label: '0–3 days',
-    min: 0,
-    max: 3,
-    color: 'text-emerald-700',
-    bgColor: 'bg-emerald-50 border-emerald-200',
-    tone: 'success',
-    barClass: 'bg-gradient-to-r from-emerald-400 to-emerald-500',
-  },
-  {
-    label: '4–7 days',
-    min: 4,
-    max: 7,
-    color: 'text-sky-700',
-    bgColor: 'bg-sky-50 border-sky-200',
-    tone: 'info',
-    barClass: 'bg-gradient-to-r from-sky-400 to-sky-500',
-  },
-  {
-    label: '8–15 days',
-    min: 8,
-    max: 15,
-    color: 'text-amber-700',
-    bgColor: 'bg-amber-50 border-amber-200',
-    tone: 'warning',
-    barClass: 'bg-gradient-to-r from-amber-400 to-amber-500',
-  },
-  {
-    label: '16–30 days',
-    min: 16,
-    max: 30,
-    color: 'text-orange-700',
-    bgColor: 'bg-orange-50 border-orange-200',
-    tone: 'warning',
-    barClass: 'bg-gradient-to-r from-orange-400 to-orange-500',
-  },
-  {
-    label: '30+ days',
-    min: 31,
-    max: Infinity,
-    color: 'text-rose-700',
-    bgColor: 'bg-rose-50 border-rose-200',
-    tone: 'danger',
-    barClass: 'bg-gradient-to-r from-rose-400 to-rose-500',
-  },
+  { label: '0–3 days', min: 0, max: 3, tone: 'success' },
+  { label: '4–7 days', min: 4, max: 7, tone: 'info' },
+  { label: '8–15 days', min: 8, max: 15, tone: 'warning' },
+  { label: '16–30 days', min: 16, max: 30, tone: 'warning' },
+  { label: '30+ days', min: 31, max: Infinity, tone: 'danger' },
 ];
 
 function getBracket(age: number): AgeBracket {
@@ -100,6 +62,8 @@ interface AgeingRow {
   entry: DailyRequisitionEntry;
   age: number;
   bracket: AgeBracket;
+  /** What is still to pay — the net, less any part payment. */
+  outstanding: number;
 }
 
 export default function AgeingReportPage() {
@@ -107,53 +71,92 @@ export default function AgeingReportPage() {
   const canView = can('View', 'Daily Requisition.Reports') || can('View', 'Daily Requisition.Entry Sheet');
 
   const [entries, setEntries] = useState<DailyRequisitionEntry[]>([]);
+  const [deptNameMap, setDeptNameMap] = useState<Record<string, string>>({});
   const [isLoading, setIsLoading] = useState(true);
   const [isExporting, setIsExporting] = useState(false);
+  // Every row ages against the same clock: when the page opened.
+  const [now] = useState(() => Date.now());
 
   useEffect(() => {
-    if (isAuthLoading) return;
-    if (!canView) { setIsLoading(false); return; }
+    // Until permissions load `can` answers false — wait for them rather than fetch without them.
+    if (isAuthLoading || !canView) return;
+    let active = true;
     const load = async () => {
-      setIsLoading(true);
       try {
-        const snap = await getDocs(collection(db, 'dailyRequisitions'));
+        const [snap, deptsSnap] = await Promise.all([
+          getDocs(collection(db, 'dailyRequisitions')),
+          // Names are a nicety: without them the column falls back to the department id.
+          getDocs(collection(db, 'departments')).catch(() => null),
+        ]);
+        if (!active) return;
         setEntries(snap.docs.map((d) => ({ id: d.id, ...d.data() } as DailyRequisitionEntry)));
+        const names: Record<string, string> = {};
+        deptsSnap?.docs.forEach((d) => {
+          names[d.id] = (d.data().name as string) || d.id;
+        });
+        setDeptNameMap(names);
       } catch (err) {
         console.error('Failed to load daily requisitions for ageing report', err);
       } finally {
-        setIsLoading(false);
+        if (active) setIsLoading(false);
       }
     };
     load();
+    return () => {
+      active = false;
+    };
   }, [isAuthLoading, canView]);
 
-  const rows = useMemo((): AgeingRow[] => {
-    const open = entries.filter((e) => !CLOSED_STATUSES.includes(e.status));
-    return open
-      .map((e) => {
-        const age = ageInDays(e.createdAt);
-        return { entry: e, age, bracket: getBracket(age) };
-      })
-      .sort((a, b) => b.age - a.age);
-  }, [entries]);
+  const rows = useMemo(
+    (): AgeingRow[] =>
+      entries
+        .filter((e) => !CLOSED_STATUSES.includes(e.status))
+        .map((e) => {
+          const age = ageInDays(e.createdAt, now);
+          return { entry: e, age, bracket: getBracket(age), outstanding: balanceOf(e) };
+        })
+        .sort((a, b) => b.age - a.age || b.outstanding - a.outstanding),
+    [entries, now]
+  );
 
-  const totalOpen = rows.length;
-  const critical = rows.filter((r) => r.age > 30).length;
-  const avgAge = totalOpen > 0 ? Math.round(rows.reduce((s, r) => s + r.age, 0) / totalOpen) : 0;
-  const oldestAge = rows[0]?.age ?? 0;
-
-  const bracketCounts = useMemo(() => {
-    const map = new Map<string, number>();
-    BRACKETS.forEach((b) => map.set(b.label, 0));
-    rows.forEach((r) => map.set(r.bracket.label, (map.get(r.bracket.label) ?? 0) + 1));
-    return map;
+  const summary = useMemo(() => {
+    const byBracket = new Map(
+      BRACKETS.map((b): [string, { count: number; outstanding: number }] => [b.label, { count: 0, outstanding: 0 }])
+    );
+    let outstanding = 0;
+    let net = 0;
+    let partPaid = 0;
+    let critical = 0;
+    let criticalOutstanding = 0;
+    let ageSum = 0;
+    for (const r of rows) {
+      const bucket = byBracket.get(r.bracket.label);
+      if (bucket) {
+        bucket.count += 1;
+        bucket.outstanding += r.outstanding;
+      }
+      outstanding += r.outstanding;
+      net += Number(r.entry.netAmount) || 0;
+      if (r.entry.status === 'Partially Paid') partPaid += 1;
+      if (r.age > 30) {
+        critical += 1;
+        criticalOutstanding += r.outstanding;
+      }
+      ageSum += r.age;
+    }
+    return {
+      byBracket,
+      outstanding,
+      net,
+      partPaid,
+      critical,
+      criticalOutstanding,
+      avgAge: rows.length > 0 ? Math.round(ageSum / rows.length) : 0,
+      oldestAge: rows[0]?.age ?? 0,
+    };
   }, [rows]);
 
-  const formatDate = (ts: Timestamp | undefined): string => {
-    if (!ts) return '—';
-    const d = ts instanceof Timestamp ? ts.toDate() : new Date(ts);
-    return d.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
-  };
+  const deptName = (id: string) => (id ? deptNameMap[id] || id : '—');
 
   const exportExcel = async () => {
     if (isExporting) return;
@@ -164,24 +167,26 @@ export default function AgeingReportPage() {
       ws.columns = [
         { header: 'Reception No', key: 'receptionNo', width: 18 },
         { header: 'Party Name', key: 'partyName', width: 26 },
-        { header: 'Department', key: 'departmentId', width: 18 },
+        { header: 'Department', key: 'department', width: 22 },
         { header: 'Status', key: 'status', width: 22 },
         { header: 'Created Date', key: 'createdDate', width: 16 },
         { header: 'Age (days)', key: 'age', width: 12 },
         { header: 'Net Amount (INR)', key: 'netAmount', width: 18 },
+        { header: 'Paid (INR)', key: 'paid', width: 16 },
+        { header: 'Outstanding (INR)', key: 'outstanding', width: 18 },
         { header: 'Age Bracket', key: 'bracket', width: 14 },
       ];
       rows.forEach((r) =>
         ws.addRow({
           receptionNo: r.entry.receptionNo,
           partyName: r.entry.partyName,
-          departmentId: r.entry.departmentId,
+          department: deptName(r.entry.departmentId),
           status: r.entry.status,
-          createdDate: r.entry.createdAt instanceof Timestamp
-            ? r.entry.createdAt.toDate().toLocaleDateString('en-IN')
-            : '—',
+          createdDate: toJsDate(r.entry.createdAt)?.toLocaleDateString('en-IN') ?? '—',
           age: r.age,
           netAmount: r.entry.netAmount || 0,
+          paid: paidOf(r.entry),
+          outstanding: r.outstanding,
           bracket: r.bracket.label,
         })
       );
@@ -192,7 +197,7 @@ export default function AgeingReportPage() {
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = `ageing-report-${new Date().toISOString().slice(0, 10)}.xlsx`;
+      a.download = `ageing-report-${localDateKey(new Date())}.xlsx`;
       a.click();
       URL.revokeObjectURL(url);
     } catch (e) {
@@ -202,39 +207,14 @@ export default function AgeingReportPage() {
     }
   };
 
-  if (isAuthLoading || (isLoading && canView)) {
-    return (
-      <div className={dailyPageContainerClass}>
-        <Skeleton className="mb-6 h-10 w-72" />
-        <div className="mb-6 grid grid-cols-2 gap-4 sm:grid-cols-4">
-          {Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} className="h-20 rounded-2xl" />)}
-        </div>
-        <div className="mb-6 grid grid-cols-2 gap-4 sm:grid-cols-3 xl:grid-cols-5">
-          {Array.from({ length: 5 }).map((_, i) => <Skeleton key={i} className="h-24 rounded-2xl" />)}
-        </div>
-        <Skeleton className="h-96 w-full rounded-2xl" />
-      </div>
-    );
-  }
+  if (isAuthLoading || (isLoading && canView)) return <ReportSkeleton filters={false} strip />;
 
   if (!canView) {
     return (
-      <div className={dailyPageContainerClass}>
-        <PageHeader eyebrow="Daily Requisition"
-          title="Ageing Report"
-          description="Open requisitions bucketed by age — spot what is stuck and for how long."
-          backHref="/daily-requisition/reports"
-        />
-        <Card className={dailySurfaceCardClass}>
-          <CardHeader>
-            <CardTitle>Access Denied</CardTitle>
-            <CardDescription>You do not have permission to view this report.</CardDescription>
-          </CardHeader>
-          <CardContent className="flex justify-center p-8">
-            <ShieldAlert className="h-16 w-16 text-destructive" />
-          </CardContent>
-        </Card>
-      </div>
+      <ReportAccessDenied
+        title="Ageing Report"
+        description="Open requisitions bucketed by age — spot what is stuck, for how long, and what is still owed."
+      />
     );
   }
 
@@ -242,7 +222,7 @@ export default function AgeingReportPage() {
     <div className={dailyPageContainerClass}>
       <PageHeader eyebrow="Daily Requisition"
         title="Ageing Report"
-        description="Open requisitions (excluding Paid and Cancelled) sorted by age — oldest first. Live snapshot, no date filter."
+        description="Open requisitions (excluding Paid and Cancelled; Partially Paid stays open for its balance) sorted by age — oldest first. Live snapshot, no date filter."
         backHref="/daily-requisition/reports"
         meta={
           <Badge variant="neutral">
@@ -262,43 +242,53 @@ export default function AgeingReportPage() {
         }
       />
 
-      {/* Stat cards */}
-      <div className="mb-6 grid grid-cols-2 gap-4 sm:grid-cols-4">
-        <DailyMetricCard label="Total Open" value={totalOpen} />
-        <DailyMetricCard
-          label="Critical (30+ days)"
-          value={critical}
-          hint={totalOpen > 0 ? `${Math.round((critical / totalOpen) * 100)}% of open` : undefined}
+      <KpiRow>
+        <KpiCard
+          label="Open requisitions"
+          value={rows.length}
+          hint={summary.partPaid > 0 ? `${summary.partPaid} part paid` : 'None part paid'}
+          icon={FileText}
+          tone="blue"
+          accent
         />
-        <DailyMetricCard label="Average Age" value={`${avgAge} days`} />
-        <DailyMetricCard label="Oldest Entry" value={`${oldestAge} days`} />
-      </div>
+        <KpiCard
+          label="Outstanding"
+          value={inrWhole(summary.outstanding)}
+          hint={`of ${inrWhole(summary.net)} net`}
+          icon={Hourglass}
+          tone="amber"
+          accent
+        />
+        <KpiCard
+          label="Critical (30+ days)"
+          value={summary.critical}
+          hint={rows.length > 0 ? `${pctOf(summary.critical, rows.length)} of open · ${inrWhole(summary.criticalOutstanding)}` : undefined}
+          icon={AlertTriangle}
+          tone="rose"
+          accent
+        />
+        <KpiCard
+          label="Average age"
+          value={`${summary.avgAge} days`}
+          hint={`Oldest ${summary.oldestAge} days`}
+          icon={Clock}
+          tone="violet"
+          accent
+        />
+      </KpiRow>
 
-      {/* Bracket summary cards */}
-      <div className="mb-6 grid grid-cols-2 gap-4 sm:grid-cols-3 xl:grid-cols-5">
-        {BRACKETS.map((b) => {
-          const count = bracketCounts.get(b.label) ?? 0;
-          return (
-            <div
-              key={b.label}
-              className={`flex flex-col rounded-2xl border p-4 shadow-sm backdrop-blur ${b.bgColor}`}
-            >
-              <span className={`text-[11px] font-semibold uppercase tracking-[0.18em] ${b.color}`}>
-                {b.label}
-              </span>
-              <span className={`mt-2 text-3xl font-bold ${b.color}`}>{count}</span>
-              <span className={`mt-1 text-xs ${b.color} opacity-70`}>
-                entr{count === 1 ? 'y' : 'ies'}
-              </span>
-            </div>
-          );
+      <ChipStrip
+        label="Open requisitions by age"
+        chips={BRACKETS.map((b) => {
+          const bucket = summary.byBracket.get(b.label);
+          return { key: b.label, label: b.label, count: bucket?.count ?? 0, tone: b.tone, hint: inrWhole(bucket?.outstanding ?? 0) };
         })}
-      </div>
+      />
 
       {/* Ageing table */}
       <TableCard
         title="Open Requisitions"
-        description="Sorted oldest first. Age calculated from created date to today."
+        description="Sorted oldest first. Age calculated from created date to today; Outstanding is the net less any part payment."
         count={rows.length}
       >
           {rows.length === 0 ? (
@@ -316,26 +306,34 @@ export default function AgeingReportPage() {
                     <TableHead className="min-w-[120px]">Created Date</TableHead>
                     <TableHead className="text-right min-w-[90px]">Age (days)</TableHead>
                     <TableHead className="text-right min-w-[120px]">Net Amount</TableHead>
+                    <TableHead className="text-right min-w-[120px]">Outstanding</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {rows.map(({ entry: e, age, bracket }) => (
+                  {rows.map(({ entry: e, age, bracket, outstanding }) => (
                     <TableRow key={e.id}>
                       <TableCell className="whitespace-nowrap font-mono">{e.receptionNo}</TableCell>
                       <TableCell className="font-medium">{e.partyName}</TableCell>
-                      <TableCell>{e.departmentId || '—'}</TableCell>
+                      <TableCell>{deptName(e.departmentId)}</TableCell>
                       <TableCell className="whitespace-nowrap">
                         <StatusBadge status={e.status} tone={DAILY_STATUS_TONE[e.status]}>{e.status}</StatusBadge>
                       </TableCell>
-                      <TableCell className="whitespace-nowrap">{formatDate(e.createdAt)}</TableCell>
+                      <TableCell className="whitespace-nowrap">{formatDay(e.createdAt)}</TableCell>
                       <TableCell className="text-right">
                         <Badge variant={bracket.tone} className="tabular-nums">
                           {age}
                         </Badge>
                       </TableCell>
-                      <TableCell className="whitespace-nowrap text-right tabular-nums">{fmt(e.netAmount || 0)}</TableCell>
+                      <TableCell className="whitespace-nowrap text-right tabular-nums">{inr(e.netAmount)}</TableCell>
+                      <TableCell className="whitespace-nowrap text-right font-medium tabular-nums">{inr(outstanding)}</TableCell>
                     </TableRow>
                   ))}
+                  {/* Totals row */}
+                  <TableRow className="bg-muted/50 font-medium">
+                    <TableCell colSpan={6}>Total ({rows.length} open)</TableCell>
+                    <TableCell className="whitespace-nowrap text-right tabular-nums">{inr(summary.net)}</TableCell>
+                    <TableCell className="whitespace-nowrap text-right tabular-nums">{inr(summary.outstanding)}</TableCell>
+                  </TableRow>
                 </TableBody>
               </Table>
           )}

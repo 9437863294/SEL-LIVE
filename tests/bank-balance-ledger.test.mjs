@@ -9,6 +9,7 @@ import {
   formatDay,
   formatInr,
   getApplicableRate,
+  lowestAvailableFrom,
   normaliseDatedLog,
   utilisationLevel,
 } from '../src/lib/bank-balance-ledger.ts';
@@ -104,4 +105,16 @@ test('formatting', () => {
   assert.equal(formatDay('2026-09-28'), '28 Sep 2026');
   assert.equal(utilisationLevel(70), 'high');
   assert.equal(utilisationLevel(95), 'critical');
+});
+
+test('the lowest available figure counts post-dated entries after the date', () => {
+  const account = { id: 'ca2', accountType: 'Current Account', openingBalance: 1000, openingDate: '2026-09-01' };
+  const ledger = buildLedgers([account], [
+    { accountId: 'ca2', amount: 700, type: 'Debit', date: at('2026-10-10') },
+    { accountId: 'ca2', amount: 500, type: 'Credit', date: at('2026-10-20') },
+  ]).get('ca2');
+  const lowest = lowestAvailableFrom(ledger, at('2026-09-29'), (_day, figure) => figure);
+  assert.equal(lowest.amount, 300);
+  assert.equal(lowest.day.getDate(), 10);
+  assert.equal(lowestAvailableFrom(ledger, at('2026-10-25'), (_d, f) => f).amount, 800);
 });

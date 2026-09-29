@@ -35,6 +35,9 @@ import {
 } from '@/components/bank-balance/page-kit';
 import { useToast } from '@/hooks/use-toast';
 import { useAuthorization } from '@/hooks/useAuthorization';
+import { useActivityLogger } from '@/hooks/useActivityLogger';
+import { diffFields } from '@/lib/activity-logger';
+import { ACTIVITY_MODULES } from '@/lib/activity-modules';
 import { db } from '@/lib/firebase';
 import { formatDay, formatInr } from '@/lib/bank-balance-ledger';
 import type { BankAccount } from '@/lib/types';
@@ -82,6 +85,7 @@ const openingOf = (account: BankAccount) => (isCc(account) ? account.openingUtil
 export default function BankAccountsPage() {
   const { toast } = useToast();
   const { can, isLoading: authLoading } = useAuthorization();
+  const { log } = useActivityLogger(ACTIVITY_MODULES.BANK_BALANCE);
   const canView = !authLoading && can('View', 'Bank Balance.Accounts');
   const canAdd = !authLoading && can('Add', 'Bank Balance.Accounts');
   const canEdit = !authLoading && can('Edit', 'Bank Balance.Accounts');
@@ -158,7 +162,7 @@ export default function BankAccountsPage() {
     setIsSaving(true);
     try {
       if (isNew) {
-        await addDoc(collection(db, 'bankAccounts'), {
+        const created = await addDoc(collection(db, 'bankAccounts'), {
           openingBalance: 0,
           openingUtilization: 0,
           ...details,
@@ -167,9 +171,15 @@ export default function BankAccountsPage() {
           interestRateLog: [],
         });
         toast({ title: 'Saved', description: `${details.shortName} added.` });
+        void log('Add Bank Account', details, { recordId: created.id, recordRef: details.shortName });
       } else {
         await updateDoc(doc(db, 'bankAccounts', editing.id), details);
         toast({ title: 'Saved', description: `${details.shortName} updated.` });
+        void log(
+          'Edit Bank Account',
+          { shortName: details.shortName, bankName: details.bankName, changes: diffFields(editing, details) },
+          { recordId: editing.id, recordRef: details.shortName },
+        );
       }
       setEditing(null);
       void refresh();
@@ -191,6 +201,20 @@ export default function BankAccountsPage() {
     try {
       await deleteDoc(doc(db, 'bankAccounts', deleteTarget.id));
       toast({ title: 'Deleted', description: `${accountLabel(deleteTarget)} deleted.` });
+      // The account is gone, so the log row is the only trace of it: record what it was.
+      void log(
+        'Delete Bank Account',
+        {
+          shortName: deleteTarget.shortName || '',
+          bankName: deleteTarget.bankName || '',
+          accountNumber: deleteTarget.accountNumber || '',
+          accountType: deleteTarget.accountType || '',
+          status: deleteTarget.status || '',
+          openingDate: deleteTarget.openingDate || '',
+          openingFigure: openingOf(deleteTarget),
+        },
+        { recordId: deleteTarget.id, recordRef: accountLabel(deleteTarget) },
+      );
       setDeleteTarget(null);
       void refresh();
     } catch (error) {

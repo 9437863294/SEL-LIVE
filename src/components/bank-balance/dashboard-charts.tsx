@@ -14,7 +14,7 @@ import {
   XAxis,
   YAxis,
 } from 'recharts';
-import type { LucideIcon } from 'lucide-react';
+import { CalendarClock, type LucideIcon } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { chartChrome } from '@/components/ui/chart';
 import { useTheme } from '@/components/theme/ThemeProvider';
@@ -250,15 +250,33 @@ export interface MonthlyFlowPoint {
   payments: number;
 }
 
-/** Money in against money out per month, internal transfers excluded. */
-export function MonthlyFlowChart({ points }: { points: MonthlyFlowPoint[] }) {
+/** Receipts and payments dated after today: left out of the monthly bars and reported under them. */
+export interface FlowDatedAhead {
+  payments: number;
+  paymentCount: number;
+  receipts: number;
+  receiptCount: number;
+}
+
+const entryCount = (n: number) => `${n} entr${n === 1 ? 'y' : 'ies'}`;
+
+/**
+ * Money in against money out per month, internal transfers excluded, counting only entries dated
+ * up to today. A post-dated cheque's Debit sits on its instrument date, so it must not swell the
+ * current month before then; `datedAhead` names what was left out.
+ */
+export function MonthlyFlowChart({ points, datedAhead }: { points: MonthlyFlowPoint[]; datedAhead?: FlowDatedAhead }) {
   const series = useSeries();
   const hasData = points.some((point) => point.receipts || point.payments);
+  const aheadParts = [
+    datedAhead?.paymentCount ? `${formatInr(datedAhead.payments)} in post-dated payments (${entryCount(datedAhead.paymentCount)})` : '',
+    datedAhead?.receiptCount ? `${formatInr(datedAhead.receipts)} in future-dated receipts (${entryCount(datedAhead.receiptCount)})` : '',
+  ].filter(Boolean);
 
   return (
     <ChartPanel
       title="Receipts vs Payments"
-      description="Per month across all accounts, internal transfers excluded — last 6 months."
+      description="Per month across all accounts, internal transfers excluded — last 6 months, up to today."
       legend={<Legend items={[{ label: 'Receipts', color: series.blue }, { label: 'Payments', color: series.orange }]} />}
     >
       {!hasData ? (
@@ -291,6 +309,12 @@ export function MonthlyFlowChart({ points }: { points: MonthlyFlowPoint[] }) {
             <Bar dataKey="payments" fill={series.orange} radius={[4, 4, 0, 0]} maxBarSize={28} isAnimationActive={false} />
           </BarChart>
         </ResponsiveContainer>
+      )}
+      {aheadParts.length > 0 && (
+        <p className="mt-2 flex items-start gap-1.5 text-xs text-muted-foreground">
+          <CalendarClock aria-hidden className="mt-px h-3.5 w-3.5 shrink-0" />
+          <span>{aheadParts.join(' and ')} not included until their date.</span>
+        </p>
       )}
     </ChartPanel>
   );

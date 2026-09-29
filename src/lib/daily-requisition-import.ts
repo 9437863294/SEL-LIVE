@@ -690,3 +690,86 @@ export function allocateReceptionNos(
   const receptionNos = Array.from({ length: wanted }, (_, offset) => formatReceptionNo(config, start + offset));
   return { receptionNos, nextIndex: start + wanted };
 }
+
+/* ── what an imported entry carries beyond the sheet ─────────────────────── */
+
+/** The payment fields written alongside an imported entry — none unless it was imported as Paid. */
+export interface ImportedPaymentFields {
+  paidAmount?: number;
+  manualPaid?: boolean;
+}
+
+/**
+ * An entry imported as Paid is register history paid outside Bank Balance: no voucher will ever
+ * settle it. So it lands paid in full and flagged as a manual payment, the same as one marked Paid by
+ * hand in Daily Requisition. Without `paidAmount`, anything reading the paid total alone — Bank
+ * Balance's balance due among them — would count every such entry as still owed.
+ *
+ * Returns only the fields to add, so spreading it into a Firestore write never adds an `undefined`.
+ */
+export function importedPaymentFields(
+  draft: Pick<RequisitionImportDraft, "status" | "netAmount">,
+): ImportedPaymentFields {
+  if (draft.status !== "Paid") return {};
+  return { paidAmount: Math.round((Number(draft.netAmount) || 0) * 100) / 100, manualPaid: true };
+}
+
+/** An expense request, as far as linking one to an imported entry needs it. */
+export interface RequisitionImportExpenseRequest {
+  id: string;
+  requestNo?: string;
+  /** Set once a requisition has received the request; blank while it is still unlinked. */
+  receptionNo?: string;
+}
+
+/**
+ * What an imported row does to the expense request its Dep No names:
+ *
+ *   - `link`     — the request is not received yet, and this row's entry claims it
+ *   - `received` — every request with that number is already received, under `receptionNo`
+ *   - `claimed`  — an earlier row of the same import claims the only free one (`index` is that row)
+ *   - `none`     — the row has no Dep No, or no expense request carries it
+ */
+export type RequisitionExpenseLink =
+  | { kind: "link"; expenseRequestId: string }
+  | { kind: "received"; receptionNo: string }
+  | { kind: "claimed"; index: number }
+  | { kind: "none" };
+
+/**
+ * Links each imported row to the expense request it was raised as — what the entry sheet does when
+ * a DEP No is picked by hand: the request whose Request No is the row's Dep No, and only while no
+ * requisition has received it yet. Aligned with `depNos`, one outcome per row.
+ *
+ * Matched exactly (trimmed), not loosely. Every other module joins the two on `depNo === requestNo`,
+ * so a looser match here would mark a request received by an entry those modules then cannot find.
+ * Each request is claimed once, by the first row that names it.
+ */
+export function planExpenseRequestLinks(
+  depNos: readonly string[],
+  expenseRequests: readonly RequisitionImportExpenseRequest[],
+): RequisitionExpenseLink[] {
+  const received = (request: RequisitionImportExpenseRequest) => String(request.receptionNo ?? "").trim();
+  const byRequestNo = new Map<string, RequisitionImportExpenseRequest[]>();
+  for (const request of expenseRequests) {
+    const key = String(request.requestNo ?? "").trim();
+    if (!key) continue;
+    byRequestNo.set(key, [...(byRequestNo.get(key) ?? []), request]);
+  }
+
+  const claimedBy = new Map<string, number>();
+  return depNos.map((depNo, index): RequisitionExpenseLink => {
+    const key = String(depNo ?? "").trim();
+    const candidates = key ? byRequestNo.get(key) ?? [] : [];
+    if (!candidates.length) return { kind: "none" };
+
+    const free = candidates.find((request) => !received(request) && !claimedBy.has(request.id));
+    if (free) {
+      claimedBy.set(free.id, index);
+      return { kind: "link", expenseRequestId: free.id };
+    }
+    const unreceived = candidates.find((request) => !received(request));
+    if (unreceived) return { kind: "claimed", index: claimedBy.get(unreceived.id) ?? 0 };
+    return { kind: "received", receptionNo: received(candidates[0]) };
+  });
+}

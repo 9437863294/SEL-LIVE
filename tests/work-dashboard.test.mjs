@@ -682,22 +682,54 @@ test('somebody who can only view the module can action nothing', () => {
 test('a finance receiver sees only the stages they can move', () => {
   const receiver = grants('Mark as Received@Daily Requisition.Receiving at Finance');
   const statuses = actionableRequisitionStatuses(receiver);
-  assert.ok(statuses.includes('Pending'), 'Pending sits at Receiving at Finance');
-  assert.ok(statuses.includes('Needs Review'), 'Needs Review sits there too');
-  // Not theirs: these belong to verification and payment.
+  assert.deepEqual(statuses, ['Pending'], 'Pending is the only stage Receiving at Finance works');
+  // Not theirs. Needs Review waits on the GST step (its Needs Review tab), and the rest belong to
+  // verification and payment.
+  assert.ok(!statuses.includes('Needs Review'));
   assert.ok(!statuses.includes('Received'));
   assert.ok(!statuses.includes('Verified'));
   assert.ok(!statuses.includes('Received for Payment'));
+  assert.ok(!statuses.includes('Partially Paid'));
 });
 
-test('a verifier sees the verification stage and nothing else', () => {
+test('a verifier sees the verification stages and nothing else', () => {
+  // Needs Review is set by the GST & TDS dialog on an amount mismatch and cleared by its Review &
+  // Verify button, which needs 'Verify'. So it is the verifier's, like Received.
   const verifier = grants('Verify@Daily Requisition.GST & TDS Verification');
-  assert.deepEqual(actionableRequisitionStatuses(verifier), ['Received']);
+  assert.deepEqual(actionableRequisitionStatuses(verifier), ['Received', 'Needs Review']);
 });
 
-test('a payment approver sees both payment stages', () => {
+test('a payment approver sees the entries waiting to be paid, part-paid ones included', () => {
   const approver = grants('Approve@Daily Requisition.Processed for Payment');
-  assert.deepEqual(actionableRequisitionStatuses(approver), ['Verified', 'Received for Payment']);
+  const statuses = actionableRequisitionStatuses(approver);
+  assert.deepEqual(statuses, ['Verified', 'Received for Payment', 'Partially Paid']);
+  // Part-paid by a voucher, but the rest is still due. It stays in the payer's queue.
+  assert.ok(statuses.includes('Partially Paid'));
+});
+
+test('Send for Payment admits somebody to the Verified entries on the GST step, and to paying', () => {
+  // Verified entries wait on the GST & TDS Verification page, but its Send for Payment button checks
+  // 'Mark as Received for Payment' on Processed for Payment — the same grant the payment step's
+  // Mark as Paid checks, so that person also owns the entries still waiting to be paid.
+  const sender = grants('Mark as Received for Payment@Daily Requisition.Processed for Payment');
+  assert.deepEqual(actionableRequisitionStatuses(sender), ['Verified', 'Received for Payment', 'Partially Paid']);
+});
+
+test('each stage is labelled with the step whose page shows it', () => {
+  // The label is where you go to act on the entry, so it names the page that lists it.
+  assert.equal(REQUISITION_STAGE_LABEL['Pending'], 'Receiving at Finance');
+  assert.equal(REQUISITION_STAGE_LABEL['Received'], 'GST & TDS Verification');
+  assert.equal(REQUISITION_STAGE_LABEL['Needs Review'], 'GST & TDS Verification');
+  assert.equal(REQUISITION_STAGE_LABEL['Verified'], 'GST & TDS Verification');
+  assert.equal(REQUISITION_STAGE_LABEL['Received for Payment'], 'Processed for Payment');
+  assert.equal(REQUISITION_STAGE_LABEL['Partially Paid'], 'Processed for Payment');
+});
+
+test('settled and cancelled entries are nobody\'s work', () => {
+  const everything = () => true;
+  const statuses = actionableRequisitionStatuses(everything);
+  assert.ok(!statuses.includes('Paid'));
+  assert.ok(!statuses.includes('Cancelled'));
 });
 
 test('any one action on a stage is enough to be admitted to it', () => {
@@ -715,10 +747,11 @@ test('holding everything yields every stage, in pipeline order', () => {
   const everything = () => true;
   assert.deepEqual(actionableRequisitionStatuses(everything), [
     'Pending',
-    'Needs Review',
     'Received',
+    'Needs Review',
     'Verified',
     'Received for Payment',
+    'Partially Paid',
   ]);
 });
 

@@ -5,12 +5,17 @@ export const dynamic = 'force-dynamic';
  * Account Statement — one account's entries in a date range with a running figure, from the ledger
  * engine: entries dated before the account's opening date are already inside the opening figure and
  * are left out, and internal transfers count toward the balance, marked as transfers.
+ *
+ * A post-dated cheque's Debit is dated on the cheque date, after today. The default range and every
+ * preset end today, so the statement shows what has happened; a custom range that runs past today
+ * includes those entries, badged "Post-dated", and says its closing figure is projected.
  */
 
-import { useMemo, useState } from 'react';
+import { Fragment, useMemo, useState, type ReactNode } from 'react';
+import Link from 'next/link';
 import type { DateRange } from 'react-day-picker';
 import { endOfDay, startOfDay, subDays, subMonths } from 'date-fns';
-import { ArrowDownLeft, ArrowUpRight, FileText, Flag, RefreshCw, Search, Wallet } from 'lucide-react';
+import { ArrowDownLeft, ArrowUpRight, CalendarClock, FileText, Flag, RefreshCw, Search, Wallet } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -32,6 +37,8 @@ import {
 import { useAuthorization } from '@/hooks/useAuthorization';
 import type { DateRangePreset } from '@/lib/date-range-presets';
 import { balanceAt, buildLedger, formatDay, formatInr, isCashCredit } from '@/lib/bank-balance-ledger';
+import { modeConfig } from '@/lib/bank-payments';
+import { requisitionHref, voucherHref } from '@/lib/requisition-progress';
 import type { BankAccount, BankExpense } from '@/lib/types';
 import { cn } from '@/lib/utils';
 
@@ -39,11 +46,76 @@ interface StatementRow {
   id: string;
   date: Date;
   description: string;
-  ref: string;
+  /** The payment voucher the Debit was issued on (`bankPayments` id and BP/… number), if any. */
+  bankPaymentId: string;
+  voucherNo: string;
+  /** Cheque / DD / batch number, and the mode it was paid by. */
+  instrumentNo: string;
+  method: string;
+  /** Reception No. of the Daily Requisition it settles — or a plain request reference without one. */
+  requestRef: string;
+  requisitionId: string;
+  utr: string;
   debit: number;
   credit: number;
   figure: number;
   isContra: boolean;
+  /** Dated after today — a post-dated cheque that has not happened yet. */
+  postDated: boolean;
+}
+
+/** What the instrument number is called on the mode it was paid by: "Cheque", "DD", "RTGS ref". */
+function instrumentLabel(method: string) {
+  if (!method) return 'Chq / Ref';
+  const kind = modeConfig(method).kind;
+  return kind === 'transfer' ? `${method} ref` : kind === 'draft' ? 'DD' : method;
+}
+
+const REF_LINK = 'text-primary underline-offset-2 hover:underline';
+
+/** The entry's references, one labelled line each — voucher, instrument, reception, UTR. */
+function ReferenceCell({ row }: { row: StatementRow }) {
+  const items: Array<{ key: string; label: string; value: ReactNode }> = [];
+  if (row.bankPaymentId || row.voucherNo) {
+    const text = row.voucherNo || 'Open';
+    items.push({
+      key: 'voucher',
+      label: 'Voucher',
+      value: row.bankPaymentId ? (
+        <Link href={voucherHref(row.bankPaymentId)} className={REF_LINK}>
+          {text}
+        </Link>
+      ) : (
+        text
+      ),
+    });
+  }
+  if (row.instrumentNo) items.push({ key: 'instrument', label: instrumentLabel(row.method), value: row.instrumentNo });
+  if (row.requestRef) {
+    items.push({
+      key: 'request',
+      label: row.requisitionId ? 'Reception' : 'Ref',
+      value: row.requisitionId ? (
+        <Link href={requisitionHref(row.requestRef)} className={REF_LINK}>
+          {row.requestRef}
+        </Link>
+      ) : (
+        row.requestRef
+      ),
+    });
+  }
+  if (row.utr) items.push({ key: 'utr', label: 'UTR', value: row.utr });
+  if (!items.length) return <span className="text-muted-foreground">—</span>;
+  return (
+    <dl className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-2 gap-y-0.5">
+      {items.map((item) => (
+        <Fragment key={item.key}>
+          <dt className="whitespace-nowrap text-muted-foreground">{item.label}</dt>
+          <dd className="min-w-0 break-all font-mono">{item.value}</dd>
+        </Fragment>
+      ))}
+    </dl>
+  );
 }
 
 export default function AccountStatementPage() {
@@ -52,6 +124,7 @@ export default function AccountStatementPage() {
   const { accounts, transactions, isLoading, isRefreshing, refresh } = useBankData({ enabled: canView, transactions: true });
 
   const [pickedAccountId, setPickedAccountId] = useState('');
+  // Ends today, like every preset: post-dated entries show only in a custom range reaching past it.
   const [dateRange, setDateRange] = useState<DateRange | undefined>(() => ({ from: startOfDay(subMonths(new Date(), 1)), to: endOfDay(new Date()) }));
   const [datePreset, setDatePreset] = useState<DateRangePreset>('custom');
 
@@ -76,9 +149,17 @@ export default function AccountStatementPage() {
     const opening = startsAtOpening ? ledger.opening : balanceAt(ledger, subDays(from, 1));
     const openingDay = startsAtOpening && ledger.start ? ledger.start : from;
 
+    // Anything dated after today has not happened yet (a post-dated cheque's Debit sits on its date).
+    const today = new Date();
+    const todayEnd = endOfDay(today);
+    const runsPastToday = to > todayEnd;
+    // Then the opening figure already carries post-dated entries dated between today and `from`.
+    const startsAfterToday = from > todayEnd;
+
     let figure = opening;
     const rows: StatementRow[] = [];
     const totals = { receipts: 0, payments: 0, transfersIn: 0, transfersOut: 0 };
+    const postDated = { count: 0, amount: 0 };
     for (const { txn, at, effect } of ledger.entries) {
       if (at < from || at > to) continue;
       figure += effect;
@@ -88,18 +169,30 @@ export default function AccountStatementPage() {
         else totals.transfersOut += amount;
       } else if (txn.type === 'Credit') totals.receipts += amount;
       else totals.payments += amount;
+      const isPostDated = at > todayEnd;
+      if (isPostDated) {
+        postDated.count += 1;
+        postDated.amount += amount;
+      }
       rows.push({
         id: txn.id,
         date: at,
         description: txn.description,
-        ref: txn.paymentRequestRefNo || txn.paymentRefNo || txn.utrNumber || '',
+        bankPaymentId: txn.bankPaymentId || '',
+        voucherNo: txn.voucherNo || '',
+        instrumentNo: txn.paymentRefNo || '',
+        method: txn.paymentMethod || '',
+        requestRef: txn.paymentRequestRefNo || '',
+        requisitionId: txn.requisitionId || '',
+        utr: txn.utrNumber || '',
         debit: txn.type === 'Debit' ? amount : 0,
         credit: txn.type === 'Credit' ? amount : 0,
         figure,
         isContra: !!txn.isContra,
+        postDated: isPostDated,
       });
     }
-    return { opening, openingDay, startsAtOpening, closing: figure, rows, totals, from, to };
+    return { opening, openingDay, startsAtOpening, closing: figure, rows, totals, from, to, today, runsPastToday, startsAfterToday, postDated };
   }, [ledger, dateRange]);
 
   if (authLoading || (isLoading && canView)) return <BankPageSkeleton kpis={4} />;
@@ -110,6 +203,17 @@ export default function AccountStatementPage() {
   const totalDebit = statement?.rows.reduce((s, r) => s + r.debit, 0) ?? 0;
   const totalCredit = statement?.rows.reduce((s, r) => s + r.credit, 0) ?? 0;
   const rangeLabel = statement ? `${formatDay(statement.from)} – ${formatDay(statement.to)}` : 'Pick a date range';
+  const figureWord = figureLabel.toLowerCase();
+  const pd = statement?.postDated;
+  const projectedNote = !statement?.runsPastToday
+    ? null
+    : statement.startsAfterToday
+      ? `This range is after today (${formatDay(statement.today)}): its opening and closing ${figureWord} are projected from post-dated entries, not actual.`
+      : pd && pd.count > 0
+        ? `This range runs past today (${formatDay(statement.today)}): ${pd.count} post-dated entr${pd.count === 1 ? 'y' : 'ies'} of ${formatInr(pd.amount)} ${
+            pd.count === 1 ? 'is' : 'are'
+          } included, so the closing ${figureWord} is projected, not actual.`
+        : `This range runs past today (${formatDay(statement.today)}), so the closing ${figureWord} is projected — no post-dated entries fall in it yet.`;
 
   const toolbar = (
     <FilterBar>
@@ -158,7 +262,13 @@ export default function AccountStatementPage() {
           <KpiCard
             label={`Opening ${figureLabel.toLowerCase()}`}
             value={formatInr(statement?.opening ?? 0)}
-            hint={statement ? (statement.startsAtOpening ? `Opening figure on ${formatDay(statement.openingDay)}` : `Start of ${formatDay(statement.from)}`) : '—'}
+            hint={
+              statement
+                ? statement.startsAtOpening
+                  ? `Opening figure on ${formatDay(statement.openingDay)}`
+                  : `${statement.startsAfterToday ? 'Projected, start' : 'Start'} of ${formatDay(statement.from)}`
+                : '—'
+            }
             icon={Flag}
             tone="amber"
             accent
@@ -182,12 +292,19 @@ export default function AccountStatementPage() {
           <KpiCard
             label={`Closing ${figureLabel.toLowerCase()}`}
             value={formatInr(statement?.closing ?? 0)}
-            hint={statement ? `End of ${formatDay(statement.to)}` : '—'}
+            hint={statement ? `${statement.runsPastToday ? 'Projected, end' : 'End'} of ${formatDay(statement.to)}` : '—'}
             icon={Wallet}
             tone={cc ? 'violet' : 'blue'}
             accent
           />
         </div>
+
+        {projectedNote && (
+          <p className="flex items-start gap-2 rounded-md bg-sky-50 px-3 py-2 text-sm text-sky-800">
+            <CalendarClock className="mt-0.5 h-4 w-4 shrink-0" />
+            {projectedNote}
+          </p>
+        )}
 
         <TableCard
           title={account ? `${accountLabel(account)} — ${account.bankName}` : 'Select an account'}
@@ -203,12 +320,12 @@ export default function AccountStatementPage() {
           actions={account ? <StatusBadge status={account.status} /> : undefined}
           toolbar={toolbar}
         >
-          <Table className="w-full min-w-[820px]">
+          <Table className="w-full min-w-[880px]">
             <TableHeader>
               <TableRow>
                 <TableHead className="w-32">Date</TableHead>
                 <TableHead>Description</TableHead>
-                <TableHead className="w-40">Ref / UTR</TableHead>
+                <TableHead className="w-56">Reference</TableHead>
                 <TableHead className="w-36 text-right">Debit</TableHead>
                 <TableHead className="w-36 text-right">Credit</TableHead>
                 <TableHead className="w-40 text-right">{figureLabel}</TableHead>
@@ -236,7 +353,16 @@ export default function AccountStatementPage() {
               ) : (
                 statement.rows.map((row) => (
                   <TableRow key={row.id}>
-                    <TableCell className="whitespace-nowrap">{formatDay(row.date)}</TableCell>
+                    <TableCell className="whitespace-nowrap">
+                      <div className="flex flex-col items-start gap-1">
+                        <span>{formatDay(row.date)}</span>
+                        {row.postDated && (
+                          <Badge variant="info" title="Dated after today — it has not happened yet">
+                            Post-dated
+                          </Badge>
+                        )}
+                      </div>
+                    </TableCell>
                     <TableCell className="max-w-md">
                       <div className="flex items-start gap-2">
                         <span className="line-clamp-2 min-w-0">{row.description || '—'}</span>
@@ -247,7 +373,9 @@ export default function AccountStatementPage() {
                         )}
                       </div>
                     </TableCell>
-                    <TableCell className="whitespace-nowrap font-mono text-xs">{row.ref || '—'}</TableCell>
+                    <TableCell className="text-xs">
+                      <ReferenceCell row={row} />
+                    </TableCell>
                     <TableCell className="whitespace-nowrap text-right tabular-nums text-rose-600">{row.debit ? formatInr(row.debit) : '—'}</TableCell>
                     <TableCell className="whitespace-nowrap text-right tabular-nums text-emerald-600">{row.credit ? formatInr(row.credit) : '—'}</TableCell>
                     <TableCell className={cn('whitespace-nowrap text-right font-medium tabular-nums', row.figure < 0 && 'text-rose-600')}>
@@ -260,7 +388,9 @@ export default function AccountStatementPage() {
             {statement && statement.rows.length > 0 && (
               <TableFooter>
                 <TableRow>
-                  <TableCell colSpan={3}>Total · closing {figureLabel.toLowerCase()}</TableCell>
+                  <TableCell colSpan={3}>
+                    Total · {statement.runsPastToday ? 'projected ' : ''}closing {figureWord}
+                  </TableCell>
                   <TableCell className="whitespace-nowrap text-right tabular-nums text-rose-700">{formatInr(totalDebit)}</TableCell>
                   <TableCell className="whitespace-nowrap text-right tabular-nums text-emerald-700">{formatInr(totalCredit)}</TableCell>
                   <TableCell className={cn('whitespace-nowrap text-right tabular-nums', statement.closing < 0 && 'text-rose-700')}>

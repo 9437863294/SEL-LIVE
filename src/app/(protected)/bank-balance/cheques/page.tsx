@@ -1,9 +1,10 @@
 'use client';
 export const dynamic = 'force-dynamic';
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { Suspense, useCallback, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
-import { Ban, BookOpenCheck, CalendarClock, CheckCircle2, Eye, Loader2, Plus, RefreshCw, Undo2, Wallet } from 'lucide-react';
+import { useSearchParams } from 'next/navigation';
+import { Ban, BookOpenCheck, CalendarClock, CheckCircle2, Eye, Loader2, Plus, Printer, RefreshCw, Undo2, Wallet } from 'lucide-react';
 import { collection, deleteField, doc, getDocs, runTransaction, Timestamp } from 'firebase/firestore';
 import { format, startOfMonth } from 'date-fns';
 
@@ -20,16 +21,32 @@ import { TableCard } from '@/components/shared/table-card';
 import { FilterBar } from '@/components/shared/filter-bar';
 import { StatusBadge, type StatusTone } from '@/components/shared/status-badge';
 import { BANK_PAGE, BankAccessDenied, BankBalanceBackground, BankPageSkeleton, accountLabel } from '@/components/bank-balance/page-kit';
+import { useAuth } from '@/components/auth/AuthProvider';
 import { useToast } from '@/hooks/use-toast';
 import { useAuthorization } from '@/hooks/useAuthorization';
+import { useActivityLogger } from '@/hooks/useActivityLogger';
+import { ACTIVITY_MODULES } from '@/lib/activity-modules';
 import { db } from '@/lib/firebase';
 import { formatDay, formatInr } from '@/lib/bank-balance-ledger';
-import { displayStatus, reversePayment, type BankPaymentVoucher, type VoucherDisplayStatus } from '@/lib/bank-payments';
+import {
+  CHEQUE_VALIDITY_MONTHS,
+  canBounce,
+  displayStatus,
+  instrumentKey,
+  isPaymentStageStatus,
+  modeConfig,
+  reversePayment,
+  type BankPaymentVoucher,
+  type PayableRequisition,
+  type VoucherDisplayStatus,
+} from '@/lib/bank-payments';
+import { requisitionHref } from '@/lib/requisition-progress';
 import type { BankAccount, DailyRequisitionEntry } from '@/lib/types';
 
 const STATUS_TONE: Record<VoucherDisplayStatus, StatusTone> = {
   'Post-dated': 'info',
   Issued: 'progress',
+  Stale: 'warning',
   Cleared: 'success',
   Cancelled: 'neutral',
   Bounced: 'danger',
@@ -37,15 +54,45 @@ const STATUS_TONE: Record<VoucherDisplayStatus, StatusTone> = {
 
 type Closing = { voucher: BankPaymentVoucher; action: 'Cancelled' | 'Bounced' };
 
+/** A linked requisition that got its money back but kept the status Daily Requisition had given it. */
+type KeptStatus = { receptionNo: string; status: string };
+
+const todayKey = () => format(new Date(), 'yyyy-MM-dd');
+
+/** The printable A4 voucher, opened in a new tab from the View dialog. */
+const printHref = (voucherId: string) => `/bank-balance/cheques/${encodeURIComponent(voucherId)}/print`;
+
+/**
+ * Reads `?voucher=<id>` — the link other modules build with `voucherHref` — and hands the id up.
+ * A component of its own so the Suspense boundary `useSearchParams` asks for wraps only this, not
+ * the register.
+ */
+function VoucherDeepLink({ onOpen }: { onOpen: (voucherId: string) => void }) {
+  const voucherId = useSearchParams().get('voucher');
+  useEffect(() => {
+    if (voucherId) onOpen(voucherId);
+  }, [voucherId, onOpen]);
+  return null;
+}
+
 /**
  * Cheque Register — every payment voucher (cheque, e-cheque, RTGS/NEFT batch, DD) with its status:
- * post-dated until its date, issued, cleared, cancelled or bounced. Clearing only stamps the
- * voucher (the balance moved on the instrument date). Cancelling or recording a bounce reverses it
- * in one transaction: its bankExpenses Debits are removed and every linked Daily Requisition gets
- * the amount back (Paid → Partially Paid / Received for Payment).
+ * post-dated until its date, issued, stale once a cheque is more than three months past its date
+ * uncleared, cleared, cancelled or bounced.
+ *
+ * Clearing stamps the voucher and its bankExpenses Debits (the balance already moved on the
+ * instrument date). Cancelling or recording a bounce reverses it in one transaction: its Debits are
+ * removed and every linked Daily Requisition gets the amount back — its status recomputed only while
+ * it is still in the payment stage, so one cancelled or sent back meanwhile keeps that status.
+ * Cancelling also frees the instrument number for reuse; a bounced leaf stays used. Only an issued
+ * cheque or DD can bounce — once the bank has paid it (cleared) it cannot.
+ *
+ * `?voucher=<id>` opens that voucher.
  */
 export default function ChequeRegisterPage() {
   const { toast } = useToast();
+  const { user } = useAuth();
+  const { log } = useActivityLogger(ACTIVITY_MODULES.BANK_BALANCE);
   const { can, isLoading: authLoading } = useAuthorization();
   const canView = !authLoading && can('View', 'Bank Balance.Expenses');
   const canAdd = !authLoading && can('Add', 'Bank Balance.Expenses');
@@ -62,6 +109,7 @@ export default function ChequeRegisterPage() {
   const [accountFilter, setAccountFilter] = useState('all');
 
   const [viewing, setViewing] = useState<BankPaymentVoucher | null>(null);
+  const [pendingVoucherId, setPendingVoucherId] = useState<string | null>(null);
   const [clearing, setClearing] = useState<BankPaymentVoucher | null>(null);
   const [clearDate, setClearDate] = useState('');
   const [closing, setClosing] = useState<Closing | null>(null);
@@ -97,19 +145,34 @@ export default function ChequeRegisterPage() {
     else setIsLoading(false);
   }, [authLoading, canView, load]);
 
-  const today = format(new Date(), 'yyyy-MM-dd');
+  // A deep link opens its voucher once the register has loaded — once: closing it keeps it closed.
+  useEffect(() => {
+    if (!pendingVoucherId || isLoading) return;
+    const target = vouchers.find((v) => v.id === pendingVoucherId);
+    setPendingVoucherId(null);
+    if (target) setViewing(target);
+    else toast({ title: 'Voucher not found', description: 'The payment voucher this link points to no longer exists.', variant: 'destructive' });
+  }, [pendingVoucherId, isLoading, vouchers, toast]);
+
+  const today = todayKey();
   const monthStart = format(startOfMonth(new Date()), 'yyyy-MM-dd');
   const accountById = useMemo(() => new Map(accounts.map((a) => [a.id, a])), [accounts]);
   const statusOf = (v: BankPaymentVoucher) => displayStatus(v, today);
+  /** Only an issued cheque or DD that has reached its date can come back unpaid. */
+  const bounceable = (v: BankPaymentVoucher) => v.status === 'Issued' && v.instrumentDate <= today && canBounce(v.mode);
 
   const summary = useMemo(() => {
     const postDated = vouchers.filter((v) => displayStatus(v, today) === 'Post-dated');
-    const issued = vouchers.filter((v) => displayStatus(v, today) === 'Issued');
+    const issued = vouchers.filter((v) => {
+      const status = displayStatus(v, today);
+      return status === 'Issued' || status === 'Stale';
+    });
+    const stale = issued.filter((v) => displayStatus(v, today) === 'Stale');
     const clearedThisMonth = vouchers.filter((v) => v.status === 'Cleared' && (v.clearedDate || '') >= monthStart);
     const closedThisMonth = vouchers.filter((v) => (v.status === 'Cancelled' || v.status === 'Bounced') && (v.closedAt || '') >= monthStart);
     const sum = (list: BankPaymentVoucher[]) => list.reduce((s, v) => s + (Number(v.total) || 0), 0);
     const nextDue = [...postDated].sort((a, b) => a.instrumentDate.localeCompare(b.instrumentDate))[0];
-    return { postDated, issued, clearedThisMonth, closedThisMonth, sum, nextDue };
+    return { postDated, issued, stale, clearedThisMonth, closedThisMonth, sum, nextDue };
   }, [vouchers, today, monthStart]);
 
   const modes = useMemo(() => [...new Set(vouchers.map((v) => v.mode))].sort(), [vouchers]);
@@ -118,7 +181,7 @@ export default function ChequeRegisterPage() {
     const q = search.trim().toLowerCase();
     return vouchers.filter((v) => {
       const status = displayStatus(v, today);
-      if (statusFilter === 'open' && !(status === 'Post-dated' || status === 'Issued')) return false;
+      if (statusFilter === 'open' && !(status === 'Post-dated' || status === 'Issued' || status === 'Stale')) return false;
       if (statusFilter !== 'all' && statusFilter !== 'open' && status !== statusFilter) return false;
       if (modeFilter !== 'all' && v.mode !== modeFilter) return false;
       if (accountFilter !== 'all' && v.accountId !== accountFilter) return false;
@@ -130,19 +193,59 @@ export default function ChequeRegisterPage() {
 
   const handleClear = async () => {
     if (!clearing || !canAdd || !clearDate) return;
+    const day = todayKey();
+    if (clearing.instrumentDate > day) {
+      toast({ title: 'Not yet due', description: `This cheque is dated ${formatDay(clearing.instrumentDate)} and cannot clear before then.`, variant: 'destructive' });
+      return;
+    }
     if (clearDate < clearing.instrumentDate) {
       toast({ title: 'Check the date', description: `A cheque dated ${formatDay(clearing.instrumentDate)} cannot clear before that date.`, variant: 'destructive' });
       return;
     }
+    if (clearDate > day) {
+      toast({ title: 'Check the date', description: 'The clearing date cannot be in the future.', variant: 'destructive' });
+      return;
+    }
     setBusy(true);
     try {
-      await runTransaction(db, async (tx) => {
+      const result = await runTransaction(db, async (tx) => {
         const ref = doc(db, 'bankPayments', clearing.id);
         const snap = await tx.get(ref);
-        if (!snap.exists() || (snap.data() as BankPaymentVoucher).status !== 'Issued') throw new Error('This voucher is no longer open.');
-        tx.update(ref, { status: 'Cleared', clearedDate: clearDate });
+        if (!snap.exists()) throw new Error('This voucher no longer exists.');
+        const current = { id: snap.id, ...snap.data() } as BankPaymentVoucher;
+        if (current.status !== 'Issued') throw new Error(`This voucher is no longer open — it is ${current.status.toLowerCase()}.`);
+        if (current.instrumentDate > day) throw new Error(`It is dated ${formatDay(current.instrumentDate)} and cannot clear before then.`);
+        if (clearDate < current.instrumentDate) throw new Error(`A cheque dated ${formatDay(current.instrumentDate)} cannot clear before that date.`);
+
+        // Every read before any write: each line's bank entry is stamped with the clearing date too.
+        const expenseSnaps = await Promise.all(
+          (current.lines || []).filter((line) => line.expenseId).map((line) => tx.get(doc(db, 'bankExpenses', line.expenseId))),
+        );
+        expenseSnaps.forEach((expenseSnap) => {
+          if (expenseSnap.exists()) tx.update(expenseSnap.ref, { clearedDate: clearDate });
+        });
+        tx.update(ref, { status: 'Cleared', clearedDate: clearDate, clearedById: user?.id || '', clearedByName: user?.name || '' });
+        return { voucherNo: current.voucherNo, missing: expenseSnaps.filter((expenseSnap) => !expenseSnap.exists()).length };
       });
-      toast({ title: 'Cleared', description: `${clearing.voucherNo} marked cleared on ${formatDay(clearDate)}.` });
+      toast({
+        title: 'Cleared',
+        description: `${result.voucherNo} marked cleared on ${formatDay(clearDate)}.${
+          result.missing ? ` ${result.missing} of its bank entr${result.missing === 1 ? 'y was' : 'ies were'} missing and could not be stamped.` : ''
+        }`,
+      });
+      void log(
+        'Clear Payment Voucher',
+        {
+          voucherNo: result.voucherNo,
+          mode: clearing.mode || '',
+          instrumentNo: clearing.instrumentNo || '',
+          instrumentDate: clearing.instrumentDate || '',
+          accountId: clearing.accountId || '',
+          amount: Number(clearing.total) || 0,
+          clearedDate: clearDate,
+        },
+        { recordId: clearing.id, recordRef: result.voucherNo },
+      );
       setClearing(null);
       void load(true);
     } catch (error) {
@@ -154,47 +257,122 @@ export default function ChequeRegisterPage() {
 
   const handleClose = async () => {
     if (!closing || !canDelete) return;
-    if (!reason.trim()) {
+    const why = reason.trim();
+    if (!why) {
       toast({ title: 'Reason needed', description: 'Say why the voucher is being cancelled or bounced.', variant: 'destructive' });
       return;
     }
     const { voucher, action } = closing;
+    const day = todayKey();
     setBusy(true);
     try {
-      await runTransaction(db, async (tx) => {
+      const result = await runTransaction(db, async (tx) => {
         const voucherRef = doc(db, 'bankPayments', voucher.id);
         const snap = await tx.get(voucherRef);
         if (!snap.exists()) throw new Error('This voucher no longer exists.');
         const current = { id: snap.id, ...snap.data() } as BankPaymentVoucher;
-        if (current.status === 'Cancelled' || current.status === 'Bounced') throw new Error(`Already ${current.status.toLowerCase()}.`);
-        if (action === 'Cancelled' && current.status === 'Cleared') throw new Error('A cleared voucher cannot be cancelled — record a bounce instead.');
+        if (current.status === 'Cleared') {
+          throw new Error('The bank has already paid this voucher (it is cleared), so it can no longer be cancelled or bounced. Record any refund as a receipt.');
+        }
+        if (current.status !== 'Issued') throw new Error(`Already ${current.status.toLowerCase()}.`);
+        if (action === 'Bounced' && !canBounce(current.mode)) throw new Error(`A ${current.mode} transfer cannot bounce — cancel it instead.`);
+        if (action === 'Bounced' && current.instrumentDate > day) {
+          throw new Error(`It is dated ${formatDay(current.instrumentDate)} and cannot have been presented yet — cancel it instead.`);
+        }
+        const lines = current.lines || [];
 
-        const reqIds = [...new Set(current.lines.map((l) => l.requisitionId).filter(Boolean) as string[])];
+        // Every read before any write: the linked requisitions and, on a cancel, the number's reservation.
+        const reqIds = [...new Set(lines.map((l) => l.requisitionId).filter(Boolean) as string[])];
         const reqSnaps = await Promise.all(reqIds.map((id) => tx.get(doc(db, 'dailyRequisitions', id))));
+        const key = action === 'Cancelled' ? instrumentKey(current.accountId, current.mode, current.instrumentNo || '') : null;
+        const reservationRef = key ? doc(db, 'bankInstrumentNos', key) : null;
+        const reservation = reservationRef ? await tx.get(reservationRef) : null;
 
-        current.lines.forEach((line) => tx.delete(doc(db, 'bankExpenses', line.expenseId)));
+        lines.forEach((line) => {
+          if (line.expenseId) tx.delete(doc(db, 'bankExpenses', line.expenseId));
+        });
+
+        const keptStatus: KeptStatus[] = [];
+        const missing: string[] = [];
         reqSnaps.forEach((reqSnap) => {
-          if (!reqSnap.exists()) return;
-          let req = reqSnap.data() as DailyRequisitionEntry;
-          current.lines
-            .filter((l) => l.requisitionId === reqSnap.id)
-            .forEach((l) => {
-              const back = reversePayment(req, current.id, l.lineId);
-              req = { ...req, ...back };
-            });
+          const reqLines = lines.filter((l) => l.requisitionId === reqSnap.id);
+          if (!reqSnap.exists()) {
+            missing.push(reqLines[0]?.receptionNo || reqSnap.id);
+            return;
+          }
+          const data = reqSnap.data() as DailyRequisitionEntry;
+          // Its current status goes in with it: reversePayment recomputes the status only while the
+          // requisition is in the payment stage, so one cancelled or sent back meanwhile keeps its status.
+          const status: string | undefined = data.status;
+          let req: PayableRequisition = { netAmount: data.netAmount, paidAmount: data.paidAmount, payments: data.payments, status };
+          reqLines.forEach((l) => {
+            req = { ...req, ...reversePayment(req, current.id, l.lineId) };
+          });
+          const inPaymentStage = status === undefined || isPaymentStageStatus(status);
+          if (!inPaymentStage) keptStatus.push({ receptionNo: data.receptionNo || reqLines[0]?.receptionNo || reqSnap.id, status: status || '(none)' });
+          const payments = req.payments ?? [];
           tx.update(reqSnap.ref, {
             paidAmount: req.paidAmount ?? 0,
-            payments: req.payments ?? [],
-            status: req.status,
+            payments,
+            ...(inPaymentStage && req.status ? { status: req.status } : {}),
             ...(req.status === 'Paid' ? {} : { paidAt: deleteField() }),
+            ...(payments.length ? {} : { lastPaidAt: deleteField() }),
           });
         });
-        tx.update(voucherRef, { status: action, closedReason: reason.trim(), closedAt: today, closedAtTs: Timestamp.now() });
+
+        // A cancel frees the number so a mistyped one can be issued again — only this voucher's own
+        // reservation, never one another voucher holds. A bounced leaf was used: its number stays taken.
+        const owner = reservation?.exists() ? (reservation.data() as { voucherId?: string }).voucherId : undefined;
+        const released = !!reservationRef && !!reservation?.exists() && (!owner || owner === current.id);
+        if (released && reservationRef) tx.delete(reservationRef);
+
+        tx.update(voucherRef, {
+          status: action,
+          closedReason: why,
+          closedAt: day,
+          closedAtTs: Timestamp.now(),
+          closedById: user?.id || '',
+          closedByName: user?.name || '',
+        });
+
+        return {
+          voucherNo: current.voucherNo,
+          total: Number(current.total) || 0,
+          instrument: `${modeConfig(current.mode).instrumentLabel} ${current.instrumentNo || ''}`.trim(),
+          returnedTo: reqSnaps.length - missing.length,
+          keptStatus,
+          missing,
+          released,
+          receptionNos: [...new Set(lines.map((l) => l.receptionNo || '').filter(Boolean))],
+        };
       });
+
+      const back = result.returnedTo ? ` and returned to ${result.returnedTo === 1 ? 'its requisition' : `its ${result.returnedTo} requisitions`}` : '';
+      const notes = [
+        ...result.keptStatus.map((k) => `${k.receptionNo} left as ${k.status}`),
+        ...(result.missing.length ? [`${result.missing.join(', ')} no longer ${result.missing.length === 1 ? 'exists' : 'exist'}`] : []),
+        ...(result.released ? [`${result.instrument} can be used again`] : []),
+      ];
       toast({
         title: action === 'Cancelled' ? 'Voucher cancelled' : 'Bounce recorded',
-        description: `${voucher.voucherNo}: ${formatInr(voucher.total)} reversed from the balance and returned to its requisitions.`,
+        description: `${result.voucherNo}: ${formatInr(result.total)} reversed from the balance${back}${notes.length ? `; ${notes.join('; ')}` : ''}.`,
       });
+      void log(
+        action === 'Cancelled' ? 'Cancel Payment Voucher' : 'Record Cheque Bounce',
+        {
+          voucherNo: result.voucherNo,
+          mode: voucher.mode || '',
+          instrumentNo: voucher.instrumentNo || '',
+          instrumentDate: voucher.instrumentDate || '',
+          accountId: voucher.accountId || '',
+          amount: result.total,
+          reason: why,
+          requisitions: result.receptionNos,
+          ...(result.keptStatus.length ? { statusKept: result.keptStatus.map((k) => `${k.receptionNo}: ${k.status}`) } : {}),
+          ...(action === 'Cancelled' ? { instrumentNoReleased: result.released } : {}),
+        },
+        { recordId: voucher.id, recordRef: result.voucherNo },
+      );
       setClosing(null);
       setReason('');
       void load(true);
@@ -207,6 +385,19 @@ export default function ChequeRegisterPage() {
 
   if (authLoading || (isLoading && canView)) return <BankPageSkeleton kpis={4} blocks={1} />;
   if (!canView) return <BankAccessDenied title="Cheque Register" />;
+
+  /** What the cancel / bounce confirmation says will happen. */
+  const closingNote = ({ voucher, action }: Closing) => {
+    const linked = new Set((voucher.lines || []).map((l) => l.requisitionId).filter(Boolean)).size;
+    const back = linked ? ` and returned to the ${linked} linked requisition${linked === 1 ? '' : 's'}, which become payable again` : '';
+    const leaf =
+      action === 'Bounced'
+        ? ' The leaf stays used: its number cannot be issued again.'
+        : instrumentKey(voucher.accountId, voucher.mode, voucher.instrumentNo || '')
+          ? ` ${modeConfig(voucher.mode).instrumentLabel} ${voucher.instrumentNo} is released and can be used again.`
+          : '';
+    return `${formatInr(voucher.total)} is taken back out of the balance${back}.${leaf}`;
+  };
 
   const columns: Array<ListColumn<BankPaymentVoucher>> = [
     {
@@ -242,6 +433,7 @@ export default function ChequeRegisterPage() {
       cell: (v) => (
         <div className="text-xs">
           <p className="whitespace-nowrap font-medium">{formatDay(v.instrumentDate)}</p>
+          {statusOf(v) === 'Stale' && <p className="text-amber-700">Over {CHEQUE_VALIDITY_MONTHS} months old</p>}
           {v.status === 'Cleared' && <p className="text-emerald-700">Cleared {formatDay(v.clearedDate)}</p>}
           {(v.status === 'Cancelled' || v.status === 'Bounced') && <p className="text-muted-foreground">{v.status} {formatDay(v.closedAt)}</p>}
         </div>
@@ -291,7 +483,7 @@ export default function ChequeRegisterPage() {
               Cancel
             </Button>
           )}
-          {canDelete && (v.status === 'Issued' || v.status === 'Cleared') && v.mode !== 'RTGS' && v.mode !== 'NEFT' && v.mode !== 'IMPS' && (
+          {canDelete && bounceable(v) && (
             <Button variant="ghost" size="sm" className="h-8 text-destructive hover:text-destructive" onClick={() => { setReason(''); setClosing({ voucher: v, action: 'Bounced' }); }}>
               <Undo2 className="mr-1.5 h-3.5 w-3.5" />
               Bounced
@@ -306,6 +498,9 @@ export default function ChequeRegisterPage() {
 
   return (
     <>
+      <Suspense fallback={null}>
+        <VoucherDeepLink onOpen={setPendingVoucherId} />
+      </Suspense>
       <BankBalanceBackground tone="indigo" />
       <div className={BANK_PAGE}>
         <PageHeader
@@ -345,7 +540,14 @@ export default function ChequeRegisterPage() {
             tone="blue"
             accent
           />
-          <KpiCard label="Issued, not cleared" value={formatInr(summary.sum(summary.issued))} hint={`${summary.issued.length} voucher${summary.issued.length === 1 ? '' : 's'}`} icon={Wallet} tone="violet" accent />
+          <KpiCard
+            label="Issued, not cleared"
+            value={formatInr(summary.sum(summary.issued))}
+            hint={`${summary.issued.length} voucher${summary.issued.length === 1 ? '' : 's'}${summary.stale.length ? ` · ${summary.stale.length} stale` : ''}`}
+            icon={Wallet}
+            tone={summary.stale.length ? 'amber' : 'violet'}
+            accent
+          />
           <KpiCard label="Cleared this month" value={formatInr(summary.sum(summary.clearedThisMonth))} hint={`${summary.clearedThisMonth.length} voucher${summary.clearedThisMonth.length === 1 ? '' : 's'}`} icon={CheckCircle2} tone="emerald" accent />
           <KpiCard
             label="Cancelled / bounced this month"
@@ -381,6 +583,7 @@ export default function ChequeRegisterPage() {
                   <SelectItem value="all">All statuses</SelectItem>
                   <SelectItem value="Post-dated">Post-dated</SelectItem>
                   <SelectItem value="Issued">Issued</SelectItem>
+                  <SelectItem value="Stale">Stale (over {CHEQUE_VALIDITY_MONTHS} months)</SelectItem>
                   <SelectItem value="Cleared">Cleared</SelectItem>
                   <SelectItem value="Cancelled">Cancelled</SelectItem>
                   <SelectItem value="Bounced">Bounced</SelectItem>
@@ -470,11 +673,27 @@ export default function ChequeRegisterPage() {
                     )}
                   </dd>
                 </div>
+                {viewing.status === 'Cleared' && (
+                  <div>
+                    <dt className="text-xs text-muted-foreground">Cleared</dt>
+                    <dd>
+                      {formatDay(viewing.clearedDate)}
+                      {viewing.clearedByName ? ` · ${viewing.clearedByName}` : ''}
+                    </dd>
+                  </div>
+                )}
               </dl>
+              {statusOf(viewing) === 'Stale' && (
+                <p className="rounded-md bg-amber-50 px-3 py-2 text-sm text-amber-800">
+                  More than {CHEQUE_VALIDITY_MONTHS} months past its date and still not cleared, so a bank will refuse it now. If it was never paid, cancel it and issue a fresh one.
+                </p>
+              )}
               {viewing.remarks && <p className="rounded-md bg-muted/40 px-3 py-2 text-sm">{viewing.remarks}</p>}
-              {viewing.closedReason && (
+              {(viewing.status === 'Cancelled' || viewing.status === 'Bounced') && (
                 <p className="rounded-md bg-rose-50 px-3 py-2 text-sm text-rose-800">
-                  {viewing.status} on {formatDay(viewing.closedAt)}: {viewing.closedReason}
+                  {viewing.status} on {formatDay(viewing.closedAt)}
+                  {viewing.closedByName ? ` by ${viewing.closedByName}` : ''}
+                  {viewing.closedReason ? `: ${viewing.closedReason}` : ''}
                 </p>
               )}
               <div className="overflow-x-auto rounded-lg border">
@@ -494,7 +713,15 @@ export default function ChequeRegisterPage() {
                     {viewing.lines.map((line, index) => (
                       <tr key={line.lineId}>
                         <td className="px-3 py-2 text-xs text-muted-foreground">{index + 1}</td>
-                        <td className="whitespace-nowrap px-2 py-2 font-mono text-xs">{line.receptionNo || '—'}</td>
+                        <td className="whitespace-nowrap px-2 py-2 font-mono text-xs">
+                          {line.requisitionId && line.receptionNo ? (
+                            <Link href={requisitionHref(line.receptionNo)} className="text-primary underline-offset-2 hover:underline" title="Open in Daily Requisition">
+                              {line.receptionNo}
+                            </Link>
+                          ) : (
+                            line.receptionNo || '—'
+                          )}
+                        </td>
                         <td className="px-2 py-2">
                           <span className="block font-medium">{line.partyName || '—'}</span>
                           {line.projectName && <span className="block text-xs text-muted-foreground">{line.projectName}</span>}
@@ -518,7 +745,15 @@ export default function ChequeRegisterPage() {
               </div>
             </div>
           )}
-          <DialogFooter className="hr-dialog-footer">
+          <DialogFooter className="hr-dialog-footer gap-2 sm:gap-0">
+            {viewing && (
+              <Button variant="outline" asChild>
+                <Link href={printHref(viewing.id)} target="_blank" rel="noopener noreferrer">
+                  <Printer className="mr-2 h-4 w-4" />
+                  Print voucher
+                </Link>
+              </Button>
+            )}
             <Button variant="outline" onClick={() => setViewing(null)}>
               Close
             </Button>
@@ -539,6 +774,11 @@ export default function ChequeRegisterPage() {
             <Label htmlFor="clear-date">Cleared on (per bank statement)</Label>
             <Input id="clear-date" type="date" value={clearDate} min={clearing?.instrumentDate} max={today} onChange={(e) => setClearDate(e.target.value)} />
             <p className="text-xs text-muted-foreground">The balance already moved on the cheque date; clearing records that the bank has paid it.</p>
+            {clearing && statusOf(clearing) === 'Stale' && (
+              <p className="text-xs text-amber-700">
+                This cheque is more than {CHEQUE_VALIDITY_MONTHS} months past its date. Mark it cleared only if the bank statement shows it was paid.
+              </p>
+            )}
           </div>
           <DialogFooter className="hr-dialog-footer gap-2 sm:gap-0">
             <Button variant="outline" onClick={() => setClearing(null)} disabled={busy}>
@@ -560,11 +800,7 @@ export default function ChequeRegisterPage() {
         <DialogContent className="hr-mobile-dialog gap-4 sm:max-w-md">
           <DialogHeader className="hr-dialog-header pr-8">
             <DialogTitle>{closing?.action === 'Cancelled' ? 'Cancel' : 'Record bounce of'} {closing?.voucher.voucherNo}?</DialogTitle>
-            <DialogDescription>
-              {closing
-                ? `${formatInr(closing.voucher.total)} is taken back out of the balance and returned to the ${closing.voucher.lines.filter((l) => l.requisitionId).length} linked requisition(s), which become payable again.`
-                : ''}
-            </DialogDescription>
+            <DialogDescription>{closing ? closingNote(closing) : ''}</DialogDescription>
           </DialogHeader>
           <div className="hr-dialog-body space-y-1.5">
             <Label htmlFor="close-reason">Reason</Label>

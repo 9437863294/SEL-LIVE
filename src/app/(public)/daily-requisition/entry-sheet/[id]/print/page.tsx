@@ -1,130 +1,143 @@
 'use client';
 
-import React, { useRef, useEffect, useState } from 'react';
-import { useParams, useRouter, useSearchParams } from 'next/navigation';
-import { Separator } from '@/components/ui/separator';
-import { db } from '@/lib/firebase';
-import {
-  collection,
-  getDocs,
-  query,
-  where,
-  documentId,
-  Timestamp,
-} from 'firebase/firestore';
-import type {
-  DailyRequisitionEntry,
-  ExpenseRequest,
-  Project,
-} from '@/lib/types';
-import { useAuth } from '@/components/auth/AuthProvider';
-import { format } from 'date-fns';
-import { Skeleton } from '@/components/ui/skeleton';
-import { Loader2 } from 'lucide-react';
+/**
+ * The payment checklist for one requisition (`/daily-requisition/entry-sheet/<id>/print`), or for a
+ * batch (`?ids=a,b,c` — the entry sheet's "Print Checklists" arrives through the
+ * `/daily-requisition/entry-sheet/print` route, which renders this same page).
+ *
+ * Printed from this page itself, like the app's other print pages: the checklist is laid out with
+ * the app's own styles, shown on screen, and the print dialog opens once it has loaded. It used to
+ * copy its HTML into a pop-up window — which the browser blocks when no click opened it, and which
+ * carried none of the styles the layout depends on.
+ */
 
-const toDateSafe = (value: any): Date | null => {
+import React, { Suspense, useEffect, useMemo, useRef, useState } from 'react';
+import Link from 'next/link';
+import { useParams, useRouter, useSearchParams } from 'next/navigation';
+import { collection, documentId, getDocs, query, where, type FieldPath } from 'firebase/firestore';
+import { format } from 'date-fns';
+import { Loader2, Printer } from 'lucide-react';
+import { db } from '@/lib/firebase';
+import { useAuth } from '@/components/auth/AuthProvider';
+import { Button } from '@/components/ui/button';
+import { Separator } from '@/components/ui/separator';
+import { Skeleton } from '@/components/ui/skeleton';
+import type { DailyRequisitionEntry, ExpenseRequest, Project } from '@/lib/types';
+
+const inr = new Intl.NumberFormat('en-IN', {
+  style: 'currency',
+  currency: 'INR',
+  minimumFractionDigits: 2,
+  maximumFractionDigits: 2,
+});
+const money = (value: unknown) => inr.format(Number(value) || 0);
+
+const toDateSafe = (value: unknown): Date | null => {
   if (!value) return null;
-  if (value instanceof Date) return value;
-  if (value instanceof Timestamp) return value.toDate();
+  if (value instanceof Date) return Number.isNaN(value.getTime()) ? null : value;
+  const maybe = value as { toDate?: () => Date; seconds?: number };
+  if (typeof maybe.toDate === 'function') return maybe.toDate();
+  if (typeof maybe.seconds === 'number') return new Date(maybe.seconds * 1000);
   if (typeof value === 'string' || typeof value === 'number') {
-    const d = new Date(value);
-    return isNaN(d.getTime()) ? null : d;
+    const parsed = new Date(value);
+    return Number.isNaN(parsed.getTime()) ? null : parsed;
   }
   return null;
 };
 
-const PrintableContent = React.forwardRef<
-  HTMLDivElement,
-  {
-    entry: DailyRequisitionEntry;
-    expenseRequest?: ExpenseRequest | null;
-    project?: Project | null;
-  }
->(({ entry, expenseRequest, project }, ref) => {
-  const { user } = useAuth();
-  if (!entry) return null;
+const formatDate = (value: unknown) => {
+  const date = toDateSafe(value);
+  return date ? format(date, 'dd MMM yyyy') : 'N/A';
+};
 
-  const entryDate = toDateSafe(entry.date);
+/** Firestore caps an `in` filter at 30 values, and a bulk print can select more. */
+const IN_LIMIT = 30;
 
+async function getDocsWhereIn<T>(collectionName: string, field: string | FieldPath, values: string[]): Promise<T[]> {
+  const unique = Array.from(new Set(values.filter(Boolean)));
+  const chunks: string[][] = [];
+  for (let index = 0; index < unique.length; index += IN_LIMIT) chunks.push(unique.slice(index, index + IN_LIMIT));
+  const snapshots = await Promise.all(
+    chunks.map((chunk) => getDocs(query(collection(db, collectionName), where(field, 'in', chunk)))),
+  );
+  return snapshots.flatMap((snapshot) => snapshot.docs.map((d) => ({ id: d.id, ...d.data() }) as T));
+}
+
+const PrintStyles = () => (
+  <style>{`
+    @media print {
+      @page { size: A4 portrait; margin: 14mm; }
+      html, body { background: #fff !important; }
+      .no-print { display: none !important; }
+      .checklist-sheet { break-after: page; page-break-after: always; }
+      .checklist-sheet:last-child { break-after: auto; page-break-after: auto; }
+    }
+  `}</style>
+);
+
+function Field({ label, children, wide }: { label: string; children: React.ReactNode; wide?: boolean }) {
   return (
-    <div ref={ref} className="p-8 bg-white text-black font-sans">
-      <div className="text-center mb-4">
+    <div className="flex min-w-0">
+      <span className={`${wide ? 'w-36' : 'w-32'} shrink-0 font-medium`}>{label}</span>
+      <span className="min-w-0 break-words">{children}</span>
+    </div>
+  );
+}
+
+function Checklist({
+  entry,
+  project,
+  expenseRequest,
+  printedBy,
+  printedAt,
+}: {
+  entry: DailyRequisitionEntry;
+  project?: Project;
+  expenseRequest?: ExpenseRequest;
+  printedBy: string;
+  printedAt: string;
+}) {
+  return (
+    <div className="bg-white p-8 font-sans text-black print:p-0">
+      <div className="mb-4 text-center">
         <h2 className="text-xl font-bold">SIDDHARTHA ENGINEERING LIMITED</h2>
         <p className="text-sm font-medium">Nayapalli, Bhubaneswar</p>
       </div>
-      <h3 className="text-lg font-semibold text-center mb-4 underline">
-        Check List for Payment
-      </h3>
+      <h3 className="mb-4 text-center text-lg font-semibold underline">Check List for Payment</h3>
 
-      <div className="grid grid-cols-2 gap-x-8 gap-y-2 text-sm mb-4">
-        <div className="flex">
-          <span className="font-medium w-32 shrink-0">Reception No:</span>
-          <span>{entry.receptionNo}</span>
-        </div>
-        <div className="flex">
-          <span className="font-medium w-32 shrink-0">Reception Date:</span>
-          <span>
-            {entryDate
-              ? format(entryDate, 'MMMM do, yyyy')
-              : 'N/A'}
-          </span>
-        </div>
-        <div className="flex">
-          <span className="font-medium w-32 shrink-0">DEP No:</span>
-          <span>{entry.depNo}</span>
-        </div>
-        <div className="flex">
-          <span className="font-medium w-32 shrink-0">Project Name:</span>
-          <span>{project?.projectName || 'N/A'}</span>
-        </div>
+      <div className="mb-4 grid grid-cols-1 gap-x-8 gap-y-2 text-sm sm:grid-cols-2 print:grid-cols-2">
+        <Field label="Reception No:">{entry.receptionNo}</Field>
+        <Field label="Reception Date:">{formatDate(entry.date)}</Field>
+        <Field label="DEP No:">{entry.depNo || 'N/A'}</Field>
+        <Field label="Project Name:">{project?.projectName || 'N/A'}</Field>
       </div>
 
       <Separator className="my-4 bg-gray-400" />
 
-      <div className="grid grid-cols-2 gap-x-8 text-sm mb-2">
-        <div className="flex">
-          <span className="font-medium w-32 shrink-0">
-            Name of the party:
-          </span>
+      <div className="mb-4 grid grid-cols-1 gap-x-8 gap-y-2 text-sm sm:grid-cols-2 print:grid-cols-2">
+        <Field label="Name of the party:" wide>
           <span className="font-semibold">{entry.partyName}</span>
-        </div>
-        <div className="flex gap-x-4">
+        </Field>
+        <div className="flex flex-wrap gap-x-6 gap-y-2">
           <div className="flex">
-            <span className="font-medium w-24 shrink-0">
-              Gross Amount:
-            </span>
-            <span>{entry.grossAmount.toLocaleString()}</span>
+            <span className="w-28 shrink-0 font-medium">Gross Amount:</span>
+            <span className="tabular-nums">{money(entry.grossAmount)}</span>
           </div>
           <div className="flex">
-            <span className="font-medium w-24 shrink-0">
-              Net Amount:
-            </span>
-            <span>{entry.netAmount.toLocaleString()}</span>
+            <span className="w-28 shrink-0 font-medium">Net Amount:</span>
+            <span className="tabular-nums">{money(entry.netAmount)}</span>
           </div>
         </div>
+        <Field label="Head of A/c:" wide>{expenseRequest?.headOfAccount || 'N/A'}</Field>
+        <Field label="Sub-Head of A/c:">{expenseRequest?.subHeadOfAccount || 'N/A'}</Field>
       </div>
 
-      <div className="grid grid-cols-2 gap-x-8 text-sm mb-4">
-        <div className="flex">
-          <span className="font-medium w-32 shrink-0">Head of A/c:</span>
-          <span>{expenseRequest?.headOfAccount || 'N/A'}</span>
-        </div>
-        <div className="flex">
-          <span className="font-medium w-32 shrink-0">
-            Sub-Head of A/c:
-          </span>
-          <span>{expenseRequest?.subHeadOfAccount || 'N/A'}</span>
-        </div>
-      </div>
-
-      <div className="space-y-2 text-sm mb-8">
+      <div className="mb-8 space-y-2 text-sm">
         <p className="font-medium">Description:</p>
-        <p className="pl-4 min-h-[50px] border-l-2 border-gray-200">
-          {entry.description}
-        </p>
+        <p className="min-h-[50px] border-l-2 border-gray-200 pl-4">{entry.description}</p>
       </div>
 
-      <div className="mt-24 grid grid-cols-2 gap-x-24 gap-y-16 text-sm">
+      <div className="mt-24 grid grid-cols-2 gap-x-8 gap-y-16 text-sm sm:gap-x-24 print:gap-x-24">
         <div className="border-t border-black pt-1">Prepared by</div>
         <div className="border-t border-black pt-1">Authorised by</div>
         <div className="border-t border-black pt-1">Checked by</div>
@@ -133,209 +146,159 @@ const PrintableContent = React.forwardRef<
         <div className="border-t border-black pt-1">A/c Dept</div>
       </div>
 
-      <div className="mt-24 flex justify-between text-xs text-gray-500">
+      <div className="mt-24 flex flex-wrap justify-between gap-2 text-xs text-gray-500">
         <div>
-          <span className="font-medium">Printed By:</span>
-          <span> {user?.name || 'N/A'}</span>
+          <span className="font-medium">Printed By:</span> <span>{printedBy}</span>
         </div>
         <div>
-          <span className="font-medium">Timestamp:</span>
-          <span>
-            {' '}
-            {format(new Date(), 'dd-MMM-yyyy HH:mm:ss')}
-          </span>
+          <span className="font-medium">Timestamp:</span> <span>{printedAt}</span>
         </div>
       </div>
     </div>
   );
-});
-PrintableContent.displayName = 'PrintableContent';
+}
 
-export default function PrintChecklistPage() {
-  const params = useParams();
-  const router = useRouter();
+function ChecklistPrint() {
+  const params = useParams<{ id?: string }>();
   const searchParams = useSearchParams();
+  const router = useRouter();
+  const { user } = useAuth();
 
-  const id = params.id as string;
-  const idsFromQuery = searchParams.get('ids')?.split(',');
+  // Keyed on the joined string, not a fresh array per render — an array in the effect's
+  // dependencies re-ran the fetch after every render.
+  const idsKey = searchParams.get('ids') || (typeof params?.id === 'string' ? params.id : '');
+  const ids = useMemo(
+    () => idsKey.split(',').map((value) => value.trim()).filter(Boolean),
+    [idsKey],
+  );
 
-  const componentToPrintRef = useRef<HTMLDivElement>(null);
   const [entries, setEntries] = useState<DailyRequisitionEntry[]>([]);
   const [projects, setProjects] = useState<Project[]>([]);
-  const [expenseRequests, setExpenseRequests] = useState<ExpenseRequest[]>(
-    []
-  );
+  const [expenseRequests, setExpenseRequests] = useState<ExpenseRequest[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState('');
+  const printed = useRef(false);
 
   useEffect(() => {
-    const idsToFetch = idsFromQuery || (id ? [id] : []);
-    if (idsToFetch.length === 0) {
-      router.push('/daily-requisition/entry-sheet');
+    let cancelled = false;
+    if (!ids.length) {
+      setError('No requisition was chosen to print.');
+      setIsLoading(false);
       return;
     }
-
-    const fetchData = async () => {
+    const load = async () => {
       setIsLoading(true);
+      setError('');
       try {
-        const entryQuery = query(
-          collection(db, 'dailyRequisitions'),
-          where(documentId(), 'in', idsToFetch)
-        );
-        const entrySnap = await getDocs(entryQuery);
-
-        if (entrySnap.empty) {
-          router.push('/daily-requisition/entry-sheet');
-          return;
-        }
-
-        const entriesData = entrySnap.docs.map(
-          (d) =>
-            ({
-              id: d.id,
-              ...d.data(),
-            } as DailyRequisitionEntry)
-        );
-        setEntries(entriesData);
-
-        const projectIds = [
-          ...new Set(
-            entriesData.map((e) => e.projectId).filter(Boolean)
-          ),
-        ];
-        if (projectIds.length > 0) {
-          const projectQuery = query(
-            collection(db, 'projects'),
-            where(documentId(), 'in', projectIds)
-          );
-          const projectSnap = await getDocs(projectQuery);
-          setProjects(
-            projectSnap.docs.map(
-              (d) =>
-                ({
-                  id: d.id,
-                  ...d.data(),
-                } as Project)
-            )
-          );
-        }
-
-        const depNos = [
-          ...new Set(entriesData.map((e) => e.depNo).filter(Boolean)),
-        ];
-        if (depNos.length > 0) {
-          const expenseQuery = query(
-            collection(db, 'expenseRequests'),
-            where('requestNo', 'in', depNos)
-          );
-          const expenseSnap = await getDocs(expenseQuery);
-          setExpenseRequests(
-            expenseSnap.docs.map(
-              (d) => d.data() as ExpenseRequest
-            )
-          );
-        }
-      } catch (error) {
-        console.error('Error fetching checklist data:', error);
+        const found = await getDocsWhereIn<DailyRequisitionEntry>('dailyRequisitions', documentId(), ids);
+        // In the order they were chosen, not the order Firestore returned them.
+        const order = new Map(ids.map((id, index) => [id, index]));
+        found.sort((a, b) => (order.get(a.id) ?? 0) - (order.get(b.id) ?? 0));
+        const [projectDocs, expenseDocs] = await Promise.all([
+          getDocsWhereIn<Project>('projects', documentId(), found.map((entry) => entry.projectId)),
+          getDocsWhereIn<ExpenseRequest>('expenseRequests', 'requestNo', found.map((entry) => entry.depNo)),
+        ]);
+        if (cancelled) return;
+        setEntries(found);
+        setProjects(projectDocs);
+        setExpenseRequests(expenseDocs);
+        if (!found.length) setError('That requisition could not be found. It may have been deleted.');
+      } catch (err) {
+        console.error('Error fetching checklist data:', err);
+        if (!cancelled) setError('The checklist could not be loaded.');
       } finally {
-        setIsLoading(false);
+        if (!cancelled) setIsLoading(false);
       }
     };
+    void load();
+    return () => {
+      cancelled = true;
+    };
+  }, [ids]);
 
-    fetchData();
-  }, [id, idsFromQuery, router]);
-
-  // Auto-open a print window once content is ready
   useEffect(() => {
-    if (isLoading) return;
-    if (entries.length === 0) return;
-    if (!componentToPrintRef.current) return;
+    if (!entries.length) return;
+    document.title = entries.length === 1 ? `Checklist-${entries[0].receptionNo}` : `Checklists-${entries.length}`;
+  }, [entries]);
 
-    const timer = setTimeout(() => {
-      const printContents =
-        componentToPrintRef.current?.innerHTML ?? '';
-      const printWindow = window.open('', '_blank');
+  // Open the print dialog once, when the checklists are on the page. Marked inside the timer so a
+  // development double-run of the effect does not cancel the only print.
+  useEffect(() => {
+    if (isLoading || !entries.length || printed.current) return;
+    const timer = window.setTimeout(() => {
+      printed.current = true;
+      window.print();
+    }, 400);
+    return () => window.clearTimeout(timer);
+  }, [isLoading, entries]);
 
-      if (!printWindow) {
-        console.error('Unable to open print window');
-        return;
-      }
+  const close = () => {
+    window.close();
+    // Only a tab opened by a script can close itself; otherwise go back to the entry sheet.
+    window.setTimeout(() => {
+      if (!window.closed) router.push('/daily-requisition/entry-sheet');
+    }, 150);
+  };
 
-      printWindow.document.write(`
-        <html>
-          <head>
-            <title>Checklist-${id || 'batch'}</title>
-            <style>
-              @page {
-                margin: 16mm;
-              }
-              body {
-                font-family: system-ui, -apple-system, BlinkMacSystemFont,
-                  'Segoe UI', sans-serif;
-                background-color: #ffffff;
-                margin: 0;
-              }
-              .page-break {
-                page-break-after: always;
-              }
-              .page-break:last-child {
-                page-break-after: auto;
-              }
-            </style>
-          </head>
-          <body>
-            ${printContents}
-          </body>
-        </html>
-      `);
-
-      printWindow.document.close();
-      printWindow.focus();
-      printWindow.print();
-      printWindow.close();
-
-      router.back();
-    }, 500);
-
-    return () => clearTimeout(timer);
-  }, [isLoading, entries, id, router]);
+  const printedAt = format(new Date(), 'dd MMM yyyy HH:mm');
+  const expenseFor = (entry: DailyRequisitionEntry) =>
+    expenseRequests.find((er) => er.requestNo === entry.depNo && er.receptionNo === entry.receptionNo) ??
+    expenseRequests.find((er) => er.requestNo === entry.depNo);
 
   return (
-    <div className="p-4 md:p-8 bg-gray-100">
-      {/* Hidden printable content */}
-      <div className="hidden">
-        <div ref={componentToPrintRef}>
-          {isLoading ? (
-            <div className="bg-white border rounded-lg max-w-4xl mx-auto p-8">
-              <Skeleton className="h-96 w-full" />
-            </div>
-          ) : (
-            entries.map((entry) => (
-              <div
-                key={entry.receptionNo}
-                className="page-break"
-              >
-                <PrintableContent
-                  entry={entry}
-                  project={projects.find(
-                    (p) => p.id === entry.projectId
-                  )}
-                  expenseRequest={expenseRequests.find(
-                    (er) => er.requestNo === entry.depNo
-                  )}
-                />
-              </div>
-            ))
-          )}
+    <div className="min-h-screen bg-slate-100 p-4 md:p-8 print:bg-white print:p-0">
+      <PrintStyles />
+      <div className="no-print mx-auto mb-4 flex max-w-4xl flex-wrap items-center justify-between gap-2">
+        <p className="text-sm text-slate-600">
+          {isLoading ? 'Loading…' : entries.length > 1 ? `${entries.length} checklists` : 'Payment checklist'}
+        </p>
+        <div className="flex gap-2">
+          <Button variant="outline" onClick={close}>
+            Close
+          </Button>
+          <Button onClick={() => window.print()} disabled={isLoading || !entries.length}>
+            {isLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Printer className="mr-2 h-4 w-4" />}
+            Print / Save as PDF
+          </Button>
         </div>
       </div>
 
-      {/* Loading / "preparing" UI */}
-      <div className="flex flex-col items-center justify-center h-[calc(100vh-4rem)]">
-        <Loader2 className="h-16 w-16 animate-spin text-primary" />
-        <p className="mt-4 text-muted-foreground">
-          Preparing your document for printing...
-        </p>
-      </div>
+      {isLoading ? (
+        <div className="mx-auto max-w-4xl rounded-lg border bg-white p-8">
+          <Skeleton className="h-96 w-full" />
+        </div>
+      ) : !entries.length ? (
+        <div className="mx-auto max-w-4xl rounded-lg border bg-white p-8 text-center text-sm text-slate-600">
+          <p>{error || 'Nothing to print.'}</p>
+          <Link href="/daily-requisition/entry-sheet" className="mt-3 inline-block font-medium text-primary underline">
+            Back to the entry sheet
+          </Link>
+        </div>
+      ) : (
+        entries.map((entry) => (
+          <div
+            key={entry.id}
+            className="checklist-sheet mx-auto mb-6 max-w-4xl overflow-hidden rounded-lg border bg-white print:mb-0 print:max-w-none print:overflow-visible print:rounded-none print:border-0"
+          >
+            <Checklist
+              entry={entry}
+              project={projects.find((p) => p.id === entry.projectId)}
+              expenseRequest={expenseFor(entry)}
+              printedBy={user?.name || 'N/A'}
+              printedAt={printedAt}
+            />
+          </div>
+        ))
+      )}
     </div>
+  );
+}
+
+export default function PrintChecklistPage() {
+  // useSearchParams (`?ids=`) needs a Suspense boundary for a route that prerenders.
+  return (
+    <Suspense fallback={<div className="p-8"><Skeleton className="h-96 w-full" /></div>}>
+      <ChecklistPrint />
+    </Suspense>
   );
 }

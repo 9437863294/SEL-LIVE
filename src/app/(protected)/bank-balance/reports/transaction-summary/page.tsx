@@ -9,11 +9,15 @@ export const dynamic = 'force-dynamic';
  * Entries come from the ledger engine, so an entry dated before its account's opening date (already
  * inside the opening figure) is not counted as a flow. Internal transfers are left out by default;
  * switched on, they count as the receipt / payment each leg is.
+ *
+ * Only what has happened is reported: months run up to the current one, which counts through today.
+ * A post-dated cheque's Debit, dated after today, is left out of every figure until its date, and a
+ * note says how much is waiting.
  */
 
 import { Fragment, useMemo, useState } from 'react';
-import { eachMonthOfInterval, endOfMonth, format, parse, startOfMonth, subMonths } from 'date-fns';
-import { ArrowDownLeft, ArrowUpRight, Building2, CalendarRange, CreditCard, LayoutGrid, RefreshCw, Scale } from 'lucide-react';
+import { eachMonthOfInterval, endOfDay, endOfMonth, format, isSameMonth, parse, startOfMonth, subMonths } from 'date-fns';
+import { ArrowDownLeft, ArrowUpRight, Building2, CalendarClock, CalendarRange, CreditCard, LayoutGrid, RefreshCw, Scale } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -34,7 +38,7 @@ import {
   useBankData,
 } from '@/components/bank-balance/page-kit';
 import { useAuthorization } from '@/hooks/useAuthorization';
-import { buildLedgers, formatInr, isCashCredit } from '@/lib/bank-balance-ledger';
+import { buildLedgers, formatDay, formatInr, isCashCredit } from '@/lib/bank-balance-ledger';
 import type { BankAccount, BankExpense } from '@/lib/types';
 import { cn } from '@/lib/utils';
 
@@ -59,14 +63,17 @@ const parseMonth = (value: string) => {
   return Number.isNaN(parsed.getTime()) ? null : startOfMonth(parsed);
 };
 
+/** The months to report, never past the current one: a custom range reaching ahead stops there. */
 function getRangeMonths(option: RangeOption, customFrom: string, customTo: string): { start: Date; end: Date } {
   const today = new Date();
   const end = endOfMonth(today);
   if (option === 'custom') {
-    const from = parseMonth(customFrom) ?? startOfMonth(today);
-    const to = parseMonth(customTo) ?? startOfMonth(today);
+    const thisMonth = startOfMonth(today);
+    const from = parseMonth(customFrom) ?? thisMonth;
+    const to = parseMonth(customTo) ?? thisMonth;
     const [a, b] = from <= to ? [from, to] : [to, from];
-    return { start: a, end: endOfMonth(b) };
+    const last = b > thisMonth ? thisMonth : b;
+    return { start: a > last ? last : a, end: endOfMonth(last) };
   }
   if (option === 'ytd') return { start: new Date(today.getFullYear(), 0, 1), end };
   return { start: startOfMonth(subMonths(today, Number(option) - 1)), end };
@@ -86,10 +93,13 @@ export default function TransactionSummaryPage() {
 
   const ledgers = useMemo(() => buildLedgers<BankAccount, BankExpense>(accounts, transactions), [accounts, transactions]);
 
-  const { months, summaryRows, grandMonths, grandTotal } = useMemo(() => {
+  const { months, summaryRows, grandMonths, grandTotal, postDated } = useMemo(() => {
     const { start, end } = getRangeMonths(rangeOption, customFrom, customTo);
     const monthDates = eachMonthOfInterval({ start, end });
     const keys = monthDates.map(monthKey);
+    const todayEnd = endOfDay(new Date());
+    // Entries dated after today — post-dated cheques — are not flows yet: counted here, not below.
+    const waiting = emptyCell();
 
     const rows: AccountSummaryRow[] = [];
     for (const account of accounts) {
@@ -98,8 +108,15 @@ export default function TransactionSummaryPage() {
       const cells: Record<string, MonthCell> = Object.fromEntries(keys.map((key) => [key, emptyCell()]));
       const total = emptyCell();
       for (const { txn, at } of ledger.entries) {
-        if (at < start || at > end) continue;
         if (excludeContra && txn.isContra) continue;
+        if (at > todayEnd) {
+          const amount = Number(txn.amount) || 0;
+          if (txn.type === 'Credit') waiting.receipts += amount;
+          else waiting.payments += amount;
+          waiting.count += 1;
+          continue;
+        }
+        if (at < start || at > end) continue;
         const cell = cells[monthKey(at)];
         if (!cell) continue;
         const amount = Number(txn.amount) || 0;
@@ -130,7 +147,7 @@ export default function TransactionSummaryPage() {
       grandTotalCell.count += row.total.count;
     }
 
-    return { months: monthDates, summaryRows: rows, grandMonths: grand, grandTotal: grandTotalCell };
+    return { months: monthDates, summaryRows: rows, grandMonths: grand, grandTotal: grandTotalCell, postDated: waiting };
   }, [accounts, ledgers, rangeOption, customFrom, customTo, excludeContra]);
 
   const cashflowRows = useMemo(
@@ -145,13 +162,38 @@ export default function TransactionSummaryPage() {
   if (authLoading || (isLoading && canView)) return <BankPageSkeleton kpis={4} blocks={2} />;
   if (!canView) return <BankAccessDenied title="Transaction Summary" what="this report" />;
 
+  const today = new Date();
+  const isCurrentMonth = (month: Date) => isSameMonth(month, today);
   const firstMonth = months[0];
   const lastMonth = months[months.length - 1];
-  const periodLabel = firstMonth && lastMonth ? `${format(firstMonth, 'MMM yyyy')} – ${format(lastMonth, 'MMM yyyy')}` : '—';
+  // The current month counts only through today, so the period says so.
+  const periodLabel =
+    firstMonth && lastMonth
+      ? `${format(firstMonth, 'MMM yyyy')} – ${isCurrentMonth(lastMonth) ? formatDay(today) : format(lastMonth, 'MMM yyyy')}`
+      : '—';
   const grandNet = grandTotal.receipts - grandTotal.payments;
+  const postDatedAmounts = [
+    postDated.payments ? `${formatInr(postDated.payments)} in payments` : '',
+    postDated.receipts ? `${formatInr(postDated.receipts)} in receipts` : '',
+  ].filter(Boolean);
+  const postDatedNote =
+    postDated.count > 0
+      ? `Left out until their date: ${postDated.count} post-dated entr${postDated.count === 1 ? 'y' : 'ies'} dated after today${
+          postDatedAmounts.length ? ` — ${postDatedAmounts.join(' and ')}` : ''
+        }.`
+      : null;
 
   const cashflowColumns: Array<ListColumn<(typeof cashflowRows)[number]>> = [
-    { header: 'Month', mobile: 'title', cell: (row) => <span className="whitespace-nowrap font-medium">{format(row.month, 'MMMM yyyy')}</span> },
+    {
+      header: 'Month',
+      mobile: 'title',
+      cell: (row) => (
+        <span className="whitespace-nowrap font-medium">
+          {format(row.month, 'MMMM yyyy')}
+          {isCurrentMonth(row.month) && <span className="ml-1.5 text-xs font-normal text-muted-foreground">to date</span>}
+        </span>
+      ),
+    },
     {
       header: 'Net',
       align: 'right',
@@ -185,8 +227,8 @@ export default function TransactionSummaryPage() {
       </Select>
       {rangeOption === 'custom' && (
         <>
-          <Input type="month" aria-label="From month" value={customFrom} onChange={(e) => setCustomFrom(e.target.value)} className="sm:w-44" />
-          <Input type="month" aria-label="To month" value={customTo} onChange={(e) => setCustomTo(e.target.value)} className="sm:w-44" />
+          <Input type="month" aria-label="From month" max={monthKey(today)} value={customFrom} onChange={(e) => setCustomFrom(e.target.value)} className="sm:w-44" />
+          <Input type="month" aria-label="To month" max={monthKey(today)} value={customTo} onChange={(e) => setCustomTo(e.target.value)} className="sm:w-44" />
         </>
       )}
       <div className="flex h-10 items-center gap-2 rounded-md border px-3">
@@ -237,6 +279,13 @@ export default function TransactionSummaryPage() {
           />
         </div>
 
+        {postDatedNote && (
+          <p className="flex items-start gap-2 rounded-md bg-sky-50 px-3 py-2 text-sm text-sky-800">
+            <CalendarClock className="mt-0.5 h-4 w-4 shrink-0" />
+            {postDatedNote}
+          </p>
+        )}
+
         <TableCard
           title="Monthly breakdown by account"
           description={
@@ -258,6 +307,7 @@ export default function TransactionSummaryPage() {
                 {months.map((m) => (
                   <TableHead key={monthKey(m)} colSpan={3} className="border-l text-center">
                     {format(m, 'MMM yyyy')}
+                    {isCurrentMonth(m) && <span className="ml-1 text-[10px] font-normal text-muted-foreground">to date</span>}
                   </TableHead>
                 ))}
                 <TableHead colSpan={3} className="border-l text-center">

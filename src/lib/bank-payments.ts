@@ -58,8 +58,32 @@ export const modeConfig = (mode: string, modes: PaymentModeConfig[] = STANDARD_M
   modes.find((m) => m.mode === mode) ?? { mode, kind: 'transfer', instrumentLabel: 'Reference No.', instrumentRequired: false, allowsFutureDate: false, utrPerLine: true };
 
 export type VoucherStatus = 'Issued' | 'Cleared' | 'Cancelled' | 'Bounced';
-/** What the register shows: an issued cheque dated after today reads as post-dated. */
-export type VoucherDisplayStatus = VoucherStatus | 'Post-dated';
+/**
+ * What the register shows. An issued cheque dated after today reads as post-dated; one still
+ * uncleared more than three months after its date reads as stale (an Indian cheque is valid for
+ * three months from its date, so the bank will refuse it).
+ */
+export type VoucherDisplayStatus = VoucherStatus | 'Post-dated' | 'Stale';
+
+/** Cheque validity, in months from the instrument date. */
+export const CHEQUE_VALIDITY_MONTHS = 3;
+
+/** Only paper instruments come back unpaid: cheques and demand drafts. A transfer is cancelled. */
+export const canBounce = (mode: string, modes: PaymentModeConfig[] = STANDARD_MODES) => modeConfig(mode, modes).kind !== 'transfer';
+
+/**
+ * The deterministic id that reserves an instrument number on an account, so two vouchers can never
+ * carry the same cheque/DD number (checked inside the save transaction). Transfers are not reserved:
+ * their "number" is a free batch reference.
+ */
+export function instrumentKey(accountId: string, mode: string, instrumentNo: string): string | null {
+  const number = instrumentNo.trim().toUpperCase().replace(/[^A-Z0-9-]/g, '');
+  if (!accountId || !number) return null;
+  const kind = modeConfig(mode).kind;
+  if (kind === 'transfer') return null;
+  // Cheque and e-Cheque share one series per account; a DD has its own.
+  return `${accountId}_${kind}_${number}`;
+}
 
 export interface VoucherLine {
   lineId: string;
@@ -95,13 +119,30 @@ export interface BankPaymentVoucher {
   createdById?: string;
   createdByName?: string;
   clearedDate?: string;
+  clearedById?: string;
+  clearedByName?: string;
   closedReason?: string;
+  /** yyyy-MM-dd of the cancel / bounce. */
   closedAt?: string;
+  closedById?: string;
+  closedByName?: string;
 }
 
-export function displayStatus(voucher: Pick<BankPaymentVoucher, 'status' | 'instrumentDate'>, todayKey: string): VoucherDisplayStatus {
-  if (voucher.status === 'Issued' && voucher.instrumentDate > todayKey) return 'Post-dated';
-  return voucher.status;
+/** yyyy-MM-dd `months` calendar months before `dayKey` (clamped to the month's last day). */
+export function monthsBefore(dayKey: string, months: number): string {
+  const [y, m, d] = dayKey.split('-').map(Number);
+  const total = y * 12 + (m - 1) - months;
+  const year = Math.floor(total / 12);
+  const month = (total % 12) + 1;
+  const lastDay = new Date(year, month, 0).getDate();
+  return `${year}-${String(month).padStart(2, '0')}-${String(Math.min(d, lastDay)).padStart(2, '0')}`;
+}
+
+export function displayStatus(voucher: Pick<BankPaymentVoucher, 'status' | 'instrumentDate' | 'mode'>, todayKey: string): VoucherDisplayStatus {
+  if (voucher.status !== 'Issued') return voucher.status;
+  if (voucher.instrumentDate > todayKey) return 'Post-dated';
+  if (modeConfig(voucher.mode).kind !== 'transfer' && voucher.instrumentDate < monthsBefore(todayKey, CHEQUE_VALIDITY_MONTHS)) return 'Stale';
+  return 'Issued';
 }
 
 /** Indian financial year of a yyyy-MM-dd date, e.g. 2026-09-29 → "2026-27". */
@@ -135,7 +176,12 @@ export interface PayableRequisition {
   netAmount: number;
   paidAmount?: number;
   payments?: RequisitionPaymentRef[];
+  status?: string;
 }
+
+/** The workflow statuses in which payment bookkeeping owns the status. */
+export const PAYMENT_STAGE_STATUSES: readonly string[] = ['Received for Payment', 'Partially Paid', 'Paid'];
+export const isPaymentStageStatus = (status: string | undefined) => !!status && PAYMENT_STAGE_STATUSES.includes(status);
 
 const round2 = (n: number) => Math.round(n * 100) / 100;
 
@@ -160,11 +206,32 @@ export function applyPayment(req: PayableRequisition, ref: RequisitionPaymentRef
   };
 }
 
-/** The requisition fields after a voucher's line is cancelled or bounced. */
+/**
+ * Several voucher lines paying the same requisition, applied in order to a running copy — so the
+ * balance check sees the earlier lines and neither update is lost. Throws on overpayment.
+ */
+export function applyPayments(req: PayableRequisition, refs: RequisitionPaymentRef[]) {
+  let current: PayableRequisition = { ...req };
+  let result = { paidAmount: Number(req.paidAmount) || 0, payments: req.payments ?? [], status: statusForPaid(Number(req.netAmount) || 0, Number(req.paidAmount) || 0) };
+  for (const ref of refs) {
+    result = applyPayment(current, ref);
+    current = { ...current, ...result };
+  }
+  return result;
+}
+
+/**
+ * The requisition fields after a voucher's line is cancelled or bounced.
+ *
+ * The status is recomputed only while the requisition is still in the payment stage. If Daily
+ * Requisition has meanwhile moved it elsewhere (cancelled it, sent it back), the amount is given
+ * back but the status is left alone — a reversal must never un-cancel a requisition.
+ */
 export function reversePayment(req: PayableRequisition, bankPaymentId: string, lineId: string) {
   const payments = req.payments ?? [];
   const removed = payments.filter((p) => p.bankPaymentId === bankPaymentId && p.lineId === lineId);
   const kept = payments.filter((p) => !(p.bankPaymentId === bankPaymentId && p.lineId === lineId));
   const paidAmount = round2(Math.max(0, (Number(req.paidAmount) || 0) - removed.reduce((sum, p) => sum + p.amount, 0)));
-  return { paidAmount, payments: kept, status: statusForPaid(Number(req.netAmount) || 0, paidAmount) };
+  const status = req.status === undefined || isPaymentStageStatus(req.status) ? statusForPaid(Number(req.netAmount) || 0, paidAmount) : req.status;
+  return { paidAmount, payments: kept, status };
 }

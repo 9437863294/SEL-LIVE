@@ -6,6 +6,7 @@ import {
   allocateRequestNos,
   buildExpenseColumnMap,
   buildExpenseTemplateInstructions,
+  buildReceptionRegister,
   detectHeaderRow,
   expenseFingerprint,
   formatRequestNo,
@@ -14,6 +15,7 @@ import {
   parseExpenseDate,
   parseExpenseImportRows,
   readExpenseSheet,
+  receptionNoWarning,
   resolveProject,
   resolveSubAccountHead,
   toDateKey,
@@ -454,6 +456,104 @@ test('a missing Request No column in file mode stops the import', () => {
   assert.match(result.issues[0].message, /"Request No"/);
 });
 
+/* ── reception numbers ───────────────────────────────────────────────────── */
+
+test('a reception number resolves to the spelling Daily Requisition records it under', () => {
+  const register = buildReceptionRegister(['SEL\\REC\\2025-26\\7340', 'SEL\\REC\\2025-26\\7341']);
+  assert.deepEqual(register.check('SEL/REC/2025-26/7340'), {
+    status: 'linked',
+    receptionNo: 'SEL\\REC\\2025-26\\7340',
+  });
+  assert.deepEqual(register.check('SEL\\REC\\2025-26\\9999'), { status: 'not-found' });
+  assert.deepEqual(register.check(''), { status: 'not-found' });
+});
+
+test('a reception number another request carries, or a row has just claimed, is not available', () => {
+  const register = buildReceptionRegister(['REC/1', 'REC/2', 'REC/3'], [
+    { receptionNo: 'rec-1', requestNo: 'ACC/0001' },
+    { receptionNo: 'REC/2', requestNo: '' },
+  ]);
+  assert.deepEqual(register.check('REC/1'), { status: 'claimed', by: 'request ACC/0001' });
+  assert.deepEqual(register.check('REC/2'), { status: 'claimed', by: 'another request' });
+  assert.equal(register.check('REC/3').status, 'linked');
+  register.claim('REC/3', 'row 4 of this file');
+  assert.deepEqual(register.check('rec 3'), { status: 'claimed', by: 'row 4 of this file' });
+});
+
+test('the reception warnings say what happened to the row', () => {
+  assert.equal(
+    receptionNoWarning('REC/9', { status: 'not-found' }),
+    'Reception No "REC/9" not found in Daily Requisition — imported as pending reception.',
+  );
+  assert.equal(
+    receptionNoWarning('REC/1', { status: 'claimed', by: 'request ACC/0001' }),
+    'Reception No "REC/1" is already used by request ACC/0001 — imported as pending reception.',
+  );
+});
+
+const RECEPTION_HEADINGS = [...HEADINGS, 'Reception No', 'Reception Date'];
+
+test('a reception number Daily Requisition does not have is dropped, date and all', () => {
+  const grid = [
+    RECEPTION_HEADINGS,
+    [...dataRow(), 'REC/9', '20-07-2026'],
+    [...dataRow({ Description: 'Diesel' }), 'rec 1', '21-07-2026'],
+  ];
+  const result = run(grid, { requisitionReceptionNos: ['REC/1'] });
+  assert.equal(result.rows.length, 2, 'the row itself still imports');
+  const [unknown, known] = result.rows;
+  assert.equal(unknown.draft.receptionNo, '');
+  assert.equal(unknown.draft.receptionDate, '');
+  assert.deepEqual(unknown.warnings, [
+    'Reception No "REC/9" not found in Daily Requisition — imported as pending reception.',
+  ]);
+  assert.equal(known.draft.receptionNo, 'REC/1', 'stored the way Daily Requisition spells it');
+  assert.equal(known.draft.receptionDate, '2026-07-21');
+  assert.deepEqual(known.warnings, []);
+});
+
+test('a reception number already on a request, or used by an earlier row, is not claimed twice', () => {
+  const grid = [
+    RECEPTION_HEADINGS,
+    [...dataRow(), 'REC/1', '20-07-2026'],
+    [...dataRow({ Description: 'Diesel' }), 'REC/2', '20-07-2026'],
+    [...dataRow({ Description: 'Sand' }), 'REC/2', '21-07-2026'],
+  ];
+  const result = run(grid, {
+    requisitionReceptionNos: ['REC/1', 'REC/2'],
+    claimedReceptionNos: [{ receptionNo: 'REC/1', requestNo: 'CIV/0009' }],
+  });
+  assert.deepEqual(
+    result.rows.map((row) => row.draft.receptionNo),
+    ['', 'REC/2', ''],
+  );
+  assert.match(result.rows[0].warnings[0], /already used by request CIV\/0009/);
+  assert.match(result.rows[2].warnings[0], /already used by row 3 of this file/);
+});
+
+test('a row skipped as a duplicate does not take its reception number from a later row', () => {
+  const grid = [
+    RECEPTION_HEADINGS,
+    [...dataRow(), 'REC/1', '20-07-2026'],
+    [...dataRow({ Description: 'Diesel' }), 'REC/1', '20-07-2026'],
+  ];
+  const alreadyRecorded = run(gridOf(HEADINGS, dataRow())).rows[0].fingerprint;
+  const result = run(grid, {
+    existingFingerprints: [alreadyRecorded],
+    requisitionReceptionNos: ['REC/1'],
+  });
+  assert.equal(result.duplicates.length, 1);
+  assert.equal(result.rows.length, 1);
+  assert.equal(result.rows[0].draft.receptionNo, 'REC/1');
+});
+
+test('an unreadable reception date still rejects the row, whatever the reception number', () => {
+  const grid = [RECEPTION_HEADINGS, [...dataRow(), 'REC/9', 'someday']];
+  const result = run(grid, { requisitionReceptionNos: [] });
+  assert.equal(result.rows.length, 0);
+  assert.equal(result.issues[0].message, 'Reception date "someday" is not a date.');
+});
+
 /* ── numbering ───────────────────────────────────────────────────────────── */
 
 test('a request number is formatted exactly as the create form formats one', () => {
@@ -471,4 +571,19 @@ test('a block of numbers is contiguous and reports where the counter lands', () 
 test('an unset counter starts at 1 and an empty import leaves it alone', () => {
   assert.deepEqual(allocateRequestNos({}, 2), { requestNos: ['0001', '0002'], nextIndex: 3 });
   assert.deepEqual(allocateRequestNos({ startingIndex: 5 }, 0), { requestNos: [], nextIndex: 5 });
+});
+
+test('numbers already in use are stepped over and the counter lands past them', () => {
+  // History imported with its own numbers leaves the counter behind them.
+  const { requestNos, nextIndex } = allocateRequestNos({ prefix: 'ACC/', startingIndex: 1 }, 3, [
+    'ACC/0001',
+    'acc-0003',
+    '',
+  ]);
+  assert.deepEqual(requestNos, ['ACC/0002', 'ACC/0004', 'ACC/0005']);
+  assert.equal(nextIndex, 6);
+  assert.deepEqual(allocateRequestNos({ prefix: 'ACC/', startingIndex: 7 }, 1, ['ACC/0001']), {
+    requestNos: ['ACC/0007'],
+    nextIndex: 8,
+  });
 });

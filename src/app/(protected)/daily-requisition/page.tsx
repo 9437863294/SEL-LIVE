@@ -1,47 +1,24 @@
 'use client';
 
-import { useState, useEffect, useMemo } from 'react';
-import {
-  BarChart3,
-  FilePlus,
-  Landmark,
-  Receipt,
-  Settings,
-  Files,
-  Banknote,
-  Sparkles,
-  ArrowRight,
-  Workflow,
-} from 'lucide-react';
-import type { LucideIcon } from 'lucide-react';
+import { useEffect, useMemo, useState } from 'react';
+import { FileBarChart, FilePlus, Files, Settings } from 'lucide-react';
+import { collection, getCountFromServer, query, where } from 'firebase/firestore';
 
 import { useAuthorization } from '@/hooks/useAuthorization';
 import { db } from '@/lib/firebase';
-import { doc, getDoc } from 'firebase/firestore';
-import type { WorkflowStep } from '@/lib/types';
+import { DailyWorkflowCard, dailyPageContainerClass } from '@/components/daily-requisition/module-shell';
 import {
-  DailyMetricCard,
-  DailyWorkflowCard,
-  dailyPageContainerClass,
-} from '@/components/daily-requisition/module-shell';
+  DAILY_REQUISITION_BASE,
+  dailyRequisitionAccess,
+  dailyStageIcon,
+  dailyStepSlug,
+  useDailyRequisitionWorkflowSteps,
+} from '@/components/daily-requisition/nav';
 import { Skeleton } from '@/components/ui/skeleton';
 import { PageHeader } from '@/components/shared/page-header';
 import { Badge } from '@/components/ui/badge';
 
 /* ─── helpers ─── */
-
-function toSlug(name: string): string {
-  return name
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-|-$/g, '');
-}
-
-/** Pick an icon based on dynamic step index (0-based, Entry Sheet excluded) */
-const dynamicStepIcons: LucideIcon[] = [Landmark, Receipt, Banknote];
-function getDynamicStepIcon(index: number): LucideIcon {
-  return dynamicStepIcons[index] ?? Workflow;
-}
 
 /** Pick an accent gradient based on dynamic step index */
 const dynamicStepAccents = [
@@ -53,123 +30,144 @@ function getDynamicStepAccent(index: number): string {
   return dynamicStepAccents[index] ?? 'bg-gradient-to-r from-slate-300 via-slate-400 to-slate-500';
 }
 
+/** Short descriptions for each dynamic step position. */
+function getDynamicStepDescription(index: number, name: string): string {
+  switch (index) {
+    case 0:
+      return 'Receive entries and move them into finance review.';
+    case 1:
+      return 'Verify deductions and prepare the payment-ready amount.';
+    case 2:
+      return 'Track entries that are ready for final payment action.';
+    default:
+      return `Manage entries at the "${name}" stage.`;
+  }
+}
+
+/**
+ * What is still open at each stage, by position: every status that stage's page lists except the
+ * finished ones (Cancelled at receiving, Paid at payment). Mirrors `getStepConfig` in
+ * `[step]/page.tsx`, which is also position-based — keep the two in step.
+ */
+const STAGE_OPEN_STATUSES: string[][] = [
+  ['Pending'],
+  ['Received', 'Verified', 'Needs Review'],
+  ['Received for Payment', 'Partially Paid'],
+];
+
 /* ─── static standalone cards (Entry Sheet + support) ─── */
 
 const entrySheetCard = {
   icon: FilePlus,
   title: 'Entry Sheet',
-  href: '/daily-requisition/entry-sheet',
+  href: `${DAILY_REQUISITION_BASE}/entry-sheet`,
   description: 'Create and manage daily requisition entries.',
-  permission: 'View',
   badge: 'Entry',
   accentClassName: 'bg-gradient-to-r from-cyan-400 via-sky-400 to-blue-400',
-} as const;
-
-const supportItems = [
-  {
-    icon: Files,
-    title: 'Manage Documents',
-    href: '/daily-requisition/manage-documents',
-    description: 'Upload, verify, and follow up on supporting documents.',
-    permission: 'View',
-    badge: 'Support',
-    accentClassName: 'bg-gradient-to-r from-emerald-300 via-cyan-300 to-sky-400',
-  },
-  {
-    icon: BarChart3,
-    title: 'Reports',
-    href: '/daily-requisition/reports',
-    description: 'Status overview, trends, department/project analysis, financial breakdown, ageing, and more.',
-    permission: 'View',
-    badge: 'Reports',
-    accentClassName: 'bg-gradient-to-r from-indigo-400 via-violet-400 to-purple-500',
-  },
-  {
-    icon: Settings,
-    title: 'Settings',
-    href: '/daily-requisition/settings',
-    description: 'Configure serials, printing, workflow, and module-level controls.',
-    permission: 'View',
-    badge: 'Admin',
-    accentClassName: 'bg-gradient-to-r from-slate-300 via-slate-400 to-slate-500',
-  },
-] as const;
+};
 
 /* ════════════════════════════════════════════════════════════
    COMPONENT
    ════════════════════════════════════════════════════════════ */
 
 export default function DailyRequisitionPage() {
-  const { can } = useAuthorization();
-  const [workflowSteps, setWorkflowSteps] = useState<WorkflowStep[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
+  const { can, isLoading: isAuthLoading } = useAuthorization();
+  const { steps: workflowSteps, isLoading: stepsLoading } = useDailyRequisitionWorkflowSteps();
+  const access = useMemo(() => dailyRequisitionAccess(can), [can]);
 
-  /* ── fetch workflow config ── */
+  /* ── the stages whose queue this person can see, and so is counted for them ── */
+  const countable = useMemo(
+    () =>
+      isAuthLoading || stepsLoading
+        ? []
+        : workflowSteps
+            .slice(0, STAGE_OPEN_STATUSES.length)
+            .map((step, index) => ({ name: step.name, statuses: STAGE_OPEN_STATUSES[index] }))
+            .filter(({ name }) => access.stage(name)),
+    [isAuthLoading, stepsLoading, workflowSteps, access],
+  );
+  const countKey = countable.map(({ name }) => name).join('\u0000');
+  const [counts, setCounts] = useState<{ key: string; values: Record<string, number> } | null>(null);
+
   useEffect(() => {
-    (async () => {
-      try {
-        const snap = await getDoc(doc(db, 'workflows', 'daily-requisition-workflow'));
-        if (snap.exists()) {
-          const data = snap.data();
-          setWorkflowSteps(data.steps || []);
-        }
-      } catch (err) {
-        console.error('Error loading workflow config for dashboard:', err);
-      }
-      setIsLoading(false);
-    })();
-  }, []);
+    if (countable.length === 0) return;
+    let cancelled = false;
+    Promise.all(
+      countable.map(({ name, statuses }) =>
+        getCountFromServer(query(collection(db, 'dailyRequisitions'), where('status', 'in', statuses)))
+          .then((snap) => [name, Number(snap.data().count || 0)] as const)
+          .catch((error) => {
+            // No figure is better than a wrong one: the card simply shows none.
+            console.error(`Could not count the "${name}" queue:`, error);
+            return null;
+          }),
+      ),
+    ).then((results) => {
+      if (cancelled) return;
+      const values: Record<string, number> = {};
+      for (const result of results) if (result) values[result[0]] = result[1];
+      setCounts({ key: countKey, values });
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [countable, countKey]);
 
-  /* ── dynamic workflow stages (all steps in config are dynamic) ── */
-  const dynamicSteps = useMemo(() => workflowSteps, [workflowSteps]);
+  const countsLoaded = counts?.key === countKey;
+  const countedStages = new Set(countable.map(({ name }) => name));
 
-  const workflowCards = useMemo(() => {
-    return dynamicSteps.map((step, i) => ({
-      icon: getDynamicStepIcon(i),
-      title: step.name,
-      href: `/daily-requisition/${toSlug(step.name)}`,
-      description: getDynamicStepDescription(i, step.name),
-      permission: 'View' as const,
-      badge: `Stage ${i + 1}`,
-      accentClassName: getDynamicStepAccent(i),
-    }));
-  }, [dynamicSteps]);
-
-  /* ── assemble all cards: Entry Sheet → Workflow Stages → Support ── */
-  const allItems = [entrySheetCard, ...workflowCards, ...supportItems];
-
-  const dashboardItems = allItems.map((item) => ({
-    ...item,
-    disabled: !can(item.permission, `Daily Requisition.${item.title}`),
+  const workflowCards = workflowSteps.map((step, i) => ({
+    icon: dailyStageIcon(i),
+    title: step.name,
+    href: `${DAILY_REQUISITION_BASE}/${dailyStepSlug(step.name)}`,
+    description: getDynamicStepDescription(i, step.name),
+    badge: `Stage ${i + 1}`,
+    accentClassName: getDynamicStepAccent(i),
+    disabled: !access.stage(step.name),
+    count: countedStages.has(step.name) ? (countsLoaded ? counts?.values[step.name] : null) : undefined,
+    countLabel: 'waiting',
   }));
 
-  const enabledCount = dashboardItems.filter((item) => !item.disabled).length;
+  const supportCards = [
+    {
+      icon: Files,
+      title: 'Manage Documents',
+      href: `${DAILY_REQUISITION_BASE}/manage-documents`,
+      description: 'Upload, verify, and follow up on supporting documents.',
+      badge: 'Support',
+      accentClassName: 'bg-gradient-to-r from-emerald-300 via-cyan-300 to-sky-400',
+      disabled: !access.manageDocuments,
+    },
+    {
+      icon: FileBarChart,
+      title: 'Reports',
+      href: `${DAILY_REQUISITION_BASE}/reports`,
+      description: 'Status overview, trends, department/project analysis, financial breakdown, ageing, and more.',
+      badge: 'Reports',
+      accentClassName: 'bg-gradient-to-r from-indigo-400 via-violet-400 to-purple-500',
+      disabled: !access.reportsHub,
+    },
+    {
+      icon: Settings,
+      title: 'Settings',
+      href: `${DAILY_REQUISITION_BASE}/settings`,
+      description: 'Configure serials, printing, workflow, and module-level controls.',
+      badge: 'Admin',
+      accentClassName: 'bg-gradient-to-r from-slate-300 via-slate-400 to-slate-500',
+      disabled: !access.settings,
+    },
+  ];
+
   const stageCount = workflowCards.length;
 
-  /* ── short descriptions for each dynamic step position ── */
-  function getDynamicStepDescription(index: number, name: string): string {
-    switch (index) {
-      case 0:
-        return 'Receive entries and move them into finance review.';
-      case 1:
-        return 'Verify deductions and prepare the payment-ready amount.';
-      case 2:
-        return 'Track entries that are ready for final payment action.';
-      default:
-        return `Manage entries at the "${name}" stage.`;
-    }
-  }
-
-  if (isLoading) {
+  if (isAuthLoading || stepsLoading) {
     return (
       <div className={dailyPageContainerClass}>
-        <Skeleton className="mb-6 h-10 w-80" />
-        <div className="grid gap-4 grid-cols-1 sm:grid-cols-2 md:grid-cols-3">
-          <Skeleton className="h-24" />
-          <Skeleton className="h-24" />
-          <Skeleton className="h-24" />
+        <Skeleton className="mb-6 h-10 w-full max-w-80" />
+        <Skeleton className="mb-3 h-6 w-32 rounded-full" />
+        <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 xl:grid-cols-3">
+          <Skeleton className="h-28 rounded-2xl" />
         </div>
-        <Skeleton className="mt-6 h-40 w-full rounded-2xl" />
         <div className="mt-6 grid grid-cols-1 gap-6 sm:grid-cols-2 xl:grid-cols-3">
           {Array.from({ length: 6 }).map((_, i) => (
             <Skeleton key={i} className="h-28 rounded-2xl" />
@@ -181,27 +179,17 @@ export default function DailyRequisitionPage() {
 
   return (
     <div className={dailyPageContainerClass}>
-      <PageHeader eyebrow="Daily Requisition"
+      <PageHeader
+        eyebrow="Daily Requisition"
         title="Daily Requisition"
         description="Create entries, then track them through the workflow stages — from receiving to payment."
         backHref="/"
         meta={
-          <>
-            <Badge variant="neutral">
-              {stageCount} workflow stage{stageCount !== 1 ? 's' : ''}
-            </Badge>
-            <Badge variant="neutral">
-              {enabledCount} accessible areas
-            </Badge>
-          </>
+          <Badge variant="neutral">
+            {stageCount} workflow stage{stageCount !== 1 ? 's' : ''}
+          </Badge>
         }
       />
-
-      <div className="mb-6 grid gap-4 grid-cols-1 sm:grid-cols-2 md:grid-cols-3">
-        <DailyMetricCard label="Workflow Stages" value={stageCount} hint="Receiving to payment" />
-        <DailyMetricCard label="Support Areas" value={3} hint="Entry, documents & settings" />
-        <DailyMetricCard label="Your Access" value={enabledCount} hint="Cards enabled for your role" />
-      </div>
 
       {/* ── Entry Sheet — standalone card ── */}
       <div className="mb-6">
@@ -210,17 +198,16 @@ export default function DailyRequisitionPage() {
           Entry Point
         </div>
         <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 xl:grid-cols-3">
-          <DailyWorkflowCard item={dashboardItems[0]} />
+          <DailyWorkflowCard item={{ ...entrySheetCard, disabled: !access.entrySheet }} />
         </div>
       </div>
 
-      {/* ── Workflow stage cards ── */}
+      {/* ── Workflow stage cards, each with its live queue ── */}
       {workflowCards.length > 0 && (
         <div className="mb-6">
           <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 xl:grid-cols-3">
-            {/* dashboardItems[0] is Entry Sheet (already rendered above), so skip it */}
-            {dashboardItems.slice(1, 1 + workflowCards.length).map((item) => (
-              <DailyWorkflowCard key={item.title} item={item} />
+            {workflowCards.map((item) => (
+              <DailyWorkflowCard key={item.href} item={item} />
             ))}
           </div>
         </div>
@@ -233,7 +220,7 @@ export default function DailyRequisitionPage() {
           Support &amp; Admin
         </div>
         <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 xl:grid-cols-3">
-          {dashboardItems.slice(1 + workflowCards.length).map((item) => (
+          {supportCards.map((item) => (
             <DailyWorkflowCard key={item.title} item={item} />
           ))}
         </div>

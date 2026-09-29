@@ -1,11 +1,16 @@
 /**
  * The Expenses report catalogue.
  *
- * Every report the module can answer from `expenseRequests` alone, defined as data rather than as
- * a page each: one entry per report, each carrying its own builder that turns a filtered set of
- * requests into columns, rows and a footer total. The report centre renders whatever the catalogue
- * lists, so adding a report is adding an entry here — not another route, another table component
- * and another export button that formats currency slightly differently from the last one.
+ * Every report the module can answer, defined as data rather than as a page each: one entry per
+ * report, each carrying its own builder that turns a filtered set of requests into columns, rows
+ * and a footer total. The report centre renders whatever the catalogue lists, so adding a report
+ * is adding an entry here — not another route, another table component and another export button
+ * that formats currency slightly differently from the last one.
+ *
+ * Most reports read `expenseRequests` alone. The Payments reports also read what each request
+ * became downstream — its Daily Requisition, and the Bank Balance vouchers that paid it — through
+ * `requisition-progress.ts`, the one reading of a requisition all three modules share, so a stage
+ * or a balance here never disagrees with the one Daily Requisition shows for the same request.
  *
  * The same catalogue serves a single department and the whole organisation. Scope is a filter
  * applied before the builder runs, not a different set of reports, so a department head and the
@@ -14,24 +19,37 @@
  * Pure — no Firebase, no DOM — so every total here is unit-testable with `node --test`.
  */
 
+import {
+  requisitionHref,
+  requisitionProgress,
+  type ProgressRequisition,
+  type ProgressStage,
+  type RequisitionProgress,
+} from './requisition-progress.ts';
+
 /* ── shapes ──────────────────────────────────────────────────────────────── */
 
-export type ExpenseReportGroup = 'Summary' | 'Breakdown' | 'Trend' | 'Control' | 'Detail';
+export type ExpenseReportGroup = 'Summary' | 'Breakdown' | 'Trend' | 'Control' | 'Payments' | 'Detail';
 
 export const EXPENSE_REPORT_GROUPS: ExpenseReportGroup[] = [
   'Summary',
   'Breakdown',
   'Trend',
   'Control',
+  'Payments',
   'Detail',
 ];
 
-export type ExpenseReportColumnType = 'text' | 'number' | 'currency' | 'percent' | 'date';
+export type ExpenseReportColumnType = 'text' | 'number' | 'currency' | 'percent' | 'date' | 'month';
 
 export interface ExpenseReportColumn {
   key: string;
   label: string;
   type?: ExpenseReportColumnType;
+  /** Row key holding a link for this cell. On screen only — an export carries the text. */
+  linkKey?: string;
+  /** Row key holding a status tone; the cell is drawn as a badge in it. On screen only. */
+  toneKey?: string;
 }
 
 export type ExpenseReportCell = string | number | null;
@@ -79,6 +97,16 @@ export interface ExpenseReportInput {
   today?: Date;
   /** What counts as high value, in rupees. */
   highValueThreshold?: number;
+  /**
+   * The Daily Requisition each request became, keyed by request no — `requisitionsByRequestNo`
+   * over `dailyRequisitions`. Absent when Daily Requisition could not be read: the Payments reports
+   * then say so, rather than reporting every request as never received.
+   */
+  requisitions?: ReadonlyMap<string, ProgressRequisition>;
+  /** Payment Status: which stages to list. Every stage when absent. */
+  paymentStage?: PaymentStageFilter;
+  /** Payment Status Summary: what one row totals. Department when absent. */
+  paymentGroupBy?: PaymentSummaryGrouping;
 }
 
 export interface ExpenseReportDefinition {
@@ -238,7 +266,61 @@ const groupBy = <T>(rows: readonly T[], keyOf: (row: T) => string): Map<string, 
   return grouped;
 };
 
-const money = (value: number) => `₹${Math.round(value).toLocaleString('en-IN')}`;
+const round2 = (value: number) => Math.round(value * 100) / 100;
+
+const inrFormatters = new Map<number, Intl.NumberFormat>();
+
+/**
+ * Rupees as every Expenses report, headline and pivot shows them — and as Bank Balance does: Indian
+ * digit grouping, two decimals unless told otherwise. The module's one money formatter, so a figure
+ * reads the same in the table, in the stat above it and in the workbook it is exported to.
+ */
+export function formatInr(value: number | null | undefined, decimals = 2): string {
+  let formatter = inrFormatters.get(decimals);
+  if (!formatter) {
+    formatter = new Intl.NumberFormat('en-IN', {
+      style: 'currency',
+      currency: 'INR',
+      minimumFractionDigits: decimals,
+      maximumFractionDigits: decimals,
+    });
+    inrFormatters.set(decimals, formatter);
+  }
+  return formatter.format(Number(value) || 0);
+}
+
+const money = (value: number) => formatInr(value);
+
+const MONTH_NAMES = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
+/**
+ * A date the way the module shows one: `dd MMM yyyy`. Takes the `yyyy-MM-dd` keys the reports
+ * bucket by — read as written rather than through `Date`, so no time zone can move the day — or an
+ * ISO timestamp, read in local time. Anything else ("Total", "Undated", "—") comes back as it was.
+ */
+export function formatReportDate(value: string): string {
+  const text = String(value ?? '').trim();
+  const key = /^(\d{4})-(\d{2})-(\d{2})$/.exec(text);
+  if (key) {
+    const month = MONTH_NAMES[Number(key[2]) - 1];
+    return month ? `${key[3]} ${month} ${key[1]}` : text;
+  }
+  if (/^\d{4}-\d{2}-\d{2}T/.test(text)) {
+    const date = new Date(text);
+    if (!Number.isNaN(date.getTime())) {
+      return `${String(date.getDate()).padStart(2, '0')} ${MONTH_NAMES[date.getMonth()]} ${date.getFullYear()}`;
+    }
+  }
+  return text;
+}
+
+/** A `yyyy-MM` month bucket as `MMM yyyy`; anything else comes back as it was. */
+export function formatReportMonth(value: string): string {
+  const text = String(value ?? '').trim();
+  const key = /^(\d{4})-(\d{2})$/.exec(text);
+  const month = key ? MONTH_NAMES[Number(key[2]) - 1] : undefined;
+  return key && month ? `${month} ${key[1]}` : text;
+}
 
 const headlineStats = (rows: readonly EnrichedExpense[]): ExpenseReportStat[] => {
   const total = sum(rows);
@@ -305,6 +387,8 @@ function crossTab(
     columnKeyOf: (row: EnrichedExpense) => string;
     rowLabel: string;
     sortColumns?: (a: string, b: string) => number;
+    /** A column's heading, when its key is not fit to show (a `yyyy-MM` month). */
+    columnLabelOf?: (key: string) => string;
     emptyMessage: string;
   },
 ): ExpenseReportResult {
@@ -312,10 +396,11 @@ function crossTab(
     options.sortColumns ?? ((a, b) => a.localeCompare(b)),
   );
   const grouped = groupBy(rows, options.rowKeyOf);
+  const labelOf = options.columnLabelOf ?? ((key: string) => key);
 
   const columns: ExpenseReportColumn[] = [
     { key: 'label', label: options.rowLabel, type: 'text' },
-    ...columnKeys.map(key => ({ key: `col:${key}`, label: key, type: 'currency' as const })),
+    ...columnKeys.map(key => ({ key: `col:${key}`, label: labelOf(key), type: 'currency' as const })),
     { key: 'total', label: 'Total', type: 'currency' },
   ];
 
@@ -346,6 +431,140 @@ function crossTab(
     emptyMessage: options.emptyMessage,
   };
 }
+
+/* ── payments: what each request became downstream ───────────────────────── */
+
+/**
+ * Every stage a request can stand at, in the order it moves through them, labelled by the shared
+ * reading in `requisition-progress.ts` rather than in words of this module's own.
+ */
+export const PAYMENT_STAGES: readonly { stage: ProgressStage; label: string }[] = [
+  undefined,
+  'Pending',
+  'Received',
+  'Needs Review',
+  'Verified',
+  'Received for Payment',
+  'Partially Paid',
+  'Paid',
+  'Cancelled',
+].map(status => {
+  const progress = requisitionProgress(status ? { status } : undefined);
+  return { stage: progress.stage, label: progress.label };
+});
+
+const STAGE_RANK = new Map<ProgressStage, number>(PAYMENT_STAGES.map((entry, index) => [entry.stage, index]));
+
+/** Payment Status lists every stage, everything not yet paid in full, or a single stage. */
+export type PaymentStageFilter = 'all' | 'outstanding' | ProgressStage;
+
+export const PAYMENT_STAGE_FILTERS: readonly { value: PaymentStageFilter; label: string }[] = [
+  { value: 'all', label: 'All stages' },
+  { value: 'outstanding', label: 'Not paid in full' },
+  ...PAYMENT_STAGES.map(entry => ({ value: entry.stage, label: entry.label })),
+];
+
+export type PaymentSummaryGrouping = 'department' | 'project' | 'department-project';
+
+export const PAYMENT_SUMMARY_GROUPINGS: readonly { value: PaymentSummaryGrouping; label: string }[] = [
+  { value: 'department', label: 'By department' },
+  { value: 'project', label: 'By project' },
+  { value: 'department-project', label: 'By department & project' },
+];
+
+const PAYMENTS_UNAVAILABLE =
+  'Daily Requisition could not be read, so where these requests stand is not known. Reload the page to try again.';
+
+/**
+ * Still waiting to be received in Daily Requisition.
+ *
+ * Where Daily Requisition has a record of the request, that record decides. A live requisition
+ * means received, even when the request never had its reception number written back (a requisition
+ * that was imported). A cancelled one means waiting again: cancelling now clears the request's
+ * reception number, and reading the requisition also catches the requests cancelled before it did —
+ * unless the request records some other reception. Where Daily Requisition has no record, or could
+ * not be read, the request's own reception number decides, as it always has.
+ */
+export function isAwaitingReception(
+  expense: Pick<EnrichedExpense, 'requestNo' | 'receptionNo'>,
+  requisitions?: ReadonlyMap<string, ProgressRequisition>,
+): boolean {
+  const receptionNo = expense.receptionNo.trim();
+  const requisition = requisitions?.get(expense.requestNo.trim());
+  if (!requisition) return !receptionNo;
+  if (requisition.status !== 'Cancelled') return false;
+  // `requisitionsByRequestNo` prefers a live requisition, so a cancelled one here has no live successor.
+  return !receptionNo || receptionNo === (requisition.receptionNo ?? '').trim();
+}
+
+interface PaymentLine {
+  expense: EnrichedExpense;
+  requisition: ProgressRequisition | undefined;
+  progress: RequisitionProgress;
+  /** Has a requisition that is not cancelled — something Daily Requisition holds payable. */
+  live: boolean;
+}
+
+function paymentLinesOf(
+  expenses: readonly EnrichedExpense[],
+  requisitions: ReadonlyMap<string, ProgressRequisition>,
+): PaymentLine[] {
+  return expenses.map(expense => {
+    const requisition = requisitions.get(expense.requestNo.trim());
+    const progress = requisitionProgress(requisition);
+    return { expense, requisition, progress, live: !!requisition && progress.stage !== 'cancelled' };
+  });
+}
+
+/**
+ * The money through the pipeline. "Received in DR" is what Daily Requisition holds payable — the
+ * requisition's net, after deductions — which is what "paid" and "balance due" divide between them.
+ * A request not received, or whose requisition was cancelled, counts towards "raised" alone.
+ */
+function paymentTotals(lines: readonly PaymentLine[]) {
+  let raised = 0;
+  let received = 0;
+  let paid = 0;
+  let balance = 0;
+  let inRequisition = 0;
+  for (const line of lines) {
+    raised += line.expense.amount;
+    paid += line.progress.paid;
+    if (!line.live) continue;
+    received += line.progress.net;
+    balance += line.progress.balance;
+    inRequisition += 1;
+  }
+  return {
+    requests: lines.length,
+    raised: round2(raised),
+    received: round2(received),
+    paid: round2(paid),
+    balance: round2(balance),
+    inRequisition,
+  };
+}
+
+const paymentStats = (totals: ReturnType<typeof paymentTotals>): ExpenseReportStat[] => [
+  { label: 'Requests', value: totals.requests.toLocaleString('en-IN') },
+  { label: 'Raised', value: money(totals.raised) },
+  { label: 'Received in DR', value: money(totals.received) },
+  { label: 'Paid', value: money(totals.paid) },
+  { label: 'Balance due', value: money(totals.balance) },
+  { label: 'Not yet in DR', value: `${totals.requests - totals.inRequisition} of ${totals.requests}` },
+];
+
+/** The vouchers that paid a requisition, by number — or a note that it was paid outside Bank Balance. */
+const vouchersOf = (requisition: ProgressRequisition | undefined): string => {
+  const numbers = (requisition?.payments ?? []).map(payment => (payment.voucherNo || '').trim()).filter(Boolean);
+  if (numbers.length) return Array.from(new Set(numbers)).join(', ');
+  return requisition?.manualPaid ? 'Paid outside Bank Balance' : '';
+};
+
+const raisedMillis = (line: PaymentLine) => {
+  const millis = Date.parse(line.expense.createdAt);
+  return Number.isNaN(millis) ? 0 : millis;
+};
 
 /* ── the catalogue ───────────────────────────────────────────────────────── */
 
@@ -407,7 +626,7 @@ export const EXPENSE_REPORTS: ExpenseReportDefinition[] = [
     description: 'Every sub-head with its parent head, so a head total can be taken apart.',
     build: ({ expenses }) =>
       groupedSummary(expenses, {
-        keyOf: row => `${row.headOfAccount} ${row.subHeadOfAccount}`,
+        keyOf: row => `${row.headOfAccount}\u0000${row.subHeadOfAccount}`,
         columns: [
           { key: 'head', label: 'Head of A/c', type: 'text' },
           { key: 'subHead', label: 'Sub-Head of A/c', type: 'text' },
@@ -416,7 +635,7 @@ export const EXPENSE_REPORTS: ExpenseReportDefinition[] = [
           { key: 'share', label: 'Share', type: 'percent' },
         ],
         labelsOf: key => {
-          const [head, subHead] = key.split(' ');
+          const [head, subHead] = key.split('\u0000');
           return { head, subHead };
         },
         emptyMessage: 'No requests in this selection.',
@@ -498,7 +717,7 @@ export const EXPENSE_REPORTS: ExpenseReportDefinition[] = [
 
       return {
         columns: [
-          { key: 'month', label: 'Month', type: 'text' },
+          { key: 'month', label: 'Month', type: 'month' },
           { key: 'requests', label: 'Requests', type: 'number' },
           { key: 'total', label: 'Total', type: 'currency' },
           { key: 'change', label: 'Change', type: 'percent' },
@@ -509,7 +728,10 @@ export const EXPENSE_REPORTS: ExpenseReportDefinition[] = [
         stats: [
           ...headlineStats(expenses),
           { label: 'Months', value: months.length.toLocaleString('en-IN') },
-          { label: 'Peak month', value: busiest ? `${busiest.month} · ${money(Number(busiest.total))}` : '—' },
+          {
+            label: 'Peak month',
+            value: busiest ? `${formatReportMonth(String(busiest.month))} · ${money(Number(busiest.total))}` : '—',
+          },
         ],
         emptyMessage: 'No requests in this selection.',
       };
@@ -550,6 +772,7 @@ export const EXPENSE_REPORTS: ExpenseReportDefinition[] = [
       crossTab(expenses, {
         rowKeyOf: row => row.departmentName,
         columnKeyOf: row => monthKeyOf(row.createdAt),
+        columnLabelOf: formatReportMonth,
         rowLabel: 'Department',
         emptyMessage: 'No requests in this selection.',
       }),
@@ -563,6 +786,7 @@ export const EXPENSE_REPORTS: ExpenseReportDefinition[] = [
       crossTab(expenses, {
         rowKeyOf: row => row.projectName,
         columnKeyOf: row => monthKeyOf(row.createdAt),
+        columnLabelOf: formatReportMonth,
         rowLabel: 'Project',
         emptyMessage: 'No requests in this selection.',
       }),
@@ -584,10 +808,11 @@ export const EXPENSE_REPORTS: ExpenseReportDefinition[] = [
     id: 'pending-reception',
     title: 'Pending Reception',
     group: 'Control',
-    description: 'Requests that have never been given a reception number, oldest first.',
-    build: ({ expenses, today }) => {
+    description:
+      'Requests Daily Requisition does not yet hold — never received, or received and then cancelled — oldest first.',
+    build: ({ expenses, today, requisitions }) => {
       const now = today ?? new Date();
-      const pending = expenses.filter(row => !row.receptionNo.trim());
+      const pending = expenses.filter(row => isAwaitingReception(row, requisitions));
       const rows: ExpenseReportRow[] = pending
         .map(row => ({
           requestNo: row.requestNo,
@@ -631,9 +856,9 @@ export const EXPENSE_REPORTS: ExpenseReportDefinition[] = [
     title: 'Reception Ageing',
     group: 'Control',
     description: 'Unreceived requests bucketed by how long they have been waiting.',
-    build: ({ expenses, today }) => {
+    build: ({ expenses, today, requisitions }) => {
       const now = today ?? new Date();
-      const pending = expenses.filter(row => !row.receptionNo.trim());
+      const pending = expenses.filter(row => isAwaitingReception(row, requisitions));
       const buckets: { label: string; test: (age: number) => boolean }[] = [
         { label: '0–7 days', test: age => age <= 7 },
         { label: '8–15 days', test: age => age > 7 && age <= 15 },
@@ -779,6 +1004,156 @@ export const EXPENSE_REPORTS: ExpenseReportDefinition[] = [
     },
   },
   {
+    id: 'payment-status',
+    title: 'Payment Status',
+    group: 'Payments',
+    description:
+      'Where each request stands since it was raised — received in Daily Requisition, verified, paid in part or in full — with what has been paid and what is still due.',
+    build: ({ expenses, requisitions, paymentStage }) => {
+      const columns: ExpenseReportColumn[] = [
+        { key: 'requestNo', label: 'Request No', type: 'text' },
+        { key: 'raised', label: 'Raised', type: 'date' },
+        { key: 'department', label: 'Department', type: 'text' },
+        { key: 'project', label: 'Project', type: 'text' },
+        { key: 'party', label: 'Party', type: 'text' },
+        { key: 'amount', label: 'Amount', type: 'currency' },
+        { key: 'receptionNo', label: 'Reception No', type: 'text', linkKey: 'receptionHref' },
+        { key: 'stage', label: 'Stage', type: 'text', toneKey: 'stageTone' },
+        { key: 'net', label: 'Received in DR', type: 'currency' },
+        { key: 'paid', label: 'Paid', type: 'currency' },
+        { key: 'balance', label: 'Balance due', type: 'currency' },
+        { key: 'vouchers', label: 'Vouchers', type: 'text' },
+      ];
+      if (!requisitions) return { columns, rows: [], stats: [], emptyMessage: PAYMENTS_UNAVAILABLE };
+
+      const filter = paymentStage ?? 'all';
+      const lines = paymentLinesOf(expenses, requisitions)
+        .filter(line =>
+          filter === 'all' || (filter === 'outstanding' ? line.progress.stage !== 'paid' : line.progress.stage === filter),
+        )
+        // Down the pipeline, and oldest first within a stage — the order requests get chased in.
+        .sort(
+          (a, b) =>
+            (STAGE_RANK.get(a.progress.stage) ?? 0) - (STAGE_RANK.get(b.progress.stage) ?? 0) ||
+            raisedMillis(a) - raisedMillis(b),
+        );
+
+      const rows: ExpenseReportRow[] = lines.map(line => {
+        const receptionNo = (line.requisition?.receptionNo || line.expense.receptionNo).trim();
+        return {
+          requestNo: line.expense.requestNo,
+          raised: dayKeyOf(line.expense.createdAt),
+          department: line.expense.departmentName,
+          project: line.expense.projectName,
+          party: line.expense.partyName,
+          amount: line.expense.amount,
+          receptionNo: receptionNo || '—',
+          receptionHref: line.requisition && receptionNo ? requisitionHref(receptionNo) : null,
+          stage: line.progress.label,
+          stageTone: line.progress.tone,
+          // Nothing is payable on a request Daily Requisition does not hold: "—", not a 0 that
+          // would read as settled.
+          net: line.live ? line.progress.net : null,
+          paid: line.live || line.progress.paid > 0 ? line.progress.paid : null,
+          balance: line.live ? line.progress.balance : null,
+          vouchers: vouchersOf(line.requisition),
+        };
+      });
+
+      const totals = paymentTotals(lines);
+      return {
+        columns,
+        rows,
+        total: {
+          requestNo: 'Total',
+          amount: totals.raised,
+          net: totals.received,
+          paid: totals.paid,
+          balance: totals.balance,
+        },
+        stats: paymentStats(totals),
+        emptyMessage:
+          filter === 'all'
+            ? 'No requests in this selection.'
+            : filter === 'outstanding'
+              ? 'Every request in this selection has been paid in full.'
+              : 'No request in this selection is at this stage.',
+      };
+    },
+  },
+  {
+    id: 'payment-summary',
+    title: 'Payment Status Summary',
+    group: 'Payments',
+    description:
+      'Raised, received in Daily Requisition, paid and still due — by department, by project or both — with how many requests stand at each stage.',
+    build: ({ expenses, requisitions, paymentGroupBy }) => {
+      const grouping = paymentGroupBy ?? 'department';
+      const labelColumns: ExpenseReportColumn[] = [
+        ...(grouping === 'project' ? [] : [{ key: 'department', label: 'Department', type: 'text' as const }]),
+        ...(grouping === 'department' ? [] : [{ key: 'project', label: 'Project', type: 'text' as const }]),
+      ];
+      const figureColumns: ExpenseReportColumn[] = [
+        { key: 'requests', label: 'Requests', type: 'number' },
+        { key: 'raised', label: 'Raised', type: 'currency' },
+        { key: 'received', label: 'Received in DR', type: 'currency' },
+        { key: 'paid', label: 'Paid', type: 'currency' },
+        { key: 'balance', label: 'Balance due', type: 'currency' },
+      ];
+      if (!requisitions) {
+        return { columns: [...labelColumns, ...figureColumns], rows: [], stats: [], emptyMessage: PAYMENTS_UNAVAILABLE };
+      }
+
+      const lines = paymentLinesOf(expenses, requisitions);
+      // A count for each stage something in the selection stands at: nine columns, most of them
+      // zeros, would bury the few that say anything.
+      const stages = PAYMENT_STAGES.filter(entry => lines.some(line => line.progress.stage === entry.stage));
+      const stageColumns: ExpenseReportColumn[] = stages.map(entry => ({
+        key: `stage:${entry.stage}`,
+        // "Paid" already heads the money column, and an export keys its cells by heading.
+        label: entry.stage === 'paid' ? 'Paid in full' : entry.label,
+        type: 'number' as const,
+      }));
+
+      const figuresOf = (group: readonly PaymentLine[]): ExpenseReportRow => {
+        const totals = paymentTotals(group);
+        const row: ExpenseReportRow = {
+          requests: totals.requests,
+          raised: totals.raised,
+          received: totals.received,
+          paid: totals.paid,
+          balance: totals.balance,
+        };
+        stages.forEach(entry => {
+          row[`stage:${entry.stage}`] = group.filter(line => line.progress.stage === entry.stage).length;
+        });
+        return row;
+      };
+
+      const grouped = groupBy(lines, line =>
+        grouping === 'project'
+          ? line.expense.projectName
+          : grouping === 'department'
+            ? line.expense.departmentName
+            : `${line.expense.departmentName}\u0000${line.expense.projectName}`,
+      );
+      const rows: ExpenseReportRow[] = Array.from(grouped.values()).map(group => ({
+        ...(grouping === 'project' ? {} : { department: group[0].expense.departmentName }),
+        ...(grouping === 'department' ? {} : { project: group[0].expense.projectName }),
+        ...figuresOf(group),
+      }));
+      rows.sort((a, b) => Number(b.raised) - Number(a.raised));
+
+      return {
+        columns: [...labelColumns, ...figureColumns, ...stageColumns],
+        rows,
+        total: { [labelColumns[0].key]: 'Total', ...figuresOf(lines) },
+        stats: paymentStats(paymentTotals(lines)),
+        emptyMessage: 'No requests in this selection.',
+      };
+    },
+  },
+  {
     id: 'expense-register',
     title: 'Expense Register',
     group: 'Detail',
@@ -815,7 +1190,7 @@ export const EXPENSE_REPORTS: ExpenseReportDefinition[] = [
           { key: 'remarks', label: 'Remarks', type: 'text' },
           { key: 'raisedBy', label: 'Raised by', type: 'text' },
           { key: 'receptionNo', label: 'Reception No', type: 'text' },
-          { key: 'receptionDate', label: 'Reception Date', type: 'text' },
+          { key: 'receptionDate', label: 'Reception Date', type: 'date' },
           { key: 'amount', label: 'Amount', type: 'currency' },
         ],
         rows,
@@ -835,9 +1210,12 @@ export function formatReportCell(value: ExpenseReportCell, type: ExpenseReportCo
   if (value === null || value === undefined || value === '') return type === 'text' ? '' : '—';
   if (type === 'currency') return money(Number(value));
   if (type === 'number') return Number(value).toLocaleString('en-IN');
-  if (type === 'percent') {
-    const numeric = Number(value);
-    return `${numeric > 0 ? '' : ''}${numeric.toFixed(1)}%`;
-  }
+  if (type === 'percent') return `${Number(value).toFixed(1)}%`;
+  if (type === 'date') return formatReportDate(String(value));
+  if (type === 'month') return formatReportMonth(String(value));
   return String(value);
 }
+
+/** Figures, as opposed to words and dates: set right-aligned, in tabular digits. */
+export const isNumericReportColumn = (type: ExpenseReportColumnType | undefined): boolean =>
+  type === 'number' || type === 'currency' || type === 'percent';

@@ -930,6 +930,12 @@ export interface DailyRequisitionEntry {
   paidAmount?: number;
   /** Each voucher line that paid (part of) this requisition. See src/lib/bank-payments.ts. */
   payments?: import("@/lib/bank-payments").RequisitionPaymentRef[];
+  /** When the latest voucher payment was made. */
+  lastPaidAt?: Timestamp;
+  /** Marked Paid by hand in Daily Requisition (paid outside Bank Balance), not through a voucher. */
+  manualPaid?: boolean;
+  paidById?: string;
+  paidByName?: string;
 }
 
 /** ---------- User settings ---------- **/
@@ -1335,6 +1341,10 @@ export interface BankExpense {
   bankPaymentId?: string;
   /** The Daily Requisition this Debit settles, if any. */
   requisitionId?: string;
+  /** The voucher number (BP/yyyy-yy/nnnn) of the voucher above, copied for lists and statements. */
+  voucherNo?: string;
+  /** yyyy-MM-dd the bank paid it (stamped when its voucher is marked cleared) — for reconciliation. */
+  clearedDate?: string;
   createdAt: Timestamp;
 }
 

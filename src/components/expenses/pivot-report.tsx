@@ -31,7 +31,7 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import type { PivotConfig } from '@/lib/types';
-import { monthKeyOf, type EnrichedExpense as ReportExpense } from '@/lib/expenses-reports';
+import { formatInr, formatReportMonth, monthKeyOf, type EnrichedExpense as ReportExpense } from '@/lib/expenses-reports';
 import { cn } from '@/lib/utils';
 
 const pivotOptions = [
@@ -199,10 +199,13 @@ export function PivotReport({ expenses, isLoading }: { expenses: ReportExpense[]
     }));
   };
 
+  // The report centre's one money formatter, so a pivot cell and the fixed report beside it read
+  // the same figure the same way.
   const formatValue = (val: number) =>
-    pivotConfig.value === 'amount'
-      ? val.toLocaleString('en-IN', { style: 'currency', currency: 'INR', minimumFractionDigits: 0 })
-      : val.toLocaleString();
+    pivotConfig.value === 'amount' ? formatInr(val) : val.toLocaleString('en-IN');
+
+  /** Month buckets are keyed `yyyy-MM` so they sort; they are headed `MMM yyyy`. */
+  const headingOf = (key: string) => (pivotConfig.columns.includes('month') ? formatReportMonth(key) : key);
 
   const renderRows = (rows: PivotRow[]): ReactNode[] => {
     return rows.flatMap((row) => {
@@ -253,7 +256,7 @@ export function PivotReport({ expenses, isLoading }: { expenses: ReportExpense[]
               if (!c.subColumns || c.subColumns.length === 0) return 1;
               return c.subColumns.reduce((sum: number, sc: any) => sum + subLeafCount(sc), 0);
             };
-            cells.push({ key: col.key, label: col.key, colspan: subLeafCount(col) });
+            cells.push({ key: col.key, label: headingOf(col.key), colspan: subLeafCount(col) });
           } else if (level < i && col.subColumns) {
             processLevel(col.subColumns, level + 1);
           }

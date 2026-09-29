@@ -11,11 +11,18 @@
  * which is what lets a department head and the finance office argue about a number rather than
  * about whose definition of it is right. `?departmentId=` pre-scopes the page, so the Reports
  * button on a department register lands here already narrowed to that department.
+ *
+ * What a person may see is decided before any of that. Without `View All` on Expense Requests,
+ * only the departments they may open reach the page — fetched by department, so the other
+ * departments' requests never reach the browser at all, and filtered again by the same `can`
+ * check the department registers make, so every report, the pivot and every export read only
+ * those. The Payments reports read Daily Requisition too, scoped the same way.
  */
 
-import { Suspense, useEffect, useMemo, useState } from 'react';
+import { Suspense, useCallback, useEffect, useMemo, useState } from 'react';
+import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
-import { collection, getDocs } from 'firebase/firestore';
+import { collection, getDocs, query, where, type DocumentData, type QueryDocumentSnapshot } from 'firebase/firestore';
 import {
   BarChart3,
   Download,
@@ -29,14 +36,21 @@ import { useAuthorization } from '@/hooks/useAuthorization';
 import { useToast } from '@/hooks/use-toast';
 import { exportRowsToExcel } from '@/lib/report-excel';
 import type { Department, ExpenseRequest, Project } from '@/lib/types';
+import { requisitionsByRequestNo, type ProgressRequisition } from '@/lib/requisition-progress';
 import {
   EXPENSE_REPORTS,
-  EXPENSE_REPORT_GROUPS,
+  PAYMENT_STAGE_FILTERS,
+  PAYMENT_SUMMARY_GROUPINGS,
   enrichExpenses,
   expenseReportById,
   filterExpensesForReport,
   formatReportCell,
+  isNumericReportColumn,
   type EnrichedExpense,
+  type ExpenseReportColumn,
+  type ExpenseReportRow,
+  type PaymentStageFilter,
+  type PaymentSummaryGrouping,
 } from '@/lib/expenses-reports';
 import { useExpensesSettings } from '@/components/expenses/use-expenses-settings';
 import { PivotReport } from '@/components/expenses/pivot-report';
@@ -46,6 +60,7 @@ import { Calendar } from '@/components/ui/calendar';
 import { Card, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { TableCard } from '@/components/shared/table-card';
 import { FilterBar } from '@/components/shared/filter-bar';
+import { StatusBadge, type StatusTone } from '@/components/shared/status-badge';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
@@ -60,6 +75,61 @@ import { PageHeader } from '@/components/shared/page-header';
 /** The custom pivot sits in the list alongside the fixed reports, under its own id. */
 const PIVOT_ID = 'custom-pivot';
 
+/**
+ * A department id no grant can name. `can('View', 'Expenses.Departments', …)` passes it only for a
+ * grant that covers every department (module-wide `View All`, or `View` on all departments) —
+ * never for a grant on particular departments — which is how the page tells the two apart.
+ */
+const ANY_DEPARTMENT_PROBE = '__any_department__';
+
+/** Firestore's cap on the values of one `in` filter. */
+const IN_QUERY_LIMIT = 30;
+
+/** Every document whose `field` is one of `values`, in as many `in` queries as that takes. */
+async function getDocsWhereIn(
+  collectionName: string,
+  field: string,
+  values: readonly string[],
+): Promise<QueryDocumentSnapshot<DocumentData>[]> {
+  const unique = Array.from(new Set(values.filter(Boolean)));
+  const chunks: string[][] = [];
+  for (let index = 0; index < unique.length; index += IN_QUERY_LIMIT) chunks.push(unique.slice(index, index + IN_QUERY_LIMIT));
+  const snapshots = await Promise.all(
+    chunks.map(chunk => getDocs(query(collection(db, collectionName), where(field, 'in', chunk)))),
+  );
+  return snapshots.flatMap(snapshot => snapshot.docs);
+}
+
+/** Column headings as an export keys its cells: a repeated heading would overwrite the first. */
+function exportHeadings(columns: readonly ExpenseReportColumn[]): string[] {
+  const seen = new Map<string, number>();
+  return columns.map(column => {
+    const count = (seen.get(column.label) ?? 0) + 1;
+    seen.set(column.label, count);
+    return count === 1 ? column.label : `${column.label} (${count})`;
+  });
+}
+
+/** One body cell: text, a link across to the module that holds the record, or a stage badge. */
+function ReportCell({ column, row }: { column: ExpenseReportColumn; row: ExpenseReportRow }) {
+  const text = formatReportCell(row[column.key], column.type);
+  const tone = column.toneKey ? row[column.toneKey] : null;
+  // Badge renders a <div>, so it sits in the cell directly rather than inside the truncating span.
+  if (tone && text) return <StatusBadge tone={tone as StatusTone}>{text}</StatusBadge>;
+  const href = column.linkKey ? row[column.linkKey] : null;
+  return (
+    <span className="block max-w-[320px] truncate" title={text}>
+      {typeof href === 'string' && href ? (
+        <Link href={href} className="font-medium text-primary hover:underline print:text-foreground print:no-underline">
+          {text}
+        </Link>
+      ) : (
+        text
+      )}
+    </span>
+  );
+}
+
 function ReportCentre() {
   const { can, isLoading: isAuthLoading } = useAuthorization();
   const { toast } = useToast();
@@ -69,10 +139,21 @@ function ReportCentre() {
   const reportId = searchParams?.get('report') || EXPENSE_REPORTS[0].id;
   const canViewPage = can('View', 'Expenses.Reports');
 
+  // The same test the department registers make: `View All` on Expense Requests sees everything;
+  // anyone else sees the departments they may open.
+  const canViewAll = can('View All', 'Expenses.Expense Requests');
+  const seesEveryDepartment = canViewAll || can('View', 'Expenses.Departments', ANY_DEPARTMENT_PROBE);
+  const canViewDepartment = useCallback(
+    (departmentId: string) => canViewAll || can('View', 'Expenses.Departments', departmentId),
+    [canViewAll, can],
+  );
+
   const [isLoading, setIsLoading] = useState(true);
   const [expenses, setExpenses] = useState<EnrichedExpense[]>([]);
   const [departments, setDepartments] = useState<Department[]>([]);
   const [projects, setProjects] = useState<Project[]>([]);
+  /** Each request's requisition, by request no. `undefined` when Daily Requisition could not be read. */
+  const [requisitions, setRequisitions] = useState<ReadonlyMap<string, ProgressRequisition> | undefined>(undefined);
 
   const [departmentId, setDepartmentId] = useState('all');
   const [projectId, setProjectId] = useState('all');
@@ -82,6 +163,8 @@ function ReportCentre() {
   const { settings } = useExpensesSettings();
   const [highValueThreshold, setHighValueThreshold] = useState<number | null>(null);
   const threshold = highValueThreshold ?? settings.data.highValueThreshold;
+  const [paymentStage, setPaymentStage] = useState<PaymentStageFilter>('all');
+  const [paymentGroupBy, setPaymentGroupBy] = useState<PaymentSummaryGrouping>('department');
 
   // A department register links here with ?departmentId=, so the page opens already scoped.
   const scopedDepartmentId = searchParams?.get('departmentId') ?? null;
@@ -95,55 +178,125 @@ function ReportCentre() {
       setIsLoading(false);
       return;
     }
+    let cancelled = false;
     const fetchData = async () => {
       setIsLoading(true);
       try {
-        const [expensesSnap, projectsSnap, deptsSnap] = await Promise.all([
-          getDocs(collection(db, 'expenseRequests')),
+        const mastersPromise = Promise.all([
           getDocs(collection(db, 'projects')),
           getDocs(collection(db, 'departments')),
         ]);
+        // A department-limited person's requests are fetched by department, so nobody else's are
+        // ever downloaded — hiding them after the fact would still leave them in the browser.
+        const permittedIds = seesEveryDepartment
+          ? []
+          : (await mastersPromise)[1].docs.map(entry => entry.id).filter(id => canViewDepartment(id));
+
+        // Daily Requisition is read alongside, and on its own terms: a failure there costs the
+        // Payments reports, not every report on the page.
+        const requisitionsPromise = (
+          seesEveryDepartment
+            ? getDocs(collection(db, 'dailyRequisitions')).then(snapshot => snapshot.docs)
+            : getDocsWhereIn('dailyRequisitions', 'departmentId', permittedIds)
+        ).then(
+          docs => docs,
+          error => {
+            console.warn('Daily Requisition could not be read for the Payments reports:', error);
+            return null;
+          },
+        );
+
+        const [[projectsSnap, deptsSnap], expenseDocs] = await Promise.all([
+          mastersPromise,
+          seesEveryDepartment
+            ? getDocs(collection(db, 'expenseRequests')).then(snapshot => snapshot.docs)
+            : getDocsWhereIn('expenseRequests', 'departmentId', permittedIds),
+        ]);
+        const expenseRows = expenseDocs.map(entry => ({ id: entry.id, ...entry.data() }) as ExpenseRequest);
+
+        let requisitionDocs = await requisitionsPromise;
+        if (requisitionDocs && !seesEveryDepartment) {
+          // Daily Requisition can move a requisition to another department; those are still found
+          // by the request no they carry.
+          const found = new Set(requisitionDocs.map(entry => String(entry.data().depNo ?? '').trim()));
+          const missing = expenseRows.map(row => (row.requestNo ?? '').trim()).filter(no => no && !found.has(no));
+          try {
+            requisitionDocs = [...requisitionDocs, ...(await getDocsWhereIn('dailyRequisitions', 'depNo', missing))];
+          } catch (error) {
+            console.warn('Daily Requisition could not be read for the Payments reports:', error);
+            requisitionDocs = null;
+          }
+        }
+        if (cancelled) return;
+
         const projectList = projectsSnap.docs.map(entry => ({ id: entry.id, ...entry.data() }) as Project);
         const departmentList = deptsSnap.docs.map(entry => ({ id: entry.id, ...entry.data() }) as Department);
         setProjects(projectList);
         setDepartments(departmentList);
-        setExpenses(
-          enrichExpenses(
-            expensesSnap.docs.map(entry => ({ id: entry.id, ...entry.data() }) as ExpenseRequest),
-            { projects: projectList, departments: departmentList },
-          ),
-        );
+        setExpenses(enrichExpenses(expenseRows, { projects: projectList, departments: departmentList }));
+        if (requisitionDocs) {
+          const byId = new Map(requisitionDocs.map(entry => [entry.id, { id: entry.id, ...entry.data() } as ProgressRequisition]));
+          setRequisitions(requisitionsByRequestNo(Array.from(byId.values())));
+        } else {
+          setRequisitions(undefined);
+        }
       } catch (error) {
         console.error('Error loading report data:', error);
-        toast({ title: 'Error', description: 'Failed to load expense data.', variant: 'destructive' });
+        if (!cancelled) toast({ title: 'Error', description: 'Failed to load expense data.', variant: 'destructive' });
       }
-      setIsLoading(false);
+      if (!cancelled) setIsLoading(false);
     };
     void fetchData();
-  }, [isAuthLoading, canViewPage, toast]);
+    return () => {
+      cancelled = true;
+    };
+  }, [isAuthLoading, canViewPage, seesEveryDepartment, canViewDepartment, toast]);
+
+  /**
+   * The only requests any report, the pivot or an export ever sees. The fetch is already scoped;
+   * this is the same test again on what came back, so the page never relies on the query alone.
+   */
+  const permittedExpenses = useMemo(
+    () => (canViewAll ? expenses : expenses.filter(row => canViewDepartment(row.departmentId))),
+    [expenses, canViewAll, canViewDepartment],
+  );
+  const visibleDepartments = useMemo(
+    () => departments.filter(entry => canViewDepartment(entry.id)),
+    [departments, canViewDepartment],
+  );
+  const allDepartmentsLabel = seesEveryDepartment ? 'All departments' : 'All your departments';
 
   const scoped = useMemo(
     () =>
-      filterExpensesForReport(expenses, {
+      filterExpensesForReport(permittedExpenses, {
         from: dateRange?.from,
         to: dateRange?.to,
         departmentId,
         projectId,
         search,
       }),
-    [expenses, dateRange, departmentId, projectId, search],
+    [permittedExpenses, dateRange, departmentId, projectId, search],
   );
 
   const definition = reportId === PIVOT_ID ? undefined : expenseReportById(reportId);
   const result = useMemo(
-    () => (definition ? definition.build({ expenses: scoped, highValueThreshold: threshold }) : null),
-    [definition, scoped, threshold],
+    () =>
+      definition
+        ? definition.build({
+            expenses: scoped,
+            highValueThreshold: threshold,
+            requisitions,
+            paymentStage,
+            paymentGroupBy,
+          })
+        : null,
+    [definition, scoped, threshold, requisitions, paymentStage, paymentGroupBy],
   );
 
   const scopeLabel = useMemo(() => {
     const parts: string[] = [
       departmentId === 'all'
-        ? 'All departments'
+        ? allDepartmentsLabel
         : departments.find(entry => entry.id === departmentId)?.name ?? 'Department',
     ];
     if (projectId !== 'all') parts.push(projects.find(entry => entry.id === projectId)?.projectName ?? 'Project');
@@ -153,7 +306,7 @@ function ReportCentre() {
         : 'All time',
     );
     return parts.join(' · ');
-  }, [departmentId, projectId, dateRange, departments, projects]);
+  }, [departmentId, projectId, dateRange, departments, projects, allDepartmentsLabel]);
 
   const activeFilterCount =
     (departmentId !== 'all' ? 1 : 0) + (projectId !== 'all' ? 1 : 0) + (search ? 1 : 0) + (dateRange?.from ? 1 : 0);
@@ -169,25 +322,64 @@ function ReportCentre() {
     if (!definition || !result?.rows.length) return;
     // Exported with the same formatter the screen uses, so a figure in the workbook reads exactly
     // as it did in the report it came from.
-    const rows = result.rows.map(row => {
+    const headings = exportHeadings(result.columns);
+    const toRecord = (row: ExpenseReportRow) => {
       const record: Record<string, string> = {};
-      result.columns.forEach(column => {
-        record[column.label] = formatReportCell(row[column.key], column.type);
+      result.columns.forEach((column, index) => {
+        record[headings[index]] = formatReportCell(row[column.key] ?? null, column.type);
       });
       return record;
-    });
-    if (result.total) {
-      const totalRow: Record<string, string> = {};
-      result.columns.forEach(column => {
-        totalRow[column.label] = formatReportCell(result.total?.[column.key] ?? null, column.type);
-      });
-      rows.push(totalRow);
-    }
+    };
+    const rows = result.rows.map(toRecord);
+    if (result.total) rows.push(toRecord(result.total));
     await exportRowsToExcel(definition.title, rows, {
       filename: `${definition.id}-${new Date().toISOString().slice(0, 10)}.xlsx`,
       sheetName: definition.title,
     });
   };
+
+  // Settings a report takes beyond the shared filters, in the card's toolbar row.
+  const reportToolbar =
+    definition?.id === 'high-value' ? (
+      <div className="flex items-center gap-2">
+        <Label htmlFor="expense-report-threshold">Threshold ₹</Label>
+        <Input
+          id="expense-report-threshold"
+          type="number"
+          className="max-w-[10rem]"
+          value={threshold}
+          onChange={event => setHighValueThreshold(Number(event.target.value) || 0)}
+        />
+      </div>
+    ) : definition?.id === 'payment-status' ? (
+      <div className="flex flex-wrap items-center gap-2">
+        <Label htmlFor="expense-report-stage">Stage</Label>
+        <Select value={paymentStage} onValueChange={value => setPaymentStage(value as PaymentStageFilter)}>
+          <SelectTrigger id="expense-report-stage" className="w-full sm:w-[14rem]">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            {PAYMENT_STAGE_FILTERS.map(option => (
+              <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </div>
+    ) : definition?.id === 'payment-summary' ? (
+      <div className="flex flex-wrap items-center gap-2">
+        <Label htmlFor="expense-report-grouping">Rows</Label>
+        <Select value={paymentGroupBy} onValueChange={value => setPaymentGroupBy(value as PaymentSummaryGrouping)}>
+          <SelectTrigger id="expense-report-grouping" className="w-full sm:w-[14rem]">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            {PAYMENT_SUMMARY_GROUPINGS.map(option => (
+              <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </div>
+    ) : undefined;
 
   if (isAuthLoading) {
     return (
@@ -246,13 +438,13 @@ function ReportCentre() {
         search={{ value: search, onChange: setSearch, placeholder: 'Request no, party, description…' }}
         activeCount={activeFilterCount}
         onClear={clearFilters}
-        summary={`${scoped.length.toLocaleString('en-IN')} of ${expenses.length.toLocaleString('en-IN')} requests in scope`}
+        summary={`${scoped.length.toLocaleString('en-IN')} of ${permittedExpenses.length.toLocaleString('en-IN')} requests in scope`}
       >
         <Select value={departmentId} onValueChange={setDepartmentId}>
           <SelectTrigger aria-label="Department"><SelectValue /></SelectTrigger>
           <SelectContent>
-            <SelectItem value="all">All departments</SelectItem>
-            {departments.map(entry => (
+            <SelectItem value="all">{allDepartmentsLabel}</SelectItem>
+            {visibleDepartments.map(entry => (
               <SelectItem key={entry.id} value={entry.id}>{entry.name}</SelectItem>
             ))}
           </SelectContent>
@@ -275,7 +467,7 @@ function ReportCentre() {
             >
               <CalendarIcon className="mr-2 h-3.5 w-3.5" />
               {dateRange?.from && dateRange?.to
-                ? `${format(dateRange.from, 'dd MMM')} – ${format(dateRange.to, 'dd MMM yy')}`
+                ? `${format(dateRange.from, 'dd MMM yyyy')} – ${format(dateRange.to, 'dd MMM yyyy')}`
                 : 'All time'}
             </Button>
           </PopoverTrigger>
@@ -327,29 +519,16 @@ function ReportCentre() {
               }
               count={isLoading ? undefined : result.rows.length}
               noun="row"
-              toolbar={
-                definition.id === 'high-value' ? (
-                  <div className="flex items-center gap-2">
-                    <Label htmlFor="expense-report-threshold">Threshold ₹</Label>
-                    <Input
-                      id="expense-report-threshold"
-                      type="number"
-                      className="max-w-[10rem]"
-                      value={threshold}
-                      onChange={event => setHighValueThreshold(Number(event.target.value) || 0)}
-                    />
-                  </div>
-                ) : undefined
-              }
+              toolbar={reportToolbar}
             >
                 {isLoading ? (
                   <div className="space-y-2 p-6">
                     {Array.from({ length: 6 }).map((_, index) => <Skeleton key={index} className="h-6 w-full" />)}
                   </div>
                 ) : result.rows.length === 0 ? (
-                  <div className="flex flex-col items-center justify-center py-16 text-muted-foreground">
+                  <div className="flex flex-col items-center justify-center py-16 text-center text-muted-foreground">
                     <TableIcon className="mb-3 h-10 w-10 opacity-30" />
-                    <p className="font-medium">{result.emptyMessage}</p>
+                    <p className="max-w-md px-4 font-medium">{result.emptyMessage}</p>
                     {hasFilters && (
                       <Button variant="outline" size="sm" className="mt-4" onClick={clearFilters}>
                         Clear filters
@@ -363,10 +542,7 @@ function ReportCentre() {
                         {result.columns.map(column => (
                           <TableHead
                             key={column.key}
-                            className={cn(
-                              'whitespace-nowrap',
-                              column.type && column.type !== 'text' && column.type !== 'date' && 'text-right',
-                            )}
+                            className={cn('whitespace-nowrap', isNumericReportColumn(column.type) && 'text-right')}
                           >
                             {column.label}
                           </TableHead>
@@ -381,12 +557,10 @@ function ReportCentre() {
                               key={column.key}
                               className={cn(
                                 'whitespace-nowrap',
-                                column.type && column.type !== 'text' && column.type !== 'date' && 'text-right tabular-nums',
+                                isNumericReportColumn(column.type) && 'text-right tabular-nums',
                               )}
                             >
-                              <span className="block max-w-[320px] truncate" title={String(row[column.key] ?? '')}>
-                                {formatReportCell(row[column.key], column.type)}
-                              </span>
+                              <ReportCell column={column} row={row} />
                             </TableCell>
                           ))}
                         </TableRow>
@@ -400,7 +574,7 @@ function ReportCentre() {
                               key={column.key}
                               className={cn(
                                 'whitespace-nowrap',
-                                column.type && column.type !== 'text' && column.type !== 'date' && 'text-right tabular-nums',
+                                isNumericReportColumn(column.type) && 'text-right tabular-nums',
                               )}
                             >
                               {result.total?.[column.key] === undefined

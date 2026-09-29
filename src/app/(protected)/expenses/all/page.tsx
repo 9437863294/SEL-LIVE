@@ -3,7 +3,7 @@
 
 'use client';
 
-import { useState, useEffect, useRef, useMemo } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import Link from 'next/link';
 import {
   ShieldAlert, SlidersHorizontal,
@@ -14,7 +14,7 @@ import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import { db } from '@/lib/firebase';
 import { collection, getDocs } from 'firebase/firestore';
-import type { Department, ExpenseRequest, Project } from '@/lib/types';
+import type { DailyRequisitionEntry, Department, ExpenseRequest, Project } from '@/lib/types';
 import { useToast } from '@/hooks/use-toast';
 import { Card, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { TableCard } from '@/components/shared/table-card';
@@ -24,33 +24,34 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/comp
 import { useAuth } from '@/components/auth/AuthProvider';
 import { useAuthorization } from '@/hooks/useAuthorization';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { cn } from '@/lib/utils';
 import {
   ExpenseDetailsDialog,
+  PaidBalanceCell,
   RemarksCell,
   RequestNoCell,
+  StageCell,
+  StageFilterSelect,
   formatExpenseTimestamp,
   formatReceptionDate,
+  matchesStageFilter,
+  receptionOf,
+  requisitionOf,
+  withProgressColumns,
+  type StageFilter,
 } from '@/components/expenses/expense-details-dialog';
 import { useExpensesSettings } from '@/components/expenses/use-expenses-settings';
 import { applyColumnSettings } from '@/lib/expenses-settings';
+import { formatInr } from '@/lib/bank-balance-ledger';
+import { requisitionsByRequestNo } from '@/lib/requisition-progress';
 import { PageHeader } from '@/components/shared/page-header';
 
-
-const baseTableHeaders = [
-  'Request No',
-  'Timestamp',
-  'Department',
-  'Project Name',
-  'Amount',
-  'Head of A/c',
-  'Sub-Head of A/c',
-  'Remarks',
-  'Description',
-  'Name of the party',
-  'Reception No',
-  'Reception Date',
-];
+const EMPTY_FILTERS = {
+  requestNo: '',
+  projectName: 'all',
+  departmentName: 'all',
+  partyName: '',
+  stage: 'all' as StageFilter,
+};
 
 export default function AllExpensesPage() {
   const { toast } = useToast();
@@ -64,19 +65,17 @@ export default function AllExpensesPage() {
   const [projects, setProjects] = useState<Project[]>([]);
   const [departments, setDepartments] = useState<Department[]>([]);
   const [expenses, setExpenses] = useState<ExpenseRequest[]>([]);
+  const [requisitions, setRequisitions] = useState<DailyRequisitionEntry[]>([]);
+  // "Could not read Daily Requisition" — progress is unknown, which must not read as "Not received".
+  const [requisitionsUnavailable, setRequisitionsUnavailable] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [detailsExpense, setDetailsExpense] = useState<ExpenseRequest | null>(null);
 
-  const [filters, setFilters] = useState({
-    requestNo: '',
-    projectName: 'all',
-    departmentName: 'all',
-    partyName: '',
-  });
+  const [filters, setFilters] = useState(EMPTY_FILTERS);
 
   const canViewPage = can('View All', 'Expenses.Expense Requests');
 
-  const handleFilterChange = (field: keyof typeof filters, value: string) => {
+  const handleFilterChange = <K extends keyof typeof filters>(field: K, value: (typeof filters)[K]) => {
     setFilters(prev => ({ ...prev, [field]: value }));
   };
 
@@ -84,22 +83,27 @@ export default function AllExpensesPage() {
     (filters.requestNo ? 1 : 0) +
     (filters.partyName ? 1 : 0) +
     (filters.projectName !== 'all' ? 1 : 0) +
-    (filters.departmentName !== 'all' ? 1 : 0);
+    (filters.departmentName !== 'all' ? 1 : 0) +
+    (filters.stage !== 'all' ? 1 : 0);
+
+  /** Each request's requisition, by Request No = Dep No — the link every module uses. */
+  const requisitionByRequestNo = useMemo(() => requisitionsByRequestNo(requisitions), [requisitions]);
 
   const filteredExpenses = useMemo(() => {
     return expenses.filter(exp => {
       const project = projects.find(p => p.id === exp.projectId);
       return (
-        (filters.requestNo === '' || exp.requestNo.toLowerCase().includes(filters.requestNo.toLowerCase())) &&
-        (filters.partyName === '' || exp.partyName.toLowerCase().includes(filters.partyName.toLowerCase())) &&
+        (filters.requestNo === '' || (exp.requestNo || '').toLowerCase().includes(filters.requestNo.toLowerCase())) &&
+        (filters.partyName === '' || (exp.partyName || '').toLowerCase().includes(filters.partyName.toLowerCase())) &&
         (filters.projectName === 'all' || project?.projectName === filters.projectName) &&
-        (filters.departmentName === 'all' || exp.generatedByDepartment === filters.departmentName)
+        (filters.departmentName === 'all' || exp.generatedByDepartment === filters.departmentName) &&
+        (requisitionsUnavailable || matchesStageFilter(filters.stage, requisitionOf(requisitionByRequestNo, exp)))
       );
     });
-  }, [expenses, filters, projects]);
+  }, [expenses, filters, projects, requisitionByRequestNo, requisitionsUnavailable]);
 
   const totalAmount = useMemo(() =>
-    filteredExpenses.reduce((sum, e) => sum + (e.amount || 0), 0),
+    filteredExpenses.reduce((sum, e) => sum + (Number(e.amount) || 0), 0),
     [filteredExpenses]
   );
 
@@ -115,16 +119,28 @@ export default function AllExpensesPage() {
     const fetchData = async () => {
       setIsLoading(true);
       try {
-        const [projectsSnap, expensesSnap, deptsSnap] = await Promise.all([
+        const [projectsSnap, expensesSnap, deptsSnap, requisitionsSnap] = await Promise.all([
           getDocs(collection(db, 'projects')),
           getDocs(collection(db, 'expenseRequests')),
           getDocs(collection(db, 'departments')),
+          // Where each request has got to lives in Daily Requisition. Someone who cannot read it
+          // still gets the register; only its progress goes blank.
+          getDocs(collection(db, 'dailyRequisitions')).catch(error => {
+            console.error('Could not read Daily Requisition:', error);
+            return null;
+          }),
         ]);
         setProjects(projectsSnap.docs.map(doc => ({ id: doc.id, ...doc.data() } as Project)));
         setDepartments(deptsSnap.docs.map(doc => ({ id: doc.id, ...doc.data() } as Department)));
         const fetchedExpenses = expensesSnap.docs.map(doc => ({ id: doc.id, ...doc.data() } as ExpenseRequest));
         fetchedExpenses.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
         setExpenses(fetchedExpenses);
+        setRequisitions(
+          requisitionsSnap
+            ? requisitionsSnap.docs.map(doc => ({ ...(doc.data() as DailyRequisitionEntry), id: doc.id }))
+            : [],
+        );
+        setRequisitionsUnavailable(!requisitionsSnap);
       } catch (error: any) {
         console.error('Error fetching data:', error);
         toast({ title: 'Error', description: 'Failed to fetch consolidated expenses.', variant: 'destructive' });
@@ -137,27 +153,18 @@ export default function AllExpensesPage() {
   const getProjectName = (projectId: string) =>
     projects.find(p => p.id === projectId)?.projectName || 'Unknown Project';
 
-  const { order, visibility } = useMemo(
-    () => applyColumnSettings(settings.registers.all),
-    [settings],
-  );
-  const visibleHeaders = order.filter(header => visibility[header]);
+  const visibleHeaders = useMemo(() => {
+    const { order, visibility } = applyColumnSettings(settings.registers.all);
+    return withProgressColumns(order, visibility);
+  }, [settings]);
 
-  const getCellContent = (header: string, expense: ExpenseRequest) => {
-    const formatCurrency = (amount: number) =>
-      new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', minimumFractionDigits: 2 }).format(amount);
-
+  const getCellContent = (header: string, expense: ExpenseRequest, requisition: DailyRequisitionEntry | undefined) => {
     switch (header) {
       case 'Request No': return <RequestNoCell expense={expense} onOpen={setDetailsExpense} />;
       case 'Timestamp': return formatExpenseTimestamp(expense.createdAt);
       case 'Department': return expense.generatedByDepartment;
       case 'Project Name': return getProjectName(expense.projectId);
-      case 'Amount':
-        return (
-          <span className="tabular-nums">
-            {formatCurrency(expense.amount || 0)}
-          </span>
-        );
+      case 'Amount': return <span className="tabular-nums">{formatInr(expense.amount)}</span>;
       case 'Head of A/c': return expense.headOfAccount;
       case 'Sub-Head of A/c': return expense.subHeadOfAccount;
       case 'Remarks': return <RemarksCell remarks={expense.remarks} />;
@@ -166,15 +173,17 @@ export default function AllExpensesPage() {
           <TooltipProvider>
             <Tooltip>
               <TooltipTrigger>
-                <p className="truncate max-w-[200px]">{expense.description}</p>
+                <span className="block truncate max-w-[200px]">{expense.description}</span>
               </TooltipTrigger>
               <TooltipContent><p className="max-w-md">{expense.description}</p></TooltipContent>
             </Tooltip>
           </TooltipProvider>
         );
       case 'Name of the party': return expense.partyName;
-      case 'Reception No': return expense.receptionNo || 'N/A';
-      case 'Reception Date': return formatReceptionDate(expense.receptionDate);
+      case 'Reception No': return receptionOf(expense, requisition).receptionNo || '—';
+      case 'Reception Date': return formatReceptionDate(receptionOf(expense, requisition).receptionDate);
+      case 'Stage': return <StageCell requisition={requisition} unavailable={requisitionsUnavailable} />;
+      case 'Paid / Balance': return <PaidBalanceCell requisition={requisition} unavailable={requisitionsUnavailable} />;
       default: return '';
     }
   };
@@ -230,35 +239,35 @@ export default function AllExpensesPage() {
         }
       />
 
-      {/* Stats ribbon */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+      {/* Stats ribbon — whole rupees here; the rows carry the paise. */}
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
         <div className="flex items-center gap-2.5 px-4 py-2.5 rounded-lg border border-blue-500/20 bg-blue-500/5 text-blue-600 dark:text-blue-400">
           <FileText className="h-4 w-4 flex-shrink-0" />
-          <div>
+          <div className="min-w-0">
             <span className="text-xs text-muted-foreground block leading-tight">Total Requests</span>
             <span className="font-bold leading-tight">{filteredExpenses.length}</span>
           </div>
         </div>
         <div className="flex items-center gap-2.5 px-4 py-2.5 rounded-lg border border-emerald-500/20 bg-emerald-500/5 text-emerald-600 dark:text-emerald-400">
           <IndianRupee className="h-4 w-4 flex-shrink-0" />
-          <div>
+          <div className="min-w-0">
             <span className="text-xs text-muted-foreground block leading-tight">Total Amount</span>
-            <span className="font-bold leading-tight text-sm">₹{totalAmount.toLocaleString('en-IN')}</span>
+            <span className="font-bold leading-tight text-sm tabular-nums break-words">{formatInr(totalAmount, 0)}</span>
           </div>
         </div>
         <div className="flex items-center gap-2.5 px-4 py-2.5 rounded-lg border border-purple-500/20 bg-purple-500/5 text-purple-600 dark:text-purple-400">
           <Building2 className="h-4 w-4 flex-shrink-0" />
-          <div>
+          <div className="min-w-0">
             <span className="text-xs text-muted-foreground block leading-tight">Departments</span>
             <span className="font-bold leading-tight">{uniqueDepts}</span>
           </div>
         </div>
         <div className="flex items-center gap-2.5 px-4 py-2.5 rounded-lg border border-amber-500/20 bg-amber-500/5 text-amber-600 dark:text-amber-400">
           <TrendingUp className="h-4 w-4 flex-shrink-0" />
-          <div>
+          <div className="min-w-0">
             <span className="text-xs text-muted-foreground block leading-tight">Avg per Request</span>
-            <span className="font-bold leading-tight text-sm">
-              {filteredExpenses.length > 0 ? `₹${Math.round(totalAmount / filteredExpenses.length).toLocaleString('en-IN')}` : '—'}
+            <span className="font-bold leading-tight text-sm tabular-nums break-words">
+              {filteredExpenses.length > 0 ? formatInr(totalAmount / filteredExpenses.length, 0) : '—'}
             </span>
           </div>
         </div>
@@ -267,6 +276,11 @@ export default function AllExpensesPage() {
       {/* Data Table — TableCard owns the scroll container and the pinned header. */}
       <TableCard
         title="Expense requests"
+        description={
+          requisitionsUnavailable
+            ? 'Stage and payments could not be loaded from Daily Requisition.'
+            : undefined
+        }
         count={filteredExpenses.length}
         total={expenses.length}
         noun="request"
@@ -274,7 +288,7 @@ export default function AllExpensesPage() {
           <FilterBar
             search={{ value: filters.requestNo, onChange: value => handleFilterChange('requestNo', value), placeholder: 'Search Request No...' }}
             activeCount={activeFilterCount}
-            onClear={() => setFilters({ requestNo: '', projectName: 'all', departmentName: 'all', partyName: '' })}
+            onClear={() => setFilters(EMPTY_FILTERS)}
           >
             <SearchInput
               placeholder="Search Party Name..."
@@ -295,6 +309,11 @@ export default function AllExpensesPage() {
                 {departments.map(d => <SelectItem key={d.id} value={d.name}>{d.name}</SelectItem>)}
               </SelectContent>
             </Select>
+            <StageFilterSelect
+              value={filters.stage}
+              onChange={value => handleFilterChange('stage', value)}
+              disabled={requisitionsUnavailable}
+            />
           </FilterBar>
         }
       >
@@ -309,30 +328,25 @@ export default function AllExpensesPage() {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {isLoading ? (
-                Array.from({ length: 8 }).map((_, i) => (
-                  <TableRow key={i}>
-                    {visibleHeaders.map(header => (
-                      <TableCell key={header}><Skeleton className="h-4 w-full" /></TableCell>
-                    ))}
-                  </TableRow>
-                ))
-              ) : filteredExpenses.length > 0 ? (
-                filteredExpenses.map(expense => (
-                  // The whole row opens the details. Keyboard access is the Request No button
-                  // inside it, so the row keeps its table semantics.
-                  <TableRow
-                    key={expense.id}
-                    onClick={() => setDetailsExpense(expense)}
-                    className="cursor-pointer"
-                  >
-                    {visibleHeaders.map(header => (
-                      <TableCell key={header} className="whitespace-nowrap">
-                        {getCellContent(header, expense)}
-                      </TableCell>
-                    ))}
-                  </TableRow>
-                ))
+              {filteredExpenses.length > 0 ? (
+                filteredExpenses.map(expense => {
+                  const requisition = requisitionOf(requisitionByRequestNo, expense);
+                  return (
+                    // The whole row opens the details. Keyboard access is the Request No button
+                    // inside it, so the row keeps its table semantics.
+                    <TableRow
+                      key={expense.id}
+                      onClick={() => setDetailsExpense(expense)}
+                      className="cursor-pointer"
+                    >
+                      {visibleHeaders.map(header => (
+                        <TableCell key={header} className="whitespace-nowrap">
+                          {getCellContent(header, expense, requisition)}
+                        </TableCell>
+                      ))}
+                    </TableRow>
+                  );
+                })
               ) : (
                 <TableRow>
                   <TableCell colSpan={visibleHeaders.length}>
@@ -351,6 +365,8 @@ export default function AllExpensesPage() {
       <ExpenseDetailsDialog
         expense={detailsExpense}
         projectName={detailsExpense ? getProjectName(detailsExpense.projectId) : ''}
+        requisition={detailsExpense ? requisitionOf(requisitionByRequestNo, detailsExpense) : undefined}
+        requisitionsUnavailable={requisitionsUnavailable}
         open={!!detailsExpense}
         onOpenChange={open => { if (!open) setDetailsExpense(null); }}
       />

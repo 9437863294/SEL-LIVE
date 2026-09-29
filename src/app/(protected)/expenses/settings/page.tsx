@@ -8,6 +8,7 @@ import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/com
 import type { LucideIcon } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useAuthorization } from '@/hooks/useAuthorization';
+import { canOpenAccessManagement, type PermissionChecker } from '@/lib/access-control';
 import { Skeleton } from '@/components/ui/skeleton';
 import { PageHeader } from '@/components/shared/page-header';
 
@@ -22,20 +23,21 @@ interface ExpenseSettingCardProps {
   };
 }
 
-const settingsItemsBase = [
-  { 
-    icon: Hash, 
-    title: 'Department-wise Serial Number', 
+/** Each card says who it is for, as a predicate over `can`, so a card can follow its target page's own rule. */
+const settingsItemsBase: Array<ExpenseSettingCardProps['item'] & { isEnabled: (can: PermissionChecker) => boolean }> = [
+  {
+    icon: Hash,
+    title: 'Department-wise Serial Number',
     description: 'Configure serial numbers for expense reports for each department.',
     href: '/expenses/settings/department-serial-no',
-    permission: 'Edit Serial Nos'
+    isEnabled: can => can('Edit Serial Nos', 'Expenses.Settings'),
   },
-  { 
-    icon: Tags, 
-    title: 'Head of A/c Sub-Head of A/c', 
+  {
+    icon: Tags,
+    title: 'Head of A/c Sub-Head of A/c',
     description: 'Manage the chart of accounts for expenses.',
     href: '/expenses/settings/accounts',
-    permission: 'Manage Accounts'
+    isEnabled: can => can('Manage Accounts', 'Expenses.Settings'),
   },
   {
     icon: SlidersHorizontal,
@@ -44,23 +46,28 @@ const settingsItemsBase = [
     href: '/expenses/settings/table-and-fields',
     // Viewing settings is enough to look; the page itself only lets the settings administrators
     // change anything, so this is not gated behind a permission nobody has been granted.
-    permission: 'View'
+    isEnabled: can => can('View', 'Expenses.Settings'),
   },
   {
     icon: Users,
     title: 'User Role Configuration',
     description: 'Configure module permissions and assign access through roles.',
     href: '/settings/access-management',
-    permission: 'Edit User Rights'
+    // Expenses has no role screen of its own: this opens the app's Access Management, so it is
+    // enabled for exactly the people that page admits (the same rule the main Settings page uses).
+    // It used to ask for "Edit User Rights", which the Expenses permission tree does not define —
+    // nobody could hold it, so the card was disabled for everyone, administrators included.
+    isEnabled: canOpenAccessManagement,
   },
 ];
 
 
-/** One tone per settings card, so the three are told apart by colour as well as by icon. */
+/** One tone per settings card, so the cards are told apart by colour as well as by icon. */
 const SETTING_TONES = [
     { tile: 'from-sky-500 to-blue-600', bar: 'from-sky-500 to-blue-500', ring: 'hover:border-sky-300' },
     { tile: 'from-teal-500 to-emerald-600', bar: 'from-teal-500 to-emerald-500', ring: 'hover:border-teal-300' },
     { tile: 'from-amber-500 to-orange-600', bar: 'from-amber-500 to-orange-500', ring: 'hover:border-amber-300' },
+    { tile: 'from-violet-500 to-purple-600', bar: 'from-violet-500 to-purple-500', ring: 'hover:border-violet-300' },
 ] as const;
 
 function ExpenseSettingCard({ item, tone }: ExpenseSettingCardProps & { tone: (typeof SETTING_TONES)[number] }) {
@@ -101,9 +108,9 @@ export default function ExpensesSettingsPage() {
     const { can, isLoading } = useAuthorization();
     const canViewPage = can('View', 'Expenses.Settings');
 
-    const settingsItems = settingsItemsBase.map(item => ({
+    const settingsItems = settingsItemsBase.map(({ isEnabled, ...item }) => ({
         ...item,
-        disabled: !can(item.permission, 'Expenses.Settings')
+        disabled: !isEnabled(can),
     }));
 
     if (isLoading) {
@@ -111,9 +118,7 @@ export default function ExpensesSettingsPage() {
             <div className="w-full">
                 <Skeleton className="h-10 w-64 mb-6" />
                 <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
-                    <Skeleton className="h-28" />
-                    <Skeleton className="h-28" />
-                    <Skeleton className="h-28" />
+                    {settingsItemsBase.map(item => <Skeleton key={item.title} className="h-28" />)}
                 </div>
             </div>
         );
