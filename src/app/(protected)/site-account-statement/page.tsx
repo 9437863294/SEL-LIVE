@@ -12,6 +12,8 @@ import {
   type SASAttachment, type SASBudget, type SASCategory, type SASExpense, type SASPayment, type SASProject,
 } from '@/lib/site-account-statement';
 import { runBudgetAlertChecks } from '@/lib/sas-budget-alerts';
+import { slugify } from '@/lib/print-table-report';
+import { openPrintWindow } from '@/lib/open-print-window';
 import { allExpenses as fetchAllExpenses, allPayments as fetchAllPayments } from '@/lib/site-account-statement-queries';
 import { useFieldControl, validateFieldControlRequirements } from '@/components/site-account-statement/use-field-control';
 import { useDateControl } from '@/components/site-account-statement/use-date-control';
@@ -38,9 +40,10 @@ import { cn } from '@/lib/utils';
 import Link from 'next/link';
 import {
   AlertTriangle, ArrowDownRight, ArrowUpRight, BarChart3,
-  BookOpen, Building2, File, FileText, Loader2, Paperclip, Plus, Receipt, Target,
-  TrendingDown, TrendingUp, Wallet, X,
+  BookOpen, Building2, Download, File, FileText, Loader2, Paperclip, Plus, Printer, Receipt,
+  Target, TrendingDown, TrendingUp, Wallet, X,
 } from 'lucide-react';
+import ExcelJS from 'exceljs';
 import type { LucideIcon } from 'lucide-react';
 
 const MODULE = 'Site Account Statement';
@@ -663,6 +666,8 @@ function MyProjectCard({
 
 export default function SiteAccountDashboardPage() {
   const { user } = useAuth();
+  const { toast } = useToast();
+  const { log } = useActivityLogger(MODULE);
   const { can, isLoading: isAuthLoading } = useAuthorization();
   const canViewAll = can('View', `${MODULE}.All Projects`);
   const canViewDashboard = can('View', `${MODULE}.Dashboard`) || canViewAll;
@@ -851,6 +856,188 @@ export default function SiteAccountDashboardPage() {
   // FY budget total for stat card
   const totalFYBudget = useMemo(() => projectStats.reduce((s, p) => s + p.plannedBudget, 0), [projectStats]);
 
+  // ── Print / export the project-wise summary ─────────────────────────────────
+  const [exporting, setExporting] = useState(false);
+
+  const periodLabel = filterFY === 'all'
+    ? 'All time'
+    : filterMonth
+      ? `${monthLabel(filterMonth)} (FY ${filterFY})`
+      : `FY ${filterFY}`;
+
+  /** The filters in force, so a printed or exported copy still says what it is a year from now. */
+  const reportMeta = useMemo(() => [
+    { label: 'Period', value: periodLabel },
+    {
+      label: 'Budget status',
+      value: filterBudgetStatus === 'all' ? 'All' : filterBudgetStatus === 'over' ? 'Over budget'
+        : filterBudgetStatus === 'ok' ? 'Within budget' : 'No budget set',
+    },
+    ...(filterSearch ? [{ label: 'Search', value: filterSearch }] : []),
+    { label: 'Projects', value: `${filteredProjectStats.length} of ${projectStats.length}` },
+  ], [periodLabel, filterBudgetStatus, filterSearch, filteredProjectStats.length, projectStats.length]);
+
+  /** Column totals. Percentages are recomputed from the totals, never summed down the column. */
+  const reportTotals = useMemo(() => {
+    const planned = filteredProjectStats.reduce((s, r) => s + r.plannedBudget, 0);
+    const spent   = filteredProjectStats.reduce((s, r) => s + r.cumulativeExpenses, 0);
+    const balance = planned - spent;
+    return {
+      planned, spent, balance,
+      usedPct: planned > 0 ? (spent / planned) * 100 : 0,
+      balancePct: planned > 0 ? (balance / planned) * 100 : 0,
+    };
+  }, [filteredProjectStats]);
+
+  function handlePrintSummary() {
+    const opened = openPrintWindow({
+      title: 'Project-Wise Summary',
+      subtitle: 'Site Account Statement',
+      meta: reportMeta,
+      columns: [
+        { key: 'project',  label: 'Project' },
+        { key: 'planned',  label: 'Total Planned Budget', align: 'right' },
+        { key: 'spent',    label: 'Cumulative Expense',   align: 'right' },
+        { key: 'usedPct',  label: 'Used %',               align: 'right' },
+        { key: 'balance',  label: 'Balance Fund',         align: 'right' },
+        { key: 'balPct',   label: 'Balance %',            align: 'right' },
+      ],
+      rows: filteredProjectStats.map(stat => ({
+        project: stat.name,
+        planned: formatINR(stat.plannedBudget),
+        spent:   formatINR(stat.cumulativeExpenses),
+        usedPct: stat.plannedBudget > 0 ? `${stat.cumulativeUsedPct.toFixed(2)}%` : '—',
+        balance: formatINR(stat.balanceFund),
+        balPct:  stat.plannedBudget > 0 ? `${stat.balanceFundPct.toFixed(2)}%` : '—',
+      })),
+      totals: {
+        project: `Total — ${filteredProjectStats.length} project${filteredProjectStats.length === 1 ? '' : 's'}`,
+        planned: formatINR(reportTotals.planned),
+        spent:   formatINR(reportTotals.spent),
+        usedPct: reportTotals.planned > 0 ? `${reportTotals.usedPct.toFixed(2)}%` : '—',
+        balance: formatINR(reportTotals.balance),
+        balPct:  reportTotals.planned > 0 ? `${reportTotals.balancePct.toFixed(2)}%` : '—',
+      },
+      // The dashboard's own truncation warning has to travel with the paper copy, or a partial
+      // total gets filed as the whole picture.
+      footNote: ledgerTruncated
+        ? 'This organisation has more transactions than the dashboard loads at once, so these '
+          + 'figures are based on the most recent records only. Use the reports for exact figures.'
+        : undefined,
+      generatedOn: new Date().toLocaleString('en-IN'),
+      generatedBy: user?.name ?? undefined,
+    });
+    if (!opened) {
+      toast({
+        title: 'Could not open the print view',
+        description: 'Your browser blocked the pop-up. Allow pop-ups for this site and try again.',
+        variant: 'destructive',
+      });
+    }
+  }
+
+  async function handleExportSummary() {
+    setExporting(true);
+    try {
+      const wb = new ExcelJS.Workbook();
+      const ws = wb.addWorksheet('Project-Wise Summary');
+
+      // Widths only. Assigning `header` here would write into row 1 and destroy the title block
+      // added below it.
+      ws.columns = [
+        { key: 'project', width: 38 },
+        { key: 'planned', width: 20 },
+        { key: 'spent',   width: 22 },
+        { key: 'usedPct', width: 12 },
+        { key: 'balance', width: 18 },
+        { key: 'balPct',  width: 12 },
+      ];
+
+      ws.addRow(['Project-Wise Summary']).font = { bold: true, size: 14 };
+      ws.addRow(['Site Account Statement']).font = { color: { argb: 'FF666666' } };
+      for (const m of reportMeta) ws.addRow([`${m.label}:`, m.value]);
+      ws.addRow([`Generated:`, new Date().toLocaleString('en-IN')]);
+      if (user?.name) ws.addRow([`Generated by:`, user.name]);
+      ws.addRow([]);
+
+      const header = ws.addRow([
+        'Project', 'Total Planned Budget', 'Cumulative Expense', 'Used %', 'Balance Fund', 'Balance %',
+      ]);
+      header.font = { bold: true };
+      header.eachCell(cell => {
+        cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFE8F5EE' } };
+      });
+      // Freeze everything above and including the header so the columns stay labelled while
+      // scrolling a long project list.
+      ws.views = [{ state: 'frozen', ySplit: header.number }];
+
+      const MONEY = '#,##0';
+      const PCT = '0.00"%"';
+      for (const stat of filteredProjectStats) {
+        const row = ws.addRow([
+          stat.name,
+          stat.plannedBudget,
+          stat.cumulativeExpenses,
+          stat.plannedBudget > 0 ? stat.cumulativeUsedPct : null,
+          stat.balanceFund,
+          stat.plannedBudget > 0 ? stat.balanceFundPct : null,
+        ]);
+        // Written as numbers with a display format, not pre-formatted strings — a spreadsheet the
+        // recipient cannot sum or pivot is a screenshot with extra steps.
+        row.getCell(2).numFmt = MONEY;
+        row.getCell(3).numFmt = MONEY;
+        row.getCell(4).numFmt = PCT;
+        row.getCell(5).numFmt = MONEY;
+        row.getCell(6).numFmt = PCT;
+        if (stat.plannedBudget > 0 && stat.cumulativeExpenses > stat.plannedBudget) {
+          row.getCell(3).font = { color: { argb: 'FFC00000' }, bold: true };
+        }
+      }
+
+      const totals = ws.addRow([
+        `Total — ${filteredProjectStats.length} project${filteredProjectStats.length === 1 ? '' : 's'}`,
+        reportTotals.planned,
+        reportTotals.spent,
+        reportTotals.planned > 0 ? reportTotals.usedPct : null,
+        reportTotals.balance,
+        reportTotals.planned > 0 ? reportTotals.balancePct : null,
+      ]);
+      totals.font = { bold: true };
+      totals.eachCell(cell => {
+        cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFEEEEEE' } };
+      });
+      totals.getCell(2).numFmt = MONEY;
+      totals.getCell(3).numFmt = MONEY;
+      totals.getCell(4).numFmt = PCT;
+      totals.getCell(5).numFmt = MONEY;
+      totals.getCell(6).numFmt = PCT;
+
+      if (ledgerTruncated) {
+        ws.addRow([]);
+        ws.addRow([
+          'Note: this organisation has more transactions than the dashboard loads at once, so these '
+          + 'figures are based on the most recent records only. Use the reports for exact figures.',
+        ]).font = { color: { argb: 'FF9C6500' }, italic: true };
+      }
+
+      const buffer = await wb.xlsx.writeBuffer();
+      const blob = new Blob([buffer], {
+        type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `project-wise-summary-${slugify(periodLabel)}.xlsx`;
+      a.click();
+      URL.revokeObjectURL(url);
+      void log('Export SAS Project Summary', { period: periodLabel, rows: filteredProjectStats.length });
+    } catch (e: any) {
+      toast({ title: 'Export failed', description: e.message, variant: 'destructive' });
+    } finally {
+      setExporting(false);
+    }
+  }
+
   if (isAuthLoading || loading) {
     return (
       <div className="space-y-4">
@@ -953,6 +1140,35 @@ export default function SiteAccountDashboardPage() {
                 search={{ value: filterSearch, onChange: setFilterSearch, placeholder: 'Search projects…' }}
                 activeCount={filterBudgetStatus !== 'all' ? 1 : 0}
                 onClear={() => { setFilterSearch(''); setFilterBudgetStatus('all'); }}
+                /*
+                 * Print and export belong to the filter bar, not the page header: what they
+                 * produce is whatever the filters currently select, and a copy taken from a
+                 * control at the other end of the page reads as a copy of everything. They go in
+                 * `actions` rather than among the children so they stay visible on a phone, where
+                 * the filter controls fold away behind a toggle.
+                 */
+                actions={
+                  <>
+                    <Button
+                      variant="outline"
+                      className="gap-2"
+                      onClick={handlePrintSummary}
+                      disabled={filteredProjectStats.length === 0}
+                    >
+                      <Printer className="h-4 w-4" />
+                      Print
+                    </Button>
+                    <Button
+                      variant="outline"
+                      className="gap-2"
+                      onClick={handleExportSummary}
+                      disabled={exporting || filteredProjectStats.length === 0}
+                    >
+                      {exporting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
+                      Excel
+                    </Button>
+                  </>
+                }
               >
                 <Select value={filterFY} onValueChange={setFilterFY}>
                   <SelectTrigger aria-label="Financial year">
