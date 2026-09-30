@@ -390,6 +390,55 @@ service cloud.firestore {
     }
 
     /**
+     * Monthly budget allocations — the instalments a month's budget is made of.
+     *
+     * The separation of duties the UI enforces is re-stated here, because a rule that only the
+     * dialog obeys is not a rule. Recording an allocation is an ordinary budget write, available to
+     * the people assigned to the project. Moving one to `approved` is what turns a typed number
+     * into money a site may spend, so it requires the distinct `Budget Allocation` / `Verify`
+     * permission and nothing else grants it — not `Budget`, not a project assignment.
+     *
+     * Verified rows are frozen: the only permitted change to one is the move back to `pending`,
+     * which the reviewer makes deliberately and which takes the money back out of the budget. An
+     * edit in place would change an audited figure with no trace that it moved.
+     */
+    function sasCanVerifyAllocation() {
+      return sasPerm('Budget Allocation', 'Verify');
+    }
+
+    function sasAllocationStatusUnchanged() {
+      return request.resource.data.status == resource.data.status;
+    }
+
+    match /siteAccountBudgetAllocations/{allocationId} {
+      allow get, list: if sasCanReadBudget()
+        || sasPerm('Budget Allocation', 'View')
+        || (resource != null && sasCanReadProject(resource.data.projectId));
+
+      allow create: if request.resource.data.status == 'pending'
+        && (sasPerm('Budget Allocation', 'Add')
+            || sasCanWriteBudget('Add')
+            || sasCanWriteProject(request.resource.data.projectId));
+
+      allow update: if sasAllocationStatusUnchanged()
+        // Attaching or replacing the approval on a row still under review.
+        ? (resource.data.status != 'approved'
+           && (sasCanVerifyAllocation()
+               || sasPerm('Budget Allocation', 'Add')
+               || sasCanWriteProject(resource.data.projectId)))
+        // Any status move — verify, reject, reopen — is the reviewer's alone, and a move to
+        // `approved` additionally needs the sanction document, mirroring canVerifyAllocation().
+        : sasCanVerifyAllocation()
+          && (request.resource.data.status != 'approved'
+              || (request.resource.data.approval is map
+                  && request.resource.data.approval.url is string
+                  && request.resource.data.approval.url != ''));
+
+      allow delete: if resource.data.status != 'approved'
+        && (sasPerm('Budget Allocation', 'Delete') || sasCanWriteBudget('Delete'));
+    }
+
+    /**
      * Expense categories — the module's shared vocabulary.
      *
      * Every expense form needs to read them, so reads are open to signed-in users. Renaming one now

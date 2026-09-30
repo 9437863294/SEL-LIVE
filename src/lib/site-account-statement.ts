@@ -9,6 +9,8 @@ export const SAS_COLLECTIONS = {
   budgetAlertConfigs: 'siteAccountBudgetAlertConfigs',
   budgetAlertState:   'siteAccountBudgetAlertState',
   tenderBudgets:   'siteAccountTenderBudgets',
+  /** Instalment-level monthly budget rows, each verified before it counts. */
+  budgetAllocations: 'siteAccountBudgetAllocations',
   settings:        'siteAccountSettings',
 } as const;
 
@@ -31,6 +33,13 @@ export {
   DEFAULT_DATE_CONTROL,
   type SASDateControlSettings,
 } from './site-account-statement-date-policy';
+
+// The allocation ledger's rules live with the logic that interprets them, in an import-free
+// module so `node --test` can load them directly.
+export {
+  type SASBudgetAllocation,
+  type SASAllocationStatus,
+} from './site-account-statement-allocations';
 
 export interface SASProject {
   id: string;

@@ -917,6 +917,9 @@ export const permissionModules = {
     // clerk should be able to record today's spend without also being able to reopen a month that
     // has already been reported on.
     "Backdated Entry": ["Add", "Edit"],
+    // Recording an allocation and verifying one are separate on purpose: the point of the
+    // ledger is that a second person signs off the amount, so one role holding both defeats it.
+    "Budget Allocation": ["View", "Add", "Verify", "Delete"],
     Reports: ["View", "Export"],
   },
   // The Windows desktop agent: office PCs, work sessions, foreground-application time, desktop

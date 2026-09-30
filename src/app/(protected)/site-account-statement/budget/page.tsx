@@ -12,8 +12,13 @@ import {
   type SASBudget, type SASBudgetApproval, type SASCategory, type SASCategoryBudget,
   type SASExpense, type SASPayment, type SASProject,
 } from '@/lib/site-account-statement';
+import {
+  effectiveMonthlyBudget, summariseAllocations,
+  type SASBudgetAllocation,
+} from '@/lib/site-account-statement-allocations';
 import { resetBudgetAlertState } from '@/lib/sas-budget-alerts';
 import { loadScopedLedger } from '@/lib/site-account-statement-queries';
+import { BudgetAllocationsDialog } from '@/components/site-account-statement/budget-allocations-dialog';
 import { useFieldControl, validateFieldControlRequirements } from '@/components/site-account-statement/use-field-control';
 import { ControlledField } from '@/components/site-account-statement/controlled-field';
 import { useAuth } from '@/components/auth/AuthProvider';
@@ -41,8 +46,9 @@ import {
   AlertDialogTrigger,
 } from '@/components/ui/alert-dialog';
 import {
-  Calendar, ChevronDown, ChevronLeft, ChevronRight, Download, FileText, Filter, Layers, Loader2,
-  Lock, Pencil, Plus, ShieldAlert, Target, Trash2, TrendingDown, TrendingUp, Upload, Wallet,
+  Calendar, ChevronDown, ChevronLeft, ChevronRight, Clock, Download, FileText, Filter, Layers,
+  Loader2, Lock, Pencil, Plus, ShieldAlert, Split, Target, Trash2, TrendingDown, TrendingUp,
+  Upload, Wallet,
 } from 'lucide-react';
 import ExcelJS from 'exceljs';
 import { cn } from '@/lib/utils';
@@ -178,6 +184,7 @@ export default function SiteFundBudgetPage() {
   const [categories,   setCategories]   = useState<SASCategory[]>([]);
   const [allCatBudgets,  setAllCatBudgets]  = useState<SASCategoryBudget[]>([]);
   const [allApprovals,   setAllApprovals]   = useState<SASBudgetApproval[]>([]);
+  const [allAllocations, setAllAllocations] = useState<SASBudgetAllocation[]>([]);
   const [loading,        setLoading]        = useState(true);
   const [saving,       setSaving]       = useState(false);
   const [catSaving,    setCatSaving]    = useState(false);
@@ -217,6 +224,9 @@ export default function SiteFundBudgetPage() {
   const [uploadOpen,   setUploadOpen]   = useState(false);
   const [uploadRows,   setUploadRows]   = useState<UploadRow[]>([]);
   const [uploadSaving, setUploadSaving] = useState(false);
+
+  // ── Monthly allocation ledger dialog ─────────────────────────────────────────
+  const [allocDialog, setAllocDialog] = useState<{ project: SASProject; period: string } | null>(null);
 
   // ── PDF approval upload state ─────────────────────────────────────────────────
   const [pdfUploadingKey, setPdfUploadingKey] = useState<string | null>(null); // "projectId:period"
@@ -258,6 +268,13 @@ export default function SiteFundBudgetPage() {
     try {
       const appSnap = await getDocs(collection(db, SAS_COLLECTIONS.budgetApprovals));
       setAllApprovals(appSnap.docs.map(d => ({ id: d.id, ...d.data() } as SASBudgetApproval)));
+    } catch { /* collection may not exist yet */ }
+
+    // Same treatment for the allocation ledger: it does not exist until the first instalment is
+    // recorded, and an absent collection must not take the whole budget tree down with it.
+    try {
+      const allocSnap = await getDocs(collection(db, SAS_COLLECTIONS.budgetAllocations));
+      setAllAllocations(allocSnap.docs.map(d => ({ id: d.id, ...d.data() } as SASBudgetAllocation)));
     } catch { /* collection may not exist yet */ }
   }
 
@@ -306,7 +323,81 @@ export default function SiteFundBudgetPage() {
   const fyPerm       = typePerm('FY Budget');
   const monthlyPerm  = typePerm('Monthly Budget');
   const categoryPerm = typePerm('Category Budget');
-  const anyRowActionPerm = [totalPerm, fyPerm, monthlyPerm, categoryPerm].some(p => p.add || p.edit || p.del);
+
+  /*
+   * Allocation rights, deliberately not folded into `typePerm`.
+   *
+   * Recording an instalment and verifying it are different jobs, so `Verify` is its own action and
+   * is *not* granted by a project assignment — a site engineer who can record what Head Office sent
+   * must not also be the one who confirms it. Add follows the same assignment rule as the rest of
+   * the page, because whoever runs the site is usually the one who knows a transfer landed.
+   */
+  function allocPerm(projectId?: string) {
+    const resource = `${MODULE}.Budget Allocation`;
+    const assigned = projectId
+      ? isAssignedTo(projectId)
+      : visibleProjects.some(p => isAssignedTo(p.id));
+    return {
+      view:   monthlyPerm.view || can('View', resource),
+      add:    can('Add', resource) || assigned,
+      verify: can('Verify', resource),
+      remove: can('Delete', resource),
+    };
+  }
+  const anyAllocPerm = (() => {
+    const p = allocPerm();
+    return p.add || p.verify || p.remove;
+  })();
+
+  const anyRowActionPerm = [totalPerm, fyPerm, monthlyPerm, categoryPerm].some(p => p.add || p.edit || p.del)
+    || anyAllocPerm;
+
+  /**
+   * The allocation rows for one project-month.
+   *
+   * Indexed once rather than filtered per row: the tree renders a dozen months for each of many
+   * projects, and a linear scan of the whole ledger inside each of those cells is the kind of thing
+   * that only shows up as sluggishness once a site has a year of instalments behind it.
+   */
+  const allocationIndex = useMemo(() => {
+    const index = new Map<string, SASBudgetAllocation[]>();
+    for (const allocation of allAllocations) {
+      const key = `${allocation.projectId}:${allocation.period}`;
+      const bucket = index.get(key);
+      if (bucket) bucket.push(allocation); else index.set(key, [allocation]);
+    }
+    return index;
+  }, [allAllocations]);
+
+  const allocationsForMonth = useMemo(
+    () => (projectId: string, period: string) => allocationIndex.get(`${projectId}:${period}`) ?? [],
+    [allocationIndex]
+  );
+
+  /**
+   * What a month's budget actually is, and what is still waiting to become part of it.
+   *
+   * `legacy` is the single figure on the old monthly budget document. It is added to the verified
+   * allocations rather than replaced by them, so installations that set budgets before the ledger
+   * existed keep the number they have been spending against.
+   */
+  const monthlyBudgetFor = useMemo(() => (projectId: string, period: string) => {
+    const legacyRow = allBudgets.find(
+      b => b.projectId === projectId && b.budgetType === 'monthly' && b.period === period
+    ) ?? null;
+    const allocations = allocationsForMonth(projectId, period);
+    const summary = summariseAllocations(allocations);
+    return {
+      legacyRow,
+      legacy: legacyRow?.budgetAmount ?? 0,
+      allocations,
+      approved: summary.approved,
+      pending: summary.pending,
+      pendingCount: summary.pendingCount,
+      approvedCount: summary.approvedCount,
+      effective: effectiveMonthlyBudget(legacyRow?.budgetAmount ?? 0, allocations),
+    };
+  }, [allBudgets, allocationsForMonth]);
 
   // Budget-type tabs the current role is allowed to create in the Set Budget dialog.
   const addableBudgetTabs = useMemo(() => [
@@ -340,10 +431,16 @@ export default function SiteFundBudgetPage() {
       .filter(b => b.projectId === projectId && b.budgetType === 'fy')
       .reduce((s, b) => s + (b.budgetAmount || 0), 0);
     if (fySum > 0) return fySum;
-    return allBudgets
+    const monthSum = allBudgets
       .filter(b => b.projectId === projectId && b.budgetType === 'monthly')
       .reduce((s, b) => s + (b.budgetAmount || 0), 0);
-  }, [allBudgets]);
+    // Verified allocations are monthly budget too, so a project funded entirely through the
+    // allocation ledger still rolls up to a real total instead of showing ₹0.
+    const allocSum = allAllocations
+      .filter(a => a.projectId === projectId && a.status === 'approved')
+      .reduce((s, a) => s + (Number(a.amount) || 0), 0);
+    return monthSum + allocSum;
+  }, [allBudgets, allAllocations]);
 
   // ── Summary cards ─────────────────────────────────────────────────────────────
   const summary = useMemo(() => {
@@ -402,6 +499,7 @@ export default function SiteFundBudgetPage() {
     });
     allExpenses.filter(e => e.projectId === projectId).forEach(e => fySet.add(getFYStartFromDate(e.expenseDate)));
     allCatBudgets.filter(b => b.projectId === projectId && b.period).forEach(b => fySet.add(getFYStartFromDate(b.period + '-01')));
+    allAllocations.filter(a => a.projectId === projectId && a.period).forEach(a => fySet.add(getFYStartFromDate(a.period + '-01')));
     return [...fySet].sort((a, b) => b - a);
   }
 
@@ -411,7 +509,10 @@ export default function SiteFundBudgetPage() {
       m === cur ||
       allBudgets.some(b => b.projectId === projectId && b.budgetType === 'monthly' && b.period === m) ||
       allExpenses.some(e => e.projectId === projectId && e.expenseDate.startsWith(m)) ||
-      allCatBudgets.some(b => b.projectId === projectId && b.period === m)
+      allCatBudgets.some(b => b.projectId === projectId && b.period === m) ||
+      // A month whose only budget is a recorded allocation still has to be reachable — including
+      // while that allocation is pending, or nobody could open the ledger to verify it.
+      allocationsForMonth(projectId, m).length > 0
     );
   }
 
@@ -1013,7 +1114,10 @@ export default function SiteFundBudgetPage() {
         const tSpent = pExp.reduce((s, e) => s + (e.expenseAmount || 0), 0);
         const tRcvd  = pPay.reduce((s, p) => s + (p.receivedAmount || 0), 0);
         const exportFySumAll = allBudgets.filter(b => b.projectId === project.id && b.budgetType === 'fy').reduce((s, b) => s + b.budgetAmount, 0);
-        const exportMonthSumAll = allBudgets.filter(b => b.projectId === project.id && b.budgetType === 'monthly').reduce((s, b) => s + b.budgetAmount, 0);
+        // Mirrors `projectBudgetTotal`: verified allocations are monthly budget, so the export
+        // cannot read only the legacy rows without disagreeing with the screen it was run from.
+        const exportMonthSumAll = allBudgets.filter(b => b.projectId === project.id && b.budgetType === 'monthly').reduce((s, b) => s + b.budgetAmount, 0)
+          + allAllocations.filter(a => a.projectId === project.id && a.status === 'approved').reduce((s, a) => s + (Number(a.amount) || 0), 0);
         const tAmt   = tb ? tb.budgetAmount : exportFySumAll > 0 ? exportFySumAll : exportMonthSumAll;
         if (totalPerm.view) {
           addNode(0, {
@@ -1043,10 +1147,8 @@ export default function SiteFundBudgetPage() {
           const fyB = allBudgets.find(b => b.projectId === project.id && b.budgetType === 'fy' && b.period === fyLabel(fyS));
           const fySpent = pExp.filter(e => e.expenseDate >= r.start && e.expenseDate <= r.end).reduce((s, e) => s + (e.expenseAmount || 0), 0);
           const fyRcvd  = pPay.filter(p => p.receiptDate >= r.start && p.receiptDate <= r.end).reduce((s, p) => s + (p.receivedAmount || 0), 0);
-          const exportFyMonthSum = getRelevantMonths(project.id, fyS).reduce((s, m) => {
-            const mb = allBudgets.find(b => b.projectId === project.id && b.budgetType === 'monthly' && b.period === m);
-            return s + (mb?.budgetAmount ?? 0);
-          }, 0);
+          const exportFyMonthSum = getRelevantMonths(project.id, fyS).reduce(
+            (s, m) => s + monthlyBudgetFor(project.id, m).effective, 0);
           if (!fyB && fySpent === 0 && exportFyMonthSum === 0) continue;
           const fAmt = fyB ? fyB.budgetAmount : exportFyMonthSum;
           if (fyPerm.view) {
@@ -1073,19 +1175,27 @@ export default function SiteFundBudgetPage() {
           }
 
           for (const m of getRelevantMonths(project.id, fyS)) {
-            const mB = allBudgets.find(b => b.projectId === project.id && b.budgetType === 'monthly' && b.period === m);
+            const mAlloc = monthlyBudgetFor(project.id, m);
+            const mB = mAlloc.legacyRow;
             const mSpent = pExp.filter(e => e.expenseDate.startsWith(m)).reduce((s, e) => s + (e.expenseAmount || 0), 0);
             const mRcvd  = pPay.filter(p => p.receiptDate.startsWith(m)).reduce((s, p) => s + (p.receivedAmount || 0), 0);
-            if (!mB && mSpent === 0 && !allCatBudgets.some(b => b.projectId === project.id && b.period === m)) continue;
-            const mAmt = mB?.budgetAmount ?? 0;
+            if (mAlloc.effective === 0 && mSpent === 0 && !allCatBudgets.some(b => b.projectId === project.id && b.period === m)) continue;
+            const mAmt = mAlloc.effective;
+            // The notes column carries the instalment breakdown, so a reader of the spreadsheet can
+            // see that a month's figure is three sanctions rather than one, and what is still
+            // waiting on a reviewer.
+            const allocNote = [
+              mAlloc.approvedCount > 0 ? `${mAlloc.approvedCount} verified allocation(s)` : '',
+              mAlloc.pending > 0 ? `${formatINR(mAlloc.pending)} pending verification (not counted)` : '',
+            ].filter(Boolean).join('; ');
             if (monthlyPerm.view) {
               addNode(2, {
                 level: 'Month', name: monthLabel(m),
                 budget: mAmt || '—', received: mRcvd, spent: mSpent,
                 remaining: mAmt > 0 ? mAmt - mSpent : '—',
                 pctUsed: mAmt > 0 ? formatPct((mSpent / mAmt) * 100) : '—',
-                status: !mB ? 'No Budget' : mSpent > mAmt ? 'Over Budget' : (mSpent / mAmt) * 100 >= 80 ? 'Warning' : 'On Track',
-                notes: mB?.notes || '',
+                status: mAmt === 0 ? 'No Budget' : mSpent > mAmt ? 'Over Budget' : (mSpent / mAmt) * 100 >= 80 ? 'Warning' : 'On Track',
+                notes: [mB?.notes || '', allocNote].filter(Boolean).join(' · '),
               });
               monthRows.push({
                 project: project.projectName,
@@ -1098,8 +1208,8 @@ export default function SiteFundBudgetPage() {
                 spent: mSpent,
                 remaining: mAmt > 0 ? mAmt - mSpent : null,
                 pctUsed: pctOf(mSpent, mAmt),
-                status: !mB ? 'No Budget' : mSpent > mAmt ? 'Over Budget' : (mSpent / mAmt) * 100 >= 80 ? 'Warning' : 'On Track',
-                notes: mB?.notes || '',
+                status: mAmt === 0 ? 'No Budget' : mSpent > mAmt ? 'Over Budget' : (mSpent / mAmt) * 100 >= 80 ? 'Warning' : 'On Track',
+                notes: [mB?.notes || '', allocNote].filter(Boolean).join(' · '),
               });
             }
 
@@ -1444,7 +1554,10 @@ export default function SiteFundBudgetPage() {
                       .reduce((s, b) => s + b.budgetAmount, 0);
                     const monthBudgetSumAll = allBudgets
                       .filter(b => b.projectId === project.id && b.budgetType === 'monthly')
-                      .reduce((s, b) => s + b.budgetAmount, 0);
+                      .reduce((s, b) => s + b.budgetAmount, 0)
+                      + allAllocations
+                        .filter(a => a.projectId === project.id && a.status === 'approved')
+                        .reduce((s, a) => s + (Number(a.amount) || 0), 0);
                     const tAmt    = totalBudget ? totalBudget.budgetAmount
                                    : fyBudgetSumAll > 0 ? fyBudgetSumAll
                                    : monthBudgetSumAll;
@@ -1532,10 +1645,12 @@ export default function SiteFundBudgetPage() {
                           const isCurFY = fyS === curFYStart;
                           const months  = getRelevantMonths(project.id, fyS);
                           // Cascade: explicit FY budget → sum of monthly budgets in this FY
-                          const fyMonthSum = months.reduce((s, m) => {
-                            const mb = allBudgets.find(b => b.projectId === project.id && b.budgetType === 'monthly' && b.period === m);
-                            return s + (mb?.budgetAmount ?? 0);
-                          }, 0);
+                          const fyMonthSum = months.reduce(
+                            (s, m) => s + monthlyBudgetFor(project.id, m).effective, 0);
+                          // Instalments across the year that nobody has verified yet, surfaced on
+                          // the FY row so a reviewer sees there is a queue without opening months.
+                          const fyPendingCount = months.reduce(
+                            (s, m) => s + monthlyBudgetFor(project.id, m).pendingCount, 0);
                           const fAmt    = fyB ? fyB.budgetAmount : fyMonthSum;
                           const fBudgetSource = fyB ? 'explicit' : 'month-sum';
                           const fyPct   = fAmt > 0 ? Math.min((fySpent / fAmt) * 100, 100) : 0;
@@ -1555,6 +1670,15 @@ export default function SiteFundBudgetPage() {
                                     <Target className="h-3 w-3 text-emerald-600 shrink-0" />
                                     <span>FY {fyLabel(fyS)}</span>
                                     {isCurFY && <Badge variant="info">Current FY</Badge>}
+                                    {fyPendingCount > 0 && (
+                                      <span
+                                        title={`${fyPendingCount} budget allocation(s) awaiting verification this financial year`}
+                                        className="flex items-center gap-0.5 rounded bg-amber-100 px-1 py-px text-[10px] font-medium text-amber-800"
+                                      >
+                                        <Clock className="h-2.5 w-2.5 shrink-0" />
+                                        {fyPendingCount} to verify
+                                      </span>
+                                    )}
                                   </button>
                                 </TableCell>
                                 <TableCell className="text-right font-medium text-emerald-700">
@@ -1607,7 +1731,9 @@ export default function SiteFundBudgetPage() {
                               {isFYExp && months.map(m => {
                                 const monthKey = `${project.id}:${m}`;
                                 const isMoExp  = expandedMonths.has(monthKey);
-                                const mB       = allBudgets.find(b => b.projectId === project.id && b.budgetType === 'monthly' && b.period === m) ?? null;
+                                const alloc    = monthlyBudgetFor(project.id, m);
+                                const mB       = alloc.legacyRow;
+                                const mPerm    = allocPerm(project.id);
                                 const approval = allApprovals.find(a => a.projectId === project.id && a.period === m);
                                 const isPdfUploading = pdfUploadingKey === `${project.id}:${m}`;
                                 const mSpent   = pExp.filter(e => e.expenseDate.startsWith(m)).reduce((s, e) => s + (e.expenseAmount || 0), 0);
@@ -1616,11 +1742,18 @@ export default function SiteFundBudgetPage() {
                                 const catBudgetSum = allCatBudgets
                                   .filter(b => b.projectId === project.id && b.period === m)
                                   .reduce((s, b) => s + b.budgetAmount, 0);
-                                const mAmt     = mB?.budgetAmount ?? catBudgetSum;
+                                /*
+                                 * The month's spendable budget: the legacy single figure plus every
+                                 * verified allocation, falling back to the category roll-up only
+                                 * when neither exists. Pending allocations are deliberately absent
+                                 * — an unverified instalment must not move the line that spending
+                                 * and alerts are measured against.
+                                 */
+                                const mAmt     = alloc.effective > 0 ? alloc.effective : catBudgetSum;
                                 const mPct     = mAmt > 0 ? Math.min((mSpent / mAmt) * 100, 100) : 0;
                                 // How much of monthly budget has been allocated to categories
                                 const catAllocated = catBudgetSum;
-                                const showCatAlloc = mB && catAllocated > 0;
+                                const showCatAlloc = mAmt > 0 && mAmt !== catBudgetSum && catAllocated > 0;
                                 const isCurMo  = m === curMonth;
                                 const catRows  = getMonthCategories(project.id, m);
 
@@ -1654,16 +1787,39 @@ export default function SiteFundBudgetPage() {
                                           <span className="ml-1 text-[10px] text-muted-foreground">
                                             ({catRows.length} categories)
                                           </span>
+                                          {alloc.pendingCount > 0 && (
+                                            <span
+                                              title={`${alloc.pendingCount} allocation(s) worth ${formatINR(alloc.pending)} awaiting verification`}
+                                              className="flex items-center gap-0.5 rounded bg-amber-100 px-1 py-px text-[10px] font-medium text-amber-800"
+                                            >
+                                              <Clock className="h-2.5 w-2.5 shrink-0" />
+                                              {alloc.pendingCount} to verify
+                                            </span>
+                                          )}
                                         </button>
                                       </TableCell>
                                       <TableCell className="text-right font-medium text-emerald-700">
-                                        {!monthlyPerm.view ? <RestrictedCell /> : mAmt > 0
+                                        {!monthlyPerm.view ? <RestrictedCell /> : mAmt > 0 || alloc.pending > 0
                                           ? <div>
-                                              {formatINR(mAmt)}
-                                              {!mB && <p className="text-[10px] font-normal text-muted-foreground">∑ categories</p>}
+                                              {mAmt > 0 ? formatINR(mAmt) : <span className="text-muted-foreground">—</span>}
+                                              {mAmt > 0 && alloc.effective === 0 && (
+                                                <p className="text-[10px] font-normal text-muted-foreground">∑ categories</p>
+                                              )}
+                                              {alloc.approvedCount > 0 && (
+                                                <p className="text-[10px] font-normal text-muted-foreground">
+                                                  {alloc.approvedCount} verified allocation{alloc.approvedCount > 1 ? 's' : ''}
+                                                  {alloc.legacy > 0 && <> + {formatINR(alloc.legacy)} base</>}
+                                                </p>
+                                              )}
+                                              {/* Shown but never added in: pending money is not budget. */}
+                                              {alloc.pending > 0 && (
+                                                <p className="text-[10px] font-normal text-amber-700">
+                                                  + {formatINR(alloc.pending)} pending
+                                                </p>
+                                              )}
                                               {showCatAlloc && (
                                                 <p className={cn('text-[10px] font-normal', catAllocated > mAmt ? 'text-destructive' : 'text-muted-foreground')}>
-                                                  {formatINR(catAllocated)} allocated
+                                                  {formatINR(catAllocated)} to categories
                                                 </p>
                                               )}
                                             </div>
@@ -1688,7 +1844,7 @@ export default function SiteFundBudgetPage() {
                                       </TableCell>
                                       <TableCell>
                                         {monthlyPerm.view
-                                          ? <BudgetStatusBadge budget={mB ?? (catBudgetSum > 0 ? { budgetAmount: catBudgetSum } as SASBudget : null)} spent={mSpent} />
+                                          ? <BudgetStatusBadge budget={mAmt > 0 ? { budgetAmount: mAmt } as SASBudget : null} spent={mSpent} />
                                           : <RestrictedCell />}
                                       </TableCell>
                                       {anyRowActionPerm && (
@@ -1698,6 +1854,23 @@ export default function SiteFundBudgetPage() {
                                               mB
                                                 ? <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => openEdit(mB)}><Pencil className="h-3 w-3" /></Button>
                                                 : monthlyPerm.add && <Button variant="outline" size="sm" className="h-6 text-[11px] gap-0.5 text-emerald-700 border-emerald-200 hover:bg-emerald-50 px-2" onClick={() => openAdd(project, 'monthly', fyS, m)}><Plus className="h-2.5 w-2.5" />Set</Button>
+                                            )}
+                                            {(mPerm.view || mPerm.add) && (
+                                              <Button
+                                                variant="outline" size="sm"
+                                                className={cn(
+                                                  'h-6 gap-0.5 px-2 text-[11px]',
+                                                  alloc.pendingCount > 0
+                                                    ? 'border-amber-300 bg-amber-50 text-amber-800 hover:bg-amber-100'
+                                                    : 'border-violet-200 text-violet-700 hover:bg-violet-50',
+                                                )}
+                                                title="Instalments sanctioned for this month"
+                                                onClick={() => setAllocDialog({ project, period: m })}
+                                              >
+                                                <Split className="h-2.5 w-2.5" />
+                                                Allocations
+                                                {alloc.allocations.length > 0 && <> ({alloc.allocations.length})</>}
+                                              </Button>
                                             )}
                                             {(categoryPerm.add || categoryPerm.edit) && (
                                               <Button
@@ -2170,6 +2343,32 @@ export default function SiteFundBudgetPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* ══ Monthly allocation ledger ══ */}
+      {allocDialog && (
+        <BudgetAllocationsDialog
+          open
+          onOpenChange={open => { if (!open) setAllocDialog(null); }}
+          projectId={allocDialog.project.id}
+          projectName={allocDialog.project.projectName}
+          period={allocDialog.period}
+          periodLabel={monthLabel(allocDialog.period)}
+          allocations={allocationsForMonth(allocDialog.project.id, allocDialog.period)}
+          legacyAmount={monthlyBudgetFor(allocDialog.project.id, allocDialog.period).legacy}
+          permissions={allocPerm(allocDialog.project.id)}
+          onChanged={() => {
+            void loadAll();
+            // Verifying, reopening or rejecting moves the spendable budget, so the "you have
+            // crossed 80%" markers for this month are stale the moment it happens — clearing them
+            // lets the alert fire again against the new figure instead of staying silent.
+            void resetBudgetAlertState({
+              projectId: allocDialog.project.id,
+              period: allocDialog.period,
+              scopeType: 'monthly',
+            });
+          }}
+        />
+      )}
     </div>
   );
 }
