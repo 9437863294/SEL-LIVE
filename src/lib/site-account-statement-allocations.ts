@@ -25,6 +25,19 @@ export interface AllocationAttachment {
   storagePath: string;
   size: number;
   type: string;
+  /**
+   * The file belongs to another record — a payment receipt it was carried across from — and this
+   * allocation only points at it. Replacing or deleting the allocation must leave it alone, or
+   * approving a budget would silently destroy the receipt's own document.
+   */
+  shared?: boolean;
+}
+
+/** True when deleting the allocation may also delete the file behind its approval. */
+export function ownsApprovalFile(
+  allocation: Pick<SASBudgetAllocation, 'approval'>,
+): boolean {
+  return Boolean(allocation.approval?.storagePath) && allocation.approval?.shared !== true;
 }
 
 /**
@@ -50,6 +63,16 @@ export interface SASBudgetAllocation {
   /** The sanction letter. Required before an allocation can be verified. */
   approval?: AllocationAttachment | null;
 
+  /**
+   * The receipt this allocation was raised from, when it came from one.
+   *
+   * An allocation is a claim that money arrived; the payments ledger is the record that it did.
+   * Carrying the receipt id lets the dialog show which receipts have already been turned into
+   * budget and which are still sitting unclaimed, so the same ₹2L transfer cannot quietly be
+   * allocated twice.
+   */
+  paymentId?: string;
+
   createdAt?: unknown;
   createdBy?: string;
   createdByName?: string;
@@ -57,6 +80,23 @@ export interface SASBudgetAllocation {
   verifiedBy?: string;
   verifiedByName?: string;
   rejectedReason?: string;
+}
+
+/**
+ * A payment receipt, as the allocation ledger needs to see one.
+ *
+ * Declared structurally rather than imported from the domain file, so this module stays importless
+ * and `node --test` can load it. It matches the fields of `SASPayment` that matter here.
+ */
+export interface AllocationReceipt {
+  id: string;
+  receiptDate: string;
+  receivedAmount: number;
+  paymentMode?: string;
+  referenceNo?: string;
+  receivedBy?: string;
+  remarks?: string;
+  attachments?: AllocationAttachment[];
 }
 
 /** A row being composed in the dialog, before it becomes a document. */
@@ -213,6 +253,92 @@ export function sortAllocations(allocations: SASBudgetAllocation[]): SASBudgetAl
     if (rank[a.status] !== rank[b.status]) return rank[a.status] - rank[b.status];
     return (b.allocationDate || '').localeCompare(a.allocationDate || '');
   });
+}
+
+// ── Receipts → budget ─────────────────────────────────────────────────────────
+//
+// Where the money a site may spend actually comes from. Head Office transfers land in the payments
+// ledger, and an allocation is the act of saying "this transfer is September's budget". Deriving
+// the list from the receipts rather than asking somebody to retype the figures is the difference
+// between a ledger that reconciles and one that drifts.
+
+/** Receipts recorded against one project inside one month, newest first. */
+export function receiptsForPeriod<T extends { projectId: string; receiptDate?: string }>(
+  payments: T[],
+  projectId: string,
+  period: string,
+): T[] {
+  return payments
+    .filter(p => p.projectId === projectId && (p.receiptDate || '').startsWith(period))
+    .sort((a, b) => (b.receiptDate || '').localeCompare(a.receiptDate || ''));
+}
+
+/**
+ * The allocation raised from a given receipt, if there is a live one.
+ *
+ * Rejected allocations are skipped: a receipt whose allocation was turned down is available again,
+ * which is the whole reason rejection is a status rather than a deletion.
+ */
+export function allocationForPayment(
+  allocations: SASBudgetAllocation[],
+  paymentId: string | undefined,
+): SASBudgetAllocation | null {
+  // Both sides must actually hold an id. Allocations recorded by hand store no payment id, so a
+  // plain equality test would have matched every one of them against a missing lookup id and
+  // reported unrelated receipts as already claimed.
+  if (!paymentId) return null;
+  return allocations.find(a => Boolean(a.paymentId) && a.paymentId === paymentId && a.status !== 'rejected') ?? null;
+}
+
+export interface ReceiptSummary {
+  /** Everything the project received this month, per the payments ledger. */
+  received: number;
+  /** The part of it that has been raised as an allocation, verified or not. */
+  allocated: number;
+  /** Money that arrived but has not been claimed as budget by anyone. */
+  unallocated: number;
+  receiptCount: number;
+  unallocatedCount: number;
+}
+
+export function summariseReceipts(
+  receipts: AllocationReceipt[],
+  allocations: SASBudgetAllocation[],
+): ReceiptSummary {
+  let received = 0, allocated = 0, unallocatedCount = 0;
+  for (const receipt of receipts) {
+    const amount = Number(receipt.receivedAmount) || 0;
+    received += amount;
+    if (allocationForPayment(allocations, receipt.id)) allocated += amount;
+    else unallocatedCount++;
+  }
+  return {
+    received,
+    allocated,
+    unallocated: received - allocated,
+    receiptCount: receipts.length,
+    unallocatedCount,
+  };
+}
+
+/**
+ * Pre-fills the allocation form from a receipt.
+ *
+ * The amount and date are left editable rather than locked, because a single transfer is sometimes
+ * split across two months and the person doing the work knows that; what matters is that they
+ * start from the recorded figure instead of keying it in again.
+ */
+export function draftFromReceipt(receipt: AllocationReceipt): AllocationDraft {
+  const parts = [
+    receipt.paymentMode ? `received by ${receipt.paymentMode}` : '',
+    receipt.receivedBy ? `via ${receipt.receivedBy}` : '',
+  ].filter(Boolean).join(' ');
+  return {
+    amount: String(Number(receipt.receivedAmount) || 0),
+    allocationDate: receipt.receiptDate,
+    referenceNo: receipt.referenceNo || '',
+    notes: parts ? `From receipt dated ${receipt.receiptDate} (${parts}).` : `From receipt dated ${receipt.receiptDate}.`,
+  };
 }
 
 /** Allocations for one project and month. */

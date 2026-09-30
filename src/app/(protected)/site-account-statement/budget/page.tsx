@@ -13,7 +13,7 @@ import {
   type SASExpense, type SASPayment, type SASProject,
 } from '@/lib/site-account-statement';
 import {
-  effectiveMonthlyBudget, summariseAllocations,
+  effectiveMonthlyBudget, receiptsForPeriod, summariseAllocations,
   type SASBudgetAllocation,
 } from '@/lib/site-account-statement-allocations';
 import { resetBudgetAlertState } from '@/lib/sas-budget-alerts';
@@ -337,11 +337,22 @@ export default function SiteFundBudgetPage() {
     const assigned = projectId
       ? isAssignedTo(projectId)
       : visibleProjects.some(p => isAssignedTo(p.id));
+    /*
+     * Whoever holds a *role* permission to edit monthly budgets can already type any figure into
+     * the legacy monthly row, with no approval and nobody's sign-off, so withholding Verify from
+     * them would protect nothing while leaving a freshly-installed system with no one able to
+     * approve anything at all.
+     *
+     * The separation that does matter is the project-assigned site user: their add/edit rights come
+     * from the assignment rather than from a role, so they record what Head Office sent and someone
+     * else confirms it. `assigned` is deliberately absent from `verify` below.
+     */
+    const roleCanEditBudget = canEdit || can('Edit', `${MODULE}.Monthly Budget`);
     return {
       view:   monthlyPerm.view || can('View', resource),
-      add:    can('Add', resource) || assigned,
-      verify: can('Verify', resource),
-      remove: can('Delete', resource),
+      add:    can('Add', resource) || roleCanEditBudget || assigned,
+      verify: can('Verify', resource) || roleCanEditBudget,
+      remove: can('Delete', resource) || canDelete,
     };
   }
   const anyAllocPerm = (() => {
@@ -2354,6 +2365,7 @@ export default function SiteFundBudgetPage() {
           period={allocDialog.period}
           periodLabel={monthLabel(allocDialog.period)}
           allocations={allocationsForMonth(allocDialog.project.id, allocDialog.period)}
+          receipts={receiptsForPeriod(allPayments, allocDialog.project.id, allocDialog.period)}
           legacyAmount={monthlyBudgetFor(allocDialog.project.id, allocDialog.period).legacy}
           permissions={allocPerm(allocDialog.project.id)}
           onChanged={() => {

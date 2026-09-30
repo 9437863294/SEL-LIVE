@@ -13,6 +13,11 @@ const {
   sortAllocations,
   allocationsFor,
   ALLOCATION_STATUS_LABEL,
+  receiptsForPeriod,
+  allocationForPayment,
+  summariseReceipts,
+  draftFromReceipt,
+  ownsApprovalFile,
 } = await import('../src/lib/site-account-statement-allocations.ts');
 
 const APPROVAL = {
@@ -230,6 +235,119 @@ test('allocations are looked up by project and month together', () => {
   ];
   assert.deepEqual(allocationsFor(all, 'p1', '2026-04').map(a => a.id), ['1']);
   assert.deepEqual(allocationsFor(all, 'p3', '2026-04'), []);
+});
+
+// ── Receipts → budget ─────────────────────────────────────────────────────────
+
+function receipt(over = {}) {
+  return {
+    id: 'r1', projectId: 'p1', receiptDate: '2026-04-10', receivedAmount: 200000,
+    paymentMode: 'Bank', referenceNo: 'NEFT-771', receivedBy: 'Site Office', attachments: [],
+    ...over,
+  };
+}
+
+test('receipts are scoped to one project and one month', () => {
+  const all = [
+    receipt({ id: 'in',        projectId: 'p1', receiptDate: '2026-04-10' }),
+    receipt({ id: 'next-mo',   projectId: 'p1', receiptDate: '2026-05-01' }),
+    receipt({ id: 'other-prj', projectId: 'p2', receiptDate: '2026-04-11' }),
+  ];
+  assert.deepEqual(receiptsForPeriod(all, 'p1', '2026-04').map(r => r.id), ['in']);
+});
+
+test('receipts come back newest first', () => {
+  const all = [
+    receipt({ id: 'early', receiptDate: '2026-04-02' }),
+    receipt({ id: 'late',  receiptDate: '2026-04-28' }),
+    receipt({ id: 'mid',   receiptDate: '2026-04-15' }),
+  ];
+  assert.deepEqual(receiptsForPeriod(all, 'p1', '2026-04').map(r => r.id), ['late', 'mid', 'early']);
+});
+
+test('a receipt with no date is not mistaken for one in the month', () => {
+  const all = [receipt({ id: 'undated', receiptDate: undefined })];
+  assert.deepEqual(receiptsForPeriod(all, 'p1', '2026-04'), []);
+});
+
+test('a receipt is linked to the allocation raised from it', () => {
+  const all = [alloc({ id: 'a1', paymentId: 'r1' })];
+  assert.equal(allocationForPayment(all, 'r1').id, 'a1');
+  assert.equal(allocationForPayment(all, 'r2'), null);
+});
+
+test('a rejected allocation frees its receipt to be raised again', () => {
+  const all = [alloc({ id: 'a1', paymentId: 'r1', status: 'rejected' })];
+  assert.equal(allocationForPayment(all, 'r1'), null);
+});
+
+test('allocations not raised from a receipt never match one', () => {
+  // An allocation stored before receipts were linked has no paymentId at all.
+  assert.equal(allocationForPayment([alloc({ id: 'a1' })], undefined), null);
+  assert.equal(allocationForPayment([alloc({ id: 'a1', paymentId: '' })], ''), null);
+});
+
+test('receipt summary separates what arrived from what has been made budget', () => {
+  const receipts = [
+    receipt({ id: 'r1', receivedAmount: 200000 }),
+    receipt({ id: 'r2', receivedAmount: 150000 }),
+    receipt({ id: 'r3', receivedAmount: 50000 }),
+  ];
+  const allocations = [
+    alloc({ id: 'a1', paymentId: 'r1', status: 'approved' }),
+    alloc({ id: 'a2', paymentId: 'r2', status: 'pending' }),
+  ];
+  const s = summariseReceipts(receipts, allocations);
+  assert.equal(s.received, 400000);
+  // Pending counts as allocated here — the receipt has been claimed, even if not yet verified.
+  assert.equal(s.allocated, 350000);
+  assert.equal(s.unallocated, 50000);
+  assert.equal(s.receiptCount, 3);
+  assert.equal(s.unallocatedCount, 1);
+});
+
+test('a receipt whose allocation was rejected counts as unallocated again', () => {
+  const s = summariseReceipts(
+    [receipt({ id: 'r1', receivedAmount: 200000 })],
+    [alloc({ id: 'a1', paymentId: 'r1', status: 'rejected' })],
+  );
+  assert.equal(s.unallocated, 200000);
+  assert.equal(s.unallocatedCount, 1);
+});
+
+test('a month with no receipts summarises to zero', () => {
+  const s = summariseReceipts([], []);
+  assert.deepEqual([s.received, s.allocated, s.unallocated, s.receiptCount, s.unallocatedCount], [0, 0, 0, 0, 0]);
+});
+
+test('a draft built from a receipt carries its figures across', () => {
+  const d = draftFromReceipt(receipt());
+  assert.equal(d.amount, '200000');
+  assert.equal(d.allocationDate, '2026-04-10');
+  assert.equal(d.referenceNo, 'NEFT-771');
+  assert.match(d.notes, /2026-04-10/);
+});
+
+test('a receipt-built draft passes validation for its own month', () => {
+  assert.equal(validateAllocationDraft(draftFromReceipt(receipt()), '2026-04').ok, true);
+});
+
+test('a draft from a receipt missing its optional fields is still valid', () => {
+  const d = draftFromReceipt(receipt({ referenceNo: undefined, paymentMode: undefined, receivedBy: undefined }));
+  assert.equal(d.referenceNo, '');
+  assert.equal(validateAllocationDraft(d, '2026-04').ok, true);
+});
+
+test('an approval carried from a receipt is never the allocation\'s to delete', () => {
+  // Deleting it would destroy the payment record's own document.
+  assert.equal(ownsApprovalFile({ approval: { ...APPROVAL, shared: true } }), false);
+  assert.equal(ownsApprovalFile({ approval: APPROVAL }), true);
+  assert.equal(ownsApprovalFile({ approval: null }), false);
+  assert.equal(ownsApprovalFile({}), false);
+});
+
+test('a carried receipt document still satisfies the verification gate', () => {
+  assert.equal(canVerifyAllocation(alloc({ approval: { ...APPROVAL, shared: true } })).ok, true);
 });
 
 test('every status has a label the UI can render', () => {

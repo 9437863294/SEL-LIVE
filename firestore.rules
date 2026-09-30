@@ -403,7 +403,14 @@ service cloud.firestore {
      * edit in place would change an audited figure with no trace that it moved.
      */
     function sasCanVerifyAllocation() {
-      return sasPerm('Budget Allocation', 'Verify');
+      // A role that can edit monthly budgets can already set any figure it likes on the legacy
+      // monthly row, so it gains nothing from being denied here — while a fresh installation, where
+      // no role yet carries the granular permission, would otherwise have nobody able to verify.
+      // Note what is absent: sasCanWriteProject. A project assignment records instalments, it never
+      // approves them.
+      return sasPerm('Budget Allocation', 'Verify')
+        || sasPerm('Budget', 'Edit')
+        || sasPerm('Monthly Budget', 'Edit');
     }
 
     function sasAllocationStatusUnchanged() {
