@@ -28,6 +28,8 @@ import { Badge } from '@/components/ui/badge';
 import { StatusBadge } from '@/components/shared/status-badge';
 import { TableCard } from '@/components/shared/table-card';
 import { SearchInput } from '@/components/shared/filter-bar';
+import { useActivityLogger } from '@/hooks/useActivityLogger';
+import { ACTIVITY_MODULES } from '@/lib/activity-modules';
 
 type DocumentsTab = 'pending' | 'uploaded' | 'missing';
 
@@ -43,6 +45,7 @@ export default function ManageDocumentsPage() {
   const { toast } = useToast();
   const { user } = useAuth();
   const { can, isLoading: isAuthLoading } = useAuthorization();
+  const { log } = useActivityLogger(ACTIVITY_MODULES.DAILY_REQUISITION);
 
   const [requisitions, setRequisitions] = useState<EnrichedDailyRequisitionEntry[]>([]);
   const [users, setUsers] = useState<User[]>([]);
@@ -164,6 +167,7 @@ export default function ManageDocumentsPage() {
       toast({ title: 'Error', description: 'You must be logged in.', variant: 'destructive' });
       return;
     }
+    const before = requisitions.find((r) => r.id === id);
     try {
       const reqRef = doc(db, 'dailyRequisitions', id);
       await updateDoc(reqRef, {
@@ -171,6 +175,17 @@ export default function ManageDocumentsPage() {
         documentStatusUpdatedById: user.id,
         documentStatusUpdatedAt: Timestamp.now(),
       });
+      void log(
+        'Update Requisition Document Status',
+        {
+          receptionNo: before?.receptionNo ?? null,
+          partyName: before?.partyName ?? null,
+          from: before?.documentStatus ?? null,
+          to: status,
+          attachmentCount: before?.attachments?.length ?? 0,
+        },
+        { recordId: id, recordRef: before?.receptionNo || undefined },
+      );
       toast({ title: 'Status Updated', description: `Entry marked as ${status}.` });
       refreshRequisitions();
     } catch (error) {

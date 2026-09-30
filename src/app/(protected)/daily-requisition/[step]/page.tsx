@@ -27,6 +27,7 @@ import { collection, getDocs, doc, getDoc, runTransaction, Timestamp, query, whe
 import type { DailyRequisitionEntry, Project, User, WorkflowStep } from '@/lib/types';
 import { balanceOf, isPaymentLocked, paidOf, payRequisitionsHref, voucherHref } from '@/lib/requisition-progress';
 import { useActivityLogger } from '@/hooks/useActivityLogger';
+import { diffFields, type FieldChange } from '@/lib/activity-logger';
 import { ACTIVITY_MODULES } from '@/lib/activity-modules';
 import { format } from 'date-fns';
 import { useAuthorization } from '@/hooks/useAuthorization';
@@ -108,6 +109,17 @@ interface MoveOptions {
   expenseLink?: 'release' | 'restore';
   /** Added to the activity log's details. */
   logDetails?: Record<string, string | number | boolean>;
+}
+
+/** What a move did to one requisition, for its own audit log row. */
+interface MovedRecord {
+  entry: EnrichedEntry;
+  /** Its status as the transaction read it. */
+  from: string;
+  /** Fields besides status the move rewrote (e.g. a cleared verification), as from/to. */
+  changes: Record<string, FieldChange>;
+  requestsReleased: number;
+  requestsRelinked: number;
 }
 
 interface MoveSkips {
@@ -483,6 +495,7 @@ function DynamicWorkflowStepContent() {
     if (targets.length === 0 || isUpdating) return;
     setIsUpdating(true);
     const moved: EnrichedEntry[] = [];
+    const movedRecords: MovedRecord[] = [];
     const skipped: MoveSkips = { paid: 0, changed: 0, reReceived: 0 };
     const requests = { released: 0, relinked: 0 };
     let failed = false;
@@ -496,6 +509,7 @@ function DynamicWorkflowStepContent() {
         const result = await runTransaction(db, async (tx) => {
           const out = {
             moved: [] as EnrichedEntry[],
+            records: [] as MovedRecord[],
             paid: 0,
             changed: 0,
             reReceived: 0,
@@ -548,20 +562,33 @@ function DynamicWorkflowStepContent() {
               }
             }
 
-            const update: Record<string, any> = { status: to, ...stampFor(to), ...(options.fields?.(current) ?? {}) };
+            const extraFields = options.fields?.(current) ?? {};
+            const update: Record<string, any> = { status: to, ...stampFor(to), ...extraFields };
             tx.update(snap.ref, update);
+            let released = 0;
+            let relinked = 0;
             requestUpdates.forEach(([ref, data]) => {
               tx.update(ref, data);
               linkOf.set(ref.path, data.receptionNo);
-              if (data.receptionNo) out.relinked += 1;
-              else out.released += 1;
+              if (data.receptionNo) relinked += 1;
+              else released += 1;
             });
+            out.released += released;
+            out.relinked += relinked;
             out.moved.push(entry);
+            out.records.push({
+              entry,
+              from: current.status ?? '',
+              changes: diffFields(current as Record<string, any>, extraFields as Record<string, any>),
+              requestsReleased: released,
+              requestsRelinked: relinked,
+            });
           });
           return out;
         });
 
         moved.push(...result.moved);
+        movedRecords.push(...result.records);
         skipped.paid += result.paid;
         skipped.changed += result.changed;
         skipped.reReceived += result.reReceived;
@@ -575,23 +602,41 @@ function DynamicWorkflowStepContent() {
     }
 
     const skippedCount = skipped.paid + skipped.changed + skipped.reReceived;
-    if (moved.length > 0) {
+    // One row per requisition, so each record's history shows its own move; a multi-entry move
+    // also gets one summary row (no recordId) saying what the bulk action was.
+    movedRecords.forEach((record) => {
       void log(
         'Update Requisition Status',
         {
           step: currentStep?.name ?? '',
-          from: [...new Set(moved.map((entry) => entry.status))].join(' / '),
+          receptionNo: record.entry.receptionNo ?? null,
+          partyName: record.entry.partyName ?? null,
+          from: record.from,
+          to,
+          ...(movedRecords.length > 1 ? { bulk: true, batchCount: movedRecords.length } : {}),
+          ...(Object.keys(record.changes).length > 0 ? { changes: record.changes } : {}),
+          ...(record.requestsReleased > 0 ? { expenseRequestsReleased: record.requestsReleased } : {}),
+          ...(record.requestsRelinked > 0 ? { expenseRequestsRelinked: record.requestsRelinked } : {}),
+          ...(options.logDetails ?? {}),
+        },
+        { recordId: record.entry.id, recordRef: record.entry.receptionNo || undefined },
+      );
+    });
+    if (moved.length > 1) {
+      void log(
+        'Bulk Update Requisition Status',
+        {
+          step: currentStep?.name ?? '',
+          from: [...new Set(movedRecords.map((record) => record.from))].join(' / '),
           to,
           count: moved.length,
+          receptionNos: moved.map((entry) => entry.receptionNo || entry.id),
           ...(skippedCount > 0 ? { skipped: skippedCount } : {}),
           ...(requests.released > 0 ? { expenseRequestsReleased: requests.released } : {}),
           ...(requests.relinked > 0 ? { expenseRequestsRelinked: requests.relinked } : {}),
           ...(options.logDetails ?? {}),
         },
-        {
-          recordId: moved.length === 1 ? moved[0].id : undefined,
-          recordRef: refList(moved.map((entry) => entry.receptionNo)),
-        },
+        { recordRef: refList(moved.map((entry) => entry.receptionNo)) },
       );
     }
 

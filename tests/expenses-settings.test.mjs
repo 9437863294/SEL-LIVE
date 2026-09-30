@@ -15,6 +15,16 @@ import {
   resolveFormField,
   setColumnVisibility,
   validateExpensesSettings,
+  validateFieldControl,
+  validateDataControl,
+  fieldControlPayload,
+  dataControlPayload,
+  flattenFieldControl,
+  flattenDataControl,
+  requestAmountError,
+  findDuplicateRequest,
+  settingsStampFor,
+  toIsoStamp,
 } from '../src/lib/expenses-settings.ts';
 
 const TODAY = new Date(2026, 8, 17); // Thursday 17 Sep 2026
@@ -252,4 +262,121 @@ test('the form reads its label and required-ness from the settings', () => {
     helpText: 'Who we pay',
   });
   assert.equal(resolveFormField(settings, 'description').label, 'Description', 'unset falls back to shipped');
+});
+
+/* ── data rules added with Data Control ──────────────────────────────────── */
+
+test('a document saved before the new data rules reads as the shipped behaviour', () => {
+  const legacy = resolveExpensesSettings({
+    data: { defaultDateRange: 'this-month', allowEditAfterReception: true, highValueThreshold: 50000 },
+    updatedAt: '2026-01-02T03:04:05.000Z',
+    updatedBy: 'Asha Rao',
+  });
+  assert.equal(legacy.data.gstTdsCapture, true, 'GST & TDS still shown');
+  assert.equal(legacy.data.maxRequestAmount, 0, 'no amount cap');
+  assert.equal(legacy.data.duplicateRequestWarningDays, 0, 'no duplicate prompt');
+  assert.equal(legacy.data.allowStatutoryEditAfterReception, false, 'statutory figures stay fixed');
+  assert.equal(legacy.data.defaultDateRange, 'this-month', 'the old rules survive');
+  assert.deepEqual(settingsStampFor(legacy, 'fieldControl'), { at: '2026-01-02T03:04:05.000Z', by: 'Asha Rao' });
+});
+
+test('the new rules resolve tolerant of junk and keep what was saved', () => {
+  const resolved = resolveExpensesSettings({
+    data: { gstTdsCapture: false, maxRequestAmount: '500000', duplicateRequestWarningDays: -3, allowStatutoryEditAfterReception: 'yes' },
+  });
+  assert.equal(resolved.data.gstTdsCapture, false);
+  assert.equal(resolved.data.maxRequestAmount, 500000);
+  assert.equal(resolved.data.duplicateRequestWarningDays, 0);
+  assert.equal(resolved.data.allowStatutoryEditAfterReception, false, 'only a real true turns it on');
+});
+
+test('a Firestore timestamp stamp is read, and each part keeps its own stamp', () => {
+  const at = new Date('2026-09-01T10:00:00.000Z');
+  const resolved = resolveExpensesSettings({
+    updatedAt: { toDate: () => at },
+    updatedBy: 'uid-1',
+    updatedByName: 'Ravi',
+    stamps: {
+      dataControl: { updatedAt: { seconds: at.getTime() / 1000 + 60 }, updatedBy: 'uid-2', updatedByName: 'Meera' },
+    },
+  });
+  assert.equal(resolved.updatedAt, at.toISOString());
+  assert.equal(settingsStampFor(resolved, 'dataControl').by, 'Meera');
+  assert.equal(settingsStampFor(resolved, 'fieldControl').by, 'Ravi', 'falls back to the document stamp');
+  assert.equal(toIsoStamp('   '), undefined);
+});
+
+test('data validation blocks nonsense numbers and warns on contradictory rules', () => {
+  const data = { ...DEFAULT_EXPENSE_DATA_CONTROL };
+  assert.equal(hasBlockingIssue(validateDataControl(data)), false);
+  assert.ok(hasBlockingIssue(validateDataControl({ ...data, maxRequestAmount: -1 })));
+  assert.ok(hasBlockingIssue(validateDataControl({ ...data, duplicateRequestWarningDays: 400 })));
+  assert.ok(hasBlockingIssue(validateDataControl({ ...data, duplicateRequestWarningDays: 2.5 })));
+  const contradictory = validateDataControl({ ...data, allowStatutoryEditAfterReception: true });
+  assert.equal(hasBlockingIssue(contradictory), false);
+  assert.ok(contradictory.some(issue => /no effect/.test(issue.message)));
+  assert.ok(validateDataControl({ ...data, maxRequestAmount: 5000 }).some(issue => /never flag/.test(issue.message)));
+});
+
+test('field and data validation split the whole-document validation between them', () => {
+  const settings = defaultExpensesSettings();
+  settings.data.allowEditAfterReception = true;
+  settings.fields = settings.fields.map(field => (field.key === 'remarks' ? { ...field, visible: false, required: false } : field));
+  const whole = validateExpensesSettings(settings).map(issue => issue.message);
+  const parts = [...validateFieldControl(settings), ...validateDataControl(settings.data)].map(issue => issue.message);
+  assert.deepEqual(whole, parts);
+  assert.ok(!validateFieldControl(settings).some(issue => /reception/.test(issue.message)));
+});
+
+test('the field-control payload carries no undefined values and no data rules', () => {
+  const settings = defaultExpensesSettings();
+  settings.fields[4] = { ...settings.fields[4], label: '  Vendor ', helpText: '' };
+  const payload = fieldControlPayload(settings);
+  assert.deepEqual(Object.keys(payload).sort(), ['fields', 'registers']);
+  const walk = value => {
+    if (value === undefined) assert.fail('undefined found in payload');
+    if (value && typeof value === 'object') Object.values(value).forEach(walk);
+  };
+  walk(payload);
+  assert.equal(payload.fields[4].label, 'Vendor');
+  assert.ok(!('helpText' in payload.fields[4]));
+});
+
+test('flattened settings diff into readable keys', () => {
+  const before = defaultExpensesSettings();
+  const after = defaultExpensesSettings();
+  after.fields = after.fields.map(field => (field.key === 'partyName' ? { ...field, required: false } : field));
+  after.registers.all = moveColumn(after.registers.all, 1, 'up');
+  const a = flattenFieldControl(before);
+  const b = flattenFieldControl(after);
+  const changed = Object.keys(b).filter(key => a[key] !== b[key]);
+  assert.deepEqual(changed.sort(), ['Consolidated Register · column order', 'Name of the Party · required']);
+
+  const data = flattenDataControl({ ...DEFAULT_EXPENSE_DATA_CONTROL, gstTdsCapture: false });
+  assert.equal(data['Capture GST & TDS on new requests'], false);
+  assert.equal(Object.keys(data).length, Object.keys(DEFAULT_EXPENSE_DATA_CONTROL).length, 'every rule has a label');
+  assert.deepEqual(dataControlPayload(DEFAULT_EXPENSE_DATA_CONTROL), DEFAULT_EXPENSE_DATA_CONTROL);
+});
+
+test('the request amount cap applies only above a non-zero limit', () => {
+  assert.equal(requestAmountError(1_000_000, { maxRequestAmount: 0 }), undefined, '0 means no limit');
+  assert.equal(requestAmountError(50_000, { maxRequestAmount: 50_000 }), undefined, 'the limit itself is allowed');
+  assert.match(requestAmountError(50_001, { maxRequestAmount: 50_000 }), /cannot be more than/);
+});
+
+test('a duplicate is the newest same-party, same-amount request inside the window', () => {
+  const now = new Date('2026-09-30T12:00:00.000Z');
+  const daysAgo = n => new Date(now.getTime() - n * 86400000).toISOString();
+  const existing = [
+    { requestNo: 'OLD', partyName: 'Acme Traders', amount: 5000, createdAt: daysAgo(20) },
+    { requestNo: 'A-1', partyName: 'acme  traders', amount: 5000, createdAt: daysAgo(3) },
+    { requestNo: 'A-2', partyName: 'Acme Traders', amount: 5000, createdAt: daysAgo(1) },
+    { requestNo: 'OTHER', partyName: 'Acme Traders', amount: 5000.5, createdAt: daysAgo(0) },
+    { requestNo: 'UNDATED', partyName: 'Acme Traders', amount: 5000 },
+  ];
+  assert.equal(findDuplicateRequest(existing, { partyName: 'ACME Traders', amount: 5000 }, 7, now).requestNo, 'A-2');
+  assert.equal(findDuplicateRequest(existing, { partyName: 'Acme Traders', amount: 5000 }, 0, now), undefined, '0 is off');
+  assert.equal(findDuplicateRequest(existing, { partyName: '', amount: 5000 }, 7, now), undefined, 'no party, no check');
+  assert.equal(findDuplicateRequest(existing.slice(0, 1), { partyName: 'Acme Traders', amount: 5000 }, 7, now), undefined);
+  assert.equal(findDuplicateRequest(existing, { partyName: 'Acme Traders', amount: 5000.5 }, 1, now).requestNo, 'OTHER');
 });

@@ -9,15 +9,13 @@ import { useSearchParams } from 'next/navigation';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
-import { ArrowLeft, Save, Loader2, Check, ChevronsUpDown, Receipt, Sparkles, Info, ShieldAlert } from 'lucide-react';
+import { Save, Loader2, Check, ChevronsUpDown, Receipt, Sparkles, ShieldAlert, Hash, CalendarClock } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
-import { Textarea } from '@/components/ui/textarea';
 import { useToast } from '@/hooks/use-toast';
 import { db } from '@/lib/firebase';
 import { collection, getDocs, doc, runTransaction, getDoc } from 'firebase/firestore';
-import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import type { Department, Project, SerialNumberConfig, AccountHead, SubAccountHead, ExpenseRequest, DailyRequisitionEntry } from '@/lib/types';
 import { useAuth } from '@/components/auth/AuthProvider';
@@ -30,15 +28,37 @@ import { cn } from '@/lib/utils';
 import { logUserActivity } from '@/lib/activity-logger';
 import { useState, useEffect, useMemo } from 'react';
 import { Skeleton } from '@/components/ui/skeleton';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
 import { ExpenseBadge } from '@/components/expenses/page-header';
 import { useExpensesSettings } from '@/components/expenses/use-expenses-settings';
 import {
   defaultExpensesSettings,
+  findDuplicateRequest,
+  requestAmountError,
   resolveFormField,
+  toIsoStamp,
   type ExpensesModuleSettings,
 } from '@/lib/expenses-settings';
 import { allocateRequestNos } from '@/lib/expenses-import';
 import { PageHeader } from '@/components/shared/page-header';
+import { StatutorySection, FORM_GRID as GRID, FORM_LABEL as LABEL, FORM_READ_ONLY as READ_ONLY } from '@/components/expenses/statutory-section';
+import {
+  EMPTY_STATUTORY,
+  buildExpenseStatutory,
+  computeStatutory,
+  hasStatutory,
+  statutoryErrors,
+  type StatutoryInput,
+} from '@/lib/statutory';
 
 
 /** How two spellings of a party name are compared: case and spacing do not make a new party. */
@@ -58,6 +78,7 @@ const findRecordedParty = (name: string, recorded: readonly string[]): string | 
  *
  * With "Restrict parties to existing names" on, a party must be one already on an expense request
  * or a requisition (`recordedParties`). Blank is still governed by the field's own required setting.
+ * With a largest request amount set (Settings › Data Control), anything above it is refused.
  */
 const buildExpenseFormSchema = (settings: ExpensesModuleSettings, recordedParties: readonly string[] = []) => {
   const text = (key: Parameters<typeof resolveFormField>[1]) => {
@@ -79,13 +100,15 @@ const buildExpenseFormSchema = (settings: ExpensesModuleSettings, recordedPartie
       partyName: text('partyName'),
     })
     .superRefine((values, ctx) => {
+      const tooMuch = requestAmountError(Number(values.amount) || 0, settings.data);
+      if (tooMuch) ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['amount'], message: tooMuch });
       if (!settings.data.restrictPartyToExisting) return;
       const name = values.partyName?.trim();
       if (name && !findRecordedParty(name, recordedParties)) {
         ctx.addIssue({
           code: z.ZodIssueCode.custom,
           path: ['partyName'],
-          message: `"${name}" is not a party on record. Choose one from the list — adding new parties is turned off in Expenses › Settings.`,
+          message: `"${name}" is not a party on record. Choose one from the list — adding new parties is turned off in Expenses › Settings › Data Control.`,
         });
       }
     });
@@ -95,23 +118,6 @@ const expenseFormSchema = buildExpenseFormSchema(defaultExpensesSettings());
 
 type ExpenseFormValues = z.infer<typeof expenseFormSchema>;
 
-function ReadOnlyField({ label, value, id }: { label: string; value: string; id?: string }) {
-  return (
-    <div className="space-y-1.5">
-      <Label htmlFor={id} className="text-sm font-medium text-slate-700 flex items-center gap-1">
-        {label}
-        <Info className="h-3 w-3 text-muted-foreground/50" />
-      </Label>
-      <Input
-        id={id}
-        value={value}
-        readOnly
-        className="h-9 text-sm bg-muted/30 border-border/40 text-muted-foreground cursor-default focus:ring-0 focus:ring-offset-0"
-      />
-    </div>
-  );
-}
-
 function NewExpenseRequestForm() {
   const { toast } = useToast();
   const { user } = useAuth();
@@ -119,7 +125,7 @@ function NewExpenseRequestForm() {
   const { settings } = useExpensesSettings();
   const searchParams = useSearchParams();
 
-  /** Labels, help text and required-ness come from Settings › Table & Field Configuration. */
+  /** Labels, help text and required-ness come from Settings › Field Control. */
   const fieldFor = (key: Parameters<typeof resolveFormField>[1]) => resolveFormField(settings, key);
 
   const departmentIdFromUrl = searchParams?.get('departmentId') ?? null;
@@ -140,10 +146,18 @@ function NewExpenseRequestForm() {
   const [recordedPartyNames, setRecordedPartyNames] = useState<string[]>([]);
   /** Every request number in use in any department, so a new one never repeats one imported from a file. */
   const [recordedRequestNos, setRecordedRequestNos] = useState<string[]>([]);
+  /** What the duplicate-request check compares against (Settings › Data Control). */
+  const [recentRequests, setRecentRequests] = useState<Pick<ExpenseRequest, 'requestNo' | 'partyName' | 'amount' | 'createdAt'>[]>([]);
+  /** A save waiting on the user to confirm it is not a repeat of `match`. */
+  const [pendingDuplicate, setPendingDuplicate] = useState<{ data: ExpenseFormValues; match: { requestNo: string; createdAt: string } } | null>(null);
   const [previewRequestNo, setPreviewRequestNo] = useState('Generating...');
   const [timestamp, setTimestamp] = useState('');
 
   const [partySearch, setPartySearch] = useState('');
+  /** GST & TDS (Statutory section). Optional; stored on the request only when something is entered. */
+  const [statutory, setStatutory] = useState<StatutoryInput>(EMPTY_STATUTORY);
+  const [showStatutoryErrors, setShowStatutoryErrors] = useState(false);
+  const [statutoryKey, setStatutoryKey] = useState(0);
   const [partyPopoverOpen, setPartyPopoverOpen] = useState(false);
 
   const form = useForm<ExpenseFormValues>({
@@ -206,6 +220,9 @@ function NewExpenseRequestForm() {
         setPartyNames(uniquePartyNames);
         setRecordedPartyNames(uniquePartyNames);
         setRecordedRequestNos(existingExpenses.map(expense => expense.requestNo).filter(Boolean));
+        setRecentRequests(
+          existingExpenses.map(({ requestNo, partyName, amount, createdAt }) => ({ requestNo, partyName, amount, createdAt })),
+        );
       } catch (error) {
         toast({ title: 'Error', description: 'Failed to load required data.', variant: 'destructive' });
       }
@@ -244,7 +261,7 @@ function NewExpenseRequestForm() {
       }
     };
     generatePreviewId();
-    setTimestamp(format(new Date(), 'PPpp'));
+    setTimestamp(format(new Date(), 'dd MMM yyyy, HH:mm'));
   }, [form, form.watch('departmentId'), recordedRequestNos]);
 
   const handleSubHeadChange = (subHeadName: string) => {
@@ -256,7 +273,10 @@ function NewExpenseRequestForm() {
     }
   };
 
-  const handleSave = async (data: ExpenseFormValues) => {
+  /** Settings › Data Control › "Capture GST & TDS on new requests". Off hides the section and ignores anything in it. */
+  const captureStatutory = settings.data.gstTdsCapture;
+
+  const handleSave = async (data: ExpenseFormValues, duplicateConfirmed = false) => {
     if (!user) {
       toast({ title: 'Authentication Error', description: 'You must be logged in.', variant: 'destructive' });
       return;
@@ -268,6 +288,30 @@ function NewExpenseRequestForm() {
         variant: 'destructive',
       });
       return;
+    }
+    // The request amount is the taxable value; GST and deductions are worked out on it.
+    const taxable = Number(data.amount) || 0;
+    const withStatutory = captureStatutory && hasStatutory(statutory);
+    if (withStatutory) {
+      const problems = Object.values(statutoryErrors(taxable, statutory));
+      if (problems.length) {
+        setShowStatutoryErrors(true);
+        toast({ title: 'Check the GST & TDS details', description: problems[0], variant: 'destructive' });
+        return;
+      }
+    }
+    // Settings › Data Control › "Warn on a repeat request within N days": the same party for the
+    // same amount recently is usually the same bill raised twice, so ask before saving it.
+    if (!duplicateConfirmed) {
+      const match = findDuplicateRequest(
+        recentRequests,
+        { partyName: data.partyName, amount: taxable },
+        settings.data.duplicateRequestWarningDays,
+      );
+      if (match) {
+        setPendingDuplicate({ data, match: { requestNo: match.requestNo || 'an earlier request', createdAt: toIsoStamp(match.createdAt) ?? '' } });
+        return;
+      }
     }
     setIsSaving(true);
     try {
@@ -294,6 +338,7 @@ function NewExpenseRequestForm() {
         receptionNo: '',
         receptionDate: '',
         createdAt: new Date().toISOString(),
+        ...(withStatutory ? { statutory: buildExpenseStatutory(taxable, statutory) } : {}),
       };
 
       const configRef = doc(db, 'departmentSerialConfigs', data.departmentId);
@@ -321,12 +366,21 @@ function NewExpenseRequestForm() {
         userEmail: user.email,
         module: 'Expenses',
         action: 'Create Expense Request',
-        details: { requestNo: newRequestNo, department: selectedDept.name, amount: data.amount },
+        details: {
+          requestNo: newRequestNo,
+          department: selectedDept.name,
+          amount: data.amount,
+          ...(withStatutory ? { netPayable: computeStatutory(taxable, statutory).net, gstNo: statutory.gstNo, tdsSection: statutory.tdsSection } : {}),
+        },
         recordId: requestRef.id,
         recordRef: newRequestNo,
       });
 
       setRecordedRequestNos(prev => [...prev, newRequestNo]);
+      setRecentRequests(prev => [
+        ...prev,
+        { requestNo: newRequestNo, partyName, amount: data.amount, createdAt: requestFields.createdAt },
+      ]);
       if (partyName) {
         if (!partyNames.includes(partyName)) setPartyNames(prev => [...prev, partyName].sort());
         if (!recordedPartyNames.includes(partyName)) setRecordedPartyNames(prev => [...prev, partyName].sort());
@@ -344,6 +398,9 @@ function NewExpenseRequestForm() {
         partyName: '',
       });
       setPartySearch('');
+      setStatutory(EMPTY_STATUTORY);
+      setShowStatutoryErrors(false);
+      setStatutoryKey(key => key + 1);
     } catch (error: any) {
       console.error('Error creating expense request:', error);
       toast({ title: 'Save Failed', description: error.message || 'An error occurred while saving the request.', variant: 'destructive' });
@@ -352,30 +409,41 @@ function NewExpenseRequestForm() {
     }
   };
 
-  const selectedDepartmentName = departments.find(d => d.id === form.getValues('departmentId'))?.name || '';
 
-  /** Settings › Table & Field Configuration › "Restrict parties to existing names". */
+  /** Settings › Data Control › "Restrict parties to existing names". */
   const restrictParty = settings.data.restrictPartyToExisting;
   const partyOptions = restrictParty ? recordedPartyNames : partyNames;
+
+  const watchedAmount = Number(form.watch('amount')) || 0;
+  const withStatutoryNow = captureStatutory && hasStatutory(statutory);
+  const netPayableNow = withStatutoryNow ? computeStatutory(watchedAmount, statutory).net : watchedAmount;
+  const headOfAccount = form.watch('headOfAccount');
+  const headError = form.formState.errors.headOfAccount?.message;
+  const inrText = (n: number) => new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR' }).format(n || 0);
+  const optional = (key: Parameters<typeof resolveFormField>[1]) =>
+    !fieldFor(key).required && <span className="ml-1 font-normal text-muted-foreground">(optional)</span>;
+  /** The help text set under Settings › Field Control, if any. */
+  const help = (key: Parameters<typeof resolveFormField>[1]) => {
+    const text = fieldFor(key).helpText;
+    return text ? <FormDescription className="text-[11px]">{text}</FormDescription> : null;
+  };
 
   return (
     <div className="w-full space-y-4">
       <PageHeader
         icon={Receipt}
         title="New Expense Request"
-        description="Fill in the details below to create a new expense request."
+        description="Raise a payment request. Add GST, TDS or deductions only when the bill has them."
         backHref="/expenses"
         badge={<ExpenseBadge accent="emerald"><Sparkles className="h-2.5 w-2.5" /> New</ExpenseBadge>}
       />
 
       {isLoadingData || isAuthLoading ? (
-        <Card className="border-border/60 bg-card/60 backdrop-blur-sm">
-          <CardContent className="p-6">
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-              {Array.from({ length: 9 }).map((_, i) => <Skeleton key={i} className="h-16 rounded-lg" />)}
-            </div>
-          </CardContent>
-        </Card>
+        <div className="space-y-4">
+          <Skeleton className="h-14 w-full rounded-xl" />
+          <Skeleton className="h-80 w-full rounded-xl" />
+          <Skeleton className="h-28 w-full rounded-xl" />
+        </div>
       ) : isDenied ? (
         <Card className="border-destructive/30">
           <CardHeader className="text-center pb-2">
@@ -391,262 +459,285 @@ function NewExpenseRequestForm() {
         </Card>
       ) : (
         <Form {...form}>
-          <form onSubmit={form.handleSubmit(handleSave)}>
-            <Card className="border-white/60 bg-white/70 backdrop-blur-sm overflow-hidden shadow-sm">
-              <div className="h-[3px] bg-gradient-to-r from-emerald-500 via-teal-500 to-transparent" />
-              <CardHeader className="pb-3">
-                <CardTitle className="text-sm font-bold flex items-center gap-2">
-                  <span className="flex h-6 w-6 items-center justify-center rounded-md bg-emerald-50">
-                    <Receipt className="h-3.5 w-3.5 text-emerald-600" />
+          <form onSubmit={form.handleSubmit(data => handleSave(data))} className="space-y-4">
+            {/* One card, one 6-column grid shared with the GST & TDS part below, so every column lines up:
+                row 1 — who and where it is booked · row 2 — how much and what for. */}
+            <Card className="overflow-hidden border-slate-200/80 bg-white shadow-sm">
+              <div className="flex flex-col gap-2 border-b bg-slate-50/70 px-4 py-2.5 sm:flex-row sm:items-center sm:justify-between sm:px-5">
+                <div className="min-w-0">
+                  <h2 className="text-sm font-semibold text-slate-900">Request details</h2>
+                  <p className="text-xs text-muted-foreground">Who is being paid, for what, and how much.</p>
+                </div>
+                <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-slate-500">
+                  <span className="inline-flex items-center gap-1.5">
+                    <Hash className="h-3.5 w-3.5 text-slate-400" />
+                    <span className={cn('font-medium text-slate-800', /\d/.test(previewRequestNo) && 'font-mono')}>{previewRequestNo}</span>
                   </span>
-                  Expense Details
-                </CardTitle>
-                <CardDescription className="text-xs">All fields except Remarks are required.</CardDescription>
-              </CardHeader>
-              <CardContent className="pt-0">
-                {/* Section: Auto-generated / Read-only */}
-                <div className="mb-4">
-                  <div className="flex items-center gap-2 mb-3">
-                    <div className="h-px flex-1 bg-gradient-to-r from-transparent to-slate-200" />
-                    <span className="rounded-full bg-slate-100 px-2.5 py-0.5 text-[11px] font-semibold text-slate-600">Auto-generated</span>
-                    <div className="h-px flex-1 bg-gradient-to-l from-transparent to-slate-200" />
+                  <span className="inline-flex items-center gap-1.5">
+                    <CalendarClock className="h-3.5 w-3.5 text-slate-400" />
+                    {timestamp}
+                  </span>
+                </div>
+              </div>
+
+              <CardContent className={cn(GRID, 'p-4 sm:p-5')}>
+                <FormField
+                  control={form.control}
+                  name="departmentId"
+                  render={({ field }) => (
+                    <FormItem className="space-y-1.5">
+                      <FormLabel className={LABEL}>Department</FormLabel>
+                      <Select onValueChange={field.onChange} value={field.value} disabled={!!departmentIdFromUrl}>
+                        <FormControl>
+                          <SelectTrigger className="h-9 text-sm">
+                            <SelectValue placeholder="Select department" />
+                          </SelectTrigger>
+                        </FormControl>
+                        <SelectContent>
+                          {creatableDepartments.map(d => <SelectItem key={d.id} value={d.id}>{d.name}</SelectItem>)}
+                        </SelectContent>
+                      </Select>
+                      <FormMessage className="text-[11px]" />
+                    </FormItem>
+                  )}
+                />
+
+                <FormField
+                  control={form.control}
+                  name="projectId"
+                  render={({ field }) => (
+                    <FormItem className="space-y-1.5">
+                      <FormLabel className={LABEL}>{fieldFor('projectId').label}</FormLabel>
+                      <Select onValueChange={field.onChange} value={field.value}>
+                        <FormControl>
+                          <SelectTrigger className="h-9 text-sm"><SelectValue placeholder="Select project" /></SelectTrigger>
+                        </FormControl>
+                        <SelectContent>{projects.map(p => <SelectItem key={p.id} value={p.id}>{p.projectName}</SelectItem>)}</SelectContent>
+                      </Select>
+                      {help('projectId')}
+                      <FormMessage className="text-[11px]" />
+                    </FormItem>
+                  )}
+                />
+
+                <FormField
+                  control={form.control}
+                  name="partyName"
+                  render={({ field }) => (
+                    <FormItem className="space-y-1.5 sm:col-span-2">
+                      <FormLabel className={LABEL}>{fieldFor('partyName').label}{optional('partyName')}</FormLabel>
+                      <Popover open={partyPopoverOpen} onOpenChange={setPartyPopoverOpen}>
+                        <PopoverTrigger asChild>
+                          <FormControl>
+                            <Button
+                              variant="outline"
+                              role="combobox"
+                              className={cn('flex h-9 w-full justify-between px-3 font-normal text-sm', !field.value && 'text-muted-foreground')}
+                            >
+                              <span className="truncate">{field.value || (restrictParty ? 'Select a party on record' : 'Select or type a party')}</span>
+                              <ChevronsUpDown className="ml-2 h-3.5 w-3.5 shrink-0 opacity-50" />
+                            </Button>
+                          </FormControl>
+                        </PopoverTrigger>
+                        <PopoverContent className="w-[--radix-popover-trigger-width] p-0" side="bottom" align="start">
+                          <Command>
+                            <CommandInput placeholder="Search party name..." value={partySearch} onValueChange={setPartySearch} />
+                            <CommandList>
+                              <CommandEmpty>{restrictParty ? 'No party on record matches.' : 'No party found.'}</CommandEmpty>
+                              <CommandGroup>
+                                {partyOptions.filter(p => p.toLowerCase().includes(partySearch.toLowerCase())).map(name => (
+                                  <CommandItem
+                                    value={name}
+                                    key={name}
+                                    onSelect={currentValue => {
+                                      field.onChange(currentValue);
+                                      form.setValue('partyName', currentValue);
+                                      setPartySearch(currentValue);
+                                      setPartyPopoverOpen(false);
+                                    }}
+                                  >
+                                    <Check className={cn('mr-2 h-4 w-4', name === field.value ? 'opacity-100' : 'opacity-0')} />
+                                    {name}
+                                  </CommandItem>
+                                ))}
+                                {!restrictParty && partySearch && !partyNames.some(n => n.toLowerCase() === partySearch.toLowerCase()) && (
+                                  <CommandItem
+                                    value={partySearch}
+                                    onSelect={currentValue => {
+                                      field.onChange(currentValue);
+                                      form.setValue('partyName', currentValue);
+                                      setPartySearch(currentValue);
+                                      setPartyNames(prev => [...prev, currentValue].sort());
+                                      setPartyPopoverOpen(false);
+                                    }}
+                                  >
+                                    <Check className="mr-2 h-4 w-4 opacity-0" />
+                                    Add &quot;{partySearch}&quot;
+                                  </CommandItem>
+                                )}
+                              </CommandGroup>
+                            </CommandList>
+                          </Command>
+                        </PopoverContent>
+                      </Popover>
+                      {restrictParty && <FormDescription className="text-[11px]">Only parties already on record can be chosen.</FormDescription>}
+                      {help('partyName')}
+                      <FormMessage className="text-[11px]" />
+                    </FormItem>
+                  )}
+                />
+
+                <FormField
+                  control={form.control}
+                  name="subHeadOfAccount"
+                  render={({ field }) => (
+                    <FormItem className="space-y-1.5">
+                      <FormLabel className={LABEL}>{fieldFor('subHeadOfAccount').label}</FormLabel>
+                      <Select onValueChange={handleSubHeadChange} value={field.value}>
+                        <FormControl>
+                          <SelectTrigger className="h-9 text-sm"><SelectValue placeholder="Select sub-head" /></SelectTrigger>
+                        </FormControl>
+                        <SelectContent>{subAccountHeads.map(sh => <SelectItem key={sh.id} value={sh.name}>{sh.name}</SelectItem>)}</SelectContent>
+                      </Select>
+                      {help('subHeadOfAccount')}
+                      <FormMessage className="text-[11px]" />
+                    </FormItem>
+                  )}
+                />
+
+                {/* The head is derived from the sub-head, so it is shown, not asked for. */}
+                <div className="min-w-0 space-y-1.5">
+                  <p className={LABEL}>{fieldFor('headOfAccount').label}</p>
+                  <div className={cn(READ_ONLY, headOfAccount ? 'font-medium text-slate-800' : 'text-muted-foreground')}>
+                    <span className="truncate">{headOfAccount || 'Set by the sub-head'}</span>
                   </div>
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                    <ReadOnlyField label="Request No" value={previewRequestNo} id="requestNo" />
-                    <ReadOnlyField label="Timestamp" value={timestamp} id="timestamp" />
-                    <ReadOnlyField label="Generated by Department" value={selectedDepartmentName} id="departmentName" />
+                  {fieldFor('headOfAccount').helpText && <p className="text-[11px] text-muted-foreground">{fieldFor('headOfAccount').helpText}</p>}
+                  {headError && form.watch('subHeadOfAccount') && <p className="text-[11px] font-medium text-destructive">{headError}</p>}
+                </div>
+
+                <FormField
+                  control={form.control}
+                  name="amount"
+                  render={({ field }) => (
+                    <FormItem className="space-y-1.5">
+                      <FormLabel className={LABEL}>
+                        {fieldFor('amount').label}
+                        {withStatutoryNow && <span className="ml-1 font-normal text-muted-foreground">(before GST)</span>}
+                      </FormLabel>
+                      <div className="relative">
+                        <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-sm text-muted-foreground">₹</span>
+                        <FormControl>
+                          <Input
+                            type="number"
+                            inputMode="decimal"
+                            placeholder="0.00"
+                            className="h-9 pl-7 text-right text-sm font-semibold tabular-nums"
+                            {...field}
+                            value={field.value === 0 ? '' : field.value}
+                          />
+                        </FormControl>
+                      </div>
+                      {help('amount')}
+                      <FormMessage className="text-[11px]" />
+                    </FormItem>
+                  )}
+                />
+
+                <div className="min-w-0 space-y-1.5">
+                  <p className={LABEL}>Net payable</p>
+                  <div className={cn(READ_ONLY, 'justify-end border-emerald-200 bg-emerald-50/70 font-semibold tabular-nums text-emerald-800')}>
+                    {inrText(netPayableNow)}
                   </div>
                 </div>
 
-                {/* Section: Main Fields */}
-                <div>
-                  <div className="flex items-center gap-2 mb-3">
-                    <div className="h-px flex-1 bg-gradient-to-r from-transparent to-emerald-200" />
-                    <span className="rounded-full bg-emerald-50 px-2.5 py-0.5 text-[11px] font-semibold text-emerald-700">Request Details</span>
-                    <div className="h-px flex-1 bg-gradient-to-l from-transparent to-emerald-200" />
-                  </div>
-                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                    {/* Department */}
-                    <FormField
-                      control={form.control}
-                      name="departmentId"
-                      render={({ field }) => (
-                        <FormItem className="space-y-1.5">
-                          <FormLabel className="text-sm font-medium text-slate-700">Department</FormLabel>
-                          <Select onValueChange={field.onChange} value={field.value} disabled={!!departmentIdFromUrl}>
-                            <FormControl>
-                              <SelectTrigger className="h-9 text-sm">
-                                <SelectValue placeholder="Select Department" />
-                              </SelectTrigger>
-                            </FormControl>
-                            <SelectContent>
-                              {creatableDepartments.map(d => <SelectItem key={d.id} value={d.id}>{d.name}</SelectItem>)}
-                            </SelectContent>
-                          </Select>
-                          <FormMessage />
-                        </FormItem>
-                      )}
-                    />
+                <FormField
+                  control={form.control}
+                  name="description"
+                  render={({ field }) => (
+                    <FormItem className="space-y-1.5 sm:col-span-2">
+                      <FormLabel className={LABEL}>{fieldFor('description').label}{optional('description')}</FormLabel>
+                      <FormControl>
+                        <Input {...field} placeholder="What the payment is for, e.g. Cement supply for Block A" className="h-9 text-sm" />
+                      </FormControl>
+                      {help('description')}
+                      <FormMessage className="text-[11px]" />
+                    </FormItem>
+                  )}
+                />
 
-                    {/* Project */}
-                    <FormField
-                      control={form.control}
-                      name="projectId"
-                      render={({ field }) => (
-                        <FormItem className="space-y-1.5">
-                          <FormLabel className="text-sm font-medium text-slate-700">{fieldFor('projectId').label}</FormLabel>
-                          <Select onValueChange={field.onChange} value={field.value}>
-                            <FormControl>
-                              <SelectTrigger className="h-9 text-sm"><SelectValue placeholder="Select Project" /></SelectTrigger>
-                            </FormControl>
-                            <SelectContent>{projects.map(p => <SelectItem key={p.id} value={p.id}>{p.projectName}</SelectItem>)}</SelectContent>
-                          </Select>
-                          <FormMessage />
-                        </FormItem>
-                      )}
-                    />
-
-                    {/* Amount */}
-                    <FormField
-                      control={form.control}
-                      name="amount"
-                      render={({ field }) => (
-                        <FormItem className="space-y-1.5">
-                          <FormLabel className="text-sm font-medium text-slate-700">{fieldFor('amount').label}</FormLabel>
-                          <FormControl>
-                            <Input type="number" placeholder="0.00" className="h-9 text-sm" {...field} />
-                          </FormControl>
-                          <FormMessage />
-                        </FormItem>
-                      )}
-                    />
-
-                    {/* Party Name */}
-                    <FormField
-                      control={form.control}
-                      name="partyName"
-                      render={({ field }) => (
-                        <FormItem className="flex flex-col space-y-1.5">
-                          <FormLabel className="text-sm font-medium text-slate-700">{fieldFor('partyName').label}{!fieldFor('partyName').required && <span className="ml-1 font-normal text-muted-foreground">(optional)</span>}</FormLabel>
-                          <Popover open={partyPopoverOpen} onOpenChange={setPartyPopoverOpen}>
-                            <PopoverTrigger asChild>
-                              <FormControl>
-                                <Button
-                                  variant="outline"
-                                  role="combobox"
-                                  className={cn('h-9 w-full justify-between font-normal text-sm', !field.value && 'text-muted-foreground')}
-                                >
-                                  {field.value || (restrictParty ? 'Select a party on record' : 'Select or type a party name')}
-                                  <ChevronsUpDown className="ml-2 h-3.5 w-3.5 shrink-0 opacity-50" />
-                                </Button>
-                              </FormControl>
-                            </PopoverTrigger>
-                            <PopoverContent className="w-[--radix-popover-trigger-width] p-0" side="bottom" align="start">
-                              <Command>
-                                <CommandInput placeholder="Search party name..." value={partySearch} onValueChange={setPartySearch} />
-                                <CommandList>
-                                  <CommandEmpty>{restrictParty ? 'No party on record matches.' : 'No party found.'}</CommandEmpty>
-                                  <CommandGroup>
-                                    {partyOptions.filter(p => p.toLowerCase().includes(partySearch.toLowerCase())).map(name => (
-                                      <CommandItem
-                                        value={name}
-                                        key={name}
-                                        onSelect={currentValue => {
-                                          field.onChange(currentValue);
-                                          form.setValue('partyName', currentValue);
-                                          setPartySearch(currentValue);
-                                          setPartyPopoverOpen(false);
-                                        }}
-                                      >
-                                        <Check className={cn('mr-2 h-4 w-4', name === field.value ? 'opacity-100' : 'opacity-0')} />
-                                        {name}
-                                      </CommandItem>
-                                    ))}
-                                    {!restrictParty && partySearch && !partyNames.some(n => n.toLowerCase() === partySearch.toLowerCase()) && (
-                                      <CommandItem
-                                        value={partySearch}
-                                        onSelect={currentValue => {
-                                          field.onChange(currentValue);
-                                          form.setValue('partyName', currentValue);
-                                          setPartySearch(currentValue);
-                                          setPartyNames(prev => [...prev, currentValue].sort());
-                                          setPartyPopoverOpen(false);
-                                        }}
-                                      >
-                                        <Check className="mr-2 h-4 w-4 opacity-0" />
-                                        Create &quot;{partySearch}&quot;
-                                      </CommandItem>
-                                    )}
-                                  </CommandGroup>
-                                </CommandList>
-                              </Command>
-                            </PopoverContent>
-                          </Popover>
-                          {restrictParty && (
-                            <FormDescription className="text-[11px]">
-                              Only parties already on record can be chosen.
-                            </FormDescription>
-                          )}
-                          <FormMessage />
-                        </FormItem>
-                      )}
-                    />
-
-                    {/* Sub-Head first — it auto-fills Head */}
-                    <FormField
-                      control={form.control}
-                      name="subHeadOfAccount"
-                      render={({ field }) => (
-                        <FormItem className="space-y-1.5">
-                          <FormLabel className="text-sm font-medium text-slate-700">{fieldFor('subHeadOfAccount').label}</FormLabel>
-                          <Select onValueChange={handleSubHeadChange} defaultValue={field.value}>
-                            <FormControl>
-                              <SelectTrigger className="h-9 text-sm"><SelectValue placeholder="Select Sub-Head" /></SelectTrigger>
-                            </FormControl>
-                            <SelectContent>{subAccountHeads.map(sh => <SelectItem key={sh.id} value={sh.name}>{sh.name}</SelectItem>)}</SelectContent>
-                          </Select>
-                          <FormMessage />
-                        </FormItem>
-                      )}
-                    />
-
-                    {/* Head auto-filled */}
-                    <FormField
-                      control={form.control}
-                      name="headOfAccount"
-                      render={({ field }) => (
-                        <FormItem className="space-y-1.5">
-                          <FormLabel className="text-sm font-medium text-slate-700 flex items-center gap-1">
-                            Head of A/c
-                            <Info className="h-3 w-3 text-muted-foreground/50" />
-                          </FormLabel>
-                          <Select value={field.value} disabled>
-                            <FormControl>
-                              <SelectTrigger className="h-9 text-sm bg-muted/30 text-muted-foreground border-border/40">
-                                <SelectValue placeholder="Auto-filled from Sub-Head" />
-                              </SelectTrigger>
-                            </FormControl>
-                            <SelectContent>{accountHeads.map(h => <SelectItem key={h.id} value={h.name}>{h.name}</SelectItem>)}</SelectContent>
-                          </Select>
-                          <FormMessage />
-                        </FormItem>
-                      )}
-                    />
-
-                    {/* Description - full width */}
-                    <FormField
-                      control={form.control}
-                      name="description"
-                      render={({ field }) => (
-                        <FormItem className="space-y-1.5 col-span-1 md:col-span-2 lg:col-span-3">
-                          <FormLabel className="text-sm font-medium text-slate-700">{fieldFor('description').label}{!fieldFor('description').required && <span className="ml-1 font-normal text-muted-foreground">(optional)</span>}</FormLabel>
-                          <FormControl>
-                            <Textarea {...field} rows={3} placeholder="Describe the purpose of this expense..." className="text-sm resize-none" />
-                          </FormControl>
-                          <FormMessage />
-                        </FormItem>
-                      )}
-                    />
-
-                    {/* Remarks - full width */}
-                    <FormField
-                      control={form.control}
-                      name="remarks"
-                      render={({ field }) => (
-                        <FormItem className="space-y-1.5 col-span-1 md:col-span-2 lg:col-span-3">
-                          <FormLabel className="text-sm font-medium text-slate-700">{fieldFor('remarks').label}{!fieldFor('remarks').required && <span className="ml-1 font-normal text-muted-foreground">(optional)</span>}</FormLabel>
-                          <FormControl>
-                            <Textarea {...field} rows={2} placeholder="Any additional notes or remarks..." className="text-sm resize-none" />
-                          </FormControl>
-                          <FormMessage />
-                        </FormItem>
-                      )}
-                    />
-                  </div>
-                </div>
+                <FormField
+                  control={form.control}
+                  name="remarks"
+                  render={({ field }) => (
+                    <FormItem className="space-y-1.5 sm:col-span-2">
+                      <FormLabel className={LABEL}>{fieldFor('remarks').label}{optional('remarks')}</FormLabel>
+                      <FormControl>
+                        <Input {...field} placeholder="Anything else worth noting" className="h-9 text-sm" />
+                      </FormControl>
+                      {help('remarks')}
+                      <FormMessage className="text-[11px]" />
+                    </FormItem>
+                  )}
+                />
               </CardContent>
+
+              {/* Only as much tax detail as the bill has — and none when Data Control turns GST & TDS capture off */}
+              {captureStatutory && (
+                <div className="border-t bg-slate-50/50 p-4 sm:p-5">
+                  <StatutorySection key={statutoryKey} amount={watchedAmount} value={statutory} onChange={setStatutory} showErrors={showStatutoryErrors} />
+                </div>
+              )}
             </Card>
 
-            {/* Sticky bottom bar */}
-            <div className="sticky bottom-0 py-3 -mx-1 px-1 bg-background/80 backdrop-blur-sm border-t border-border/30 mt-4">
-              <div className="flex items-center justify-between flex-wrap gap-3">
-                <p className="text-xs text-muted-foreground">
-                  All fields except <span className="font-medium">Remarks</span> are required.
-                </p>
-                <Button
-                  type="submit"
-                  disabled={isSaving}
-                  size="sm"
-                  className="gap-2 min-w-[130px]"
-                >
-                  {isSaving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Save className="h-3.5 w-3.5" />}
-                  {isSaving ? 'Saving...' : 'Save Request'}
+            {/* Totals and Save, always in reach */}
+            <div className="sticky bottom-0 z-10 rounded-t-xl border border-b-0 bg-background/95 px-4 py-3 shadow-[0_-8px_24px_-20px_rgba(15,23,42,0.5)] backdrop-blur">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div className="flex flex-wrap items-baseline gap-x-5 gap-y-1 text-sm">
+                  <span>
+                    <span className="text-muted-foreground">Amount </span>
+                    <span className="font-semibold tabular-nums">{inrText(watchedAmount)}</span>
+                  </span>
+                  {withStatutoryNow && (
+                    <span>
+                      <span className="text-muted-foreground">Net payable </span>
+                      <span className="text-base font-bold tabular-nums text-emerald-700">{inrText(netPayableNow)}</span>
+                    </span>
+                  )}
+                </div>
+                <Button type="submit" disabled={isSaving} className="min-w-[150px] gap-2">
+                  {isSaving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
+                  {isSaving ? 'Saving…' : 'Save Request'}
                 </Button>
               </div>
             </div>
           </form>
         </Form>
       )}
+
+      <AlertDialog open={!!pendingDuplicate} onOpenChange={open => { if (!open) setPendingDuplicate(null); }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>This looks like a repeat request</AlertDialogTitle>
+            <AlertDialogDescription>
+              {pendingDuplicate
+                ? `${pendingDuplicate.match.requestNo} was raised for ${pendingDuplicate.data.partyName} for ${inrText(Number(pendingDuplicate.data.amount) || 0)}${pendingDuplicate.match.createdAt ? ` on ${format(new Date(pendingDuplicate.match.createdAt), 'dd MMM yyyy')}` : ''}. Save this one as well?`
+                : ''}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Go back</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => {
+                const pending = pendingDuplicate;
+                setPendingDuplicate(null);
+                if (pending) void handleSave(pending.data, true);
+              }}
+            >
+              Save anyway
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

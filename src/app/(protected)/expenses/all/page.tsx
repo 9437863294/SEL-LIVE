@@ -230,7 +230,7 @@ export default function AllExpensesPage() {
         backHref="/expenses"
         actions={
           can('View', 'Expenses.Settings') ? (
-            <Link href="/expenses/settings/table-and-fields">
+            <Link href="/expenses/settings/field-control">
               <Button variant="outline" size="sm" className="gap-2">
                 <SlidersHorizontal className="h-3.5 w-3.5" /> Columns
               </Button>

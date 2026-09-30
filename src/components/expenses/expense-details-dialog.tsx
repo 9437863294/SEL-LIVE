@@ -28,6 +28,7 @@ import {
 } from '@/components/ui/dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { StatusBadge } from '@/components/shared/status-badge';
+import { RecordActivity } from '@/components/shared/record-history';
 import { formatInr } from '@/lib/bank-balance-ledger';
 import {
   requisitionHref,
@@ -37,6 +38,7 @@ import {
 } from '@/lib/requisition-progress';
 import type { DailyRequisitionEntry, ExpenseRequest } from '@/lib/types';
 import { cn } from '@/lib/utils';
+import { TDS_SECTIONS } from '@/lib/statutory';
 
 /** How much of a remark the register shows before it becomes "open the details". */
 export const REMARKS_PREVIEW_WORDS = 5;
@@ -349,6 +351,40 @@ function Figure({ label, value, tone }: { label: string; value: number; tone?: '
   );
 }
 
+/** GST & TDS recorded when the request was raised (src/lib/statutory.ts). */
+function StatutoryDetails({ statutory }: { statutory: NonNullable<ExpenseRequest['statutory']> }) {
+  const gstLabel =
+    statutory.gstType === 'igst'
+      ? 'IGST @ ' + statutory.gstRate + '%'
+      : statutory.gstType === 'cgst-sgst'
+        ? 'CGST + SGST @ ' + statutory.gstRate / 2 + '% + ' + statutory.gstRate / 2 + '%'
+        : 'No GST';
+  const section = TDS_SECTIONS.find((entry) => entry.code === statutory.tdsSection);
+  return (
+    <section aria-label="Statutory" className="mt-4 space-y-3 border-t border-border/60 pt-4">
+      <h3 className={LABEL}>Statutory — GST &amp; TDS</h3>
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+        <Field label="Invoice" value={[statutory.invoiceNo, statutory.invoiceDate ? formatReceptionDate(statutory.invoiceDate) : ''].filter(Boolean).join(' · ')} />
+        <Field label="Supplier GSTIN" value={statutory.gstNo} />
+        <Field label="GST" value={gstLabel + (statutory.reverseCharge ? ' · reverse charge' : '')} />
+        <Field label="PAN" value={statutory.panNo} />
+        <Field label="TDS" value={section && section.code !== 'none' ? section.label + ' @ ' + statutory.tdsRate + '%' : 'No TDS'} />
+        <Field label="HSN / SAC" value={statutory.hsnSac} />
+        {statutory.otherDeductionReason && <Field label="Other deduction for" value={statutory.otherDeductionReason} className="sm:col-span-2" />}
+      </div>
+      <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+        <Figure label="Taxable" value={statutory.taxableAmount} />
+        <Figure label="GST" value={statutory.gstAmount} />
+        <Figure label="Invoice" value={statutory.invoiceAmount} />
+        <Figure label="TDS" value={statutory.tdsAmount} />
+        {statutory.retentionAmount > 0 && <Figure label="Retention" value={statutory.retentionAmount} />}
+        {statutory.otherDeduction > 0 && <Figure label="Other" value={statutory.otherDeduction} />}
+        <Figure label="Net payable" value={statutory.netPayable} tone="paid" />
+      </div>
+    </section>
+  );
+}
+
 /** A link into another module, wrapping inside a narrow dialog rather than widening it. */
 function ModuleLink({ href, children }: { href: string; children: string }) {
   return (
@@ -511,10 +547,21 @@ export function ExpenseDetailsDialog({
               <Field label="Remarks" value={expense.remarks} className="sm:col-span-2" />
             </div>
 
+            {expense.statutory && <StatutoryDetails statutory={expense.statutory} />}
+
             <ProgressSection
               expense={expense}
               requisition={requisition}
               unavailable={requisitionsUnavailable}
+            />
+
+            {/* Who did what to this request. Keyed so another request opens closed. */}
+            <RecordActivity
+              key={expense.id}
+              recordId={expense.id}
+              recordRef={expense.requestNo}
+              sectionClassName="mt-4 border-t border-border/60 pt-4"
+              headingClassName={LABEL}
             />
           </>
         )}

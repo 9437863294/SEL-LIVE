@@ -67,6 +67,8 @@ import {
   type RequisitionImportResult,
   type RequisitionStatus,
 } from '@/lib/daily-requisition-import';
+import { resolveDateWindow, todayLocal, validateReceptionDate } from '@/lib/daily-requisition-settings';
+import { useDailyRequisitionSettings } from '@/components/daily-requisition/use-daily-requisition-settings';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import {
@@ -353,6 +355,11 @@ export function DailyRequisitionImportDialog({
 
   const sheet = useMemo(() => (grid.length ? readRequisitionSheet(grid) : null), [grid]);
 
+  const { settings: moduleSettings } = useDailyRequisitionSettings();
+  const dataControl = moduleSettings.data;
+  const [today] = useState(todayLocal);
+  const dateWindow = useMemo(() => resolveDateWindow(today, moduleSettings), [today, moduleSettings]);
+
   /** Auto-mapping is a starting point; anything the user changed in the mapping step wins. */
   const columnMap = useMemo<RequisitionColumnMap>(() => {
     if (!sheet) return {};
@@ -361,19 +368,38 @@ export function DailyRequisitionImportDialog({
 
   const result = useMemo<RequisitionImportResult | null>(() => {
     if (!sheet) return null;
-    return parseRequisitionImportRows(
+    const parsed = parseRequisitionImportRows(
       sheet,
       columnMap,
       { projects, departments },
       {
         receptionNoSource,
         existingReceptionNos: existing.receptionNos,
-        existingFingerprints: existing.fingerprints,
+        // Data Control can switch off content matching; reception numbers stay unique regardless.
+        existingFingerprints: dataControl.importDuplicateDetection ? existing.fingerprints : undefined,
         partyFromDescription,
         status,
       },
     );
-  }, [sheet, columnMap, projects, departments, receptionNoSource, existing, partyFromDescription, status]);
+    // Data Control's reception-date window, when it is set to cover imports.
+    if (!dateWindow.enforced || !dataControl.dateControl.applyToImport) return parsed;
+    const rows: typeof parsed.rows = [];
+    const issues = [...parsed.issues];
+    for (const row of parsed.rows) {
+      const check = validateReceptionDate(localDateKeyOf(row.draft.date), dateWindow, 'Date');
+      if (check.ok) rows.push(row);
+      else issues.push({ row: row.row, field: parsed.columnMap.date, message: check.reason ?? 'Outside the allowed date window.' });
+    }
+    if (rows.length === parsed.rows.length) return parsed;
+    issues.sort((a, b) => a.row - b.row);
+    return {
+      ...parsed,
+      rows,
+      issues,
+      totalGross: rows.reduce((sum, entry) => sum + entry.draft.grossAmount, 0),
+      totalNet: rows.reduce((sum, entry) => sum + entry.draft.netAmount, 0),
+    };
+  }, [sheet, columnMap, projects, departments, receptionNoSource, existing, partyFromDescription, status, dataControl, dateWindow]);
 
   /** Which rows will receive their expense request, by the page's copy — re-read at import time. */
   const previewLinks = useMemo<RequisitionExpenseLink[]>(

@@ -158,9 +158,36 @@ export interface ExpenseDataControl {
   importDuplicateDetection: boolean;
   /** Where a bulk import takes request numbers from. */
   importRequestNoSource: 'generate' | 'file';
+  /**
+   * Whether the GST, TDS and deductions of a request may still be changed once it carries a
+   * reception number. Only meaningful while `allowEditAfterReception` is on. Today no edit screen
+   * changes a request's statutory figures — they are fixed at New Request — so this is stored
+   * for the screen that will, rather than enforced anywhere yet.
+   */
+  allowStatutoryEditAfterReception: boolean;
+  /** Whether New Request shows the GST & TDS section at all. */
+  gstTdsCapture: boolean;
+  /** The largest amount a single request may be raised for, in rupees. 0 means no limit. */
+  maxRequestAmount: number;
+  /**
+   * How many days back New Request looks for a request to the same party for the same amount
+   * before saving, asking the user to confirm when it finds one. 0 turns the check off.
+   */
+  duplicateRequestWarningDays: number;
 }
 
 /* ── the whole settings document ─────────────────────────────────────────── */
+
+/** Who last saved one part of the document, and when. */
+export interface ExpenseSettingsStamp {
+  updatedAt?: string;
+  /** User id. Documents written before the split stored a display name here. */
+  updatedBy?: string;
+  updatedByName?: string;
+}
+
+/** The two parts of the document that are edited — and stamped — separately. */
+export type ExpenseSettingsPart = 'fieldControl' | 'dataControl';
 
 export interface ExpensesModuleSettings {
   registers: Record<ExpenseRegisterId, ExpenseColumnSetting[]>;
@@ -168,6 +195,9 @@ export interface ExpensesModuleSettings {
   data: ExpenseDataControl;
   updatedAt?: string;
   updatedBy?: string;
+  updatedByName?: string;
+  /** Per-part stamps, so each settings page can say who last changed what it shows. */
+  stamps?: Partial<Record<ExpenseSettingsPart, ExpenseSettingsStamp>>;
 }
 
 /** Where the settings document lives. */
@@ -194,6 +224,10 @@ export const DEFAULT_EXPENSE_DATA_CONTROL: ExpenseDataControl = {
   highValueThreshold: 100000,
   importDuplicateDetection: true,
   importRequestNoSource: 'generate',
+  allowStatutoryEditAfterReception: false,
+  gstTdsCapture: true,
+  maxRequestAmount: 0,
+  duplicateRequestWarningDays: 0,
 };
 
 export const defaultExpensesSettings = (): ExpensesModuleSettings => ({
@@ -209,6 +243,49 @@ const clampThreshold = (value: unknown): number => {
   if (!Number.isFinite(numeric) || numeric < 0) return DEFAULT_EXPENSE_DATA_CONTROL.highValueThreshold;
   return Math.round(numeric);
 };
+
+/** A non-negative whole number, or `fallback` when the stored value is not one. */
+const clampWhole = (value: unknown, fallback: number): number => {
+  if (value === undefined || value === null || value === '') return fallback;
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric) || numeric < 0) return fallback;
+  return Math.round(numeric);
+};
+
+/**
+ * A stored stamp as an ISO string. The document has been written both ways — an ISO string by the
+ * old combined page, a Firestore Timestamp (`serverTimestamp()`) since — and a snapshot may carry
+ * either. Duck-typed so this file stays free of Firebase.
+ */
+export function toIsoStamp(value: unknown): string | undefined {
+  if (typeof value === 'string') return value.trim() ? value : undefined;
+  if (value instanceof Date) return Number.isNaN(value.getTime()) ? undefined : value.toISOString();
+  if (value && typeof value === 'object') {
+    const candidate = value as { toDate?: () => Date; seconds?: unknown };
+    if (typeof candidate.toDate === 'function') {
+      const date = candidate.toDate();
+      return date instanceof Date && !Number.isNaN(date.getTime()) ? date.toISOString() : undefined;
+    }
+    if (typeof candidate.seconds === 'number') return new Date(candidate.seconds * 1000).toISOString();
+  }
+  return undefined;
+}
+
+const text = (value: unknown): string | undefined =>
+  typeof value === 'string' && value.trim() ? value.trim() : undefined;
+
+function resolveStamp(stored: unknown): ExpenseSettingsStamp | undefined {
+  if (!stored || typeof stored !== 'object') return undefined;
+  const saved = stored as Record<string, unknown>;
+  const stamp: ExpenseSettingsStamp = {};
+  const at = toIsoStamp(saved.updatedAt);
+  if (at) stamp.updatedAt = at;
+  const by = text(saved.updatedBy);
+  if (by) stamp.updatedBy = by;
+  const byName = text(saved.updatedByName);
+  if (byName) stamp.updatedByName = byName;
+  return Object.keys(stamp).length ? stamp : undefined;
+}
 
 /**
  * Merges a stored column layout over the shipped one.
@@ -292,13 +369,31 @@ function resolveDataControl(stored: unknown): ExpenseDataControl {
     highValueThreshold: clampThreshold(saved.highValueThreshold),
     importDuplicateDetection: saved.importDuplicateDetection !== false,
     importRequestNoSource: saved.importRequestNoSource === 'file' ? 'file' : 'generate',
+    // Rules added after the first release: a document that predates them reads as the shipped
+    // behaviour — GST & TDS shown, no amount cap, no duplicate prompt, statutory figures fixed.
+    allowStatutoryEditAfterReception: saved.allowStatutoryEditAfterReception === true,
+    gstTdsCapture: saved.gstTdsCapture !== false,
+    maxRequestAmount: clampWhole(saved.maxRequestAmount, DEFAULT_EXPENSE_DATA_CONTROL.maxRequestAmount),
+    duplicateRequestWarningDays: clampWhole(
+      saved.duplicateRequestWarningDays,
+      DEFAULT_EXPENSE_DATA_CONTROL.duplicateRequestWarningDays,
+    ),
   };
 }
 
 /** Everything the module reads, whatever shape the stored document happens to be in. */
 export function resolveExpensesSettings(stored: unknown): ExpensesModuleSettings {
-  const saved = (stored ?? {}) as Partial<ExpensesModuleSettings>;
-  const registers = (saved.registers ?? {}) as Partial<Record<ExpenseRegisterId, unknown>>;
+  const saved = (stored && typeof stored === 'object' ? stored : {}) as Record<string, unknown>;
+  const registers = (saved.registers && typeof saved.registers === 'object' ? saved.registers : {}) as Partial<
+    Record<ExpenseRegisterId, unknown>
+  >;
+  const top = resolveStamp(saved);
+  const storedStamps = (saved.stamps && typeof saved.stamps === 'object' ? saved.stamps : {}) as Record<string, unknown>;
+  const stamps: Partial<Record<ExpenseSettingsPart, ExpenseSettingsStamp>> = {};
+  for (const part of ['fieldControl', 'dataControl'] as const) {
+    const stamp = resolveStamp(storedStamps[part]);
+    if (stamp) stamps[part] = stamp;
+  }
   return {
     registers: {
       all: resolveColumnSettings(registers.all, defaultColumns()),
@@ -306,9 +401,24 @@ export function resolveExpensesSettings(stored: unknown): ExpensesModuleSettings
     },
     fields: resolveFieldSettings(saved.fields),
     data: resolveDataControl(saved.data),
-    updatedAt: typeof saved.updatedAt === 'string' ? saved.updatedAt : undefined,
-    updatedBy: typeof saved.updatedBy === 'string' ? saved.updatedBy : undefined,
+    updatedAt: top?.updatedAt,
+    updatedBy: top?.updatedBy,
+    updatedByName: top?.updatedByName,
+    stamps,
   };
+}
+
+/**
+ * Who last changed one part of the settings. A document saved before the parts were stamped
+ * separately has only the whole-document stamp, which is the best answer there is for either.
+ */
+export function settingsStampFor(
+  settings: ExpensesModuleSettings,
+  part: ExpenseSettingsPart,
+): { at?: string; by?: string } {
+  const own = settings.stamps?.[part];
+  const stamp = own?.updatedAt ? own : settings;
+  return { at: stamp.updatedAt, by: stamp.updatedByName || stamp.updatedBy };
 }
 
 /* ── editing helpers ─────────────────────────────────────────────────────── */
@@ -345,6 +455,13 @@ export interface ExpenseSettingsIssue {
 
 /** What would go wrong if this configuration were saved. Errors block the save; warnings do not. */
 export function validateExpensesSettings(settings: ExpensesModuleSettings): ExpenseSettingsIssue[] {
+  return [...validateFieldControl(settings), ...validateDataControl(settings.data)];
+}
+
+/** The register layouts and form fields — what the Field Control page saves. */
+export function validateFieldControl(
+  settings: Pick<ExpensesModuleSettings, 'registers' | 'fields'>,
+): ExpenseSettingsIssue[] {
   const issues: ExpenseSettingsIssue[] = [];
 
   for (const register of EXPENSE_REGISTERS) {
@@ -386,16 +503,51 @@ export function validateExpensesSettings(settings: ExpensesModuleSettings): Expe
     }
   }
 
-  if (settings.data.highValueThreshold <= 0) {
+  return issues;
+}
+
+/** The longest look-back the duplicate-request check accepts. */
+export const MAX_DUPLICATE_WARNING_DAYS = 365;
+
+/** The module's data rules — what the Data Control page saves. */
+export function validateDataControl(data: ExpenseDataControl): ExpenseSettingsIssue[] {
+  const issues: ExpenseSettingsIssue[] = [];
+  const whole = (value: number) => Number.isFinite(value) && value >= 0 && Math.round(value) === value;
+
+  if (!whole(data.highValueThreshold)) {
+    issues.push({ severity: 'error', message: 'The high-value threshold must be a whole number of rupees, zero or more.' });
+  } else if (data.highValueThreshold <= 0) {
     issues.push({ severity: 'warning', message: 'A high-value threshold of zero flags every request.' });
   }
-  if (settings.data.allowEditAfterReception) {
+  if (!whole(data.maxRequestAmount)) {
+    issues.push({ severity: 'error', message: 'The largest request amount must be a whole number of rupees (0 for no limit).' });
+  } else if (data.maxRequestAmount > 0 && data.highValueThreshold > 0 && data.maxRequestAmount < data.highValueThreshold) {
+    issues.push({
+      severity: 'warning',
+      message: 'The largest request amount is below the high-value threshold — the High Value report will never flag anything.',
+    });
+  }
+  if (!whole(data.duplicateRequestWarningDays)) {
+    issues.push({ severity: 'error', message: 'The duplicate-request window must be a whole number of days (0 to turn it off).' });
+  } else if (data.duplicateRequestWarningDays > MAX_DUPLICATE_WARNING_DAYS) {
+    issues.push({
+      severity: 'error',
+      message: `The duplicate-request window cannot be more than ${MAX_DUPLICATE_WARNING_DAYS} days.`,
+    });
+  }
+  if (data.allowEditAfterReception) {
     issues.push({
       severity: 'warning',
       message: 'Requests stay editable after a reception number is recorded.',
     });
   }
-  if (!settings.data.importDuplicateDetection) {
+  if (data.allowStatutoryEditAfterReception && !data.allowEditAfterReception) {
+    issues.push({
+      severity: 'warning',
+      message: 'GST & TDS editing after reception has no effect while editing after reception is off.',
+    });
+  }
+  if (!data.importDuplicateDetection) {
     issues.push({ severity: 'warning', message: 'Imports will not skip rows that repeat an existing request.' });
   }
 
@@ -483,4 +635,135 @@ export function resolveFormField(
     label: setting?.label || definition?.label || key,
     helpText: setting?.helpText,
   };
+}
+
+/* ── saving one part ─────────────────────────────────────────────────────── */
+
+/**
+ * The Field Control part of the document, ready to write: register layouts and form fields, with
+ * blank labels and help text left out rather than written as `undefined` (which Firestore
+ * refuses). Written with `merge`, so it never touches the data rules.
+ */
+export function fieldControlPayload(
+  settings: Pick<ExpensesModuleSettings, 'registers' | 'fields'>,
+): Pick<ExpensesModuleSettings, 'registers' | 'fields'> {
+  const columns = (list: readonly ExpenseColumnSetting[]) =>
+    list.map(column => ({ key: column.key, visible: column.visible === true }));
+  return {
+    registers: { all: columns(settings.registers.all), department: columns(settings.registers.department) },
+    fields: settings.fields.map(field => {
+      const entry: ExpenseFieldSetting = { key: field.key, visible: field.visible, required: field.visible && field.required };
+      const label = text(field.label);
+      const helpText = text(field.helpText);
+      if (label) entry.label = label;
+      if (helpText) entry.helpText = helpText;
+      return entry;
+    }),
+  };
+}
+
+/** The Data Control part of the document, ready to write — every rule, nothing else. */
+export function dataControlPayload(data: ExpenseDataControl): ExpenseDataControl {
+  return resolveDataControl(data);
+}
+
+/* ── describing a change ─────────────────────────────────────────────────── */
+
+/** Readable names for the data rules, as they appear in the activity log. */
+export const DATA_CONTROL_LABELS: Record<keyof ExpenseDataControl, string> = {
+  defaultDateRange: 'Registers open on',
+  highValueThreshold: 'High-value threshold (₹)',
+  allowEditAfterReception: 'Allow editing after reception',
+  allowStatutoryEditAfterReception: 'Allow GST & TDS editing after reception',
+  restrictPartyToExisting: 'Restrict parties to existing names',
+  gstTdsCapture: 'Capture GST & TDS on new requests',
+  maxRequestAmount: 'Largest request amount (₹, 0 = no limit)',
+  duplicateRequestWarningDays: 'Duplicate request warning (days, 0 = off)',
+  importDuplicateDetection: 'Detect duplicates on import',
+  importRequestNoSource: 'Imports take request numbers from',
+};
+
+/**
+ * The Field Control part flattened to one readable key per setting — "Name of the Party ·
+ * required" — so a shallow before/after diff of two of these reads as a list of edits.
+ */
+export function flattenFieldControl(
+  settings: Pick<ExpensesModuleSettings, 'registers' | 'fields'>,
+): Record<string, string | boolean> {
+  const flat: Record<string, string | boolean> = {};
+  for (const definition of EXPENSE_FORM_FIELDS) {
+    const field = settings.fields.find(entry => entry.key === definition.key);
+    if (!field) continue;
+    flat[`${definition.label} · shown`] = field.visible;
+    flat[`${definition.label} · required`] = field.required;
+    flat[`${definition.label} · label`] = text(field.label) ?? '';
+    flat[`${definition.label} · help text`] = text(field.helpText) ?? '';
+  }
+  for (const register of EXPENSE_REGISTERS) {
+    const columns = settings.registers[register.id] ?? [];
+    flat[`${register.label} · column order`] = columns.map(column => column.key).join(' › ');
+    for (const column of columns) flat[`${register.label} · ${column.key} shown`] = column.visible;
+  }
+  return flat;
+}
+
+/** The data rules under their readable names, for the same kind of diff. */
+export function flattenDataControl(data: ExpenseDataControl): Record<string, string | number | boolean> {
+  const flat: Record<string, string | number | boolean> = {};
+  for (const key of Object.keys(DATA_CONTROL_LABELS) as (keyof ExpenseDataControl)[]) {
+    flat[DATA_CONTROL_LABELS[key]] = data[key];
+  }
+  return flat;
+}
+
+/* ── New Request rules ───────────────────────────────────────────────────── */
+
+/** Why an amount may not be requested, or undefined when it may. */
+export function requestAmountError(amount: number, data: Pick<ExpenseDataControl, 'maxRequestAmount'>): string | undefined {
+  const limit = data.maxRequestAmount;
+  if (!(limit > 0) || !(amount > limit)) return undefined;
+  return `A single request cannot be more than ₹${limit.toLocaleString('en-IN')}. Split it, or ask an administrator to raise the limit in Expenses › Settings › Data Control.`;
+}
+
+export interface DuplicateCandidate {
+  requestNo?: string;
+  partyName?: string;
+  amount?: unknown;
+  createdAt?: unknown;
+}
+
+/**
+ * The most recent request to the same party for the same amount raised within `days` of `now`,
+ * or undefined. Party names compare without regard to case or spacing; amounts to the paisa.
+ * `days` of 0 (or less) turns the check off. A request with no readable date is not counted —
+ * the check is a nudge, and a false alarm on an undated legacy row would only teach people to
+ * click through it.
+ */
+export function findDuplicateRequest<T extends DuplicateCandidate>(
+  existing: readonly T[],
+  draft: { partyName?: string; amount: number },
+  days: number,
+  now: Date = new Date(),
+): T | undefined {
+  if (!(days > 0)) return undefined;
+  const key = (name: unknown) => String(name ?? '').trim().replace(/\s+/g, ' ').toLowerCase();
+  const party = key(draft.partyName);
+  const paise = Math.round(Number(draft.amount) * 100);
+  if (!party || !Number.isFinite(paise) || paise <= 0) return undefined;
+  const since = now.getTime() - days * 24 * 60 * 60 * 1000;
+
+  let match: T | undefined;
+  let matchTime = -Infinity;
+  for (const candidate of existing) {
+    if (key(candidate.partyName) !== party) continue;
+    if (Math.round(Number(candidate.amount) * 100) !== paise) continue;
+    const stamp = toIsoStamp(candidate.createdAt);
+    const time = stamp ? new Date(stamp).getTime() : NaN;
+    if (!Number.isFinite(time) || time < since || time > now.getTime() + 60_000) continue;
+    if (time > matchTime) {
+      match = candidate;
+      matchTime = time;
+    }
+  }
+  return match;
 }

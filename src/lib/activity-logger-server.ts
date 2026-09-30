@@ -42,6 +42,8 @@ export async function logServerActivity(logData: ServerActivityLogData): Promise
       module: canonicalModuleName(logData.module),
       action: logData.action,
       details: logData.details ?? {},
+      recordId: logData.recordId ?? null,
+      recordRef: logData.recordRef ?? null,
       sessionId: logData.sessionId ?? null,
       ipAddress: logData.ipAddress ?? null,
       userAgent: logData.userAgent ?? null,

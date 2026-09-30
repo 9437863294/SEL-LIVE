@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, type ReactNode } from 'react';
 import Link from 'next/link';
 import { collection, doc, getDocs, query, runTransaction, Timestamp, updateDoc, where } from 'firebase/firestore';
 import { format, isValid, parseISO } from 'date-fns';
@@ -8,7 +8,7 @@ import { Download, Eye, Loader2, Lock, Paperclip, Printer } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { Dialog, DialogClose, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Dialog, DialogClose, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import {
   AlertDialog,
   AlertDialogCancel,
@@ -18,9 +18,8 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
-import { Label } from '@/components/ui/label';
-import { Separator } from '@/components/ui/separator';
 import { StatusBadge } from '@/components/shared/status-badge';
+import { RecordActivity } from '@/components/shared/record-history';
 import { DAILY_STATUS_TONE } from '@/components/daily-requisition/module-shell';
 import { useAuth } from '@/components/auth/AuthProvider';
 import { useAuthorization } from '@/hooks/useAuthorization';
@@ -88,6 +87,7 @@ const amountOf = (value: unknown) => Number(value) || 0;
 const hasDeductions = (entry: DailyRequisitionEntry) =>
   DEDUCTION_LINES.some(({ key }) => amountOf(entry[key]) !== 0) ||
   !!entry.gstNo?.trim() ||
+  !!entry.invoiceNo?.trim() ||
   !!entry.verificationNotes?.trim();
 
 const LOCKED_BY_VOUCHER =
@@ -120,11 +120,34 @@ interface StatusChange {
   done: string;
 }
 
-function AmountRow({ label, value, total = false, muted = false }: { label: string; value: string; total?: boolean; muted?: boolean }) {
+function AmountRow({ label, value, total = false }: { label: string; value: string; total?: boolean }) {
   return (
-    <div className={cn('flex items-baseline justify-between gap-3 py-1 text-sm', total && 'mt-1 border-t pt-2 font-semibold')}>
+    <div className={cn('flex items-baseline justify-between gap-3 py-1 text-sm', total && 'mt-1 border-t pt-2 font-semibold text-slate-900')}>
       <span className={total ? undefined : 'text-muted-foreground'}>{label}</span>
-      <span className={cn('shrink-0 tabular-nums', muted && 'text-muted-foreground')}>{value}</span>
+      <span className="shrink-0 tabular-nums">{value}</span>
+    </div>
+  );
+}
+
+/** One label / value pair of the details grid. */
+function Detail({ label, mono = false, children }: { label: string; mono?: boolean; children: ReactNode }) {
+  return (
+    <div className="min-w-0">
+      <dt className="text-[11px] font-medium uppercase tracking-wide text-slate-500">{label}</dt>
+      <dd className={cn('mt-0.5 break-words text-sm font-medium text-slate-900', mono && 'font-mono')}>{children}</dd>
+    </div>
+  );
+}
+
+function SectionTitle({ children }: { children: ReactNode }) {
+  return <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">{children}</h3>;
+}
+
+function Figure({ label, value, tone }: { label: string; value: string; tone?: 'emerald' | 'amber' }) {
+  return (
+    <div className="min-w-0 rounded-lg border bg-white px-3 py-2">
+      <p className="text-[11px] text-slate-500">{label}</p>
+      <p className={cn('truncate text-sm font-semibold tabular-nums text-slate-900', tone === 'emerald' && 'text-emerald-700', tone === 'amber' && 'text-amber-700')}>{value}</p>
     </div>
   );
 }
@@ -333,186 +356,235 @@ export default function ViewDailyRequisitionDialog({
 
   return (
     <Dialog open={isOpen} onOpenChange={handleOpenChange}>
-      <DialogContent className="hr-mobile-dialog sm:max-w-3xl sm:gap-4">
-        <DialogHeader className="hr-dialog-header no-print">
-          <div className="flex min-w-0 flex-wrap items-center justify-center gap-2 pr-6 sm:justify-start">
-            <DialogTitle className="min-w-0 break-words">Details for {entry.receptionNo}</DialogTitle>
+      <DialogContent className="hr-mobile-dialog sm:max-w-3xl sm:gap-0 sm:p-0">
+        <DialogHeader className="hr-dialog-header no-print space-y-1 border-b px-5 py-4 text-left sm:px-6">
+          <div className="flex min-w-0 flex-wrap items-center gap-2 pr-6">
+            <DialogTitle className="min-w-0 break-words font-mono text-base font-semibold tracking-tight sm:text-lg">{entry.receptionNo}</DialogTitle>
             <StatusBadge status={status} tone={DAILY_STATUS_TONE[status]} className="shrink-0">
               {status}
             </StatusBadge>
           </div>
+          <DialogDescription className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs">
+            <span>Daily requisition</span>
+            {entry.depNo ? (
+              <>
+                <span aria-hidden>·</span>
+                <span>
+                  from <span className="font-mono font-medium text-slate-700">{entry.depNo}</span>
+                </span>
+              </>
+            ) : null}
+            <span aria-hidden>·</span>
+            <span>received {formatDateSafe(entry.date)}</span>
+          </DialogDescription>
         </DialogHeader>
 
-        <div className="hr-dialog-body space-y-3 sm:-mx-1 sm:min-h-0 sm:flex-1 sm:overflow-y-auto sm:px-1">
-          <div className="mb-4 hidden text-center print:block">
+        <div className="hr-dialog-body space-y-4 px-5 py-4 sm:min-h-0 sm:flex-1 sm:overflow-y-auto sm:px-6">
+          <div className="mb-2 hidden text-center print:block">
             <h2 className="text-lg font-bold">Daily Requisition - {entry.receptionNo}</h2>
           </div>
-          <div className="grid grid-cols-2 gap-3 text-sm md:grid-cols-3 [&>div]:min-w-0 [&_p]:break-words">
-            <div><Label className="text-xs">Reception No.</Label><p className="font-medium">{entry.receptionNo}</p></div>
-            <div><Label className="text-xs">Date</Label><p className="font-medium">{formatDateSafe(entry.date)}</p></div>
-            <div><Label className="text-xs">Created At</Label><p className="font-medium">{formatDateSafe(entry.createdAt)}</p></div>
-            <div><Label className="text-xs">Project</Label><p className="font-medium">{projectName}</p></div>
-            <div><Label className="text-xs">Department</Label><p className="font-medium">{departmentName}</p></div>
-            <div><Label className="text-xs">DEP No.</Label><p className="font-medium">{entry.depNo || 'N/A'}</p></div>
-          </div>
 
-          <Separator />
-
-          <div className="grid grid-cols-1 gap-3 text-sm [&_p]:break-words">
-            <div>
-              <Label className="text-xs">Party Name</Label>
-              <p className="font-medium">{entry.partyName}</p>
+          {/* Who is paid, for what, and how much — at a glance */}
+          <div className="flex flex-col gap-3 rounded-lg border bg-slate-50/70 p-4 sm:flex-row sm:items-start sm:justify-between">
+            <div className="min-w-0 space-y-1">
+              <p className="text-[11px] font-medium uppercase tracking-wide text-slate-500">Party</p>
+              <p className="break-words text-base font-semibold text-slate-900">{entry.partyName || '—'}</p>
+              <p className={cn('whitespace-pre-wrap break-words text-sm', entry.description?.trim() ? 'text-slate-600' : 'italic text-muted-foreground')}>
+                {entry.description?.trim() || 'No description'}
+              </p>
             </div>
-            <div>
-              <Label className="text-xs">Description</Label>
-              <p className="min-h-[40px] whitespace-pre-wrap rounded-md bg-muted p-2 font-medium">{entry.description}</p>
+            <div className="shrink-0 border-t pt-3 sm:border-l sm:border-t-0 sm:pl-5 sm:pt-0 sm:text-right">
+              <p className="text-[11px] font-medium uppercase tracking-wide text-slate-500">Net amount</p>
+              <p className="text-xl font-bold tabular-nums text-emerald-700">{formatInr(entry.netAmount)}</p>
+              {amountOf(entry.grossAmount) !== amountOf(entry.netAmount) && (
+                <p className="text-xs tabular-nums text-muted-foreground">Gross {formatInr(entry.grossAmount)}</p>
+              )}
             </div>
           </div>
 
-          <Separator />
+          <dl className="grid grid-cols-2 gap-x-4 gap-y-3 md:grid-cols-3">
+            <Detail label="Project">{projectName}</Detail>
+            <Detail label="Department">{departmentName}</Detail>
+            <Detail label="Reception date">{formatDateSafe(entry.date)}</Detail>
+            {expenseRequest && <Detail label="Head of A/c">{expenseRequest.headOfAccount || '—'}</Detail>}
+            {expenseRequest && <Detail label="Sub-head of A/c">{expenseRequest.subHeadOfAccount || '—'}</Detail>}
+            <Detail label="Created">{formatDateSafe(entry.createdAt)}</Detail>
+          </dl>
 
-          {expenseRequest && (
-            <>
-              <div className="grid grid-cols-2 gap-3 text-sm [&>div]:min-w-0 [&_p]:break-words">
-                <div><Label className="text-xs">Head of A/c</Label><p className="font-medium">{expenseRequest.headOfAccount}</p></div>
-                <div><Label className="text-xs">Sub-Head of A/c</Label><p className="font-medium">{expenseRequest.subHeadOfAccount}</p></div>
-              </div>
-              <Separator />
-            </>
-          )}
-
-          {showDeductions ? (
-            <section className="space-y-2">
-              <h3 className="text-sm font-semibold">Deductions</h3>
-              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                <div className="min-w-0 rounded-md border px-3 py-2">
+          {showDeductions && (
+            <section className="grid grid-cols-1 gap-4 border-t pt-4 sm:grid-cols-2">
+              <div className="min-w-0">
+                <SectionTitle>Amount working</SectionTitle>
+                <div className="rounded-lg border px-3 py-1.5">
                   <AmountRow label="Gross amount" value={formatInr(entry.grossAmount)} />
-                  {DEDUCTION_LINES.map(({ key, label }) => {
-                    const value = amountOf(entry[key]);
-                    return <AmountRow key={key} label={label} value={value ? formatInr(value) : '—'} muted={!value} />;
-                  })}
+                  {DEDUCTION_LINES.filter(({ key }) => amountOf(entry[key]) !== 0).map(({ key, label }) => (
+                    <AmountRow key={key} label={label} value={formatInr(amountOf(entry[key]))} />
+                  ))}
                   <AmountRow label="Net amount" value={formatInr(entry.netAmount)} total />
                 </div>
-                <div className="min-w-0 space-y-3 text-sm [&_p]:break-words">
-                  <div><Label className="text-xs">GST No.</Label><p className="font-medium">{entry.gstNo?.trim() || 'N/A'}</p></div>
-                  {entry.verifiedAt ? (
-                    <div><Label className="text-xs">Verified On</Label><p className="font-medium">{formatDateSafe(entry.verifiedAt)}</p></div>
+              </div>
+              <div className="min-w-0">
+                <SectionTitle>GST &amp; TDS</SectionTitle>
+                {/* Carried from the expense request's Statutory section (src/lib/statutory.ts). */}
+                <dl className="grid grid-cols-2 gap-x-4 gap-y-3">
+                  <Detail label="GSTIN" mono>{entry.gstNo?.trim() || '—'}</Detail>
+                  {entry.panNo ? <Detail label="PAN" mono>{entry.panNo}</Detail> : null}
+                  {entry.invoiceNo ? (
+                    <Detail label="Invoice">
+                      {entry.invoiceNo}
+                      {entry.invoiceDate ? <span className="block text-xs font-normal text-muted-foreground">{formatDateSafe(entry.invoiceDate)}</span> : null}
+                    </Detail>
                   ) : null}
-                  <div>
-                    <Label className="text-xs">Verification Notes</Label>
-                    <p className="whitespace-pre-wrap font-medium">{entry.verificationNotes?.trim() || 'N/A'}</p>
-                  </div>
-                </div>
+                  {entry.tdsSection && entry.tdsSection !== 'none' ? (
+                    <Detail label="TDS section">{entry.tdsSection} @ {entry.tdsRate ?? 0}%</Detail>
+                  ) : null}
+                  {entry.verifiedAt ? <Detail label="Verified on">{formatDateSafe(entry.verifiedAt)}</Detail> : null}
+                  {entry.reverseCharge ? (
+                    <div className="col-span-2 rounded-md bg-amber-50 px-2.5 py-1.5 text-xs font-medium text-amber-800">Reverse charge — GST is not paid to the supplier.</div>
+                  ) : null}
+                  {entry.verificationNotes?.trim() ? (
+                    <div className="col-span-2">
+                      <Detail label="Verification notes">
+                        <span className="whitespace-pre-wrap font-normal">{entry.verificationNotes.trim()}</span>
+                      </Detail>
+                    </div>
+                  ) : null}
+                </dl>
               </div>
             </section>
-          ) : (
-            <div className="grid grid-cols-2 gap-3 text-sm [&>div]:min-w-0">
-              <div><Label className="text-xs">Gross Amount</Label><p className="font-medium tabular-nums">{formatInr(entry.grossAmount)}</p></div>
-              <div><Label className="text-xs">Net Amount</Label><p className="font-medium tabular-nums">{formatInr(entry.netAmount)}</p></div>
-            </div>
           )}
 
           {showPayment && (
-            <>
-              <Separator />
-              <section className="space-y-2">
-                <h3 className="text-sm font-semibold">Payment</h3>
-                <div className="grid grid-cols-2 gap-3 text-sm sm:grid-cols-3 [&>div]:min-w-0">
-                  <div><Label className="text-xs">Net Amount</Label><p className="font-medium tabular-nums">{formatInr(entry.netAmount)}</p></div>
-                  <div><Label className="text-xs">Paid</Label><p className="font-medium tabular-nums">{formatInr(paidOf(entry))}</p></div>
-                  <div><Label className="text-xs">Balance</Label><p className="font-medium tabular-nums">{formatInr(balanceOf(entry))}</p></div>
-                </div>
-                {payments.length > 0 && (
-                  <Table containerClassName="rounded-md border">
-                    <TableHeader>
-                      <TableRow>
-                        <TableHead>Voucher No.</TableHead>
-                        <TableHead>Mode</TableHead>
-                        <TableHead>Instrument No.</TableHead>
-                        <TableHead>Instrument Date</TableHead>
-                        {showAccount && <TableHead>Account</TableHead>}
-                        <TableHead className="text-right">Amount</TableHead>
+            <section className="space-y-2.5 border-t pt-4">
+              <SectionTitle>Payment</SectionTitle>
+              <div className="grid grid-cols-3 gap-2">
+                <Figure label="Net amount" value={formatInr(entry.netAmount)} />
+                <Figure label="Paid" value={formatInr(paidOf(entry))} tone="emerald" />
+                <Figure label="Balance" value={formatInr(balanceOf(entry))} tone={balanceOf(entry) > 0 ? 'amber' : undefined} />
+              </div>
+              {payments.length > 0 && (
+                <Table containerClassName="rounded-lg border">
+                  <TableHeader>
+                    <TableRow className="bg-slate-50/80">
+                      <TableHead className="h-9 text-xs">Voucher No.</TableHead>
+                      <TableHead className="h-9 text-xs">Mode</TableHead>
+                      <TableHead className="h-9 text-xs">Instrument</TableHead>
+                      <TableHead className="h-9 text-xs">Date</TableHead>
+                      {showAccount && <TableHead className="h-9 text-xs">Account</TableHead>}
+                      <TableHead className="h-9 text-right text-xs">Amount</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {payments.map((payment, index) => (
+                      <TableRow key={`${payment.bankPaymentId}-${payment.lineId}-${index}`}>
+                        <TableCell className="whitespace-nowrap py-2 font-medium">
+                          {payment.bankPaymentId ? (
+                            <Link href={voucherHref(payment.bankPaymentId)} className="text-primary underline-offset-2 hover:underline">
+                              {payment.voucherNo || 'View voucher'}
+                            </Link>
+                          ) : (
+                            payment.voucherNo || '—'
+                          )}
+                        </TableCell>
+                        <TableCell className="whitespace-nowrap py-2">{payment.mode || '—'}</TableCell>
+                        <TableCell className="whitespace-nowrap py-2">{payment.instrumentNo || '—'}</TableCell>
+                        <TableCell className="whitespace-nowrap py-2">{formatDay(payment.instrumentDate)}</TableCell>
+                        {showAccount && <TableCell className="whitespace-nowrap py-2">{accountNames.get(payment.accountId) ?? '—'}</TableCell>}
+                        <TableCell className="whitespace-nowrap py-2 text-right tabular-nums">{formatInr(payment.amount)}</TableCell>
                       </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {payments.map((payment, index) => (
-                        <TableRow key={`${payment.bankPaymentId}-${payment.lineId}-${index}`}>
-                          <TableCell className="whitespace-nowrap font-medium">
-                            {payment.bankPaymentId ? (
-                              <Link href={voucherHref(payment.bankPaymentId)} className="text-primary underline-offset-2 hover:underline">
-                                {payment.voucherNo || 'View voucher'}
-                              </Link>
-                            ) : (
-                              payment.voucherNo || '—'
-                            )}
-                          </TableCell>
-                          <TableCell className="whitespace-nowrap">{payment.mode || '—'}</TableCell>
-                          <TableCell className="whitespace-nowrap">{payment.instrumentNo || '—'}</TableCell>
-                          <TableCell className="whitespace-nowrap">{formatDay(payment.instrumentDate)}</TableCell>
-                          {showAccount && <TableCell className="whitespace-nowrap">{accountNames.get(payment.accountId) ?? '—'}</TableCell>}
-                          <TableCell className="whitespace-nowrap text-right tabular-nums">{formatInr(payment.amount)}</TableCell>
-                        </TableRow>
-                      ))}
-                    </TableBody>
-                  </Table>
-                )}
-                {entry.manualPaid && <p className="text-xs text-muted-foreground">{manualPaidNote}</p>}
-              </section>
-            </>
+                    ))}
+                  </TableBody>
+                </Table>
+              )}
+              {entry.manualPaid && <p className="text-xs text-muted-foreground">{manualPaidNote}</p>}
+            </section>
           )}
 
           {entry.attachments && entry.attachments.length > 0 && (
-            <div>
-              <Label className="text-xs">Attachments</Label>
-              <div className="mt-1 space-y-2">
+            <section className="space-y-2 border-t pt-4">
+              <SectionTitle>Attachments ({entry.attachments.length})</SectionTitle>
+              <div className="flex flex-wrap gap-2">
                 {entry.attachments.map((file, index) => (
-                  <div key={index} className="flex items-center justify-between gap-2 rounded-md bg-muted p-2">
-                    <div className="flex min-w-0 items-center gap-2 overflow-hidden">
-                      <Paperclip className="h-4 w-4 shrink-0" />
-                      <span className="truncate text-sm font-medium">{file.name}</span>
-                    </div>
-                    <div className="flex shrink-0 items-center">
-                      <Button asChild variant="outline" size="sm" className="mr-2 h-7">
-                        <a href={file.url} target="_blank" rel="noopener noreferrer">
-                          <Eye className="mr-2 h-3 w-3" /> View
-                        </a>
-                      </Button>
-                      <Button asChild variant="outline" size="sm" className="h-7">
-                        <a href={file.url} download={file.name}>
-                          <Download className="mr-2 h-3 w-3" /> Download
-                        </a>
-                      </Button>
-                    </div>
+                  <div key={index} className="flex max-w-full items-center gap-1 rounded-md border bg-white py-1 pl-2.5 pr-1 text-sm">
+                    <Paperclip className="h-3.5 w-3.5 shrink-0 text-slate-400" />
+                    <span className="max-w-[14rem] truncate font-medium text-slate-700">{file.name}</span>
+                    <Button asChild variant="ghost" size="icon" className="h-7 w-7" title="View">
+                      <a href={file.url} target="_blank" rel="noopener noreferrer" aria-label={`View ${file.name}`}>
+                        <Eye className="h-3.5 w-3.5" />
+                      </a>
+                    </Button>
+                    <Button asChild variant="ghost" size="icon" className="h-7 w-7" title="Download">
+                      <a href={file.url} download={file.name} aria-label={`Download ${file.name}`}>
+                        <Download className="h-3.5 w-3.5" />
+                      </a>
+                    </Button>
                   </div>
                 ))}
               </div>
+            </section>
+          )}
+
+          {explainLock && (
+            <div className="no-print flex items-start gap-2 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
+              <Lock className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+              <span>
+                {payments.length > 0 ? (
+                  <>
+                    Payments have been made against this requisition. Reverse the voucher in the Bank Balance{' '}
+                    <Link href="/bank-balance/cheques" className="font-medium underline underline-offset-2">
+                      Cheque Register
+                    </Link>{' '}
+                    first.
+                  </>
+                ) : (
+                  LOCKED_AS_PAID
+                )}
+              </span>
             </div>
           )}
+
+          {/* Who did what to this requisition. Keyed so another entry opens closed. */}
+          <RecordActivity
+            key={entry.id}
+            recordId={entry.id}
+            recordRef={entry.receptionNo}
+            sectionClassName="border-t pt-4"
+          />
         </div>
 
-        {explainLock && (
-          <div className="no-print flex shrink-0 items-start gap-2 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
-            <Lock className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden="true" />
-            <span>
-              {payments.length > 0 ? (
-                <>
-                  Payments have been made against this requisition. Reverse the voucher in the Bank Balance{' '}
-                  <Link href="/bank-balance/cheques" className="font-medium underline underline-offset-2">
-                    Cheque Register
-                  </Link>{' '}
-                  first.
-                </>
-              ) : (
-                LOCKED_AS_PAID
-              )}
-            </span>
-          </div>
-        )}
-
-        <DialogFooter className="hr-dialog-footer no-print flex-wrap gap-2 sm:shrink-0 sm:justify-end sm:space-x-0">
-          <Button variant="outline" onClick={handlePrint} size="sm">
+        <DialogFooter className="hr-dialog-footer no-print flex-wrap gap-2 border-t bg-slate-50/60 px-5 py-3 sm:shrink-0 sm:justify-end sm:space-x-0 sm:px-6">
+          <Button variant="ghost" onClick={handlePrint} size="sm" className="sm:mr-auto">
             <Printer className="mr-2 h-4 w-4" /> Print
           </Button>
+          {offerCancel && (
+            <Button
+              variant="outline"
+              onClick={() => setConfirmCancelOpen(true)}
+              disabled={busy !== null}
+              size="sm"
+              className="border-red-200 text-red-700 hover:bg-red-50 hover:text-red-800"
+            >
+              Cancel requisition
+            </Button>
+          )}
+          {entry.documentStatus === 'Pending' && canMarkMissing && (
+            <Button variant="outline" onClick={() => handleDocumentStatusUpdate('Missing')} disabled={busy !== null} size="sm">
+              {spinner('missing')}
+              Mark as Missing
+            </Button>
+          )}
+          {entry.documentStatus === 'Pending' && canMarkNotRequired && (
+            <Button variant="outline" onClick={() => handleDocumentStatusUpdate('Not Required')} disabled={busy !== null} size="sm">
+              {spinner('not-required')}
+              Mark as Not Required
+            </Button>
+          )}
+          {offerReturn && (
+            <Button variant="outline" onClick={handleReturnToPending} disabled={busy !== null} size="sm">
+              {spinner('return')}
+              Return to Pending
+            </Button>
+          )}
           <DialogClose asChild>
             <Button variant="outline" size="sm">Close</Button>
           </DialogClose>
@@ -520,29 +592,6 @@ export default function ViewDailyRequisitionDialog({
             <Button onClick={handleReceive} disabled={busy !== null} size="sm">
               {spinner('receive')}
               Mark as Received
-            </Button>
-          )}
-          {offerReturn && (
-            <Button variant="secondary" onClick={handleReturnToPending} disabled={busy !== null} size="sm">
-              {spinner('return')}
-              Return to Pending
-            </Button>
-          )}
-          {entry.documentStatus === 'Pending' && canMarkMissing && (
-            <Button variant="secondary" onClick={() => handleDocumentStatusUpdate('Missing')} disabled={busy !== null} size="sm">
-              {spinner('missing')}
-              Mark as Missing
-            </Button>
-          )}
-          {entry.documentStatus === 'Pending' && canMarkNotRequired && (
-            <Button variant="secondary" onClick={() => handleDocumentStatusUpdate('Not Required')} disabled={busy !== null} size="sm">
-              {spinner('not-required')}
-              Mark as Not Required
-            </Button>
-          )}
-          {offerCancel && (
-            <Button variant="destructive" onClick={() => setConfirmCancelOpen(true)} disabled={busy !== null} size="sm">
-              Cancel
             </Button>
           )}
         </DialogFooter>

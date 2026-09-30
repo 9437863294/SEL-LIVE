@@ -23,7 +23,7 @@ import type { Department, SerialNumberConfig } from '@/lib/types';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useAuthorization } from '@/hooks/useAuthorization';
 import { useAuth } from '@/components/auth/AuthProvider';
-import { logUserActivity } from '@/lib/activity-logger';
+import { diffFields, logUserActivity } from '@/lib/activity-logger';
 
 const initialConfigState: SerialNumberConfig = {
     prefix: '',
@@ -96,14 +96,23 @@ export default function DepartmentSerialNoPage() {
     if (!user) return;
     setSavingStates(prev => ({ ...prev, [deptId]: true }));
     try {
-      await setDoc(doc(db, 'departmentSerialConfigs', deptId), configs[deptId]);
+      const after = configs[deptId];
+      const ref = doc(db, 'departmentSerialConfigs', deptId);
+      // Read fresh rather than trusting what this page loaded: raising a request moves the index on,
+      // and the log should record what this save really changed.
+      const beforeSnap = await getDoc(ref);
+      const before = beforeSnap.exists() ? (beforeSnap.data() as SerialNumberConfig) : null;
+      await setDoc(ref, after);
+      const changes = diffFields(before, after);
       await logUserActivity({
           userId: user.id,
           userName: user.name,
           userEmail: user.email,
           module: 'Expenses',
           action: 'Update Department Serial No. Config',
-          details: { department: deptName, config: configs[deptId] }
+          details: { department: deptName, config: after, changes, isNew: !before },
+          recordId: deptId,
+          recordRef: deptName,
       });
       toast({ title: 'Success', description: `Configuration for ${deptName} saved.` });
     } catch (error) {

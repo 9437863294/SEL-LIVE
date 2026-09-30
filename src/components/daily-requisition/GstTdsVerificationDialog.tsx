@@ -23,6 +23,9 @@ import type { DailyRequisitionEntry } from '@/lib/types';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { Separator } from '@/components/ui/separator';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
+import { useActivityLogger } from '@/hooks/useActivityLogger';
+import { diffFields } from '@/lib/activity-logger';
+import { ACTIVITY_MODULES } from '@/lib/activity-modules';
 
 interface GstTdsVerificationDialogProps {
   isOpen: boolean;
@@ -40,6 +43,7 @@ export function GstTdsVerificationDialog({
   onSuccess,
 }: GstTdsVerificationDialogProps) {
   const { toast } = useToast();
+  const { log } = useActivityLogger(ACTIVITY_MODULES.DAILY_REQUISITION);
   const [isLoading, setIsLoading] = useState(false);
   
   const [gstType, setGstType] = useState<GstType>('igst');
@@ -74,15 +78,28 @@ export function GstTdsVerificationDialog({
             gstNo: entry.gstNo || '',
         });
         
-        // Determine initial GST state from loaded data
-        if(entry.igstAmount && entry.igstAmount > 0) {
-            setGstType('igst');
-        } else if (entry.cgstAmount && entry.cgstAmount > 0) {
-            setGstType('cgst-sgst');
-        } else {
-            setGstType('none');
-        }
-        setGstPercentage(0); // Reset percentage on new entry
+        // Start from what the entry already carries (from its expense request, or an earlier
+        // verification): the stored treatment and rate, else read back from the amounts. Resetting the
+        // rate to 0 here used to recompute — and wipe — GST that had been entered upstream.
+        const gross = entry.grossAmount || 0;
+        const storedGst = (entry.igstAmount || 0) + (entry.cgstAmount || 0) + (entry.sgstAmount || 0);
+        const type: GstType = entry.gstType
+          ? entry.gstType
+          : entry.igstAmount && entry.igstAmount > 0
+            ? 'igst'
+            : entry.cgstAmount && entry.cgstAmount > 0
+              ? 'cgst-sgst'
+              : 'none';
+        setGstType(type);
+        setGstPercentage(
+          type === 'none'
+            ? 0
+            : typeof entry.gstRate === 'number' && entry.gstRate > 0
+              ? entry.gstRate
+              : gross > 0
+                ? Math.round((storedGst / gross) * 10000) / 100
+                : 0,
+        );
     }
   }, [entry]);
   
@@ -121,7 +138,8 @@ export function GstTdsVerificationDialog({
     }
     
     const totalGst = igst + cgst + sgst;
-    const calculatedNetAmount = grossAmount + totalGst - tds - retention - otherDeduction;
+    // Under reverse charge the company pays the GST to the government, not to the supplier.
+    const calculatedNetAmount = grossAmount + (entry.reverseCharge ? 0 : totalGst) - tds - retention - otherDeduction;
     
     setTaxDetails(prev => ({ ...prev, calculatedNetAmount: String(calculatedNetAmount.toFixed(2)) }));
 
@@ -149,6 +167,8 @@ export function GstTdsVerificationDialog({
         otherDeduction: parseFloat(taxDetails.otherDeduction) || 0,
         verificationNotes: taxDetails.notes,
         gstNo: gstType === 'none' ? '' : taxDetails.gstNo,
+        gstType,
+        gstRate: gstType === 'none' ? 0 : gstPercentage,
       };
 
       // Only update the netAmount if it matches the original, otherwise preserve the old amount
@@ -157,7 +177,29 @@ export function GstTdsVerificationDialog({
       }
 
       await updateDoc(doc(db, 'dailyRequisitions', entry.id), updateData);
-      
+
+      // Audit: what the verifier changed. Only the tax / amount fields this dialog owns are
+      // compared — status is reported separately as from/to, verifiedAt changes every time.
+      const { status: _status, verifiedAt: _verifiedAt, ...taxAfter } = updateData;
+      const taxBefore: Record<string, unknown> = {};
+      for (const key of Object.keys(taxAfter)) taxBefore[key] = (entry as any)[key] ?? null;
+      void log(
+        newStatus === 'Verified' ? 'Verify GST & TDS' : 'Mark GST & TDS Needs Review',
+        {
+          receptionNo: entry.receptionNo ?? null,
+          partyName: entry.partyName ?? null,
+          grossAmount: entry.grossAmount ?? 0,
+          from: entry.status ?? null,
+          to: newStatus,
+          amountMismatch,
+          ...(amountMismatch
+            ? { calculatedNetAmount: parseFloat(taxDetails.calculatedNetAmount) || 0, preservedNetAmount: originalNetAmount }
+            : {}),
+          changes: diffFields(taxBefore, taxAfter),
+        },
+        { recordId: entry.id, recordRef: entry.receptionNo || undefined },
+      );
+
       toast({ title: 'Success', description: successMessage });
       onSuccess();
       onOpenChange(false);
@@ -191,6 +233,17 @@ export function GstTdsVerificationDialog({
                 <span className="text-muted-foreground">Gross Amount:</span>
                 <span className="font-medium">{formatCurrency(entry.grossAmount)}</span>
             </div>
+            {(entry.invoiceNo || entry.panNo || entry.tdsSection || entry.hsnSac || entry.reverseCharge) && (
+              <div className="grid grid-cols-1 gap-1 rounded-md border bg-muted/30 p-3 text-xs sm:grid-cols-2">
+                <span className="font-semibold text-muted-foreground sm:col-span-2">From the expense request</span>
+                {entry.invoiceNo && <span>Invoice: <span className="font-medium">{entry.invoiceNo}</span>{entry.invoiceDate ? ` · ${entry.invoiceDate}` : ''}</span>}
+                {entry.panNo && <span>PAN: <span className="font-mono font-medium">{entry.panNo}</span></span>}
+                {entry.tdsSection && entry.tdsSection !== 'none' && <span>TDS: <span className="font-medium">{entry.tdsSection} @ {entry.tdsRate ?? 0}%</span></span>}
+                {entry.hsnSac && <span>HSN / SAC: <span className="font-medium">{entry.hsnSac}</span></span>}
+                {entry.reverseCharge && <span className="font-medium text-amber-700 sm:col-span-2">Reverse charge — GST is not added to the amount payable.</span>}
+                {entry.otherDeductionReason && <span className="sm:col-span-2">Other deduction: {entry.otherDeductionReason}</span>}
+              </div>
+            )}
             
             <Separator />
 

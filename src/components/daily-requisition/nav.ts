@@ -6,17 +6,20 @@ import {
   Banknote,
   BarChart3,
   Clock,
+  Database,
   FileBarChart,
   FilePlus,
   Files,
   FolderOpen,
   GitMerge,
+  History,
   Landmark,
   Layers,
   LayoutDashboard,
   Printer,
   Receipt,
   Settings,
+  SlidersHorizontal,
   TrendingUp,
   Users,
   Wallet,
@@ -44,7 +47,7 @@ export function dailyStepSlug(name: string): string {
  * The module's own static pages. A stage whose name slugs to one of these can never be opened (the
  * static route wins over `[step]`), so it is left out of the menu rather than linked to the wrong page.
  */
-const STATIC_SEGMENTS = new Set(['entry-sheet', 'manage-documents', 'reports', 'settings']);
+const STATIC_SEGMENTS = new Set(['entry-sheet', 'manage-documents', 'reports', 'settings', 'audit-log']);
 
 /** Each stage's icon and chip colours, by position. The dashboard's stage cards use the same icons. */
 const STAGE_LOOKS: ReadonlyArray<{ icon: LucideIcon; color: string; bg: string }> = [
@@ -79,6 +82,10 @@ export function dailyRequisitionAccess(can: Can) {
   const view = (page: string) => can('View', `Daily Requisition.${page}`);
   const reports = view('Reports') || view('Entry Sheet');
   const settings = view('Settings');
+  // Field and Data Control open read-only for anyone who can see Settings; editing needs Edit on the section.
+  const fieldControl = view('Field Control') || settings;
+  const dataControl = view('Data Control') || settings;
+  const auditLog = view('Audit Log');
   return {
     entrySheet: view('Entry Sheet'),
     manageDocuments: view('Manage Documents'),
@@ -88,7 +95,11 @@ export function dailyRequisitionAccess(can: Can) {
     reports,
     /** The Reports card grid also opens for Settings. */
     reportsHub: reports || settings,
-    settings,
+    /** The Settings card grid also opens for anyone who can open one of its controls. */
+    settings: settings || fieldControl || dataControl || auditLog,
+    fieldControl,
+    dataControl,
+    auditLog,
     /** Printing Setup: the Settings page's card and the page itself. */
     printing: settings,
     workflowConfiguration: can('View Workflow', 'Daily Requisition.Settings'),
@@ -177,6 +188,9 @@ export function useDailyRequisitionNav(): { items: DailyRequisitionNavItem[]; is
       { href: `${base}/settings`, label: 'All Settings', icon: Settings, group: 'Settings', color: 'text-slate-700', bg: 'bg-slate-100', allowed: access.settings },
       { href: `${base}/settings/printing`, label: 'Printing Setup', icon: Printer, group: 'Settings', color: 'text-orange-700', bg: 'bg-orange-50', allowed: access.printing },
       { href: `${base}/settings/workflow-configuration`, label: 'Workflow Configuration', icon: GitMerge, group: 'Settings', color: 'text-fuchsia-700', bg: 'bg-fuchsia-50', allowed: access.workflowConfiguration },
+      { href: `${base}/settings/field-control`, label: 'Field Control', icon: SlidersHorizontal, group: 'Settings', color: 'text-teal-700', bg: 'bg-teal-50', allowed: access.fieldControl },
+      { href: `${base}/settings/data-control`, label: 'Data Control', icon: Database, group: 'Settings', color: 'text-blue-700', bg: 'bg-blue-50', allowed: access.dataControl },
+      { href: `${base}/audit-log`, label: 'Audit Log', icon: History, group: 'Settings', color: 'text-slate-700', bg: 'bg-slate-100', allowed: access.auditLog },
     ];
 
     return visibleOnce(all);

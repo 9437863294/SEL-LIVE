@@ -309,6 +309,9 @@ export const permissionModules = {
       "Edit Workflow",
     ],
     Reports: ["View", "Export"],
+    "Field Control": ["View", "Edit"],
+    "Data Control": ["View", "Edit"],
+    "Audit Log": ["View", "Export"],
   },
   "Billing Recon": {
     "View Module": [],
@@ -388,6 +391,9 @@ export const permissionModules = {
     "Expense Requests": ["View All"],
     Reports: ["View"],
     Settings: ["View", "Edit Serial Nos", "Manage Accounts"],
+    "Field Control": ["View", "Edit"],
+    "Data Control": ["View", "Edit"],
+    "Audit Log": ["View", "Export"],
   },
   Loan: {
     "View Module": [],
@@ -872,6 +878,8 @@ export interface ExpenseRequest {
   receptionNo: string;
   receptionDate: string;
   createdAt: string;
+  /** GST & TDS captured when the request was raised; carried into its requisition. See src/lib/statutory.ts. */
+  statutory?: import("@/lib/statutory").ExpenseStatutory;
 }
 
 export interface AccountHead {
@@ -920,6 +928,17 @@ export interface DailyRequisitionEntry {
   otherDeduction?: number;
   verificationNotes?: string;
   gstNo?: string;
+  /** Statutory details, carried from the expense request (src/lib/statutory.ts) and kept by verification. */
+  gstType?: import("@/lib/statutory").GstType;
+  gstRate?: number;
+  invoiceNo?: string;
+  invoiceDate?: string;
+  panNo?: string;
+  hsnSac?: string;
+  reverseCharge?: boolean;
+  tdsSection?: string;
+  tdsRate?: number;
+  otherDeductionReason?: string;
   // Document Status
   documentStatus: "Pending" | "Uploaded" | "Missing" | "Not Required";
   documentStatusUpdatedAt?: Timestamp;

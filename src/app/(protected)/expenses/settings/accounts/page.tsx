@@ -22,7 +22,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogHeader, AlertDialogFooter, AlertDialogTitle, AlertDialogTrigger } from '@/components/ui/alert-dialog';
 import { useAuthorization } from '@/hooks/useAuthorization';
 import { useAuth } from '@/components/auth/AuthProvider';
-import { logUserActivity } from '@/lib/activity-logger';
+import { diffFields, logUserActivity } from '@/lib/activity-logger';
 
 const initialAccountData = {
     'Purchase': ['Payment to Supplier', 'Interest to Creditor'],
@@ -114,33 +114,72 @@ export default function ManageAccountsPage() {
     try {
       let action = '';
       let details: Record<string, any> = {};
+      let recordId = '';
+      let recordRef = '';
+      const headName = (id: string) => heads.find(h => h.id === id)?.name ?? id;
 
       switch (dialogMode) {
-        case 'addHead':
-          await addDoc(collection(db, 'accountHeads'), { name });
+        case 'addHead': {
+          const ref = await addDoc(collection(db, 'accountHeads'), { name });
           action = 'Add Account Head';
-          details = { headName: name };
+          details = { headName: name, changes: diffFields(null, { name }) };
+          recordId = ref.id;
+          recordRef = name;
           break;
-        case 'addSubHead':
+        }
+        case 'addSubHead': {
           if (!selectedHeadId) return;
-          await addDoc(collection(db, 'subAccountHeads'), { name, headId: selectedHeadId });
+          const ref = await addDoc(collection(db, 'subAccountHeads'), { name, headId: selectedHeadId });
           action = 'Add Sub-Account Head';
-          details = { subHeadName: name, parentHeadId: selectedHeadId };
+          details = {
+            subHeadName: name,
+            parentHeadId: selectedHeadId,
+            changes: diffFields(null, { name, headOfAccount: headName(selectedHeadId) }),
+          };
+          recordId = ref.id;
+          recordRef = name;
           break;
+        }
         case 'editHead':
           if (!currentHead) return;
           await updateDoc(doc(db, 'accountHeads', currentHead.id), { name });
           action = 'Edit Account Head';
-          details = { headId: currentHead.id, newName: name, oldName: currentHead.name };
+          details = {
+            headId: currentHead.id,
+            newName: name,
+            oldName: currentHead.name,
+            changes: diffFields({ name: currentHead.name }, { name }),
+          };
+          recordId = currentHead.id;
+          recordRef = name;
           break;
         case 'editSubHead':
           if (!currentSubHead) return;
           await updateDoc(doc(db, 'subAccountHeads', currentSubHead.id), { name, headId: selectedHeadId });
           action = 'Edit Sub-Account Head';
-          details = { subHeadId: currentSubHead.id, newName: name, oldName: currentSubHead.name };
+          details = {
+            subHeadId: currentSubHead.id,
+            newName: name,
+            oldName: currentSubHead.name,
+            changes: diffFields(
+              { name: currentSubHead.name, headOfAccount: headName(currentSubHead.headId) },
+              { name, headOfAccount: headName(selectedHeadId) },
+            ),
+          };
+          recordId = currentSubHead.id;
+          recordRef = name;
           break;
       }
-      await logUserActivity({ userId: user.id, userName: user.name, userEmail: user.email, module: 'Expenses', action, details });
+      await logUserActivity({
+        userId: user.id,
+        userName: user.name,
+        userEmail: user.email,
+        module: 'Expenses',
+        action,
+        details,
+        recordId: recordId || undefined,
+        recordRef: recordRef || undefined,
+      });
       toast({ title: 'Success', description: 'Account data saved successfully.' });
       fetchData();
       setIsDialogOpen(false);
@@ -157,7 +196,21 @@ export default function ManageAccountsPage() {
       } else {
         await deleteDoc(doc(db, 'subAccountHeads', id));
       }
-      await logUserActivity({ userId: user.id, userName: user.name, userEmail: user.email, module: 'Expenses', action: `Delete ${type === 'head' ? 'Account Head' : 'Sub-Account Head'}`, details: { id, name: itemName }});
+      // What the record held, so the log says what was removed and not only that something was.
+      const removedSubHead = type === 'subhead' ? subHeads.find(sh => sh.id === id) : undefined;
+      const before: Record<string, unknown> = { name: itemName };
+      if (removedSubHead) before.headOfAccount = heads.find(h => h.id === removedSubHead.headId)?.name ?? removedSubHead.headId;
+      const changes = Object.fromEntries(Object.entries(before).map(([key, value]) => [key, { from: value, to: null }]));
+      await logUserActivity({
+        userId: user.id,
+        userName: user.name,
+        userEmail: user.email,
+        module: 'Expenses',
+        action: `Delete ${type === 'head' ? 'Account Head' : 'Sub-Account Head'}`,
+        details: { id, name: itemName, changes },
+        recordId: id,
+        recordRef: itemName,
+      });
       toast({ title: 'Success', description: 'Item deleted.' });
       fetchData();
     } catch (error) {

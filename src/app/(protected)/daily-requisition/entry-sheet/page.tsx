@@ -21,6 +21,8 @@ import {
   Printer,
   Upload,
   File as FileIcon,
+  Hash,
+  Paperclip,
   X,
   Lock,
 } from 'lucide-react';
@@ -52,8 +54,6 @@ import {
   DialogFooter,
   DialogClose,
 } from '@/components/ui/dialog';
-import { Label } from '@/components/ui/label';
-import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useToast } from '@/hooks/use-toast';
 import { db } from '@/lib/firebase';
@@ -105,11 +105,33 @@ import {
   requisitionProgress,
   voucherHref,
 } from '@/lib/requisition-progress';
+import { requisitionStatutoryFields, type ExpenseStatutory } from '@/lib/statutory';
+import { FORM_LABEL } from '@/components/expenses/statutory-section';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from '@/components/ui/form';
 import { PageHeader } from '@/components/shared/page-header';
+import { useDailyRequisitionSettings } from '@/components/daily-requisition/use-daily-requisition-settings';
+import {
+  DR_DATE_PRESETS,
+  DR_FIELD_KEYS,
+  applyColumnSettings,
+  dateKey,
+  describeDateWindow,
+  fieldLabel,
+  isHighValue,
+  receivedRuleBlock,
+  resolveDatePreset,
+  resolveDateWindow,
+  resolveField,
+  todayLocal,
+  validateEntryValues,
+  type DRColumnKey,
+  type DRDatePreset,
+  type DRFieldKey,
+  type ResolvedDRField,
+} from '@/lib/daily-requisition-settings';
 
 const toDate = (v: any): Date | undefined =>
   v?.toDate?.() instanceof Date
@@ -142,6 +164,9 @@ function paymentLockReason(entry: Pick<DailyRequisitionEntry, 'payments'>): stri
 
 const lockedError = (message: string) => Object.assign(new Error(message), { locked: true });
 const isLockedError = (error: unknown) => Boolean((error as { locked?: boolean } | null)?.locked);
+/** A Data Control rule refused the change (e.g. no edits once received). */
+const ruleError = (message: string) => Object.assign(new Error(message), { rule: true });
+const isRuleError = (error: unknown) => Boolean((error as { rule?: boolean } | null)?.rule);
 
 /** The fields the edit form owns, in comparable form: the date as a day, amounts to the paisa. */
 const editableFields = (source: {
@@ -177,6 +202,12 @@ const LOCKED_FIELD_LABELS: Record<string, string> = {
  * The expense request(s) a requisition received: its DEP No *and* its reception number. Matching on
  * the request number alone could release a request since received under another entry.
  */
+/** The GST & TDS fields a requisition inherits from its expense request — all but gross and net. */
+function carriedStatutory(statutory: ExpenseStatutory) {
+  const { grossAmount: _gross, netAmount: _net, ...rest } = requisitionStatutoryFields(statutory);
+  return rest;
+}
+
 async function linkedExpenseRefs(entry: Pick<DailyRequisitionEntry, 'depNo' | 'receptionNo'>) {
   const receptionNo = String(entry.receptionNo ?? '').trim();
   if (!String(entry.depNo ?? '').trim() || !receptionNo) return [];
@@ -242,8 +273,33 @@ function EntrySheetPageComponent() {
   const [filterText, setFilterText] = React.useState(() => queryParam ?? '');
   const [dateFilter, setDateFilter] = React.useState<Date>();
 
+  // Field Control and Data Control, live. At their defaults nothing below behaves differently.
+  const { settings: moduleSettings, isLoading: isSettingsLoading } = useDailyRequisitionSettings();
+  const dataControl = moduleSettings.data;
+  const [todayKey] = React.useState(todayLocal);
+  const dateWindow = React.useMemo(() => resolveDateWindow(todayKey, moduleSettings), [todayKey, moduleSettings]);
+  const dateWindowHint = describeDateWindow(dateWindow);
+  const fields = React.useMemo(
+    () => Object.fromEntries(DR_FIELD_KEYS.map((key) => [key, resolveField(moduleSettings, key)])) as Record<DRFieldKey, ResolvedDRField>,
+    [moduleSettings],
+  );
+  const columns = React.useMemo(() => applyColumnSettings(moduleSettings.columns), [moduleSettings.columns]);
+
+  // The register opens on Data Control's default period — once, so it never overrides the user's
+  // own choice. A `?q=` link to one entry always opens on all dates, or it could hide that entry.
+  const [rangePreset, setRangePreset] = React.useState<DRDatePreset>('all');
+  const appliedDefaultRange = React.useRef(false);
   React.useEffect(() => {
-    if (queryParam !== null) setFilterText(queryParam);
+    if (isSettingsLoading || appliedDefaultRange.current) return;
+    appliedDefaultRange.current = true;
+    if (!queryParam) setRangePreset(dataControl.defaultDateRange);
+  }, [isSettingsLoading, dataControl.defaultDateRange, queryParam]);
+
+  React.useEffect(() => {
+    if (queryParam !== null) {
+      setFilterText(queryParam);
+      setRangePreset('all');
+    }
   }, [queryParam]);
 
   const [isAddDialogOpen, setIsAddDialogOpen] = React.useState(false);
@@ -302,6 +358,62 @@ function EntrySheetPageComponent() {
       netAmount: '',
     },
   });
+
+  /** Attachments are not a form field, so their Field Control error is held here. */
+  const [attachmentError, setAttachmentError] = React.useState<string | null>(null);
+
+  /** The reception-date picker offers only the Data Control window's days. */
+  const calendarDisabled = React.useMemo(() => {
+    if (!dateWindow.enforced || !dateWindow.min || !dateWindow.max) return undefined;
+    const local = (key: string) => {
+      const [y, m, d] = key.split('-').map(Number);
+      return new Date(y, m - 1, d);
+    };
+    return [{ before: local(dateWindow.min) }, { after: local(dateWindow.max) }];
+  }, [dateWindow]);
+
+  /**
+   * Field Control's required fields and Data Control's entry rules, checked before a save. Zod keeps
+   * the shapes; this decides what is mandatory, so a hidden field is never demanded.
+   * Returns true when the submission may go ahead.
+   */
+  const passesEntryRules = (
+    target: typeof form,
+    data: z.infer<typeof formSchema>,
+    options: Omit<Parameters<typeof validateEntryValues>[2], 'window'>,
+  ): boolean => {
+    const errors = validateEntryValues(
+      {
+        depNo: data.depNo,
+        receptionDate: data.date instanceof Date && !Number.isNaN(data.date.getTime()) ? dateKey(data.date) : '',
+        partyName: data.partyName,
+        projectId: data.projectId,
+        departmentId: data.departmentId,
+        description: data.description,
+        grossAmount: data.grossAmount,
+        netAmount: data.netAmount,
+      },
+      moduleSettings,
+      { ...options, window: dateWindow },
+    );
+    setAttachmentError(errors.attachments ?? null);
+    const formName: Partial<Record<DRFieldKey, keyof z.infer<typeof formSchema>>> = {
+      depNo: 'depNo',
+      receptionDate: 'date',
+      partyName: 'partyName',
+      projectId: 'projectId',
+      departmentId: 'departmentId',
+      description: 'description',
+      grossAmount: 'grossAmount',
+      netAmount: 'netAmount',
+    };
+    const keys = Object.keys(errors) as DRFieldKey[];
+    for (const key of keys) {
+      const name = formName[key];
+      if (name) target.setError(name, { type: 'manual', message: errors[key] });
+    }
+    return keys.length === 0;
+  };
 
   /**
    * What the importer needs to recognise a re-import.
@@ -410,8 +522,9 @@ function EntrySheetPageComponent() {
         partyName: selectedRequest.partyName || '',
         projectId: selectedRequest.projectId || '',
         departmentId: selectedRequest.departmentId || '',
-        grossAmount: String(selectedRequest.amount || ''),
-        netAmount: String(selectedRequest.amount || ''),
+        // With GST & TDS captured on the request, gross is its taxable value and net what is payable.
+        grossAmount: String(selectedRequest.statutory?.taxableAmount ?? selectedRequest.amount ?? ''),
+        netAmount: String(selectedRequest.statutory?.netPayable ?? selectedRequest.amount ?? ''),
       });
     } else {
       form.setValue('depNo', value);
@@ -421,6 +534,7 @@ function EntrySheetPageComponent() {
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files) {
+      setAttachmentError(null);
       setSelectedFiles(Array.from(e.target.files));
     }
   };
@@ -430,6 +544,7 @@ function EntrySheetPageComponent() {
       toast({ title: 'Authentication Error', description: 'User not found.', variant: 'destructive' });
       return;
     }
+    if (!passesEntryRules(form, data, { mode: 'add', attachmentCount: selectedFiles.length })) return;
     setIsSaving(true);
     const configRef = doc(db, 'serialNumberConfigs', 'daily-requisition');
     // Only a request not yet received can be picked — never another copy of the number already linked.
@@ -485,6 +600,9 @@ function EntrySheetPageComponent() {
         createdAt: Timestamp.now(),
         status: 'Pending' as const,
         attachments: attachmentUrls,
+        // GST & TDS captured on the expense request travel with it, so verification starts filled in.
+        // Gross and net stay as entered on this form (verification flags any mismatch).
+        ...(selectedExpenseRequest?.statutory ? carriedStatutory(selectedExpenseRequest.statutory) : {}),
       };
 
       const newEntryRef = doc(collection(db, 'dailyRequisitions'));
@@ -552,6 +670,23 @@ function EntrySheetPageComponent() {
   const handleUpdateEntry = async (data: z.infer<typeof formSchema>) => {
     if (!editingEntry) return;
     const entry = editingEntry;
+    const statusBlock = receivedRuleBlock(entry.status, dataControl, 'edit');
+    if (statusBlock) {
+      toast({ title: 'Editing not allowed', description: statusBlock, variant: 'destructive' });
+      return;
+    }
+    const paymentLocked = isPaymentLocked(entry);
+    const entryDateKey = entry.originalDate ? dateKey(new Date(entry.originalDate)) : '';
+    if (
+      !passesEntryRules(editForm, data, {
+        mode: 'edit',
+        originalReceptionDate: entryDateKey,
+        // A paid entry's figures are read-only on the form, so they can never be made to comply.
+        lockedKeys: paymentLocked ? ['receptionDate', 'partyName', 'projectId', 'departmentId', 'grossAmount', 'netAmount'] : [],
+      })
+    ) {
+      return;
+    }
     const next = editableFields({
       ...data,
       grossAmount: parseFloat(data.grossAmount),
@@ -584,6 +719,9 @@ function EntrySheetPageComponent() {
         if (isPaymentLocked(snap.data() as DailyRequisitionEntry) && lockedChanges.length) {
           throw lockedError(lockedFieldsMessage(lockedChanges));
         }
+        // And the status rule: it may have been received while the dialog was open.
+        const nowBlocked = receivedRuleBlock((snap.data() as DailyRequisitionEntry).status, dataControl, 'edit');
+        if (nowBlocked) throw ruleError(nowBlocked);
         const expenseSnaps = await Promise.all(expenseRefs.map((ref) => transaction.get(ref)));
 
         const update: Record<string, unknown> = {};
@@ -610,8 +748,8 @@ function EntrySheetPageComponent() {
     } catch (error) {
       console.error('Error updating entry:', error);
       toast({
-        title: isLockedError(error) ? 'Payment recorded' : 'Update Failed',
-        description: isLockedError(error)
+        title: isLockedError(error) ? 'Payment recorded' : isRuleError(error) ? 'Editing not allowed' : 'Update Failed',
+        description: isLockedError(error) || isRuleError(error)
           ? (error as Error).message
           : 'An error occurred while updating the entry.',
         variant: 'destructive',
@@ -627,6 +765,11 @@ function EntrySheetPageComponent() {
       toast({ title: 'Cannot delete a paid requisition', description: paymentLockReason(entry), variant: 'destructive' });
       return;
     }
+    const statusBlock = receivedRuleBlock(entry.status, dataControl, 'delete');
+    if (statusBlock) {
+      toast({ title: 'Deleting not allowed', description: statusBlock, variant: 'destructive' });
+      return;
+    }
     try {
       const expenseRefs = await linkedExpenseRefs(entry);
       const entryRef = doc(db, 'dailyRequisitions', entry.id);
@@ -638,6 +781,8 @@ function EntrySheetPageComponent() {
         const current = snap.data() as DailyRequisitionEntry;
         // Re-checked here: a voucher may have paid it since the list was loaded.
         if (isPaymentLocked(current)) throw lockedError(paymentLockReason(current));
+        const nowBlocked = receivedRuleBlock(current.status, dataControl, 'delete');
+        if (nowBlocked) throw ruleError(nowBlocked);
 
         const expenseSnaps = await Promise.all(expenseRefs.map((ref) => transaction.get(ref)));
         let count = 0;
@@ -673,7 +818,11 @@ function EntrySheetPageComponent() {
     } catch (error) {
       console.error('Error deleting entry:', error);
       toast({
-        title: isLockedError(error) ? 'Cannot delete a paid requisition' : 'Delete Failed',
+        title: isLockedError(error)
+          ? 'Cannot delete a paid requisition'
+          : isRuleError(error)
+            ? 'Deleting not allowed'
+            : 'Delete Failed',
         description: isLockedError(error)
           ? (error as Error).message
           : error instanceof Error && error.message
@@ -749,8 +898,13 @@ function EntrySheetPageComponent() {
         return 0;
       });
     }
-    const onDay = (entry: EnrichedDailyRequisitionEntry) =>
-      !dateFilter || isSameDay(new Date(entry.originalDate), dateFilter);
+    const range = resolveDatePreset(rangePreset);
+    const onDay = (entry: EnrichedDailyRequisitionEntry) => {
+      if (dateFilter && !isSameDay(new Date(entry.originalDate), dateFilter)) return false;
+      if (!range) return true;
+      const when = entry.originalDate ? new Date(entry.originalDate) : undefined;
+      return Boolean(when) && (when as Date) >= range.from && (when as Date) <= range.to;
+    };
     const needle = filterText.trim().toLowerCase();
     if (!needle) return sortedEntries.filter(onDay);
 
@@ -772,12 +926,12 @@ function EntrySheetPageComponent() {
           ].some((value) => String(value).toLowerCase().includes(needle)),
         );
     return matches.filter(onDay);
-  }, [entries, sortKey, sortDirection, filterText, dateFilter, projectNameById, departmentNameById]);
+  }, [entries, sortKey, sortDirection, filterText, dateFilter, rangePreset, projectNameById, departmentNameById]);
 
   // A narrower filter must not leave the table on a page that no longer exists.
   React.useEffect(() => {
     setCurrentPage(1);
-  }, [filterText, dateFilter]);
+  }, [filterText, dateFilter, rangePreset]);
 
   const paginatedEntries = React.useMemo(() => {
     const startIndex = (currentPage - 1) * itemsPerPage;
@@ -799,6 +953,20 @@ function EntrySheetPageComponent() {
     setSelectedEntry(entry);
     setIsViewDialogOpen(true);
   };
+
+  /**
+   * A click on a row opens its details (or ticks it, in selection mode). React bubbles clicks from
+   * portals — the actions menu, the delete confirmation — through the row, so only clicks inside the
+   * row's own DOM count, and never ones on its buttons, links or checkbox, or ones that end a text selection.
+   */
+  const handleRowClick = (event: React.MouseEvent<HTMLTableRowElement>, entry: DailyRequisitionEntry) => {
+    const target = event.target as HTMLElement;
+    if (!event.currentTarget.contains(target)) return;
+    if (target.closest('button, a, input, [role="checkbox"], [role="menuitem"]')) return;
+    if (window.getSelection()?.toString()) return;
+    if (isSelectionMode) handleSelectRow(entry.id, !selectedIds.has(entry.id));
+    else handleViewDetails(entry);
+  };
   
   const handleViewChecklist = (entry: DailyRequisitionEntry) => {
     window.open(`/daily-requisition/entry-sheet/${entry.id}/print`, '_blank');
@@ -809,20 +977,10 @@ function EntrySheetPageComponent() {
     window.open(`/daily-requisition/entry-sheet/print?ids=${idsToPrint}`, '_blank');
   };
 
-  const headers: { key: SortKey; label: string; numeric?: boolean }[] = [
-    { key: 'createdAt', label: 'Created At' },
-    { key: 'receptionNo', label: 'Reception No.' },
-    { key: 'status', label: 'Status' },
-    { key: 'date', label: 'Date' },
-    { key: 'projectId', label: 'Project' },
-    { key: 'departmentId', label: 'Department' },
-    { key: 'partyName', label: 'Party Name' },
-    { key: 'description', label: 'Description' },
-    { key: 'grossAmount', label: 'Gross Amount', numeric: true },
-    { key: 'netAmount', label: 'Net Amount', numeric: true },
-    { key: 'paid', label: 'Paid', numeric: true },
-    { key: 'balance', label: 'Balance', numeric: true },
-  ];
+  // Field Control's column layout. Actions is always the last column and is rendered on its own.
+  const headers: { key: SortKey & DRColumnKey; label: string; numeric?: boolean }[] = columns
+    .filter((column) => column.key !== 'actions')
+    .map((column) => ({ key: column.key as SortKey & DRColumnKey, label: column.label, numeric: column.numeric }));
 
   const handleSelectAll = (checked: boolean | 'indeterminate') => {
     if (checked) {
@@ -842,7 +1000,7 @@ function EntrySheetPageComponent() {
     setSelectedIds(newSelectedIds);
   };
 
-  if (isAuthLoading || isLoading) {
+  if (isAuthLoading || isLoading || isSettingsLoading) {
     return <EntrySheetSkeleton />;
   }
 
@@ -914,7 +1072,7 @@ function EntrySheetPageComponent() {
                 <Button variant="outline" onClick={() => setIsImportOpen(true)} disabled={!canAdd}>
                   <Upload className="mr-2 h-4 w-4" /> Import
                 </Button>
-                <Button onClick={() => setIsAddDialogOpen(true)} disabled={!canAdd}>
+                <Button onClick={() => { form.clearErrors(); setAttachmentError(null); setIsAddDialogOpen(true); }} disabled={!canAdd}>
                   <Plus className="mr-2 h-4 w-4" /> Add Entry
                 </Button>
               </>
@@ -934,9 +1092,21 @@ function EntrySheetPageComponent() {
           toolbar={
             <FilterBar
               search={{ value: filterText, onChange: setFilterText, placeholder: 'Filter entries...' }}
-              activeCount={dateFilter ? 1 : 0}
-              onClear={() => { setFilterText(''); setDateFilter(undefined); }}
+              activeCount={(dateFilter ? 1 : 0) + (rangePreset !== 'all' ? 1 : 0)}
+              onClear={() => { setFilterText(''); setDateFilter(undefined); setRangePreset('all'); }}
             >
+              <Select value={rangePreset} onValueChange={(value) => setRangePreset(value as DRDatePreset)}>
+                <SelectTrigger className="w-full sm:w-36" aria-label="Date range">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {DR_DATE_PRESETS.map((preset) => (
+                    <SelectItem key={preset.value} value={preset.value}>
+                      {preset.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
               <Popover>
                 <PopoverTrigger asChild>
                   <Button
@@ -1011,8 +1181,30 @@ function EntrySheetPageComponent() {
                     {paginatedEntries.map((entry) => {
                       const progress = requisitionProgress(entry);
                       const locked = isPaymentLocked(entry);
+                      const editBlock = receivedRuleBlock(entry.status, dataControl, 'edit');
+                      // The payment lock's reason wins over the status rule's.
+                      const deleteBlock = locked ? paymentLockReason(entry) : receivedRuleBlock(entry.status, dataControl, 'delete');
+                      const highValue = isHighValue(entry, dataControl.highValueThreshold);
+                      const rowTitle = isSelectionMode
+                        ? undefined
+                        : highValue
+                          ? `High value — ${formatCurrency(dataControl.highValueThreshold)} or more · Open details`
+                          : 'Open details';
                       return (
-                        <TableRow key={entry.id} data-state={selectedIds.has(entry.id) ? 'selected' : ''}>
+                        <TableRow
+                          key={entry.id}
+                          data-state={selectedIds.has(entry.id) ? 'selected' : ''}
+                          className={cn('cursor-pointer', highValue && 'bg-amber-50/40')}
+                          tabIndex={0}
+                          title={rowTitle}
+                          onClick={(event) => handleRowClick(event, entry)}
+                          onKeyDown={(event) => {
+                            if (event.target !== event.currentTarget || (event.key !== 'Enter' && event.key !== ' ')) return;
+                            event.preventDefault();
+                            if (isSelectionMode) handleSelectRow(entry.id, !selectedIds.has(entry.id));
+                            else handleViewDetails(entry);
+                          }}
+                        >
                           {isSelectionMode && (
                             <TableCell>
                               <Checkbox
@@ -1021,46 +1213,75 @@ function EntrySheetPageComponent() {
                               />
                             </TableCell>
                           )}
-                          <TableCell className="whitespace-nowrap">{entry.createdAtText}</TableCell>
-                          <TableCell className="whitespace-nowrap font-medium">{entry.receptionNo}</TableCell>
-                          <TableCell>
-                            <StatusBadge
-                              tone={progress.tone}
-                              title={entry.manualPaid ? 'Recorded as paid outside Bank Balance' : entry.status}
-                            >
-                              {progress.label}
-                            </StatusBadge>
-                          </TableCell>
-                          <TableCell className="whitespace-nowrap">{entry.dateText}</TableCell>
-                          <TableCell>{projectNameById.get(entry.projectId) || entry.projectId}</TableCell>
-                          <TableCell>{departmentNameById.get(entry.departmentId) || entry.departmentId}</TableCell>
-                          <TableCell>{entry.partyName}</TableCell>
-                          <TableCell>
-                            <Tooltip>
-                              <TooltipTrigger>
-                                <span className="block max-w-xs truncate">{entry.description}</span>
-                              </TooltipTrigger>
-                              <TooltipContent>
-                                <p className="max-w-md">{entry.description}</p>
-                              </TooltipContent>
-                            </Tooltip>
-                          </TableCell>
-                          <TableCell className="whitespace-nowrap text-right tabular-nums">
-                            {formatCurrency(entry.grossAmount)}
-                          </TableCell>
-                          <TableCell className="whitespace-nowrap text-right tabular-nums">
-                            {formatCurrency(entry.netAmount)}
-                          </TableCell>
-                          <TableCell className="whitespace-nowrap text-right tabular-nums">
-                            {progress.paid > 0 ? formatCurrency(progress.paid) : <span className="text-muted-foreground">—</span>}
-                          </TableCell>
-                          <TableCell className="whitespace-nowrap text-right tabular-nums">
-                            {progress.balance > 0 ? (
-                              formatCurrency(progress.balance)
-                            ) : (
-                              <span className="text-muted-foreground">—</span>
-                            )}
-                          </TableCell>
+                          {headers.map((header, columnIndex) => {
+                            // High-value rows carry an amber rule down their first data column.
+                            const accent = highValue && columnIndex === 0 ? 'shadow-[inset_3px_0_0_0_#f59e0b]' : undefined;
+                            switch (header.key) {
+                              case 'createdAt':
+                                return <TableCell key={header.key} className={cn('whitespace-nowrap', accent)}>{entry.createdAtText}</TableCell>;
+                              case 'receptionNo':
+                                return <TableCell key={header.key} className={cn('whitespace-nowrap font-medium', accent)}>{entry.receptionNo}</TableCell>;
+                              case 'status':
+                                return (
+                                  <TableCell key={header.key} className={accent}>
+                                    <StatusBadge
+                                      tone={progress.tone}
+                                      title={entry.manualPaid ? 'Recorded as paid outside Bank Balance' : entry.status}
+                                    >
+                                      {progress.label}
+                                    </StatusBadge>
+                                  </TableCell>
+                                );
+                              case 'date':
+                                return <TableCell key={header.key} className={cn('whitespace-nowrap', accent)}>{entry.dateText}</TableCell>;
+                              case 'projectId':
+                                return <TableCell key={header.key} className={accent}>{projectNameById.get(entry.projectId) || entry.projectId}</TableCell>;
+                              case 'departmentId':
+                                return <TableCell key={header.key} className={accent}>{departmentNameById.get(entry.departmentId) || entry.departmentId}</TableCell>;
+                              case 'partyName':
+                                return <TableCell key={header.key} className={accent}>{entry.partyName}</TableCell>;
+                              case 'description':
+                                return (
+                                  <TableCell key={header.key} className={accent}>
+                                    <Tooltip>
+                                      {/* A span, not the default button, so a click here opens the row too. */}
+                                      <TooltipTrigger asChild>
+                                        <span className="block max-w-xs truncate">{entry.description}</span>
+                                      </TooltipTrigger>
+                                      <TooltipContent>
+                                        <p className="max-w-md">{entry.description}</p>
+                                      </TooltipContent>
+                                    </Tooltip>
+                                  </TableCell>
+                                );
+                              case 'grossAmount':
+                                return (
+                                  <TableCell key={header.key} className={cn('whitespace-nowrap text-right tabular-nums', accent)}>
+                                    {formatCurrency(entry.grossAmount)}
+                                  </TableCell>
+                                );
+                              case 'netAmount':
+                                return (
+                                  <TableCell key={header.key} className={cn('whitespace-nowrap text-right tabular-nums', accent)}>
+                                    {formatCurrency(entry.netAmount)}
+                                  </TableCell>
+                                );
+                              case 'paid':
+                                return (
+                                  <TableCell key={header.key} className={cn('whitespace-nowrap text-right tabular-nums', accent)}>
+                                    {progress.paid > 0 ? formatCurrency(progress.paid) : <span className="text-muted-foreground">—</span>}
+                                  </TableCell>
+                                );
+                              case 'balance':
+                                return (
+                                  <TableCell key={header.key} className={cn('whitespace-nowrap text-right tabular-nums', accent)}>
+                                    {progress.balance > 0 ? formatCurrency(progress.balance) : <span className="text-muted-foreground">—</span>}
+                                  </TableCell>
+                                );
+                              default:
+                                return null;
+                            }
+                          })}
                           <TableCell>
                             <AlertDialog>
                               <DropdownMenu>
@@ -1093,18 +1314,32 @@ function EntrySheetPageComponent() {
                                       <FileText className="mr-2 h-4 w-4" /> View Checklist
                                     </DropdownMenuItem>
                                   )}
-                                  {canEdit && (
-                                    <DropdownMenuItem
-                                      onClick={(e) => {
-                                        e.stopPropagation();
-                                        handleOpenEditDialog(entry);
-                                      }}
-                                    >
-                                      <Edit className="mr-2 h-4 w-4" /> {locked ? 'Edit description' : 'Edit'}
-                                    </DropdownMenuItem>
-                                  )}
+                                  {canEdit &&
+                                    (editBlock ? (
+                                      <Tooltip>
+                                        <TooltipTrigger asChild>
+                                          <span className="block cursor-not-allowed">
+                                            <DropdownMenuItem disabled>
+                                              <Lock className="mr-2 h-4 w-4" /> Edit
+                                            </DropdownMenuItem>
+                                          </span>
+                                        </TooltipTrigger>
+                                        <TooltipContent side="left" className="max-w-xs text-xs">
+                                          {editBlock}
+                                        </TooltipContent>
+                                      </Tooltip>
+                                    ) : (
+                                      <DropdownMenuItem
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          handleOpenEditDialog(entry);
+                                        }}
+                                      >
+                                        <Edit className="mr-2 h-4 w-4" /> {locked ? 'Edit description' : 'Edit'}
+                                      </DropdownMenuItem>
+                                    ))}
                                   {canDelete &&
-                                    (locked ? (
+                                    (deleteBlock ? (
                                       // A disabled item takes no pointer events, so the wrapper carries the reason.
                                       <Tooltip>
                                         <TooltipTrigger asChild>
@@ -1115,7 +1350,7 @@ function EntrySheetPageComponent() {
                                           </span>
                                         </TooltipTrigger>
                                         <TooltipContent side="left" className="max-w-xs text-xs">
-                                          {paymentLockReason(entry)}
+                                          {deleteBlock}
                                         </TooltipContent>
                                       </Tooltip>
                                     ) : (
@@ -1160,19 +1395,33 @@ function EntrySheetPageComponent() {
       </div>
 
       <Dialog open={isAddDialogOpen} onOpenChange={setIsAddDialogOpen}>
-        <DialogContent className="sm:max-w-3xl">
-          <DialogHeader>
+        <DialogContent className="max-h-[92vh] overflow-y-auto sm:max-w-3xl">
+          <DialogHeader className="space-y-1 text-left">
             <DialogTitleShad>Add New Entry</DialogTitleShad>
-            <DialogDescriptionShad>Fill in the details for the new requisition entry.</DialogDescriptionShad>
+            <DialogDescriptionShad>Receive an expense request into Daily Requisition.</DialogDescriptionShad>
+            <div className="flex items-center gap-1.5 pt-1 text-xs text-slate-500">
+              <Hash className="h-3.5 w-3.5 text-slate-400" />
+              Reception No
+              <span className="font-mono font-medium text-slate-800">{form.watch('receptionNo') || '—'}</span>
+            </div>
           </DialogHeader>
           <Form {...form}>
             <form onSubmit={form.handleSubmit(handleAddEntry)}>
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-6 py-4">
-                  <FormField control={form.control} name="receptionNo" render={({ field }) => (<FormItem className="space-y-2"><FormLabel>Reception No.</FormLabel><FormControl><Input {...field} readOnly /></FormControl><FormMessage /></FormItem>)}/>
-                  <div className="space-y-2">
-                    <Label htmlFor="dep-no">DEP No. (Expense Request)</Label>
-                    <Select value={form.getValues('depNo')} onValueChange={handleDepNoSelect}>
-                      <SelectTrigger>
+              {/* 4 columns: the request and when it came in · who and where · how much and what for · files */}
+              <div className={cn(ENTRY_GRID, 'border-t pt-4')}>
+                  {fields.depNo.visible && (
+                  <div className="min-w-0 space-y-1.5 sm:col-span-2">
+                    <label htmlFor="dep-no" className={FORM_LABEL}>
+                      {dataControl.requireExpenseRequest ? `${fields.depNo.label} *` : fields.depNo.label}
+                    </label>
+                    <Select
+                      value={form.getValues('depNo')}
+                      onValueChange={(value) => {
+                        form.clearErrors('depNo');
+                        handleDepNoSelect(value);
+                      }}
+                    >
+                      <SelectTrigger id="dep-no" aria-invalid={Boolean(form.formState.errors.depNo)}>
                         <SelectValue placeholder="Select an expense request" />
                       </SelectTrigger>
                       <SelectContent>
@@ -1183,37 +1432,69 @@ function EntrySheetPageComponent() {
                         ))}
                       </SelectContent>
                     </Select>
+                    {form.formState.errors.depNo?.message ? (
+                      <p className="text-[11px] font-medium text-destructive">{form.formState.errors.depNo.message}</p>
+                    ) : null}
                   </div>
-                   <FormField control={form.control} name="date" render={({ field }) => (<FormItem className="space-y-2 flex flex-col"><FormLabel>Reception Date</FormLabel><Popover><PopoverTrigger asChild><FormControl><Button variant={'outline'} className={cn('w-full justify-start text-left font-normal', !field.value && 'text-muted-foreground')}><CalendarIcon className="mr-2 h-4 w-4" />{field.value ? format(field.value, 'dd MMM yyyy') : <span>Pick a date</span>}</Button></FormControl></PopoverTrigger><PopoverContent className="w-auto p-0" align="start"><Calendar mode="single" selected={field.value} onSelect={field.onChange} initialFocus /></PopoverContent></Popover><FormMessage /></FormItem>)}/>
-                   <FormField control={form.control} name="partyName" render={({ field }) => (<FormItem className="space-y-2"><FormLabel>Party Name</FormLabel><FormControl><Input {...field} /></FormControl><FormMessage /></FormItem>)}/>
-                   <FormField control={form.control} name="projectId" render={({ field }) => (<FormItem className="space-y-2"><FormLabel>Project Name</FormLabel><Select onValueChange={field.onChange} value={field.value}><FormControl><SelectTrigger><SelectValue placeholder="Select Project"/></SelectTrigger></FormControl><SelectContent>{projects.map((p) => (<SelectItem key={p.id} value={p.id}>{p.projectName}</SelectItem>))}</SelectContent></Select><FormMessage /></FormItem>)}/>
-                   <FormField control={form.control} name="description" render={({ field }) => (<FormItem className="space-y-2"><FormLabel>Description</FormLabel><FormControl><Textarea {...field}/></FormControl><FormMessage/></FormItem>)}/>
-                   <FormField control={form.control} name="departmentId" render={({ field }) => (<FormItem className="space-y-2"><FormLabel>Department</FormLabel><Select onValueChange={field.onChange} value={field.value}><FormControl><SelectTrigger><SelectValue placeholder="Select Department"/></SelectTrigger></FormControl><SelectContent>{departments.map((d) => (<SelectItem key={d.id} value={d.id}>{d.name}</SelectItem>))}</SelectContent></Select><FormMessage /></FormItem>)}/>
-                   <FormField control={form.control} name="grossAmount" render={({ field }) => (<FormItem className="space-y-2"><FormLabel>Gross Amount</FormLabel><FormControl><Input type="number" {...field} /></FormControl><FormMessage /></FormItem>)}/>
-                   <FormField control={form.control} name="netAmount" render={({ field }) => (<FormItem className="space-y-2"><FormLabel>Net Amount</FormLabel><FormControl><Input type="number" {...field} /></FormControl><FormMessage /></FormItem>)}/>
-                  <div className="md:col-span-3 space-y-2">
-                    <Label htmlFor="attachments">Attachments</Label>
-                    <FormControl>
-                        <Input id="attachments" type="file" multiple onChange={handleFileChange} />
-                    </FormControl>
-                     {selectedFiles.length > 0 && (
-                          <div className="mt-2 space-y-2">
-                              {selectedFiles.map((file, i) => (
-                                  <div key={i} className="flex items-center justify-between p-2 bg-muted rounded-md">
-                                      <div className="flex items-center gap-2">
-                                          <FileIcon className="w-4 h-4" />
-                                          <span className="text-sm">{file.name}</span>
-                                      </div>
-                                      <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => setSelectedFiles(selectedFiles.filter((_, index) => index !== i))}>
-                                          <X className="w-4 h-4" />
-                                      </Button>
-                                  </div>
-                              ))}
-                          </div>
+                  )}
+                  <FormField control={form.control} name="date" render={({ field }) => (<FormItem className="space-y-1.5"><FormLabel className={FORM_LABEL}>{fields.receptionDate.label}</FormLabel><Popover><PopoverTrigger asChild><FormControl><Button variant={'outline'} className={cn('h-9 w-full justify-start px-3 text-left font-normal', !field.value && 'text-muted-foreground')}><CalendarIcon className="mr-2 h-4 w-4 text-slate-400" />{field.value ? format(field.value, 'dd MMM yyyy') : <span>Pick a date</span>}</Button></FormControl></PopoverTrigger><PopoverContent className="w-auto p-0" align="start"><Calendar mode="single" selected={field.value} onSelect={field.onChange} disabled={calendarDisabled} defaultMonth={field.value} initialFocus /></PopoverContent></Popover>{dateWindowHint ? <p className="text-[11px] text-muted-foreground">{dateWindowHint}</p> : null}<FormMessage className="text-[11px]" /></FormItem>)}/>
+                  {fields.departmentId.visible && (<FormField control={form.control} name="departmentId" render={({ field }) => (<FormItem className="space-y-1.5"><FormLabel className={FORM_LABEL}>{fieldLabel(fields.departmentId)}</FormLabel><Select onValueChange={field.onChange} value={field.value}><FormControl><SelectTrigger><SelectValue placeholder="Select department"/></SelectTrigger></FormControl><SelectContent>{departments.map((d) => (<SelectItem key={d.id} value={d.id}>{d.name}</SelectItem>))}</SelectContent></Select><FormMessage className="text-[11px]" /></FormItem>)}/>)}
+                  {(() => {
+                    const picked = unassignedExpenseRequests.find((req) => req.requestNo === form.getValues('depNo'));
+                    const st = picked?.statutory;
+                    if (!st) return null;
+                    return (
+                      <div className="rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs text-emerald-900 sm:col-span-2 md:col-span-4">
+                        GST &amp; TDS from the request come with it
+                        {st.invoiceNo ? ` · invoice ${st.invoiceNo}` : ''}
+                        {st.gstNo ? ` · GSTIN ${st.gstNo}` : ''}
+                        {st.gstAmount ? ` · GST ${formatCurrency(st.gstAmount)}` : ''}
+                        {st.tdsAmount ? ` · TDS ${formatCurrency(st.tdsAmount)}` : ''} · net payable {formatCurrency(st.netPayable)}.
+                      </div>
+                    );
+                  })()}
+                  {fields.partyName.visible && (<FormField control={form.control} name="partyName" render={({ field }) => (<FormItem className="space-y-1.5 sm:col-span-2"><FormLabel className={FORM_LABEL}>{fieldLabel(fields.partyName)}</FormLabel><FormControl><Input {...field} placeholder="Who is being paid" /></FormControl><FormMessage className="text-[11px]" /></FormItem>)}/>)}
+                  {fields.projectId.visible && (<FormField control={form.control} name="projectId" render={({ field }) => (<FormItem className="space-y-1.5 sm:col-span-2"><FormLabel className={FORM_LABEL}>{fieldLabel(fields.projectId)}</FormLabel><Select onValueChange={field.onChange} value={field.value}><FormControl><SelectTrigger><SelectValue placeholder="Select project"/></SelectTrigger></FormControl><SelectContent>{projects.map((p) => (<SelectItem key={p.id} value={p.id}>{p.projectName}</SelectItem>))}</SelectContent></Select><FormMessage className="text-[11px]" /></FormItem>)}/>)}
+                  {fields.grossAmount.visible && (<FormField control={form.control} name="grossAmount" render={({ field }) => (<FormItem className="space-y-1.5"><FormLabel className={FORM_LABEL}>{fieldLabel(fields.grossAmount)}</FormLabel><div className="relative"><span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-sm text-muted-foreground">₹</span><FormControl><Input type="number" inputMode="decimal" placeholder="0.00" {...field} className="pl-7 text-right tabular-nums" /></FormControl></div><FormMessage className="text-[11px]" /></FormItem>)}/>)}
+                  {fields.netAmount.visible && (<FormField control={form.control} name="netAmount" render={({ field }) => (<FormItem className="space-y-1.5"><FormLabel className={FORM_LABEL}>{fieldLabel(fields.netAmount)}</FormLabel><div className="relative"><span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-sm text-muted-foreground">₹</span><FormControl><Input type="number" inputMode="decimal" placeholder="0.00" {...field} className="pl-7 text-right font-semibold tabular-nums" /></FormControl></div><FormMessage className="text-[11px]" /></FormItem>)}/>)}
+                  {fields.description.visible && (<FormField control={form.control} name="description" render={({ field }) => (<FormItem className="space-y-1.5 sm:col-span-2"><FormLabel className={FORM_LABEL}>{fieldLabel(fields.description)}</FormLabel><FormControl><Input {...field} placeholder="What the payment is for" /></FormControl><FormMessage className="text-[11px]"/></FormItem>)}/>)}
+                  {fields.attachments.visible && (
+                  <div className="min-w-0 space-y-1.5 sm:col-span-2 md:col-span-4">
+                    <p className={FORM_LABEL}>{fieldLabel(fields.attachments)}</p>
+                    <div className={cn('flex min-h-9 flex-wrap items-center gap-2 rounded-md border border-dashed px-2 py-1.5', attachmentError && 'border-destructive')}>
+                      <label
+                        htmlFor="attachments"
+                        className="inline-flex h-7 cursor-pointer items-center gap-1.5 rounded-md border bg-white px-2.5 text-xs font-medium text-slate-700 hover:bg-slate-50"
+                      >
+                        <Paperclip className="h-3.5 w-3.5" /> Choose files
+                      </label>
+                      <input id="attachments" type="file" multiple className="sr-only" onChange={handleFileChange} />
+                      {selectedFiles.length === 0 ? (
+                        <span className="text-xs text-muted-foreground">
+                          Bill, invoice or approval — {fields.attachments.required ? 'at least one file' : 'optional'}
+                        </span>
+                      ) : (
+                        selectedFiles.map((file, i) => (
+                          <span key={i} className="inline-flex max-w-[16rem] items-center gap-1.5 rounded-md bg-slate-100 py-1 pl-2 pr-1 text-xs text-slate-700">
+                            <FileIcon className="h-3.5 w-3.5 shrink-0 text-slate-500" />
+                            <span className="truncate">{file.name}</span>
+                            <button
+                              type="button"
+                              aria-label={`Remove ${file.name}`}
+                              className="rounded p-0.5 text-slate-500 hover:bg-slate-200 hover:text-slate-800"
+                              onClick={() => setSelectedFiles(selectedFiles.filter((_, index) => index !== i))}
+                            >
+                              <X className="h-3 w-3" />
+                            </button>
+                          </span>
+                        ))
                       )}
+                    </div>
+                    {attachmentError ? <p className="text-[11px] font-medium text-destructive">{attachmentError}</p> : null}
                   </div>
+                  )}
               </div>
-              <DialogFooter>
+              <DialogFooter className="mt-4 gap-2 border-t pt-4">
                 <DialogClose asChild>
                   <Button type="button" variant="outline" onClick={() => { setSelectedFiles([]); }}>Cancel</Button>
                 </DialogClose>
@@ -1228,10 +1509,19 @@ function EntrySheetPageComponent() {
       </Dialog>
 
       <Dialog open={isEditDialogOpen} onOpenChange={setIsEditDialogOpen}>
-        <DialogContent className="sm:max-w-3xl">
-          <DialogHeader>
-            <DialogTitleShad>Edit Entry: {editingEntry?.receptionNo}</DialogTitleShad>
+        <DialogContent className="max-h-[92vh] overflow-y-auto sm:max-w-3xl">
+          <DialogHeader className="space-y-1 text-left">
+            <DialogTitleShad>Edit Entry</DialogTitleShad>
             <DialogDescriptionShad>Update the details of the requisition entry.</DialogDescriptionShad>
+            <div className="flex flex-wrap items-center gap-x-4 gap-y-1 pt-1 text-xs text-slate-500">
+              <span className="inline-flex items-center gap-1.5">
+                <Hash className="h-3.5 w-3.5 text-slate-400" />
+                Reception No <span className="font-mono font-medium text-slate-800">{editingEntry?.receptionNo || '—'}</span>
+              </span>
+              <span className="inline-flex items-center gap-1.5">
+                DEP No <span className="font-mono font-medium text-slate-800">{editingEntry?.depNo || '—'}</span>
+              </span>
+            </div>
           </DialogHeader>
           {editLocked && (
             <div className="flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
@@ -1262,18 +1552,17 @@ function EntrySheetPageComponent() {
           )}
           <Form {...editForm}>
             <form onSubmit={editForm.handleSubmit(handleUpdateEntry)}>
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-6 py-4">
-                 <FormField control={editForm.control} name="receptionNo" render={({ field }) => (<FormItem className="space-y-2"><FormLabel>Reception No.</FormLabel><FormControl><Input {...field} readOnly /></FormControl><FormMessage /></FormItem>)}/>
-                 <FormField control={editForm.control} name="depNo" render={({ field }) => (<FormItem className="space-y-2"><FormLabel>DEP No.</FormLabel><FormControl><Input {...field} readOnly /></FormControl><FormMessage /></FormItem>)}/>
-                 <FormField control={editForm.control} name="date" render={({ field }) => (<FormItem className="space-y-2 flex flex-col"><FormLabel>Reception Date</FormLabel><Popover><PopoverTrigger asChild><FormControl><Button variant={'outline'} disabled={editLocked} className={cn('w-full justify-start text-left font-normal', !field.value && 'text-muted-foreground')}><CalendarIcon className="mr-2 h-4 w-4" />{field.value ? format(field.value, 'dd MMM yyyy') : <span>Pick a date</span>}</Button></FormControl></PopoverTrigger><PopoverContent className="w-auto p-0" align="start"><Calendar mode="single" selected={field.value} onSelect={field.onChange} initialFocus /></PopoverContent></Popover><FormMessage /></FormItem>)}/>
-                 <FormField control={editForm.control} name="partyName" render={({ field }) => (<FormItem className="space-y-2"><FormLabel>Party Name</FormLabel><FormControl><Input {...field} readOnly={editLocked} className={cn(editLocked && lockedFieldClass)} /></FormControl><FormMessage /></FormItem>)}/>
-                 <FormField control={editForm.control} name="projectId" render={({ field }) => (<FormItem className="space-y-2"><FormLabel>Project Name</FormLabel><Select onValueChange={field.onChange} value={field.value} disabled={editLocked}><FormControl><SelectTrigger><SelectValue/></SelectTrigger></FormControl><SelectContent>{projects.map((p) => (<SelectItem key={p.id} value={p.id}>{p.projectName}</SelectItem>))}</SelectContent></Select><FormMessage /></FormItem>)}/>
-                 <FormField control={editForm.control} name="description" render={({ field }) => (<FormItem className="space-y-2"><FormLabel>Description</FormLabel><FormControl><Textarea {...field}/></FormControl><FormMessage/></FormItem>)}/>
-                 <FormField control={editForm.control} name="departmentId" render={({ field }) => (<FormItem className="space-y-2"><FormLabel>Department</FormLabel><Select onValueChange={field.onChange} value={field.value} disabled={editLocked}><FormControl><SelectTrigger><SelectValue/></SelectTrigger></FormControl><SelectContent>{departments.map((d) => (<SelectItem key={d.id} value={d.id}>{d.name}</SelectItem>))}</SelectContent></Select><FormMessage /></FormItem>)}/>
-                 <FormField control={editForm.control} name="grossAmount" render={({ field }) => (<FormItem className="space-y-2"><FormLabel>Gross Amount</FormLabel><FormControl><Input type="number" {...field} readOnly={editLocked} className={cn(editLocked && lockedFieldClass)} /></FormControl><FormMessage /></FormItem>)}/>
-                 <FormField control={editForm.control} name="netAmount" render={({ field }) => (<FormItem className="space-y-2"><FormLabel>Net Amount</FormLabel><FormControl><Input type="number" {...field} readOnly={editLocked} className={cn(editLocked && lockedFieldClass)} /></FormControl><FormMessage /></FormItem>)}/>
+              {/* 4 columns: who and where · when, which department, how much · what for */}
+              <div className={cn(ENTRY_GRID, 'border-t pt-4')}>
+                 {fields.partyName.visible && (<FormField control={editForm.control} name="partyName" render={({ field }) => (<FormItem className="space-y-1.5 sm:col-span-2"><FormLabel className={FORM_LABEL}>{fieldLabel(fields.partyName)}</FormLabel><FormControl><Input {...field} readOnly={editLocked} className={cn(editLocked && lockedFieldClass)} /></FormControl><FormMessage className="text-[11px]" /></FormItem>)}/>)}
+                 {fields.projectId.visible && (<FormField control={editForm.control} name="projectId" render={({ field }) => (<FormItem className="space-y-1.5 sm:col-span-2"><FormLabel className={FORM_LABEL}>{fieldLabel(fields.projectId)}</FormLabel><Select onValueChange={field.onChange} value={field.value} disabled={editLocked}><FormControl><SelectTrigger><SelectValue/></SelectTrigger></FormControl><SelectContent>{projects.map((p) => (<SelectItem key={p.id} value={p.id}>{p.projectName}</SelectItem>))}</SelectContent></Select><FormMessage className="text-[11px]" /></FormItem>)}/>)}
+                 <FormField control={editForm.control} name="date" render={({ field }) => (<FormItem className="space-y-1.5"><FormLabel className={FORM_LABEL}>{fields.receptionDate.label}</FormLabel><Popover><PopoverTrigger asChild><FormControl><Button variant={'outline'} disabled={editLocked} className={cn('h-9 w-full justify-start px-3 text-left font-normal', !field.value && 'text-muted-foreground')}><CalendarIcon className="mr-2 h-4 w-4 text-slate-400" />{field.value ? format(field.value, 'dd MMM yyyy') : <span>Pick a date</span>}</Button></FormControl></PopoverTrigger><PopoverContent className="w-auto p-0" align="start"><Calendar mode="single" selected={field.value} onSelect={field.onChange} disabled={calendarDisabled} defaultMonth={field.value} initialFocus /></PopoverContent></Popover>{dateWindowHint ? <p className="text-[11px] text-muted-foreground">{dateWindowHint}</p> : null}<FormMessage className="text-[11px]" /></FormItem>)}/>
+                 {fields.departmentId.visible && (<FormField control={editForm.control} name="departmentId" render={({ field }) => (<FormItem className="space-y-1.5"><FormLabel className={FORM_LABEL}>{fieldLabel(fields.departmentId)}</FormLabel><Select onValueChange={field.onChange} value={field.value} disabled={editLocked}><FormControl><SelectTrigger><SelectValue/></SelectTrigger></FormControl><SelectContent>{departments.map((d) => (<SelectItem key={d.id} value={d.id}>{d.name}</SelectItem>))}</SelectContent></Select><FormMessage className="text-[11px]" /></FormItem>)}/>)}
+                 {fields.grossAmount.visible && (<FormField control={editForm.control} name="grossAmount" render={({ field }) => (<FormItem className="space-y-1.5"><FormLabel className={FORM_LABEL}>{fieldLabel(fields.grossAmount)}</FormLabel><div className="relative"><span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-sm text-muted-foreground">₹</span><FormControl><Input type="number" inputMode="decimal" placeholder="0.00" {...field} readOnly={editLocked} className={cn('pl-7 text-right tabular-nums', editLocked && lockedFieldClass)} /></FormControl></div><FormMessage className="text-[11px]" /></FormItem>)}/>)}
+                 {fields.netAmount.visible && (<FormField control={editForm.control} name="netAmount" render={({ field }) => (<FormItem className="space-y-1.5"><FormLabel className={FORM_LABEL}>{fieldLabel(fields.netAmount)}</FormLabel><div className="relative"><span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-sm text-muted-foreground">₹</span><FormControl><Input type="number" inputMode="decimal" placeholder="0.00" {...field} readOnly={editLocked} className={cn('pl-7 text-right font-semibold tabular-nums', editLocked && lockedFieldClass)} /></FormControl></div><FormMessage className="text-[11px]" /></FormItem>)}/>)}
+                 {fields.description.visible && (<FormField control={editForm.control} name="description" render={({ field }) => (<FormItem className="space-y-1.5 sm:col-span-2 md:col-span-4"><FormLabel className={FORM_LABEL}>{fieldLabel(fields.description)}</FormLabel><FormControl><Input {...field} placeholder="What the payment is for" /></FormControl><FormMessage className="text-[11px]"/></FormItem>)}/>)}
               </div>
-              <DialogFooter>
+              <DialogFooter className="mt-4 gap-2 border-t pt-4">
                 <DialogClose asChild>
                   <Button type="button" variant="outline">Cancel</Button>
                 </DialogClose>
@@ -1316,6 +1605,9 @@ function EntrySheetPageComponent() {
     </>
   );
 }
+
+/** The Add / Edit entry dialogs' grid: 1 column on a phone, 2 on a tablet, 4 from md up, 36px controls. */
+const ENTRY_GRID = 'grid grid-cols-1 gap-x-4 gap-y-3.5 [--control-h:2.25rem] sm:grid-cols-2 md:grid-cols-4';
 
 export default function EntrySheetPage() {
     return (

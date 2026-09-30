@@ -21,6 +21,8 @@ import type { DailyRequisitionEntry, Attachment } from '@/lib/types';
 import { Loader2, Upload, Paperclip, Download, Eye, Trash2, File as FileIcon, X } from 'lucide-react';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { useAuth } from '@/components/auth/AuthProvider';
+import { useActivityLogger } from '@/hooks/useActivityLogger';
+import { ACTIVITY_MODULES } from '@/lib/activity-modules';
 
 interface RequisitionDocumentDialogProps {
   isOpen: boolean;
@@ -34,13 +36,21 @@ interface RequisitionDocumentDialogProps {
 export function RequisitionDocumentDialog({ isOpen, onOpenChange, requisition, onUploadComplete, canEdit, canDownload }: RequisitionDocumentDialogProps) {
   const { toast } = useToast();
   const { user } = useAuth();
+  const { log } = useActivityLogger(ACTIVITY_MODULES.DAILY_REQUISITION);
   const [isUploading, setIsUploading] = useState(false);
   const [filesToUpload, setFilesToUpload] = useState<File[]>([]);
   const [currentAttachments, setCurrentAttachments] = useState<Attachment[]>([]);
+  // The document status as this dialog last wrote it — the `requisition` prop goes stale after an
+  // upload or delete until the parent refetches, and the audit log needs the real "from".
+  const [currentDocStatus, setCurrentDocStatus] = useState<string>('Pending');
 
   useEffect(() => {
     if (requisition) {
       setCurrentAttachments(requisition.attachments || []);
+      setCurrentDocStatus(
+        requisition.documentStatus ||
+          ((requisition.attachments?.length ?? 0) > 0 ? 'Uploaded' : 'Pending'),
+      );
     }
   }, [requisition]);
 
@@ -71,6 +81,19 @@ export function RequisitionDocumentDialog({ isOpen, onOpenChange, requisition, o
         documentStatusUpdatedAt: new Date(),
         documentStatusUpdatedById: user.id,
       });
+
+      void log(
+        'Upload Requisition Attachment',
+        {
+          receptionNo: requisition.receptionNo ?? null,
+          fileNames: attachmentUrls.map((a) => a.name),
+          fileCount: attachmentUrls.length,
+          attachmentCount: currentAttachments.length + attachmentUrls.length,
+          documentStatus: { from: currentDocStatus, to: 'Uploaded' },
+        },
+        { recordId: requisition.id, recordRef: requisition.receptionNo || undefined },
+      );
+      setCurrentDocStatus('Uploaded');
       
       toast({ title: "Success", description: `${filesToUpload.length} file(s) uploaded successfully.` });
       setFilesToUpload([]);
@@ -108,6 +131,19 @@ export function RequisitionDocumentDialog({ isOpen, onOpenChange, requisition, o
       }
       
       await updateDoc(reqRef, updateData);
+
+      const nextDocStatus: string = updateData.documentStatus ?? currentDocStatus;
+      void log(
+        'Delete Requisition Attachment',
+        {
+          receptionNo: requisition.receptionNo ?? null,
+          fileName: attachmentToDelete.name ?? null,
+          attachmentCount: remainingAttachments.length,
+          documentStatus: { from: currentDocStatus, to: nextDocStatus },
+        },
+        { recordId: requisition.id, recordRef: requisition.receptionNo || undefined },
+      );
+      setCurrentDocStatus(nextDocStatus);
       
       toast({ title: "Success", description: "Attachment deleted." });
     } catch (error) {

@@ -20,6 +20,9 @@ import {
   dailySurfaceCardClass,
 } from '@/components/daily-requisition/module-shell';
 import { PageHeader } from '@/components/shared/page-header';
+import { useActivityLogger } from '@/hooks/useActivityLogger';
+import { diffFields } from '@/lib/activity-logger';
+import { ACTIVITY_MODULES } from '@/lib/activity-modules';
 
 interface PrintingSettings {
   paperSize: string;
@@ -42,12 +45,37 @@ const initialSettings: PrintingSettings = {
   headerText: 'SIDDHARTHA ENGINEERING LIMITED',
 };
 
+/** One flat row per setting, so the audit log's `changes` names "marginTop" rather than a whole margins object. */
+const flattenSettings = (s: PrintingSettings | null): Record<string, string> | null =>
+  s
+    ? {
+        paperSize: s.paperSize ?? '',
+        orientation: s.orientation ?? '',
+        marginTop: s.margins?.top ?? '',
+        marginBottom: s.margins?.bottom ?? '',
+        marginLeft: s.margins?.left ?? '',
+        marginRight: s.margins?.right ?? '',
+        marginUnit: s.marginUnit ?? '',
+        headerText: s.headerText ?? '',
+      }
+    : null;
+
 export default function PrintingSetupPage() {
   const { toast } = useToast();
   const { can, isLoading: isAuthLoading } = useAuthorization();
   // The Settings page's "Printing Setup" card is gated on this, and so is the menu entry.
   const canViewPage = can('View', 'Daily Requisition.Settings');
+  // Saving used to need only View. Any of the module's settings-edit rights now unlocks it;
+  // everyone else sees the setup read-only.
+  const canEdit =
+    can('Edit Serial Nos', 'Daily Requisition.Settings') ||
+    can('Edit Workflow', 'Daily Requisition.Settings') ||
+    can('Edit User Rights', 'Daily Requisition.Settings') ||
+    can('Edit', 'Daily Requisition.Data Control');
+  const { log } = useActivityLogger(ACTIVITY_MODULES.DAILY_REQUISITION);
   const [settings, setSettings] = useState<PrintingSettings>(initialSettings);
+  // What is stored right now (null when the document does not exist yet) — the audit log's "before".
+  const [savedSettings, setSavedSettings] = useState<PrintingSettings | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
 
@@ -59,6 +87,7 @@ export default function PrintingSetupPage() {
         const docSnap = await getDoc(docRef);
         if (docSnap.exists()) {
           setSettings(docSnap.data() as PrintingSettings);
+          setSavedSettings(docSnap.data() as PrintingSettings);
         }
       } catch (e) {
         toast({ title: 'Error', description: 'Failed to load printing settings.', variant: 'destructive' });
@@ -73,9 +102,17 @@ export default function PrintingSetupPage() {
   };
 
   const handleSave = async () => {
+    if (!canEdit) return;
     setIsSaving(true);
     try {
       await setDoc(doc(db, 'settings', 'printing'), settings);
+      const changes = diffFields(flattenSettings(savedSettings), flattenSettings(settings));
+      void log(
+        'Update Daily Requisition Printing Setup',
+        { settingsDoc: 'settings/printing', created: savedSettings === null, changedCount: Object.keys(changes).length, changes },
+        { recordRef: 'Printing Setup' },
+      );
+      setSavedSettings(settings);
       toast({
         title: 'Settings Saved',
         description: 'Your printing preferences have been updated.',
@@ -128,14 +165,19 @@ export default function PrintingSetupPage() {
         description="Control page setup, margins, and header text for daily requisition print outputs."
         backHref="/daily-requisition/settings"
         actions={
-          <Button onClick={handleSave} disabled={isSaving}>
-            {isSaving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
-            Save Settings
-          </Button>
+          canEdit ? (
+            <Button onClick={handleSave} disabled={isSaving}>
+              {isSaving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
+              Save Settings
+            </Button>
+          ) : (
+            <span className="text-sm text-muted-foreground">Read-only — you need a Daily Requisition settings edit right to change this.</span>
+          )
         }
       />
 
-      <div className="space-y-6">
+      {/* A disabled fieldset makes every input, select and radio below read-only in one place. */}
+      <fieldset disabled={!canEdit} className="min-w-0 space-y-6">
         <Card className={dailySurfaceCardClass}>
           <div className="h-1.5 w-full bg-gradient-to-r from-cyan-400 via-fuchsia-400 to-amber-300 opacity-70" />
           <CardHeader>
@@ -231,7 +273,7 @@ export default function PrintingSetupPage() {
             </div>
           </CardContent>
         </Card>
-      </div>
+      </fieldset>
     </div>
   );
 }

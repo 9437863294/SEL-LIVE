@@ -149,6 +149,9 @@ export const permissionModules = {
       "Edit Workflow",
     ],
     Reports: ["View", "Export"],
+    "Field Control": ["View", "Edit"],
+    "Data Control": ["View", "Edit"],
+    "Audit Log": ["View", "Export"],
   },
   "Site Fund Requisition 2": {
     "View Module": [],
@@ -260,6 +263,9 @@ export const permissionModules = {
     "Expense Requests": ["View All"],
     Reports: ["View"],
     Settings: ["View", "Edit Serial Nos", "Manage Accounts"],
+    "Field Control": ["View", "Edit"],
+    "Data Control": ["View", "Edit"],
+    "Audit Log": ["View", "Export"],
   },
   Loan: {
     "View Module": [],

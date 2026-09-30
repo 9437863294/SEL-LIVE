@@ -43,7 +43,9 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { useAuthorization } from '@/hooks/useAuthorization';
 import { useAuth } from '@/components/auth/AuthProvider';
-import { logUserActivity } from '@/lib/activity-logger';
+import { diffFields, type FieldChange } from '@/lib/activity-logger';
+import { useActivityLogger } from '@/hooks/useActivityLogger';
+import { ACTIVITY_MODULES } from '@/lib/activity-modules';
 import { Badge } from '@/components/ui/badge';
 
 /* ---------------- type guards ---------------- */
@@ -112,8 +114,11 @@ export default function DailyRequisitionWorkflowConfigurationPage() {
   const { toast } = useToast();
   const { user } = useAuth();
   const { can, isLoading: isAuthLoading } = useAuthorization();
+  const { log } = useActivityLogger(ACTIVITY_MODULES.DAILY_REQUISITION);
 
   const [steps, setSteps] = useState<WorkflowStep[]>([]);
+  // The workflow as stored (empty when the document does not exist yet) — the audit log's "before".
+  const [savedSteps, setSavedSteps] = useState<WorkflowStep[]>([]);
   const [roles, setRoles] = useState<Role[]>([]);
   const [users, setUsers] = useState<User[]>([]);
   const [projects, setProjects] = useState<Project[]>([]);
@@ -159,8 +164,10 @@ export default function DailyRequisitionWorkflowConfigurationPage() {
       if (workflowSnap.exists()) {
         const s = (workflowSnap.data().steps || []) as WorkflowStep[];
         setSteps(Array.isArray(s) && s.length > 0 ? normalizeIds(s) : initialSteps);
+        setSavedSteps(Array.isArray(s) ? s : []);
       } else {
         setSteps(initialSteps);
+        setSavedSteps([]);
       }
     } catch (error) {
       console.error('Error fetching data: ', error);
@@ -330,14 +337,22 @@ export default function DailyRequisitionWorkflowConfigurationPage() {
     try {
       const workflowRef = doc(db, 'workflows', 'daily-requisition-workflow');
       await setDoc(workflowRef, { steps: steps });
-      await logUserActivity({
-        userId: user.id,
-        userName: user.name,
-        userEmail: user.email,
-        module: 'Daily Requisition',
-        action: 'Update Daily Requisition Workflow',
-        details: { stepCount: steps.length },
+      const diff = diffWorkflowSteps(savedSteps, steps, {
+        users: new Map(users.map((u) => [u.id, u.name || u.id])),
+        projects: new Map(projects.map((p) => [p.id, p.projectName || p.id])),
+        departments: new Map(departments.map((d) => [d.id, d.name || d.id])),
+        roles: new Map(roles.map((r) => [r.id, r.name || r.id])),
       });
+      void log(
+        'Update Daily Requisition Workflow',
+        {
+          workflowDoc: 'workflows/daily-requisition-workflow',
+          stepCount: { from: savedSteps.length, to: steps.length },
+          ...diff,
+        },
+        { recordRef: 'Workflow' },
+      );
+      setSavedSteps(steps);
       toast({ title: 'Success', description: 'Workflow configuration saved.' });
     } catch (error) {
       console.error('Error saving workflow: ', error);
@@ -834,6 +849,144 @@ function safeCan3(canFn: CanFn3, action: string, module: string, scope?: string)
   } catch {
     return false;
   }
+}
+
+/* ---------------- audit diff ---------------- */
+interface WorkflowLookups {
+  users: Map<string, string>;
+  projects: Map<string, string>;
+  departments: Map<string, string>;
+  roles: Map<string, string>;
+}
+
+type AmountBasedConditionLike = {
+  type: string;
+  amount1?: number;
+  amount2?: number;
+  userId: string;
+  alternativeUserId?: string;
+};
+
+/** One step as readable, flat text — names instead of ids — so a log reviewer can read the diff. */
+function summarizeStep(step: WorkflowStep, lk: WorkflowLookups): Record<string, string | number | null> {
+  const userName = (id?: string | null) => (id ? lk.users.get(id) ?? id : '');
+  let assignees = '';
+  if (step.assignmentType === 'User-based') {
+    const [primary, alternative] = (step.assignedTo as string[]) ?? [];
+    assignees = [primary && `Primary: ${userName(primary)}`, alternative && `Alternative: ${userName(alternative)}`]
+      .filter(Boolean)
+      .join('; ');
+  } else if (step.assignmentType === 'Amount-based') {
+    assignees = ((step.assignedTo as AmountBasedConditionLike[]) ?? [])
+      .map((c) => {
+        const range =
+          c.type === 'Between' ? `Between ${c.amount1 ?? 0} and ${c.amount2 ?? 0}` : `${c.type} ${c.amount1 ?? 0}`;
+        const alt = c.alternativeUserId ? ` / ${userName(c.alternativeUserId)}` : '';
+        return `${range}: ${userName(c.userId)}${alt}`;
+      })
+      .join('; ');
+  } else {
+    const names =
+      step.assignmentType === 'Project-based'
+        ? lk.projects
+        : step.assignmentType === 'Department-based'
+          ? lk.departments
+          : lk.roles;
+    const map = (step.assignedTo ?? {}) as Record<string, AssignedTo>;
+    assignees = Object.entries(map)
+      .filter(([, m]) => m && (m.primary || m.alternative))
+      .map(([key, m]) => {
+        const alt = m.alternative ? ` / ${userName(m.alternative)}` : '';
+        return `${names.get(key) ?? key}: ${userName(m.primary)}${alt}`;
+      })
+      .sort()
+      .join('; ');
+  }
+
+  const actions = (step.actions ?? [])
+    .map((a) => {
+      if (typeof a === 'string') return a;
+      const flags = [
+        a.requiresComment && 'comment required',
+        a.requiresAttachment && 'attachment required',
+        a.nextStatus && `next: ${a.nextStatus}`,
+        a.departmentId && `dept: ${lk.departments.get(a.departmentId) ?? a.departmentId}`,
+      ].filter(Boolean);
+      return flags.length ? `${a.name} (${flags.join(', ')})` : a.name;
+    })
+    .join(', ');
+
+  return {
+    tat: Number(step.tat) || 0,
+    assignmentType: step.assignmentType ?? null,
+    assignees,
+    actions,
+    upload: step.upload ?? null,
+    description: step.description ?? '',
+    notify: (step.notifyUserIds ?? []).map((id) => userName(id)).join(', '),
+    escalationUser: userName(step.escalationUserId),
+    escalationThreshold: step.escalationThreshold ?? null,
+  };
+}
+
+/**
+ * What a workflow save changed, per step name. Steps are matched by name first (ids are
+ * renumbered on every move/delete); a leftover old and new step in the same position is a rename.
+ * `changes` uses the usual {field: {from, to}} shape, keyed "<Step> › <field>".
+ */
+function diffWorkflowSteps(before: WorkflowStep[], after: WorkflowStep[], lk: WorkflowLookups) {
+  const changes: Record<string, FieldChange> = {};
+  const added: string[] = [];
+  const removed: string[] = [];
+  const renamed: { from: string; to: string }[] = [];
+
+  const beforeByName = new Map(before.map((st) => [st.name, st]));
+  const afterNames = new Set(after.map((st) => st.name));
+  const unmatchedBefore = new Map<number, WorkflowStep>();
+  before.forEach((st, i) => {
+    if (!afterNames.has(st.name)) unmatchedBefore.set(i, st);
+  });
+
+  const compare = (label: string, a: WorkflowStep, b: WorkflowStep) => {
+    const d = diffFields(summarizeStep(a, lk), summarizeStep(b, lk));
+    for (const [field, change] of Object.entries(d)) changes[`${label} › ${field}`] = change;
+  };
+
+  after.forEach((st, i) => {
+    const match = beforeByName.get(st.name);
+    if (match) {
+      compare(st.name, match, st);
+      return;
+    }
+    const old = unmatchedBefore.get(i);
+    if (old) {
+      unmatchedBefore.delete(i);
+      renamed.push({ from: old.name, to: st.name });
+      changes[`${st.name} › name`] = { from: old.name, to: st.name };
+      compare(st.name, old, st);
+      return;
+    }
+    added.push(st.name);
+    changes[`${st.name} › step`] = { from: null, to: 'Added' };
+  });
+  for (const old of unmatchedBefore.values()) {
+    removed.push(old.name);
+    changes[`${old.name} › step`] = { from: 'Removed', to: null };
+  }
+
+  const beforeOrder = before.map((st) => st.name).join(' → ');
+  const afterOrder = after.map((st) => st.name).join(' → ');
+  const orderChanged = beforeOrder !== afterOrder;
+  if (orderChanged) changes['Step order'] = { from: beforeOrder || null, to: afterOrder || null };
+
+  return {
+    added,
+    removed,
+    renamed,
+    orderChanged,
+    changedCount: Object.keys(changes).length,
+    changes,
+  };
 }
 
 function normalizeIds(arr: WorkflowStep[]): WorkflowStep[] {

@@ -20,7 +20,7 @@ import * as React from 'react';
 import { useState } from 'react';
 import Link from 'next/link';
 import { usePathname, useSearchParams } from 'next/navigation';
-import { BarChart3, ChevronDown, ChevronRight, IndianRupee, LayoutDashboard, Layers, Plus, Settings, type LucideIcon } from 'lucide-react';
+import { BarChart3, ChevronDown, ChevronRight, IndianRupee, LayoutDashboard, Layers, Plus, ScrollText, Settings, type LucideIcon } from 'lucide-react';
 import { EXPENSE_REPORTS, EXPENSE_REPORT_GROUPS } from '@/lib/expenses-reports';
 import { useAuth } from '@/components/auth/AuthProvider';
 import { ModuleBottomNav, type ModuleNavTab } from '@/components/navigation/ModuleBottomNav';
@@ -33,7 +33,11 @@ import { SheetClose } from '@/components/ui/sheet';
 import { useAuthorization } from '@/hooks/useAuthorization';
 import { cn } from '@/lib/utils';
 
-type NavChild = { id: string; label: string; group: string };
+/**
+ * A section's sub-entry. Report children select through a query key (`?report=`); a child with
+ * an `href` of its own is a page, and is lit by the path instead.
+ */
+type NavChild = { id: string; label: string; group: string; href?: string };
 
 type NavItem = {
   href: string;
@@ -65,7 +69,31 @@ const reportChildren: NavChild[] = [
   { id: PIVOT_ID, label: 'Custom Pivot', group: 'Custom' },
 ];
 
-const CHILD_GROUP_ORDER = [...EXPENSE_REPORT_GROUPS, 'Custom'];
+/** Settings' own pages, listed under it while Settings is open. */
+const settingsChildren: NavChild[] = [
+  { id: 'field-control', label: 'Field Control', group: 'Controls', href: '/expenses/settings/field-control' },
+  { id: 'data-control', label: 'Data Control', group: 'Controls', href: '/expenses/settings/data-control' },
+];
+
+const CHILD_GROUP_ORDER = [...EXPENSE_REPORT_GROUPS, 'Custom', 'Controls'];
+
+/** Where a child links to. */
+const childHref = (parentHref: string, childParam: string | undefined, child: NavChild) =>
+  child.href ?? `${parentHref}?${childParam}=${child.id}`;
+
+/**
+ * Whether a child is the one open. A page child is lit by the path; a query child by its key, with
+ * the first entry standing in when nothing is selected (that is what the page falls back to).
+ */
+const isChildSelected = (
+  child: NavChild,
+  children: NavChild[],
+  selected: string | null | undefined,
+  pathname: string,
+) => {
+  if (child.href) return pathname === child.href || pathname.startsWith(`${child.href}/`);
+  return selected ? selected === child.id : child.id === children[0].id;
+};
 
 /** Headings for each `group` in the phone's "More" pop-up; the sidebar draws the same groups as dividers. */
 const GROUP_LABELS: Record<string, string> = {
@@ -75,7 +103,7 @@ const GROUP_LABELS: Record<string, string> = {
 };
 
 /** Sub-routes with a nav entry of their own; anything else under /expenses belongs to Overview. */
-const NAMED_SUB_ROUTES = ['/expenses/new-request', '/expenses/all', '/expenses/reports', '/expenses/settings'];
+const NAMED_SUB_ROUTES = ['/expenses/new-request', '/expenses/all', '/expenses/reports', '/expenses/settings', '/expenses/audit-log'];
 
 function matchesPath(pathname: string, href: string) {
   if (href === '/expenses') {
@@ -165,7 +193,7 @@ export default function ExpensesLayoutShell({ children }: { children: React.Reac
     {
       href: '/expenses/settings',
       label: 'Settings',
-      caption: 'Series & accounts',
+      caption: 'Series, accounts & controls',
       icon: Settings,
       color: 'text-teal-600',
       bg: 'bg-teal-50',
@@ -173,6 +201,19 @@ export default function ExpensesLayoutShell({ children }: { children: React.Reac
       glow: 'shadow-[0_8px_24px_-8px_rgba(20,184,166,0.55)]',
       group: 'admin',
       permitted: can('View', 'Expenses.Settings'),
+      children: settingsChildren,
+    },
+    {
+      href: '/expenses/audit-log',
+      label: 'Audit Log',
+      caption: 'Who changed what',
+      icon: ScrollText,
+      color: 'text-slate-600',
+      bg: 'bg-slate-100',
+      gradient: 'from-slate-600 to-slate-800',
+      glow: 'shadow-[0_8px_24px_-8px_rgba(71,85,105,0.55)]',
+      group: 'admin',
+      permitted: can('View', 'Expenses.Audit Log') || can('View', 'Settings.Audit Logs'),
     },
   ].filter(item => item.permitted);
 
@@ -220,14 +261,11 @@ export default function ExpensesLayoutShell({ children }: { children: React.Reac
             {group}
           </p>
           {inGroup.map(child => {
-            // The first entry is what the page falls back to when nothing is selected.
-            const isSelected = selectedChild
-              ? selectedChild === child.id
-              : child.id === item.children![0].id;
+            const isSelected = isChildSelected(child, item.children!, selectedChild, safePathname);
             return (
               <Link
                 key={child.id}
-                href={`${item.href}?${item.childParam}=${child.id}`}
+                href={childHref(item.href, item.childParam, child)}
                 onClick={onNavigate}
                 aria-current={isSelected ? 'true' : undefined}
                 className={cn(
@@ -272,14 +310,12 @@ export default function ExpensesLayoutShell({ children }: { children: React.Reac
               </p>
               <div className="flex flex-wrap gap-1.5">
                 {inGroup.map(child => {
-                  // Same rule as the sidebar: the first entry is what the page falls back to.
-                  const isSelected = parentSelected
-                    ? parentSelected === child.id
-                    : child.id === parentChildren[0].id;
+                  // Same rule as the sidebar.
+                  const isSelected = isChildSelected(child, parentChildren, parentSelected, safePathname);
                   return (
                     <SheetClose key={child.id} asChild>
                       <Link
-                        href={`${activeParent.href}?${activeParent.childParam}=${child.id}`}
+                        href={childHref(activeParent.href, activeParent.childParam, child)}
                         aria-current={isSelected ? 'true' : undefined}
                         className={cn(
                           'inline-flex min-h-9 items-center rounded-full border px-3 text-xs font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
