@@ -2,7 +2,7 @@
 
 import { useCallback } from 'react';
 import { useAuth } from '@/components/auth/AuthProvider';
-import { logUserActivity } from '@/lib/activity-logger';
+import { activityLogDoc, logUserActivity } from '@/lib/activity-logger';
 
 /** Identifies the record an action touched, so the log can be filtered by it. */
 export interface ActivityTarget {
@@ -62,5 +62,28 @@ export function useActivityLogger(module: string) {
     [user, module]
   );
 
-  return { log };
+  /**
+   * The same log as a `userLogs` document, for writing inside the caller's own batch
+   * (`batch.set(doc(collection(db, 'userLogs')), entry(...))`). Null when no one is signed in.
+   */
+  const entry = useCallback(
+    (action: string, details: Record<string, any> = {}, target: ActivityTarget = {}) => {
+      if (!user?.id) return null;
+      return activityLogDoc({
+        userId: user.id,
+        userName: user.name ?? undefined,
+        userEmail: user.email ?? undefined,
+        module,
+        action,
+        details,
+        recordId: target.recordId,
+        recordRef: target.recordRef,
+        sessionId: typeof window !== 'undefined' ? (localStorage.getItem('sessionId') ?? undefined) : undefined,
+        userAgent: typeof navigator !== 'undefined' ? navigator.userAgent : undefined,
+      });
+    },
+    [user, module]
+  );
+
+  return { log, entry };
 }

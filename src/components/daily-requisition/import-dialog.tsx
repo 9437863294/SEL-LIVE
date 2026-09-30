@@ -216,7 +216,7 @@ export function DailyRequisitionImportDialog({
 }) {
   const { user } = useAuth();
   const { toast } = useToast();
-  const { log } = useActivityLogger(ACTIVITY_MODULES.DAILY_REQUISITION);
+  const { log, entry: logEntry } = useActivityLogger(ACTIVITY_MODULES.DAILY_REQUISITION);
   const fileInput = useRef<HTMLInputElement>(null);
 
   const [step, setStep] = useState<'input' | 'preview' | 'summary'>('input');
@@ -493,7 +493,8 @@ export function DailyRequisitionImportDialog({
       for (let index = 0; index < rows.length; index += 1) {
         const { draft } = rows[index];
         const link = links[index];
-        const needed = link.kind === 'link' ? 2 : 1;
+        // The requisition, its "Import" log, and the linked expense request when there is one.
+        const needed = link.kind === 'link' ? 3 : 2;
         if (writes + needed > WRITES_PER_BATCH) {
           await batch.commit();
           setProgress(index);
@@ -502,7 +503,8 @@ export function DailyRequisitionImportDialog({
         }
 
         const receptionNo = receptionNos[index];
-        batch.set(doc(collection(db, 'dailyRequisitions')), {
+        const requisitionRef = doc(collection(db, 'dailyRequisitions'));
+        batch.set(requisitionRef, {
           receptionNo,
           depNo: draft.depNo,
           date: Timestamp.fromDate(new Date(draft.date)),
@@ -522,6 +524,25 @@ export function DailyRequisitionImportDialog({
           ...importedPaymentFields(draft),
         });
         writes += 1;
+
+        // Each imported requisition's own "created" line in its history, written with it.
+        const importLog = logEntry(
+          'Import Daily Requisition',
+          {
+            source: sourceLabel ?? '',
+            receptionNo,
+            depNo: draft.depNo ?? '',
+            partyName: draft.partyName ?? '',
+            grossAmount: Number(draft.grossAmount) || 0,
+            netAmount: Number(draft.netAmount) || 0,
+            status: draft.status ?? '',
+          },
+          { recordId: requisitionRef.id, recordRef: receptionNo },
+        );
+        if (importLog) {
+          batch.set(doc(collection(db, 'userLogs')), importLog);
+          writes += 1;
+        }
 
         // The expense request this row was raised as is received by it, exactly as when the DEP No
         // is picked on the entry sheet — otherwise it stays in the unassigned list for ever.

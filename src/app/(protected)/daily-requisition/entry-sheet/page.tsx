@@ -626,6 +626,7 @@ function EntrySheetPageComponent() {
           depNo: data.depNo || null,
           partyName: data.partyName ?? '',
           amount: parseFloat(data.netAmount) || 0,
+          attachments: selectedFiles.map((file) => file.name),
         },
         { recordId: newEntryRef.id, recordRef: generatedReceptionNo },
       );

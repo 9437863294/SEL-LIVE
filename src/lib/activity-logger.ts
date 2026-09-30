@@ -51,22 +51,30 @@ export interface ActivityLogData {
   userAgent?: string;
 }
 
+/**
+ * The `userLogs` document for one action. Exposed so a bulk write (an import) can put each record's
+ * log in the same batch as the record itself — the two then land, or fail, together.
+ */
+export function activityLogDoc(logData: ActivityLogData) {
+  return {
+    userId:      logData.userId,
+    userName:    logData.userName    ?? null,
+    userEmail:   logData.userEmail   ?? null,
+    module:      canonicalModuleName(logData.module),
+    action:      logData.action,
+    details:     logData.details     ?? {},
+    recordId:    logData.recordId    ?? null,
+    recordRef:   logData.recordRef   ?? null,
+    sessionId:   logData.sessionId   ?? null,
+    ipAddress:   logData.ipAddress   ?? null,
+    userAgent:   logData.userAgent   ?? null,
+    timestamp:   serverTimestamp(),
+  };
+}
+
 export async function logUserActivity(logData: ActivityLogData): Promise<void> {
   try {
-    await addDoc(collection(db, 'userLogs'), {
-      userId:      logData.userId,
-      userName:    logData.userName    ?? null,
-      userEmail:   logData.userEmail   ?? null,
-      module:      canonicalModuleName(logData.module),
-      action:      logData.action,
-      details:     logData.details     ?? {},
-      recordId:    logData.recordId    ?? null,
-      recordRef:   logData.recordRef   ?? null,
-      sessionId:   logData.sessionId   ?? null,
-      ipAddress:   logData.ipAddress   ?? null,
-      userAgent:   logData.userAgent   ?? null,
-      timestamp:   serverTimestamp(),
-    });
+    await addDoc(collection(db, 'userLogs'), activityLogDoc(logData));
   } catch (err) {
     // Logging must never crash the calling feature.
     console.error('[activity-logger] Failed to write log:', err);
