@@ -728,6 +728,21 @@ export interface EApprovalSettings {
   /** Whether an approver may return to any earlier step, or only to the requester. */
   allowReturnToAnyStep: boolean;
   /**
+   * Which kinds of assignee the *ad-hoc* pickers offer — the request form, and the Forward,
+   * Delegate, Add Approver, Verification and Clarification dialogs.
+   *
+   * An organisation that routes everything by named person does not want a requester addressing a
+   * whole department, and one that routes by post does not want four spellings of the same job
+   * title; either way the unused tabs are three extra wrong answers on the form. This is the switch
+   * for that, and it is deliberately not applied to the workflow editor or the approval matrix:
+   * those are the admin's own configuration, and hiding a kind there would strand a stage already
+   * using it, editable nowhere.
+   *
+   * `'User'` is always offered whatever is stored here — see `eApprovalAdHocAssigneeKinds`. A form
+   * on which no approver can be named is not a stricter policy, it is a broken form.
+   */
+  adHocAssigneeKinds: EApprovalAssigneeKind[];
+  /**
    * Whether a return travels back through the requester before it resumes.
    *
    * A return is a request for a correction, and the proposal is the requester's to correct —
@@ -798,6 +813,9 @@ export const DEFAULT_E_APPROVAL_SETTINGS: EApprovalSettings = {
   allowApproveAndComplete: true,
   allowNestedVerification: true,
   maxVerificationDepth: 4,
+  // All four, because switching one off is a decision about how a particular organisation routes
+  // work and nothing the module can guess. Existing records predate the field and read as this too.
+  adHocAssigneeKinds: ['User', 'Department', 'Project', 'Designation'],
   allowReturnToAnyStep: true,
   returnViaRequester: true,
   skipSelfApprovalSteps: true,
@@ -808,6 +826,52 @@ export const DEFAULT_E_APPROVAL_SETTINGS: EApprovalSettings = {
   allowReverse: true,
   reverseWindowHours: 24,
 };
+
+/** The four kinds an ad-hoc picker can offer, in the order the tabs are drawn. */
+export const E_APPROVAL_AD_HOC_ASSIGNEE_KINDS: readonly EApprovalAssigneeKind[] = [
+  'User',
+  'Department',
+  'Project',
+  'Designation',
+];
+
+/** What each tab is called on the form, so the setting and the picker cannot drift apart. */
+export const E_APPROVAL_ASSIGNEE_KIND_LABELS: Record<string, string> = {
+  User: 'Person',
+  Department: 'Department',
+  Project: 'Project',
+  Designation: 'Designation',
+};
+
+/**
+ * Which assignee tabs the ad-hoc pickers should offer, given the settings.
+ *
+ * Three rules, and each exists because of a way the stored value can be wrong:
+ *
+ *   - **`'User'` is always offered.** A form on which no approver can be named is not a stricter
+ *     policy, it is a form nobody can submit. An admin who unticks everything gets Person back.
+ *   - **A missing or empty list means all four.** Every settings record written before this field
+ *     existed has no list, and reading that as "nothing is allowed" would take the Department,
+ *     Project and Designation tabs away from every organisation on the next deploy.
+ *   - **Unknown values are dropped and the order is this file's**, not the stored array's, so the
+ *     tabs cannot be reordered or populated by whatever happens to be in the document.
+ */
+export function eApprovalAdHocAssigneeKinds(
+  settings?: Pick<EApprovalSettings, 'adHocAssigneeKinds'> | null,
+): EApprovalAssigneeKind[] {
+  const stored = settings?.adHocAssigneeKinds;
+  if (!Array.isArray(stored) || stored.length === 0) return [...E_APPROVAL_AD_HOC_ASSIGNEE_KINDS];
+  const chosen = new Set(stored);
+  return E_APPROVAL_AD_HOC_ASSIGNEE_KINDS.filter((kind) => kind === 'User' || chosen.has(kind));
+}
+
+/** Whether one tab is offered. The same rules, for a caller that only cares about one. */
+export function eApprovalAdHocKindAllowed(
+  settings: Pick<EApprovalSettings, 'adHocAssigneeKinds'> | null | undefined,
+  kind: EApprovalAssigneeKind,
+): boolean {
+  return eApprovalAdHocAssigneeKinds(settings).includes(kind);
+}
 
 /* ------------------------------------------------------------------------------------------------
  * Reference numbering (spec section 24)

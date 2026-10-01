@@ -32,6 +32,7 @@ import { useToast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
 import {
   describeEApprovalAssignment,
+  eApprovalAdHocAssigneeKinds,
   E_APPROVAL_BASE_PATH,
   E_APPROVAL_PRIORITIES,
   eApprovalStepSla,
@@ -103,6 +104,8 @@ export function ApprovalForm({
   const { toast } = useToast();
   const { directory, isLoading: directoryLoading } = useEApprovalDirectory();
   const { settings } = useEApprovalSettings();
+  // Which assignee tabs this organisation offers on a form. Workflow stages are unaffected.
+  const adHocKinds = eApprovalAdHocAssigneeKinds(settings);
 
   const [subject, setSubject] = useState(existing?.subject ?? '');
   /**
@@ -927,6 +930,9 @@ export function ApprovalForm({
                   multiple
                   label=""
                   allowRequester={false}
+                  allowDepartment={adHocKinds.includes('Department')}
+                  allowProject={adHocKinds.includes('Project')}
+                  allowDesignation={adHocKinds.includes('Designation')}
                 />
 
                 {chain.length > 1 && (
@@ -1186,6 +1192,7 @@ export function ApprovalForm({
                   multiple
                   allowDepartment={false}
                   allowDesignation={false}
+                  allowProject={adHocKinds.includes('Project')}
                   label="CC — view and comment only"
                 />
                 <label className="flex cursor-pointer items-start gap-2 rounded-md border bg-muted/20 px-2.5 py-2">

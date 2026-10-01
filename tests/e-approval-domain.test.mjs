@@ -10,6 +10,9 @@ import {
   canActOnEApprovalStep,
   canAssignEApprovalStep,
   canDeleteEApprovalRequest,
+  eApprovalAdHocAssigneeKinds,
+  eApprovalAdHocKindAllowed,
+  E_APPROVAL_AD_HOC_ASSIGNEE_KINDS,
   canEditEApprovalRequest,
   canRemoveEApprovalAttachment,
   canManageEApprovalDelegationFor,
@@ -2298,4 +2301,71 @@ test('nobody signed in deletes nothing', () => {
   });
   assert.equal(decision.allowed, false);
   assert.equal(decision.kind, null);
+});
+
+/* ── which assignee tabs an ad-hoc picker offers ─────────────────────────────────────────────── */
+
+/*
+ * An organisation-wide switch over the Person / Department / Project / Designation tabs on the
+ * request form and the routing dialogs. Deliberately not applied to workflow stages or the approval
+ * matrix: hiding a kind there would strand a stage already routed to it, editable nowhere.
+ */
+
+test('all four tabs are offered by default', () => {
+  assert.deepEqual(eApprovalAdHocAssigneeKinds({ adHocAssigneeKinds: undefined }), [
+    'User',
+    'Department',
+    'Project',
+    'Designation',
+  ]);
+});
+
+test('a settings record written before the field existed still gets all four', () => {
+  // The upgrade case. Reading a missing list as "nothing is allowed" would take three tabs away
+  // from every organisation on the next deploy.
+  assert.deepEqual(eApprovalAdHocAssigneeKinds({}), [...E_APPROVAL_AD_HOC_ASSIGNEE_KINDS]);
+  assert.deepEqual(eApprovalAdHocAssigneeKinds(null), [...E_APPROVAL_AD_HOC_ASSIGNEE_KINDS]);
+  assert.deepEqual(eApprovalAdHocAssigneeKinds(undefined), [...E_APPROVAL_AD_HOC_ASSIGNEE_KINDS]);
+});
+
+test('an empty list reads as all four, not as none', () => {
+  assert.deepEqual(eApprovalAdHocAssigneeKinds({ adHocAssigneeKinds: [] }), [
+    ...E_APPROVAL_AD_HOC_ASSIGNEE_KINDS,
+  ]);
+});
+
+test('switching a kind off removes exactly that tab', () => {
+  const kinds = eApprovalAdHocAssigneeKinds({ adHocAssigneeKinds: ['User', 'Department'] });
+  assert.deepEqual(kinds, ['User', 'Department']);
+  assert.equal(eApprovalAdHocKindAllowed({ adHocAssigneeKinds: ['User', 'Department'] }, 'Project'), false);
+  assert.equal(eApprovalAdHocKindAllowed({ adHocAssigneeKinds: ['User', 'Department'] }, 'Department'), true);
+});
+
+test('Person cannot be switched off, however the record was written', () => {
+  // A form on which no approver can be named is not a stricter policy, it is a form nobody can
+  // submit — so the one tab that makes the page work is not up for negotiation.
+  assert.deepEqual(eApprovalAdHocAssigneeKinds({ adHocAssigneeKinds: ['Department'] }), [
+    'User',
+    'Department',
+  ]);
+  assert.equal(eApprovalAdHocKindAllowed({ adHocAssigneeKinds: ['Designation'] }, 'User'), true);
+});
+
+test('the tab order is the module\u0027s, not whatever order the record happens to list', () => {
+  const kinds = eApprovalAdHocAssigneeKinds({
+    adHocAssigneeKinds: ['Designation', 'Project', 'Department', 'User'],
+  });
+  assert.deepEqual(kinds, ['User', 'Department', 'Project', 'Designation']);
+});
+
+test('a value that is not an assignee kind is dropped rather than drawn as a tab', () => {
+  assert.deepEqual(eApprovalAdHocAssigneeKinds({ adHocAssigneeKinds: ['User', 'Role', 'nonsense'] }), [
+    'User',
+  ]);
+});
+
+test('a non-array value falls back to all four rather than throwing', () => {
+  assert.deepEqual(eApprovalAdHocAssigneeKinds({ adHocAssigneeKinds: 'Department' }), [
+    ...E_APPROVAL_AD_HOC_ASSIGNEE_KINDS,
+  ]);
 });

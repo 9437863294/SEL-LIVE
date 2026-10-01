@@ -37,6 +37,7 @@ import {
   canAssignEApprovalStep,
   canTakeEApprovalOwnership,
   describeEApprovalAssignment,
+  eApprovalAdHocAssigneeKinds,
   eApprovalReturnTargets,
   E_APPROVAL_ACTION_LABELS,
   isTerminalEApprovalStatus,
@@ -218,6 +219,9 @@ export function ActionPanel({
   const { toast } = useToast();
   const { request, steps } = detail;
   const [dialog, setDialog] = useState<DialogConfig | null>(null);
+  // Which assignee tabs this organisation offers when somebody routes a file by hand. Workflow
+  // stages keep all four, so a stage already using a kind that was switched off still works.
+  const adHocKinds = eApprovalAdHocAssigneeKinds(settings);
   const [stepId, setStepId] = useState<string | null>(null);
   const [comment, setComment] = useState('');
   const [reason, setReason] = useState('');
@@ -622,8 +626,9 @@ export function ActionPanel({
                   onChange={setTargets}
                   multiple={dialog.needsTargets === 'multiple'}
                   allowRequester={dialog.kind === 'Request Clarification'}
-                  allowDepartment={dialog.kind !== 'Assign'}
-                  allowDesignation={dialog.kind !== 'Assign'}
+                  allowDepartment={dialog.kind !== 'Assign' && adHocKinds.includes('Department')}
+                  allowDesignation={dialog.kind !== 'Assign' && adHocKinds.includes('Designation')}
+                  allowProject={adHocKinds.includes('Project')}
                   label={
                     dialog.kind === 'Send For Verification'
                       ? 'Verify with'
@@ -646,6 +651,7 @@ export function ActionPanel({
                   multiple
                   allowDepartment={false}
                   allowDesignation={false}
+                  allowProject={adHocKinds.includes('Project')}
                   label="Participants"
                 />
               )}

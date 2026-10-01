@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { AlarmClock, BellRing, Hash, Loader2, Plus, Save, ShieldCheck, Trash2, Undo2, Users, Zap } from 'lucide-react';
+import { AlarmClock, BellRing, Hash, Loader2, Plus, Save, ShieldCheck, Trash2, Undo2, Users, UserSearch, Zap } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -12,6 +12,9 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { useToast } from '@/hooks/use-toast';
 import {
   DEFAULT_E_APPROVAL_ESCALATION_LADDER,
+  eApprovalAdHocAssigneeKinds,
+  E_APPROVAL_AD_HOC_ASSIGNEE_KINDS,
+  E_APPROVAL_ASSIGNEE_KIND_LABELS,
   E_APPROVAL_MATERIAL_FIELD_LABELS,
   eApprovalReference,
   type EApprovalEscalationRule,
@@ -51,6 +54,10 @@ export function EApprovalSettingsPanel({
   }, [settings]);
 
   if (!draft) return null;
+
+  // Read through the same helper the pickers use, so the ticks shown here are the tabs that actually
+  // appear — including the "empty means all four" reading that every pre-existing record relies on.
+  const effectiveAdHocKinds = eApprovalAdHocAssigneeKinds(draft);
 
   const save = async () => {
     if (!serviceActor) return;
@@ -306,6 +313,66 @@ export function EApprovalSettingsPanel({
                 </span>
               </span>
             </label>
+          </div>
+        </CardContent>
+      </Card>
+
+      <Card id="assignee-kinds" className="scroll-mt-20">
+        <CardHeader className="px-3 py-2.5 sm:px-4">
+          <CardTitle className="flex items-center gap-1.5 text-sm">
+            <UserSearch className="h-4 w-4" /> How an approver may be named
+          </CardTitle>
+          <CardDescription className="text-xs">
+            The tabs offered on the request form and in the Forward, Delegate, Add approver,
+            Verification and Clarification dialogs. An organisation that routes everything by named
+            person does not want a requester addressing a whole department — the unused tabs are
+            three more wrong answers on the form.
+          </CardDescription>
+          {/* Said plainly, because an admin reasonably expects a switch here to apply everywhere.
+              It does not, and the reason is that it must not: a stage already routed to a kind that
+              was then switched off would be editable nowhere. */}
+          <p className="text-[11px] text-muted-foreground">
+            Workflow stages and the approval matrix are unaffected — they keep all four, so switching
+            one off here can never strand a stage that already uses it.
+          </p>
+        </CardHeader>
+        <CardContent className="px-3 pb-3 sm:px-4">
+          <div className="grid gap-1.5 sm:grid-cols-2">
+            {E_APPROVAL_AD_HOC_ASSIGNEE_KINDS.map((kind) => {
+              const always = kind === 'User';
+              const checked = always || effectiveAdHocKinds.includes(kind);
+              return (
+                <label key={kind} className="flex items-start gap-1.5 text-xs">
+                  <Checkbox
+                    checked={checked}
+                    onCheckedChange={(next) =>
+                      setDraft({
+                        ...draft,
+                        adHocAssigneeKinds: E_APPROVAL_AD_HOC_ASSIGNEE_KINDS.filter((candidate) =>
+                          candidate === kind ? next === true : effectiveAdHocKinds.includes(candidate),
+                        ),
+                      })
+                    }
+                    // Person cannot be switched off: a form on which no approver can be named is not
+                    // a stricter policy, it is a form nobody can submit.
+                    disabled={!canEdit || always}
+                    className="mt-0.5"
+                  />
+                  <span>
+                    {E_APPROVAL_ASSIGNEE_KIND_LABELS[kind] ?? kind}
+                    <span className="block text-[11px] text-muted-foreground">
+                      {kind === 'User'
+                        ? 'Always available — somebody has to be nameable.'
+                        : kind === 'Department'
+                          ? 'Addresses the department; anyone in it, or its head, may act.'
+                          : kind === 'Project'
+                            ? "Addresses a project — its head, or whoever holds a named role on it."
+                            : 'Addresses a post rather than a person, so it survives a transfer.'}
+                    </span>
+                  </span>
+                </label>
+              );
+            })}
           </div>
         </CardContent>
       </Card>

@@ -170,12 +170,43 @@ export function AssigneePicker({
     });
 
   /**
-   * Name, designation, location, employee ID — the four facts that identify a colleague.
+   * Employee ID, name, designation, location — the four facts that identify a colleague.
+   *
+   * The ID leads because it is the one that settles an argument: two people share a name, a
+   * designation is held by several, but a code identifies exactly one person, and it is what every
+   * other system in the company files them under.
    *
    * All four come off the row itself: `AuthProvider` joined the greytHR record onto the directory
    * once, so nothing here reads a database or needs the index passed down.
    */
   const personColumns: HrListColumn<User>[] = [
+    {
+      header: 'Emp ID',
+      // `detail`, not `title`: this is the desktop column order. The phone card still leads with the
+      // name, because a card headed "E1597" is a card nobody can scan.
+      mobile: 'detail',
+      /*
+       * Sized to its contents instead of taking an equal quarter of the table.
+       *
+       * `w-px` with `whitespace-nowrap` is the shrink-to-fit idiom for the kit's auto-layout
+       * `w-full` table: the browser cannot honour a 1px width without clipping the text, so it
+       * gives the column exactly the width of its longest value and hands the slack to the three
+       * columns people actually read across. A code like "E1597" is six characters and fixed, so
+       * every pixel beyond that would push the name away from the left edge for nothing.
+       *
+       * The monospace face stays on the cell rather than going here, because `className` is applied
+       * to the header too and "EMP ID" was rendering in a different face from the other three.
+       */
+      className: 'w-px whitespace-nowrap',
+      cell: (row) => {
+        const { employeeCode } = resolveDesignation(row);
+        return employeeCode ? (
+          <span className="font-mono text-[11px]">{employeeCode}</span>
+        ) : (
+          <span className="text-muted-foreground/70">—</span>
+        );
+      },
+    },
     {
       header: 'Name',
       mobile: 'title',
@@ -206,31 +237,6 @@ export function AssigneePicker({
       header: 'Location',
       mobile: 'detail',
       cell: (row) => resolveDesignation(row).location ?? <span className="text-muted-foreground/70">—</span>,
-    },
-    {
-      header: 'Emp ID',
-      mobile: 'detail',
-      /*
-       * Sized to its contents instead of taking an equal quarter of the table.
-       *
-       * `w-px` with `whitespace-nowrap` is the shrink-to-fit idiom for the kit's auto-layout
-       * `w-full` table: the browser cannot honour a 1px width without clipping the text, so it
-       * gives the column exactly the width of its longest value and hands the slack to the three
-       * columns people actually read across. A code like "E1597" is six characters and fixed —
-       * every pixel beyond that was dead space between the location and the right edge.
-       *
-       * The monospace face stays on the cell rather than going here, because `className` is applied
-       * to the header too and "EMP ID" was rendering in a different face from the other three.
-       */
-      className: 'w-px whitespace-nowrap',
-      cell: (row) => {
-        const { employeeCode } = resolveDesignation(row);
-        return employeeCode ? (
-          <span className="font-mono text-[11px]">{employeeCode}</span>
-        ) : (
-          <span className="text-muted-foreground/70">—</span>
-        );
-      },
     },
   ];
 
@@ -289,7 +295,15 @@ export function AssigneePicker({
 
       {!disabled && (
         <div className="rounded-lg border bg-muted/20 p-1.5">
-          <div className="flex flex-wrap items-center gap-1.5">
+          {/* Hidden when Person is the only kind on offer — a one-tab tab strip is a control that
+              cannot be operated, and it is what the settings produce for an organisation that routes
+              everything by named person. The search box below is then the whole picker. */}
+          <div
+            className={cn(
+              'flex flex-wrap items-center gap-1.5',
+              !allowDepartment && !allowProject && !allowDesignation && !allowRequester && 'hidden',
+            )}
+          >
             <Button
               type="button"
               size="sm"
