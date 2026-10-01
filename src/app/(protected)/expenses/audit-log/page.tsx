@@ -9,6 +9,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { PageHeader } from '@/components/shared/page-header';
 import { ModuleAuditLog, type AuditLogEntry } from '@/components/shared/module-audit-log';
 import { useAuthorization } from '@/hooks/useAuthorization';
+import { useExpensesActor } from '@/components/expenses/use-expenses-actor';
 import { ACTIVITY_MODULES } from '@/lib/activity-modules';
 import { db } from '@/lib/firebase';
 
@@ -16,10 +17,15 @@ const DESCRIPTION = 'Every action on expense requests and Expenses settings — 
 
 export default function ExpensesAuditLogPage() {
   const { can, isLoading: isAuthLoading } = useAuthorization();
+  const { mayWith } = useExpensesActor();
   // Settings › Audit Logs already sees every module's trail, so it sees this one too.
   const isGlobalAuditor = can('View', 'Settings.Audit Logs');
-  const canView = can('View', 'Expenses.Audit Log') || isGlobalAuditor;
-  const canExport = can('Export', 'Expenses.Audit Log') || isGlobalAuditor;
+  // The global auditor's grant is part of the role half of the question, so it is passed in rather
+  // than lost — `view-audit` in Settings › User Roles then widens or narrows from there, and with
+  // nothing configured this is the same test as before.
+  const viewDecision = mayWith('view-audit', can('View', 'Expenses.Audit Log') || isGlobalAuditor);
+  const canView = viewDecision.allowed;
+  const canExport = canView && (can('Export', 'Expenses.Audit Log') || isGlobalAuditor);
 
   // Expense logs name their department (`details.department`) rather than its id, and the
   // department register is the only page that opens a request — there is no per-request deep link.
@@ -69,8 +75,14 @@ export default function ExpensesAuditLogPage() {
             </div>
             <CardTitle>Access Denied</CardTitle>
             <CardDescription>
-              You need the <strong>Audit Log → View</strong> permission under Expenses. Ask an administrator to grant
-              it in Role Management.
+              {viewDecision.mode === 'roles-only' ? (
+                <>
+                  You need the <strong>Audit Log → View</strong> permission under Expenses. Ask an administrator to
+                  grant it in Role Management.
+                </>
+              ) : (
+                viewDecision.reason
+              )}
             </CardDescription>
           </CardHeader>
         </Card>

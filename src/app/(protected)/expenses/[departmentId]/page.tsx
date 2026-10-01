@@ -60,6 +60,7 @@ import {
   type StageFilter,
 } from '@/components/expenses/expense-details-dialog';
 import { useExpensesSettings } from '@/components/expenses/use-expenses-settings';
+import { useExpensesActor } from '@/components/expenses/use-expenses-actor';
 import { applyColumnSettings, resolveDatePreset } from '@/lib/expenses-settings';
 import { formatInr } from '@/lib/bank-balance-ledger';
 import { isPaymentLocked, requisitionsByRequestNo } from '@/lib/requisition-progress';
@@ -141,6 +142,7 @@ export default function DepartmentExpensesPage() {
   const { toast } = useToast();
   const { user, loading: isAuthLoading } = useAuth();
   const { can } = useAuthorization();
+  const { may } = useExpensesActor();
 
   // Columns, form fields and data rules are module configuration now — see
   // Expenses › Settings › Table & Field Configuration.
@@ -193,7 +195,21 @@ export default function DepartmentExpensesPage() {
   const canViewPage =
     can('View', 'Expenses.Departments', departmentId) || can('View All', 'Expenses.Expense Requests');
   const canCreate = can('Create', 'Expenses.Departments', departmentId);
-  const canEdit = can('Edit', 'Expenses.Departments', departmentId);
+
+  /**
+   * Editing and importing go through the module's own assignment as well as the permission —
+   * Settings › User Roles can name who edits this department's requests, and may do it differently
+   * above an amount. `editDecisionFor` is therefore asked per row; `editDecision` is the same
+   * question without an amount, for the things that are not about one request.
+   */
+  const editDecision = may('edit-request', { departmentId });
+  const editDecisionFor = useCallback(
+    (expense: Pick<ExpenseRequest, 'amount'>) =>
+      may('edit-request', { departmentId, amount: Number(expense.amount) || 0 }),
+    [may, departmentId],
+  );
+  const importDecision = may('import-requests', { departmentId });
+  const canImport = importDecision.allowed;
 
   const handleFilterChange = <K extends 'requestNo' | 'projectName' | 'partyName' | 'stage'>(
     field: K,
@@ -231,6 +247,16 @@ export default function DepartmentExpensesPage() {
       );
     });
   }, [expenses, filters, requisitionByRequestNo, requisitionsUnavailable]);
+
+  /**
+   * Whether the Actions column is worth a column at all. The department-level answer usually
+   * settles it; the rows are consulted as well so an assignment that only covers requests above an
+   * amount does not hide the column that holds the very rows it does cover.
+   */
+  const canEdit = useMemo(
+    () => editDecision.allowed || filteredExpenses.some(expense => editDecisionFor(expense).allowed),
+    [editDecision.allowed, filteredExpenses, editDecisionFor],
+  );
 
   const activeFilterCount =
     (filters.requestNo !== '' ? 1 : 0) +
@@ -349,7 +375,15 @@ export default function DepartmentExpensesPage() {
     editLockOf(expense, requisitionOf(requisitionByRequestNo, expense), settings.data.allowEditAfterReception);
 
   const openEditDialog = (expense: ExpenseRequest) => {
-    if (!canEdit) return;
+    const decision = editDecisionFor(expense);
+    if (!decision.allowed) {
+      // Silent when it is the permission talking — that is the row the user never had. An
+      // assignment refusal is new, and has to say what it is.
+      if (decision.mode !== 'roles-only') {
+        toast({ title: 'Not allowed', description: decision.reason, variant: 'destructive' });
+      }
+      return;
+    }
     const lock = lockFor(expense);
     if (lock.locked) {
       toast({
@@ -383,8 +417,19 @@ export default function DepartmentExpensesPage() {
 
   const handleUpdateExpense = async () => {
     if (!editingExpense || !editForm || !user) return;
-    if (!canEdit) {
-      toast({ title: 'Not allowed', description: 'You cannot edit requests of this department.', variant: 'destructive' });
+    // The write, not the button, is the gate — and it is asked of the amount being saved as well as
+    // the one the row was opened with, so an edit cannot be banded into and then out of.
+    const savingAmount = Number(editForm.amount.trim());
+    const decision = editDecisionFor({
+      amount: Number.isFinite(savingAmount) && savingAmount > 0 ? savingAmount : Number(editingExpense.amount) || 0,
+    });
+    if (!decision.allowed) {
+      toast({
+        title: 'Not allowed',
+        description:
+          decision.mode === 'roles-only' ? 'You cannot edit requests of this department.' : decision.reason,
+        variant: 'destructive',
+      });
       return;
     }
 
@@ -549,14 +594,29 @@ export default function DepartmentExpensesPage() {
 
             {/* Importing creates expense requests, so the authority to create is the authority to
                 bulk-create — gating it on a separate permission nobody has been granted yet would
-                only ship a button that is disabled for everybody. */}
-            {canCreate && (
+                only ship a button that is disabled for everybody. An administrator who wants
+                importing in fewer hands than creating says so against `import-requests` in
+                Settings › User Roles; the permission behind both stays the same one. */}
+            {canImport ? (
               <Button variant="outline" size="sm" className="gap-2" onClick={() => setIsImportDialogOpen(true)}>
                 <Upload className="h-3.5 w-3.5" /> Import
               </Button>
-            )}
+            ) : canCreate && importDecision.mode !== 'roles-only' ? (
+              <Button
+                variant="outline"
+                size="sm"
+                className="gap-2 text-muted-foreground"
+                aria-disabled
+                title={importDecision.reason}
+                onClick={() => toast({ title: 'Importing is not yours', description: importDecision.reason })}
+              >
+                <Upload className="h-3.5 w-3.5" /> Import
+              </Button>
+            ) : null}
 
-            {canCreate && (
+            {/* The form itself refuses a department the user may not raise in, so the shortcut asks
+                the same question rather than leading to an Access Denied card. */}
+            {may('raise-request', { departmentId }).allowed && (
               <Link href={`/expenses/new-request?departmentId=${departmentId}`}>
                 <Button size="sm" className="gap-2">
                   <Plus className="h-3.5 w-3.5" /> New Request
@@ -698,6 +758,10 @@ export default function DepartmentExpensesPage() {
                     filteredExpenses.map(expense => {
                       const requisition = requisitionOf(requisitionByRequestNo, expense);
                       const lock = editLockOf(expense, requisition, settings.data.allowEditAfterReception);
+                      // Per row: an assignment can cover one amount and not another, so the row
+                      // this user may not edit says which it is rather than offering a button that
+                      // refuses on the way in.
+                      const rowEdit = editDecisionFor(expense);
                       return (
                         // The whole row opens the details. Keyboard access is the Request No button
                         // inside it, so the row keeps its table semantics.
@@ -721,13 +785,20 @@ export default function DepartmentExpensesPage() {
                               <Button
                                 variant="outline"
                                 size="sm"
-                                className={cn('h-7 gap-1 text-xs', lock.locked && 'text-muted-foreground')}
-                                aria-disabled={lock.locked || undefined}
-                                title={lock.reason || `Edit ${expense.requestNo || 'this request'}`}
+                                className={cn(
+                                  'h-7 gap-1 text-xs',
+                                  (lock.locked || !rowEdit.allowed) && 'text-muted-foreground',
+                                )}
+                                aria-disabled={lock.locked || !rowEdit.allowed || undefined}
+                                title={
+                                  !rowEdit.allowed
+                                    ? rowEdit.reason
+                                    : lock.reason || `Edit ${expense.requestNo || 'this request'}`
+                                }
                                 onClick={() => openEditDialog(expense)}
                               >
-                                {lock.locked ? <Lock className="h-3 w-3" /> : <Edit className="h-3 w-3" />}
-                                {lock.locked ? 'Locked' : 'Edit'}
+                                {lock.locked || !rowEdit.allowed ? <Lock className="h-3 w-3" /> : <Edit className="h-3 w-3" />}
+                                {lock.locked ? 'Locked' : rowEdit.allowed ? 'Edit' : 'Not yours'}
                               </Button>
                             </TableCell>
                           )}
@@ -777,7 +848,9 @@ export default function DepartmentExpensesPage() {
       />
 
       {/* Import Dialog — mounted only while open so exceljs is not pulled in on a normal page view */}
-      {isImportDialogOpen && (
+      {/* The dialog is where the writing happens, so the decision is carried through to it rather
+          than left behind on the button that opened it. */}
+      {isImportDialogOpen && canImport && (
         <ExpenseImportDialog
           open={isImportDialogOpen}
           onOpenChange={setIsImportDialogOpen}

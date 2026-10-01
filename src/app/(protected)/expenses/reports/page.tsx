@@ -33,6 +33,7 @@ import {
 } from 'lucide-react';
 import { db } from '@/lib/firebase';
 import { useAuthorization } from '@/hooks/useAuthorization';
+import { useExpensesActor } from '@/components/expenses/use-expenses-actor';
 import { useToast } from '@/hooks/use-toast';
 import { exportRowsToExcel } from '@/lib/report-excel';
 import type { Department, ExpenseRequest, Project } from '@/lib/types';
@@ -132,12 +133,26 @@ function ReportCell({ column, row }: { column: ExpenseReportColumn; row: Expense
 
 function ReportCentre() {
   const { can, isLoading: isAuthLoading } = useAuthorization();
+  const { may, restrictedToAssignees } = useExpensesActor();
   const { toast } = useToast();
   const searchParams = useSearchParams();
   // Which report is showing comes from the URL, because the catalogue lives in the module sidebar
   // now — that also makes a report linkable and survives a refresh or a back button.
   const reportId = searchParams?.get('report') || EXPENSE_REPORTS[0].id;
-  const canViewPage = can('View', 'Expenses.Reports');
+  const viewDecision = may('view-reports');
+  const canViewPage = viewDecision.allowed;
+
+  /**
+   * Exporting had no gate of its own: `Expenses.Reports` declared only `View`, so every report
+   * centre shipped the button to anyone who could read a report. `Export` is declared now, but
+   * nobody has been granted it yet — so, as the Daily Requisition reports do, viewing is the
+   * fallback and no one loses the button they have today. The one thing that does take it away
+   * is an administrator restricting `export-reports` to named people: a deliberate narrowing
+   * must not be undone by a fallback.
+   */
+  const exportDecision = may('export-reports');
+  const canExport =
+    exportDecision.allowed || (!restrictedToAssignees('export-reports') && canViewPage);
 
   // The same test the department registers make: `View All` on Expense Requests sees everything;
   // anyone else sees the departments they may open.
@@ -320,6 +335,10 @@ function ReportCentre() {
 
   const handleExport = async () => {
     if (!definition || !result?.rows.length) return;
+    if (!canExport) {
+      toast({ title: 'Not allowed', description: exportDecision.reason, variant: 'destructive' });
+      return;
+    }
     // Exported with the same formatter the screen uses, so a figure in the workbook reads exactly
     // as it did in the report it came from.
     const headings = exportHeadings(result.columns);
@@ -401,7 +420,11 @@ function ReportCentre() {
               <ShieldAlert className="h-7 w-7 text-destructive" />
             </div>
             <CardTitle>Access Denied</CardTitle>
-            <CardDescription>You do not have permission to view reports.</CardDescription>
+            <CardDescription>
+              {viewDecision.mode === 'roles-only'
+                ? 'You do not have permission to view reports.'
+                : viewDecision.reason}
+            </CardDescription>
           </CardHeader>
         </Card>
       </div>
@@ -424,7 +447,8 @@ function ReportCentre() {
               size="sm"
               className="gap-2 print:hidden"
               onClick={() => void handleExport()}
-              disabled={!definition || !result?.rows.length}
+              disabled={!canExport || !definition || !result?.rows.length}
+              title={canExport ? undefined : exportDecision.reason}
             >
               <Download className="h-3.5 w-3.5" /> Export
             </Button>

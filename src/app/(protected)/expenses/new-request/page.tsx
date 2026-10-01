@@ -40,6 +40,7 @@ import {
 } from '@/components/ui/alert-dialog';
 import { ExpenseBadge } from '@/components/expenses/page-header';
 import { useExpensesSettings } from '@/components/expenses/use-expenses-settings';
+import { useExpensesActor } from '@/components/expenses/use-expenses-actor';
 import {
   defaultExpensesSettings,
   findDuplicateRequest,
@@ -127,7 +128,8 @@ type ExpenseFormValues = z.infer<typeof expenseFormSchema>;
 function NewExpenseRequestForm() {
   const { toast } = useToast();
   const { user } = useAuth();
-  const { can, isLoading: isAuthLoading } = useAuthorization();
+  const { isLoading: isAuthLoading } = useAuthorization();
+  const { may } = useExpensesActor();
   const { settings } = useExpensesSettings();
   const searchParams = useSearchParams();
 
@@ -188,18 +190,40 @@ function NewExpenseRequestForm() {
    * This page had no permission check of its own — it trusted the links that lead to it, and a
    * typed URL reached the form regardless. Only departments the user may raise a request in are
    * offered, and a `?departmentId=` naming one they may not is refused.
+   *
+   * Who may raise one is the `Create` grant on the department plus, where an administrator has set
+   * one up, the module's own assignment for `raise-request` (Settings › User Roles) — which can
+   * differ per department and above an amount, so the figure on the form is part of the question.
+   * With nothing configured this is the `can(...)` check it replaces, verbatim.
    */
+  const watchedDepartmentId = form.watch('departmentId');
+  const watchedAmount = Number(form.watch('amount')) || 0;
+
   const creatableDepartments = useMemo(
-    () => departments.filter(dept => can('Create', 'Expenses.Departments', dept.id)),
-    [departments, can],
+    () => departments.filter(dept => may('raise-request', { departmentId: dept.id, amount: watchedAmount }).allowed),
+    [departments, may, watchedAmount],
+  );
+
+  /**
+   * Reaching the page is deliberately not an amount question — denying the form before a figure
+   * has been typed would leave nowhere to type one. The amount narrows the dropdown above.
+   */
+  const raisableDepartments = useMemo(
+    () => departments.filter(dept => may('raise-request', { departmentId: dept.id }).allowed),
+    [departments, may],
   );
 
   const canUseUrlDepartment = departmentIdFromUrl
-    ? can('Create', 'Expenses.Departments', departmentIdFromUrl)
+    ? may('raise-request', { departmentId: departmentIdFromUrl }).allowed
     : true;
 
   const isDenied =
-    !isAuthLoading && !isLoadingData && (!canUseUrlDepartment || creatableDepartments.length === 0);
+    !isAuthLoading && !isLoadingData && (!canUseUrlDepartment || raisableDepartments.length === 0);
+
+  /** The verdict for what is on the form now — the Save button's state and the words for a refusal. */
+  const raiseDecision = watchedDepartmentId
+    ? may('raise-request', { departmentId: watchedDepartmentId, amount: watchedAmount })
+    : null;
 
   useEffect(() => {
     const fetchData = async () => {
@@ -298,10 +322,19 @@ function NewExpenseRequestForm() {
       toast({ title: 'Authentication Error', description: 'You must be logged in.', variant: 'destructive' });
       return;
     }
-    if (!can('Create', 'Expenses.Departments', data.departmentId)) {
+    // Checked again here, against the department and the amount being saved: the button is not the
+    // gate, and an amount-banded assignment is only knowable once the figure is known.
+    const decision = may('raise-request', {
+      departmentId: data.departmentId,
+      amount: Number(data.amount) || 0,
+    });
+    if (!decision.allowed) {
       toast({
         title: 'Not permitted',
-        description: 'You do not have permission to raise a request for that department.',
+        description:
+          decision.mode === 'roles-only'
+            ? 'You do not have permission to raise a request for that department.'
+            : decision.reason,
         variant: 'destructive',
       });
       return;
@@ -435,7 +468,8 @@ function NewExpenseRequestForm() {
   const restrictParty = settings.data.restrictPartyToExisting;
   const partyOptions = restrictParty ? recordedPartyNames : partyNames;
 
-  const watchedAmount = Number(form.watch('amount')) || 0;
+  // `watchedAmount` is read further up as well — the assignment for raising a request can be
+  // banded by amount, so the gate watches the same figure the totals below do.
   const withStatutoryNow = captureStatutory && hasStatutory(statutory);
   const netPayableNow = withStatutoryNow ? computeStatutory(watchedAmount, statutory).net : watchedAmount;
   const headOfAccount = form.watch('headOfAccount');
@@ -733,7 +767,15 @@ function NewExpenseRequestForm() {
                     </span>
                   )}
                 </div>
-                <Button type="submit" disabled={isSaving} className="min-w-[150px] gap-2">
+                {/* A refusal that comes from the assignment rather than the role says so on the
+                    button itself — the department and amount are the two things that can change it,
+                    and neither is obvious from a greyed-out Save. */}
+                <Button
+                  type="submit"
+                  disabled={isSaving || (!!raiseDecision && !raiseDecision.allowed)}
+                  title={raiseDecision && !raiseDecision.allowed ? raiseDecision.reason : undefined}
+                  className="min-w-[150px] gap-2"
+                >
                   {isSaving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
                   {isSaving ? 'Saving…' : 'Save Request'}
                 </Button>

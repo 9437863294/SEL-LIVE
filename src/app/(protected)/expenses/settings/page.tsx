@@ -1,7 +1,18 @@
 'use client';
 
 import Link from 'next/link';
-import { Database, Hash, ReceiptIndianRupee, ScrollText, Settings2, ShieldAlert, SlidersHorizontal, Tags, Users } from 'lucide-react';
+import {
+  Database,
+  Hash,
+  ReceiptIndianRupee,
+  ScrollText,
+  Settings2,
+  ShieldAlert,
+  SlidersHorizontal,
+  Tags,
+  UserCog,
+  Users,
+} from 'lucide-react';
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/components/ui/card';
 import type { LucideIcon } from 'lucide-react';
 import { cn } from '@/lib/utils';
@@ -53,6 +64,18 @@ const canSeeControl = (section: string) => (can: PermissionChecker) =>
 const canSeeGstRegistrations = (can: PermissionChecker) =>
   can('View', 'Expenses.GST Registrations') ||
   can('Edit', 'Expenses.GST Registrations') ||
+  can('View', 'Expenses.Settings') ||
+  can('Manage Accounts', 'Expenses.Settings');
+
+/**
+ * Who Does What follows its own page's rule exactly: View or Edit on the new Expenses › User Roles
+ * section, or the rights that administer the module's other masters. It is not `canSeeControl`'s
+ * wider net, for the same reason GST Registrations is not — an Edit Serial Nos holder would be
+ * offered a card that then denies them.
+ */
+const canSeeModuleRoles = (can: PermissionChecker) =>
+  can('View', 'Expenses.User Roles') ||
+  can('Edit', 'Expenses.User Roles') ||
   can('View', 'Expenses.Settings') ||
   can('Manage Accounts', 'Expenses.Settings');
 
@@ -119,12 +142,21 @@ const SECTIONS: { id: string; title: string; description: string; items: Setting
       {
         icon: Users,
         title: 'User Role Configuration',
-        description: 'Configure module permissions and assign access through roles.',
+        description: 'Global roles and permissions for every module — opens the app’s Access Management.',
         href: '/settings/access-management',
         tone: SETTING_TONES.violet,
-        // Expenses has no role screen of its own: this opens the app's Access Management, so it is
-        // enabled for exactly the people that page admits (the same rule the main Settings page uses).
+        // The app-wide role screen, not a screen of this module's: enabled for exactly the people
+        // that page admits (the same rule the main Settings page uses).
         isEnabled: canOpenAccessManagement,
+      },
+      {
+        icon: UserCog,
+        title: 'Who Does What',
+        description:
+          'Expenses only — who acts on each action, what they act on, and who the alternatives are when they are away.',
+        href: '/expenses/settings/user-roles',
+        tone: SETTING_TONES.teal,
+        isEnabled: canSeeModuleRoles,
       },
       {
         icon: ScrollText,
@@ -176,6 +208,7 @@ export default function ExpensesSettingsPage() {
     can('View', 'Expenses.Field Control') ||
     can('View', 'Expenses.Data Control') ||
     can('View', 'Expenses.GST Registrations') ||
+    can('View', 'Expenses.User Roles') ||
     can('View', 'Expenses.Audit Log') ||
     can('View', 'Settings.Audit Logs');
 

@@ -24,6 +24,7 @@ import { collection, getDocs, query, where } from 'firebase/firestore';
 import type { Department } from '@/lib/types';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useAuthorization } from '@/hooks/useAuthorization';
+import { useExpensesActor } from '@/components/expenses/use-expenses-actor';
 
 interface DeptCardItem {
   icon: LucideIcon;
@@ -94,6 +95,7 @@ export default function ExpensesPage() {
   const [departments, setDepartments] = useState<Department[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const { can, isLoading: isAuthLoading } = useAuthorization();
+  const { may } = useExpensesActor();
   const canViewModule = can('View Module', 'Expenses');
 
   useEffect(() => {
@@ -143,8 +145,8 @@ export default function ExpensesPage() {
    * saw the shortcut — and someone who could create only in the first saw it regardless.
    */
   const canCreateAnywhere = useMemo(
-    () => visibleDepartments.some(dept => can('Create', 'Expenses.Departments', dept.id)),
-    [visibleDepartments, can],
+    () => visibleDepartments.some(dept => may('raise-request', { departmentId: dept.id }).allowed),
+    [visibleDepartments, may],
   );
 
   if (isAuthLoading || (isLoading && canViewModule)) {

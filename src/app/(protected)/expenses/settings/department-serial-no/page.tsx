@@ -22,6 +22,7 @@ import { collection, getDocs, doc, getDoc, setDoc } from 'firebase/firestore';
 import type { Department, SerialNumberConfig } from '@/lib/types';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useAuthorization } from '@/hooks/useAuthorization';
+import { useExpensesActor } from '@/components/expenses/use-expenses-actor';
 import { useAuth } from '@/components/auth/AuthProvider';
 import { diffFields, logUserActivity } from '@/lib/activity-logger';
 
@@ -36,6 +37,7 @@ export default function DepartmentSerialNoPage() {
   const { toast } = useToast();
   const { user } = useAuth();
   const { can, isLoading: isAuthLoading } = useAuthorization();
+  const { may } = useExpensesActor();
 
   const [departments, setDepartments] = useState<Department[]>([]);
   const [configs, setConfigs] = useState<Record<string, SerialNumberConfig>>({});
@@ -43,7 +45,12 @@ export default function DepartmentSerialNoPage() {
   const [savingStates, setSavingStates] = useState<Record<string, boolean>>({});
   
   const canViewPage = can('View', 'Expenses.Settings');
-  const canEdit = can('Edit Serial Nos', 'Expenses.Settings');
+  /**
+   * The series is set per department, and so is the authority for it: `manage-serials` is
+   * department-scoped, so each card asks about its own department. Unconfigured, every card gets
+   * the one `Edit Serial Nos` answer this replaced.
+   */
+  const editDecisionFor = (deptId: string) => may('manage-serials', { departmentId: deptId });
 
   useEffect(() => {
     if (isAuthLoading) return;
@@ -94,6 +101,12 @@ export default function DepartmentSerialNoPage() {
 
   const handleSaveConfig = async (deptId: string, deptName: string) => {
     if (!user) return;
+    // The disabled button is a courtesy; this is the gate.
+    const decision = editDecisionFor(deptId);
+    if (!decision.allowed) {
+      toast({ title: 'Not allowed', description: decision.reason, variant: 'destructive' });
+      return;
+    }
     setSavingStates(prev => ({ ...prev, [deptId]: true }));
     try {
       const after = configs[deptId];
@@ -152,14 +165,21 @@ export default function DepartmentSerialNoPage() {
 
       <div className="space-y-6">
         {departments.length > 0 ? (
-          departments.map((dept) => (
+          departments.map((dept) => {
+            const editDecision = editDecisionFor(dept.id);
+            const canEdit = editDecision.allowed;
+            return (
             <Card key={dept.id}>
               <CardHeader className="flex flex-row items-center justify-between">
                 <div>
                   <CardTitle>{dept.name}</CardTitle>
                   <CardDescription>Configure serial numbers for the {dept.name} department.</CardDescription>
                 </div>
-                <Button onClick={() => handleSaveConfig(dept.id, dept.name)} disabled={!canEdit || savingStates[dept.id]}>
+                <Button
+                  onClick={() => handleSaveConfig(dept.id, dept.name)}
+                  disabled={!canEdit || savingStates[dept.id]}
+                  title={canEdit ? undefined : editDecision.reason}
+                >
                     {savingStates[dept.id] ? <Loader2 className="mr-2 h-4 w-4 animate-spin"/> : <Save className="mr-2 h-4 w-4" />}
                      Save
                 </Button>
@@ -206,7 +226,8 @@ export default function DepartmentSerialNoPage() {
                 </div>
               </CardContent>
             </Card>
-          ))
+            );
+          })
         ) : (
           <Card>
             <CardContent className="text-center p-12">

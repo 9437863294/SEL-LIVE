@@ -21,6 +21,7 @@ import type { AccountHead, SubAccountHead } from '@/lib/types';
 import { Skeleton } from '@/components/ui/skeleton';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogHeader, AlertDialogFooter, AlertDialogTitle, AlertDialogTrigger } from '@/components/ui/alert-dialog';
 import { useAuthorization } from '@/hooks/useAuthorization';
+import { useExpensesActor } from '@/components/expenses/use-expenses-actor';
 import { useAuth } from '@/components/auth/AuthProvider';
 import { diffFields, logUserActivity } from '@/lib/activity-logger';
 
@@ -42,7 +43,8 @@ const initialAccountData = {
 export default function ManageAccountsPage() {
   const { toast } = useToast();
   const { user } = useAuth();
-  const { can, isLoading: isAuthLoading } = useAuthorization();
+  const { isLoading: isAuthLoading } = useAuthorization();
+  const { may } = useExpensesActor();
   
   const [heads, setHeads] = useState<AccountHead[]>([]);
   const [subHeads, setSubHeads] = useState<SubAccountHead[]>([]);
@@ -57,7 +59,13 @@ export default function ManageAccountsPage() {
   const [name, setName] = useState('');
   const [selectedHeadId, setSelectedHeadId] = useState('');
 
-  const canViewPage = can('Manage Accounts', 'Expenses.Settings');
+  /**
+   * The page is the action: it exists to manage the account heads. The permission is the same one
+   * it always was — `Manage Accounts` on Expenses › Settings — now asked through the module's own
+   * assignment for `manage-accounts`, which with nothing configured answers identically.
+   */
+  const accountsDecision = may('manage-accounts');
+  const canViewPage = accountsDecision.allowed;
   
   const fetchData = async () => {
     setIsLoading(true);
@@ -106,6 +114,11 @@ export default function ManageAccountsPage() {
   };
 
   const handleDialogSubmit = async () => {
+    // The dialog is only reachable from this page, but the write is still where the refusal counts.
+    if (!accountsDecision.allowed) {
+      toast({ title: 'Not allowed', description: accountsDecision.reason, variant: 'destructive' });
+      return;
+    }
     if (!name.trim()) {
       toast({ title: 'Validation Error', description: 'Name cannot be empty.', variant: 'destructive' });
       return;
@@ -190,6 +203,10 @@ export default function ManageAccountsPage() {
 
   const handleDelete = async (type: 'head' | 'subhead', id: string, itemName: string) => {
     if (!user) return;
+    if (!accountsDecision.allowed) {
+      toast({ title: 'Not allowed', description: accountsDecision.reason, variant: 'destructive' });
+      return;
+    }
     try {
       if (type === 'head') {
         await deleteDoc(doc(db, 'accountHeads', id));
@@ -220,6 +237,10 @@ export default function ManageAccountsPage() {
   
   const handleSeedData = async () => {
     if (!user) return;
+    if (!accountsDecision.allowed) {
+      toast({ title: 'Not allowed', description: accountsDecision.reason, variant: 'destructive' });
+      return;
+    }
     setIsSeeding(true);
     const batch = writeBatch(db);
     
@@ -270,7 +291,7 @@ export default function ManageAccountsPage() {
         <div className="w-full max-w-4xl mx-auto">
             <PageHeader title="Manage Accounts" backHref="/expenses/settings" backLabel="Back to settings" />
             <Card>
-                <CardHeader><CardTitle>Access Denied</CardTitle><CardDescription>You do not have permission to view this page.</CardDescription></CardHeader>
+                <CardHeader><CardTitle>Access Denied</CardTitle><CardDescription>{accountsDecision.mode === 'roles-only' ? 'You do not have permission to view this page.' : accountsDecision.reason}</CardDescription></CardHeader>
                 <CardContent className="flex justify-center p-8"><ShieldAlert className="h-16 w-16 text-destructive" /></CardContent>
             </Card>
         </div>

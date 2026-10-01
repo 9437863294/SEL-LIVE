@@ -20,6 +20,7 @@ import { AlertTriangle, Info, Loader2, RotateCcw, Save, ShieldAlert, type Lucide
 import { db } from '@/lib/firebase';
 import { useAuthorization } from '@/hooks/useAuthorization';
 import { useExpensesSettings } from '@/components/expenses/use-expenses-settings';
+import { useExpensesActor } from '@/components/expenses/use-expenses-actor';
 import {
   EXPENSES_SETTINGS_PATH,
   resolveExpensesSettings,
@@ -44,11 +45,21 @@ export const CONTROL_LABEL = 'block text-xs font-medium leading-4 text-slate-600
  */
 export function useExpensesControlAccess(section: 'Field Control' | 'Data Control') {
   const { can, isLoading } = useAuthorization();
+  const { mayWith } = useExpensesActor();
   const resource = `Expenses.${section}`;
-  const canEdit =
+  // The role half of the question, fallbacks and all — passed to the module's decision rather than
+  // answered by it, so the fallback above survives and `field-control` / `data-control` in
+  // Settings › User Roles can still widen or narrow who edits. Unconfigured, this is the same
+  // boolean it always was.
+  const permitted =
     can('Edit', resource) || can('Manage Accounts', 'Expenses.Settings') || can('Edit Serial Nos', 'Expenses.Settings');
+  const decision = mayWith(section === 'Field Control' ? 'field-control' : 'data-control', permitted);
+  const canEdit = decision.allowed;
   const canView = canEdit || can('View', resource) || can('View', 'Expenses.Settings');
-  return { canView, canEdit, isLoading };
+  // `editRefusal` is the words for a refusal the assignment is responsible for; nothing to say when
+  // it is the permission map, which is what every caller showed before.
+  const editRefusal = canEdit || decision.mode === 'roles-only' ? null : decision.reason;
+  return { canView, canEdit, editRefusal, isLoading };
 }
 
 /* ── draft ───────────────────────────────────────────────────────────────── */
@@ -207,11 +218,20 @@ export function IssueList({ issues }: { issues: readonly ExpenseSettingsIssue[] 
   );
 }
 
-export function ReadOnlyNotice({ section }: { section: string }) {
+export function ReadOnlyNotice({ section, refusal }: { section: string; refusal?: string | null }) {
+  // Why, in the module's own words, when it is the assignment holding the page read-only rather
+  // than the permission — a refusal nobody can explain from the permission screens alone. Asked
+  // here so the two control pages need no change of their own; any other page passes its own
+  // `refusal`, since this hook only knows about Field and Data Control.
+  const { editRefusal } = useExpensesControlAccess(section === 'Data Control' ? 'Data Control' : 'Field Control');
+  const isControlPage = section === 'Field Control' || section === 'Data Control';
+  const why = refusal !== undefined ? refusal : isControlPage ? editRefusal : null;
   return (
     <div className="flex items-start gap-2 rounded-xl border border-amber-500/30 bg-amber-500/5 p-3 text-xs text-amber-700 dark:text-amber-400">
       <Info className="mt-0.5 h-4 w-4 shrink-0" />
-      You can see this configuration but not change it. Edit on Expenses › {section} carries that right.
+      {why
+        ? `You can see this configuration but not change it. ${why} — see Expenses › Settings › Who Does What.`
+        : `You can see this configuration but not change it. Edit on Expenses › ${section} carries that right.`}
     </div>
   );
 }

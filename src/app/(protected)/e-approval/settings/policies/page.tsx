@@ -10,7 +10,7 @@ export default function EApprovalPoliciesAdminPage() {
   return (
     <SettingsSection
       title="Policies"
-      description="The rules the whole module runs under. These all live in one settings record, which is why they share one page and one Save."
+      description="Rules that apply to every approval in the module. Change what you need — a save bar appears at the bottom until you save or discard."
       node="Policies"
     >
       {(canEdit) => (
