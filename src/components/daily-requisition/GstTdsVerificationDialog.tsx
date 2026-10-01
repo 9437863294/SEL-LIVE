@@ -26,6 +26,9 @@ import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { useActivityLogger } from '@/hooks/useActivityLogger';
 import { diffFields } from '@/lib/activity-logger';
 import { ACTIVITY_MODULES } from '@/lib/activity-modules';
+import { RegistrationSelect, treatmentWarning, useBillRegistration } from '@/components/expenses/bill-registration';
+import { registrationLabel } from '@/lib/gst-registrations';
+import { checkGstin, suggestGstType } from '@/lib/statutory';
 
 interface GstTdsVerificationDialogProps {
   isOpen: boolean;
@@ -48,6 +51,8 @@ export function GstTdsVerificationDialog({
   
   const [gstType, setGstType] = useState<GstType>('igst');
   const [gstPercentage, setGstPercentage] = useState(0);
+  /** The company GST registration chosen on this bill; '' leaves it to the attribution chain. */
+  const [gstRegistrationId, setGstRegistrationId] = useState('');
 
   const [originalNetAmount, setOriginalNetAmount] = useState(0);
   const [taxDetails, setTaxDetails] = useState({
@@ -61,6 +66,18 @@ export function GstTdsVerificationDialog({
     notes: '',
     gstNo: '',
   });
+
+  /**
+   * Which of the company's registrations this bill belongs to: the choice made here, else the
+   * project's state, else the department's, else the default (src/lib/gst-registrations.ts). It is
+   * that registration's state — not one hardcoded state — that decides CGST + SGST versus IGST.
+   */
+  const bill = useBillRegistration({
+    gstRegistrationId,
+    projectId: entry?.projectId,
+    departmentId: entry?.departmentId,
+  });
+  const mismatch = gstType === 'none' ? null : treatmentWarning(bill, taxDetails.gstNo, gstType);
 
   useEffect(() => {
     if (entry) {
@@ -77,6 +94,8 @@ export function GstTdsVerificationDialog({
             notes: entry.verificationNotes || '',
             gstNo: entry.gstNo || '',
         });
+        // Carried from the expense request, or set at an earlier verification; '' = work it out.
+        setGstRegistrationId(entry.gstRegistrationId || '');
         
         // Start from what the entry already carries (from its expense request, or an earlier
         // verification): the stored treatment and rate, else read back from the amounts. Resetting the
@@ -105,6 +124,16 @@ export function GstTdsVerificationDialog({
   
   const handleInputChange = (field: keyof typeof taxDetails, value: string) => {
     setTaxDetails(prev => ({ ...prev, [field]: value }));
+  };
+
+  /** Another registration can make the same bill inter-state, so the split is suggested afresh. */
+  const onRegistrationChange = (next: string) => {
+    setGstRegistrationId(next);
+    const supplier = checkGstin(taxDetails.gstNo);
+    const chosen = next ? bill.options.find(registration => registration.id === next) ?? null : bill.automatic;
+    if (gstType !== 'none' && supplier.valid && supplier.stateCode && chosen?.stateCode) {
+      setGstType(suggestGstType(supplier.stateCode, chosen.stateCode));
+    }
   };
 
   const amountMismatch = useMemo(() => {
@@ -171,6 +200,12 @@ export function GstTdsVerificationDialog({
         gstRate: gstType === 'none' ? 0 : gstPercentage,
       };
 
+      // Written only where there is something to choose and the choice has moved, so a one-state
+      // company's verification diff reads exactly as it did before.
+      if (bill.canChoose && (entry.gstRegistrationId || '') !== gstRegistrationId) {
+        updateData.gstRegistrationId = gstRegistrationId;
+      }
+
       // Only update the netAmount if it matches the original, otherwise preserve the old amount
       if (!amountMismatch) {
           updateData.netAmount = parseFloat(taxDetails.calculatedNetAmount) || 0;
@@ -191,6 +226,7 @@ export function GstTdsVerificationDialog({
           grossAmount: entry.grossAmount ?? 0,
           from: entry.status ?? null,
           to: newStatus,
+          ...(bill.canChoose ? { gstRegistration: registrationLabel(bill.registration) } : {}),
           amountMismatch,
           ...(amountMismatch
             ? { calculatedNetAmount: parseFloat(taxDetails.calculatedNetAmount) || 0, preservedNetAmount: originalNetAmount }
@@ -247,6 +283,22 @@ export function GstTdsVerificationDialog({
             
             <Separator />
 
+            {bill.canChoose && (
+              <div className="space-y-2">
+                <Label htmlFor="gstRegistration">GST registration</Label>
+                <RegistrationSelect id="gstRegistration" value={gstRegistrationId} onValueChange={onRegistrationChange} bill={bill} />
+                <p className="text-xs text-muted-foreground">
+                  {bill.registration ? (
+                    <>
+                      <span className="font-mono">{bill.registration.gstin}</span> · {bill.attribution.reason}
+                    </>
+                  ) : (
+                    bill.attribution.reason
+                  )}
+                </p>
+              </div>
+            )}
+
              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div className="space-y-2">
                     <Label>GST Type</Label>
@@ -276,6 +328,18 @@ export function GstTdsVerificationDialog({
                     </div>
                 </div>
             </div>
+
+            {mismatch && (
+              <p className="flex items-start gap-1.5 rounded-md bg-amber-50 px-2.5 py-2 text-xs font-medium text-amber-800">
+                <AlertCircle className="mt-px h-3.5 w-3.5 shrink-0" />
+                <span>
+                  {mismatch.message}{' '}
+                  <button type="button" className="underline hover:no-underline" onClick={() => setGstType(mismatch.expected as GstType)}>
+                    Use {mismatch.expected === 'igst' ? 'IGST' : 'CGST/SGST'}
+                  </button>
+                </span>
+              </p>
+            )}
 
             <Separator />
             <p className="font-medium text-sm text-muted-foreground">Amounts:</p>

@@ -20,7 +20,7 @@ import * as React from 'react';
 import { useState } from 'react';
 import Link from 'next/link';
 import { usePathname, useSearchParams } from 'next/navigation';
-import { BarChart3, ChevronDown, ChevronRight, IndianRupee, LayoutDashboard, Layers, Plus, ScrollText, Settings, type LucideIcon } from 'lucide-react';
+import { BarChart3, ChevronDown, ChevronRight, IndianRupee, LayoutDashboard, Layers, Plus, Settings, type LucideIcon } from 'lucide-react';
 import { EXPENSE_REPORTS, EXPENSE_REPORT_GROUPS } from '@/lib/expenses-reports';
 import { useAuth } from '@/components/auth/AuthProvider';
 import { ModuleBottomNav, type ModuleNavTab } from '@/components/navigation/ModuleBottomNav';
@@ -69,13 +69,7 @@ const reportChildren: NavChild[] = [
   { id: PIVOT_ID, label: 'Custom Pivot', group: 'Custom' },
 ];
 
-/** Settings' own pages, listed under it while Settings is open. */
-const settingsChildren: NavChild[] = [
-  { id: 'field-control', label: 'Field Control', group: 'Controls', href: '/expenses/settings/field-control' },
-  { id: 'data-control', label: 'Data Control', group: 'Controls', href: '/expenses/settings/data-control' },
-];
-
-const CHILD_GROUP_ORDER = [...EXPENSE_REPORT_GROUPS, 'Custom', 'Controls'];
+const CHILD_GROUP_ORDER = [...EXPENSE_REPORT_GROUPS, 'Custom'];
 
 /** Where a child links to. */
 const childHref = (parentHref: string, childParam: string | undefined, child: NavChild) =>
@@ -112,6 +106,8 @@ function matchesPath(pathname: string, href: string) {
     // entry of its own now, and lights that instead.
     return pathname === '/expenses' || !NAMED_SUB_ROUTES.some(route => pathname.startsWith(route));
   }
+  // The Audit Log is a card on the Settings page, not a menu entry of its own, so Settings stays lit on it.
+  if (href === '/expenses/settings' && (pathname === '/expenses/audit-log' || pathname.startsWith('/expenses/audit-log/'))) return true;
   return pathname === href || pathname.startsWith(`${href}/`);
 }
 
@@ -200,20 +196,14 @@ export default function ExpensesLayoutShell({ children }: { children: React.Reac
       gradient: 'from-teal-500 to-emerald-600',
       glow: 'shadow-[0_8px_24px_-8px_rgba(20,184,166,0.55)]',
       group: 'admin',
-      permitted: can('View', 'Expenses.Settings'),
-      children: settingsChildren,
-    },
-    {
-      href: '/expenses/audit-log',
-      label: 'Audit Log',
-      caption: 'Who changed what',
-      icon: ScrollText,
-      color: 'text-slate-600',
-      bg: 'bg-slate-100',
-      gradient: 'from-slate-600 to-slate-800',
-      glow: 'shadow-[0_8px_24px_-8px_rgba(71,85,105,0.55)]',
-      group: 'admin',
-      permitted: can('View', 'Expenses.Audit Log') || can('View', 'Settings.Audit Logs'),
+      // Field & Data Control and the Audit Log are cards on the Settings page, so whoever may open
+      // one of them reaches it through Settings.
+      permitted:
+        can('View', 'Expenses.Settings') ||
+        can('View', 'Expenses.Field Control') ||
+        can('View', 'Expenses.Data Control') ||
+        can('View', 'Expenses.Audit Log') ||
+        can('View', 'Settings.Audit Logs'),
     },
   ].filter(item => item.permitted);
 

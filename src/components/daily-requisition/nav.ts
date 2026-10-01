@@ -6,20 +6,15 @@ import {
   Banknote,
   BarChart3,
   Clock,
-  Database,
   FileBarChart,
   FilePlus,
   Files,
   FolderOpen,
-  GitMerge,
-  History,
   Landmark,
   Layers,
   LayoutDashboard,
-  Printer,
   Receipt,
   Settings,
-  SlidersHorizontal,
   TrendingUp,
   Users,
   Wallet,
@@ -70,6 +65,7 @@ export const DAILY_REQUISITION_REPORTS: ReadonlyArray<{ href: string; label: str
   { href: `${DAILY_REQUISITION_BASE}/reports/party-analysis`, label: 'Party Analysis', icon: Users, color: 'text-rose-700', bg: 'bg-rose-50' },
   { href: `${DAILY_REQUISITION_BASE}/reports/financial-breakdown`, label: 'Financial Breakdown', icon: Wallet, color: 'text-indigo-700', bg: 'bg-indigo-50' },
   { href: `${DAILY_REQUISITION_BASE}/reports/ageing`, label: 'Ageing Report', icon: Clock, color: 'text-red-700', bg: 'bg-red-50' },
+  { href: `${DAILY_REQUISITION_BASE}/reports/gst-by-registration`, label: 'GST & TDS by Registration', icon: Landmark, color: 'text-teal-700', bg: 'bg-teal-50' },
 ];
 
 type Can = (action: string, resource: string) => boolean;
@@ -148,6 +144,8 @@ export interface DailyRequisitionNavItem {
   bg: string;
   /** Lit only on this exact path: the dashboard, which every other page sits under. */
   exact?: boolean;
+  /** Other pages (and their sub-pages) that light this entry — ones reached from its page rather than the menu. */
+  alsoActiveOn?: string[];
 }
 
 /**
@@ -185,12 +183,18 @@ export function useDailyRequisitionNav(): { items: DailyRequisitionNavItem[]; is
       { href: `${base}/reports`, label: 'All Reports', icon: FileBarChart, group: 'Reports', color: 'text-indigo-700', bg: 'bg-indigo-50', allowed: access.reportsHub },
       ...DAILY_REQUISITION_REPORTS.map((report) => ({ ...report, group: 'Reports' as const, allowed: access.reports })),
 
-      { href: `${base}/settings`, label: 'All Settings', icon: Settings, group: 'Settings', color: 'text-slate-700', bg: 'bg-slate-100', allowed: access.settings },
-      { href: `${base}/settings/printing`, label: 'Printing Setup', icon: Printer, group: 'Settings', color: 'text-orange-700', bg: 'bg-orange-50', allowed: access.printing },
-      { href: `${base}/settings/workflow-configuration`, label: 'Workflow Configuration', icon: GitMerge, group: 'Settings', color: 'text-fuchsia-700', bg: 'bg-fuchsia-50', allowed: access.workflowConfiguration },
-      { href: `${base}/settings/field-control`, label: 'Field Control', icon: SlidersHorizontal, group: 'Settings', color: 'text-teal-700', bg: 'bg-teal-50', allowed: access.fieldControl },
-      { href: `${base}/settings/data-control`, label: 'Data Control', icon: Database, group: 'Settings', color: 'text-blue-700', bg: 'bg-blue-50', allowed: access.dataControl },
-      { href: `${base}/audit-log`, label: 'Audit Log', icon: History, group: 'Settings', color: 'text-slate-700', bg: 'bg-slate-100', allowed: access.auditLog },
+      // Printing, Workflow, Field & Data Control and the Audit Log are cards on the Settings page,
+      // so the menu carries the one entry; it stays lit on each of them (see `alsoActiveOn`).
+      {
+        href: `${base}/settings`,
+        label: 'All Settings',
+        icon: Settings,
+        group: 'Settings',
+        color: 'text-slate-700',
+        bg: 'bg-slate-100',
+        alsoActiveOn: [`${base}/audit-log`],
+        allowed: access.settings,
+      },
     ];
 
     return visibleOnce(all);
@@ -226,11 +230,20 @@ export function groupDailyRequisitionNav(items: DailyRequisitionNavItem[]): Arra
  * The menu entry a path belongs to: the longest matching href, so /daily-requisition/reports/ageing
  * lights "Ageing Report" rather than "All Reports". The dashboard matches only itself.
  */
-export function activeDailyRequisitionHref(pathname: string, items: Array<Pick<DailyRequisitionNavItem, 'href'>>): string | undefined {
+export function activeDailyRequisitionHref(
+  pathname: string,
+  items: Array<Pick<DailyRequisitionNavItem, 'href' | 'alsoActiveOn'>>,
+): string | undefined {
   let best: string | undefined;
-  for (const { href } of items) {
-    const hit = pathname === href || (href !== DAILY_REQUISITION_BASE && pathname.startsWith(`${href}/`));
-    if (hit && (!best || href.length > best.length)) best = href;
+  let bestLength = 0;
+  const under = (path: string) => pathname === path || (path !== DAILY_REQUISITION_BASE && pathname.startsWith(`${path}/`));
+  for (const { href, alsoActiveOn } of items) {
+    for (const path of [href, ...(alsoActiveOn ?? [])]) {
+      if (under(path) && path.length > bestLength) {
+        best = href;
+        bestLength = path.length;
+      }
+    }
   }
   return best;
 }

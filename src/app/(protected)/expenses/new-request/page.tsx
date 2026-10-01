@@ -50,14 +50,20 @@ import {
 } from '@/lib/expenses-settings';
 import { allocateRequestNos } from '@/lib/expenses-import';
 import { PageHeader } from '@/components/shared/page-header';
-import { StatutorySection, FORM_GRID as GRID, FORM_LABEL as LABEL, FORM_READ_ONLY as READ_ONLY } from '@/components/expenses/statutory-section';
+import {
+  StatutorySection,
+  FORM_GRID as GRID,
+  FORM_LABEL as LABEL,
+  FORM_READ_ONLY as READ_ONLY,
+  type StatutoryValue,
+} from '@/components/expenses/statutory-section';
+import { useBillRegistration } from '@/components/expenses/bill-registration';
 import {
   EMPTY_STATUTORY,
   buildExpenseStatutory,
   computeStatutory,
   hasStatutory,
   statutoryErrors,
-  type StatutoryInput,
 } from '@/lib/statutory';
 
 
@@ -155,7 +161,7 @@ function NewExpenseRequestForm() {
 
   const [partySearch, setPartySearch] = useState('');
   /** GST & TDS (Statutory section). Optional; stored on the request only when something is entered. */
-  const [statutory, setStatutory] = useState<StatutoryInput>(EMPTY_STATUTORY);
+  const [statutory, setStatutory] = useState<StatutoryValue>(EMPTY_STATUTORY);
   const [showStatutoryErrors, setShowStatutoryErrors] = useState(false);
   const [statutoryKey, setStatutoryKey] = useState(0);
   const [partyPopoverOpen, setPartyPopoverOpen] = useState(false);
@@ -276,6 +282,17 @@ function NewExpenseRequestForm() {
   /** Settings › Data Control › "Capture GST & TDS on new requests". Off hides the section and ignores anything in it. */
   const captureStatutory = settings.data.gstTdsCapture;
 
+  /**
+   * Which of the company's GST registrations this request belongs to — chosen in the section, else
+   * worked out from the project or department it is raised for (src/lib/gst-registrations.ts). Its
+   * state is what the CGST + SGST vs IGST check is judged against, here as in the section.
+   */
+  const bill = useBillRegistration({
+    gstRegistrationId: statutory.gstRegistrationId,
+    projectId: form.watch('projectId'),
+    departmentId: form.watch('departmentId'),
+  });
+
   const handleSave = async (data: ExpenseFormValues, duplicateConfirmed = false) => {
     if (!user) {
       toast({ title: 'Authentication Error', description: 'You must be logged in.', variant: 'destructive' });
@@ -291,9 +308,12 @@ function NewExpenseRequestForm() {
     }
     // The request amount is the taxable value; GST and deductions are worked out on it.
     const taxable = Number(data.amount) || 0;
-    const withStatutory = captureStatutory && hasStatutory(statutory);
+    // The registration chosen on the bill is kept on the request itself, not inside its statutory
+    // block; '' leaves the attribution chain to decide it afresh wherever the bill is read.
+    const { gstRegistrationId: chosenRegistrationId = '', ...statutoryInput } = statutory;
+    const withStatutory = captureStatutory && hasStatutory(statutoryInput);
     if (withStatutory) {
-      const problems = Object.values(statutoryErrors(taxable, statutory));
+      const problems = Object.values(statutoryErrors(taxable, statutoryInput, bill.companyStateCode));
       if (problems.length) {
         setShowStatutoryErrors(true);
         toast({ title: 'Check the GST & TDS details', description: problems[0], variant: 'destructive' });
@@ -338,7 +358,8 @@ function NewExpenseRequestForm() {
         receptionNo: '',
         receptionDate: '',
         createdAt: new Date().toISOString(),
-        ...(withStatutory ? { statutory: buildExpenseStatutory(taxable, statutory) } : {}),
+        gstRegistrationId: chosenRegistrationId,
+        ...(withStatutory ? { statutory: buildExpenseStatutory(taxable, statutoryInput) } : {}),
       };
 
       const configRef = doc(db, 'departmentSerialConfigs', data.departmentId);
@@ -684,7 +705,15 @@ function NewExpenseRequestForm() {
               {/* Only as much tax detail as the bill has — and none when Data Control turns GST & TDS capture off */}
               {captureStatutory && (
                 <div className="border-t bg-slate-50/50 p-4 sm:p-5">
-                  <StatutorySection key={statutoryKey} amount={watchedAmount} value={statutory} onChange={setStatutory} showErrors={showStatutoryErrors} />
+                  <StatutorySection
+                    key={statutoryKey}
+                    amount={watchedAmount}
+                    value={statutory}
+                    onChange={setStatutory}
+                    showErrors={showStatutoryErrors}
+                    projectId={form.watch('projectId')}
+                    departmentId={form.watch('departmentId')}
+                  />
                 </div>
               )}
             </Card>

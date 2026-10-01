@@ -96,9 +96,18 @@ export function checkGstin(value: string | undefined): GstinCheck {
 
 export const isValidPan = (value: string | undefined) => PAN_PATTERN.test(normaliseTaxId(value));
 
-/** Inside the company's state → CGST + SGST; any other state → IGST. */
-export const suggestGstType = (supplierStateCode: string | undefined): GstType =>
-  !supplierStateCode ? 'cgst-sgst' : supplierStateCode === COMPANY_GST_STATE_CODE ? 'cgst-sgst' : 'igst';
+/**
+ * Inside the buying registration's own state → CGST + SGST; any other state → IGST.
+ *
+ * `companyStateCode` is the state of the GST registration the bill belongs to. A company registered
+ * in several states has one per state, so the caller passes the attributed registration's state
+ * (src/lib/gst-registrations.ts). Left out, it falls back to the single-state constant.
+ */
+export const suggestGstType = (
+  supplierStateCode: string | undefined,
+  companyStateCode: string | undefined = COMPANY_GST_STATE_CODE,
+): GstType =>
+  !supplierStateCode || !companyStateCode ? 'cgst-sgst' : supplierStateCode === companyStateCode ? 'cgst-sgst' : 'igst';
 
 export interface StatutoryInput {
   invoiceNo: string;
@@ -188,8 +197,17 @@ export function computeStatutory(taxableAmount: number, input: StatutoryInput): 
 /**
  * Problems that must be fixed before the request is saved. Nothing is required while GST and TDS
  * are both "none" and there are no deductions — the section is then simply not recorded.
+ *
+ * `companyStateCode` is the state of the GST registration the bill belongs to, so the treatment is
+ * judged against the registration that actually buys (src/lib/gst-registrations.ts). Left out it
+ * falls back to the single-state constant; passed as `''` — nothing attributed — the treatment is
+ * not judged at all rather than judged against the wrong state.
  */
-export function statutoryErrors(taxableAmount: number, input: StatutoryInput): Partial<Record<keyof StatutoryInput | 'net', string>> {
+export function statutoryErrors(
+  taxableAmount: number,
+  input: StatutoryInput,
+  companyStateCode: string | undefined = COMPANY_GST_STATE_CODE,
+): Partial<Record<keyof StatutoryInput | 'net', string>> {
   const errors: Partial<Record<keyof StatutoryInput | 'net', string>> = {};
   const hasGst = input.gstType !== 'none';
   if (hasGst) {
@@ -198,13 +216,14 @@ export function statutoryErrors(taxableAmount: number, input: StatutoryInput): P
     if (!(Number(input.gstRate) > 0)) errors.gstRate = 'Choose the GST rate on the invoice.';
     if (!input.invoiceNo.trim()) errors.invoiceNo = 'The invoice number is needed to claim input tax credit.';
     if (!input.invoiceDate) errors.invoiceDate = 'Enter the invoice date.';
-    if (check.valid && check.stateCode) {
-      const expected = suggestGstType(check.stateCode);
+    if (check.valid && check.stateCode && companyStateCode) {
+      const buyingState = GST_STATES[companyStateCode] ?? 'the registered state';
+      const expected = suggestGstType(check.stateCode, companyStateCode);
       if (expected !== input.gstType) {
         errors.gstType =
           expected === 'igst'
-            ? `The supplier is in ${check.stateName}, outside Odisha — an inter-state supply takes IGST.`
-            : 'The supplier is in Odisha — an intra-state supply takes CGST + SGST.';
+            ? `The supplier is in ${check.stateName}, outside ${buyingState} — an inter-state supply takes IGST.`
+            : `The supplier is in ${buyingState} — an intra-state supply takes CGST + SGST.`;
       }
     }
   }

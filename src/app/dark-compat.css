@@ -458,6 +458,9 @@
   .dark :where(.bg-orange-100:not(.keep-light, .keep-light *)) {
     background-color: rgb(249 115 22 / 0.180);
   }
+  .dark :where(.bg-orange-50\/60:not(.keep-light, .keep-light *)) {
+    background-color: rgb(249 115 22 / 0.072);
+  }
   .dark :where(.bg-orange-50\/70:not(.keep-light, .keep-light *)) {
     background-color: rgb(249 115 22 / 0.084);
   }

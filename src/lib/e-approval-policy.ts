@@ -4824,6 +4824,356 @@ export function eApprovalTimeline(
   return primaryEApprovalSteps(steps).map(build);
 }
 
+/* ------------------------------------------------------------------------------------------------
+ * The stage discussion (spec sections 7, 17, 20)
+ * ---------------------------------------------------------------------------------------------- */
+
+/**
+ * One thing somebody wrote, with what kind of writing it was.
+ *
+ * The label matters as much as the text. "Check the rate against the last PO" read as a bare
+ * quotation is indistinguishable from an approval remark, and acting on the wrong one is how a
+ * file comes back a second time — so an instruction is never rendered as a comment.
+ */
+export interface EApprovalDiscussionNote {
+  label: 'Comment' | 'Instruction' | 'Reason' | 'Retracted';
+  text: string;
+}
+
+/** One line of a stage's discussion: an action taken on it, or a note written against it. */
+export interface EApprovalDiscussionEntry {
+  id: string;
+  at: string;
+  /** The stage this belongs to, or null when it was written against the request as a whole. */
+  stepId: string | null;
+  stepName?: string;
+  source: 'Action' | 'Comment' | 'Reassignment';
+  kind?: EApprovalEventKind;
+  actorId?: string;
+  actorName?: string;
+  actorDesignation?: string;
+  onBehalfOfName?: string;
+  /** What happened, in a few words: "Forwarded for approval". */
+  headline: string;
+  /**
+   * Where the file went, when this action moved it. Kept apart from the headline so the tree can
+   * leave it out: the node directly below already carries that person's name in full, and printing
+   * it twice is what made the trail read as noise rather than as a chain.
+   */
+  movedTo?: string;
+  notes: EApprovalDiscussionNote[];
+  outcome?: EApprovalOutcome | null;
+  approvedAmount?: number;
+  retracted?: boolean;
+  /** Replies to this entry — one level, which is all the comment model allows. */
+  replies: EApprovalDiscussionEntry[];
+}
+
+export interface EApprovalDiscussion {
+  /** Entries keyed by the stage they were made on, chronological within each stage. */
+  byStepId: Record<string, EApprovalDiscussionEntry[]>;
+  /** Entries belonging to no stage — request-level comments, and Created / Submit. */
+  general: EApprovalDiscussionEntry[];
+  /** How many entries carry words somebody actually wrote, across every stage. */
+  noteCount: number;
+}
+
+/**
+ * A comment as the discussion builder needs it.
+ *
+ * `EApprovalComment.createdAt` is a Firestore `Timestamp`, and this file stays free of the Firebase
+ * SDK, so the caller normalises the stamp to an ISO string on the way in.
+ */
+export interface EApprovalDiscussionCommentLike {
+  id: string;
+  stepId?: string | null;
+  stepName?: string;
+  parentCommentId?: string | null;
+  body: string;
+  authorId?: string;
+  authorName?: string;
+  authorDesignation?: string;
+  at?: string | null;
+  retracted?: boolean;
+  retractedReason?: string;
+}
+
+/** What each event says it did, in the stage's own thread rather than the register's voice. */
+const DISCUSSION_HEADLINES: Partial<Record<EApprovalEventKind, string>> = {
+  Created: 'Created the request',
+  Submit: 'Submitted for approval',
+  Resubmit: 'Resubmitted after correction',
+  Approve: 'Approved',
+  'Approve And Complete': 'Approved and closed the file',
+  'Send For Verification': 'Sent for verification',
+  Verify: 'Reported back',
+  'Request Clarification': 'Asked for clarification',
+  'Provide Clarification': 'Answered the clarification',
+  Return: 'Returned for correction',
+  'Auto Returned': 'Returned automatically',
+  Forward: 'Forwarded for approval',
+  Delegate: 'Delegated',
+  'Add Approver': 'Added an approver',
+  Escalate: 'Escalated',
+  'Escalation Fired': 'Escalated automatically',
+  Reject: 'Rejected',
+  Hold: 'Put on hold',
+  Resume: 'Resumed',
+  Cancel: 'Cancelled',
+  Superseded: 'Superseded by a newer version',
+  'Take Ownership': 'Took ownership',
+  Assign: 'Assigned',
+  'Add Participant': 'Added a participant',
+  Recall: 'Recalled an action',
+  Reverse: 'Reversed an action',
+  Comment: 'Commented',
+  Attachment: 'Attached a document',
+};
+
+const pushNote = (
+  notes: EApprovalDiscussionNote[],
+  label: EApprovalDiscussionNote['label'],
+  text: string | undefined | null,
+): void => {
+  const trimmed = text?.trim();
+  if (!trimmed) return;
+  if (notes.some((note) => note.text === trimmed)) return;
+  notes.push({ label, text: trimmed });
+};
+
+/**
+ * Every action and note on the request, filed under the stage it happened on.
+ *
+ * The workflow tab used to show each stage's *current* fields — and a step document keeps only the
+ * last comment written on it, so an approver who forwarded with a covering note and a later
+ * approver who sanctioned with a remark showed up as one anonymous quotation. Reading the thread
+ * out of the activity log instead keeps every note, attached to the desk it was written at and the
+ * person who wrote it, which is the whole reason anybody opens this tab.
+ *
+ * Reassignments live on the step document as well as in the log, so a move that already has an
+ * event at the same instant is folded into it rather than drawn twice; the ones left over still get
+ * a line, which is what keeps requests written before the log existed readable.
+ */
+export function eApprovalDiscussion(
+  steps: EApprovalStepRecord[],
+  input: {
+    events?: EApprovalEvent[];
+    comments?: EApprovalDiscussionCommentLike[];
+  } = {},
+): EApprovalDiscussion {
+  const stepById = new Map(steps.map((step) => [step.id, step]));
+  const byStepId: Record<string, EApprovalDiscussionEntry[]> = {};
+  const general: EApprovalDiscussionEntry[] = [];
+
+  const bucket = (stepId: string | null | undefined): EApprovalDiscussionEntry[] => {
+    if (stepId && stepById.has(stepId)) {
+      byStepId[stepId] ??= [];
+      return byStepId[stepId];
+    }
+    return general;
+  };
+
+  // Moves keyed by the instant they happened, so the event that caused one can claim it.
+  const movesByKey = new Map<string, EApprovalReassignment>();
+  for (const step of steps) {
+    for (const move of step.reassignments ?? []) {
+      movesByKey.set(`${step.id}|${move.at}`, move);
+    }
+  }
+
+  const events = [...(input.events ?? [])].sort((a, b) => (millis(a.at) ?? 0) - (millis(b.at) ?? 0));
+  events.forEach((event, index) => {
+    const notes: EApprovalDiscussionNote[] = [];
+    pushNote(notes, 'Comment', event.comment);
+    pushNote(notes, 'Instruction', event.instruction);
+    pushNote(notes, 'Reason', event.reason);
+
+    const headline = DISCUSSION_HEADLINES[event.kind] ?? event.summary ?? String(event.kind);
+    const moveKey = event.stepId ? `${event.stepId}|${event.at}` : null;
+    const move = moveKey ? movesByKey.get(moveKey) : undefined;
+    let movedTo: string | undefined;
+    if (move) {
+      movesByKey.delete(moveKey!);
+      movedTo = describeEApprovalAssignment(move.to);
+      pushNote(notes, 'Reason', move.reason);
+    } else if (event.targetStepName) {
+      movedTo = event.targetStepName;
+    }
+
+    bucket(event.stepId).push({
+      id: `event:${event.stepId ?? 'request'}:${event.at}:${index}`,
+      at: event.at,
+      stepId: event.stepId && stepById.has(event.stepId) ? event.stepId : null,
+      stepName: event.stepName,
+      source: 'Action',
+      kind: event.kind,
+      actorId: event.actorId,
+      actorName: event.actorName,
+      onBehalfOfName: event.onBehalfOfName,
+      headline,
+      movedTo,
+      notes,
+      outcome: event.outcome ?? null,
+      approvedAmount: event.approvedAmount,
+      replies: [],
+    });
+  });
+
+  // Whatever no event claimed. Without this, a request whose history predates a field — or one whose
+  // log could not be read — loses the record of where the file actually went.
+  for (const step of steps) {
+    for (const move of step.reassignments ?? []) {
+      const key = `${step.id}|${move.at}`;
+      if (!movesByKey.has(key)) continue;
+      movesByKey.delete(key);
+      const notes: EApprovalDiscussionNote[] = [];
+      pushNote(notes, 'Reason', move.reason);
+      bucket(step.id).push({
+        id: `move:${step.id}:${move.at}`,
+        at: move.at,
+        stepId: step.id,
+        stepName: step.name,
+        source: 'Reassignment',
+        actorId: move.byUserId,
+        actorName: move.byName,
+        headline: `${E_APPROVAL_REASSIGNMENT_VERBS[move.kind]} from ${describeEApprovalAssignment(move.from)}`,
+        movedTo: describeEApprovalAssignment(move.to),
+        notes,
+        replies: [],
+      });
+    }
+  }
+
+  const commentEntries = new Map<string, EApprovalDiscussionEntry>();
+  const comments = [...(input.comments ?? [])].sort((a, b) => (millis(a.at) ?? 0) - (millis(b.at) ?? 0));
+  for (const comment of comments) {
+    const notes: EApprovalDiscussionNote[] = [];
+    pushNote(notes, comment.retracted ? 'Retracted' : 'Comment', comment.body);
+    if (comment.retracted) pushNote(notes, 'Reason', comment.retractedReason);
+    const entry: EApprovalDiscussionEntry = {
+      id: `comment:${comment.id}`,
+      at: comment.at ?? '',
+      stepId: comment.stepId && stepById.has(comment.stepId) ? comment.stepId : null,
+      stepName: comment.stepName,
+      source: 'Comment',
+      kind: 'Comment',
+      actorId: comment.authorId,
+      actorName: comment.authorName,
+      actorDesignation: comment.authorDesignation,
+      headline: comment.parentCommentId ? 'Replied' : 'Commented',
+      notes,
+      retracted: comment.retracted,
+      replies: [],
+    };
+    commentEntries.set(comment.id, entry);
+
+    // A reply hangs off its parent wherever the parent ended up, so an answer never drifts away from
+    // the question it answers — even when the reply was filed against a different stage.
+    const parent = comment.parentCommentId ? commentEntries.get(comment.parentCommentId) : undefined;
+    if (parent) parent.replies.push(entry);
+    else bucket(comment.stepId).push(entry);
+  }
+
+  const byTime = (a: EApprovalDiscussionEntry, b: EApprovalDiscussionEntry) =>
+    (millis(a.at) ?? 0) - (millis(b.at) ?? 0);
+  for (const entries of Object.values(byStepId)) entries.sort(byTime);
+  general.sort(byTime);
+
+  const count = (entries: EApprovalDiscussionEntry[]): number =>
+    entries.reduce(
+      (total, entry) => total + (entry.notes.length ? 1 : 0) + count(entry.replies),
+      0,
+    );
+
+  return {
+    byStepId,
+    general,
+    noteCount: count(general) + Object.values(byStepId).reduce((total, entries) => total + count(entries), 0),
+  };
+}
+
+/**
+ * One desk the file actually sat at inside a single stage.
+ *
+ * A stage is one document, but Forward, Delegate and Escalate move it by overwriting
+ * `step.assignment` in place — so a stage that passed through three people leaves one row holding
+ * only the last of them. Reading the stage back as a chain of desks is what turns that row into the
+ * tree it always was: every person who held the file gets their own node, in the order they held it.
+ */
+export interface EApprovalStepHop {
+  key: string;
+  /** The stage's own name on the first desk; the person it was sent to on every desk after. */
+  title: string;
+  assigneeLabel: string;
+  assignment?: EApprovalAssignment;
+  resolvedFrom?: string;
+  /** When this desk received the file. */
+  arrivedAt?: string | null;
+  /** The move that sent it on from here — absent on the desk that still holds it. */
+  move?: EApprovalReassignment;
+  entries: EApprovalDiscussionEntry[];
+  children: EApprovalTimelineNode[];
+  /** The last desk. It alone carries the stage's status, outcome, SLA and sanctioned figure. */
+  isCurrent: boolean;
+}
+
+/**
+ * Split a stage into the desks it passed through, filing each note and sub-task under the desk that
+ * was holding it at the time.
+ *
+ * The boundaries are the moves' own timestamps, and an action recorded *at* a boundary is the action
+ * that caused the move — so it belongs to the desk that sent the file, not to the one receiving it.
+ * That is the whole rule, and getting it backwards would put every covering note under the next
+ * approver's name and blame them for words they never wrote.
+ */
+export function eApprovalStepHops(
+  step: EApprovalStepRecord,
+  thread: EApprovalDiscussionEntry[] = [],
+  children: EApprovalTimelineNode[] = [],
+): EApprovalStepHop[] {
+  const moves = [...(step.reassignments ?? [])].sort((a, b) => (millis(a.at) ?? 0) - (millis(b.at) ?? 0));
+  const boundaries = moves.map((move) => millis(move.at) ?? 0);
+  const hopIndexAt = (at?: string | null): number => {
+    const time = millis(at);
+    if (time == null) return 0;
+    let index = 0;
+    while (index < boundaries.length && boundaries[index] < time) index += 1;
+    return Math.min(index, moves.length);
+  };
+
+  const hops: EApprovalStepHop[] = [];
+  for (let index = 0; index <= moves.length; index += 1) {
+    // The first desk's assignment was overwritten by the first move, so it is recovered from that
+    // move's `from` rather than from the step — which now names whoever holds it last.
+    const assignment = index === 0 ? (moves[0]?.from ?? step.assignment) : moves[index - 1].to;
+    const assigneeLabel = describeEApprovalAssignment(assignment);
+    hops.push({
+      key: `${step.id}:${index}`,
+      title: index === 0 ? step.name : assigneeLabel,
+      assigneeLabel,
+      assignment,
+      resolvedFrom: assignment?.resolvedFrom,
+      arrivedAt: index === 0 ? step.startedAt : moves[index - 1].at,
+      move: moves[index],
+      entries: [],
+      children: [],
+      isCurrent: index === moves.length,
+    });
+  }
+
+  for (const entry of thread) hops[hopIndexAt(entry.at)].entries.push(entry);
+  for (const child of children) hops[hopIndexAt(child.step.startedAt)].children.push(child);
+  return hops;
+}
+
+/** The thread for one stage, or an empty list — so a caller never has to guard the lookup. */
+export function eApprovalStepDiscussion(
+  discussion: EApprovalDiscussion,
+  stepId: string,
+): EApprovalDiscussionEntry[] {
+  return discussion.byStepId[stepId] ?? [];
+}
+
 /** The dashboard cards of spec section 14. */
 export interface EApprovalDashboardCounts {
   pendingApprovals: number;

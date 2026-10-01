@@ -2,9 +2,11 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   describeEApprovalPrintFit,
+  E_APPROVAL_PRINT_GUTTER_CSS,
   eApprovalPrintFit,
   LANDSCAPE_CONTENT_PX,
   MIN_SCALE,
+  PRINT_SAFETY_FRACTION,
   PORTRAIT_CONTENT_PX,
 } from '../src/lib/e-approval-print-fit.ts';
 
@@ -63,25 +65,33 @@ test('the scale is exactly what makes the content fit the width', () => {
   assert.equal(fit.scale, PORTRAIT_CONTENT_PX / 850);
 });
 
-test('past the readability floor the page turns landscape instead of shrinking further', () => {
-  // 681 / 1000 = 0.68, below the 0.8 floor.
+test('past the readability floor the page is not rotated behind the reader back', () => {
+  // 681 / 1000 = 0.68, below the 0.8 readability floor. Rotating here is what clipped a real note:
+  // "@page { size: landscape }" is a request the print dialog may refuse, and a block laid out for
+  // 1003px on a 681px page loses 322px off its right edge. So it shrinks, and offers the rotation.
   const fit = eApprovalPrintFit(1000);
-  assert.equal(fit.orientation, 'landscape');
-  assert.equal(fit.scale, 1, 'landscape is wide enough on its own, so nothing is shrunk');
+  assert.equal(fit.orientation, 'portrait');
+  assert.equal(fit.scale, PORTRAIT_CONTENT_PX / 1000);
   assert.equal(fit.clipped, false);
+  assert.equal(fit.suggestLandscape, true);
 });
 
-test('the boundary between shrinking and rotating is the readability floor', () => {
+test('the readability floor decides whether landscape is offered, not whether it is taken', () => {
   const justInside = Math.floor(PORTRAIT_CONTENT_PX / 0.8);
-  assert.equal(eApprovalPrintFit(justInside).orientation, 'portrait');
-  assert.equal(eApprovalPrintFit(justInside + 40).orientation, 'landscape');
+  assert.equal(eApprovalPrintFit(justInside).suggestLandscape, false);
+  assert.equal(eApprovalPrintFit(justInside + 40).suggestLandscape, true);
+  assert.equal(eApprovalPrintFit(justInside + 40).orientation, 'portrait', 'offered, never imposed');
 });
 
-test('a proposal too wide even for landscape is shrunk in landscape', () => {
+test('a proposal that already fits is never told landscape would be better', () => {
+  assert.equal(eApprovalPrintFit(400).suggestLandscape, false);
+  assert.equal(eApprovalPrintFit(PORTRAIT_CONTENT_PX).suggestLandscape, false);
+});
+
+test('a very wide proposal is shrunk to portrait, to the floor if it must be', () => {
   const fit = eApprovalPrintFit(1400);
-  assert.equal(fit.orientation, 'landscape');
-  assert.ok(fit.scale < 1);
-  assert.equal(Math.round(1400 * fit.scale), LANDSCAPE_CONTENT_PX);
+  assert.equal(fit.orientation, 'portrait');
+  assert.equal(Math.round(1400 * fit.scale), PORTRAIT_CONTENT_PX);
   assert.equal(fit.clipped, false);
 });
 
@@ -94,7 +104,7 @@ test('nothing is shrunk past the floor, and that case reports itself as clipped'
 });
 
 test('a fit landing exactly on the floor is not reported as clipped', () => {
-  const exact = LANDSCAPE_CONTENT_PX / MIN_SCALE;
+  const exact = PORTRAIT_CONTENT_PX / MIN_SCALE;
   const fit = eApprovalPrintFit(exact);
   // Not strict equality: the round trip through the division lands a hair off the floor
   // (0.45000000000000007), which is exactly the case the rounded `clipped` check exists for.
@@ -121,7 +131,39 @@ test('forcing landscape keeps the page landscape even when portrait would have d
 test('the print bar explains what it did, in each case', () => {
   assert.match(describeEApprovalPrintFit(eApprovalPrintFit(400)), /Fits the page/);
   assert.match(describeEApprovalPrintFit(eApprovalPrintFit(800)), /scaled to 8[0-9]%/);
-  assert.match(describeEApprovalPrintFit(eApprovalPrintFit(1000)), /^Landscape, so/);
-  assert.match(describeEApprovalPrintFit(eApprovalPrintFit(1400)), /Landscape, scaled to/);
+  assert.match(describeEApprovalPrintFit(eApprovalPrintFit(1000)), /landscape would print it larger/);
+  assert.match(describeEApprovalPrintFit(eApprovalPrintFit(400, { force: 'landscape' })), /^Landscape, so/);
+  assert.match(describeEApprovalPrintFit(eApprovalPrintFit(1400, { force: 'landscape' })), /Landscape, scaled to/);
   assert.match(describeEApprovalPrintFit(eApprovalPrintFit(9000)), /will be clipped/);
+});
+
+/* ── the sheet's right-hand gutter ───────────────────────────────────────────────────────────── */
+
+/*
+ * A different failure from the fit above, and the unit is the whole of it.
+ *
+ * The sheet fills its layout viewport, and that viewport is not reliably the paper's width: "Fit to
+ * printable area" lays the page out wider and scales the result down. So a physical cap gets scaled
+ * too — tried, and the note printed at 329px on a 698px page with two thirds of the sheet blank. A
+ * percentage holds in both modes, because 100% of the viewport is the printable width whatever the
+ * scale factor is. Measured after the change: 95–97% of the page at viewports from 697 to 1451.
+ */
+
+test('the gutter is a percentage, because layout pixels are not paper millimetres', () => {
+  assert.match(E_APPROVAL_PRINT_GUTTER_CSS, /%$/);
+  assert.ok(!E_APPROVAL_PRINT_GUTTER_CSS.includes('mm'), 'a physical length is scaled with the page');
+  assert.ok(!E_APPROVAL_PRINT_GUTTER_CSS.includes('px'), 'and so is a pixel one');
+});
+
+test('the gutter is the same safety allowance the widths use', () => {
+  assert.equal(Number.parseFloat(E_APPROVAL_PRINT_GUTTER_CSS) / 100, PRINT_SAFETY_FRACTION);
+});
+
+test('the gutter is small enough to be invisible and large enough to matter', () => {
+  const percent = Number.parseFloat(E_APPROVAL_PRINT_GUTTER_CSS);
+  // Under ~1% stops covering the shave that lost "Please chec" its k; over ~5% is a visible
+  // chunk of an A4 sheet given away for nothing.
+  assert.ok(percent >= 1 && percent <= 5, `${percent}% is outside the useful range`);
+  const atA4 = (PORTRAIT_CONTENT_PX * percent) / 100;
+  assert.ok(atA4 > 6, `${atA4}px must exceed the few pixels the print pipeline shaves`);
 });

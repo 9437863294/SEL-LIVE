@@ -3,7 +3,7 @@
 import Link from 'next/link';
 import {
   BarChart3, Clock,
-  FolderOpen, Layers, TrendingUp, Users, Wallet,
+  FolderOpen, Landmark, Layers, TrendingUp, Users, Wallet,
 } from 'lucide-react';
 import { useAuthorization } from '@/hooks/useAuthorization';
 import { Badge } from '@/components/ui/badge';
@@ -83,6 +83,17 @@ const REPORTS = [
     iconBg: 'bg-red-50 text-red-600',
     scope: 'Live',
     scopeColor: 'bg-rose-50 text-rose-700',
+  },
+  {
+    href: '/daily-requisition/reports/gst-by-registration',
+    title: 'GST & TDS by Registration',
+    description:
+      "Per the company's own GSTINs: input credit on purchase bills, output GST owed under reverse charge, and TDS withheld — kept apart, as the return keeps them.",
+    icon: Landmark,
+    color: 'from-teal-500 to-emerald-600',
+    iconBg: 'bg-teal-50 text-teal-600',
+    scope: 'Date range',
+    scopeColor: 'bg-sky-50 text-sky-700',
   },
 ];
 

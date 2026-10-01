@@ -105,7 +105,7 @@ import {
   requisitionProgress,
   voucherHref,
 } from '@/lib/requisition-progress';
-import { requisitionStatutoryFields, type ExpenseStatutory } from '@/lib/statutory';
+import { ReceiveMultiplePanel, carriedStatutory } from '@/components/daily-requisition/receive-multiple';
 import { FORM_LABEL } from '@/components/expenses/statutory-section';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -202,12 +202,6 @@ const LOCKED_FIELD_LABELS: Record<string, string> = {
  * The expense request(s) a requisition received: its DEP No *and* its reception number. Matching on
  * the request number alone could release a request since received under another entry.
  */
-/** The GST & TDS fields a requisition inherits from its expense request — all but gross and net. */
-function carriedStatutory(statutory: ExpenseStatutory) {
-  const { grossAmount: _gross, netAmount: _net, ...rest } = requisitionStatutoryFields(statutory);
-  return rest;
-}
-
 async function linkedExpenseRefs(entry: Pick<DailyRequisitionEntry, 'depNo' | 'receptionNo'>) {
   const receptionNo = String(entry.receptionNo ?? '').trim();
   if (!String(entry.depNo ?? '').trim() || !receptionNo) return [];
@@ -303,6 +297,8 @@ function EntrySheetPageComponent() {
   }, [queryParam]);
 
   const [isAddDialogOpen, setIsAddDialogOpen] = React.useState(false);
+  /** Add New Entry: one request with its own details and files, or several requests received together. */
+  const [addMode, setAddMode] = React.useState<'single' | 'multiple'>('single');
   const [isEditDialogOpen, setIsEditDialogOpen] = React.useState(false);
   const [editingEntry, setEditingEntry] = React.useState<EnrichedDailyRequisitionEntry | null>(null);
 
@@ -602,7 +598,7 @@ function EntrySheetPageComponent() {
         attachments: attachmentUrls,
         // GST & TDS captured on the expense request travel with it, so verification starts filled in.
         // Gross and net stay as entered on this form (verification flags any mismatch).
-        ...(selectedExpenseRequest?.statutory ? carriedStatutory(selectedExpenseRequest.statutory) : {}),
+        ...(selectedExpenseRequest ? carriedStatutory(selectedExpenseRequest) : {}),
       };
 
       const newEntryRef = doc(collection(db, 'dailyRequisitions'));
@@ -1396,16 +1392,61 @@ function EntrySheetPageComponent() {
       </div>
 
       <Dialog open={isAddDialogOpen} onOpenChange={setIsAddDialogOpen}>
-        <DialogContent className="max-h-[92vh] overflow-y-auto sm:max-w-3xl">
+        <DialogContent className={cn('max-h-[92vh] overflow-y-auto', addMode === 'multiple' ? 'sm:max-w-5xl' : 'sm:max-w-3xl')}>
           <DialogHeader className="space-y-1 text-left">
             <DialogTitleShad>Add New Entry</DialogTitleShad>
-            <DialogDescriptionShad>Receive an expense request into Daily Requisition.</DialogDescriptionShad>
-            <div className="flex items-center gap-1.5 pt-1 text-xs text-slate-500">
-              <Hash className="h-3.5 w-3.5 text-slate-400" />
-              Reception No
-              <span className="font-mono font-medium text-slate-800">{form.watch('receptionNo') || '—'}</span>
+            <DialogDescriptionShad>
+              {addMode === 'single'
+                ? 'Receive an expense request into Daily Requisition.'
+                : 'Receive several expense requests at once — each becomes its own entry, numbered in DEP order.'}
+            </DialogDescriptionShad>
+            <div className="flex flex-wrap items-center justify-between gap-2 pt-1">
+              <div role="tablist" aria-label="How many entries" className="inline-flex rounded-lg border bg-slate-50 p-0.5 text-sm">
+                {(
+                  [
+                    ['single', 'Single entry'],
+                    ['multiple', 'Multiple from expense requests'],
+                  ] as const
+                ).map(([mode, label]) => (
+                  <button
+                    key={mode}
+                    type="button"
+                    role="tab"
+                    aria-selected={addMode === mode}
+                    onClick={() => setAddMode(mode)}
+                    className={cn(
+                      'rounded-md px-3 py-1 font-medium transition-colors',
+                      addMode === mode ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-800',
+                    )}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+              {addMode === 'single' && (
+                <div className="flex items-center gap-1.5 text-xs text-slate-500">
+                  <Hash className="h-3.5 w-3.5 text-slate-400" />
+                  Reception No
+                  <span className="font-mono font-medium text-slate-800">{form.watch('receptionNo') || '—'}</span>
+                </div>
+              )}
             </div>
           </DialogHeader>
+          {addMode === 'multiple' ? (
+            <ReceiveMultiplePanel
+              requests={unassignedExpenseRequests}
+              projects={projects}
+              departments={departments}
+              settings={moduleSettings}
+              dateWindow={dateWindow}
+              calendarDisabled={calendarDisabled}
+              onCancel={() => setIsAddDialogOpen(false)}
+              onDone={(refreshOnly) => {
+                if (!refreshOnly) setIsAddDialogOpen(false);
+                fetchAllData();
+              }}
+            />
+          ) : (
           <Form {...form}>
             <form onSubmit={form.handleSubmit(handleAddEntry)}>
               {/* 4 columns: the request and when it came in · who and where · how much and what for · files */}
@@ -1506,6 +1547,7 @@ function EntrySheetPageComponent() {
               </DialogFooter>
             </form>
           </Form>
+          )}
         </DialogContent>
       </Dialog>
 

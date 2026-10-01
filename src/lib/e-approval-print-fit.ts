@@ -6,13 +6,17 @@
  * simply clips it — so the note that gets signed and filed is missing the last four columns, with
  * nothing on the paper to say so. That is the failure this exists to stop.
  *
- * Two levers, applied in that order:
+ * **Shrinking is the only automatic lever, and it fits portrait.** Rotating used to be automatic,
+ * and it is the reason a note came off the printer missing its entire amount column: `@page { size:
+ * A4 landscape }` is a *request*. The print dialog's own orientation control can override it, and
+ * when it does, a block laid out for the 1003px landscape width lands on a 681px portrait page and
+ * the browser simply clips the difference — 322px of it, measured. There is no API that tells the
+ * page which way the paper actually came out, so the fit cannot depend on being obeyed: it targets
+ * the narrower of the two, and then fits on either.
  *
- *   1. **Shrink.** A mild reduction is invisible to the reader and keeps the note portrait, which is
- *      what it is filed as. Preferred whenever it is enough.
- *   2. **Rotate.** Past a point, shrinking stops being "slightly smaller" and becomes "unreadable" —
- *      a rate table at 55% is a table nobody checks figures against. Beyond `MIN_READABLE_SCALE` the
- *      page turns landscape instead, and shrinking resumes from there only if it is still too wide.
+ * Landscape is still available, as the explicit choice on the print bar. `suggestLandscape` says
+ * when it is worth offering, so a rate table that portrait can only manage at 60% is a decision the
+ * user is invited to make rather than one taken behind their back.
  *
  * Pure, so the thresholds are unit-testable and the component only has to apply what this decides.
  * The widths are the printable area of A4 at 96 CSS px/inch, less the margins in `@page`.
@@ -63,11 +67,12 @@ export const PORTRAIT_CONTENT_PX = printableWidth(A4_WIDTH_MM);
 export const LANDSCAPE_CONTENT_PX = printableWidth(A4_HEIGHT_MM);
 
 /**
- * How small the proposal may be shrunk before rotating the page is the better answer.
+ * How small the proposal may be shrunk before landscape is worth offering to the user.
  *
  * 0.8 rather than something lower because this is a financial document read off paper: below about
  * four-fifths, an 11px table cell stops being comfortably legible, and a note-sheet whose figures
- * have to be squinted at gets queried rather than signed.
+ * have to be squinted at gets queried rather than signed. Below this the fit still prints — it just
+ * raises `suggestLandscape` so the print bar can say there is a better option.
  */
 export const MIN_READABLE_SCALE = 0.8;
 
@@ -84,6 +89,11 @@ export interface EApprovalPrintFit {
   contentWidthPx: number;
   /** True when even the floor was not enough and the content will still be clipped. */
   clipped: boolean;
+  /**
+   * True when portrait can only manage this proposal below `MIN_READABLE_SCALE`, so rotating is
+   * worth offering. Never set when the caller already forced an orientation — the decision is made.
+   */
+  suggestLandscape: boolean;
 }
 
 export interface EApprovalPrintFitOptions {
@@ -118,7 +128,7 @@ export function eApprovalPrintFit(
 
   const natural = Number.isFinite(naturalWidthPx) && naturalWidthPx > 0 ? naturalWidthPx : 0;
 
-  const fitIn = (width: number): EApprovalPrintFit => {
+  const fitIn = (width: number, suggestLandscape: boolean): EApprovalPrintFit => {
     const wanted = natural > width ? width / natural : 1;
     const scale = clampScale(wanted, floor);
     return {
@@ -128,19 +138,44 @@ export function eApprovalPrintFit(
       // Rounded before comparing: a scale of 0.4499999 from floating-point division is the floor,
       // not a hair under it, and reporting that as clipped would put a warning on a note that is fine.
       clipped: Math.round(natural * scale) > width + 1,
+      suggestLandscape,
     };
   };
 
-  if (options.force) return fitIn(options.force === 'landscape' ? landscape : portrait);
+  if (options.force) return fitIn(options.force === 'landscape' ? landscape : portrait, false);
 
-  // Nothing to do, and nothing to explain to the user.
-  if (natural <= portrait) return fitIn(portrait);
-
-  // A mild shrink keeps the note portrait, which is how it is filed.
-  if (portrait / natural >= readable) return fitIn(portrait);
-
-  return fitIn(landscape);
+  // Portrait, always — see the note at the top of this file. Shrinking is safe on either paper;
+  // rotating is safe only if the print dialog agrees to it, and it need not.
+  return fitIn(portrait, natural > portrait && portrait / natural < readable);
 }
+
+/**
+ * The gutter the sheet leaves at its right-hand edge in print — **as a percentage**.
+ *
+ * The unit is the whole point, and getting it wrong costs a usable note either way.
+ *
+ * The sheet is a block that fills its layout viewport, and that viewport is *not* reliably the
+ * paper's width: "Fit to printable area" in the print dialog lays the page out wider and then scales
+ * the whole thing down to fit. So the mapping from layout pixels to paper is some unknown factor —
+ * which means a physical cap like `calc(210mm - 1in)` is wrong. Tried, and measured: the sheet is
+ * capped at 684 layout px, the page is then scaled by ~0.48, and the note prints at 329px on a 698px
+ * page — a third of the sheet used, the rest blank. A millimetre is not a millimetre once the page
+ * is being scaled.
+ *
+ * A percentage is right in both modes, because 100% of the layout viewport *is* the printable width
+ * by definition, whatever the scale factor between them. So the sheet keeps its full width and full
+ * text size, and gives up only this much at the right edge.
+ *
+ * Why give up anything: with the sheet flush to both edges, right-aligned content sits exactly on
+ * the boundary and the print pipeline shaves it. The symptom is small and easy to miss — a note came
+ * back reading "Please chec" and "recorded electronically abov", one or two characters short, on a
+ * document somebody signs. `PRINT_SAFETY_FRACTION` of the page is about 4mm and ~14px of headroom at
+ * A4, against losing the end of a sentence.
+ *
+ * Paired with `margin-left: 0`: the sheet is flush left and gives its slack to the right, where the
+ * shave happens. Centring it would halve the allowance for no gain.
+ */
+export const E_APPROVAL_PRINT_GUTTER_CSS = `${(PRINT_SAFETY_FRACTION * 100).toFixed(1)}%`;
 
 /** "Shrunk to 82% to fit" / "Printed landscape" — what the print bar tells the user it did. */
 export function describeEApprovalPrintFit(fit: EApprovalPrintFit): string {
@@ -152,6 +187,9 @@ export function describeEApprovalPrintFit(fit: EApprovalPrintFit): string {
     return `Landscape, scaled to ${percent}% so the proposal fits.`;
   }
   if (fit.orientation === 'landscape') return 'Landscape, so the proposal fits.';
+  if (fit.suggestLandscape) {
+    return `Proposal scaled to ${percent}% to fit — landscape would print it larger.`;
+  }
   if (fit.scale < 1) return `Proposal scaled to ${percent}% to fit the page.`;
   return 'Fits the page.';
 }

@@ -393,6 +393,7 @@ export const permissionModules = {
     Settings: ["View", "Edit Serial Nos", "Manage Accounts"],
     "Field Control": ["View", "Edit"],
     "Data Control": ["View", "Edit"],
+    "GST Registrations": ["View", "Edit"],
     "Audit Log": ["View", "Export"],
   },
   Loan: {
@@ -880,6 +881,8 @@ export interface ExpenseRequest {
   createdAt: string;
   /** GST & TDS captured when the request was raised; carried into its requisition. See src/lib/statutory.ts. */
   statutory?: import("@/lib/statutory").ExpenseStatutory;
+  /** The company GST registration this bill was attributed to; '' lets the chain decide. See src/lib/gst-registrations.ts. */
+  gstRegistrationId?: string;
 }
 
 export interface AccountHead {
@@ -939,6 +942,8 @@ export interface DailyRequisitionEntry {
   tdsSection?: string;
   tdsRate?: number;
   otherDeductionReason?: string;
+  /** The company GST registration this bill was attributed to; '' lets the chain decide. See src/lib/gst-registrations.ts. */
+  gstRegistrationId?: string;
   // Document Status
   documentStatus: "Pending" | "Uploaded" | "Missing" | "Not Required";
   documentStatusUpdatedAt?: Timestamp;

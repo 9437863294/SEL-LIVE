@@ -30,6 +30,8 @@ import { formatDay, formatInr } from '@/lib/bank-balance-ledger';
 import { isPaymentStageStatus } from '@/lib/bank-payments';
 import { db } from '@/lib/firebase';
 import { balanceOf, isPaymentLocked, paidOf, voucherHref } from '@/lib/requisition-progress';
+import { registrationLabel } from '@/lib/gst-registrations';
+import { treatmentWarning, useBillRegistration } from '@/components/expenses/bill-registration';
 import type { BankAccount, DailyRequisitionEntry, Department, ExpenseRequest, Project } from '@/lib/types';
 import { cn } from '@/lib/utils';
 
@@ -163,6 +165,12 @@ export default function ViewDailyRequisitionDialog({
   onActionComplete,
 }: ViewDailyRequisitionDialogProps) {
   const { can } = useAuthorization();
+  /** Which of the company's GST registrations this bill belongs to (src/lib/gst-registrations.ts). */
+  const bill = useBillRegistration({
+    gstRegistrationId: entry?.gstRegistrationId,
+    projectId: entry?.projectId,
+    departmentId: entry?.departmentId,
+  });
   const { user } = useAuth();
   const { toast } = useToast();
   const { log } = useActivityLogger(ACTIVITY_MODULES.DAILY_REQUISITION);
@@ -326,6 +334,7 @@ export default function ViewDailyRequisitionDialog({
   const payments = entry.payments ?? [];
   const locked = isPaymentLocked(entry);
   const showDeductions = hasDeductions(entry);
+  const treatment = treatmentWarning(bill, entry.gstNo, entry.gstType);
   const showPayment = locked || !!entry.manualPaid || isPaymentStageStatus(entry.status);
 
   const accountNames = new Map((bankAccounts ?? []).map((a) => [a.id, (a.shortName || a.bankName || 'Unknown').trim()]));
@@ -425,8 +434,17 @@ export default function ViewDailyRequisitionDialog({
               </div>
               <div className="min-w-0">
                 <SectionTitle>GST &amp; TDS</SectionTitle>
-                {/* Carried from the expense request's Statutory section (src/lib/statutory.ts). */}
+                {/* Carried from the expense request's Statutory section (src/lib/statutory.ts); the
+                    registration it belongs to is worked out afresh (src/lib/gst-registrations.ts). */}
                 <dl className="grid grid-cols-2 gap-x-4 gap-y-3">
+                  {bill.canChoose ? (
+                    <div className="col-span-2">
+                      <Detail label="GST registration">
+                        {registrationLabel(bill.registration)}
+                        {bill.registration ? <span className="block font-mono text-xs font-normal text-muted-foreground">{bill.registration.gstin}</span> : null}
+                      </Detail>
+                    </div>
+                  ) : null}
                   <Detail label="GSTIN" mono>{entry.gstNo?.trim() || '—'}</Detail>
                   {entry.panNo ? <Detail label="PAN" mono>{entry.panNo}</Detail> : null}
                   {entry.invoiceNo ? (
@@ -439,6 +457,9 @@ export default function ViewDailyRequisitionDialog({
                     <Detail label="TDS section">{entry.tdsSection} @ {entry.tdsRate ?? 0}%</Detail>
                   ) : null}
                   {entry.verifiedAt ? <Detail label="Verified on">{formatDateSafe(entry.verifiedAt)}</Detail> : null}
+                  {treatment ? (
+                    <div className="col-span-2 rounded-md bg-amber-50 px-2.5 py-1.5 text-xs font-medium text-amber-800">{treatment.message}</div>
+                  ) : null}
                   {entry.reverseCharge ? (
                     <div className="col-span-2 rounded-md bg-amber-50 px-2.5 py-1.5 text-xs font-medium text-amber-800">Reverse charge — GST is not paid to the supplier.</div>
                   ) : null}

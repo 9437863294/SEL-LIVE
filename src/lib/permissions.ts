@@ -265,6 +265,7 @@ export const permissionModules = {
     Settings: ["View", "Edit Serial Nos", "Manage Accounts"],
     "Field Control": ["View", "Edit"],
     "Data Control": ["View", "Edit"],
+    "GST Registrations": ["View", "Edit"],
     "Audit Log": ["View", "Export"],
   },
   Loan: {

@@ -7,6 +7,11 @@
  * deductions — and only the switched-on groups appear. A plain bill shows one line and nothing else.
  * Every group sits on the same 6-column grid as the request fields above it (FORM_GRID), so the
  * page reads as one aligned form. Every rule lives in src/lib/statutory.ts.
+ *
+ * The GST group opens with the company GST registration the bill belongs to, when there is more
+ * than one to choose from: it is that registration's state that decides CGST + SGST versus IGST
+ * (src/lib/gst-registrations.ts). With one registration, or none configured, the field is not shown
+ * and the treatment follows whatever the chain resolves to.
  */
 
 import { useState, type ReactNode } from 'react';
@@ -14,6 +19,7 @@ import { AlertCircle, BadgePercent, Check, CheckCircle2, MinusCircle, Receipt } 
 import { Input } from '@/components/ui/input';
 import { Switch } from '@/components/ui/switch';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { RegistrationSelect, treatmentWarning, useBillRegistration } from '@/components/expenses/bill-registration';
 import {
   GST_RATES,
   TDS_SECTIONS,
@@ -35,6 +41,15 @@ export const FORM_GRID = 'grid grid-cols-1 gap-x-4 gap-y-3.5 sm:grid-cols-2 lg:g
 export const FORM_LABEL = 'block h-4 truncate text-xs font-medium leading-4 text-slate-600';
 /** A value the form works out itself, shown in place of an input. */
 export const FORM_READ_ONLY = 'flex h-9 min-w-0 items-center rounded-md border border-dashed bg-slate-50 px-3 text-sm';
+
+/**
+ * What the page stores for this section. The GST registration chosen on the bill rides along with
+ * the statutory inputs, so the page can save it on the request without any state of its own here;
+ * `''` means "let the attribution chain decide" (src/lib/gst-registrations.ts).
+ */
+export interface StatutoryValue extends StatutoryInput {
+  gstRegistrationId?: string;
+}
 
 const inr = new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const money = (n: number) => inr.format(Number(n) || 0);
@@ -119,30 +134,39 @@ export function StatutorySection({
   value,
   onChange,
   showErrors,
+  projectId,
+  departmentId,
 }: {
   /** The request amount — the taxable value, before GST. */
   amount: number;
-  value: StatutoryInput;
-  onChange: (next: StatutoryInput) => void;
+  value: StatutoryValue;
+  onChange: (next: StatutoryValue) => void;
   /** Mark problems only after a save attempt. */
   showErrors: boolean;
+  /** What the form holds now, so the registration can be worked out from the project / department. */
+  projectId?: string;
+  departmentId?: string;
 }) {
-  const set = (patch: Partial<StatutoryInput>) => onChange({ ...value, ...patch });
+  const set = (patch: Partial<StatutoryValue>) => onChange({ ...value, ...patch });
   const gstOn = value.gstType !== 'none';
   const tdsOn = value.tdsSection !== 'none';
   // Deductions have no field of their own that means "on", so the toggle is remembered here.
   const [deductionsSwitch, setDeductionsSwitch] = useState(false);
   const deductionsOn = deductionsSwitch || value.retentionAmount > 0 || value.otherDeduction > 0;
 
+  // The registration the bill belongs to — its state, not one hardcoded state, settles the split.
+  const bill = useBillRegistration({ gstRegistrationId: value.gstRegistrationId, projectId, departmentId });
+
   const totals = computeStatutory(amount, value);
-  const errors = showErrors ? statutoryErrors(amount, value) : {};
+  const errors = showErrors ? statutoryErrors(amount, value, bill.companyStateCode) : {};
   const gstin = normaliseTaxId(value.gstNo);
   const gstinCheck = gstin ? checkGstin(gstin) : null;
+  const mismatch = gstOn ? treatmentWarning(bill, value.gstNo, value.gstType) : null;
   const invalid = (key: keyof typeof errors) => (errors[key] ? 'border-destructive focus-visible:ring-destructive' : undefined);
 
   const toggleGst = () =>
     gstOn
-      ? set({ gstType: 'none', gstRate: 0, gstNo: '', reverseCharge: false, hsnSac: '' })
+      ? set({ gstType: 'none', gstRate: 0, gstNo: '', reverseCharge: false, hsnSac: '', gstRegistrationId: '' })
       : set({ gstType: 'cgst-sgst', gstRate: value.gstRate || 18 });
   const toggleTds = () =>
     tdsOn ? set({ tdsSection: 'none', tdsRate: 0, tdsOverride: null }) : set({ tdsSection: '', tdsRate: 0, tdsOverride: null });
@@ -156,12 +180,23 @@ export function StatutorySection({
   const onGstinChange = (raw: string) => {
     const next = normaliseTaxId(raw);
     const check = checkGstin(next);
-    const patch: Partial<StatutoryInput> = { gstNo: next };
+    const patch: Partial<StatutoryValue> = { gstNo: next };
     if (check.valid) {
-      // A valid GSTIN settles the treatment (same state → CGST + SGST, else IGST) and gives the PAN.
-      patch.gstType = suggestGstType(check.stateCode);
+      // A valid GSTIN settles the treatment — same state as the buying registration → CGST + SGST,
+      // any other state → IGST — and gives the PAN.
+      patch.gstType = suggestGstType(check.stateCode, bill.companyStateCode);
       if (!normaliseTaxId(value.panNo) && check.pan) patch.panNo = check.pan;
     }
+    set(patch);
+  };
+
+  /** Another registration can turn an intra-state bill inter-state, so the split is re-suggested. */
+  const onRegistrationChange = (next: string) => {
+    const patch: Partial<StatutoryValue> = { gstRegistrationId: next };
+    const chosen = next
+      ? bill.options.find((registration) => registration.id === next) ?? null
+      : bill.automatic;
+    if (gstinCheck?.valid && chosen?.stateCode) patch.gstType = suggestGstType(gstinCheck.stateCode, chosen.stateCode);
     set(patch);
   };
 
@@ -209,6 +244,32 @@ export function StatutorySection({
                 </label>
               }
             >
+              {bill.canChoose && (
+                <Field
+                  label="GST registration"
+                  htmlFor="st-gst-registration"
+                  className="sm:col-span-2"
+                  hint={
+                    <p className="truncate text-[11px] leading-tight text-muted-foreground" title={bill.attribution.reason}>
+                      {bill.registration ? (
+                        <>
+                          <span className="font-mono">{bill.registration.gstin}</span> · {bill.attribution.reason}
+                        </>
+                      ) : (
+                        bill.attribution.reason
+                      )}
+                    </p>
+                  }
+                >
+                  <RegistrationSelect
+                    id="st-gst-registration"
+                    value={value.gstRegistrationId ?? ''}
+                    onValueChange={onRegistrationChange}
+                    bill={bill}
+                    className={CONTROL}
+                  />
+                </Field>
+              )}
               {invoiceFields}
               <Field
                 label="Supplier GSTIN"
@@ -236,9 +297,29 @@ export function StatutorySection({
                   onChange={(e) => onGstinChange(e.target.value)}
                 />
               </Field>
-              <Field label="Tax type" error={errors.gstType}>
+              <Field
+                label="Tax type"
+                error={errors.gstType}
+                hint={
+                  mismatch ? (
+                    <p className="flex items-start gap-1 text-[11px] leading-tight text-amber-700">
+                      <AlertCircle className="mt-px h-3 w-3 shrink-0" />
+                      <span>
+                        {mismatch.message}{' '}
+                        <button
+                          type="button"
+                          className="font-medium underline hover:no-underline"
+                          onClick={() => set({ gstType: mismatch.expected as GstType })}
+                        >
+                          Use {mismatch.expected === 'igst' ? 'IGST' : 'CGST + SGST'}
+                        </button>
+                      </span>
+                    </p>
+                  ) : null
+                }
+              >
                 <Select value={value.gstType} onValueChange={(v) => set({ gstType: v as GstType })}>
-                  <SelectTrigger className={cn(CONTROL, invalid('gstType'))}>
+                  <SelectTrigger className={cn(CONTROL, mismatch && 'border-amber-400', invalid('gstType'))}>
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>

@@ -390,7 +390,9 @@ export default function EApprovalDetailPage() {
             <CardHeader className="px-3 py-2.5 sm:px-4">
               <CardTitle className="text-sm">Workflow</CardTitle>
               <CardDescription className="text-xs">
-                Verification and clarification are shown inside the approver who raised them — they always return there.
+                Every stage carries what was done at it and what was written — remarks, instructions and covering
+                notes, against the desk they were given at. Verification and clarification are shown inside the
+                approver who raised them, because they always return there.
               </CardDescription>
               {/*
                 Which routing produced this chain. A chain of one stage is the same picture whether the
@@ -408,7 +410,7 @@ export default function EApprovalDetailPage() {
               </p>
             </CardHeader>
             <CardContent className="px-3 pb-3 sm:px-4">
-              <WorkflowTimeline steps={steps} />
+              <WorkflowTimeline steps={steps} history={history} comments={comments} />
             </CardContent>
           </Card>
         </TabsContent>

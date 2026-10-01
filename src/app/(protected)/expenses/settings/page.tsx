@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { Database, Hash, ScrollText, Settings2, ShieldAlert, SlidersHorizontal, Tags, Users } from 'lucide-react';
+import { Database, Hash, ReceiptIndianRupee, ScrollText, Settings2, ShieldAlert, SlidersHorizontal, Tags, Users } from 'lucide-react';
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/components/ui/card';
 import type { LucideIcon } from 'lucide-react';
 import { cn } from '@/lib/utils';
@@ -18,6 +18,7 @@ const SETTING_TONES = {
   indigo: { tile: 'from-indigo-500 to-blue-600', bar: 'from-indigo-500 to-blue-500', ring: 'hover:border-indigo-300' },
   violet: { tile: 'from-violet-500 to-purple-600', bar: 'from-violet-500 to-purple-500', ring: 'hover:border-violet-300' },
   slate: { tile: 'from-slate-500 to-slate-700', bar: 'from-slate-500 to-slate-400', ring: 'hover:border-slate-300' },
+  emerald: { tile: 'from-emerald-500 to-green-600', bar: 'from-emerald-500 to-green-500', ring: 'hover:border-emerald-300' },
 } as const;
 
 type Tone = (typeof SETTING_TONES)[keyof typeof SETTING_TONES];
@@ -43,6 +44,17 @@ const canSeeControl = (section: string) => (can: PermissionChecker) =>
   can('View', 'Expenses.Settings') ||
   can('Manage Accounts', 'Expenses.Settings') ||
   can('Edit Serial Nos', 'Expenses.Settings');
+
+/**
+ * GST Registrations has no legacy right behind it beyond the one that administers the other
+ * masters, so it follows its own page's rule exactly rather than `canSeeControl`'s wider net —
+ * otherwise an Edit Serial Nos holder would be offered a card that denies them.
+ */
+const canSeeGstRegistrations = (can: PermissionChecker) =>
+  can('View', 'Expenses.GST Registrations') ||
+  can('Edit', 'Expenses.GST Registrations') ||
+  can('View', 'Expenses.Settings') ||
+  can('Manage Accounts', 'Expenses.Settings');
 
 const SECTIONS: { id: string; title: string; description: string; items: SettingItem[] }[] = [
   {
@@ -88,6 +100,14 @@ const SECTIONS: { id: string; title: string; description: string; items: Setting
         href: '/expenses/settings/data-control',
         tone: SETTING_TONES.indigo,
         isEnabled: canSeeControl('Data Control'),
+      },
+      {
+        icon: ReceiptIndianRupee,
+        title: 'GST Registrations',
+        description: 'The company’s own GSTINs per state, how a bill is attributed to one, and TDS grouping.',
+        href: '/expenses/settings/gst-registrations',
+        tone: SETTING_TONES.emerald,
+        isEnabled: canSeeGstRegistrations,
       },
     ],
   },
@@ -150,7 +170,14 @@ function ExpenseSettingCard({ item, disabled }: { item: SettingItem; disabled: b
 
 export default function ExpensesSettingsPage() {
   const { can, isLoading } = useAuthorization();
-  const canViewPage = can('View', 'Expenses.Settings');
+  // The page also opens for anyone who may open one of its cards (the menu's Settings entry does too).
+  const canViewPage =
+    can('View', 'Expenses.Settings') ||
+    can('View', 'Expenses.Field Control') ||
+    can('View', 'Expenses.Data Control') ||
+    can('View', 'Expenses.GST Registrations') ||
+    can('View', 'Expenses.Audit Log') ||
+    can('View', 'Settings.Audit Logs');
 
   if (isLoading) {
     return (
