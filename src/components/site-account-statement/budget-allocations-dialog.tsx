@@ -45,6 +45,7 @@ import {
   Paperclip, Plus, RotateCcw, ShieldAlert, Trash2, Upload, XCircle,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { AttachmentDownloadButton } from '@/components/site-account-statement/attachment-download-button';
 
 const MODULE = 'Site Account Statement';
 const MAX_SIZE = 5 * 1024 * 1024;
@@ -602,6 +603,14 @@ export function BudgetAllocationsDialog({
                             <Paperclip className="h-3 w-3" /> Approval
                             <ExternalLink className="h-3 w-3" />
                           </a>
+                        ) : null}
+                        {allocation.approval?.url ? (
+                          <AttachmentDownloadButton
+                            url={allocation.approval.url}
+                            name={allocation.approval.name}
+                            className="h-6 w-6"
+                            iconClassName="h-3 w-3"
+                          />
                         ) : (
                           <span className="inline-flex items-center gap-1 rounded border border-dashed px-2 py-0.5 text-[11px] text-muted-foreground">
                             <AlertTriangle className="h-3 w-3" /> No approval

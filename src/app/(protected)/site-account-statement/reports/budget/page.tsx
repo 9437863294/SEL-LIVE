@@ -37,6 +37,7 @@ import {
   Wallet, XCircle,
 } from 'lucide-react';
 import ExcelJS from 'exceljs';
+import { AttachmentDownloadButton } from '@/components/site-account-statement/attachment-download-button';
 
 const MODULE = 'Site Account Statement';
 
@@ -1059,17 +1060,20 @@ export default function BudgetReportsPage() {
                             </TableCell>
                             <TableCell>
                               {row.approval ? (
-                                <a
-                                  href={row.approval.fileUrl}
-                                  target="_blank"
-                                  rel="noopener noreferrer"
-                                  className="inline-flex items-center gap-1.5 text-blue-600 hover:text-blue-800 hover:underline underline-offset-2 max-w-[180px] truncate"
-                                  title={row.approval.fileName}
-                                >
-                                  <FileText className="h-3.5 w-3.5 shrink-0" />
-                                  <span className="truncate">{row.approval.fileName}</span>
-                                  <ExternalLink className="h-3 w-3 shrink-0" />
-                                </a>
+                                <div className="inline-flex items-center gap-1">
+                                  <a
+                                    href={row.approval.fileUrl}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="inline-flex items-center gap-1.5 text-blue-600 hover:text-blue-800 hover:underline underline-offset-2 max-w-[180px] truncate"
+                                    title={row.approval.fileName}
+                                  >
+                                    <FileText className="h-3.5 w-3.5 shrink-0" />
+                                    <span className="truncate">{row.approval.fileName}</span>
+                                    <ExternalLink className="h-3 w-3 shrink-0" />
+                                  </a>
+                                  <AttachmentDownloadButton url={row.approval.fileUrl} name={row.approval.fileName} className="h-6 w-6" iconClassName="h-3 w-3" />
+                                </div>
                               ) : (
                                 <span className="text-muted-foreground italic">No file uploaded</span>
                               )}

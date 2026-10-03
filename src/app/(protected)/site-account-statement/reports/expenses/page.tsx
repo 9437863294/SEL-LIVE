@@ -24,6 +24,7 @@ import { Badge } from '@/components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Download, ExternalLink, Loader2, Paperclip, Receipt } from 'lucide-react';
 import ExcelJS from 'exceljs';
+import { AttachmentDownloadButton } from '@/components/site-account-statement/attachment-download-button';
 
 const MODULE = 'Site Account Statement';
 
@@ -317,10 +318,13 @@ export default function ExpenseReportPage() {
                           {row.attachments && row.attachments.length > 0 ? (
                             <div className="flex flex-col gap-0.5 items-center">
                               {row.attachments.map((att, ai) => (
-                                <a key={ai} href={att.url} target="_blank" rel="noopener noreferrer"
-                                  className="inline-flex items-center gap-1 text-blue-600 hover:text-blue-800 text-xs">
-                                  <ExternalLink className="h-3 w-3" />
-                                </a>
+                                <div key={ai} className="inline-flex items-center gap-0.5">
+                                  <a href={att.url} target="_blank" rel="noopener noreferrer" title={`Open ${att.name}`}
+                                    className="inline-flex h-6 w-6 items-center justify-center rounded text-blue-600 hover:bg-blue-50 hover:text-blue-800">
+                                    <ExternalLink className="h-3 w-3" />
+                                  </a>
+                                  <AttachmentDownloadButton url={att.url} name={att.name} className="h-6 w-6" iconClassName="h-3 w-3" />
+                                </div>
                               ))}
                               <span className="text-[10px] text-muted-foreground">{row.attachments.length}</span>
                             </div>

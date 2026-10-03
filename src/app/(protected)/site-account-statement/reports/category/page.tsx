@@ -27,6 +27,7 @@ import {
   Info, Loader2, PieChart, Target,
 } from 'lucide-react';
 import ExcelJS from 'exceljs';
+import { AttachmentDownloadButton } from '@/components/site-account-statement/attachment-download-button';
 
 const MODULE = 'Site Account Statement';
 
@@ -105,18 +106,21 @@ function ExpenseDetailDialog({ expense, open, onClose }: { expense: SASExpense |
           <div className="mt-2 space-y-1.5">
             <p className="text-xs font-medium text-muted-foreground">Attachments ({expense.attachments.length})</p>
             {expense.attachments.map((att: SASAttachment, i: number) => (
-              <a
-                key={i}
-                href={att.url}
-                target="_blank"
-                rel="noreferrer"
-                className="flex items-center gap-2 rounded-lg border px-3 py-2 text-sm hover:bg-slate-50 transition-colors"
-              >
-                <File className="h-4 w-4 text-muted-foreground shrink-0" />
-                <span className="flex-1 truncate text-slate-700">{att.name}</span>
-                <span className="text-xs text-muted-foreground shrink-0">{fmtSize(att.size)}</span>
-                <ExternalLink className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
-              </a>
+              <div key={i} className="flex items-center gap-1 rounded-lg border pr-1.5 hover:bg-slate-50 transition-colors">
+                <a
+                  href={att.url}
+                  target="_blank"
+                  rel="noreferrer"
+                  title={`Open ${att.name}`}
+                  className="flex flex-1 min-w-0 items-center gap-2 px-3 py-2 text-sm"
+                >
+                  <File className="h-4 w-4 text-muted-foreground shrink-0" />
+                  <span className="flex-1 truncate text-slate-700">{att.name}</span>
+                  <span className="text-xs text-muted-foreground shrink-0">{fmtSize(att.size)}</span>
+                  <ExternalLink className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+                </a>
+                <AttachmentDownloadButton url={att.url} name={att.name} />
+              </div>
             ))}
           </div>
         )}

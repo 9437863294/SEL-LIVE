@@ -6,6 +6,7 @@ import {
 } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import { storage } from '@/lib/firebase-storage';
+import { AttachmentDownloadButton } from '@/components/site-account-statement/attachment-download-button';
 import { deleteObject, getDownloadURL, ref as storageRef, uploadBytes } from 'firebase/storage';
 import {
   formatINR, SAS_COLLECTIONS,
@@ -1918,15 +1919,12 @@ export default function SiteFundBudgetPage() {
                                             )}
                                             {approval && monthlyPerm.view && (
                                               <>
-                                                <Button
-                                                  variant="ghost"
-                                                  size="icon"
-                                                  className="h-6 w-6 text-blue-600 hover:bg-blue-50"
-                                                  title={`View: ${approval.fileName}`}
-                                                  onClick={() => window.open(approval.fileUrl, '_blank')}
-                                                >
-                                                  <Download className="h-3 w-3" />
-                                                </Button>
+                                                <AttachmentDownloadButton
+                                                  url={approval.fileUrl}
+                                                  name={approval.fileName}
+                                                  className="h-6 w-6"
+                                                  iconClassName="h-3 w-3"
+                                                />
                                                 {monthlyPerm.del && (
                                                   <DeleteConfirm
                                                     label={`Remove approval copy for ${monthLabel(m)}?`}

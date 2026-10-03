@@ -17,13 +17,30 @@ import dynamic from 'next/dynamic';
  * and had no web branch at all.
  */
 
+// Push registration is best-effort. Mounted from the root layout, a rejected chunk
+// load (a stale tab after a deploy, a dev server slow to serve) would otherwise throw
+// a ChunkLoadError through RootLayout and take down every page.
+const renderNothing = () => null;
+
 const NativePushNotifications = dynamic(
-  () => import('./NativePushNotifications').then((m) => m.NativePushNotifications),
+  () =>
+    import('./NativePushNotifications')
+      .then((m) => m.NativePushNotifications)
+      .catch((error) => {
+        console.warn('[push] native push module failed to load', error);
+        return renderNothing;
+      }),
   { ssr: false }
 );
 
 const WebPushNotifications = dynamic(
-  () => import('./WebPushNotifications').then((m) => m.WebPushNotifications),
+  () =>
+    import('./WebPushNotifications')
+      .then((m) => m.WebPushNotifications)
+      .catch((error) => {
+        console.warn('[push] web push module failed to load', error);
+        return renderNothing;
+      }),
   { ssr: false }
 );
 

@@ -19,6 +19,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { ChevronDown, ChevronRight, Download, Loader2, Paperclip, Users } from 'lucide-react';
 import ExcelJS from 'exceljs';
+import { AttachmentDownloadButton } from '@/components/site-account-statement/attachment-download-button';
 
 const MODULE = 'Site Account Statement';
 
@@ -306,17 +307,19 @@ export default function PersonExpensePage() {
                                             {e.attachments && e.attachments.length > 0 ? (
                                               <div className="flex items-center justify-center gap-1">
                                                 {e.attachments.map((att, i) => (
-                                                  <a
-                                                    key={i}
-                                                    href={att.url}
-                                                    target="_blank"
-                                                    rel="noopener noreferrer"
-                                                    title={att.name}
-                                                    className="text-blue-600 hover:text-blue-800"
-                                                    onClick={ev => ev.stopPropagation()}
-                                                  >
-                                                    <Paperclip className="h-3 w-3" />
-                                                  </a>
+                                                  <span key={i} className="inline-flex items-center">
+                                                    <a
+                                                      href={att.url}
+                                                      target="_blank"
+                                                      rel="noopener noreferrer"
+                                                      title={`Open ${att.name}`}
+                                                      className="inline-flex h-6 w-6 items-center justify-center rounded text-blue-600 hover:bg-blue-50 hover:text-blue-800"
+                                                      onClick={ev => ev.stopPropagation()}
+                                                    >
+                                                      <Paperclip className="h-3 w-3" />
+                                                    </a>
+                                                    <AttachmentDownloadButton url={att.url} name={att.name} className="h-6 w-6" iconClassName="h-3 w-3" />
+                                                  </span>
                                                 ))}
                                               </div>
                                             ) : <span className="text-muted-foreground">—</span>}

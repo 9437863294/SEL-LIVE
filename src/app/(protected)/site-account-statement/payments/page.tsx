@@ -7,6 +7,7 @@ import {
 import { deleteObject, getDownloadURL, ref as storageRef, uploadBytes } from 'firebase/storage';
 import { db } from '@/lib/firebase';
 import { storage } from '@/lib/firebase-storage';
+import { AttachmentDownloadButton } from '@/components/site-account-statement/attachment-download-button';
 import {
   formatINR, PAYMENT_MODES, SAS_COLLECTIONS,
   type SASAttachment, type SASPayment, type SASProject,
@@ -1121,20 +1122,26 @@ export default function PaymentsPage() {
                     Attachments ({viewPayment.attachments.length})
                   </p>
                   {viewPayment.attachments.map((att, i) => (
-                    <a
+                    <div
                       key={i}
-                      href={att.url}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="flex items-center gap-3 rounded-lg border bg-muted/20 px-3 py-2.5 hover:bg-muted/50 transition-colors group"
+                      className="flex items-center gap-1 rounded-lg border bg-muted/20 pr-1.5 hover:bg-muted/50 transition-colors"
                     >
-                      <AttachmentIcon type={att.type} />
-                      <div className="flex-1 min-w-0">
-                        <p className="text-sm font-medium truncate">{att.name}</p>
-                        <p className="text-xs text-muted-foreground">{formatSize(att.size)}</p>
-                      </div>
-                      <ExternalLink className="h-3.5 w-3.5 text-muted-foreground group-hover:text-blue-500 shrink-0 transition-colors" />
-                    </a>
+                      <a
+                        href={att.url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        title={`Open ${att.name}`}
+                        className="flex flex-1 min-w-0 items-center gap-3 px-3 py-2.5 group"
+                      >
+                        <AttachmentIcon type={att.type} />
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm font-medium truncate">{att.name}</p>
+                          <p className="text-xs text-muted-foreground">{formatSize(att.size)}</p>
+                        </div>
+                        <ExternalLink className="h-3.5 w-3.5 text-muted-foreground group-hover:text-blue-500 shrink-0 transition-colors" />
+                      </a>
+                      <AttachmentDownloadButton url={att.url} name={att.name} />
+                    </div>
                   ))}
                 </div>
               )}
@@ -1249,6 +1256,7 @@ export default function PaymentsPage() {
                     {att.name}
                   </a>
                   <span className="text-xs text-muted-foreground shrink-0">{formatSize(att.size)}</span>
+                  <AttachmentDownloadButton url={att.url} name={att.name} className="h-6 w-6" />
                   <Button
                     type="button"
                     variant="ghost"
