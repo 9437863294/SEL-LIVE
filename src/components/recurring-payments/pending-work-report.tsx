@@ -83,10 +83,11 @@ function toMillis(value: unknown): number {
 }
 
 function formatAge(hours: number): string {
-  if (hours < 24) return `${Math.round(hours)}h`;
-  const days = Math.floor(hours / 24);
-  const remHours = Math.round(hours % 24);
-  return `${days}d ${remHours}h`;
+  // Round once, before splitting into days — rounding the remainder alone printed "1d 24h" (and
+  // "24h" just under a day).
+  const totalHours = Math.round(hours);
+  if (totalHours < 24) return `${totalHours}h`;
+  return `${Math.floor(totalHours / 24)}d ${totalHours % 24}h`;
 }
 
 export default function PendingWorkReport() {
@@ -100,7 +101,7 @@ export default function PendingWorkReport() {
   const [loadError, setLoadError] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
   const [filters, setFilters] = useState(DEFAULT_FILTERS);
-  const [, forceTick] = useState(0);
+  const [now, setNow] = useState(() => Date.now());
 
   useEffect(() => {
     getDoc(doc(db, "workflows", "recurring-payments-workflow")).then((snapshot) => {
@@ -122,9 +123,10 @@ export default function PendingWorkReport() {
 
   // "Age" is a moving target — re-render periodically so the on-screen hours/days keep climbing
   // even if nobody touches a filter (this is the one report in the module where staleness itself
-  // is the thing being measured).
+  // is the thing being measured). The clock lives in state so the ages below recompute on each tick;
+  // a bare re-render left the memo holding the time it was first computed at.
   useEffect(() => {
-    const interval = setInterval(() => forceTick((n) => n + 1), 60_000);
+    const interval = setInterval(() => setNow(Date.now()), 60_000);
     return () => clearInterval(interval);
   }, []);
 
@@ -132,7 +134,6 @@ export default function PendingWorkReport() {
   const stepMap = useMemo(() => new Map(workflow.map((step) => [step.id, step])), [workflow]);
 
   const pending = useMemo(() => {
-    const now = Date.now();
     return payments
       .filter((item) => item.workflowStatus === "In Progress" && item.currentStepId)
       .map((item): PendingRow | null => {
@@ -159,7 +160,7 @@ export default function PendingWorkReport() {
         };
       })
       .filter((row): row is PendingRow => row !== null);
-  }, [payments, stepMap, userMap]);
+  }, [payments, stepMap, userMap, now]);
 
   const filtered = useMemo(() => {
     const byId = new Map(payments.map((item) => [item.id, item]));

@@ -92,15 +92,7 @@ export default function AdvancedPaymentCalendar() {
           setPayments(
             visibleObligations(
               snapshot.docs.map(
-                (item) =>
-                  ({
-                    id: item.id,
-                    ...item.data(),
-                    status: effectiveStatus({
-                      id: item.id,
-                      ...item.data(),
-                    } as PaymentObligation),
-                  }) as PaymentObligation,
+                (item) => ({ id: item.id, ...item.data() }) as PaymentObligation,
               ),
             ),
           );
@@ -110,9 +102,18 @@ export default function AdvancedPaymentCalendar() {
       ),
     [organizationId],
   );
+  // Shown with the status the user would expect to read (Overdue once grace has lapsed), while
+  // `payments` keeps the stored status: the summary's "Upload bill" / "Record payment" actions are
+  // gated on it, and an overdue bill still needs uploading and paying.
+  const displayed = useMemo(
+    () => payments.map((item) => ({ ...item, status: effectiveStatus(item) })),
+    [payments],
+  );
+  const ownerName = (id?: string) =>
+    id ? users.find((item) => item.id === id)?.name || id : "";
   const visible = useMemo(
     () =>
-      payments.filter(
+      displayed.filter(
         (item) =>
           (filters.category === "all" || item.category === filters.category) &&
           (filters.vendor === "all" || item.vendorName === filters.vendor) &&
@@ -130,7 +131,7 @@ export default function AdvancedPaymentCalendar() {
                 (department) => department.id === filters.department,
               )?.name),
       ),
-    [filters, payments, activeProjects, activeDepartments],
+    [filters, displayed, activeProjects, activeDepartments],
   );
   const monthRows = useMemo(
     () =>
@@ -155,7 +156,7 @@ export default function AdvancedPaymentCalendar() {
   const options = (key: keyof PaymentObligation) =>
     [
       ...new Set(
-        payments.map((item) => String(item[key] || "")).filter(Boolean),
+        displayed.map((item) => String(item[key] || "")).filter(Boolean),
       ),
     ].sort();
   const activeFilterCount = (Object.keys(DEFAULT_FILTERS) as Array<keyof typeof DEFAULT_FILTERS>)
@@ -406,7 +407,7 @@ export default function AdvancedPaymentCalendar() {
           </Card>
         </TabsContent>
         <TabsContent value="week">
-          <CalendarTable rows={weekRows} onOpen={setSelected} />
+          <CalendarTable rows={weekRows} onOpen={setSelected} ownerName={ownerName} />
         </TabsContent>
         <TabsContent value="list">
           <CalendarTable
@@ -414,6 +415,7 @@ export default function AdvancedPaymentCalendar() {
               a.dueDate.localeCompare(b.dueDate),
             )}
             onOpen={setSelected}
+            ownerName={ownerName}
           />
         </TabsContent>
         <TabsContent value="agenda">
@@ -465,6 +467,8 @@ export default function AdvancedPaymentCalendar() {
       </Tabs>
       <PaymentSummary
         payment={selected}
+        storedStatus={payments.find((item) => item.id === selected?.id)?.status}
+        ownerName={ownerName}
         onClose={() => setSelected(null)}
         canEdit={can("Edit", "Recurring Payments.Payments")}
         canRecord={
@@ -478,9 +482,11 @@ export default function AdvancedPaymentCalendar() {
 function CalendarTable({
   rows,
   onOpen,
+  ownerName,
 }: {
   rows: PaymentObligation[];
   onOpen: (item: PaymentObligation) => void;
+  ownerName: (id?: string) => string;
 }) {
   return (
     <TableCard
@@ -510,7 +516,7 @@ function CalendarTable({
                 <TableCell>{item.dueDate}</TableCell>
                 <TableCell>{item.title}</TableCell>
                 <TableCell>{item.vendorName}</TableCell>
-                <TableCell>{item.assignedTo || "—"}</TableCell>
+                <TableCell>{ownerName(item.assignedTo) || "—"}</TableCell>
                 <TableCell className="text-right">
                   {currency(item.billAmount || item.expectedAmount)}
                 </TableCell>
@@ -536,15 +542,21 @@ function CalendarTable({
 }
 function PaymentSummary({
   payment,
+  storedStatus,
+  ownerName,
   onClose,
   canEdit,
   canRecord,
 }: {
   payment: PaymentObligation | null;
+  /** The status as stored, before Overdue is derived — what the actions below are gated on. */
+  storedStatus?: PaymentObligation["status"];
+  ownerName: (id?: string) => string;
   onClose: () => void;
   canEdit: boolean;
   canRecord: boolean;
 }) {
+  const actionStatus = storedStatus || payment?.status || "";
   return (
     <Dialog open={!!payment} onOpenChange={(open) => !open && onClose()}>
       <DialogContent>
@@ -555,7 +567,7 @@ function PaymentSummary({
           </DialogDescription>
         </DialogHeader>
         {payment && (
-          <div className="grid gap-3 sm:grid-cols-2">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <Info
               label="Amount"
               value={currency(payment.billAmount || payment.expectedAmount)}
@@ -563,7 +575,7 @@ function PaymentSummary({
             <Info label="Status" value={payment.status} />
             <Info
               label="Assigned person"
-              value={payment.assignedTo || "Unassigned"}
+              value={ownerName(payment.assignedTo) || "Unassigned"}
             />
             <Info
               label="Scope"
@@ -584,7 +596,7 @@ function PaymentSummary({
           )}
           {payment &&
             canEdit &&
-            ["Awaiting Bill", "Generated"].includes(payment.status) &&
+            ["Awaiting Bill", "Generated"].includes(actionStatus) &&
             payment.currentStepId && (
               <Link href={`/recurring-payments/stage/${payment.currentStepId}`}>
                 <Button variant="outline">
@@ -596,7 +608,7 @@ function PaymentSummary({
           {payment &&
             canRecord &&
             ["Approved", "Payment Processing", "Partially Paid"].includes(
-              payment.status,
+              actionStatus,
             ) && (
               <Link
                 href={`/recurring-payments/payments/${payment.id}/record-payment`}

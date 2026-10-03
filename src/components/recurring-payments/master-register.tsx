@@ -6,12 +6,10 @@ import {
   addDoc,
   collection,
   doc,
-  getDoc,
   getDocs,
   onSnapshot,
   query,
   serverTimestamp,
-  Timestamp,
   updateDoc,
   where,
   writeBatch,
@@ -36,24 +34,27 @@ import { useAuth } from "@/components/auth/AuthProvider";
 import { useAuthorization } from "@/hooks/useAuthorization";
 import { useToast } from "@/hooks/use-toast";
 import {
-  buildPaymentObligationFields,
   actionableRecurringCycle,
+  BILL_DATE_RULES,
   buildRecurringCycle,
+  DUE_DATE_RULES,
   pendingRecurringCycles,
   currency,
-  DEFAULT_RECURRING_WORKFLOW,
+  downloadCsv,
   loadWorkingCalendar,
   maskAccount,
-  matchApprovalRule,
-  isWorkflowActivationDue,
   recurringDateOnly,
-  resolveWorkflowActivation,
-  type ApprovalRule,
+  recurringObligationId,
+  type RecurrenceFrequency,
   type RecurringPaymentMaster,
-  type RecurringWorkflowStep,
   RP_COLLECTIONS,
 } from "@/lib/recurring-payments";
-import { addBusinessHours, makeIsWorkingDay } from "@/lib/working-hours";
+import {
+  generatedCyclePredicate,
+  generateMasterCycle,
+  loadManualGenerationContext,
+} from "@/lib/recurring-payments-generation";
+import { makeIsWorkingDay } from "@/lib/working-hours";
 import { StatusBadge } from "@/components/shared/status-badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -91,6 +92,23 @@ const DEFAULT_MASTER_FILTERS = {
   frequency: ALL,
   owner: ALL,
 };
+const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
+/** A real calendar date in YYYY-MM-DD — rejects 2026-02-30 as well as 01/04/2026. */
+function isValidIsoDate(value: string) {
+  if (!ISO_DATE.test(value)) return false;
+  const [year, month, day] = value.split("-").map(Number);
+  const date = new Date(year, month - 1, day);
+  return date.getFullYear() === year && date.getMonth() === month - 1 && date.getDate() === day;
+}
+const FREQUENCIES: RecurrenceFrequency[] = ["Weekly", "Monthly", "Bi-monthly", "Quarterly", "Half-yearly", "Yearly", "Renewable", "Custom"];
+const AMOUNT_TYPES: RecurringPaymentMaster["amountType"][] = ["Fixed", "Variable", "Estimated"];
+const MAX_IMPORT_ROWS = 400;
+/** Export headers, which are also the columns the import reads (case-insensitively). */
+const IMPORT_COLUMNS = [
+  "Title", "Category", "Vendor", "Branch", "Project", "Department", "Frequency", "Amount Type",
+  "Amount", "Due Day", "Due Date Rule", "Bill Date Rule", "Period Anchor Day", "Owner ID",
+  "Owner Name", "Start Date", "End Date", "Status",
+] as const;
 
 export default function RecurringMasterRegister() {
   const { user, users } = useAuth();
@@ -131,6 +149,42 @@ export default function RecurringMasterRegister() {
     [organizationId],
   );
 
+  // Ids of every obligation in the org, soft-deleted included (a deleted obligation still occupies
+  // its cycle's id). Lets "Next Due" name the next cycle that is actually missing, rather than the
+  // oldest one in the pending window, which the cron has usually generated already.
+  const [obligationIds, setObligationIds] = useState<string[]>([]);
+  useEffect(
+    () =>
+      onSnapshot(
+        query(
+          collection(db, RP_COLLECTIONS.payments),
+          where("organizationId", "==", organizationId),
+        ),
+        (snapshot) => setObligationIds(snapshot.docs.map((item) => item.id)),
+        () => undefined,
+      ),
+    [organizationId],
+  );
+  const [calendar, setCalendar] = useState<Awaited<ReturnType<typeof loadWorkingCalendar>> | null>(null);
+  useEffect(() => {
+    loadWorkingCalendar().then(setCalendar).catch(() => undefined);
+  }, []);
+  const nextCycles = useMemo(() => {
+    const isWorkingDay = makeIsWorkingDay(calendar?.workingHours, calendar?.holidays);
+    const now = new Date();
+    return new Map(
+      rows.map((master) => [
+        master.id,
+        master.startDate
+          ? actionableRecurringCycle(master, now, {
+              isWorkingDay,
+              isGenerated: generatedCyclePredicate(organizationId, master.id, obligationIds),
+            })
+          : null,
+      ]),
+    );
+  }, [rows, obligationIds, calendar, organizationId]);
+
   const visible = useMemo(
     () =>
       rows
@@ -163,49 +217,109 @@ export default function RecurringMasterRegister() {
     can("View", "Recurring Payments.Recurring Masters");
   const canGenerate = can("Add", "Recurring Payments.Payments");
 
+  /**
+   * What stops a master from being activated: the same mandatory fields the master form enforces.
+   * "Activate" here is one click, so without this a CSV-imported draft with no owner or start date
+   * went straight into automation without ever passing the form's validation.
+   */
+  function activationBlockers(master: RecurringPaymentMaster) {
+    const missing: string[] = [];
+    if (!master.title?.trim()) missing.push("title");
+    if (!master.category) missing.push("category");
+    if (!master.vendorName?.trim()) missing.push("vendor");
+    if (!master.startDate || !ISO_DATE.test(master.startDate)) missing.push("start date");
+    if (!master.assignedTo) missing.push("payment owner");
+    if (master.amountType === "Fixed" && !Number(master.amount)) missing.push("fixed amount");
+    return missing;
+  }
+
   async function changeStatus(master: RecurringPaymentMaster) {
     const next = master.status === "Active" ? "Paused" : "Active";
-    await updateDoc(doc(db, RP_COLLECTIONS.masters, master.id), {
-      status: next,
-      updatedAt: serverTimestamp(),
-      updatedBy: user?.id || "",
-    });
-    toast({ title: `Master ${next.toLowerCase()}` });
+    if (next === "Active") {
+      const missing = activationBlockers(master);
+      if (missing.length)
+        return toast({
+          title: "Complete the master before activating it",
+          description: `Missing: ${missing.join(", ")}. Open Edit master to fill them in.`,
+          variant: "destructive",
+        });
+    }
+    try {
+      await updateDoc(doc(db, RP_COLLECTIONS.masters, master.id), {
+        status: next,
+        updatedAt: serverTimestamp(),
+        updatedBy: user?.id || "",
+      });
+      await addDoc(collection(db, RP_COLLECTIONS.masters, master.id, RP_COLLECTIONS.auditLogs), {
+        organizationId,
+        masterId: master.id,
+        action: `Master ${next.toLowerCase()}`,
+        summary: `Status changed from ${master.status} to ${next}`,
+        userId: user?.id || "",
+        userName: user?.name || "",
+        createdAt: serverTimestamp(),
+      });
+      toast({ title: `Master ${next.toLowerCase()}` });
+    } catch (error) {
+      toast({ title: "Status change failed", description: error instanceof Error ? error.message : "Please try again.", variant: "destructive" });
+    }
   }
 
   async function archive(master: RecurringPaymentMaster) {
-    await updateDoc(doc(db, RP_COLLECTIONS.masters, master.id), {
-      deleted: true,
-      status: "Inactive",
-      deletedAt: serverTimestamp(),
-      deletedBy: user?.id || "",
-    });
-    toast({
-      title: "Master archived",
-      description: "Generated payments and audit history were retained.",
-    });
+    // Same confirmation the master's own page asks for — one stray click in a row menu used to be
+    // enough to take a master out of automation.
+    if (!window.confirm(`Archive "${master.title}"? Existing generated payments will remain available.`)) return;
+    try {
+      await updateDoc(doc(db, RP_COLLECTIONS.masters, master.id), {
+        deleted: true,
+        status: "Inactive",
+        deletionReason: "Archived from master register",
+        deletedAt: serverTimestamp(),
+        deletedBy: user?.id || "",
+      });
+      await addDoc(collection(db, RP_COLLECTIONS.masters, master.id, RP_COLLECTIONS.auditLogs), {
+        organizationId,
+        masterId: master.id,
+        action: "Master archived",
+        summary: "Archived from master register; generated payments retained",
+        userId: user?.id || "",
+        userName: user?.name || "",
+        createdAt: serverTimestamp(),
+      });
+      toast({
+        title: "Master archived",
+        description: "Generated payments and audit history were retained.",
+      });
+    } catch (error) {
+      toast({ title: "Archive failed", description: error instanceof Error ? error.message : "Please try again.", variant: "destructive" });
+    }
   }
 
   async function duplicate(master: RecurringPaymentMaster) {
-    const {
-      id: _id,
-      createdAt: _createdAt,
-      updatedAt: _updatedAt,
-      ...copy
-    } = master;
-    const created = await addDoc(collection(db, RP_COLLECTIONS.masters), {
-      ...copy,
-      title: `${master.title} (Copy)`,
-      status: "Draft",
-      createdAt: serverTimestamp(),
-      createdBy: user?.id || "",
-      updatedAt: serverTimestamp(),
-      updatedBy: user?.id || "",
-    });
-    toast({
-      title: "Draft copy created",
-      description: `Master ${created.id} is ready for review.`,
-    });
+    try {
+      const {
+        id: _id,
+        createdAt: _createdAt,
+        updatedAt: _updatedAt,
+        ...copy
+      } = master;
+      const created = await addDoc(collection(db, RP_COLLECTIONS.masters), {
+        ...copy,
+        title: `${master.title} (Copy)`,
+        status: "Draft",
+        deleted: false,
+        createdAt: serverTimestamp(),
+        createdBy: user?.id || "",
+        updatedAt: serverTimestamp(),
+        updatedBy: user?.id || "",
+      });
+      toast({
+        title: "Draft copy created",
+        description: `Master ${created.id} is ready for review.`,
+      });
+    } catch (error) {
+      toast({ title: "Duplicate failed", description: error instanceof Error ? error.message : "Please try again.", variant: "destructive" });
+    }
   }
 
   async function generateAll() {
@@ -214,66 +328,22 @@ export default function RecurringMasterRegister() {
     try {
       const eligible = rows.filter(
         (master) =>
-          master.status === "Active" && master.autoGenerationEnabled !== false,
+          master.status === "Active" && master.autoGenerationEnabled !== false && master.startDate,
       );
       if (!eligible.length) {
         toast({ title: "No active masters are eligible for generation" });
         return;
       }
-      // Fetch existing approval rules and every payment obligation id already generated for the
-      // org once, up front, instead of a getDoc per master — a single read pass, then every
-      // master is checked against it in memory so the exact same cycle is never generated twice.
-      // Also fetch the org's automation settings and the configured workflow once, so each newly
-      // generated obligation can be entered into its first workflow step immediately (same as the
-      // per-master "Generate now" button and the daily automation route) instead of sitting at
-      // "Scheduled" until the next cron run picks it up.
-      const [ruleSnapshot, existingSnapshot, settingsSnap, workflowSnap, calendar] =
-        await Promise.all([
-          getDocs(
-            query(
-              collection(db, RP_COLLECTIONS.approvalRules),
-              where("organizationId", "==", organizationId),
-            ),
-          ),
-          getDocs(
-            query(
-              collection(db, RP_COLLECTIONS.payments),
-              where("organizationId", "==", organizationId),
-            ),
-          ),
-          getDoc(
-            doc(
-              db,
-              RP_COLLECTIONS.settings,
-              organizationId.replace(/[^a-zA-Z0-9_-]/g, "_"),
-            ),
-          ),
-          getDoc(doc(db, "workflows", "recurring-payments-workflow")),
-          // Fetched once for the whole batch — every master in the loop reuses the same schedule,
-          // rather than a Firestore round-trip per master.
-          loadWorkingCalendar(),
-        ]);
-      const rules = ruleSnapshot.docs.map(
-        (item) => ({ id: item.id, ...item.data() }) as ApprovalRule,
-      );
+      // One read pass up front — approval rules, settings, workflow, calendar and every obligation
+      // id already generated for the org — then each master is checked in memory, so a cycle that
+      // already exists costs nothing. The write itself still goes through `generateMasterCycle`,
+      // which creates only if absent, so a race with the nightly run can't overwrite anything.
+      const [context, existingSnapshot] = await Promise.all([
+        loadManualGenerationContext(organizationId, user),
+        getDocs(query(collection(db, RP_COLLECTIONS.payments), where("organizationId", "==", organizationId))),
+      ]);
       const existingIds = new Set(existingSnapshot.docs.map((item) => item.id));
-      const activationDays = Math.min(
-        90,
-        Math.max(
-          0,
-          Number(settingsSnap.data()?.automation?.workflowActivationDays ?? 7),
-        ),
-      );
-      const workflow = (workflowSnap.data()?.steps ||
-        DEFAULT_RECURRING_WORKFLOW) as RecurringWorkflowStep[];
       const now = new Date();
-      const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-      // Shared with the schedule math so a "last working day of month" due date resolves against
-      // the org's own calendar here exactly as it does in the cron.
-      const isWorkingDay = makeIsWorkingDay(
-        calendar.workingHours,
-        calendar.holidays,
-      );
 
       let generated = 0;
       let workflowTriggered = 0;
@@ -281,134 +351,44 @@ export default function RecurringMasterRegister() {
       let notYetDueCount = 0;
       let outsideDatesCount = 0;
       // Counted separately, because "the bill isn't expected yet" and "nobody could be assigned"
-      // need completely different responses from whoever pressed the button — the previous single
-      // "still at Scheduled" tally left them guessing which had happened.
+      // need completely different responses from whoever pressed the button.
       let awaitingBillDateCount = 0;
       let noAssigneeCount = 0;
-      let batch = writeBatch(db);
-      let batchWrites = 0;
-      const commits: Promise<void>[] = [];
+      const failures: string[] = [];
 
       for (const master of eligible) {
         // Same rule as the daily automation route: every cycle carries its own generation date
         // (expected bill date minus the master's lead time), so this only asks which cycles are
         // already due for creation — catching up immediately on any window that already passed.
-        const cycles = pendingRecurringCycles(master, now, { isWorkingDay });
+        const cycles = pendingRecurringCycles(master, now, context.scheduleOptions);
         if (!cycles.length) {
           // An empty list means either the master has no cycle at all right now, or its cycle
           // simply hasn't reached its lead-time window yet — different outcomes to report.
-          if (buildRecurringCycle(master, now)) notYetDueCount++;
+          if (buildRecurringCycle(master, now, context.scheduleOptions)) notYetDueCount++;
           else outsideDatesCount++;
           continue;
         }
         for (const cycle of cycles) {
-        const cycleKey = `${organizationId}_${master.id}_${cycle.key}`;
-        const docId = cycleKey.replace(/[^a-zA-Z0-9_-]/g, "_");
-        if (existingIds.has(docId)) {
-          duplicateCount++;
-          continue;
-        }
-        const amount = Number(master.amount || 0);
-        const approvalRule = matchApprovalRule(rules, {
-          amount,
-          category: master.category,
-          projectId: master.projectId,
-          projectName: master.projectName,
-        });
-        const obligationFields = buildPaymentObligationFields({
-          organizationId,
-          masterId: master.id,
-          cycle,
-          generatedAutomatically: false,
-          title: master.title,
-          category: master.category,
-          vendorName: master.vendorName,
-          branchId: master.branchId,
-          branchName: master.branchName,
-          projectId: master.projectId,
-          projectName: master.projectName,
-          departmentId: master.departmentId,
-          department: master.department,
-          costCentre: master.costCentre,
-          ledger: master.ledger,
-          amountType: master.amountType,
-          description: master.description,
-          accountNumber: master.accountNumber,
-          amount,
-          maximumAmount: master.maximumAmount,
-          assignedTo: master.assignedTo,
-          backupAssignedTo: master.backupAssignedTo,
-          verifierId: master.verifierId,
-          approverId: master.approverId,
-          accountsProcessorId: master.accountsProcessorId,
-          approvalRule,
-        });
-        const activation = resolveWorkflowActivation(
-          workflow[0],
-          obligationFields,
-          { activationDays, today },
-        );
-        if (activation) workflowTriggered++;
-        else if (
-          isWorkflowActivationDue(obligationFields, { activationDays, today })
-        ) {
-          // Due to activate but nobody resolved — a workflow configuration problem, not a timing
-          // one. Recorded on the obligation itself so it is diagnosable later, not just in a toast
-          // that disappears.
-          noAssigneeCount++;
-          batch.set(
-            doc(collection(db, RP_COLLECTIONS.payments, docId, RP_COLLECTIONS.auditLogs)),
-            {
-              organizationId,
-              paymentId: docId,
-              action: "Workflow activation skipped",
-              summary: `No assignee could be resolved for step "${workflow[0]?.name || "the first step"}" — check this master's payment owner, or that step's configured users in Settings › Workflow.`,
-              userId: user.id,
-              userName: user.name,
-              createdAt: serverTimestamp(),
-            },
-          );
-          batchWrites++;
-        } else {
-          awaitingBillDateCount++;
-        }
-        batch.set(doc(db, RP_COLLECTIONS.payments, docId), {
-          ...obligationFields,
-          ...(activation
-            ? {
-                status: activation.status,
-                workflowStatus: activation.workflowStatus,
-                stage: activation.stage,
-                currentStepId: activation.currentStepId,
-                assignees: activation.assignees,
-                workflowStartedAt: serverTimestamp(),
-                stepEnteredAt: serverTimestamp(),
-                // Real deadline, not resolveWorkflowActivation's naive approximation — accounts
-                // for the org's configured working hours and holidays.
-                workflowDeadline: Timestamp.fromMillis(
-                  addBusinessHours(new Date(), Math.max(1, workflow[0].tat), calendar.workingHours, calendar.holidays).getTime(),
-                ),
-              }
-            : {}),
-          createdAt: serverTimestamp(),
-          updatedAt: serverTimestamp(),
-        });
-        // Guard against this same run ever writing the same docId twice (masterId is already
-        // part of the key, so two different masters can't collide — this only protects against
-        // a master somehow appearing in `rows` more than once).
-        existingIds.add(docId);
-        generated++;
-        batchWrites++;
-        // Stay comfortably under Firestore's 500-write-per-batch limit.
-        if (batchWrites === 400) {
-          commits.push(batch.commit());
-          batch = writeBatch(db);
-          batchWrites = 0;
-        }
+          if (existingIds.has(recurringObligationId(organizationId, master.id, cycle.key))) {
+            duplicateCount++;
+            continue;
+          }
+          try {
+            const outcome = await generateMasterCycle(master, cycle, context);
+            existingIds.add(outcome.paymentId);
+            if (outcome.kind === "exists") duplicateCount++;
+            else {
+              generated++;
+              if (outcome.activationStage) workflowTriggered++;
+              else if (outcome.noAssignee) noAssigneeCount++;
+              else awaitingBillDateCount++;
+            }
+          } catch (error) {
+            // One master's failure must not abandon every master after it.
+            failures.push(`${master.title}: ${error instanceof Error ? error.message : "failed"}`);
+          }
         }
       }
-      if (batchWrites > 0) commits.push(batch.commit());
-      await Promise.all(commits);
 
       const skippedParts = [
         duplicateCount && `${duplicateCount} already generated`,
@@ -422,6 +402,7 @@ export default function RecurringMasterRegister() {
         noAssigneeCount &&
           `${noAssigneeCount} could not be assigned — check the payment owner, or the first step's users in Settings › Workflow`,
         skippedParts.length && `skipped: ${skippedParts.join(", ")}`,
+        failures.length && `${failures.length} failed (${failures.slice(0, 3).join("; ")}${failures.length > 3 ? "; …" : ""})`,
       ].filter(Boolean);
       toast({
         title: generated
@@ -430,6 +411,7 @@ export default function RecurringMasterRegister() {
         description: detailParts.length
           ? `${detailParts.join(". ")}.`
           : undefined,
+        variant: failures.length || noAssigneeCount ? "destructive" : undefined,
       });
     } catch (error) {
       toast({
@@ -443,49 +425,33 @@ export default function RecurringMasterRegister() {
     }
   }
 
+  // The export carries every column the import reads, under the same headers, so a file can be
+  // exported, edited and re-imported without losing the schedule rules or the owner.
   function exportCsv() {
-    const header = [
-      "Title",
-      "Category",
-      "Vendor",
-      "Branch",
-      "Project",
-      "Department",
-      "Frequency",
-      "Amount Type",
-      "Amount",
-      "Due Day",
-      "Owner",
-      "Status",
-    ];
-    const data = visible.map((master) => [
-      master.title,
-      master.category,
-      master.vendorName,
-      master.branchName || "",
-      master.projectName || "",
-      master.department || "",
-      master.frequency,
-      master.amountType,
-      master.amount,
-      master.dueDay,
-      master.assignedToName || "",
-      master.status,
-    ]);
-    const csv = [header, ...data]
-      .map((line) =>
-        line
-          .map((value) => `"${String(value ?? "").replace(/"/g, '""')}"`)
-          .join(","),
-      )
-      .join("\r\n");
-    const link = document.createElement("a");
-    link.href = URL.createObjectURL(
-      new Blob([csv], { type: "text/csv;charset=utf-8" }),
+    downloadCsv(
+      `recurring-payment-masters-${recurringDateOnly(new Date())}.csv`,
+      [...IMPORT_COLUMNS],
+      visible.map((master) => [
+        master.title,
+        master.category,
+        master.vendorName,
+        master.branchName || "",
+        master.projectName || "",
+        master.department || "",
+        master.frequency,
+        master.amountType,
+        master.amount,
+        master.dueDay,
+        master.dueDateRule || "",
+        master.billDateRule || "",
+        master.periodAnchorDay || 1,
+        master.assignedTo || "",
+        master.assignedToName || "",
+        master.startDate,
+        master.endDate || "",
+        master.status,
+      ]),
     );
-    link.download = `recurring-payment-masters-${recurringDateOnly(new Date())}.csv`;
-    link.click();
-    URL.revokeObjectURL(link.href);
   }
 
   async function importCsv(event: React.ChangeEvent<HTMLInputElement>) {
@@ -493,7 +459,7 @@ export default function RecurringMasterRegister() {
     event.target.value = "";
     if (!file || !user || !canImport) return;
     try {
-      const lines = (await file.text()).split(/\r?\n/).filter(Boolean);
+      const lines = (await file.text()).replace(/^﻿/, "").split(/\r?\n/).filter((line) => line.trim());
       if (lines.length < 2) throw new Error("The CSV has no data rows.");
       const headers = parseCsvLine(lines[0]).map((item) =>
         item.trim().toLowerCase(),
@@ -510,10 +476,23 @@ export default function RecurringMasterRegister() {
       ];
       if (required.some((field) => !headers.includes(field)))
         throw new Error(`Required columns: ${required.join(", ")}.`);
-      const dataRows = lines.slice(1, 101).map(parseCsvLine);
-      for (const values of dataRows) {
-        const get = (name: string) =>
-          values[headers.indexOf(name)]?.trim() || "";
+      const dataLines = lines.slice(1);
+      if (dataLines.length > MAX_IMPORT_ROWS)
+        throw new Error(`The file has ${dataLines.length} rows; import at most ${MAX_IMPORT_ROWS} at a time.`);
+
+      // Every row is validated before anything is written, then all of them go in one batch. Rows
+      // used to be written one by one and checked inside the loop, so a bad project on row 50 left
+      // rows 1–49 imported behind a "CSV import failed" message, and re-importing the corrected file
+      // duplicated them. A start date in any format but YYYY-MM-DD produced cycle keys of "NaN-NaN".
+      const problems: string[] = [];
+      const records = dataLines.map((line, index) => {
+        const values = parseCsvLine(line);
+        const rowNo = index + 2;
+        const get = (name: string) => {
+          const at = headers.indexOf(name);
+          return at < 0 ? "" : values[at]?.trim() || "";
+        };
+        const issue = (message: string) => problems.push(`Row ${rowNo}: ${message}`);
         const projectValue = get("project");
         const departmentValue = get("department");
         const project = projects.find(
@@ -526,11 +505,32 @@ export default function RecurringMasterRegister() {
             item.id === departmentValue ||
             item.name.toLowerCase() === departmentValue.toLowerCase(),
         );
-        if (projectValue && !project)
-          throw new Error(`Global project not found: ${projectValue}.`);
-        if (departmentValue && !department)
-          throw new Error(`Global department not found: ${departmentValue}.`);
-        await addDoc(collection(db, RP_COLLECTIONS.masters), {
+        if (projectValue && !project) issue(`project "${projectValue}" not found`);
+        if (departmentValue && !department) issue(`department "${departmentValue}" not found`);
+        if (!get("title")) issue("title is blank");
+        if (!get("category")) issue("category is blank");
+        if (!get("vendor")) issue("vendor is blank");
+        const frequency = (get("frequency") || "Monthly") as RecurrenceFrequency;
+        if (!FREQUENCIES.includes(frequency)) issue(`frequency "${frequency}" is not one of ${FREQUENCIES.join(", ")}`);
+        const amountType = (get("amount type") || "Fixed") as RecurringPaymentMaster["amountType"];
+        if (!AMOUNT_TYPES.includes(amountType)) issue(`amount type "${amountType}" is not one of ${AMOUNT_TYPES.join(", ")}`);
+        const amount = Number(get("amount") || 0);
+        if (!Number.isFinite(amount) || amount < 0) issue(`amount "${get("amount")}" is not a number`);
+        const dueDay = Number(get("due day") || 1);
+        if (!Number.isInteger(dueDay) || dueDay < 0 || dueDay > 31) issue(`due day "${get("due day")}" must be 0–31`);
+        const startDate = get("start date");
+        if (!isValidIsoDate(startDate)) issue(`start date "${startDate}" must be a real date in YYYY-MM-DD format`);
+        const endDate = get("end date");
+        if (endDate && !isValidIsoDate(endDate)) issue(`end date "${endDate}" must be YYYY-MM-DD`);
+        if (endDate && startDate && endDate < startDate) issue("end date is before start date");
+        const ownerId = get("owner id");
+        const owner = users.find((item) => item.id === ownerId);
+        if (ownerId && !owner) issue(`owner id "${ownerId}" is not a known user`);
+        const dueDateRule = get("due date rule");
+        if (dueDateRule && !(DUE_DATE_RULES as string[]).includes(dueDateRule)) issue(`due date rule "${dueDateRule}" is not one of ${DUE_DATE_RULES.join(", ")}`);
+        const billDateRule = get("bill date rule");
+        if (billDateRule && !(BILL_DATE_RULES as string[]).includes(billDateRule)) issue(`bill date rule "${billDateRule}" is not one of ${BILL_DATE_RULES.join(", ")}`);
+        return {
           organizationId,
           organizationName: user.organizationName || "",
           title: get("title"),
@@ -541,14 +541,19 @@ export default function RecurringMasterRegister() {
           projectName: project?.projectName || "",
           departmentId: department?.id || "",
           department: department?.name || "",
-          frequency: get("frequency") || "Monthly",
-          amountType: get("amount type") || "Fixed",
-          amount: Number(get("amount") || 0),
-          dueDay: Number(get("due day") || 1),
-          assignedTo: get("owner id"),
-          assignedToName:
-            users.find((item) => item.id === get("owner id"))?.name || "",
-          startDate: get("start date"),
+          frequency,
+          amountType,
+          amount,
+          dueDay,
+          // A bare "due day" column means a day of the month. Left unset, the schedule reads it as
+          // "N days after the bill date", which is not what anyone filling in the column meant.
+          dueDateRule: dueDateRule || "Fixed day of month",
+          ...(billDateRule ? { billDateRule } : {}),
+          periodAnchorDay: Math.min(31, Math.max(1, Number(get("period anchor day") || 1) || 1)),
+          assignedTo: ownerId,
+          assignedToName: owner?.name || "",
+          startDate,
+          ...(endDate ? { endDate } : {}),
           status: "Draft",
           autoGenerationEnabled: true,
           deleted: false,
@@ -556,10 +561,17 @@ export default function RecurringMasterRegister() {
           createdBy: user.id,
           updatedAt: serverTimestamp(),
           updatedBy: user.id,
-        });
-      }
+        };
+      });
+      if (problems.length)
+        throw new Error(
+          `Nothing was imported. Fix ${problems.length} problem(s) and try again — ${problems.slice(0, 5).join("; ")}${problems.length > 5 ? "; …" : ""}`,
+        );
+      const batch = writeBatch(db);
+      for (const record of records) batch.set(doc(collection(db, RP_COLLECTIONS.masters)), record);
+      await batch.commit();
       toast({
-        title: `${dataRows.length} draft master(s) imported`,
+        title: `${records.length} draft master(s) imported`,
         description:
           "Review and activate each imported master before automation uses it.",
       });
@@ -736,9 +748,9 @@ export default function RecurringMasterRegister() {
           </TableHeader>
           <TableBody>
             {visible.map((master) => {
-              // The cycle actually awaiting payment, which for arrears-billed masters is the
-              // closed period whose bill has arrived — not the period today sits inside.
-              const cycle = actionableRecurringCycle(master, new Date());
+              // The earliest cycle still awaiting an obligation — for arrears-billed masters the
+              // closed period whose bill has arrived, not the period today sits inside.
+              const cycle = nextCycles.get(master.id) ?? null;
               return (
                 <TableRow key={master.id}>
                   <TableCell className="whitespace-nowrap">
@@ -770,7 +782,7 @@ export default function RecurringMasterRegister() {
                     {master.frequency}
                   </TableCell>
                   <TableCell className="whitespace-nowrap">
-                    {cycle ? `Due ${cycle.dueDate}` : "Outside active dates"}
+                    {cycle ? `Due ${cycle.dueDate}` : "No upcoming cycle"}
                   </TableCell>
                   <TableCell className="whitespace-nowrap text-right tabular-nums">
                     {currency(master.amount)}

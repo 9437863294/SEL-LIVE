@@ -7,7 +7,9 @@ import { db } from "@/lib/firebase";
 import { useAuth } from "@/components/auth/AuthProvider";
 import { useAuthorization } from "@/hooks/useAuthorization";
 import {
+  daysUntilDate,
   DEFAULT_RECURRING_WORKFLOW,
+  isWorkflowActivationDue,
   resolveWorkflowActivation,
   RP_COLLECTIONS,
   currency,
@@ -130,8 +132,11 @@ export default function AutomationHealthReport() {
       setActivationDays(
         Math.min(90, Math.max(0, Number(settingsSnap.data()?.automation?.workflowActivationDays ?? 7))),
       );
-      setWorkflow((workflowSnap.data()?.steps as RecurringWorkflowStep[]) || DEFAULT_RECURRING_WORKFLOW);
-    })();
+      // An empty saved list falls back too — `[]` is truthy, and with no first step every stuck
+      // item would read as "No assignee resolved".
+      const steps = workflowSnap.data()?.steps as RecurringWorkflowStep[] | undefined;
+      setWorkflow(steps?.length ? steps : DEFAULT_RECURRING_WORKFLOW);
+    })().catch(() => setLoadError(true));
     return () => stops.forEach((stop) => stop());
   }, [organizationId]);
 
@@ -416,13 +421,18 @@ function diagnose(
   today: Date,
 ): { label: string; actionable: boolean } {
   if (!payment.dueDate) return { label: "Missing due date", actionable: true };
-  const due = new Date(`${payment.dueDate}T00:00:00`);
-  const daysUntilDue = Math.round((due.getTime() - today.getTime()) / 86_400_000);
-  if (daysUntilDue > activationDays)
+  // The same test the generation route applies (expected bill date reached, or due date inside the
+  // activation window), so "Not due yet" never contradicts what the next run will actually do.
+  if (!isWorkflowActivationDue(payment, { activationDays, today })) {
+    const byDueDate = daysUntilDate(payment.dueDate, today) - activationDays;
+    const days = payment.expectedBillDate
+      ? Math.min(byDueDate, daysUntilDate(payment.expectedBillDate, today))
+      : byDueDate;
     return {
-      label: `Not due yet — activates automatically in ${daysUntilDue - activationDays} day(s)`,
+      label: `Not due yet — activates automatically in ${days} day(s)`,
       actionable: false,
     };
+  }
   const activation = resolveWorkflowActivation(workflow[0], payment, { activationDays, today });
   if (!activation)
     return {

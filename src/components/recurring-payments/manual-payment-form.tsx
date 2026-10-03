@@ -116,8 +116,14 @@ export default function ManualPaymentForm() {
           (item) => ({ id: item.id, ...item.data() }) as NamedRecord,
         ),
       );
-    });
-  }, [organizationId]);
+    }).catch(() =>
+      toast({
+        title: "Vendors and categories could not be loaded",
+        description: "Reload the page to try again.",
+        variant: "destructive",
+      }),
+    );
+  }, [organizationId, toast]);
 
   async function upload(
     file: FormDataEntryValue | null,
@@ -433,7 +439,7 @@ export default function ManualPaymentForm() {
           title="Basic information"
           description="Organization scope, ownership and priority"
         >
-          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
             <Field label="Organization *">
               <Input
                 value={user?.organizationName || organizationId}
@@ -528,7 +534,7 @@ export default function ManualPaymentForm() {
           title="Billing information"
           description="Bill, period, due date and payable calculation"
         >
-          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
             <ControlledField setting={field("billNumber")}>
               <Input name="billNumber" required={field("billNumber").required} />
             </ControlledField>
@@ -599,7 +605,7 @@ export default function ManualPaymentForm() {
           title="Assignment"
           description="People responsible for verification, approval and processing"
         >
-          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
             <UserSelect
               name="ownerId"
               setting={field("ownerId")}
@@ -618,7 +624,7 @@ export default function ManualPaymentForm() {
           title="Documents and notes"
           description="Bill and supporting evidence"
         >
-          <div className="grid gap-4 sm:grid-cols-2">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <ControlledField setting={field("billFile")}>
               <Input
                 name="billFile"

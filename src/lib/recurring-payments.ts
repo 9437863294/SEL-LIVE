@@ -489,9 +489,59 @@ export function isObligationEditable(payment: Pick<PaymentObligation, 'status' |
   return payment.deleted !== true && EDITABLE_OBLIGATION_STATUSES.includes(payment.status);
 }
 
+/** Whether an obligation still has money to pay or a workflow to chase (see `CONCLUDED_PAYMENT_STATUSES`). */
+export function isOpenObligation(payment: Pick<PaymentObligation, 'status'>): boolean {
+  return !CONCLUDED_PAYMENT_STATUSES.includes(payment.status);
+}
+
+/** What the obligation is expected to settle: the bill once one is received, the estimate before. */
+export function obligationAmountOf(payment: Pick<PaymentObligation, 'billAmount' | 'expectedAmount'>): number {
+  return Number(payment.billAmount || payment.expectedAmount || 0);
+}
+
+/**
+ * What is still owed — the obligation amount less everything already settled against it (payments
+ * plus TDS, deductions and adjustments, which is what `settledAmount` accumulates). Never negative,
+ * so an overpaid row can't pull a total down. The same arithmetic the payment screens write back to
+ * `outstandingAmount`; reports use this rather than gross amounts, so "open exposure" means open.
+ */
+export function outstandingAmountOf(payment: Pick<PaymentObligation, 'billAmount' | 'expectedAmount' | 'settledAmount' | 'paidAmount'>): number {
+  return Math.max(0, obligationAmountOf(payment) - Number(payment.settledAmount || payment.paidAmount || 0));
+}
+
+/** `documentReferences` actions that count as proof of payment. */
+export const PAYMENT_PROOF_ACTIONS = ['Record Payment', 'Close'];
+
+/**
+ * Whether an obligation carries proof of payment. Every screen that uploads a payment receipt also
+ * appends a `documentReferences` entry under one of `PAYMENT_PROOF_ACTIONS`, so the register, detail
+ * page and dashboard can all answer this from the obligation alone, without reading its
+ * transactions subcollection row by row.
+ */
+export function hasPaymentProof(payment: Pick<PaymentObligation, 'documentReferences'>): boolean {
+  return (payment.documentReferences || []).some((document) => PAYMENT_PROOF_ACTIONS.includes(document.action));
+}
+
+/**
+ * The Firestore document id of a master's obligation for a cycle. The id *is* the idempotency key —
+ * every generation path (the cron, "Generate now", "Generate all") writes to it, so they must all
+ * derive it identically.
+ */
+export function recurringObligationId(organizationId: string, masterId: string, cycleKey: string): string {
+  return `${organizationId}_${masterId}_${cycleKey}`.replace(/[^a-zA-Z0-9_-]/g, '_');
+}
+
 export const currency = (value: number) => new Intl.NumberFormat('en-IN', {
   style: 'currency', currency: 'INR', maximumFractionDigits: 0,
 }).format(value || 0);
+
+/**
+ * Statuses after which an obligation has nothing left to pay or chase: it can't fall Overdue, and
+ * automation neither activates nor reminds on it. 'Rejected' belongs here because rejection ends the
+ * workflow with no path back — reading it as Overdue left it in every overdue count permanently,
+ * with no action anyone could take to clear it.
+ */
+export const CONCLUDED_PAYMENT_STATUSES: PaymentStatus[] = ['Paid', 'Paid Receipt Pending', 'Closed', 'Cancelled', 'Waived', 'Rejected'];
 
 /**
  * Reads a payment as Overdue once its grace period has also elapsed. `overdueDate` is stamped onto
@@ -499,7 +549,7 @@ export const currency = (value: number) => new Intl.NumberFormat('en-IN', {
  * honored (and manual payments, which have no master) fall back to the due date itself.
  */
 export function effectiveStatus(payment: PaymentObligation): PaymentStatus {
-  if (!['Paid', 'Closed', 'Cancelled', 'Waived'].includes(payment.status)) {
+  if (!CONCLUDED_PAYMENT_STATUSES.includes(payment.status)) {
     const lastAcceptable = new Date(`${payment.overdueDate || payment.dueDate}T00:00:00`);
     const now = new Date();
     const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
@@ -539,14 +589,27 @@ export function matchesScopeFilter(
  */
 export function downloadCsv(filename: string, header: string[], rows: Array<Array<string | number>>) {
   const csv = [header, ...rows]
-    .map(row => row.map(value => `"${String(value ?? '').replaceAll('"', '""')}"`).join(','))
-    .join('\n');
-  const blob = new Blob([csv], { type: 'text/csv' });
+    .map(row => row.map(value => `"${csvCellText(value).replaceAll('"', '""')}"`).join(','))
+    .join('\r\n');
+  // The BOM is what makes Excel read the file as UTF-8. Without it every generated title — "Rent —
+  // Jan 2026" — opened as "Rent â€” Jan 2026", along with ₹ and any non-ASCII vendor name.
+  const blob = new Blob(['﻿', csv], { type: 'text/csv;charset=utf-8' });
   const anchor = document.createElement('a');
   anchor.href = URL.createObjectURL(blob);
   anchor.download = filename;
   anchor.click();
-  URL.revokeObjectURL(anchor.href);
+  // Revoking synchronously can cancel the download before the browser has started reading the blob.
+  setTimeout(() => URL.revokeObjectURL(anchor.href), 1000);
+}
+
+/**
+ * A cell's text, neutralised against spreadsheet formula injection: vendor names, remarks and bill
+ * numbers are user-entered, and a value such as `=HYPERLINK(…)` would otherwise execute when the
+ * export is opened. Plain negative numbers are left alone so amounts still read as numbers.
+ */
+function csvCellText(value: string | number | null | undefined) {
+  const text = String(value ?? '');
+  return typeof value === 'string' && /^[=+\-@\t\r]/.test(text) && !/^-?[\d.,]+$/.test(text) ? `'${text}` : text;
 }
 
 /**
@@ -560,12 +623,25 @@ export function matchApprovalRule(
   rules: ApprovalRule[],
   params: { amount: number; category?: string; projectId?: string; projectName?: string },
 ): ApprovalRule | undefined {
-  return rules.find(rule =>
+  // A max of 0 (or none) means "no upper limit" — which is how Settings displays it; read as a cap
+  // of ₹0 it made such a rule match nothing but zero-value bills.
+  const ceiling = (rule: ApprovalRule) => (Number(rule.maxAmount) > 0 ? Number(rule.maxAmount) : Number.POSITIVE_INFINITY);
+  // Blank means "All"; '*' is the form's own "All" value, normally blanked before saving.
+  const scoped = (value: string | undefined) => Boolean(value) && value !== '*';
+  const matches = rules.filter(rule =>
     rule.active &&
     params.amount >= Number(rule.minAmount || 0) &&
-    params.amount <= (rule.maxAmount == null ? Number.POSITIVE_INFINITY : Number(rule.maxAmount)) &&
-    (!rule.category || rule.category === params.category) &&
-    (!rule.project || rule.project === params.projectId || rule.project === params.projectName));
+    params.amount <= ceiling(rule) &&
+    (!scoped(rule.category) || rule.category === params.category) &&
+    (!scoped(rule.project) || rule.project === params.projectId || rule.project === params.projectName));
+  // When rules overlap, the most specific wins — scoped to the project and category before
+  // org-wide, then the narrowest amount band — rather than whichever document Firestore happened
+  // to return first, which made the approvers for an amount depend on document ids.
+  const specificity = (rule: ApprovalRule) => (scoped(rule.project) ? 2 : 0) + (scoped(rule.category) ? 1 : 0);
+  return matches.sort((a, b) =>
+    specificity(b) - specificity(a) ||
+    (ceiling(a) - Number(a.minAmount || 0)) - (ceiling(b) - Number(b.minAmount || 0)) ||
+    a.id.localeCompare(b.id))[0];
 }
 
 export interface GeneratedObligationInput {

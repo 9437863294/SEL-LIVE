@@ -525,6 +525,25 @@ test('a return in the router restarts an approval it lands back on', () => {
   assert.deepEqual(routed.approvalCompletedBy, []);
 });
 
+test('a return out of an approval step also restarts it, so level 1 sees the corrected figures', () => {
+  const pay = payment({
+    currentStepId: '3', status: 'Pending Approval', approvalMode: 'Sequential',
+    approvalLevels: ['u-a', 'u-b'], currentApprovalLevel: 2, approvalCompletedBy: ['u-a'], billAmount: 250000,
+  });
+  const returned = routeRecurringWorkflow({ workflow: WORKFLOW, step: WORKFLOW[2], action: 'Return for Correction', payment: pay, actorId: 'u-b' });
+  assert.equal(returned.currentStepId, '2', 'back to verification');
+  assert.equal(returned.currentApprovalLevel, 1);
+  assert.deepEqual(returned.approvalCompletedBy, []);
+
+  // Re-verified, it re-enters approval at the first level rather than straight at level 2.
+  const reverified = routeRecurringWorkflow({
+    workflow: WORKFLOW, step: WORKFLOW[1], action: 'Verify', actorId: 'u-verify',
+    payment: { ...pay, ...returned, status: returned.status },
+  });
+  assert.equal(reverified.currentStepId, '3');
+  assert.deepEqual(reverified.assignees, ['u-a']);
+});
+
 test('the router refuses to park a payment at a step with nobody on it', () => {
   const workflow = [WORKFLOW[0], { ...WORKFLOW[1], assignedTo: [] }];
   assert.throws(

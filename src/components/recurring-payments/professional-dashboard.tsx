@@ -37,6 +37,9 @@ import {
   RP_COLLECTIONS,
   currency,
   effectiveStatus,
+  hasPaymentProof,
+  isOpenObligation,
+  outstandingAmountOf,
   visibleObligations,
 } from "@/lib/recurring-payments";
 import { Button } from "@/components/ui/button";
@@ -70,7 +73,6 @@ const PIE_COLORS = [
   "#0ea5e9",
   "#64748b",
 ];
-const closed = ["Paid", "Closed", "Cancelled", "Waived"];
 const GLASS_CARD =
   "border-white/60 bg-white/80 shadow-sm backdrop-blur-sm";
 
@@ -81,7 +83,6 @@ export default function ProfessionalRecurringDashboard() {
   const { activeProjects, activeDepartments } = useGlobalScopes();
   const [payments, setPayments] = useState<PaymentObligation[]>([]);
   const [loading, setLoading] = useState(true);
-  const [refreshing, setRefreshing] = useState(false);
   const [filters, setFilters] = useState({
     financialYear: financialYearFor(new Date()),
     branch: "all",
@@ -199,17 +200,22 @@ export default function ProfessionalRecurringDashboard() {
   // render they were evaluated in — so a re-render that straddled midnight silently moved every
   // bucket, and the server and client could disagree on hydration. React's compiler flags this as
   // an impure call during render for exactly this reason.
-  const [nowMs] = useState(() => Date.now());
+  // The data is a live listener already; Refresh re-reads this clock, so a dashboard left open past
+  // midnight moves its "today"/"this week" buckets forward.
+  const [nowMs, setNowMs] = useState(() => Date.now());
   const today = dateOnly(new Date(nowMs));
   const inDays = (days: number) => dateOnly(new Date(nowMs + days * DAY));
-  const isOpen = (payment: PaymentObligation) =>
-    !closed.includes(payment.status);
+  const isOpen = isOpenObligation;
   const sum = (items: PaymentObligation[]) =>
     items.reduce(
       (total, item) =>
         total + Number(item.billAmount || item.expectedAmount || 0),
       0,
     );
+  // Open-exposure figures count what is still owed, not the gross bill — a part-paid obligation
+  // otherwise reported its full amount as overdue / due / about to leave the bank.
+  const outstanding = (items: PaymentObligation[]) =>
+    items.reduce((total, item) => total + outstandingAmountOf(item), 0);
   const cards = [
     {
       label: "Due Today",
@@ -263,27 +269,29 @@ export default function ProfessionalRecurringDashboard() {
     },
     {
       label: "Approved but Unpaid",
+      // A part-paid obligation is approved and not yet fully paid, so it belongs here too.
       items: visible.filter((item) =>
-        ["Approved", "Payment Processing"].includes(item.status),
+        ["Approved", "Payment Processing", "Partially Paid"].includes(item.status),
       ),
       icon: IndianRupee,
       color: "border-emerald-100 text-emerald-600",
-      href: "/recurring-payments/payments?status=Approved,Payment%20Processing",
+      href: "/recurring-payments/payments?status=Approved,Payment%20Processing,Partially%20Paid",
     },
     {
       label: "Missing Payment Proof",
       items: visible.filter(
         (item) =>
-          ["Paid", "Closed"].includes(item.status) &&
-          !(item.documentReferences || []).some((document) =>
-            ["Record Payment", "Close"].includes(document.action),
-          ),
+          ["Paid", "Closed"].includes(item.status) && !hasPaymentProof(item),
       ),
       icon: FileWarning,
       color: "border-slate-200 text-slate-600",
       href: "/recurring-payments/payments?missingReceipt=1",
+      // Already-paid rows owe nothing, so this tile shows what was paid without proof.
+      gross: true,
     },
   ];
+  const cardAmount = (card: (typeof cards)[number]) =>
+    card.gross ? sum(card.items) : outstanding(card.items);
   const paidMonth = visible.filter(
     (item) =>
       ["Paid", "Closed"].includes(item.status) &&
@@ -297,10 +305,15 @@ export default function ProfessionalRecurringDashboard() {
   const monthlyTrend = useMemo(
     () =>
       Array.from({ length: 12 }, (_, index) => {
-        const [startYear] =
+        // "All years" charts the current Indian financial year (Apr–Mar); the calendar year put
+        // next FY's Jan–Mar on the chart from April onwards.
+        const [startYear] = (
           filters.financialYear === "all"
-            ? [new Date().getFullYear()]
-            : filters.financialYear.split("-").map(Number);
+            ? financialYearFor(new Date(nowMs))
+            : filters.financialYear
+        )
+          .split("-")
+          .map(Number);
         const date = new Date(
           index < 9 ? startYear : startYear + 1,
           (index + 3) % 12,
@@ -317,7 +330,7 @@ export default function ProfessionalRecurringDashboard() {
           ),
         };
       }),
-    [filters.financialYear, visible],
+    [filters.financialYear, visible, nowMs],
   );
   const categoryChart = useMemo(
     () =>
@@ -367,9 +380,9 @@ export default function ProfessionalRecurringDashboard() {
   function exportSummary() {
     const rows = [
       ["Metric", "Records", "Amount"],
-      ...cards.map((card) => [card.label, card.items.length, sum(card.items)]),
+      ...cards.map((card) => [card.label, card.items.length, cardAmount(card)]),
       ["Paid This Month", paidMonth.length, sum(paidMonth)],
-      ["Upcoming 30 Days", upcoming30.length, sum(upcoming30)],
+      ["Upcoming 30 Days", upcoming30.length, outstanding(upcoming30)],
     ];
     const blob = new Blob(
       [
@@ -408,14 +421,9 @@ export default function ProfessionalRecurringDashboard() {
             <Button
               variant="outline"
               className="bg-white/90"
-              onClick={() => {
-                setRefreshing(true);
-                setTimeout(() => setRefreshing(false), 500);
-              }}
+              onClick={() => setNowMs(Date.now())}
             >
-              <RefreshCw
-                className={`mr-2 h-4 w-4 ${refreshing ? "animate-spin" : ""}`}
-              />
+              <RefreshCw className="mr-2 h-4 w-4" />
               Refresh
             </Button>
             {can("Export", "Recurring Payments.Reports") && (
@@ -509,7 +517,9 @@ export default function ProfessionalRecurringDashboard() {
       </FilterBar>
 
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-5">
-        {cards.map(({ label, items, icon: Icon, color, href }) => (
+        {cards.map((card) => {
+          const { label, items, icon: Icon, color, href } = card;
+          return (
           <Link href={href} key={label}>
             <Card className={`h-full bg-white/80 shadow-sm backdrop-blur-sm transition hover:-translate-y-0.5 hover:shadow-md ${color}`}>
               <CardContent className="flex items-center gap-3 p-4">
@@ -522,13 +532,14 @@ export default function ProfessionalRecurringDashboard() {
                   </p>
                   <p className="text-xl font-bold text-slate-900">{items.length}</p>
                   <p className="truncate text-xs text-slate-500">
-                    {currency(sum(items))}
+                    {currency(cardAmount(card))}
                   </p>
                 </div>
               </CardContent>
             </Card>
           </Link>
-        ))}
+          );
+        })}
         <MetricCard
           label="Paid This Month"
           value={currency(sum(paidMonth))}
@@ -538,7 +549,7 @@ export default function ProfessionalRecurringDashboard() {
         />
         <MetricCard
           label="Upcoming 30 Days"
-          value={currency(sum(upcoming30))}
+          value={currency(outstanding(upcoming30))}
           sub={`${upcoming30.length} obligation(s)`}
           icon={CalendarClock}
           color="border-indigo-100 text-indigo-600"
@@ -593,15 +604,21 @@ export default function ProfessionalRecurringDashboard() {
               Open obligations by forecast horizon
             </CardDescription>
           </CardHeader>
-          <CardContent className="grid grid-cols-2 gap-3 sm:grid-cols-5">
-            {[7, 15, 30, 60, 90].map((days) => {
+          <CardContent className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+            {/* Already past due is its own bucket; the horizons start today, so "Next 7 days"
+                no longer silently includes obligations that fell due months ago. */}
+            {([0, 7, 15, 30, 60, 90] as const).map((days) => {
               const items = visible.filter(
-                (item) => isOpen(item) && item.dueDate <= inDays(days),
+                (item) =>
+                  isOpen(item) &&
+                  (days === 0
+                    ? item.dueDate < today
+                    : item.dueDate >= today && item.dueDate <= inDays(days)),
               );
               return (
                 <div key={days} className="rounded-xl border border-teal-100 bg-teal-50/60 p-3">
-                  <p className="text-xs text-muted-foreground">{days} days</p>
-                  <p className="mt-1 font-bold">{currency(sum(items))}</p>
+                  <p className="text-xs text-muted-foreground">{days === 0 ? "Past due" : `Next ${days} days`}</p>
+                  <p className="mt-1 font-bold">{currency(outstanding(items))}</p>
                   <p className="text-xs text-muted-foreground">
                     {items.length} item(s)
                   </p>

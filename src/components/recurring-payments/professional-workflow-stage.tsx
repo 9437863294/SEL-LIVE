@@ -26,6 +26,7 @@ import {
   BANK_ACCOUNT_REQUIRED_MODES,
   DEFAULT_RECURRING_PAYMENT_SETTINGS,
   DEFAULT_RECURRING_WORKFLOW,
+  isOpenObligation,
   loadWorkingCalendar,
   mergeRecurringPaymentSettings,
   paymentTiming,
@@ -93,7 +94,9 @@ export default function ProfessionalRecurringWorkflowStage({ stageId }: { stageI
   const [holidays, setHolidays] = useState<Holiday[]>([]);
   const [payments, setPayments] = useState<PaymentObligation[]>([]);
   const [loading, setLoading] = useState(true);
-  const [selected, setSelected] = useState<PaymentObligation | null>(null);
+  // Held by id and read from the live snapshot, so an open dialog shows the current outstanding
+  // amount rather than the one at the moment it was opened — and closes if the payment disappears.
+  const [selectedId, setSelectedId] = useState<string | null>(null);
   const [action, setAction] = useState<string | null>(null);
   const [working, setWorking] = useState(false);
   // Reference data for the "Create Expense Request" action only.
@@ -102,33 +105,44 @@ export default function ProfessionalRecurringWorkflowStage({ stageId }: { stageI
   const [subAccountHeads, setSubAccountHeads] = useState<SubAccountHead[]>([]);
 
   useEffect(() => {
+    // The listeners are attached only after the reference loads resolve, so an unmount (or an
+    // organization change) during those loads must stop them from being attached at all.
+    let cancelled = false;
     let stopPayments: () => void = () => undefined;
     let stopSettings: () => void = () => undefined;
     (async () => {
-      const workflowSnap = await getDoc(doc(db, 'workflows', 'recurring-payments-workflow'));
-      if (workflowSnap.exists() && workflowSnap.data().steps?.length) setWorkflow(workflowSnap.data().steps);
-      const [deptSnap, headSnap, subHeadSnap, calendar] = await Promise.all([
-        getDocs(collection(db, 'departments')),
-        getDocs(collection(db, 'accountHeads')),
-        getDocs(collection(db, 'subAccountHeads')),
-        loadWorkingCalendar(),
-      ]);
-      setDepartments(deptSnap.docs.map(item => ({ id: item.id, ...item.data() } as Department)));
-      setAccountHeads(headSnap.docs.map(item => ({ id: item.id, ...item.data() } as AccountHead)));
-      setSubAccountHeads(subHeadSnap.docs.map(item => ({ id: item.id, ...item.data() } as SubAccountHead)));
-      setWorkingHours(calendar.workingHours);
-      setHolidays(calendar.holidays);
-      stopPayments = onSnapshot(query(collection(db, RP_COLLECTIONS.payments), where('organizationId', '==', organizationId)), snapshot => {
-        setPayments(visibleObligations(snapshot.docs.map(item => ({ id: item.id, ...item.data() } as PaymentObligation))));
+      try {
+        const workflowSnap = await getDoc(doc(db, 'workflows', 'recurring-payments-workflow'));
+        const [deptSnap, headSnap, subHeadSnap, calendar] = await Promise.all([
+          getDocs(collection(db, 'departments')),
+          getDocs(collection(db, 'accountHeads')),
+          getDocs(collection(db, 'subAccountHeads')),
+          loadWorkingCalendar(),
+        ]);
+        if (cancelled) return;
+        if (workflowSnap.exists() && workflowSnap.data().steps?.length) setWorkflow(workflowSnap.data().steps);
+        setDepartments(deptSnap.docs.map(item => ({ id: item.id, ...item.data() } as Department)));
+        setAccountHeads(headSnap.docs.map(item => ({ id: item.id, ...item.data() } as AccountHead)));
+        setSubAccountHeads(subHeadSnap.docs.map(item => ({ id: item.id, ...item.data() } as SubAccountHead)));
+        setWorkingHours(calendar.workingHours);
+        setHolidays(calendar.holidays);
+        stopPayments = onSnapshot(query(collection(db, RP_COLLECTIONS.payments), where('organizationId', '==', organizationId)), snapshot => {
+          setPayments(visibleObligations(snapshot.docs.map(item => ({ id: item.id, ...item.data() } as PaymentObligation))));
+          setLoading(false);
+        }, () => setLoading(false));
+        stopSettings = onSnapshot(doc(db, RP_COLLECTIONS.settings, organizationId.replace(/[^a-zA-Z0-9_-]/g, '_')), snapshot => {
+          if (!snapshot.exists()) return;
+          setSettings(mergeRecurringPaymentSettings(snapshot.data() as Partial<RecurringPaymentSettings>, organizationId));
+        });
+      } catch (error) {
+        // A denied or failed read would otherwise leave the spinner up forever.
+        if (cancelled) return;
         setLoading(false);
-      }, () => setLoading(false));
-      stopSettings = onSnapshot(doc(db, RP_COLLECTIONS.settings, organizationId.replace(/[^a-zA-Z0-9_-]/g, '_')), snapshot => {
-        if (!snapshot.exists()) return;
-        setSettings(mergeRecurringPaymentSettings(snapshot.data() as Partial<RecurringPaymentSettings>, organizationId));
-      });
+        toast({ title: 'Could not load this workflow step', description: error instanceof Error ? error.message : undefined, variant: 'destructive' });
+      }
     })();
-    return () => { stopPayments(); stopSettings(); };
-  }, [organizationId]);
+    return () => { cancelled = true; stopPayments(); stopSettings(); };
+  }, [organizationId, toast]);
 
   // The step's configured actions are offered as-is. Every surface that can run one is already
   // restricted to the payment's own assignees — the table dropdown only renders for rows in
@@ -141,6 +155,7 @@ export default function ProfessionalRecurringWorkflowStage({ stageId }: { stageI
     .filter(payment => payment.currentStepId === stageId && (payment.assignees || []).includes(user?.id || '') && !['Completed', 'Rejected'].includes(payment.workflowStatus || ''))
     .sort((a, b) => a.dueDate.localeCompare(b.dueDate)), [payments, stageId, user?.id]);
   const completed = useMemo(() => payments.filter(payment => (payment.workflowHistory || []).some(item => item.stepId === stageId && item.userId === user?.id)), [payments, stageId, user?.id]);
+  const selected = useMemo(() => payments.find(item => item.id === selectedId) ?? null, [payments, selectedId]);
 
   async function upload(file: FormDataEntryValue | null, payment: PaymentObligation, folder: string) {
     if (!(file instanceof File) || !file.size) return '';
@@ -152,7 +167,7 @@ export default function ProfessionalRecurringWorkflowStage({ stageId }: { stageI
 
   async function perform(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (!selected || !stage || !action || !user) return;
+    if (working || !selected || !stage || !action || !user) return;
     const form = new FormData(event.currentTarget);
     const comment = String(form.get('comment') || '').trim();
     if (COMMENT_REQUIRED.includes(action) && !comment) return toast({ title: 'A reason is required for this action', variant: 'destructive' });
@@ -161,13 +176,6 @@ export default function ProfessionalRecurringWorkflowStage({ stageId }: { stageI
     const billNumber = String(form.get('billNumber') || selected.billNumber || '').trim();
     const billReceivedDate = String(form.get('billReceivedDate') || selected.billReceivedDate || '').trim();
     if (action === 'Submit Bill' && (billAmount <= 0 || !billNumber || !billReceivedDate)) return toast({ title: 'Bill number, received date, and final amount are required', variant: 'destructive' });
-    if (action === 'Submit Bill') {
-      const all = await getDocs(query(collection(db, RP_COLLECTIONS.payments), where('organizationId', '==', organizationId)));
-      // A deleted obligation must not reserve its bill number — deletion withdraws a record that
-      // shouldn't have existed, so the number has to be enterable again on the correct obligation.
-      const duplicate = all.docs.some(item => item.id !== selected.id && item.data().deleted !== true && String(item.data().vendorName).toLowerCase() === selected.vendorName.toLowerCase() && String(item.data().billNumber || '').toLowerCase() === billNumber.toLowerCase());
-      if (duplicate) return toast({ title: 'Duplicate vendor bill number', description: 'This bill number already exists for the selected vendor.', variant: 'destructive' });
-    }
 
     const paymentAmount = Number(form.get('paymentAmount') || 0);
     const tdsAmount = Number(form.get('tdsAmount') || 0);
@@ -219,6 +227,16 @@ export default function ProfessionalRecurringWorkflowStage({ stageId }: { stageI
 
     setWorking(true);
     try {
+      // Inside the working state, not before it: this read is slow on a large register, and while it
+      // ran the confirm button stayed enabled, so a second click submitted (and uploaded) twice.
+      if (action === 'Submit Bill') {
+        const all = await getDocs(query(collection(db, RP_COLLECTIONS.payments), where('organizationId', '==', organizationId)));
+        // A deleted obligation must not reserve its bill number — deletion withdraws a record that
+        // shouldn't have existed, so the number has to be enterable again on the correct obligation.
+        const duplicate = all.docs.some(item => item.id !== selected.id && item.data().deleted !== true && String(item.data().vendorName).toLowerCase() === selected.vendorName.toLowerCase() && String(item.data().billNumber || '').toLowerCase() === billNumber.toLowerCase());
+        if (duplicate) throw new Error('Duplicate vendor bill number — this bill number already exists for the selected vendor.');
+      }
+
       let documentReference = String(form.get('documentReference') || '').trim();
       const documentFile = form.get('documentFile');
       const uploadedDocument = await upload(documentFile, selected, 'documents');
@@ -226,8 +244,9 @@ export default function ProfessionalRecurringWorkflowStage({ stageId }: { stageI
       if (stage.uploadRequired && !documentReference && !['Reject', 'On Hold', 'Dispute', 'Payment Failed', 'Return for Correction'].includes(action)) throw new Error('Upload the required supporting document or enter its reference.');
 
       let receiptUrl = '';
+      const receiptFile = form.get('receiptFile');
       if (action === 'Record Payment') {
-        receiptUrl = await upload(form.get('receiptFile'), selected, 'transactions');
+        receiptUrl = await upload(receiptFile, selected, 'transactions');
         // Cash payments (and any other mode recorded without a reference) leave this blank —
         // don't treat that shared empty string as a duplicate across separate cash instalments
         // on the same bill.
@@ -241,7 +260,16 @@ export default function ProfessionalRecurringWorkflowStage({ stageId }: { stageI
       if (action === 'Create Expense Request') {
         // Runs outside the payment's own transaction below: createExpenseRequest() has its own
         // transaction against the department's serial-number config and the expenseRequests
-        // collection, which can't be nested inside another Firestore transaction.
+        // collection, which can't be nested inside another Firestore transaction. So the checks
+        // that transaction makes are run here first, against a fresh read — otherwise a payment
+        // that has moved on, or whose next step has no assignee, got a committed expense request
+        // that nothing links to, and every retry raised another one.
+        const liveSnap = await getDoc(doc(db, RP_COLLECTIONS.payments, selected.id));
+        if (!liveSnap.exists()) throw new Error('Payment no longer exists.');
+        const live = { id: liveSnap.id, ...liveSnap.data() } as PaymentObligation;
+        if (live.currentStepId !== stage.id) throw new Error('This task has already moved to another step.');
+        if (!(live.assignees || []).includes(user.id)) throw new Error('This task is not assigned to you.');
+        routeRecurringWorkflow({ workflow, step: stage, action, actorId: user.id, advance: FORWARD_ACTIONS.includes(action), payment: { ...live, billAmount } as PaymentObligation });
         const expenseResult = await createExpenseRequest({
           departmentId: expenseDepartmentId,
           projectId: selected.projectId || '',
@@ -276,7 +304,9 @@ export default function ProfessionalRecurringWorkflowStage({ stageId }: { stageI
       const variancePercent = varianceBaseline ? ((billAmount - varianceBaseline) / varianceBaseline) * 100 : 0;
       const amountLimitExceeded = Number(selected.maximumAmount || 0) > 0 && billAmount > Number(selected.maximumAmount);
       const threshold = Number(settings.controls.varianceWarningPercent || 0);
-      const comparisonWarning = Object.entries(varianceComparisons).some(([name, value]) => name !== 'maximum' && Number(value || 0) > 0 && Math.abs(((billAmount - Number(value)) / Number(value)) * 100) >= threshold);
+      // A threshold of 0 (or a cleared field) means the comparison check is off — `>= 0` would
+      // otherwise flag every bill, including one that matches its baseline exactly.
+      const comparisonWarning = threshold > 0 && Object.entries(varianceComparisons).some(([name, value]) => name !== 'maximum' && Number(value || 0) > 0 && Math.abs(((billAmount - Number(value)) / Number(value)) * 100) >= threshold);
       const varianceWarning = comparisonWarning || amountLimitExceeded;
 
       const paymentRef = doc(db, RP_COLLECTIONS.payments, selected.id);
@@ -298,7 +328,13 @@ export default function ProfessionalRecurringWorkflowStage({ stageId }: { stageI
           workflowHistory: arrayUnion(historyEntry),
           updatedAt: Timestamp.now(),
         };
-        if (documentReference) patch.documentReferences = arrayUnion({ stepId: stage.id, action, reference: documentReference, addedBy: user.id, addedAt: Timestamp.now(), category: stage.name, fileType: documentFile instanceof File ? (documentFile.type || documentFile.name.split('.').pop() || 'file') : 'external-reference', version: (current.documentReferences || []).filter(item => item.stepId === stage.id && item.action === action).length + 1 });
+        const newDocuments: NonNullable<PaymentObligation['documentReferences']> = [];
+        if (documentReference) newDocuments.push({ stepId: stage.id, action, reference: documentReference, addedBy: user.id, addedAt: Timestamp.now(), category: stage.name, fileType: documentFile instanceof File ? (documentFile.type || documentFile.name.split('.').pop() || 'file') : 'external-reference', version: (current.documentReferences || []).filter(item => item.stepId === stage.id && item.action === action).length + 1 });
+        // The receipt is also listed as a document under 'Record Payment' — that entry is what
+        // `hasPaymentProof` reads, so a receipt kept only on the transaction left the payment
+        // flagged "Missing payment proof".
+        if (receiptUrl) newDocuments.push({ stepId: stage.id, action: 'Record Payment', reference: receiptUrl, addedBy: user.id, addedAt: Timestamp.now(), category: 'Payment receipt', fileType: receiptFile instanceof File ? (receiptFile.type || receiptFile.name.split('.').pop() || 'file') : 'file', version: (current.documentReferences || []).filter(item => item.stepId === stage.id && item.category === 'Payment receipt').length + 1 });
+        if (newDocuments.length) patch.documentReferences = arrayUnion(...newDocuments);
         if (action === 'Submit Bill') Object.assign(patch, { billAmount, billNumber, billReceivedDate, varianceBaseline, variancePercent, varianceWarning, varianceComparisons, amountLimitExceeded, outstandingAmount: Math.max(0, billAmount - (current.settledAmount || current.paidAmount || 0)) });
         if (action === 'Create Expense Request') patch.expenseRequestNo = expenseRequestNo;
 
@@ -308,6 +344,9 @@ export default function ProfessionalRecurringWorkflowStage({ stageId }: { stageI
           const totalSettled = oldSettled + appliedAmount;
           const totalPaid = Number(current.paidAmount || 0) + paymentAmount;
           const obligationAmount = Number(current.billAmount || current.expectedAmount);
+          // Re-checked against the live record: the form's check used the row as it was when the
+          // dialog opened, and another instalment may have been recorded since.
+          if (appliedAmount > obligationAmount - oldSettled + 0.01) throw new Error(`Settlement exceeds the outstanding amount — only ${currency(Math.max(0, obligationAmount - oldSettled))} is still outstanding.`);
           advance = totalSettled >= obligationAmount - 0.01;
           Object.assign(patch, {
             paidAmount: totalPaid,
@@ -375,7 +414,7 @@ export default function ProfessionalRecurringWorkflowStage({ stageId }: { stageI
           summary: action === 'Record Payment' ? `${currency(paymentAmount)} recorded against ${currency(currentOutstanding)} outstanding.` : action === 'Create Expense Request' ? `Expense request ${expenseRequestNo} created for ${currency(expenseAmount)}.` : `${stage.name}: ${action}`,
           userId: user.id,
           userName: user.name,
-          metadata: { fromStep: stage.name, destination, comment, transactionReference: transactionReference || null, expenseRequestNo: expenseRequestNo || null, verificationChecklist: action === 'Verify' ? VERIFICATION_CHECKLIST : null },
+          metadata: { fromStep: stage.name, destination, comment, transactionReference: transactionReference || null, expenseRequestNo: expenseRequestNo || null, verificationChecklist: action === 'Verify' ? checkedChecklist : null },
           createdAt: Timestamp.now(),
         });
       });
@@ -404,7 +443,7 @@ export default function ProfessionalRecurringWorkflowStage({ stageId }: { stageI
         title: action === 'Create Expense Request' ? `Expense request ${expenseRequestNo} created` : `${action} completed`,
         description: destination === stage.name ? 'The item remains in your queue for the next action.' : `Moved to ${destination}.`,
       });
-      setSelected(null);
+      setSelectedId(null);
       setAction(null);
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Could not update the payment.';
@@ -432,23 +471,27 @@ export default function ProfessionalRecurringWorkflowStage({ stageId }: { stageI
   if (loading) return <div className="flex min-h-[50vh] items-center justify-center"><Loader2 className="h-7 w-7 animate-spin" /></div>;
   if (!stage) return <Card><CardContent className="py-16 text-center"><AlertTriangle className="mx-auto mb-3 h-9 w-9 text-amber-500" /><p className="font-semibold">Workflow step not found</p></CardContent></Card>;
 
-  const dueSoon = pending.filter(payment => paymentTiming(payment).daysUntilDue <= 3).length;
+  // A payment already paid (e.g. waiting at Receipt & Closure) has no due date left to miss, so
+  // only open obligations are timed — the status column applies the same rule.
+  const openTimings = pending.filter(payment => isOpenObligation(payment)).map(payment => paymentTiming(payment));
+  // Upcoming only: anything already past its due date is in grace or overdue, not "due soon".
+  const dueSoon = openTimings.filter(timing => timing.daysUntilDue >= 0 && timing.daysUntilDue <= 3).length;
   // Counted on the same rule the status column uses, so this tile can't say "Overdue: 2" about
   // rows the register still shows as in good standing inside their grace period.
-  const overdue = pending.filter(payment => paymentTiming(payment).isOverdue).length;
+  const overdue = openTimings.filter(timing => timing.isOverdue).length;
   return <div className="space-y-5">
     <PageHeader eyebrow={`Recurring payment workflow · Step ${stage.id}`} title={stage.name} description={stage.description} />
     <div className="grid grid-cols-3 gap-3"><StageMetric label="My queue" value={pending.length} /><StageMetric label="Due ≤ 3 days" value={dueSoon} /><StageMetric label="Overdue" value={overdue} /></div>
-    <Tabs defaultValue="pending"><TabsList><TabsTrigger value="pending">My pending tasks ({pending.length})</TabsTrigger><TabsTrigger value="completed">My completed tasks ({completed.length})</TabsTrigger></TabsList><TabsContent value="pending"><TaskTable rows={pending} stage={stage} title={`${stage.name} — awaiting my action`} description="Assigned to you and not yet actioned" onView={setSelected} onAction={(payment, nextAction) => { setSelected(payment); setAction(nextAction); }} /></TabsContent><TabsContent value="completed"><TaskTable rows={completed} stage={stage} title={`${stage.name} — actioned by me`} description="Payments you have already moved through this step" onView={setSelected} /></TabsContent></Tabs>
-    <ActionDialog payment={selected} stage={stage} action={action} canAct={!!selected && pending.some(item => item.id === selected.id)} onAction={setAction} onClose={() => { setSelected(null); setAction(null); }} onSubmit={perform} working={working} departments={departments} accountHeads={accountHeads} subAccountHeads={subAccountHeads} submitBillField={submitBillField} activeChecklist={activeChecklist} recordPaymentField={recordPaymentField} expenseField={expenseField} commonField={commonField} />
+    <Tabs defaultValue="pending"><TabsList><TabsTrigger value="pending">My pending tasks ({pending.length})</TabsTrigger><TabsTrigger value="completed">My completed tasks ({completed.length})</TabsTrigger></TabsList><TabsContent value="pending"><TaskTable rows={pending} stage={stage} title={`${stage.name} — awaiting my action`} description="Assigned to you and not yet actioned" onView={payment => setSelectedId(payment.id)} onAction={(payment, nextAction) => { setSelectedId(payment.id); setAction(nextAction); }} /></TabsContent><TabsContent value="completed"><TaskTable rows={completed} stage={stage} title={`${stage.name} — actioned by me`} description="Payments you have already moved through this step" onView={payment => setSelectedId(payment.id)} /></TabsContent></Tabs>
+    <ActionDialog payment={selected} stage={stage} action={action} canAct={!!selected && pending.some(item => item.id === selected.id)} onAction={setAction} onClose={() => { setSelectedId(null); setAction(null); }} onSubmit={perform} working={working} departments={departments} accountHeads={accountHeads} subAccountHeads={subAccountHeads} submitBillField={submitBillField} activeChecklist={activeChecklist} recordPaymentField={recordPaymentField} expenseField={expenseField} commonField={commonField} requireTransactionReference={settings.controls.requireTransactionReference} />
   </div>;
 }
 
 function TaskTable({ rows, stage, title, description, onView, onAction }: { rows: PaymentObligation[]; stage: RecurringWorkflowStep; title: string; description: string; onView: (payment: PaymentObligation) => void; onAction?: (payment: PaymentObligation, action: string) => void }) {
-  return <TableCard title={title} description={description} count={rows.length} noun="task"><Table><TableHeader><TableRow><TableHead>Payment</TableHead><TableHead>Category</TableHead><TableHead>Vendor</TableHead><TableHead>Due date</TableHead><TableHead>Status</TableHead><TableHead className="text-right">Amount</TableHead><TableHead>Variance</TableHead><TableHead>SLA deadline</TableHead><TableHead className="text-right">Actions</TableHead></TableRow></TableHeader><TableBody>{rows.length ? rows.map(payment => <TableRow key={payment.id} className="cursor-pointer" onClick={() => onView(payment)}><TableCell className="whitespace-nowrap"><div className="flex items-center gap-2">{payment.varianceWarning && <AlertTriangle className="h-4 w-4 text-amber-500" />}<span className="font-medium">{payment.title}</span></div></TableCell><TableCell className="whitespace-nowrap">{payment.category}</TableCell><TableCell className="whitespace-nowrap">{payment.vendorName}</TableCell><TableCell className="whitespace-nowrap">{payment.dueDate}</TableCell><TableCell className="whitespace-nowrap"><StatusBadge tone={paymentTiming(payment).isOverdue ? 'danger' : paymentTiming(payment).withinGrace ? 'warning' : 'neutral'}>{paymentTiming(payment).label}</StatusBadge></TableCell><TableCell className="whitespace-nowrap text-right tabular-nums">{currency(payment.billAmount || payment.expectedAmount)}</TableCell><TableCell className="whitespace-nowrap"><StatusBadge tone={payment.varianceWarning ? 'danger' : 'neutral'}>{payment.varianceWarning ? `${Number(payment.variancePercent || 0).toFixed(1)}% variance` : 'Normal'}</StatusBadge></TableCell><TableCell className="whitespace-nowrap">{formatTimestamp(payment.workflowDeadline)}</TableCell><TableCell className="whitespace-nowrap text-right">{onAction ? <DropdownMenu><DropdownMenuTrigger asChild><Button size="icon" variant="ghost" onClick={event => event.stopPropagation()}><MoreHorizontal className="h-4 w-4" /></Button></DropdownMenuTrigger><DropdownMenuContent align="end">{stage.actions.map(item => <DropdownMenuItem key={item} onSelect={() => onAction(payment, item)}>{item}</DropdownMenuItem>)}</DropdownMenuContent></DropdownMenu> : <Button variant="ghost" size="icon"><Eye className="h-4 w-4" /></Button>}</TableCell></TableRow>) : <TableRow><TableCell colSpan={9} className="h-36 text-center text-muted-foreground"><CheckCircle2 className="mx-auto mb-2 h-8 w-8 text-emerald-400" />No tasks in this queue.</TableCell></TableRow>}</TableBody></Table></TableCard>;
+  return <TableCard title={title} description={description} count={rows.length} noun="task"><Table><TableHeader><TableRow><TableHead>Payment</TableHead><TableHead>Category</TableHead><TableHead>Vendor</TableHead><TableHead>Due date</TableHead><TableHead>Status</TableHead><TableHead className="text-right">Amount</TableHead><TableHead>Variance</TableHead><TableHead>SLA deadline</TableHead><TableHead className="text-right">Actions</TableHead></TableRow></TableHeader><TableBody>{rows.length ? rows.map(payment => <TableRow key={payment.id} className="cursor-pointer" onClick={() => onView(payment)}><TableCell className="whitespace-nowrap"><div className="flex items-center gap-2">{payment.varianceWarning && <AlertTriangle className="h-4 w-4 text-amber-500" />}<span className="font-medium">{payment.title}</span></div></TableCell><TableCell className="whitespace-nowrap">{payment.category}</TableCell><TableCell className="whitespace-nowrap">{payment.vendorName}</TableCell><TableCell className="whitespace-nowrap">{payment.dueDate}</TableCell><TableCell className="whitespace-nowrap">{isOpenObligation(payment) ? <StatusBadge tone={paymentTiming(payment).isOverdue ? 'danger' : paymentTiming(payment).withinGrace ? 'warning' : 'neutral'}>{paymentTiming(payment).label}</StatusBadge> : <StatusBadge status={payment.status} />}</TableCell><TableCell className="whitespace-nowrap text-right tabular-nums">{currency(payment.billAmount || payment.expectedAmount)}</TableCell><TableCell className="whitespace-nowrap"><StatusBadge tone={payment.varianceWarning ? 'danger' : 'neutral'}>{payment.varianceWarning ? `${Number(payment.variancePercent || 0).toFixed(1)}% variance` : 'Normal'}</StatusBadge></TableCell><TableCell className="whitespace-nowrap">{formatTimestamp(payment.workflowDeadline)}</TableCell><TableCell className="whitespace-nowrap text-right">{onAction ? <DropdownMenu><DropdownMenuTrigger asChild><Button size="icon" variant="ghost" onClick={event => event.stopPropagation()}><MoreHorizontal className="h-4 w-4" /></Button></DropdownMenuTrigger><DropdownMenuContent align="end">{stage.actions.map(item => <DropdownMenuItem key={item} onSelect={() => onAction(payment, item)}>{item}</DropdownMenuItem>)}</DropdownMenuContent></DropdownMenu> : <Button variant="ghost" size="icon"><Eye className="h-4 w-4" /></Button>}</TableCell></TableRow>) : <TableRow><TableCell colSpan={9} className="h-36 text-center text-muted-foreground"><CheckCircle2 className="mx-auto mb-2 h-8 w-8 text-emerald-400" />No tasks in this queue.</TableCell></TableRow>}</TableBody></Table></TableCard>;
 }
 
-function ActionDialog({ payment, stage, action, canAct, onAction, onClose, onSubmit, working, departments, accountHeads, subAccountHeads, submitBillField, activeChecklist, recordPaymentField, expenseField, commonField }: { payment: PaymentObligation | null; stage: RecurringWorkflowStep; action: string | null; canAct: boolean; onAction: (action: string | null) => void; onClose: () => void; onSubmit: (event: React.FormEvent<HTMLFormElement>) => void; working: boolean; departments: Department[]; accountHeads: AccountHead[]; subAccountHeads: SubAccountHead[]; submitBillField: (key: string) => RPFieldSetting; activeChecklist: { key: string; label: string; required: boolean; visible: boolean }[]; recordPaymentField: (key: string) => RPFieldSetting; expenseField: (key: string) => RPFieldSetting; commonField: (key: string) => RPFieldSetting }) {
+function ActionDialog({ payment, stage, action, canAct, onAction, onClose, onSubmit, working, departments, accountHeads, subAccountHeads, submitBillField, activeChecklist, recordPaymentField, expenseField, commonField, requireTransactionReference }: { payment: PaymentObligation | null; stage: RecurringWorkflowStep; action: string | null; canAct: boolean; onAction: (action: string | null) => void; onClose: () => void; onSubmit: (event: React.FormEvent<HTMLFormElement>) => void; working: boolean; departments: Department[]; accountHeads: AccountHead[]; subAccountHeads: SubAccountHead[]; submitBillField: (key: string) => RPFieldSetting; activeChecklist: { key: string; label: string; required: boolean; visible: boolean }[]; recordPaymentField: (key: string) => RPFieldSetting; expenseField: (key: string) => RPFieldSetting; commonField: (key: string) => RPFieldSetting; requireTransactionReference: boolean }) {
   // Drives which of the mode-specific fields below (bank account / UTR / cheque number) are
   // shown for "Record Payment" — a cash payment has none of these, so showing them unconditionally
   // just confused whoever was recording the payment into thinking they were required.
@@ -462,28 +505,29 @@ function ActionDialog({ payment, stage, action, canAct, onAction, onClose, onSub
     {payment.varianceWarning && <div className="flex gap-3 rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900"><AlertTriangle className="h-5 w-5 shrink-0" /><div><p className="font-semibold">Amount variance requires review</p><p>{Number(payment.variancePercent || 0).toFixed(1)}% against baseline {currency(payment.varianceBaseline || payment.expectedAmount)}{payment.amountLimitExceeded&&payment.maximumAmount?` and above the ${currency(payment.maximumAmount)} master limit`:''}. Verification and approval comments are mandatory.</p></div></div>}
     <div><Label>Workflow history</Label><div className="mt-2 max-h-48 space-y-2 overflow-y-auto">{(payment.workflowHistory || []).map((item, index) => <div key={index} className="flex gap-3 rounded-lg border p-3 text-sm"><ShieldCheck className="mt-0.5 h-4 w-4 text-indigo-500" /><div><p className="font-medium">{item.action} · {item.stepName}</p><p className="text-xs text-muted-foreground">{item.userName}{item.comment ? ` — ${item.comment}` : ''} · {formatTimestamp(item.timestamp)}</p></div></div>)}{!(payment.workflowHistory || []).length && <p className="text-sm text-muted-foreground">Workflow has just started.</p>}</div></div>
     {canAct && (!action ? <div className="flex flex-wrap gap-2 border-t pt-4">{stage.actions.map(item => <Button key={item} variant={['Reject', 'Payment Failed'].includes(item) ? 'destructive' : 'default'} onClick={() => onAction(item)}>{item}</Button>)}</div> : <form onSubmit={onSubmit} className="space-y-4 border-t pt-4"><p className="font-semibold">Action: {action}</p>
-      {action === 'Submit Bill' && <div className="grid gap-3 sm:grid-cols-3"><ControlledField setting={submitBillField('billNumber')}><Input name="billNumber" defaultValue={payment.billNumber || ''} required /></ControlledField><ControlledField setting={submitBillField('billReceivedDate')}><Input name="billReceivedDate" type="date" defaultValue={payment.billReceivedDate || recurringDateOnly(new Date())} required /></ControlledField><ControlledField setting={submitBillField('billAmount')}><Input name="billAmount" type="number" min="0.01" step="0.01" defaultValue={payment.billAmount || payment.expectedAmount} required /></ControlledField></div>}
-      {action === 'Verify' && <div className="space-y-3 rounded-xl border bg-muted/20 p-4"><div><p className="font-semibold">Bill verification checklist</p><p className="text-xs text-muted-foreground">Confirm every required control. The completed checklist is captured in the audit record.</p></div><div className="grid gap-3 sm:grid-cols-2">{activeChecklist.map(item => <label key={item.key} className="flex items-start gap-2 rounded-lg border bg-background p-3 text-sm"><Checkbox name="verificationChecklist" value={item.label} required={item.required} className="mt-0.5" /><span>{item.label}{item.required && <span className="text-destructive"> *</span>}</span></label>)}</div></div>}
-      {action === 'Record Payment' && <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+      {action === 'Submit Bill' && <div className="grid grid-cols-1 gap-3 sm:grid-cols-3"><ControlledField setting={submitBillField('billNumber')}><Input name="billNumber" defaultValue={payment.billNumber || ''} required /></ControlledField><ControlledField setting={submitBillField('billReceivedDate')}><Input name="billReceivedDate" type="date" defaultValue={payment.billReceivedDate || recurringDateOnly(new Date())} required /></ControlledField><ControlledField setting={submitBillField('billAmount')}><Input name="billAmount" type="number" min="0.01" step="0.01" defaultValue={payment.billAmount || payment.expectedAmount} required /></ControlledField></div>}
+      {action === 'Verify' && <div className="space-y-3 rounded-xl border bg-muted/20 p-4"><div><p className="font-semibold">Bill verification checklist</p><p className="text-xs text-muted-foreground">Confirm every required control. The completed checklist is captured in the audit record.</p></div><div className="grid grid-cols-1 gap-3 sm:grid-cols-2">{activeChecklist.map(item => <label key={item.key} className="flex items-start gap-2 rounded-lg border bg-background p-3 text-sm"><Checkbox name="verificationChecklist" value={item.label} required={item.required} className="mt-0.5" /><span>{item.label}{item.required && <span className="text-destructive"> *</span>}</span></label>)}</div></div>}
+      {action === 'Record Payment' && <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
         <ControlledField setting={recordPaymentField('paymentDate')}><Input name="paymentDate" type="date" defaultValue={recurringDateOnly(new Date())} required /></ControlledField>
         <ControlledField setting={recordPaymentField('paymentAmount')}><Input name="paymentAmount" type="number" min="0.01" step="0.01" max={outstanding || undefined} required /></ControlledField>
         {recordPaymentField('mode').visible && <ControlledField setting={recordPaymentField('mode')}><Select name="mode" value={paymentMode} onValueChange={value => setPaymentMode(value as PaymentMode)}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent>{PAYMENT_MODES.map(mode => <SelectItem value={mode} key={mode}>{mode}</SelectItem>)}</SelectContent></Select></ControlledField>}
         {/* Bank account and UTR/transaction reference only apply once money actually moves
             through a bank — a cash payment has neither, so they're hidden rather than shown
             as fields nobody knows how to fill in. These three are locked in Field Control because
-            the step's own logic already hard-requires them for the applicable payment modes. */}
+            the step's own logic already hard-requires them for the applicable payment modes — the
+            reference following Settings' "require transaction reference", as the submit check does. */}
         {paymentMode !== 'Cash' && <ControlledField setting={recordPaymentField('bankAccount')}><Input name="bankAccount" required={BANK_ACCOUNT_REQUIRED_MODES.includes(paymentMode)} /></ControlledField>}
         {paymentMode === 'Cheque' && <ControlledField setting={recordPaymentField('chequeNumber')}><Input name="chequeNumber" required /></ControlledField>}
         {paymentMode === 'Cash'
           ? <ControlledField setting={{ ...recordPaymentField('transactionReference'), required: false, label: 'Cash voucher / receipt no.' }}><Input name="transactionReference" /></ControlledField>
-          : <ControlledField setting={recordPaymentField('transactionReference')}><Input name="transactionReference" required={BANK_ACCOUNT_REQUIRED_MODES.includes(paymentMode)} /></ControlledField>}
+          : <ControlledField setting={{ ...recordPaymentField('transactionReference'), required: requireTransactionReference }}><Input name="transactionReference" required={requireTransactionReference} /></ControlledField>}
         <ControlledField setting={recordPaymentField('tdsAmount')}><Input name="tdsAmount" type="number" min="0" defaultValue="0" required={recordPaymentField('tdsAmount').required} /></ControlledField>
         <ControlledField setting={recordPaymentField('gstAmount')}><Input name="gstAmount" type="number" min="0" defaultValue="0" required={recordPaymentField('gstAmount').required} /></ControlledField>
         <ControlledField setting={recordPaymentField('deductionAmount')}><Input name="deductionAmount" type="number" min="0" defaultValue="0" required={recordPaymentField('deductionAmount').required} /></ControlledField>
         <ControlledField setting={recordPaymentField('adjustmentAmount')}><Input name="adjustmentAmount" type="number" defaultValue="0" required={recordPaymentField('adjustmentAmount').required} /></ControlledField>
         <ControlledField setting={recordPaymentField('receiptFile')}><Input name="receiptFile" type="file" accept=".pdf,.png,.jpg,.jpeg,.webp" required={recordPaymentField('receiptFile').required} /></ControlledField>
       </div>}
-      {action === 'Create Expense Request' && <div className="grid gap-3 rounded-xl border bg-muted/20 p-4 sm:grid-cols-2">
+      {action === 'Create Expense Request' && <div className="grid grid-cols-1 gap-3 rounded-xl border bg-muted/20 p-4 sm:grid-cols-2">
         <ControlledField setting={expenseField('expenseDepartmentId')}><Select name="expenseDepartmentId" defaultValue={payment.departmentId || undefined}><SelectTrigger><SelectValue placeholder="Select department" /></SelectTrigger><SelectContent>{departments.map(item => <SelectItem value={item.id} key={item.id}>{item.name}</SelectItem>)}</SelectContent></Select></ControlledField>
         <ControlledField setting={expenseField('expensePartyName')}><Input name="expensePartyName" defaultValue={payment.vendorName} required={expenseField('expensePartyName').required} /></ControlledField>
         <ControlledField setting={expenseField('expenseAmount')}><Input name="expenseAmount" type="number" min="0.01" step="0.01" defaultValue={payment.billAmount || payment.expectedAmount} required /></ControlledField>
@@ -491,7 +535,7 @@ function ActionDialog({ payment, stage, action, canAct, onAction, onClose, onSub
         <ControlledField setting={expenseField('expenseSubHeadOfAccount')}><Select name="expenseSubHeadOfAccount"><SelectTrigger><SelectValue placeholder="Select sub-head" /></SelectTrigger><SelectContent>{subAccountHeads.map(item => <SelectItem value={item.name} key={item.id}>{item.name}</SelectItem>)}</SelectContent></Select></ControlledField>
         <div className="sm:col-span-2"><ControlledField setting={expenseField('expenseDescription')}><Textarea name="expenseDescription" defaultValue={payment.description || payment.title} required={expenseField('expenseDescription').required} /></ControlledField></div>
       </div>}
-      {stage.uploadRequired && !['Reject', 'On Hold', 'Dispute', 'Payment Failed', 'Return for Correction'].includes(action) && <div className="grid gap-3 rounded-lg border p-3 sm:grid-cols-2"><ControlledField setting={commonField('documentFile')}><Input name="documentFile" type="file" accept=".pdf,.png,.jpg,.jpeg,.webp,.doc,.docx" /></ControlledField><ControlledField setting={commonField('documentReference')}><Input name="documentReference" placeholder="URL or document number" /></ControlledField></div>}
+      {stage.uploadRequired && !['Reject', 'On Hold', 'Dispute', 'Payment Failed', 'Return for Correction'].includes(action) && <div className="grid grid-cols-1 gap-3 rounded-lg border p-3 sm:grid-cols-2"><ControlledField setting={commonField('documentFile')}><Input name="documentFile" type="file" accept=".pdf,.png,.jpg,.jpeg,.webp,.doc,.docx" /></ControlledField><ControlledField setting={commonField('documentReference')}><Input name="documentReference" placeholder="URL or document number" /></ControlledField></div>}
       <ControlledField setting={{ ...commonField('comment'), required: COMMENT_REQUIRED.includes(action) || !!(payment.varianceWarning && ['Verify', 'Approve'].includes(action)) }}><Textarea name="comment" placeholder="Add clear remarks for the audit trail" /></ControlledField>
       <div className="flex justify-end gap-2"><Button type="button" variant="outline" onClick={() => onAction(null)}>Back</Button><Button disabled={working}>{working && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}Confirm {action}</Button></div>
     </form>)}

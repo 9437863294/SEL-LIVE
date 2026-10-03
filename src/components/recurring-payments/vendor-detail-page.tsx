@@ -9,7 +9,7 @@ import { db } from '@/lib/firebase';
 import { useAuth } from '@/components/auth/AuthProvider';
 import { useAuthorization } from '@/hooks/useAuthorization';
 import { useToast } from '@/hooks/use-toast';
-import { type PaymentObligation, RP_COLLECTIONS, currency, maskAccount, visibleObligations } from '@/lib/recurring-payments';
+import { type PaymentObligation, RP_COLLECTIONS, currency, isOpenObligation, maskAccount, outstandingAmountOf, visibleObligations } from '@/lib/recurring-payments';
 import type { RecurringVendor } from './vendor-management';
 import { StatusBadge } from '@/components/shared/status-badge';
 import { Button } from '@/components/ui/button';
@@ -51,13 +51,18 @@ export default function VendorDetailPage({ vendorId }: { vendorId: string }) {
   }, [organizationId, vendorId]);
 
   const payments = allPayments.filter(item => item.vendorName === vendor?.name);
-  const outstanding = payments.filter(item => !['Paid', 'Closed', 'Cancelled', 'Waived'].includes(item.status));
+  const outstanding = payments.filter(isOpenObligation);
 
   async function toggle() {
     if (!vendor) return;
     const status = vendor.status === 'Active' ? 'Inactive' : 'Active';
-    await updateDoc(doc(db, RP_COLLECTIONS.vendors, vendor.id), { status, updatedAt: serverTimestamp() });
-    toast({ title: `Vendor ${status.toLowerCase()}` });
+    if (status === 'Inactive' && !window.confirm(`Deactivate ${vendor.name}? Its existing payments and history are kept.`)) return;
+    try {
+      await updateDoc(doc(db, RP_COLLECTIONS.vendors, vendor.id), { status, updatedAt: serverTimestamp() });
+      toast({ title: `Vendor ${status.toLowerCase()}` });
+    } catch {
+      toast({ title: `Vendor could not be ${status === 'Active' ? 'activated' : 'deactivated'}`, variant: 'destructive' });
+    }
   }
 
   if (loading) return <div className="flex min-h-[45vh] items-center justify-center"><Loader2 className="h-7 w-7 animate-spin" /></div>;
@@ -72,10 +77,10 @@ export default function VendorDetailPage({ vendorId }: { vendorId: string }) {
       description={`${vendor.code || vendor.id} · ${vendor.category || 'General vendor'}`}
       actions={can('Edit', 'Recurring Payments.Vendors') ? <><Link href={`/recurring-payments/vendors/${vendor.id}/edit`}><Button variant="outline"><Edit3 className="mr-2 h-4 w-4" />Edit</Button></Link><Button variant="outline" onClick={toggle}><Power className="mr-2 h-4 w-4" />{vendor.status === 'Active' ? 'Deactivate' : 'Activate'}</Button></> : undefined}
     />
-    <div className="grid grid-cols-1 gap-3 sm:grid-cols-3"><Metric label="Payment records" value={String(payments.length)} /><Metric label="Outstanding records" value={String(outstanding.length)} /><Metric label="Outstanding value" value={currency(outstanding.reduce((sum, item) => sum + Math.max(0, (item.billAmount || item.expectedAmount) - (item.settledAmount || item.paidAmount)), 0))} /></div>
+    <div className="grid grid-cols-1 gap-3 sm:grid-cols-3"><Metric label="Payment records" value={String(payments.length)} /><Metric label="Outstanding records" value={String(outstanding.length)} /><Metric label="Outstanding value" value={currency(outstanding.reduce((sum, item) => sum + outstandingAmountOf(item), 0))} /></div>
     <Tabs defaultValue="overview"><TabsList className="flex h-auto"><TabsTrigger value="overview">Overview</TabsTrigger><TabsTrigger value="bank">Bank details</TabsTrigger><TabsTrigger value="payments">Payment history</TabsTrigger><TabsTrigger value="outstanding">Outstanding</TabsTrigger><TabsTrigger value="audit">Audit log</TabsTrigger></TabsList>
-      <TabsContent value="overview"><Card><CardContent className="grid gap-4 p-5 sm:grid-cols-2 lg:grid-cols-3"><Info label="GSTIN" value={vendor.gstin || '—'} /><Info label="PAN" value={vendor.pan || '—'} /><Info label="Contact person" value={vendor.contactPerson || '—'} /><Info label="Mobile" value={vendor.mobile || '—'} /><Info label="Email" value={vendor.email || '—'} /><Info label="Payment terms" value={vendor.paymentTerms || '—'} /><div className="sm:col-span-2 lg:col-span-3"><Info label="Address" value={vendor.address || '—'} /></div></CardContent></Card></TabsContent>
-      <TabsContent value="bank"><Card><CardContent className="grid gap-4 p-5 sm:grid-cols-3"><Info label="Bank name" value={vendor.bankName || '—'} /><Info label="Masked account" value={maskAccount(vendor.maskedAccountNumber) || '—'} /><Info label="IFSC" value={vendor.ifsc || '—'} /></CardContent></Card></TabsContent>
+      <TabsContent value="overview"><Card><CardContent className="grid grid-cols-1 gap-4 p-5 sm:grid-cols-2 lg:grid-cols-3"><Info label="GSTIN" value={vendor.gstin || '—'} /><Info label="PAN" value={vendor.pan || '—'} /><Info label="Contact person" value={vendor.contactPerson || '—'} /><Info label="Mobile" value={vendor.mobile || '—'} /><Info label="Email" value={vendor.email || '—'} /><Info label="Payment terms" value={vendor.paymentTerms || '—'} /><div className="sm:col-span-2 lg:col-span-3"><Info label="Address" value={vendor.address || '—'} /></div></CardContent></Card></TabsContent>
+      <TabsContent value="bank"><Card><CardContent className="grid grid-cols-1 gap-4 p-5 sm:grid-cols-3"><Info label="Bank name" value={vendor.bankName || '—'} /><Info label="Masked account" value={maskAccount(vendor.maskedAccountNumber) || '—'} /><Info label="IFSC" value={vendor.ifsc || '—'} /></CardContent></Card></TabsContent>
       <TabsContent value="payments"><PaymentTable rows={payments} onOpen={id => router.push(`/recurring-payments/payments/${id}`)} /></TabsContent>
       <TabsContent value="outstanding"><PaymentTable rows={outstanding} onOpen={id => router.push(`/recurring-payments/payments/${id}`)} /></TabsContent>
       <TabsContent value="audit"><Card><CardContent className="space-y-3 p-5">{audit.map(item => <div className="rounded-xl border p-3" key={item.id}><p className="font-medium">{item.action}</p><p className="text-sm text-muted-foreground">{item.summary}</p><p className="text-xs text-muted-foreground">{item.userName} · {formatTimestamp(item.createdAt)}</p></div>)}{!audit.length && <p className="py-8 text-center text-sm text-muted-foreground">No vendor audit history.</p>}</CardContent></Card></TabsContent>
@@ -84,6 +89,6 @@ export default function VendorDetailPage({ vendorId }: { vendorId: string }) {
 }
 
 function Metric({ label, value }: { label: string; value: string }) { return <Card><CardContent className="p-4"><p className="text-xs text-muted-foreground">{label}</p><p className="mt-1 text-xl font-bold">{value}</p></CardContent></Card>; }
-function Info({ label, value }: { label: string; value: string }) { return <div className="rounded-xl border bg-muted/20 p-3"><p className="text-xs text-muted-foreground">{label}</p><p className="mt-1 font-medium">{value}</p></div>; }
+function Info({ label, value }: { label: string; value: string }) { return <div className="min-w-0 rounded-xl border bg-muted/20 p-3"><p className="text-xs text-muted-foreground">{label}</p><p className="mt-1 break-words font-medium">{value}</p></div>; }
 function PaymentTable({ rows, onOpen }: { rows: PaymentObligation[]; onOpen: (id: string) => void }) { return <TableCard title="Payment obligations" description="Obligations raised against this vendor" count={rows.length} noun="payment"><Table><TableHeader><TableRow><TableHead>Payment</TableHead><TableHead>Due date</TableHead><TableHead className="text-right">Amount</TableHead><TableHead>Status</TableHead></TableRow></TableHeader><TableBody>{rows.map(item => <TableRow key={item.id} className="cursor-pointer" onClick={() => onOpen(item.id)}><TableCell>{item.title}</TableCell><TableCell>{item.dueDate}</TableCell><TableCell className="text-right">{currency(item.billAmount || item.expectedAmount)}</TableCell><TableCell><StatusBadge status={item.status} /></TableCell></TableRow>)}{!rows.length && <TableRow><TableCell colSpan={4} className="h-24 text-center text-muted-foreground">No payments found.</TableCell></TableRow>}</TableBody></Table></TableCard>; }
 function formatTimestamp(value: unknown) { const timestamp = value as { toDate?: () => Date; seconds?: number } | null; if (timestamp?.toDate) return timestamp.toDate().toLocaleString('en-IN'); if (timestamp?.seconds) return new Date(timestamp.seconds * 1000).toLocaleString('en-IN'); return '—'; }

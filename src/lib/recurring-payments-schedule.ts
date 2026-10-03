@@ -450,13 +450,38 @@ export function pendingRecurringCycles(
  * generating it produces an obligation for a period the vendor hasn't billed while the closed
  * period whose bill is already due stays missing. Automation resolves that through
  * `pendingRecurringCycles`; routing every manual path through here keeps the two in agreement.
+ *
+ * Pass `isGenerated` wherever the caller knows which obligations already exist — which is every
+ * caller that writes or displays a "next" cycle. Without it the answer is simply the *oldest*
+ * pending cycle, and the pending window reaches three cycles back: a master running since January
+ * answered July on 3 October, long after the cron had generated July. "Generate now" then refused
+ * with "already exists" while September stayed missing, and the register's Next Due column showed
+ * a due date two months stale. With it, the answer is the earliest cycle still missing an
+ * obligation, or — once every due cycle exists — the next cycle that does not, so "Generate now"
+ * creates the upcoming obligation early rather than offering nothing.
  */
 export function actionableRecurringCycle(
   master: RecurrenceRuleInput,
   asOf = new Date(),
-  options: RecurrenceOptions = {},
+  options: RecurrenceOptions & { isGenerated?: (cycle: RecurringCycle) => boolean } = {},
 ): RecurringCycle | null {
-  return pendingRecurringCycles(master, asOf, options)[0] || buildRecurringCycle(master, asOf, options);
+  const pending = pendingRecurringCycles(master, asOf, options);
+  const current = buildRecurringCycle(master, asOf, options);
+  const { isGenerated } = options;
+  if (!isGenerated) return pending[0] || current;
+  const missing = pending.find((cycle) => !isGenerated(cycle));
+  if (missing) return missing;
+  // Outside the master's date range there is nothing to offer, generated or not.
+  if (!current) return null;
+  const firstIndex = pending.length ? pending[pending.length - 1].index + 1 : current.index;
+  // Bounded: a master generated far ahead by hand still terminates, past which "nothing to
+  // generate" is the honest answer.
+  for (let index = firstIndex; index < firstIndex + 24; index += 1) {
+    const cycle = buildCycleAtIndex(master, index, options);
+    if (!cycle) return null;
+    if (!isGenerated(cycle)) return cycle;
+  }
+  return null;
 }
 
 /** One-line plain-English summary of a master's schedule rules, shown wherever the schedule is configured or reviewed. */

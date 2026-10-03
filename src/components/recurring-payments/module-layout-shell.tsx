@@ -103,10 +103,16 @@ export default function RecurringPaymentsLayoutShell({ children }: { children: R
 
   useEffect(
     () =>
-      onSnapshot(doc(db, 'workflows', 'recurring-payments-workflow'), (snapshot) => {
-        const steps = snapshot.data()?.steps as RecurringWorkflowStep[] | undefined;
-        if (steps?.length) setWorkflowSteps(steps);
-      }),
+      onSnapshot(
+        doc(db, 'workflows', 'recurring-payments-workflow'),
+        (snapshot) => {
+          const steps = snapshot.data()?.steps as RecurringWorkflowStep[] | undefined;
+          if (steps?.length) setWorkflowSteps(steps);
+        },
+        // A failed read keeps the steps already shown (the default workflow at worst), so the
+        // sidebar stays usable instead of surfacing an uncaught listener error.
+        (error) => console.warn('Recurring payments workflow could not be loaded for the sidebar', error),
+      ),
     [],
   );
 

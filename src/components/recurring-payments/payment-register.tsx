@@ -4,6 +4,7 @@ import { Suspense, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import {
+  arrayUnion,
   collection,
   doc,
   getDocs,
@@ -12,6 +13,7 @@ import {
   query,
   runTransaction,
   serverTimestamp,
+  Timestamp,
   where,
   writeBatch,
 } from "firebase/firestore";
@@ -44,18 +46,28 @@ import { useAuth } from "@/components/auth/AuthProvider";
 import { useAuthorization } from "@/hooks/useAuthorization";
 import { useToast } from "@/hooks/use-toast";
 import {
+  CONCLUDED_PAYMENT_STATUSES,
+  DEFAULT_RECURRING_PAYMENT_SETTINGS,
   PaymentMode,
   PaymentObligation,
+  PaymentStatus,
   PaymentTransaction,
   RecurringPaymentAuditLog,
+  RecurringPaymentSettings,
   RP_COLLECTIONS,
   currency,
   effectiveStatus,
+  hasPaymentProof,
   isObligationEditable,
+  isOpenObligation,
+  mergeRecurringPaymentSettings,
+  obligationAmountOf,
+  outstandingAmountOf,
   paymentTiming,
   recurringDateOnly,
   visibleObligations,
 } from "@/lib/recurring-payments";
+import { syncRecurringPaymentApprovalInBackground } from "@/lib/recurring-payments-e-approval-service";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { PageHeader } from "@/components/shared/page-header";
@@ -147,14 +159,27 @@ function filtersFromQuery(params: URLSearchParams): Filters {
 
 /** Whether a Paid/Closed obligation is missing its payment proof. Mirrors the dashboard tile. */
 function isMissingReceipt(payment: PaymentObligation): boolean {
-  return (
-    ["Paid", "Closed"].includes(payment.status) &&
-    !(payment.documentReferences || []).some((document) =>
-      ["Record Payment", "Close"].includes(document.action),
-    )
-  );
+  return ["Paid", "Closed"].includes(payment.status) && !hasPaymentProof(payment);
 }
-const finalStatuses = ["Paid", "Closed", "Cancelled", "Waived"];
+
+/**
+ * Whether a legacy (workflow-less) transaction may be recorded against an obligation, judged on its
+ * stored status rather than the Overdue overlay. A Draft has not been raised yet, and a concluded
+ * one has nothing left to pay — recording against a Rejected obligation used to flip it to Paid.
+ */
+function acceptsLegacyPayment(status: PaymentStatus): boolean {
+  return status !== "Draft" && !CONCLUDED_PAYMENT_STATUSES.includes(status);
+}
+
+/**
+ * Statuses that void the obligation: nothing is owed on them, so they contribute no outstanding
+ * balance and no register value — counting them would report money the organization will never pay.
+ */
+const VOIDED_STATUSES: PaymentStatus[] = ["Cancelled", "Waived", "Rejected"];
+const rowOutstanding = (payment: PaymentObligation) =>
+  VOIDED_STATUSES.includes(payment.status) ? 0 : outstandingAmountOf(payment);
+
+type RegisterRow = PaymentObligation & { rawStatus: PaymentStatus };
 
 function PaymentRegisterView() {
   const router = useRouter();
@@ -169,8 +194,33 @@ function PaymentRegisterView() {
   // Read once, as the initial state: the filter card stays fully editable afterwards, and a user
   // who clears a filter should not have it reinstated by the URL they arrived from.
   const [filters, setFilters] = useState<Filters>(() => filtersFromQuery(new URLSearchParams(searchParams?.toString() || "")));
-  const [selected, setSelected] = useState<PaymentObligation | null>(null);
+  // The id only — the row itself is read from the live snapshot below, so the detail and transaction
+  // dialogs show paid/outstanding as they stand after a transaction is recorded, not as they were.
+  const [selectedId, setSelectedId] = useState<string | null>(null);
   const [recordOpen, setRecordOpen] = useState(false);
+  const [settings, setSettings] = useState<RecurringPaymentSettings>({
+    ...DEFAULT_RECURRING_PAYMENT_SETTINGS,
+    organizationId,
+  });
+  useEffect(
+    () =>
+      onSnapshot(
+        doc(
+          db,
+          RP_COLLECTIONS.settings,
+          organizationId.replace(/[^a-zA-Z0-9_-]/g, "_"),
+        ),
+        (snapshot) =>
+          setSettings(
+            mergeRecurringPaymentSettings(
+              snapshot.data() as Partial<RecurringPaymentSettings> | undefined,
+              organizationId,
+            ),
+          ),
+        () => undefined,
+      ),
+    [organizationId],
+  );
   useEffect(
     () =>
       onSnapshot(
@@ -192,20 +242,29 @@ function PaymentRegisterView() {
       ),
     [organizationId],
   );
+  // The org's own variance threshold; 0 switches the fallback warning off.
+  const varianceThreshold = Number(settings.controls.varianceWarningPercent || 0);
   const normalized = useMemo(
-    () =>
+    (): RegisterRow[] =>
       payments.map((p) => {
         const baseline = p.expectedAmount || 0;
         const actual = p.billAmount || baseline;
         const variance = baseline ? ((actual - baseline) / baseline) * 100 : 0;
         return {
           ...p,
+          rawStatus: p.status,
           status: effectiveStatus(p),
           variancePercent: p.variancePercent ?? variance,
-          varianceWarning: p.varianceWarning ?? Math.abs(variance) >= 20,
+          varianceWarning:
+            p.varianceWarning ??
+            (varianceThreshold > 0 && Math.abs(variance) >= varianceThreshold),
         };
       }),
-    [payments],
+    [payments, varianceThreshold],
+  );
+  const selected = useMemo(
+    () => normalized.find((p) => p.id === selectedId) || null,
+    [normalized, selectedId],
   );
   const categories = useMemo(
     () =>
@@ -265,7 +324,11 @@ function PaymentRegisterView() {
   );
   const totals = useMemo(
     () => ({
-      due: rows.reduce((s, p) => s + (p.billAmount || p.expectedAmount), 0),
+      // Voided rows are excluded, matching their zero outstanding (see VOIDED_STATUSES).
+      due: rows.reduce(
+        (s, p) => s + (VOIDED_STATUSES.includes(p.status) ? 0 : obligationAmountOf(p)),
+        0,
+      ),
       paid: rows.reduce((s, p) => s + (p.paidAmount || 0), 0),
       overdue: rows.filter((p) => p.status === "Overdue").length,
       variance: rows.filter((p) => p.varianceWarning).length,
@@ -325,6 +388,7 @@ function PaymentRegisterView() {
         },
       );
       await batch.commit();
+      syncRecurringPaymentApprovalInBackground(payment.id, user);
       toast({ title: "Payment deleted and retained for audit" });
     } catch {
       toast({ title: "Payment could not be deleted", variant: "destructive" });
@@ -354,11 +418,7 @@ function PaymentRegisterView() {
         p.expectedAmount,
         p.billAmount || "",
         p.paidAmount,
-        Math.max(
-          0,
-          (p.billAmount || p.expectedAmount) -
-            (p.settledAmount || p.paidAmount),
-        ),
+        rowOutstanding(p),
         p.status,
         p.stage || "",
       ]),
@@ -587,11 +647,7 @@ function PaymentRegisterView() {
           </TableHeader>
           <TableBody>
             {rows.map((payment) => {
-              const outstanding = Math.max(
-                0,
-                (payment.billAmount || payment.expectedAmount) -
-                  (payment.settledAmount || payment.paidAmount),
-              );
+              const outstanding = rowOutstanding(payment);
               return (
                 <TableRow
                   key={payment.id}
@@ -626,7 +682,8 @@ function PaymentRegisterView() {
                     ).toLocaleDateString("en-IN")}
                   </TableCell>
                   <TableCell className="whitespace-nowrap">
-                    {paymentTiming(payment).label}
+                    {/* Timing only means something while money is still owed. */}
+                    {isOpenObligation(payment) ? paymentTiming(payment).label : "—"}
                   </TableCell>
                   <TableCell
                     className={`whitespace-nowrap text-right tabular-nums ${payment.varianceWarning ? "text-amber-600" : ""}`}
@@ -662,13 +719,13 @@ function PaymentRegisterView() {
                     <div className="flex items-center justify-end gap-1">
                       {canRecord &&
                         !payment.currentStepId &&
-                        !finalStatuses.includes(payment.status) && (
+                        acceptsLegacyPayment(payment.rawStatus) && (
                           <Button
                             size="sm"
                             variant="outline"
                             className="h-7 px-2 text-xs"
                             onClick={() => {
-                              setSelected(payment);
+                              setSelectedId(payment.id);
                               setRecordOpen(true);
                             }}
                           >
@@ -753,7 +810,7 @@ function PaymentRegisterView() {
         payment={selected}
         users={users}
         onClose={() => {
-          setSelected(null);
+          setSelectedId(null);
           setRecordOpen(false);
         }}
         canRecord={canRecord}
@@ -772,7 +829,7 @@ function PaymentDetail({
   recordOpen,
   setRecordOpen,
 }: {
-  payment: PaymentObligation | null;
+  payment: RegisterRow | null;
   users: Array<{ id: string; name: string }>;
   onClose: () => void;
   canRecord: boolean;
@@ -781,15 +838,18 @@ function PaymentDetail({
 }) {
   const [transactions, setTransactions] = useState<PaymentTransaction[]>([]);
   const [audit, setAudit] = useState<RecurringPaymentAuditLog[]>([]);
+  // Keyed on the id: `payment` is a fresh object on every register snapshot, and resubscribing to
+  // both subcollections on each one would be wasted reads.
+  const paymentId = payment?.id;
   useEffect(() => {
-    if (!payment) return;
+    if (!paymentId) return;
     const stops = [
       onSnapshot(
         query(
           collection(
             db,
             RP_COLLECTIONS.payments,
-            payment.id,
+            paymentId,
             RP_COLLECTIONS.transactions,
           ),
           orderBy("createdAt", "desc"),
@@ -806,7 +866,7 @@ function PaymentDetail({
           collection(
             db,
             RP_COLLECTIONS.payments,
-            payment.id,
+            paymentId,
             RP_COLLECTIONS.auditLogs,
           ),
           orderBy("createdAt", "desc"),
@@ -820,13 +880,10 @@ function PaymentDetail({
       ),
     ];
     return () => stops.forEach((stop) => stop());
-  }, [payment]);
+  }, [paymentId]);
   if (!payment) return null;
-  const amount = payment.billAmount || payment.expectedAmount;
-  const outstanding = Math.max(
-    0,
-    amount - (payment.settledAmount || payment.paidAmount),
-  );
+  const amount = obligationAmountOf(payment);
+  const outstanding = rowOutstanding(payment);
   return (
     <Dialog open onOpenChange={(open) => !open && onClose()}>
       <DialogContent className="max-h-[94vh] overflow-y-auto sm:max-w-5xl">
@@ -852,7 +909,7 @@ function PaymentDetail({
           </TabsList>
           <TabsContent
             value="overview"
-            className="grid gap-4 pt-3 sm:grid-cols-2"
+            className="grid grid-cols-1 gap-4 pt-3 sm:grid-cols-2"
           >
             <Info label="Category" value={payment.category} />
             <Info
@@ -907,7 +964,7 @@ function PaymentDetail({
             <div className="flex justify-end">
               {canRecord &&
                 !payment.currentStepId &&
-                !finalStatuses.includes(payment.status) && (
+                acceptsLegacyPayment(payment.rawStatus) && (
                   <Button onClick={() => setRecordOpen(true)}>
                     <Plus className="mr-2 h-4 w-4" />
                     Record legacy transaction
@@ -927,7 +984,7 @@ function PaymentDetail({
             {transactions.map((tx) => (
               <div
                 key={tx.id}
-                className="grid gap-2 rounded-xl border p-4 sm:grid-cols-[1fr_1fr_1fr_auto]"
+                className="grid grid-cols-1 gap-2 rounded-xl border p-4 sm:grid-cols-[1fr_1fr_1fr_auto]"
               >
                 <div>
                   <p className="font-medium">{tx.paymentDate}</p>
@@ -963,7 +1020,7 @@ function PaymentDetail({
           </TabsContent>
           <TabsContent
             value="documents"
-            className="grid gap-3 pt-3 sm:grid-cols-2"
+            className="grid grid-cols-1 gap-3 pt-3 sm:grid-cols-2"
           >
             {(payment.documentReferences || []).map((file, index) => (
               <a
@@ -1070,8 +1127,10 @@ function TransactionDialog({
           "This transaction reference is already recorded against the payment.",
         );
       let receiptUrl = "";
+      let receiptType = "";
       const receipt = form.get("receipt");
       if (receipt instanceof File && receipt.size) {
+        receiptType = receipt.type || receipt.name.split(".").pop() || "file";
         const safe = receipt.name.replace(/[^a-zA-Z0-9._-]/g, "_");
         const uploadRef = storageRef(
           storage,
@@ -1101,6 +1160,12 @@ function TransactionDialog({
         const snapshot = await transaction.get(paymentRef);
         if (!snapshot.exists()) throw new Error("Payment no longer exists.");
         const current = { id: snapshot.id, ...snapshot.data() } as PaymentObligation;
+        // Re-checked on the fresh copy: the obligation may have entered a workflow or concluded
+        // since this dialog opened.
+        if (current.currentStepId || !acceptsLegacyPayment(current.status))
+          throw new Error(
+            `A legacy transaction can no longer be recorded on this payment (${current.status}).`,
+          );
         const billAmount = current.billAmount || current.expectedAmount;
         const newSettled =
           (current.settledAmount || current.paidAmount || 0) + appliedAmount;
@@ -1124,7 +1189,7 @@ function TransactionDialog({
           paidByName: user.name,
           createdAt: serverTimestamp(),
         });
-        transaction.update(paymentRef, {
+        const paymentPatch: Record<string, unknown> = {
           paidAmount: (current.paidAmount || 0) + amount,
           settledAmount: newSettled,
           outstandingAmount: Math.max(0, billAmount - newSettled),
@@ -1132,7 +1197,26 @@ function TransactionDialog({
           paymentDate,
           transactionReference,
           updatedAt: serverTimestamp(),
-        });
+        };
+        // Registered as proof of payment too, so `hasPaymentProof` (register filter, dashboard
+        // tile, detail page) sees this receipt — same entry shape the workflow stage writes.
+        if (receiptUrl) {
+          const stepId = current.currentStepId || "";
+          paymentPatch.documentReferences = arrayUnion({
+            stepId,
+            action: "Record Payment",
+            reference: receiptUrl,
+            addedBy: user.id,
+            addedAt: Timestamp.now(),
+            category: "Payment Proof",
+            fileType: receiptType,
+            version:
+              (current.documentReferences || []).filter(
+                (item) => item.stepId === stepId && item.action === "Record Payment",
+              ).length + 1,
+          });
+        }
+        transaction.update(paymentRef, paymentPatch);
         transaction.set(auditRef, {
           organizationId: current.organizationId,
           paymentId: payment.id,
@@ -1171,16 +1255,10 @@ function TransactionDialog({
           <DialogTitle>Record payment transaction</DialogTitle>
           <DialogDescription>
             {payment.title} · outstanding{" "}
-            {currency(
-              Math.max(
-                0,
-                (payment.billAmount || payment.expectedAmount) -
-                  (payment.settledAmount || payment.paidAmount),
-              ),
-            )}
+            {currency(outstandingAmountOf(payment))}
           </DialogDescription>
         </DialogHeader>
-        <form onSubmit={submit} className="grid gap-4 sm:grid-cols-2">
+        <form onSubmit={submit} className="grid grid-cols-1 gap-4 sm:grid-cols-2">
           <Field label="Payment date">
             <Input
               name="paymentDate"

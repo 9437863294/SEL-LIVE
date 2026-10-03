@@ -336,6 +336,28 @@ test('manual generation falls back to the current cycle when nothing is pending'
   assert.equal(actionableRecurringCycle(utilityMaster, asOf('2026-08-01')), null);
 });
 
+test('manual generation skips cycles that already have an obligation', () => {
+  // Running since January, evaluated 3 Oct: July, August and September are all inside the pending
+  // window. Without knowing what exists, the answer is July — which the cron generated in August.
+  const master = { frequency: 'Monthly', startDate: '2026-01-01', billDateRule: 'End of billing period', dueDateRule: 'Days after bill date', dueDay: 15, generateLeadDays: 7 };
+  const today = asOf('2026-10-03');
+  assert.equal(actionableRecurringCycle(master, today).key, '2026-07', 'unchanged without the predicate');
+
+  const generated = new Set(['2026-07', '2026-08']);
+  const missing = actionableRecurringCycle(master, today, { isGenerated: (cycle) => generated.has(cycle.key) });
+  assert.equal(missing.key, '2026-09', 'the earliest cycle actually missing');
+  assert.equal(missing.dueDate, '2026-10-15');
+
+  // Everything due already exists: offer the next cycle rather than one that exists.
+  generated.add('2026-09');
+  assert.equal(actionableRecurringCycle(master, today, { isGenerated: (cycle) => generated.has(cycle.key) }).key, '2026-10');
+
+  // A master that has run out of cycles has nothing left to offer.
+  const ending = { ...master, endDate: '2026-09-30' };
+  assert.equal(actionableRecurringCycle(ending, today, { isGenerated: () => true }), null);
+  assert.equal(actionableRecurringCycle(master, asOf('2025-12-01'), { isGenerated: () => false }), null, 'nor before it starts');
+});
+
 test('the preview opens on the earliest cycle still awaiting generation', () => {
   // Otherwise the form hides the obligation automation is about to create.
   const cycles = buildRecurringCycleSchedule(telecomMaster, { from: asOf('2026-08-19'), count: 3 });

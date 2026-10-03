@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { collection, doc, onSnapshot, orderBy, query, serverTimestamp, Timestamp, updateDoc, where, writeBatch } from 'firebase/firestore';
+import { arrayUnion, collection, doc, onSnapshot, orderBy, query, serverTimestamp, Timestamp, updateDoc, where, writeBatch } from 'firebase/firestore';
 import { getDownloadURL, ref as storageRef, uploadBytes } from 'firebase/storage';
 import { AlertTriangle, BellRing, CheckCircle2, Edit3, ExternalLink, FileText, History, Loader2, MessageSquare, Pencil, Printer, ReceiptText, Send, ShieldCheck, Trash2, UploadCloud, WalletCards } from 'lucide-react';
 import { db } from '@/lib/firebase';
@@ -18,9 +18,13 @@ import {
   PAYMENT_MODES,
   RP_COLLECTIONS,
   currency,
+  effectiveStatus,
+  hasPaymentProof,
   isObligationEditable,
+  isOpenObligation,
   maskAccount,
   mergeRecurringPaymentSettings,
+  outstandingAmountOf,
   paymentTiming,
   type PaymentMode,
   type PaymentObligation,
@@ -65,6 +69,8 @@ export default function RecurringPaymentDetailPage({ paymentId }: { paymentId: s
   const [loading, setLoading] = useState(true);
   const [comment, setComment] = useState('');
   const [editingTransaction, setEditingTransaction] = useState<PaymentTransaction | null>(null);
+  // One flag for every write on this page, so no action can be fired twice or alongside another.
+  const [saving, setSaving] = useState(false);
 
   useEffect(() => {
     const paymentRef = doc(db, RP_COLLECTIONS.payments, paymentId);
@@ -120,30 +126,57 @@ export default function RecurringPaymentDetailPage({ paymentId }: { paymentId: s
     return getDownloadURL(uploadRef);
   }
 
+  /**
+   * The `documentReferences` entry that registers an uploaded receipt as proof of payment (see
+   * `hasPaymentProof`) — the same shape the workflow stage writes, so the documents tab, the
+   * register's missing-proof filter and the dashboard tile all see a receipt attached here.
+   */
+  function proofReference(receiptUrl: string, file: FormDataEntryValue | null) {
+    const stepId = payment?.currentStepId || '';
+    return arrayUnion({
+      stepId, action: 'Record Payment', reference: receiptUrl, addedBy: user?.id || '', addedAt: Timestamp.now(), category: 'Payment Proof',
+      fileType: file instanceof File ? (file.type || file.name.split('.').pop() || 'file') : 'file',
+      version: (payment?.documentReferences || []).filter(item => item.stepId === stepId && item.action === 'Record Payment').length + 1,
+    });
+  }
+
+  function saveFailed(title: string, error: unknown) {
+    toast({ title, description: error instanceof Error ? error.message : 'Please try again.', variant: 'destructive' });
+  }
+
   async function saveReceiptOnly(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const original = uploadingReceiptFor;
-    if (!original || !payment || !user) return;
+    if (!original || !payment || !user || saving) return;
     if (transactionsLocked) return toast({ title: 'This payment is closed and its transactions are locked', variant: 'destructive' });
     const form = new FormData(event.currentTarget);
-    const receiptUrl = await uploadReceipt(form.get('receiptFile'));
-    if (!receiptUrl) return toast({ title: 'Select a file to upload', variant: 'destructive' });
-    const batch = writeBatch(db);
-    batch.update(doc(db, RP_COLLECTIONS.payments, payment.id, RP_COLLECTIONS.transactions, original.id), { receiptUrl, updatedAt: serverTimestamp(), updatedBy: user.id });
-    batch.set(doc(collection(db, RP_COLLECTIONS.payments, payment.id, RP_COLLECTIONS.auditLogs)), {
-      organizationId, paymentId: payment.id, action: 'Receipt uploaded',
-      summary: `Receipt attached to transaction of ${currency(original.amount)} dated ${original.paymentDate}`,
-      userId: user.id, userName: user.name, createdAt: serverTimestamp(),
-    });
-    await batch.commit();
-    setUploadingReceiptFor(null);
-    toast({ title: 'Receipt uploaded' });
+    setSaving(true);
+    try {
+      const receiptFile = form.get('receiptFile');
+      const receiptUrl = await uploadReceipt(receiptFile);
+      if (!receiptUrl) return toast({ title: 'Select a file to upload', variant: 'destructive' });
+      const batch = writeBatch(db);
+      batch.update(doc(db, RP_COLLECTIONS.payments, payment.id, RP_COLLECTIONS.transactions, original.id), { receiptUrl, updatedAt: serverTimestamp(), updatedBy: user.id });
+      batch.update(doc(db, RP_COLLECTIONS.payments, payment.id), { documentReferences: proofReference(receiptUrl, receiptFile), updatedAt: serverTimestamp() });
+      batch.set(doc(collection(db, RP_COLLECTIONS.payments, payment.id, RP_COLLECTIONS.auditLogs)), {
+        organizationId, paymentId: payment.id, action: 'Receipt uploaded',
+        summary: `Receipt attached to transaction of ${currency(original.amount)} dated ${original.paymentDate}`,
+        userId: user.id, userName: user.name, createdAt: serverTimestamp(),
+      });
+      await batch.commit();
+      setUploadingReceiptFor(null);
+      toast({ title: 'Receipt uploaded' });
+    } catch (error) {
+      saveFailed('Receipt could not be uploaded', error);
+    } finally {
+      setSaving(false);
+    }
   }
 
   async function saveTransactionEdit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const original = editingTransaction;
-    if (!original || !payment || !user) return;
+    if (!original || !payment || !user || saving) return;
     if (!canEditTransaction) return toast({ title: 'You do not have permission to edit transactions', variant: 'destructive' });
     if (transactionsLocked) return toast({ title: 'This payment is closed and its transactions are locked', variant: 'destructive' });
     const form = new FormData(event.currentTarget);
@@ -175,62 +208,90 @@ export default function RecurringPaymentDetailPage({ paymentId }: { paymentId: s
       paidBy,
       paidByName: users.find(entry => entry.id === paidBy)?.name || original.paidByName,
     };
-    const receiptFile = form.get('receiptFile');
-    if (receiptFile instanceof File && receiptFile.size) updated.receiptUrl = await uploadReceipt(receiptFile);
+    setSaving(true);
+    try {
+      const receiptFile = form.get('receiptFile');
+      const newReceiptUrl = receiptFile instanceof File && receiptFile.size ? await uploadReceipt(receiptFile) : '';
+      if (newReceiptUrl) updated.receiptUrl = newReceiptUrl;
 
-    const nextTransactions = transactions.map(item => (item.id === original.id ? updated : item));
-    const paidAmount = nextTransactions.reduce((sum, item) => sum + Number(item.amount || 0), 0);
-    const settledAmount = nextTransactions.reduce((sum, item) => sum + Number(item.amount || 0) + Number(item.tdsAmount || 0) + Number(item.deductionAmount || 0) + Number(item.adjustmentAmount || 0), 0);
-    const obligationAmount = Number(payment.billAmount || payment.expectedAmount || 0);
-    const outstandingAmount = Math.max(0, obligationAmount - settledAmount);
+      const nextTransactions = transactions.map(item => (item.id === original.id ? updated : item));
+      const paidAmount = nextTransactions.reduce((sum, item) => sum + Number(item.amount || 0), 0);
+      const settledAmount = nextTransactions.reduce((sum, item) => sum + Number(item.amount || 0) + Number(item.tdsAmount || 0) + Number(item.deductionAmount || 0) + Number(item.adjustmentAmount || 0), 0);
+      const obligationAmount = Number(payment.billAmount || payment.expectedAmount || 0);
+      const outstandingAmount = Math.max(0, obligationAmount - settledAmount);
 
-    const batch = writeBatch(db);
-    const { id: _txId, ...updatedFields } = updated;
-    batch.update(doc(db, RP_COLLECTIONS.payments, payment.id, RP_COLLECTIONS.transactions, original.id), { ...updatedFields, updatedAt: serverTimestamp(), updatedBy: user.id });
-    const paymentPatch: Record<string, unknown> = { paidAmount, settledAmount, outstandingAmount, updatedAt: serverTimestamp() };
-    if (['Paid', 'Partially Paid'].includes(payment.status)) paymentPatch.status = settledAmount >= obligationAmount - 0.01 ? 'Paid' : 'Partially Paid';
-    batch.update(doc(db, RP_COLLECTIONS.payments, payment.id), paymentPatch);
-    batch.set(doc(collection(db, RP_COLLECTIONS.payments, payment.id, RP_COLLECTIONS.auditLogs)), {
-      organizationId, paymentId: payment.id, action: 'Transaction edited',
-      summary: `${currency(original.amount)} → ${currency(updated.amount)} (${original.mode} → ${updated.mode})`,
-      metadata: { transactionId: original.id, before: pickTransactionSnapshot(original), after: pickTransactionSnapshot(updated) },
-      userId: user.id, userName: user.name, createdAt: serverTimestamp(),
-    });
-    await batch.commit();
-    setEditingTransaction(null);
-    toast({ title: 'Transaction updated' });
+      const batch = writeBatch(db);
+      const { id: _txId, ...updatedFields } = updated;
+      batch.update(doc(db, RP_COLLECTIONS.payments, payment.id, RP_COLLECTIONS.transactions, original.id), { ...updatedFields, updatedAt: serverTimestamp(), updatedBy: user.id });
+      const paymentPatch: Record<string, unknown> = { paidAmount, settledAmount, outstandingAmount, updatedAt: serverTimestamp() };
+      if (['Paid', 'Partially Paid'].includes(payment.status)) paymentPatch.status = settledAmount >= obligationAmount - 0.01 ? 'Paid' : 'Partially Paid';
+      if (newReceiptUrl) paymentPatch.documentReferences = proofReference(newReceiptUrl, receiptFile);
+      batch.update(doc(db, RP_COLLECTIONS.payments, payment.id), paymentPatch);
+      batch.set(doc(collection(db, RP_COLLECTIONS.payments, payment.id, RP_COLLECTIONS.auditLogs)), {
+        organizationId, paymentId: payment.id, action: 'Transaction edited',
+        summary: `${currency(original.amount)} → ${currency(updated.amount)} (${original.mode} → ${updated.mode})`,
+        metadata: { transactionId: original.id, before: pickTransactionSnapshot(original), after: pickTransactionSnapshot(updated) },
+        userId: user.id, userName: user.name, createdAt: serverTimestamp(),
+      });
+      await batch.commit();
+      setEditingTransaction(null);
+      toast({ title: 'Transaction updated' });
+    } catch (error) {
+      saveFailed('Transaction could not be updated', error);
+    } finally {
+      setSaving(false);
+    }
   }
 
-  const amount = Number(payment?.netPayableAmount || payment?.billAmount || payment?.expectedAmount || 0);
-  const outstanding = Math.max(0, amount - Number(payment?.settledAmount || payment?.paidAmount || 0));
+  // The same basis every settlement writer stores in `outstandingAmount` — bill (or estimate) less
+  // settled, where settled already includes TDS and deductions. Net payable is the bill *after*
+  // those deductions, so subtracting settled from it counted them twice.
+  const outstanding = payment ? outstandingAmountOf(payment) : 0;
   const currentApprover = payment?.approvalMode === 'Sequential' ? payment.approvalLevels?.[Math.max(0, Number(payment.currentApprovalLevel || 1) - 1)] : undefined;
   // Grace-aware, so this header line agrees with the status badge rendered right beside it.
-  const timing = payment ? paymentTiming(payment) : null;
+  // Only for open obligations — a paid or cancelled payment is not "32 day(s) overdue".
+  const timing = payment && isOpenObligation(payment) ? paymentTiming(payment) : null;
   const canAct = Boolean(payment?.currentStepId && (payment.assignees || []).includes(user?.id || ''));
   const documents = payment?.documentReferences || [];
-  const hasReceipt = documents.some(item => ['Record Payment', 'Close'].includes(item.action));
+  const hasReceipt = payment ? hasPaymentProof(payment) : false;
 
   async function addComment() {
-    if (!payment || !user || !comment.trim()) return;
+    if (!payment || !user || !comment.trim() || saving) return;
     const mentions = users.filter(item => comment.toLowerCase().includes(`@${item.name.toLowerCase()}`)).map(item => item.id);
     const commentRef = doc(collection(db, RP_COLLECTIONS.payments, payment.id, RP_COLLECTIONS.comments));
     const auditRef = doc(collection(db, RP_COLLECTIONS.payments, payment.id, RP_COLLECTIONS.auditLogs));
-    const batch = writeBatch(db);
-    batch.set(commentRef, { organizationId, paymentId: payment.id, message: comment.trim(), userId: user.id, userName: user.name, mentions, createdAt: serverTimestamp() });
-    batch.set(auditRef, { organizationId, paymentId: payment.id, action: 'Comment added', summary: comment.trim(), page: `/recurring-payments/payments/${payment.id}`, recordId: payment.id, userId: user.id, userName: user.name, createdAt: serverTimestamp() });
-    await batch.commit();
-    setComment('');
-    toast({ title: 'Comment added' });
+    setSaving(true);
+    try {
+      const batch = writeBatch(db);
+      batch.set(commentRef, { organizationId, paymentId: payment.id, message: comment.trim(), userId: user.id, userName: user.name, mentions, createdAt: serverTimestamp() });
+      batch.set(auditRef, { organizationId, paymentId: payment.id, action: 'Comment added', summary: comment.trim(), page: `/recurring-payments/payments/${payment.id}`, recordId: payment.id, userId: user.id, userName: user.name, createdAt: serverTimestamp() });
+      await batch.commit();
+      setComment('');
+      toast({ title: 'Comment added' });
+    } catch (error) {
+      saveFailed('Comment could not be added', error);
+    } finally {
+      setSaving(false);
+    }
   }
 
   async function cancelPayment() {
-    if (!payment || !user || !can('Cancel', 'Recurring Payments.Payments') || !window.confirm('Cancel this payment obligation? The record and audit history will be retained.')) return;
+    if (!payment || !user || saving || !can('Cancel', 'Recurring Payments.Payments') || !window.confirm('Cancel this payment obligation? The record and audit history will be retained.')) return;
     const previousStatus = payment.status;
-    const batch = writeBatch(db);
-    batch.update(doc(db, RP_COLLECTIONS.payments, payment.id), { status: 'Cancelled', workflowStatus: 'Completed', currentStepId: null, assignees: [], updatedAt: serverTimestamp() });
-    batch.set(doc(collection(db, RP_COLLECTIONS.payments, payment.id, RP_COLLECTIONS.auditLogs)), { organizationId, paymentId: payment.id, action: 'Payment cancelled', summary: `${previousStatus} → Cancelled`, page: `/recurring-payments/payments/${payment.id}`, recordId: payment.id, previousValue: { status: previousStatus }, newValue: { status: 'Cancelled' }, userId: user.id, userName: user.name, createdAt: serverTimestamp() });
-    await batch.commit();
-    toast({ title: 'Payment cancelled and retained for audit' });
+    setSaving(true);
+    try {
+      const batch = writeBatch(db);
+      batch.update(doc(db, RP_COLLECTIONS.payments, payment.id), { status: 'Cancelled', workflowStatus: 'Completed', currentStepId: null, assignees: [], updatedAt: serverTimestamp() });
+      batch.set(doc(collection(db, RP_COLLECTIONS.payments, payment.id, RP_COLLECTIONS.auditLogs)), { organizationId, paymentId: payment.id, action: 'Payment cancelled', summary: `${previousStatus} → Cancelled`, page: `/recurring-payments/payments/${payment.id}`, recordId: payment.id, previousValue: { status: previousStatus }, newValue: { status: 'Cancelled' }, userId: user.id, userName: user.name, createdAt: serverTimestamp() });
+      await batch.commit();
+      // Withdraws any mirrored E-Approval request, which would otherwise stay open on a dead payment.
+      syncRecurringPaymentApprovalInBackground(payment.id, user);
+      toast({ title: 'Payment cancelled and retained for audit' });
+    } catch (error) {
+      saveFailed('Payment could not be cancelled', error);
+    } finally {
+      setSaving(false);
+    }
   }
 
   /**
@@ -241,7 +302,7 @@ export default function RecurringPaymentDetailPage({ paymentId }: { paymentId: s
    * settled obligation would pull it out of the paid totals reports reconcile against.
    */
   async function deletePayment() {
-    if (!payment || !user || !can('Delete', 'Recurring Payments.Payments')) return;
+    if (!payment || !user || saving || !can('Delete', 'Recurring Payments.Payments')) return;
     if (Number(payment.settledAmount || payment.paidAmount || 0) > 0)
       return toast({
         title: 'This payment has recorded transactions',
@@ -249,12 +310,20 @@ export default function RecurringPaymentDetailPage({ paymentId }: { paymentId: s
         variant: 'destructive',
       });
     if (!window.confirm('Delete this payment obligation? It is hidden from all registers and reports, and the audit history is retained.')) return;
-    const batch = writeBatch(db);
-    batch.update(doc(db, RP_COLLECTIONS.payments, payment.id), { deleted: true, deletedAt: serverTimestamp(), deletedBy: user.id, updatedAt: serverTimestamp() });
-    batch.set(doc(collection(db, RP_COLLECTIONS.payments, payment.id, RP_COLLECTIONS.auditLogs)), { organizationId, paymentId: payment.id, action: 'Payment deleted', summary: `${payment.title} (${payment.status}) hidden from registers and reports`, page: `/recurring-payments/payments/${payment.id}`, recordId: payment.id, previousValue: { deleted: false, status: payment.status }, newValue: { deleted: true }, userId: user.id, userName: user.name, createdAt: serverTimestamp() });
-    await batch.commit();
-    toast({ title: 'Payment deleted and retained for audit' });
-    router.push('/recurring-payments/payments');
+    setSaving(true);
+    try {
+      const batch = writeBatch(db);
+      batch.update(doc(db, RP_COLLECTIONS.payments, payment.id), { deleted: true, deletedAt: serverTimestamp(), deletedBy: user.id, updatedAt: serverTimestamp() });
+      batch.set(doc(collection(db, RP_COLLECTIONS.payments, payment.id, RP_COLLECTIONS.auditLogs)), { organizationId, paymentId: payment.id, action: 'Payment deleted', summary: `${payment.title} (${payment.status}) hidden from registers and reports`, page: `/recurring-payments/payments/${payment.id}`, recordId: payment.id, previousValue: { deleted: false, status: payment.status }, newValue: { deleted: true }, userId: user.id, userName: user.name, createdAt: serverTimestamp() });
+      await batch.commit();
+      syncRecurringPaymentApprovalInBackground(payment.id, user);
+      toast({ title: 'Payment deleted and retained for audit' });
+      router.push('/recurring-payments/payments');
+    } catch (error) {
+      saveFailed('Payment could not be deleted', error);
+    } finally {
+      setSaving(false);
+    }
   }
 
   if (loading) return <div className="flex min-h-[55vh] items-center justify-center"><Loader2 className="h-7 w-7 animate-spin text-indigo-600" /></div>;
@@ -277,17 +346,17 @@ export default function RecurringPaymentDetailPage({ paymentId }: { paymentId: s
       backHref="/recurring-payments/payments"
       backLabel="Back to payments"
       title={payment.title}
-      badge={<><StatusBadge status={payment.status} /><StatusBadge status={payment.priority || 'Normal'} tone={PRIORITY_TONE[payment.priority || 'Normal'] || 'neutral'} /></>}
+      badge={<><StatusBadge status={effectiveStatus(payment)} /><StatusBadge status={payment.priority || 'Normal'} tone={PRIORITY_TONE[payment.priority || 'Normal'] || 'neutral'} /></>}
       description={`Payment ID ${payment.id} · ${payment.vendorName} · ${payment.sourceType || 'Recurring'}`}
       meta={timing?.label ? <span className={`text-sm font-medium ${timing.isOverdue ? 'text-red-600' : timing.withinGrace ? 'text-amber-600' : 'text-muted-foreground'}`}>{timing.label}</span> : undefined}
-      actions={<div className="contents print:hidden"><Button variant="outline" onClick={() => window.print()}><Printer className="mr-2 h-4 w-4" />Print note</Button>{can('Edit', 'Recurring Payments.Payments') && isObligationEditable(payment) && <Link href={`/recurring-payments/payments/${payment.id}/edit`}><Button variant="outline"><Pencil className="mr-2 h-4 w-4" />Edit</Button></Link>}{can('Delete', 'Recurring Payments.Payments') && <Button variant="destructive" onClick={deletePayment}><Trash2 className="mr-2 h-4 w-4" />Delete</Button>}{canAct && <Link href={`/recurring-payments/stage/${payment.currentStepId}`}><Button><ExternalLink className="mr-2 h-4 w-4" />Open assigned action</Button></Link>}{can('Record Payment', 'Recurring Payments.Payments') && ['Approved', 'Payment Processing', 'Partially Paid'].includes(payment.status) && <Link href={`/recurring-payments/payments/${payment.id}/record-payment`}><Button className="bg-emerald-500 hover:bg-emerald-400"><WalletCards className="mr-2 h-4 w-4" />Record payment</Button></Link>}{can('Cancel', 'Recurring Payments.Payments') && !['Closed', 'Cancelled'].includes(payment.status) && <Button variant="destructive" onClick={cancelPayment}>Cancel</Button>}</div>}
+      actions={<div className="contents print:hidden"><Button variant="outline" onClick={() => window.print()}><Printer className="mr-2 h-4 w-4" />Print note</Button>{can('Edit', 'Recurring Payments.Payments') && isObligationEditable(payment) && <Link href={`/recurring-payments/payments/${payment.id}/edit`}><Button variant="outline"><Pencil className="mr-2 h-4 w-4" />Edit</Button></Link>}{can('Delete', 'Recurring Payments.Payments') && <Button variant="destructive" disabled={saving} onClick={deletePayment}><Trash2 className="mr-2 h-4 w-4" />Delete</Button>}{canAct && <Link href={`/recurring-payments/stage/${payment.currentStepId}`}><Button><ExternalLink className="mr-2 h-4 w-4" />Open assigned action</Button></Link>}{can('Record Payment', 'Recurring Payments.Payments') && payment.currentStepId && ['Approved', 'Payment Processing', 'Partially Paid'].includes(payment.status) && <Link href={`/recurring-payments/payments/${payment.id}/record-payment`}><Button className="bg-emerald-500 hover:bg-emerald-400"><WalletCards className="mr-2 h-4 w-4" />Record payment</Button></Link>}{can('Cancel', 'Recurring Payments.Payments') && !['Closed', 'Cancelled'].includes(payment.status) && <Button variant="destructive" disabled={saving} onClick={cancelPayment}>Cancel</Button>}</div>}
     />
     <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5"><HeaderInfo label="Organization" value={user?.organizationName || organizationId} /><HeaderInfo label="Branch / project" value={payment.projectName || payment.branchName || 'Organization-wide'} /><HeaderInfo label="Due date" value={payment.dueDate} /><HeaderInfo label="Owner" value={userName(payment.assignedTo, users)} /><HeaderInfo label="Current stage" value={payment.stage || '—'} /></div>
     <PaymentEApprovalCard payment={payment} />
     <div className="grid grid-cols-2 gap-3 lg:grid-cols-6"><Metric label="Expected" value={currency(payment.expectedAmount)} /><Metric label="Bill" value={currency(payment.billAmount || 0)} /><Metric label="Approved" value={currency(payment.approvedAmount || payment.netPayableAmount || payment.billAmount || 0)} /><Metric label="Paid" value={currency(payment.paidAmount || 0)} /><Metric label="Balance" value={currency(outstanding)} /><Metric label="Variance" value={`${Number(payment.variancePercent || 0).toFixed(1)}%`} alert={payment.varianceWarning} /></div>
     <Tabs defaultValue="overview"><TabsList className="flex h-auto"><TabsTrigger value="overview">Overview</TabsTrigger><TabsTrigger value="bill">Bill Details</TabsTrigger><TabsTrigger value="approval">Approval Workflow</TabsTrigger><TabsTrigger value="transactions">Transactions</TabsTrigger><TabsTrigger value="documents">Documents</TabsTrigger><TabsTrigger value="comments">Comments</TabsTrigger><TabsTrigger value="notifications">Notifications</TabsTrigger><TabsTrigger value="audit">Audit Log</TabsTrigger></TabsList>
-      <TabsContent value="overview"><Card><CardContent className="grid gap-4 p-5 sm:grid-cols-2 lg:grid-cols-3"><Info label="Billing period" value={`${payment.billingPeriodStart} to ${payment.billingPeriodEnd}`} /><Info label="Bill number" value={payment.billNumber || 'Not received'} /><Info label="Bill date" value={payment.billDate || payment.billReceivedDate || '—'} /><Info label="Category" value={payment.category} /><Info label="Vendor" value={payment.vendorName} /><Info label="Account reference" value={maskAccount(payment.accountNumber) || '—'} /><Info label="Cost centre" value={payment.costCentre || '—'} /><Info label="General ledger" value={payment.ledger || '—'} /><Info label="Description" value={payment.description || '—'} />{payment.expenseRequestNo && <Info label="Expense request no." value={payment.expenseRequestNo} />}</CardContent></Card></TabsContent>
-      <TabsContent value="bill"><Card><CardHeader><CardTitle>Bill calculation and controls</CardTitle></CardHeader><CardContent className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4"><Info label="Base bill" value={currency(payment.billAmount || 0)} /><Info label="Tax" value={currency(payment.taxAmount || 0)} /><Info label="TDS" value={currency(payment.tdsAmount || 0)} /><Info label="Other deductions" value={currency(payment.deductionAmount || 0)} /><Info label="Adjustment" value={currency(payment.adjustmentAmount || 0)} /><Info label="Net payable" value={currency(payment.netPayableAmount || payment.billAmount || payment.expectedAmount)} /><Info label="Previous bill" value={currency(payment.varianceComparisons?.previous || 0)} /><Info label="Average of 3" value={currency(payment.varianceComparisons?.average3 || 0)} /><Info label="Average of 6" value={currency(payment.varianceComparisons?.average6 || 0)} /><Info label="Maximum limit" value={currency(payment.maximumAmount || 0)} /></CardContent></Card></TabsContent>
+      <TabsContent value="overview"><Card><CardContent className="grid grid-cols-1 gap-4 p-5 sm:grid-cols-2 lg:grid-cols-3"><Info label="Billing period" value={`${payment.billingPeriodStart} to ${payment.billingPeriodEnd}`} /><Info label="Bill number" value={payment.billNumber || 'Not received'} /><Info label="Bill date" value={payment.billDate || payment.billReceivedDate || '—'} /><Info label="Category" value={payment.category} /><Info label="Vendor" value={payment.vendorName} /><Info label="Account reference" value={maskAccount(payment.accountNumber) || '—'} /><Info label="Cost centre" value={payment.costCentre || '—'} /><Info label="General ledger" value={payment.ledger || '—'} /><Info label="Description" value={payment.description || '—'} />{payment.expenseRequestNo && <Info label="Expense request no." value={payment.expenseRequestNo} />}</CardContent></Card></TabsContent>
+      <TabsContent value="bill"><Card><CardHeader><CardTitle>Bill calculation and controls</CardTitle></CardHeader><CardContent className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4"><Info label="Base bill" value={currency(payment.billAmount || 0)} /><Info label="Tax" value={currency(payment.taxAmount || 0)} /><Info label="TDS" value={currency(payment.tdsAmount || 0)} /><Info label="Other deductions" value={currency(payment.deductionAmount || 0)} /><Info label="Adjustment" value={currency(payment.adjustmentAmount || 0)} /><Info label="Net payable" value={currency(payment.netPayableAmount || payment.billAmount || payment.expectedAmount)} /><Info label="Previous bill" value={currency(payment.varianceComparisons?.previous || 0)} /><Info label="Average of 3" value={currency(payment.varianceComparisons?.average3 || 0)} /><Info label="Average of 6" value={currency(payment.varianceComparisons?.average6 || 0)} /><Info label="Maximum limit" value={currency(payment.maximumAmount || 0)} /></CardContent></Card></TabsContent>
       <TabsContent value="approval"><Card><CardHeader><CardTitle>Approval path</CardTitle><CardDescription>{payment.approvalMode || 'Workflow assignment'} · current level {payment.currentApprovalLevel || 0}</CardDescription></CardHeader><CardContent className="space-y-3">{(payment.approvalLevels || []).map((approverId, index) => { const complete = (payment.approvalCompletedBy || []).includes(approverId); const pending = currentApprover === approverId || (payment.approvalMode === 'Parallel' && !complete); return <div className="flex items-center gap-3 rounded-xl border p-3" key={`${approverId}-${index}`}><div className={`rounded-full p-2 ${complete ? 'bg-emerald-100 text-emerald-600' : pending ? 'bg-amber-100 text-amber-600' : 'bg-slate-100 text-slate-500'}`}>{complete ? <CheckCircle2 className="h-4 w-4" /> : <ShieldCheck className="h-4 w-4" />}</div><div><p className="font-medium">Level {index + 1} · {userName(approverId, users)}</p><p className="text-xs text-muted-foreground">{complete ? 'Approved' : pending ? 'Pending action' : 'Waiting for previous level'}</p></div></div>; })}{!(payment.approvalLevels || []).length && <p className="py-8 text-center text-sm text-muted-foreground">The configured workflow controls approval assignment.</p>}</CardContent></Card></TabsContent>
       <TabsContent value="transactions">
         <TableCard
@@ -348,8 +417,8 @@ export default function RecurringPaymentDetailPage({ paymentId }: { paymentId: s
             </Table>
         </TableCard>
       </TabsContent>
-      <TabsContent value="documents"><Card><CardHeader><CardTitle>Document register</CardTitle><CardDescription>{hasReceipt ? 'Payment proof is available.' : 'Payment proof is currently missing.'}</CardDescription></CardHeader><CardContent className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">{documents.map((document, index) => <a href={document.reference} target="_blank" rel="noreferrer" className="flex gap-3 rounded-xl border p-4 hover:bg-muted" key={`${document.reference}-${index}`}><FileText className="h-5 w-5 text-indigo-600" /><div><p className="font-medium">{document.category || document.action}</p><p className="text-xs text-muted-foreground">Version {document.version || 1} · {document.fileType || 'document'}</p><p className="text-xs text-muted-foreground">{formatTimestamp(document.addedAt)}</p></div></a>)}{!documents.length && <p className="col-span-full py-10 text-center text-sm text-muted-foreground">No documents uploaded.</p>}</CardContent></Card></TabsContent>
-      <TabsContent value="comments"><Card><CardHeader><CardTitle className="flex items-center gap-2"><MessageSquare className="h-5 w-5" />Comments and mentions</CardTitle></CardHeader><CardContent className="space-y-4">{can('Add Comment', 'Recurring Payments.Payments') && <div className="space-y-2"><Label>Add comment</Label><Textarea value={comment} onChange={event => setComment(event.target.value)} placeholder="Add remarks; mention a user with @Name" /><Button onClick={addComment} disabled={!comment.trim()}><Send className="mr-2 h-4 w-4" />Add comment</Button></div>}<div className="space-y-3">{comments.map(item => <div className="rounded-xl border p-3" key={item.id}><p className="text-sm">{item.message}</p><p className="mt-2 text-xs text-muted-foreground">{item.userName} · {formatTimestamp(item.createdAt)}</p></div>)}{!comments.length && <p className="py-8 text-center text-sm text-muted-foreground">No comments yet.</p>}</div></CardContent></Card></TabsContent>
+      <TabsContent value="documents"><Card><CardHeader><CardTitle>Document register</CardTitle><CardDescription>{hasReceipt ? 'Payment proof is available.' : 'Payment proof is currently missing.'}</CardDescription></CardHeader><CardContent className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">{documents.map((document, index) => <a href={document.reference} target="_blank" rel="noreferrer" className="flex gap-3 rounded-xl border p-4 hover:bg-muted" key={`${document.reference}-${index}`}><FileText className="h-5 w-5 text-indigo-600" /><div><p className="font-medium">{document.category || document.action}</p><p className="text-xs text-muted-foreground">Version {document.version || 1} · {document.fileType || 'document'}</p><p className="text-xs text-muted-foreground">{formatTimestamp(document.addedAt)}</p></div></a>)}{!documents.length && <p className="col-span-full py-10 text-center text-sm text-muted-foreground">No documents uploaded.</p>}</CardContent></Card></TabsContent>
+      <TabsContent value="comments"><Card><CardHeader><CardTitle className="flex items-center gap-2"><MessageSquare className="h-5 w-5" />Comments and mentions</CardTitle></CardHeader><CardContent className="space-y-4">{can('Add Comment', 'Recurring Payments.Payments') && <div className="space-y-2"><Label>Add comment</Label><Textarea value={comment} onChange={event => setComment(event.target.value)} placeholder="Add remarks; mention a user with @Name" /><Button onClick={addComment} disabled={saving || !comment.trim()}><Send className="mr-2 h-4 w-4" />Add comment</Button></div>}<div className="space-y-3">{comments.map(item => <div className="rounded-xl border p-3" key={item.id}><p className="text-sm">{item.message}</p><p className="mt-2 text-xs text-muted-foreground">{item.userName} · {formatTimestamp(item.createdAt)}</p></div>)}{!comments.length && <p className="py-8 text-center text-sm text-muted-foreground">No comments yet.</p>}</div></CardContent></Card></TabsContent>
       <TabsContent value="notifications"><Card><CardHeader><CardTitle className="flex items-center gap-2"><BellRing className="h-5 w-5" />Reminder and escalation history</CardTitle></CardHeader><CardContent className="space-y-3">{notifications.map(item => <div className="flex items-center justify-between rounded-xl border p-3" key={item.id}><div><p className="font-medium">{item.title || 'Payment reminder'}</p><p className="text-xs text-muted-foreground">{(item.channels || []).join(', ') || 'Configured channels'} · {formatTimestamp(item.createdAt)}</p></div><StatusBadge status={item.status || 'Pending'} /></div>)}{!notifications.length && <p className="py-8 text-center text-sm text-muted-foreground">No reminder history for this payment.</p>}</CardContent></Card></TabsContent>
       <TabsContent value="audit"><Card><CardHeader><CardTitle className="flex items-center gap-2"><History className="h-5 w-5" />Immutable audit trail</CardTitle></CardHeader><CardContent className="space-y-3">{audit.map(item => <div className="flex items-start justify-between gap-4 rounded-xl border p-3" key={item.id}><div><p className="font-medium">{item.action}</p><p className="text-sm text-muted-foreground">{item.summary}</p><p className="text-xs text-muted-foreground">{item.userName}</p></div><span className="whitespace-nowrap text-xs text-muted-foreground">{formatTimestamp(item.createdAt)}</span></div>)}{!audit.length && <p className="py-8 text-center text-sm text-muted-foreground">No audit entries recorded.</p>}</CardContent></Card></TabsContent>
     </Tabs></div>
@@ -359,6 +428,7 @@ export default function RecurringPaymentDetailPage({ paymentId }: { paymentId: s
         users={users}
         onClose={() => setEditingTransaction(null)}
         onSubmit={saveTransactionEdit}
+        saving={saving}
       />
     )}
     {uploadingReceiptFor && (
@@ -366,6 +436,7 @@ export default function RecurringPaymentDetailPage({ paymentId }: { paymentId: s
         transaction={uploadingReceiptFor}
         onClose={() => setUploadingReceiptFor(null)}
         onSubmit={saveReceiptOnly}
+        saving={saving}
       />
     )}
   </>;
@@ -377,12 +448,13 @@ function pickTransactionSnapshot(transaction: PaymentTransaction) {
 }
 
 function EditTransactionDialog({
-  transaction, users, onClose, onSubmit,
+  transaction, users, onClose, onSubmit, saving,
 }: {
   transaction: PaymentTransaction;
   users: Array<{ id: string; name: string }>;
   onClose: () => void;
   onSubmit: (event: React.FormEvent<HTMLFormElement>) => void;
+  saving: boolean;
 }) {
   const [mode, setMode] = useState<PaymentMode>(transaction.mode);
   return (
@@ -453,7 +525,7 @@ function EditTransactionDialog({
           </FieldRow>
           <DialogFooter>
             <Button type="button" variant="outline" onClick={onClose}>Cancel</Button>
-            <Button type="submit">Save changes</Button>
+            <Button type="submit" disabled={saving}>{saving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}Save changes</Button>
           </DialogFooter>
         </form>
       </DialogContent>
@@ -467,11 +539,12 @@ function FieldRow({ label, children }: { label: string; children: React.ReactNod
 /** For users granted only "Upload Receipt" (not "Edit Transaction") — lets them attach proof to
  * a past payment without exposing any of the financial fields they're not permitted to change. */
 function UploadReceiptDialog({
-  transaction, onClose, onSubmit,
+  transaction, onClose, onSubmit, saving,
 }: {
   transaction: PaymentTransaction;
   onClose: () => void;
   onSubmit: (event: React.FormEvent<HTMLFormElement>) => void;
+  saving: boolean;
 }) {
   return (
     <Dialog open onOpenChange={open => !open && onClose()}>
@@ -488,7 +561,7 @@ function UploadReceiptDialog({
           </FieldRow>
           <DialogFooter>
             <Button type="button" variant="outline" onClick={onClose}>Cancel</Button>
-            <Button type="submit">Upload</Button>
+            <Button type="submit" disabled={saving}>{saving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}Upload</Button>
           </DialogFooter>
         </form>
       </DialogContent>

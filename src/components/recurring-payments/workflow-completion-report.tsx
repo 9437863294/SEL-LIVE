@@ -107,6 +107,10 @@ function buildStepReport(
     const history = payment.workflowHistory || [];
     let previousTime = toMillis(payment.workflowStartedAt) || toMillis(payment.createdAt) || 0;
     const countedTotal = new Set<string>();
+    // Total counts each payment once per step/user, so Done/On time/Rejected must too — a step
+    // returned for correction and resubmitted would otherwise count two completions against one
+    // payment, pushing Done past Total and the on-time rate past 100%. The latest outcome wins.
+    const outcomes = new Map<string, { stat: StepStat; completed: boolean; onTime: boolean | null; rejected: boolean }>();
 
     history.forEach(entry => {
       const userName = entry.userName || userMap.get(entry.userId) || "Unknown user";
@@ -118,9 +122,10 @@ function buildStepReport(
       const isRejection = REJECTION_ACTIONS.includes(entry.action);
       const entryMillis = toMillis(entry.timestamp);
       let onTime: boolean | null = null;
+      const outcome = outcomes.get(key) ?? { stat, completed: false, onTime: null, rejected: false };
+      outcomes.set(key, outcome);
 
       if (isCompletion) {
-        stat.completed++;
         const step = stepMap.get(entry.stepName);
         if (step && previousTime) {
           // Deadline as of when this step was entered, computed the same working-hours-aware
@@ -128,14 +133,20 @@ function buildStepReport(
           // would call a step "on time" or "late" inconsistently with weekends/holidays.
           const stepDeadlineMillis = addBusinessHours(new Date(previousTime), step.tat, workingHours, holidays).getTime();
           onTime = entryMillis <= stepDeadlineMillis;
-          if (onTime) stat.onTime++;
         }
+        outcome.completed = true;
+        outcome.onTime = onTime;
         completions.push({ paymentId: payment.id, title: payment.title, vendorName: payment.vendorName, stepName: entry.stepName, action: entry.action, userName, comment: entry.comment, timestamp: entry.timestamp, onTime });
       } else if (isRejection) {
-        stat.rejected++;
+        outcome.rejected = true;
         completions.push({ paymentId: payment.id, title: payment.title, vendorName: payment.vendorName, stepName: entry.stepName, action: entry.action, userName, comment: entry.comment, timestamp: entry.timestamp, onTime: null });
       }
       if (isCompletion || isRejection) previousTime = entryMillis || previousTime;
+    });
+    outcomes.forEach(outcome => {
+      if (outcome.completed) outcome.stat.completed++;
+      if (outcome.completed && outcome.onTime) outcome.stat.onTime++;
+      if (outcome.rejected) outcome.stat.rejected++;
     });
 
     // Still sitting at a step counts toward that step's workload even though it hasn't

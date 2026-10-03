@@ -54,6 +54,9 @@ export default function RecurringEApprovalSettingsPage() {
   const canEdit = can('Edit', 'Recurring Payments.Settings');
 
   const [settings, setSettings] = useState<RecurringEApprovalSettings>(DEFAULT_RECURRING_E_APPROVAL_SETTINGS);
+  // What is actually stored. The sweep reads the saved settings, not this form, so it is held back
+  // while the two differ rather than mirroring under a scope or threshold the screen no longer shows.
+  const [savedSettings, setSavedSettings] = useState<RecurringEApprovalSettings>(DEFAULT_RECURRING_E_APPROVAL_SETTINGS);
   const [workflow, setWorkflow] = useState<RecurringWorkflowStep[]>(DEFAULT_RECURRING_WORKFLOW);
   const [types, setTypes] = useState<ApprovalTypeRow[]>([]);
   const [loading, setLoading] = useState(true);
@@ -63,7 +66,9 @@ export default function RecurringEApprovalSettingsPage() {
   useEffect(() => {
     const stop = onSnapshot(doc(db, RP_COLLECTIONS.settings, settingDocId(organizationId)), (snapshot) => {
       const data = snapshot.exists() ? (snapshot.data() as Partial<RecurringPaymentSettings>) : {};
-      setSettings({ ...DEFAULT_RECURRING_E_APPROVAL_SETTINGS, ...(data.eApproval || {}) });
+      const stored = { ...DEFAULT_RECURRING_E_APPROVAL_SETTINGS, ...(data.eApproval || {}) };
+      setSettings(stored);
+      setSavedSettings(stored);
       setLoading(false);
     }, () => setLoading(false));
     (async () => {
@@ -138,6 +143,7 @@ export default function RecurringEApprovalSettingsPage() {
     }
   }
 
+  const unsaved = JSON.stringify(settings) !== JSON.stringify(savedSettings);
   const update = (patch: Partial<RecurringEApprovalSettings>) => setSettings((current) => ({ ...current, ...patch }));
 
   if (loading) {
@@ -175,7 +181,7 @@ export default function RecurringEApprovalSettingsPage() {
           </div>
 
           <div className={settings.enabled ? 'space-y-4' : 'pointer-events-none space-y-4 opacity-50'}>
-            <div className="grid gap-4 sm:grid-cols-2">
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
               <div className="space-y-1.5">
                 <Label>Which steps appear in E-Approval</Label>
                 <Select value={settings.scope} disabled={!canEdit} onValueChange={(scope: RecurringEApprovalSettings['scope']) => update({ scope })}>
@@ -245,7 +251,7 @@ export default function RecurringEApprovalSettingsPage() {
 
           <div className="flex flex-wrap items-center justify-end gap-2">
             {settings.enabled && (
-              <Button variant="outline" onClick={sweep} disabled={sweeping || !canEdit}>
+              <Button variant="outline" onClick={sweep} disabled={sweeping || !canEdit || unsaved} title={unsaved ? 'Save your changes first — the sweep uses the saved settings.' : undefined}>
                 {sweeping ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <RefreshCw className="mr-2 h-4 w-4" />}
                 Mirror eligible payments now
               </Button>
@@ -254,6 +260,9 @@ export default function RecurringEApprovalSettingsPage() {
               {saving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}Save
             </Button>
           </div>
+          {settings.enabled && unsaved && (
+            <p className="text-right text-xs text-amber-700">Save your changes before mirroring — the sweep uses the saved settings.</p>
+          )}
           {settings.enabled && (
             <p className="text-xs text-muted-foreground">
               Obligations are generated overnight by a server job that runs outside the browser, so it cannot raise

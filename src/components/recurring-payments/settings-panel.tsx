@@ -5,6 +5,7 @@ import {
   addDoc,
   collection,
   doc,
+  getDocs,
   onSnapshot,
   query,
   serverTimestamp,
@@ -22,6 +23,7 @@ import {
   ShieldCheck,
 } from "lucide-react";
 import { db } from "@/lib/firebase";
+import type { Project } from "@/lib/types";
 import { useAuth } from "@/components/auth/AuthProvider";
 import { useAuthorization } from "@/hooks/useAuthorization";
 import { useToast } from "@/hooks/use-toast";
@@ -68,15 +70,50 @@ import { useFieldControl, validateFieldControlRequirements } from "./use-field-c
 
 const settingDocId = (organizationId: string) =>
   organizationId.replace(/[^a-zA-Z0-9_-]/g, "_");
+// Blank items are dropped rather than read as 0 — "" and "7,,3" each used to add a due-date
+// reminder nobody asked for. Capped at a year either side of the due date.
 const parseNumbers = (value: string) =>
   [
     ...new Set(
       value
         .split(",")
+        .map((item) => item.trim())
+        .filter(Boolean)
         .map(Number)
-        .filter((n) => Number.isInteger(n) && n >= 0),
+        .filter((n) => Number.isInteger(n) && n >= 0 && n <= 365),
     ),
   ].sort((a, b) => b - a);
+const clampVariance = (value: number) => Math.min(1000, Math.max(1, value));
+
+/** A rule's upper bound — 0 or blank means "no limit", exactly as the matcher reads it. */
+const ruleCeiling = (rule: Pick<ApprovalRule, "maxAmount">) =>
+  Number(rule.maxAmount) > 0 ? Number(rule.maxAmount) : Number.POSITIVE_INFINITY;
+
+/**
+ * Another active rule with the same category + project scope whose amount band overlaps this
+ * one. Bands that only share an endpoint are allowed — the matcher prefers the narrower there.
+ */
+function overlappingRule(
+  candidate: Pick<ApprovalRule, "id" | "minAmount" | "maxAmount" | "category" | "project">,
+  rules: ApprovalRule[],
+  projects: Project[],
+) {
+  const categoryKey = (value?: string) => (!value || value === "*" ? "" : value);
+  // Older rules stored the project name; compare both sides by project id where it resolves.
+  const projectKey = (value?: string) =>
+    !value || value === "*"
+      ? ""
+      : projects.find((item) => item.id === value || item.projectName === value)?.id || value;
+  return rules.find(
+    (other) =>
+      other.active &&
+      other.id !== candidate.id &&
+      categoryKey(other.category) === categoryKey(candidate.category) &&
+      projectKey(other.project) === projectKey(candidate.project) &&
+      Number(other.minAmount || 0) < ruleCeiling(candidate) &&
+      Number(candidate.minAmount || 0) < ruleCeiling(other),
+  );
+}
 
 export default function RecurringPaymentSettingsPanel({
   organizationId,
@@ -102,6 +139,9 @@ export default function RecurringPaymentSettingsPanel({
   const [recipientsText, setRecipientsText] = useState(
     "Assigned Employee, Accounts Team",
   );
+  const [varianceText, setVarianceText] = useState(
+    String(DEFAULT_RECURRING_PAYMENT_SETTINGS.controls.varianceWarningPercent),
+  );
   const canEdit = can("Edit", "Recurring Payments.Settings");
 
   useEffect(() => {
@@ -120,6 +160,7 @@ export default function RecurringPaymentSettingsPanel({
       setDaysBeforeText(merged.notifications.daysBefore.join(", "));
       setDaysAfterText(merged.notifications.daysAfter.join(", "));
       setRecipientsText(merged.notifications.recipients.join(", "));
+      setVarianceText(String(merged.controls.varianceWarningPercent));
     });
     const stopRules = onSnapshot(
       query(
@@ -165,7 +206,19 @@ export default function RecurringPaymentSettingsPanel({
                   .filter(Boolean),
               },
             }
-          : settings;
+          : section === "organization"
+            ? {
+                ...settings,
+                controls: {
+                  ...settings.controls,
+                  // A cleared box keeps the previous threshold — 0% would flag every bill.
+                  varianceWarningPercent:
+                    varianceText.trim() && Number.isFinite(Number(varianceText))
+                      ? clampVariance(Number(varianceText))
+                      : settings.controls.varianceWarningPercent,
+                },
+              }
+            : settings;
       await setDoc(
         doc(db, RP_COLLECTIONS.settings, settingDocId(organizationId)),
         {
@@ -176,6 +229,7 @@ export default function RecurringPaymentSettingsPanel({
         { merge: true },
       );
       setSettings(valueToSave);
+      setVarianceText(String(valueToSave.controls.varianceWarningPercent));
       toast({
         title: `${section === "organization" ? "Organization controls" : section[0].toUpperCase() + section.slice(1)} saved`,
       });
@@ -183,6 +237,28 @@ export default function RecurringPaymentSettingsPanel({
       toast({ title: "Settings could not be saved", variant: "destructive" });
     } finally {
       setSaving(false);
+    }
+  }
+
+  async function toggleRule(rule: ApprovalRule, active: boolean) {
+    const clash = active ? overlappingRule(rule, rules, projects) : undefined;
+    if (clash)
+      return toast({
+        title: `Overlaps "${clash.name}"`,
+        description:
+          "Another active rule with the same category and project covers part of this amount range. Adjust one of the ranges first.",
+        variant: "destructive",
+      });
+    try {
+      await updateDoc(doc(db, RP_COLLECTIONS.approvalRules, rule.id), {
+        active,
+        updatedAt: serverTimestamp(),
+      });
+    } catch {
+      toast({
+        title: "Approval rule could not be updated",
+        variant: "destructive",
+      });
     }
   }
 
@@ -268,12 +344,7 @@ export default function RecurringPaymentSettingsPanel({
                     <Switch
                       disabled={!canEdit}
                       checked={rule.active}
-                      onCheckedChange={(active) =>
-                        updateDoc(
-                          doc(db, RP_COLLECTIONS.approvalRules, rule.id),
-                          { active, updatedAt: serverTimestamp() },
-                        )
-                      }
+                      onCheckedChange={(active) => toggleRule(rule, active)}
                     />
                   </div>
                 </div>
@@ -300,7 +371,7 @@ export default function RecurringPaymentSettingsPanel({
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-6">
-              <div className="grid gap-3 sm:grid-cols-2">
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                 {(
                   [
                     ["inApp", "In-app notification"],
@@ -322,7 +393,7 @@ export default function RecurringPaymentSettingsPanel({
                   />
                 ))}
               </div>
-              <div className="grid gap-4 sm:grid-cols-2">
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                 <SettingField
                   label="Days before due date"
                   help="Comma-separated, including 0 for due date"
@@ -398,7 +469,7 @@ export default function RecurringPaymentSettingsPanel({
                   }))
                 }
               />
-              <div className="grid gap-4 sm:grid-cols-2">
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                 <SettingField
                   label="Workflow starts before due"
                   help="Days before due date; default is 7"
@@ -491,7 +562,7 @@ export default function RecurringPaymentSettingsPanel({
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-5">
-              <div className="grid gap-4 sm:grid-cols-2">
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                 <SettingField
                   label="Organization ID"
                   help="Read-only data-scope key"
@@ -510,7 +581,7 @@ export default function RecurringPaymentSettingsPanel({
                   />
                 </SettingField>
               </div>
-              <div className="grid gap-3 sm:grid-cols-2">
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                 <ToggleRow
                   label="Lock closed payments"
                   checked={settings.controls.lockClosedPayments}
@@ -565,18 +636,14 @@ export default function RecurringPaymentSettingsPanel({
                 <Input
                   className="max-w-xs"
                   type="number"
-                  min={0}
+                  min={1}
                   max={1000}
-                  value={settings.controls.varianceWarningPercent}
-                  onChange={(e) =>
-                    setSettings((s) => ({
-                      ...s,
-                      controls: {
-                        ...s.controls,
-                        varianceWarningPercent: Number(e.target.value),
-                      },
-                    }))
-                  }
+                  value={varianceText}
+                  onChange={(e) => setVarianceText(e.target.value)}
+                  onBlur={() => {
+                    if (varianceText.trim() && Number.isFinite(Number(varianceText)))
+                      setVarianceText(String(clampVariance(Number(varianceText))));
+                  }}
                 />
               </SettingField>
               {canEdit && (
@@ -598,6 +665,7 @@ export default function RecurringPaymentSettingsPanel({
           setEditingRule(null);
         }}
         organizationId={organizationId}
+        rules={rules}
       />
     </>
   );
@@ -608,11 +676,13 @@ function ApprovalRuleDialog({
   rule,
   onClose,
   organizationId,
+  rules,
 }: {
   open: boolean;
   rule: ApprovalRule | null;
   onClose: () => void;
   organizationId: string;
+  rules: ApprovalRule[];
 }) {
   const { users } = useAuth();
   const { projects, activeProjects } = useGlobalScopes();
@@ -621,19 +691,49 @@ function ApprovalRuleDialog({
   const [saving, setSaving] = useState(false);
   const [approvers, setApprovers] = useState<string[]>([]);
   const [selectedProject, setSelectedProject] = useState("*");
+  const [orgCategories, setOrgCategories] = useState<string[]>([]);
+  // Initialised only when the dialog opens or the rule changes — not on every projects snapshot,
+  // which used to wipe approver choices mid-edit. The stored project is kept as-is (id, or a
+  // legacy name) and always rendered as an option, so an inactive project can't fall back to All.
   useEffect(() => {
     if (open) {
       setApprovers(rule?.approvers || []);
-      setSelectedProject(
-        rule?.project
-          ? projects.find(
-              (item) =>
-                item.id === rule.project || item.projectName === rule.project,
-            )?.id || "*"
-          : "*",
-      );
+      setSelectedProject(rule?.project || "*");
     }
-  }, [open, projects, rule]);
+  }, [open, rule]);
+  useEffect(() => {
+    if (!open) return;
+    getDocs(
+      query(
+        collection(db, RP_COLLECTIONS.categories),
+        where("organizationId", "==", organizationId),
+      ),
+    )
+      .then((snapshot) =>
+        setOrgCategories(
+          snapshot.docs
+            .map((item) => item.data() as { name?: string; active?: boolean })
+            .filter((item) => item.name && item.active !== false)
+            .map((item) => item.name as string),
+        ),
+      )
+      .catch(() => setOrgCategories([]));
+  }, [open, organizationId]);
+  // The stored category is always an option: a Radix Select whose defaultValue matches no item
+  // submits the first one ("All"), silently widening the rule.
+  const categoryOptions = [
+    ...new Set([
+      ...DEFAULT_PAYMENT_CATEGORIES,
+      ...orgCategories,
+      ...(rule?.category && rule.category !== "*" ? [rule.category] : []),
+    ]),
+  ];
+  const storedProject =
+    rule?.project &&
+    rule.project !== "*" &&
+    !activeProjects.some((item) => item.id === rule.project)
+      ? rule.project
+      : "";
   function toggleApprover(userId: string, checked: boolean) {
     setApprovers((current) =>
       checked
@@ -656,22 +756,44 @@ function ApprovalRuleDialog({
     );
     if (missingLabel)
       return toast({ title: `${missingLabel} is required`, variant: "destructive" });
+    // A field hidden by Field Control isn't rendered, so FormData has nothing for it — keep the
+    // stored value rather than writing null over it (a nulled maxAmount widened the rule).
+    const shown = (key: string) => field(key).visible;
+    const max = String(f.get("maxAmount") || "");
+    const category = String(f.get("category") || "*");
+    const payload = {
+      organizationId,
+      name: shown("name") ? String(f.get("name") || "").trim() : rule?.name || "",
+      minAmount: shown("minAmount") ? Number(f.get("minAmount") || 0) : rule?.minAmount ?? 0,
+      maxAmount: shown("maxAmount") ? (max ? Number(max) : null) : rule?.maxAmount ?? null,
+      category: shown("category") ? (category === "*" ? "" : category) : rule?.category || "",
+      project: shown("project") ? (selectedProject === "*" ? "" : selectedProject) : rule?.project || "",
+      mode: shown("mode") ? (String(f.get("mode") || "Sequential") as ApprovalRule["mode"]) : rule?.mode || "Sequential",
+      approvers,
+      finalAccountsVerification: shown("accounts")
+        ? f.get("accounts") === "yes"
+        : rule?.finalAccountsVerification ?? true,
+      active: rule?.active ?? true,
+      updatedAt: serverTimestamp(),
+    };
+    if (payload.maxAmount && payload.maxAmount > 0 && payload.maxAmount < payload.minAmount)
+      return toast({
+        title: "Maximum amount is below the minimum",
+        description: "Raise the maximum, or leave it blank for no limit.",
+        variant: "destructive",
+      });
+    const clash = payload.active
+      ? overlappingRule({ ...payload, id: rule?.id || "" }, rules, projects)
+      : undefined;
+    if (clash)
+      return toast({
+        title: `Overlaps "${clash.name}"`,
+        description:
+          "Another active rule with the same category and project covers part of this amount range. Adjust one of the ranges so each amount has one rule.",
+        variant: "destructive",
+      });
     setSaving(true);
     try {
-      const max = String(f.get("maxAmount") || "");
-      const payload = {
-        organizationId,
-        name: f.get("name"),
-        minAmount: Number(f.get("minAmount") || 0),
-        maxAmount: max ? Number(max) : null,
-        category: f.get("category") === "*" ? "" : f.get("category"),
-        project: f.get("project") === "*" ? "" : f.get("project"),
-        mode: f.get("mode"),
-        approvers,
-        finalAccountsVerification: f.get("accounts") === "yes",
-        active: rule?.active ?? true,
-        updatedAt: serverTimestamp(),
-      };
       if (rule)
         await updateDoc(
           doc(db, RP_COLLECTIONS.approvalRules, rule.id),
@@ -707,7 +829,7 @@ function ApprovalRuleDialog({
         <form
           key={rule?.id || "new"}
           onSubmit={submit}
-          className="grid gap-4 sm:grid-cols-2"
+          className="grid grid-cols-1 gap-4 sm:grid-cols-2"
         >
           {field("name").visible && (
             <SettingField label={`${field("name").label}${field("name").required ? " *" : ""}`}>
@@ -760,7 +882,7 @@ function ApprovalRuleDialog({
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="*">All categories</SelectItem>
-                  {DEFAULT_PAYMENT_CATEGORIES.map((x) => (
+                  {categoryOptions.map((x) => (
                     <SelectItem value={x} key={x}>
                       {x}
                     </SelectItem>
@@ -784,6 +906,15 @@ function ApprovalRuleDialog({
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="*">All projects</SelectItem>
+                  {storedProject && (
+                    <SelectItem value={storedProject}>
+                      {projects.find(
+                        (item) =>
+                          item.id === storedProject ||
+                          item.projectName === storedProject,
+                      )?.projectName || storedProject}
+                    </SelectItem>
+                  )}
                   {activeProjects.map((project) => (
                     <SelectItem value={project.id} key={project.id}>
                       {project.projectName}

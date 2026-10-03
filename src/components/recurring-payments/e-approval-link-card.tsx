@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { useState } from 'react';
 import { AlertTriangle, ExternalLink, Link2Off, Loader2, RefreshCw, ShieldCheck } from 'lucide-react';
 import { useAuth } from '@/components/auth/AuthProvider';
+import { useAuthorization } from '@/hooks/useAuthorization';
 import { useToast } from '@/hooks/use-toast';
 import { Badge } from '@/components/ui/badge';
 import { StatusBadge } from '@/components/shared/status-badge';
@@ -40,7 +41,11 @@ export function PaymentEApprovalCard({
   onChanged?: () => void;
 }) {
   const { user } = useAuth();
+  const { can } = useAuthorization();
   const { toast } = useToast();
+  // Breaking a mirror changes how the payment is governed, so it takes the same right as changing
+  // the bridge itself.
+  const canUnlink = can('Edit', 'Recurring Payments.Settings');
   const [busy, setBusy] = useState(false);
   const mirror = payment.eApproval;
   if (!mirror?.requestId) return null;
@@ -71,7 +76,8 @@ export function PaymentEApprovalCard({
 
   async function detach() {
     const actor = recurringPaymentEApprovalActor(user);
-    if (!actor) return;
+    if (!actor || !canUnlink) return;
+    if (!window.confirm('Unlink this payment from its E-Approval request? Both records are kept, but from now on each runs on its own and actions on one no longer move the other.')) return;
     setBusy(true);
     try {
       await detachRecurringPaymentApproval(payment.id, `Detached by ${actor.userName}.`, actor);
@@ -126,9 +132,11 @@ export function PaymentEApprovalCard({
               <Button size="sm" variant="outline" className="h-8 gap-1.5" onClick={resync} disabled={busy}>
                 {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />} Sync
               </Button>
-              <Button size="sm" variant="ghost" className="h-8 gap-1.5 text-muted-foreground" onClick={detach} disabled={busy}>
-                <Link2Off className="h-3.5 w-3.5" /> Unlink
-              </Button>
+              {canUnlink && (
+                <Button size="sm" variant="ghost" className="h-8 gap-1.5 text-muted-foreground" onClick={detach} disabled={busy}>
+                  <Link2Off className="h-3.5 w-3.5" /> Unlink
+                </Button>
+              )}
             </>
           )}
         </div>

@@ -138,7 +138,9 @@ export function ReportMetricTile({
       <CardContent className="flex items-start justify-between gap-3 p-4">
         <div className="min-w-0">
           <p className="truncate text-xs font-medium text-muted-foreground">{label}</p>
-          <p className={`mt-1.5 text-2xl font-semibold leading-none tracking-tight ${palette.value}`}>
+          {/* text-xl on phones: a 2-up tile is ~150px wide there, and a lakh-scale ₹ figure at
+              text-2xl ran past the card edge. */}
+          <p className={`mt-1.5 break-words text-xl font-semibold leading-tight tracking-tight tabular-nums sm:text-2xl sm:leading-none ${palette.value}`}>
             {value}
           </p>
           {hint && <p className="mt-1.5 text-[11px] leading-tight text-muted-foreground">{hint}</p>}
@@ -167,12 +169,17 @@ export function ReportMetricTile({
  *
  * The bar is `aria-hidden`: it restates the amount already in the adjacent column, so announcing
  * it again would just make the row twice as long to hear. Nothing is available only as a bar.
+ *
+ * When the caller passes only a top-N cut of its rows, it must also pass `totals` for the full set:
+ * otherwise each share is measured against the visible rows alone and the footer under-states the
+ * total by everything that was cut.
  */
 export function ReportSummaryTable({
   title,
   description,
   icon: Icon,
   rows,
+  totals,
   nameHeader = "Name",
   countHeader = "Records",
   emptyLabel = "No data yet.",
@@ -180,15 +187,23 @@ export function ReportSummaryTable({
   title: string;
   description?: string;
   icon?: LucideIcon;
-  rows: Array<{ name: string; count: number; amount: number }>;
+  /** `id` keys the row when two rows can share a display name (e.g. masked account numbers). */
+  rows: Array<{ id?: string; name: string; count: number; amount: number }>;
+  /** Count/amount over every row, including any not passed in `rows`. */
+  totals?: { count: number; amount: number };
   nameHeader?: string;
   countHeader?: string;
   emptyLabel?: string;
 }) {
   const ranked = [...rows].sort((a, b) => b.amount - a.amount);
-  const total = ranked.reduce((sum, row) => sum + (row.amount || 0), 0);
-  const magnitude = ranked.reduce((sum, row) => sum + Math.abs(row.amount || 0), 0);
-  const totalCount = ranked.reduce((sum, row) => sum + (row.count || 0), 0);
+  const total = totals ? totals.amount : ranked.reduce((sum, row) => sum + (row.amount || 0), 0);
+  const magnitude = totals
+    ? Math.abs(totals.amount)
+    : ranked.reduce((sum, row) => sum + Math.abs(row.amount || 0), 0);
+  const shownCount = ranked.reduce((sum, row) => sum + (row.count || 0), 0);
+  const totalCount = totals ? totals.count : shownCount;
+  // Rows were cut before reaching this table, so the footer covers more than is listed above it.
+  const hasOthers = !!totals && totals.count > shownCount;
   return (
     <TableCard title={title} description={description} icon={Icon} count={ranked.length} noun="row">
       <Table>
@@ -211,7 +226,7 @@ export function ReportSummaryTable({
                 ? "<0.1%"
                 : `${sharePct.toFixed(1)}%`;
             return (
-              <TableRow key={row.name}>
+              <TableRow key={row.id ?? row.name}>
                 <TableCell className="font-medium">{row.name}</TableCell>
                 <TableCell className="text-right tabular-nums">
                   {row.count.toLocaleString("en-IN")}
@@ -245,10 +260,10 @@ export function ReportSummaryTable({
             </TableRow>
           )}
         </TableBody>
-        {ranked.length > 1 && (
+        {(ranked.length > 1 || hasOthers) && (
           <TableFooter>
             <TableRow>
-              <TableCell>Total</TableCell>
+              <TableCell>{hasOthers ? "Total (incl. others)" : "Total"}</TableCell>
               <TableCell className="text-right tabular-nums">
                 {totalCount.toLocaleString("en-IN")}
               </TableCell>

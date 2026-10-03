@@ -96,12 +96,12 @@ const navMap: { href: string; label: string; icon: React.ElementType; descriptio
   { href: '/recurring-payments', label: 'Dashboard', icon: LayoutDashboard, description: 'Due today / this week, overdue, awaiting bill, pending approval and cash-outflow charts at a glance.' },
   { href: '/recurring-payments/payments', label: 'All Payments', icon: ReceiptIndianRupee, description: 'Every payment obligation, filterable by status, vendor, category and project.' },
   { href: '/recurring-payments/upcoming', label: 'Upcoming', icon: CalendarClock, description: 'Obligations due soon but not yet overdue.' },
-  { href: '/recurring-payments/overdue', label: 'Overdue', icon: CircleDollarSign, description: 'Anything past its due date that is not yet paid or closed.' },
+  { href: '/recurring-payments/overdue', label: 'Overdue', icon: CircleDollarSign, description: 'Anything past its due date and grace period that is not yet paid or closed.' },
   { href: '/recurring-payments/approvals', label: 'Pending Approvals', icon: ClipboardCheck, description: 'Your personal approval queue — My Pending, Approved, Rejected, Delegated and All.' },
   { href: '/recurring-payments/calendar', label: 'Payment Calendar', icon: CalendarDays, description: 'A calendar view of every obligation by due date.' },
   { href: '/recurring-payments/masters', label: 'Recurring Masters', icon: Repeat2, description: 'The recurring bill templates — create, edit and bulk-generate obligations from here.' },
   { href: '/recurring-payments/vendors', label: 'Vendors', icon: Users, description: 'Vendor master data used across masters and payments.' },
-  { href: '/recurring-payments/categories', label: 'Categories', icon: Tags, description: 'Payment categories used for classification, reporting and approval rules.' },
+  { href: '/recurring-payments/categories', label: 'Categories', icon: Tags, description: 'Payment categories used for classification and reporting — approval rules can be scoped to them.' },
   { href: '/recurring-payments/reports', label: 'Reports', icon: BarChart3, description: 'Upcoming, overdue, expenses, cash-flow, payment-mode reconciliation, automation-health and workflow-completion reports.' },
   { href: '/recurring-payments/settings', label: 'Settings', icon: Settings, description: 'Approval rules, notification rules, automation, workflow steps and permissions.' },
 ];
@@ -120,7 +120,7 @@ const statusGlossary: { status: string; meaning: string }[] = [
   { status: 'Paid', meaning: 'Full amount paid; awaiting receipt verification and closure.' },
   { status: 'Closed', meaning: 'Fully settled and closed. Locked if "Lock closed payments" is enabled.' },
   { status: 'Returned for Correction', meaning: 'Sent back one step for a fix.' },
-  { status: 'Rejected', meaning: 'Stopped at verification or approval.' },
+  { status: 'Rejected', meaning: 'Stopped at verification or approval. Final — it never reads as Overdue, and there is no reopen path; raise a new payment if the amount is still owed.' },
   { status: 'Disputed', meaning: 'The payment owner flagged a disagreement with the vendor or amount.' },
   { status: 'Payment Failed', meaning: 'A payment attempt failed at Processing.' },
   { status: 'Paid Receipt Pending', meaning: 'Paid, but the receipt/proof isn’t yet uploaded or verified.' },
@@ -257,7 +257,7 @@ export default function RecurringPaymentsHandbook() {
               </p>
               <StepList
                 items={[
-                  { title: 'Set up master data', detail: 'Add Vendors and Categories first — masters and approval rules reference them.' },
+                  { title: 'Set up master data', detail: 'Add Vendors and Categories first — masters pick from them, and approval rules can be scoped to a category.' },
                   { title: 'Create Recurring Masters', detail: 'Define the vendor, category, amount, frequency, due-day rule and who’s assigned to each step (owner, verifier, approver, processor).' },
                   { title: 'Configure Approval Rules', detail: 'Under Settings › Approval Rules, set amount ranges, category/project scope, and Sequential vs. Parallel approvers.' },
                   { title: 'Configure Notifications', detail: 'Under Settings › Notifications, set reminder channels and days before/after due date.' },
@@ -297,8 +297,8 @@ export default function RecurringPaymentsHandbook() {
           </ol>
           <p className="mt-5 rounded-lg bg-muted p-3 text-xs text-muted-foreground">
             At any actionable step, "Return for Correction" sends the obligation back one step, "Reject"/"Dispute"
-            stop or flag it, and "On Hold" pauses it without deciding. If your organization allows it (Settings
-            › Organization › "Allow authorized reopening"), a closed payment can later be reopened.
+            stop or flag it, and "On Hold" pauses it without deciding. Closed and Rejected payments are final — this
+            module has no reopen action yet, whatever "Allow authorized reopening" is set to.
           </p>
         </CardContent>
       </Card>

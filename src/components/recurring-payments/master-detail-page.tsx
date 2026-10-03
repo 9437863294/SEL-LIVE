@@ -7,14 +7,10 @@ import {
   addDoc,
   collection,
   doc,
-  getDoc,
-  getDocs,
   onSnapshot,
   orderBy,
   query,
   serverTimestamp,
-  setDoc,
-  Timestamp,
   updateDoc,
   where,
 } from "firebase/firestore";
@@ -35,22 +31,22 @@ import { useAuthorization } from "@/hooks/useAuthorization";
 import { useToast } from "@/hooks/use-toast";
 import {
   actionableRecurringCycle,
-  buildPaymentObligationFields,
-  DEFAULT_RECURRING_WORKFLOW,
   describeRecurrence,
   loadWorkingCalendar,
-  matchApprovalRule,
-  resolveWorkflowActivation,
-  type ApprovalRule,
   type PaymentObligation,
   type RecurringPaymentMaster,
-  type RecurringWorkflowStep,
   RP_COLLECTIONS,
   currency,
   maskAccount,
+  recurringDateOnly,
   visibleObligations,
 } from "@/lib/recurring-payments";
-import { addBusinessHours } from "@/lib/working-hours";
+import {
+  generatedCyclePredicate,
+  generateMasterCycle,
+  loadManualGenerationContext,
+} from "@/lib/recurring-payments-generation";
+import { makeIsWorkingDay } from "@/lib/working-hours";
 import { StatusBadge } from "@/components/shared/status-badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -94,6 +90,15 @@ export default function RecurringMasterDetailPage({
   const [payments, setPayments] = useState<PaymentObligation[]>([]);
   const [audit, setAudit] = useState<AuditRecord[]>([]);
   const [loading, setLoading] = useState(true);
+  // Every obligation id this master has, soft-deleted included: a deleted obligation still occupies
+  // its cycle's document id, so it counts as generated even though it's hidden from the list.
+  const [obligationIds, setObligationIds] = useState<string[]>([]);
+  const [calendar, setCalendar] = useState<Awaited<ReturnType<typeof loadWorkingCalendar>> | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    loadWorkingCalendar().then(setCalendar).catch(() => undefined);
+  }, []);
 
   useEffect(() => {
     const masterRef = doc(db, RP_COLLECTIONS.masters, masterId);
@@ -119,6 +124,7 @@ export default function RecurringMasterDetailPage({
           where("masterId", "==", masterId),
         ),
         (snapshot) => {
+          setObligationIds(snapshot.docs.map((item) => item.id));
           setPayments(
             visibleObligations(
               snapshot.docs.map(
@@ -146,168 +152,148 @@ export default function RecurringMasterDetailPage({
     return () => stops.forEach((stop) => stop());
   }, [masterId, organizationId]);
 
-  // The cycle awaiting an obligation, not merely the one today falls inside — under arrears billing
-  // those differ, and it's the former that "Generate now" must create and this page must report.
+  // The earliest cycle still missing an obligation — not merely the one today falls inside (under
+  // arrears billing those differ), nor the oldest one in the pending window (which the cron has
+  // usually generated already). It's what "Generate now" creates and what this page reports, on
+  // the org's working calendar so a "last working day" due date matches the cron's.
   const nextCycle = useMemo(
-    () => (master ? actionableRecurringCycle(master, new Date()) : null),
-    [master],
+    () =>
+      master?.startDate
+        ? actionableRecurringCycle(master, new Date(), {
+            isWorkingDay: makeIsWorkingDay(calendar?.workingHours, calendar?.holidays),
+            isGenerated: generatedCyclePredicate(organizationId, master.id, obligationIds),
+          })
+        : null,
+    [master, calendar, organizationId, obligationIds],
   );
+  // An archived master keeps its page for the history, but nothing on it may act: resuming it set
+  // it Active while still archived, which then offered "Generate now" for it.
+  const archived = master?.deleted === true;
 
-  async function changeStatus(next: RecurringPaymentMaster["status"]) {
-    if (!master || !user) return;
-    await updateDoc(doc(db, RP_COLLECTIONS.masters, master.id), {
-      status: next,
-      updatedAt: serverTimestamp(),
-      updatedBy: user.id,
+  /** Runs a write with a busy flag and a toast on failure, so no action fails silently or twice. */
+  async function guarded(label: string, action: () => Promise<void>) {
+    if (busy) return;
+    setBusy(true);
+    try {
+      await action();
+    } catch (error) {
+      toast({
+        title: `${label} failed`,
+        description: error instanceof Error ? error.message : "Please try again.",
+        variant: "destructive",
+      });
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  const changeStatus = (next: RecurringPaymentMaster["status"]) =>
+    guarded("Status change", async () => {
+      if (!master || !user || archived) return;
+      await updateDoc(doc(db, RP_COLLECTIONS.masters, master.id), {
+        status: next,
+        updatedAt: serverTimestamp(),
+        updatedBy: user.id,
+      });
+      await addDoc(
+        collection(
+          db,
+          RP_COLLECTIONS.masters,
+          master.id,
+          RP_COLLECTIONS.auditLogs,
+        ),
+        {
+          organizationId,
+          masterId: master.id,
+          action: `Master ${next.toLowerCase()}`,
+          summary: `Status changed from ${master.status} to ${next}`,
+          userId: user.id,
+          userName: user.name,
+          createdAt: serverTimestamp(),
+        },
+      );
+      toast({ title: `Master ${next.toLowerCase()}` });
     });
-    await addDoc(
-      collection(
-        db,
-        RP_COLLECTIONS.masters,
-        master.id,
-        RP_COLLECTIONS.auditLogs,
-      ),
-      {
+
+  const duplicate = () =>
+    guarded("Duplicate", async () => {
+      if (!master || !user) return;
+      // The copy is a fresh draft: none of the original's archive markers come with it.
+      const { id, createdAt, updatedAt, deleted, ...data } = master as RecurringPaymentMaster & Record<string, unknown>;
+      delete data.deletedAt;
+      delete data.deletedBy;
+      delete data.deletionReason;
+      const copy = await addDoc(collection(db, RP_COLLECTIONS.masters), {
+        ...data,
+        title: `${master.title} (Copy)`,
+        status: "Draft",
+        deleted: false,
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+        createdBy: user.id,
+        updatedBy: user.id,
+      });
+      toast({ title: "Draft copy created" });
+      router.push(`/recurring-payments/masters/${copy.id}/edit`);
+    });
+
+  const generate = () =>
+    guarded("Generation", async () => {
+      if (!master || !user || !nextCycle || archived) return;
+      const outcome = await generateMasterCycle(
+        master,
+        nextCycle,
+        await loadManualGenerationContext(organizationId, user),
+      );
+      if (outcome.kind === "exists") {
+        toast({
+          title: `The cycle ${nextCycle.billingPeriodStart} to ${nextCycle.billingPeriodEnd} already exists`,
+          variant: "destructive",
+        });
+        return;
+      }
+      toast({
+        title: `Payment generated for ${nextCycle.billingPeriodStart} to ${nextCycle.billingPeriodEnd}`,
+        description: outcome.activationStage
+          ? `Sent to ${outcome.activationStage} for action.`
+          : outcome.noAssignee
+            ? "Due to enter the workflow, but nobody could be assigned — check the payment owner, or the first step's users in Settings › Workflow."
+            : "Not due soon enough yet to enter the workflow — it'll activate automatically as the bill date approaches.",
+        variant: outcome.noAssignee ? "destructive" : undefined,
+      });
+      router.push(`/recurring-payments/payments/${outcome.paymentId}`);
+    });
+
+  const archive = () =>
+    guarded("Archive", async () => {
+      if (
+        !master ||
+        !user ||
+        archived ||
+        !window.confirm(
+          "Archive this master? Existing generated payments will remain available.",
+        )
+      )
+        return;
+      await updateDoc(doc(db, RP_COLLECTIONS.masters, master.id), {
+        deleted: true,
+        status: "Inactive",
+        deletionReason: "Archived from master details",
+        deletedAt: serverTimestamp(),
+        deletedBy: user.id,
+      });
+      await addDoc(collection(db, RP_COLLECTIONS.masters, master.id, RP_COLLECTIONS.auditLogs), {
         organizationId,
         masterId: master.id,
-        action: `Master ${next.toLowerCase()}`,
-        summary: `Status changed from ${master.status} to ${next}`,
+        action: "Master archived",
+        summary: "Archived from master details; generated payments retained",
         userId: user.id,
         userName: user.name,
         createdAt: serverTimestamp(),
-      },
-    );
-    toast({ title: `Master ${next.toLowerCase()}` });
-  }
-
-  async function duplicate() {
-    if (!master || !user) return;
-    const { id, createdAt, updatedAt, ...data } = master;
-    const copy = await addDoc(collection(db, RP_COLLECTIONS.masters), {
-      ...data,
-      title: `${master.title} (Copy)`,
-      status: "Draft",
-      createdAt: serverTimestamp(),
-      updatedAt: serverTimestamp(),
-      createdBy: user.id,
-      updatedBy: user.id,
-    });
-    toast({ title: "Draft copy created" });
-    router.push(`/recurring-payments/masters/${copy.id}/edit`);
-  }
-
-  async function generate() {
-    if (!master || !nextCycle) return;
-    const cycleKey = `${organizationId}_${master.id}_${nextCycle.key}`;
-    const paymentRef = doc(
-      db,
-      RP_COLLECTIONS.payments,
-      cycleKey.replace(/[^a-zA-Z0-9_-]/g, "_"),
-    );
-    if ((await getDoc(paymentRef)).exists())
-      return toast({
-        title: `The cycle ${nextCycle.billingPeriodStart} to ${nextCycle.billingPeriodEnd} already exists`,
-        variant: "destructive",
       });
-    const ruleSnapshot = await getDocs(
-      query(
-        collection(db, RP_COLLECTIONS.approvalRules),
-        where("organizationId", "==", organizationId),
-      ),
-    );
-    const amount = Number(master.amount || 0);
-    const approvalRule = matchApprovalRule(
-      ruleSnapshot.docs.map((item) => ({ id: item.id, ...item.data() }) as ApprovalRule),
-      { amount, category: master.category, projectId: master.projectId, projectName: master.projectName },
-    );
-    const fields = buildPaymentObligationFields({
-      organizationId,
-      masterId: master.id,
-      cycle: nextCycle,
-      generatedAutomatically: false,
-      title: master.title,
-      category: master.category,
-      vendorName: master.vendorName,
-      branchId: master.branchId,
-      branchName: master.branchName,
-      projectId: master.projectId,
-      projectName: master.projectName,
-      departmentId: master.departmentId,
-      department: master.department,
-      costCentre: master.costCentre,
-      ledger: master.ledger,
-      amountType: master.amountType,
-      description: master.description,
-      accountNumber: master.accountNumber,
-      amount,
-      maximumAmount: master.maximumAmount,
-      assignedTo: master.assignedTo,
-      backupAssignedTo: master.backupAssignedTo,
-      verifierId: master.verifierId,
-      approverId: master.approverId,
-      accountsProcessorId: master.accountsProcessorId,
-      approvalRule,
+      toast({ title: "Master archived; historical payments retained" });
+      router.push("/recurring-payments/masters");
     });
-    // Don't leave this obligation stuck at "Scheduled" until the next automation run: if it's
-    // already due soon enough per the org's workflow-activation window, enter it into the first
-    // workflow step immediately, same as the daily automation job would.
-    const [settingsSnap, workflowSnap, calendar] = await Promise.all([
-      getDoc(doc(db, RP_COLLECTIONS.settings, organizationId.replace(/[^a-zA-Z0-9_-]/g, "_"))),
-      getDoc(doc(db, "workflows", "recurring-payments-workflow")),
-      loadWorkingCalendar(),
-    ]);
-    const activationDays = Math.min(90, Math.max(0, Number(settingsSnap.data()?.automation?.workflowActivationDays ?? 7)));
-    const workflow = (workflowSnap.data()?.steps || DEFAULT_RECURRING_WORKFLOW) as RecurringWorkflowStep[];
-    const activation = resolveWorkflowActivation(workflow[0], fields, { activationDays, today: new Date() });
-    await setDoc(paymentRef, {
-      ...fields,
-      ...(activation
-        ? {
-            status: activation.status,
-            workflowStatus: activation.workflowStatus,
-            stage: activation.stage,
-            currentStepId: activation.currentStepId,
-            assignees: activation.assignees,
-            workflowStartedAt: serverTimestamp(),
-            stepEnteredAt: serverTimestamp(),
-            // Real deadline, not resolveWorkflowActivation's naive approximation — accounts for
-            // the org's configured working hours and holidays.
-            workflowDeadline: Timestamp.fromMillis(
-              addBusinessHours(new Date(), Math.max(1, workflow[0].tat), calendar.workingHours, calendar.holidays).getTime(),
-            ),
-          }
-        : {}),
-      createdAt: serverTimestamp(),
-      updatedAt: serverTimestamp(),
-    });
-    toast({
-      title: "Current payment cycle generated",
-      description: activation
-        ? `Sent to ${activation.stage} for action.`
-        : "Not due soon enough yet to enter the workflow — it'll activate automatically as the due date approaches.",
-    });
-    router.push(`/recurring-payments/payments/${paymentRef.id}`);
-  }
-
-  async function archive() {
-    if (
-      !master ||
-      !user ||
-      !window.confirm(
-        "Archive this master? Existing generated payments will remain available.",
-      )
-    )
-      return;
-    await updateDoc(doc(db, RP_COLLECTIONS.masters, master.id), {
-      deleted: true,
-      status: "Inactive",
-      deletionReason: "Archived from master details",
-      deletedAt: serverTimestamp(),
-      deletedBy: user.id,
-    });
-    toast({ title: "Master archived; historical payments retained" });
-    router.push("/recurring-payments/masters");
-  }
 
   if (loading)
     return (
@@ -331,7 +317,7 @@ export default function RecurringMasterDetailPage({
         backHref="/recurring-payments/masters"
         backLabel="Back to masters"
         title={master.title}
-        badge={<StatusBadge status={master.status} />}
+        badge={<StatusBadge status={archived ? "Archived" : master.status} />}
         description={
           <>
             Master ID {master.id} · {master.category} ·{" "}
@@ -342,45 +328,61 @@ export default function RecurringMasterDetailPage({
           <>
             {can("Edit", "Recurring Payments.Recurring Masters") && (
               <>
-                <Link href={`/recurring-payments/masters/${master.id}/edit`}>
-                  <Button variant="outline">
-                    <Edit3 className="mr-2 h-4 w-4" />
-                    Edit
-                  </Button>
-                </Link>
-                <Button
-                  variant="outline"
-                  onClick={() =>
-                    changeStatus(
-                      master.status === "Paused" ? "Active" : "Paused",
-                    )
-                  }
-                >
-                  {master.status === "Paused" ? (
-                    <Play className="mr-2 h-4 w-4" />
-                  ) : (
-                    <Pause className="mr-2 h-4 w-4" />
-                  )}
-                  {master.status === "Paused" ? "Resume" : "Pause"}
-                </Button>
-                <Button variant="outline" onClick={duplicate}>
+                {!archived && (
+                  <>
+                    <Link href={`/recurring-payments/masters/${master.id}/edit`}>
+                      <Button variant="outline">
+                        <Edit3 className="mr-2 h-4 w-4" />
+                        Edit
+                      </Button>
+                    </Link>
+                    {/* Pause/Resume only between Active and Paused — resuming a Draft would activate a
+                        master that never passed the form's validation. */}
+                    {["Active", "Paused"].includes(master.status) && (
+                      <Button
+                        variant="outline"
+                        disabled={busy}
+                        onClick={() =>
+                          changeStatus(
+                            master.status === "Paused" ? "Active" : "Paused",
+                          )
+                        }
+                      >
+                        {master.status === "Paused" ? (
+                          <Play className="mr-2 h-4 w-4" />
+                        ) : (
+                          <Pause className="mr-2 h-4 w-4" />
+                        )}
+                        {master.status === "Paused" ? "Resume" : "Pause"}
+                      </Button>
+                    )}
+                  </>
+                )}
+                <Button variant="outline" disabled={busy} onClick={duplicate}>
                   <Copy className="mr-2 h-4 w-4" />
                   Duplicate
                 </Button>
               </>
             )}
             {can("Add", "Recurring Payments.Payments") &&
-              master.status === "Active" && (
+              master.status === "Active" &&
+              !archived &&
+              nextCycle && (
                 <Button
                   className="bg-emerald-500 hover:bg-emerald-400"
+                  disabled={busy}
                   onClick={generate}
                 >
-                  <RefreshCw className="mr-2 h-4 w-4" />
+                  {busy ? (
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  ) : (
+                    <RefreshCw className="mr-2 h-4 w-4" />
+                  )}
                   Generate now
                 </Button>
               )}
-            {can("Delete", "Recurring Payments.Recurring Masters") && (
-              <Button variant="destructive" onClick={archive}>
+            {can("Delete", "Recurring Payments.Recurring Masters") && !archived && (
+              <Button variant="destructive" disabled={busy} onClick={archive}>
                 <Trash2 className="mr-2 h-4 w-4" />
                 Archive
               </Button>
@@ -397,7 +399,7 @@ export default function RecurringMasterDetailPage({
         <HeaderStat label="Vendor" value={master.vendorName} />
         <HeaderStat
           label="Next generation"
-          value={nextCycle?.billingPeriodStart || "—"}
+          value={nextCycle?.generationDate || "—"}
         />
         <HeaderStat
           label="Bill expected"
@@ -415,7 +417,7 @@ export default function RecurringMasterDetailPage({
         </TabsList>
         <TabsContent value="overview">
           <Card>
-            <CardContent className="grid gap-4 p-5 sm:grid-cols-2 lg:grid-cols-4">
+            <CardContent className="grid grid-cols-1 gap-4 p-5 sm:grid-cols-2 lg:grid-cols-4">
               <Info
                 label="Branch / project"
                 value={
@@ -462,7 +464,7 @@ export default function RecurringMasterDetailPage({
                 </p>
                 <p className="text-sm">{describeRecurrence(master)}</p>
                 {nextCycle && (
-                  <div className="grid gap-3 pt-1 sm:grid-cols-2 lg:grid-cols-4">
+                  <div className="grid grid-cols-1 gap-3 pt-1 sm:grid-cols-2 lg:grid-cols-4">
                     <Info
                       label="Current cycle"
                       value={`${nextCycle.billingPeriodStart} to ${nextCycle.billingPeriodEnd}`}
@@ -487,7 +489,7 @@ export default function RecurringMasterDetailPage({
         </TabsContent>
         <TabsContent value="documents">
           <Card>
-            <CardContent className="grid gap-3 p-5 sm:grid-cols-2 lg:grid-cols-3">
+            <CardContent className="grid grid-cols-1 gap-3 p-5 sm:grid-cols-2 lg:grid-cols-3">
               {(master.masterDocuments || []).map((document, index) => (
                 <a
                   className="flex gap-3 rounded-xl border p-4 hover:bg-muted"
@@ -543,7 +545,7 @@ export default function RecurringMasterDetailPage({
                 Current calculated cycle and generation readiness
               </CardDescription>
             </CardHeader>
-            <CardContent className="grid gap-4 sm:grid-cols-3">
+            <CardContent className="grid grid-cols-1 gap-4 sm:grid-cols-3">
               <Info
                 label="Current cycle"
                 value={nextCycle?.key || "Not applicable"}
@@ -559,11 +561,13 @@ export default function RecurringMasterDetailPage({
               <Info
                 label="Generation result"
                 value={
-                  payments.some((item) =>
-                    item.cycleKey.endsWith(nextCycle?.key || "__"),
-                  )
-                    ? "Current cycle already generated"
-                    : "Ready for generation"
+                  archived
+                    ? "Master archived — no further cycles are generated"
+                    : !nextCycle
+                      ? "No cycle left to generate"
+                      : nextCycle.generationDate > recurringDateOnly(new Date())
+                        ? `Next cycle generates on ${nextCycle.generationDate}`
+                        : "Ready for generation"
                 }
               />
             </CardContent>

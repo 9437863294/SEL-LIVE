@@ -6,7 +6,7 @@ import { BarChart3, CalendarClock, FileSpreadsheet, Loader2, Printer, Store, Tag
 import { db } from '@/lib/firebase';
 import { useAuth } from '@/components/auth/AuthProvider';
 import { useAuthorization } from '@/hooks/useAuthorization';
-import { PaymentObligation, RP_COLLECTIONS, currency, effectiveStatus, matchesScopeFilter, recurringDateOnly, visibleObligations } from '@/lib/recurring-payments';
+import { PaymentObligation, RP_COLLECTIONS, currency, effectiveStatus, isOpenObligation, matchesScopeFilter, outstandingAmountOf, paymentTiming, recurringDateOnly, visibleObligations } from '@/lib/recurring-payments';
 import { exportWorkbook } from '@/lib/report-excel';
 import { useToast } from '@/hooks/use-toast';
 import { Button } from '@/components/ui/button';
@@ -68,24 +68,29 @@ export default function RecurringPaymentReports() {
   // obligations are still included here (at their expected amount) since they're a real forecast,
   // not yet-realized spend — that distinction is what "open" (below) narrows further for ageing.
   const nonVoid = useMemo(() => scopedPayments.filter(p => !['Cancelled', 'Waived'].includes(p.status)), [scopedPayments]);
-  const open = useMemo(() => scopedPayments.filter(p => !['Paid', 'Closed', 'Cancelled', 'Waived'].includes(p.status)), [scopedPayments]);
+  const open = useMemo(() => scopedPayments.filter(isOpenObligation), [scopedPayments]);
   const now = new Date();
   const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  // Open exposure: what is still owed, not the gross bill — a part-paid bill only owes its balance.
   const outflow = (days: number) => open.filter(p => {
     if (!p.dueDate) return false;
     const due = new Date(`${p.dueDate}T00:00:00`);
     return due >= today && due <= new Date(today.getTime() + days * 86_400_000);
-  }).reduce((s, p) => s + (p.billAmount || p.expectedAmount), 0);
+  }).reduce((s, p) => s + outstandingAmountOf(p), 0);
 
   const byCategory = group(nonVoid, p => p.category);
   const byVendor = group(nonVoid, p => p.vendorName);
+  // The vendor table lists only the top 12, so its shares and footer are taken over every vendor.
+  const vendorTotals = byVendor.reduce((acc, row) => ({ count: acc.count + row.count, amount: acc.amount + row.amount }), { count: 0, amount: 0 });
   const ageing = [['1–7 days', 1, 7], ['8–15 days', 8, 15], ['16–30 days', 16, 30], ['31–60 days', 31, 60], ['Above 60 days', 61, 100_000]].map(([label, min, max]) => {
+    // Aged from the end of grace (overdueDate), the same point at which effectiveStatus turns a
+    // payment Overdue — ageing from the due date put in-grace payments into the overdue buckets.
     const subset = open.filter(p => {
-      if (!p.dueDate) return false;
-      const days = Math.floor((today.getTime() - new Date(`${p.dueDate}T00:00:00`).getTime()) / 86_400_000);
+      if (!p.dueDate || p.status !== 'Overdue') return false;
+      const days = paymentTiming(p).daysPastGrace;
       return days >= Number(min) && days <= Number(max);
     });
-    return { label: String(label), count: subset.length, amount: subset.reduce((s, p) => s + (p.billAmount || p.expectedAmount) - (p.settledAmount || p.paidAmount), 0) };
+    return { label: String(label), count: subset.length, amount: subset.reduce((s, p) => s + outstandingAmountOf(p), 0) };
   });
   const monthly = Array.from({ length: 6 }, (_, index) => {
     const d = new Date(today.getFullYear(), today.getMonth() - (5 - index), 1);
@@ -211,7 +216,7 @@ export default function RecurringPaymentReports() {
 
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
         <ReportSummaryTable title="Category-wise expense" description="Total billed (or expected, where no bill exists yet) value, by category — excludes cancelled/waived" icon={Tags} rows={byCategory} />
-        <ReportSummaryTable title="Vendor-wise expense" description="Top 12 vendors by total value — excludes cancelled/waived" icon={Store} rows={byVendor.slice(0, 12)} />
+        <ReportSummaryTable title="Vendor-wise expense" description="Top 12 vendors by total value — excludes cancelled/waived" icon={Store} rows={byVendor.slice(0, 12)} totals={vendorTotals} />
       </div>
 
       <TableCard

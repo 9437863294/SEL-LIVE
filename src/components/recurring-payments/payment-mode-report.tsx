@@ -59,6 +59,8 @@ const DEFAULT_FILTERS = {
   paidBy: "all",
 };
 
+const NO_ACCOUNT = "Cash / no account";
+
 export default function PaymentModeReport() {
   const { user } = useAuth();
   const { can } = useAuthorization();
@@ -131,8 +133,15 @@ export default function PaymentModeReport() {
   );
 
   const byMode = useMemo(() => groupBy(rows, (item) => item.mode || "Other"), [rows]);
+  // Grouped on the raw account and masked only for display — grouping on the masked form merged
+  // every pair of accounts that happen to end in the same four digits. `id` keeps such rows apart.
   const byBank = useMemo(
-    () => groupBy(rows, (item) => (item.bankAccount ? maskAccount(item.bankAccount) : "Cash / no account")),
+    () =>
+      groupBy(rows, (item) => item.bankAccount || NO_ACCOUNT).map((row) => ({
+        ...row,
+        id: row.name,
+        name: row.name === NO_ACCOUNT ? NO_ACCOUNT : maskAccount(row.name),
+      })),
     [rows],
   );
 

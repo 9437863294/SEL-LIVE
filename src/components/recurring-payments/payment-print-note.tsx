@@ -2,7 +2,9 @@
 
 import {
   currency,
+  effectiveStatus,
   maskAccount,
+  outstandingAmountOf,
   type PaymentObligation,
   type PaymentTransaction,
 } from "@/lib/recurring-payments";
@@ -69,14 +71,16 @@ export default function PaymentPrintNote({
   const gross = Number(payment.billAmount || payment.expectedAmount || 0);
   const net = Number(payment.netPayableAmount || gross);
   const paid = Number(payment.settledAmount || payment.paidAmount || 0);
-  const outstanding = Math.max(0, net - paid);
+  // Outstanding on the same basis every settlement writer stores: bill less settled. Net payable is
+  // already after TDS and deductions, which `settled` also includes, so net − settled counted them twice.
+  const outstanding = outstandingAmountOf(payment);
   const identity = [
     line("Payment reference", payment.id),
     line("Bill number", payment.billNumber || "Not received"),
     line("Bill date", payment.billDate || payment.billReceivedDate || "—"),
     line("Billing period", `${payment.billingPeriodStart} to ${payment.billingPeriodEnd}`),
     line("Due date", payment.dueDate),
-    line("Status", payment.status),
+    line("Status", effectiveStatus(payment)),
   ];
   const parties = [
     line("Vendor", payment.vendorName),
@@ -199,7 +203,7 @@ export default function PaymentPrintNote({
                   <td className="py-1 pr-3">
                     {item.transactionReference || item.chequeNumber || "—"}
                   </td>
-                  <td className="py-1 pr-3">{item.bankAccount || "—"}</td>
+                  <td className="py-1 pr-3">{maskAccount(item.bankAccount) || "—"}</td>
                   <td className="py-1 text-right tabular-nums">{currency(item.amount)}</td>
                 </tr>
               ))}

@@ -40,25 +40,24 @@ import { useToast } from "@/hooks/use-toast";
 import {
   actionableRecurringCycle,
   BILL_DATE_RULES,
-  buildPaymentObligationFields,
   buildRecurringCycleSchedule,
   currency,
   DEFAULT_PAYMENT_CATEGORIES,
-  DEFAULT_RECURRING_WORKFLOW,
   describeRecurrence,
   DUE_DATE_RULES,
   loadWorkingCalendar,
-  matchApprovalRule,
   normalizeDueDateRule,
   recurringDateOnly,
-  resolveWorkflowActivation,
   type ApprovalRule,
   type RecurrenceRuleInput,
   type RecurringPaymentMaster,
-  type RecurringWorkflowStep,
   RP_COLLECTIONS,
 } from "@/lib/recurring-payments";
-import { addBusinessHours, makeIsWorkingDay } from "@/lib/working-hours";
+import { makeIsWorkingDay } from "@/lib/working-hours";
+import {
+  generateMasterCycle,
+  loadManualGenerationContext,
+} from "@/lib/recurring-payments-generation";
 import { ControlledField, ControlledToggleLabel } from "./controlled-field";
 import {
   useFieldControl,
@@ -168,6 +167,9 @@ export default function RecurringMasterFormPage({
   // org's real calendar; until it arrives the math falls back to Mon–Fri.
   const [calendar, setCalendar] = useState<Awaited<ReturnType<typeof loadWorkingCalendar>> | null>(null);
   const [loading, setLoading] = useState(!!masterId);
+  // An edit URL for a master that is archived, belongs to another organization, or doesn't exist.
+  // Saving it used to write `deleted: false` — quietly un-archiving it, possibly straight to Active.
+  const [notFound, setNotFound] = useState(false);
   const [saving, setSaving] = useState(false);
   const set = <K extends keyof RecurringPaymentMaster>(
     key: K,
@@ -214,10 +216,12 @@ export default function RecurringMasterFormPage({
               (item) => ({ id: item.id, ...item.data() }) as ApprovalRule,
             ),
           );
-          if (masterSnapshot && masterSnapshot.exists())
-            setDraft(
-              hydrateMasterDraft(masterSnapshot.id, masterSnapshot.data()),
-            );
+          if (masterId) {
+            const data = masterSnapshot?.exists() ? masterSnapshot.data() : null;
+            if (!data || data.deleted === true || (data.organizationId || "default") !== organizationId)
+              setNotFound(true);
+            else setDraft(hydrateMasterDraft(masterSnapshot!.id, data));
+          }
           setLoading(false);
         },
       )
@@ -243,6 +247,8 @@ export default function RecurringMasterFormPage({
       missing.push("Fixed amount");
     if (draft.frequency === "Custom" && !Number(draft.customIntervalDays))
       missing.push("Custom interval days");
+    if (Number(draft.maximumAmount) > 0 && Number(draft.maximumAmount) < Number(draft.amount || 0))
+      missing.push("Maximum amount (cannot be below the expected amount)");
     return missing;
   }, [
     draft.title,
@@ -255,6 +261,7 @@ export default function RecurringMasterFormPage({
     draft.amount,
     draft.frequency,
     draft.customIntervalDays,
+    draft.maximumAmount,
   ]);
   // The exact rule set the schedule math consumes, so the preview below and what automation will
   // actually generate can never drift apart — both read this one object.
@@ -370,6 +377,13 @@ export default function RecurringMasterFormPage({
         title: "Custom interval is required",
         variant: "destructive",
       });
+    // A ceiling below the expected amount flags every bill at the expected amount as over-limit,
+    // forcing a variance comment on payments that are exactly as planned.
+    if (Number(draft.maximumAmount) > 0 && Number(draft.maximumAmount) < Number(draft.amount || 0))
+      return toast({
+        title: "Maximum amount cannot be below the expected amount",
+        variant: "destructive",
+      });
     const missingLabel = validateFieldControlRequirements("master", draft, field);
     if (missingLabel)
       return toast({
@@ -387,20 +401,27 @@ export default function RecurringMasterFormPage({
       const form = new FormData(formElement);
       const documents = await uploadDocuments(form, masterRef.id);
       const owner = users.find((item) => item.id === draft.assignedTo);
+      // "save" keeps whatever status the master already has. Before it existed, an edit could only
+      // ever leave as Draft or Active — a Paused master couldn't be edited and stay paused — and
+      // pressing Enter in any field submitted through the first button, "Save as draft", silently
+      // dropping an Active master out of automation.
       const status: RecurringPaymentMaster["status"] =
-        intent === "draft" ? "Draft" : "Active";
-      const approvalRule = matchApprovalRule(rules, {
-        amount: Number(draft.amount || 0),
-        category: draft.category,
-        projectId: draft.projectId,
-        projectName: draft.projectName,
-      });
+        intent === "save" && draft.status
+          ? draft.status
+          : intent === "draft" ? "Draft" : "Active";
       // Omit `id` rather than setting it to `undefined` — Firestore's set()/update() rejects
-      // any field whose value is `undefined`.
-      const { id: _draftId, ...draftFields } = draft;
+      // any field whose value is `undefined`. The archive markers are omitted too: on an update
+      // they are left as they are rather than rewritten from whatever the form loaded.
+      const {
+        id: _draftId,
+        deleted: _deleted,
+        organizationId: _organizationId,
+        ...draftFields
+      } = draft;
       const payload = {
         ...draftFields,
-        organizationId,
+        // Ownership is set once, at creation — an edit must not move a master between organizations.
+        ...(masterId ? {} : { organizationId, deleted: false }),
         organizationName: user.organizationName || "",
         amount: Number(draft.amount || 0),
         maximumAmount: Number(draft.maximumAmount || 0),
@@ -415,10 +436,9 @@ export default function RecurringMasterFormPage({
           draft.frequency === "Custom"
             ? Number(draft.customIntervalDays || 30)
             : null,
-        varianceTolerancePercent: Number(draft.varianceTolerancePercent || 20),
+        varianceTolerancePercent: Math.max(0, Number(draft.varianceTolerancePercent ?? 20)),
         assignedToName: owner?.name || "",
         status,
-        deleted: false,
         masterDocuments: [...(draft.masterDocuments || []), ...documents],
         updatedAt: serverTimestamp(),
         updatedBy: user.id,
@@ -445,99 +465,54 @@ export default function RecurringMasterFormPage({
         newValue: { status, amount: netAmount, frequency: draft.frequency },
         createdAt: serverTimestamp(),
       });
-      let activationStage: string | null = null;
+      await batch.commit();
+      let generationNote: string | undefined;
+      let generationFailed = false;
       if (intent === "generate") {
-        // Same rule object the preview reads, so what gets written is what the user was shown —
-        // and the same cycle automation would pick, which for an arrears-billed master is the
-        // closed period whose bill has arrived rather than the period today falls inside.
-        const cycle = recurrenceRules
-          ? actionableRecurringCycle(recurrenceRules, new Date(), scheduleOptions)
-          : null;
-        if (cycle) {
-          const cycleKey = `${organizationId}_${masterRef.id}_${cycle.key}`;
-          const paymentRef = doc(
-            db,
-            RP_COLLECTIONS.payments,
-            cycleKey.replace(/[^a-zA-Z0-9_-]/g, "_"),
-          );
-          const obligationFields = buildPaymentObligationFields({
-            organizationId,
-            masterId: masterRef.id,
-            cycle,
-            generatedAutomatically: false,
-            title: draft.title!,
-            category: draft.category!,
-            vendorName: draft.vendorName!,
-            branchId: draft.branchId,
-            branchName: draft.branchName,
-            projectId: draft.projectId,
-            projectName: draft.projectName,
-            departmentId: draft.departmentId,
-            department: draft.department,
-            costCentre: draft.costCentre,
-            ledger: draft.ledger,
-            amountType: draft.amountType,
-            description: draft.description,
-            accountNumber: draft.accountNumber,
-            amount: Number(draft.amount || 0),
-            maximumAmount: Number(draft.maximumAmount || 0),
-            assignedTo: draft.assignedTo,
-            backupAssignedTo: draft.backupAssignedTo,
-            verifierId: draft.verifierId,
-            approverId: draft.approverId,
-            accountsProcessorId: draft.accountsProcessorId,
-            approvalRule,
-          });
-          // Don't leave this obligation stuck at "Scheduled" until the next automation run: if
-          // it's already due soon enough per the org's workflow-activation window, enter it into
-          // the first workflow step immediately, same as the daily automation job would.
-          const [settingsSnap, workflowSnap, calendar] = await Promise.all([
-            getDoc(doc(db, RP_COLLECTIONS.settings, organizationId.replace(/[^a-zA-Z0-9_-]/g, "_"))),
-            getDoc(doc(db, "workflows", "recurring-payments-workflow")),
-            loadWorkingCalendar(),
-          ]);
-          const activationDays = Math.min(90, Math.max(0, Number(settingsSnap.data()?.automation?.workflowActivationDays ?? 7)));
-          const workflow = (workflowSnap.data()?.steps || DEFAULT_RECURRING_WORKFLOW) as RecurringWorkflowStep[];
-          const activation = resolveWorkflowActivation(workflow[0], obligationFields, { activationDays, today: new Date() });
-          if (activation) activationStage = activation.stage;
-          batch.set(
-            paymentRef,
-            {
-              ...obligationFields,
-              ...(activation
-                ? {
-                    status: activation.status,
-                    workflowStatus: activation.workflowStatus,
-                    stage: activation.stage,
-                    currentStepId: activation.currentStepId,
-                    assignees: activation.assignees,
-                    workflowStartedAt: serverTimestamp(),
-                    stepEnteredAt: serverTimestamp(),
-                    // Real deadline, not resolveWorkflowActivation's naive approximation — accounts
-                    // for the org's configured working hours and holidays.
-                    workflowDeadline: Timestamp.fromMillis(
-                      addBusinessHours(new Date(), Math.max(1, workflow[0].tat), calendar.workingHours, calendar.holidays).getTime(),
-                    ),
-                  }
-                : {}),
-              createdAt: serverTimestamp(),
-              updatedAt: serverTimestamp(),
-            },
-            { merge: false },
-          );
+        // After the master exists, through the same path as "Generate now", so the first payment
+        // gets the same assignee notification and create-only-if-absent write. The master is saved
+        // either way; a generation problem is reported, not allowed to read as a failed save.
+        try {
+          const context = await loadManualGenerationContext(organizationId, user);
+          // Same rule object the preview reads, so what gets written is what the user was shown,
+          // and the same cycle automation would pick. A brand-new master has nothing generated.
+          const cycle = recurrenceRules
+            ? actionableRecurringCycle(recurrenceRules, new Date(), context.scheduleOptions)
+            : null;
+          if (!cycle) {
+            generationNote = "No payment was generated — the master has no cycle to generate yet (check its start and end dates).";
+          } else {
+            const outcome = await generateMasterCycle(
+              {
+                ...draftFields,
+                id: masterRef.id,
+                organizationId,
+                amount: payload.amount,
+                maximumAmount: payload.maximumAmount,
+              } as RecurringPaymentMaster,
+              cycle,
+              context,
+            );
+            generationNote = outcome.kind === "exists"
+              ? `The payment for ${cycle.billingPeriodStart} to ${cycle.billingPeriodEnd} already exists.`
+              : outcome.activationStage
+                ? `First payment (${cycle.billingPeriodStart} to ${cycle.billingPeriodEnd}) generated and sent to ${outcome.activationStage} for action.`
+                : outcome.noAssignee
+                  ? `First payment generated, but nobody could be assigned to its first step — check the payment owner, or that step's users in Settings › Workflow.`
+                  : `First payment (${cycle.billingPeriodStart} to ${cycle.billingPeriodEnd}) generated; it enters the workflow automatically as its bill date approaches.`;
+            generationFailed = outcome.kind === "created" && outcome.noAssignee;
+          }
+        } catch (error) {
+          generationFailed = true;
+          generationNote = `The master was saved, but its first payment could not be generated: ${error instanceof Error ? error.message : "please use Generate now on the master."}`;
         }
       }
-      await batch.commit();
       toast({
         title: masterId
           ? "Recurring master updated"
           : "Recurring master created",
-        description:
-          intent === "generate"
-            ? activationStage
-              ? `Current cycle generated and sent to ${activationStage} for action.`
-              : "Current cycle generated, but not due soon enough yet to enter the workflow — it'll activate automatically as the due date approaches."
-            : undefined,
+        description: generationNote,
+        variant: generationFailed ? "destructive" : undefined,
       });
       router.push(`/recurring-payments/masters/${masterRef.id}`);
     } catch (error) {
@@ -556,6 +531,15 @@ export default function RecurringMasterFormPage({
       <div className="flex min-h-[50vh] items-center justify-center">
         <Loader2 className="h-7 w-7 animate-spin" />
       </div>
+    );
+  if (notFound)
+    return (
+      <Card>
+        <CardContent className="py-16 text-center text-sm text-muted-foreground">
+          This master was not found, has been archived, or belongs to another organization, so it
+          can&apos;t be edited.
+        </CardContent>
+      </Card>
     );
   return (
     <div className="mx-auto max-w-6xl space-y-5">
@@ -1034,7 +1018,7 @@ export default function RecurringMasterFormPage({
               <Input
                 type="number"
                 min="0"
-                value={draft.varianceTolerancePercent || 20}
+                value={draft.varianceTolerancePercent ?? 20}
                 onChange={(event) =>
                   set("varianceTolerancePercent", Number(event.target.value))
                 }
@@ -1225,6 +1209,14 @@ export default function RecurringMasterFormPage({
           <Button type="button" variant="outline" onClick={() => router.back()}>
             Cancel
           </Button>
+          {/* First submit button in DOM order, so pressing Enter in a field saves without changing
+              the master's status (rendered visually last via `order`). */}
+          {masterId && (
+            <Button type="submit" value="save" disabled={saving} className="order-last">
+              {saving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
+              Save changes
+            </Button>
+          )}
           <Button
             type="submit"
             value="draft"

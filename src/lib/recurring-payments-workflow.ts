@@ -278,8 +278,10 @@ export function routeRecurringWorkflow(input: RouteRecurringWorkflowInput): Rout
     target = workflow[Math.max(0, workflow.findIndex((item) => item.id === step.id) - 1)];
     currentStepId = target.id;
     // Returning *into* an approval step restarts it: the levels that had already signed did so
-    // against figures the correction is about to change.
-    if (target.name.toLowerCase().includes('approval')) {
+    // against figures the correction is about to change. So does returning *out of* one — a level-2
+    // approver sending the bill back to verification must not leave level 1's signature standing,
+    // or the payment re-enters approval at level 2 and level 1 never sees the corrected figures.
+    if (target.name.toLowerCase().includes('approval') || step.name.toLowerCase().includes('approval')) {
       currentApprovalLevel = 1;
       approvalCompletedBy = [];
     }

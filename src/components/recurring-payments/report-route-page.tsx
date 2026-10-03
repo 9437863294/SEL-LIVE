@@ -23,6 +23,9 @@ import {
   RP_COLLECTIONS,
   currency,
   effectiveStatus,
+  isOpenObligation,
+  outstandingAmountOf,
+  paymentTiming,
   recurringDateOnly,
   visibleObligations,
 } from "@/lib/recurring-payments";
@@ -61,7 +64,7 @@ export type ReportKind = "upcoming" | "overdue" | "expenses" | "cash-flow";
 const titles = {
   upcoming: [
     "Upcoming Payments Report",
-    "Open obligations due in the selected future period",
+    "Open obligations not yet overdue — due ahead, or past due but still within grace",
   ],
   overdue: [
     "Overdue Payments Report",
@@ -78,6 +81,12 @@ const titles = {
 } as const;
 
 const FORECAST_HORIZONS = [7, 15, 30, 60, 90];
+
+const DATE_FIELD_LABELS = {
+  dueDate: "Due date",
+  billDate: "Bill date",
+  paymentDate: "Payment date",
+} as const;
 
 const DEFAULT_FILTERS = {
   from: "",
@@ -195,18 +204,16 @@ function ReportRouteView({ kind }: { kind: ReportKind }) {
     () =>
       payments
         .filter((item) => {
+          // Upcoming is everything open that isn't Overdue yet. Cutting at the due date instead
+          // dropped payments that were past due but inside their grace period from both this
+          // report and the Overdue one (which only starts once grace runs out).
           if (
             kind === "upcoming" &&
-            (item.dueDate < today ||
-              ["Paid", "Closed", "Cancelled", "Waived"].includes(item.status))
+            (!isOpenObligation(item) || item.status === "Overdue")
           )
             return false;
           if (kind === "overdue" && item.status !== "Overdue") return false;
-          if (
-            kind === "cash-flow" &&
-            ["Paid", "Closed", "Cancelled", "Waived"].includes(item.status)
-          )
-            return false;
+          if (kind === "cash-flow" && !isOpenObligation(item)) return false;
           // Expense Summary is about what's actually been billed, not what's merely scheduled —
           // unlike Cash-Flow Forecast, exclude obligations that haven't received a bill yet. Uses
           // `== null` rather than falsy so a legitimate ₹0 bill still counts as "received."
@@ -251,8 +258,15 @@ function ReportRouteView({ kind }: { kind: ReportKind }) {
           if (filters.max && amount > Number(filters.max)) return false;
           return true;
         })
-        .sort((a, b) => a.dueDate.localeCompare(b.dueDate)),
-    [filters, kind, payments, today, activeProjects, activeDepartments],
+        // Sorted on the date the filter is set to — the one the Date column shows. Rows without
+        // that date (no bill / not paid yet) go last.
+        .sort((a, b) => {
+          const left = (a[filters.dateField] as string | undefined) || "";
+          const right = (b[filters.dateField] as string | undefined) || "";
+          if (!left || !right) return Number(!left) - Number(!right);
+          return left.localeCompare(right) || a.dueDate.localeCompare(b.dueDate);
+        }),
+    [filters, kind, payments, activeProjects, activeDepartments],
   );
   const expected = rows.reduce(
     (sum, item) => sum + Number(item.expectedAmount || 0),
@@ -280,7 +294,7 @@ function ReportRouteView({ kind }: { kind: ReportKind }) {
   // filter below) — otherwise this page was just the same flat table as Upcoming/Overdue with a
   // different status filter, despite being named "Forecast."
   const openForForecast = useMemo(
-    () => payments.filter((item) => !["Paid", "Closed", "Cancelled", "Waived"].includes(item.status)),
+    () => payments.filter(isOpenObligation),
     [payments],
   );
   const outflowBuckets = useMemo(
@@ -292,7 +306,8 @@ function ReportRouteView({ kind }: { kind: ReportKind }) {
             const due = new Date(`${item.dueDate}T00:00:00`);
             return due >= todayDate && due <= new Date(todayDate.getTime() + days * 86_400_000);
           })
-          .reduce((sum, item) => sum + Number(item.billAmount || item.expectedAmount || 0), 0);
+          // Open exposure is what is still owed — a part-paid bill counts only its balance.
+          .reduce((sum, item) => sum + outstandingAmountOf(item), 0);
         return { days, amount };
       }),
     [openForForecast, todayDate],
@@ -416,7 +431,7 @@ function ReportRouteView({ kind }: { kind: ReportKind }) {
         <div>
           <SectionHeader
             title="Outflow horizon"
-            description="Total open exposure (confirmed bills, or expected amount where no bill exists yet) due within each window, regardless of the filters below."
+            description="Total open exposure (unpaid balance of confirmed bills, or of the expected amount where no bill exists yet) due within each window, regardless of the filters below."
           />
           <div className="grid grid-cols-2 gap-3 lg:grid-cols-5">
             {outflowBuckets.map(({ days, amount }) => (
@@ -633,7 +648,7 @@ function ReportRouteView({ kind }: { kind: ReportKind }) {
         <Table>
           <TableHeader>
             <TableRow>
-              <TableHead>Date</TableHead>
+              <TableHead>{DATE_FIELD_LABELS[filters.dateField]}</TableHead>
               <TableHead>Payment</TableHead>
               <TableHead>Scope</TableHead>
               <TableHead>Category</TableHead>
@@ -649,7 +664,14 @@ function ReportRouteView({ kind }: { kind: ReportKind }) {
           <TableBody>
             {rows.map((item) => (
               <TableRow key={item.id}>
-                <TableCell className="whitespace-nowrap">{item.dueDate}</TableCell>
+                <TableCell className="whitespace-nowrap">
+                  {(item[filters.dateField] as string | undefined) || "—"}
+                  {kind === "upcoming" && paymentTiming(item).withinGrace && (
+                    <span className="block text-xs text-amber-700 dark:text-amber-400">
+                      Past due — in grace
+                    </span>
+                  )}
+                </TableCell>
                 <TableCell className="whitespace-nowrap font-medium">
                   {item.title}
                 </TableCell>

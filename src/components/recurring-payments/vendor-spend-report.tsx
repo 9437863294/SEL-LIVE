@@ -11,6 +11,8 @@ import {
   RP_COLLECTIONS,
   currency,
   effectiveStatus,
+  outstandingAmountOf,
+  paymentTiming,
   recurringDateOnly,
   type PaymentObligation,
   visibleObligations,
@@ -157,16 +159,14 @@ export default function VendorSpendReport() {
   const activeFilterCount = (Object.keys(DEFAULT_FILTERS) as Array<keyof typeof DEFAULT_FILTERS>)
     .filter((key) => filters[key] !== DEFAULT_FILTERS[key]).length;
 
-  const today = useMemo(() => {
-    const now = new Date();
-    return new Date(now.getFullYear(), now.getMonth(), now.getDate());
-  }, []);
-
   const vendorMap = useMemo(() => new Map(vendors.map((item) => [item.name, item])), [vendors]);
 
   const rows = useMemo<VendorRow[]>(() => {
     const byVendor = new Map<string, VendorRow>();
     filtered.forEach((item) => {
+      // Cancelled/Waived/Rejected obligations were never owed, so they count toward neither the
+      // vendor's billed value nor what is outstanding with them.
+      if (["Cancelled", "Waived", "Rejected"].includes(item.status)) return;
       const name = item.vendorName || "Unspecified";
       const row =
         byVendor.get(name) ||
@@ -187,14 +187,11 @@ export default function VendorSpendReport() {
       row.expected += Number(item.expectedAmount || 0);
       row.billed += Number(item.billAmount || item.expectedAmount || 0);
       row.paid += Number(item.paidAmount || 0);
-      row.outstanding += Math.max(
-        0,
-        Number(item.billAmount || item.expectedAmount || 0) - Number(item.settledAmount || item.paidAmount || 0),
-      );
+      row.outstanding += outstandingAmountOf(item);
       if (item.status === "Overdue") {
         row.overdueCount += 1;
-        const days = Math.floor((today.getTime() - new Date(`${item.dueDate}T00:00:00`).getTime()) / 86_400_000);
-        row.oldestOverdueDays = Math.max(row.oldestOverdueDays, days);
+        // Days past grace — the point the payment became Overdue — not past the due date.
+        row.oldestOverdueDays = Math.max(row.oldestOverdueDays, paymentTiming(item).daysPastGrace);
       }
       if (item.paymentDate && item.paymentDate > row.lastPaymentDate) row.lastPaymentDate = item.paymentDate;
       byVendor.set(name, row);
@@ -202,7 +199,7 @@ export default function VendorSpendReport() {
     return [...byVendor.values()]
       .filter((row) => !filters.search || row.vendorName.toLowerCase().includes(filters.search.trim().toLowerCase()))
       .sort((a, b) => b.outstanding - a.outstanding);
-  }, [filtered, vendorMap, today, filters.search]);
+  }, [filtered, vendorMap, filters.search]);
 
   const totals = useMemo(
     () => ({
