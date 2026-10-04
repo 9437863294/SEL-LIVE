@@ -116,6 +116,8 @@ JOBS=(
   "insurance-workflow|/api/vehicle-management/insurance-workflow|30 0 * * *"
   "fixed-deposit-controls|/api/fixed-deposit/daily-controls|45 0 * * *"
   "hr-sla|/api/hr/sla|0 1 * * *"
+  # Bill Tracking: follow-ups due, client commitments, overdue high-value bills, retention due.
+  "bill-tracking-reminders|/api/bill-tracking/reminders|0 8 * * *"
   # Mail Hub: sync, scheduled sends, reminders, watch renewal, retention (docs/mail-hub.md).
   # Every minute; each tick drains a queue and is safe to overlap.
   "mail-hub-worker|/api/mail-hub/worker|* * * * *"

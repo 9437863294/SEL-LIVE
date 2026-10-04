@@ -32,6 +32,7 @@ const moduleIcons: Record<string, string> = {
   "E-Approval": "Stamp",
   Loan: "Coins",
   "Recurring Payments": "RefreshCard",
+  "Bill Tracking": "BillTracking",
   "Letter of Credit Management": "BookOpenCheck",
   "Bank Guarantee Management": "ShieldCheck",
   "Fixed Deposit Management": "Vault",
@@ -85,6 +86,8 @@ const moduleDescriptions: Record<string, string> = {
   Loan: "Manage and track loan activities.",
   "Recurring Payments":
     "Manage recurring bills, approvals, due dates, and payments.",
+  "Bill Tracking":
+    "Track client bills, deductions, collections, retention, ageing and outstanding receivables.",
   "Letter of Credit Management":
     "Control LC requests, limits, collateral, bills, payments, recoveries, and closure.",
   "Bank Guarantee Management":
@@ -134,6 +137,7 @@ const moduleCategories: Record<string, ModuleCategory> = {
   "Bank Guarantee Management": "Finance & Treasury",
   Loan: "Finance & Treasury",
   "Recurring Payments": "Finance & Treasury",
+  "Bill Tracking": "Finance & Treasury",
   Expenses: "Finance & Treasury",
   Insurance: "Finance & Treasury",
   // Everything addressed to a site or a project, including the money that goes to one.

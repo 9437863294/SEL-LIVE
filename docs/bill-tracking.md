@@ -1,0 +1,101 @@
+# Bill Tracking & Collection Management
+
+Client billing, deductions, collections, retention, ageing and outstanding receivables. It replaces
+the finance team's `BILL TRACKING-<FY>.xlsx` workbook. The database is the source of truth. Excel
+is used only to import, export and migrate.
+
+Route: `/bill-tracking` (Module Hub → Finance & Treasury → Bill Tracking).
+
+## Architecture
+
+| Layer | Where | Notes |
+|---|---|---|
+| Domain (pure, unit-tested) | `src/lib/bill-tracking/{calculations,money,import,reports,legacy-export,reminders,access,defaults,types,schemas,workbook}.ts` | All money arithmetic is done in integer paise. Signs are never altered. |
+| Server services (Admin SDK) | `src/lib/bill-tracking/server/*` | Permission and scope checks, transactions, audit trail. |
+| API | `src/app/api/bill-tracking/**` | The only way the browser reaches the data. |
+| UI | `src/components/bill-tracking/*`, `src/app/(protected)/bill-tracking/**` | Thin pages. Filters live in the URL, so dashboard links open pre-filtered lists. |
+
+**No client Firestore access.** Every read and write goes through the API. The API resolves the
+caller's permissions and project scope, recomputes all derived amounts (gross, net, received,
+outstanding, status) inside a transaction, and writes the audit entry in the same commit. Values
+the browser sends for derived fields are ignored.
+
+### Collections (Firestore)
+
+| Collection | Contents |
+|---|---|
+| `billTrackingBills` | One document per bill. Holds embedded deduction lines and a mirror of its receipt allocations. |
+| `billTrackingCollections` | One document per bank receipt, with its allocation across bills. |
+| `billTrackingRetention` | The retention release ledger. "Held" is derived from bill deductions. |
+| `billTrackingFollowUps`, `billTrackingComments`, `billTrackingDocuments` | Records attached to a bill. |
+| `billTrackingTargets` | Weekly collection targets. |
+| `billTrackingActivity` | The immutable audit trail. |
+| `billTrackingImportJobs` | One document per import. The `rows` subcollection keeps each row's original cells. |
+| `billTrackingConfig/{org}` | Settings, the masters, project profiles (DGM office, billing client, credit days) and remembered import mappings. |
+| `billTrackingCounters`, `billTrackingSavedViews` | Bill numbering counters and saved filter views. |
+
+Attachments and imported workbooks are stored under `bill-tracking/{org}/…` in Storage. They are
+written and served only by the API.
+
+## Deployment checklist
+
+1. **Firestore rules (console).** Copy the "Bill Tracking & Collection Management" block from
+   `firestore.rules` into the console ruleset. The repo file is not deployed. If the console ends
+   in a catch-all "signed-in users may read", the module's data is readable by every user until
+   you do this. To verify, open Settings → Security & permissions → *Check security rules*.
+2. **Storage rules.** Deploy `storage.rules`. It closes `bill-tracking/**` to clients.
+3. **Indexes.** Deploy `firestore.indexes.json`. The activity feed needs
+   `organizationId ASC, at DESC`.
+4. **Permissions.** No role has Bill Tracking permissions until an admin grants them in Settings →
+   Access Management → *Bill Tracking*.
+   - `All Projects · View` is for HO finance.
+   - Site teams get project-scoped grants instead.
+   - Keep `Collections · Add` and `Collections · Verify` on different people.
+5. **Reminders.** Run `scripts/setup-cloud-scheduler.sh` to add the `bill-tracking-reminders` job
+   (08:00 IST). The route refuses every call while `CRON_SECRET` is unset.
+6. **Migration.**
+   1. Fill in Settings → Projects & DGM offices.
+   2. Run `npm run bill-tracking:dry-run -- "<path to workbook>"` and check the totals offline.
+   3. Import the workbook at `/bill-tracking/import`.
+   4. Open the job's Reconciliation and accept the import only when every difference is explained.
+
+## What the 2026-27 workbook taught the importer
+
+- The data sheet is `Bill Tracking`. Its headings are on row 2, with stray spaces and line breaks
+  in them.
+- About 1,000 rows are pre-filled with formulas, but only 143 are bills.
+  - A row counts as a bill only if finance typed something into it (project, number, date, type
+    or a source amount).
+  - 18 emptied rows still held cached Net/Shortfall results from an earlier year, worth ₹8.5 lakh
+    in total. The importer reports these and ignores them.
+- `Net = ROUND(Taxable + GST − Deductions, 0)`. The "Round net to the rupee" setting is on by
+  default, so legacy nets reproduce exactly. The 7 rows where someone typed over the formula
+  (₹2–4 each) are flagged as net mismatches. The bill keeps the calculated figure.
+- Crop-compensation rows enter the compensation as a *negative* "Mob Adv" deduction. Signs are
+  preserved, so these rows come out with a positive net.
+- STATUS is typed by hand. It disagrees with the receipts on 23 rows; for example, "RECEIVED" is
+  used for short-paid bills. These rows are kept as `legacyStatus` and flagged.
+- One statement number can carry several bill lines, and bill serials restart for each series.
+  Duplicate detection therefore matches on bill type and amounts as well as numbers.
+- The month-wise summary's QUERY formulas list `SUPPLY-20%` and `SUPPLY-10%` both as Supply
+  billing and as retention bills. Here each bill lands in exactly one column, decided by the Bill
+  Type master.
+- "PI" rows are those whose `TAXABLE / ADVANCE` value equals the configured PI marker (default
+  `PI`). The 2026-27 book has none.
+
+Reconciliation of the 2026-27 book (dry run):
+
+| Measure | Result |
+|---|---|
+| Taxable, GST, deductions, received | Match to the paisa |
+| Net | ₹22 higher in SEL LIVE |
+| Outstanding | ₹20 higher in SEL LIVE |
+
+The net and outstanding differences are exactly the 7 flagged rows.
+
+## Tests
+
+```
+npm run test:bill-tracking       # 51 tests: calculations, ageing, import, reports, permissions, reminders
+npm run typecheck:bill-tracking
+```

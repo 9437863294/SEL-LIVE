@@ -1,0 +1,17 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "incremental": false
+  },
+  "include": [
+    "next-env.d.ts",
+    "src/env.d.ts",
+    "src/lib/bill-tracking/**/*.ts",
+    "src/app/api/bill-tracking/**/*.ts",
+    "src/app/(protected)/bill-tracking/**/*.ts",
+    "src/app/(protected)/bill-tracking/**/*.tsx",
+    "src/components/bill-tracking/**/*.ts",
+    "src/components/bill-tracking/**/*.tsx"
+  ],
+  "exclude": ["node_modules"]
+}

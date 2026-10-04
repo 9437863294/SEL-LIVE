@@ -817,6 +817,59 @@ service cloud.firestore {
     }
 
     /* ══════════════════════════════════════════════════════════════════════════════════════════
+     * Bill Tracking & Collection Management
+     *
+     * **Every Bill Tracking collection is closed to every client.** The browser reaches client
+     * billing, receipts and retention only through /api/bill-tracking/*, which checks the
+     * caller's Bill Tracking permissions and project scope (`src/lib/bill-tracking/server/context.ts`)
+     * on every read and write, recomputes every derived amount, and writes the audit trail in the
+     * same transaction. Project scope comes from Access Management grants, which these rules
+     * cannot see, so instead of an approximation the rules deny everything and the Admin SDK —
+     * which bypasses them — is the only accessor.
+     *
+     * If the console ruleset ends in a catch-all "signed-in users may read anything", copy these
+     * blocks in **before** Bill Tracking holds real data. Settings → Security has a "Check
+     * security rules" button that tries each collection from the browser and reports any that
+     * answer.
+     */
+    match /billTrackingBills/{docId=**} {
+      allow read, write: if false;
+    }
+    match /billTrackingCollections/{docId=**} {
+      allow read, write: if false;
+    }
+    match /billTrackingRetention/{docId=**} {
+      allow read, write: if false;
+    }
+    match /billTrackingFollowUps/{docId=**} {
+      allow read, write: if false;
+    }
+    match /billTrackingComments/{docId=**} {
+      allow read, write: if false;
+    }
+    match /billTrackingDocuments/{docId=**} {
+      allow read, write: if false;
+    }
+    match /billTrackingTargets/{docId=**} {
+      allow read, write: if false;
+    }
+    match /billTrackingActivity/{docId=**} {
+      allow read, write: if false;
+    }
+    match /billTrackingImportJobs/{docId=**} {
+      allow read, write: if false;
+    }
+    match /billTrackingConfig/{docId=**} {
+      allow read, write: if false;
+    }
+    match /billTrackingCounters/{docId=**} {
+      allow read, write: if false;
+    }
+    match /billTrackingSavedViews/{docId=**} {
+      allow read, write: if false;
+    }
+
+    /* ══════════════════════════════════════════════════════════════════════════════════════════
      * Mail Hub (docs/mail-hub.md)
      *
      * **Every Mail Hub collection is closed to every client, including its owner.** The browser

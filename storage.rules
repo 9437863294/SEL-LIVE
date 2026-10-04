@@ -93,6 +93,16 @@ service firebase.storage {
       allow read, write: if false;
     }
 
+    // Bill Tracking attachments and imported workbooks: bill-tracking/{org}/{bill|imports}/…
+    //
+    // Written and read only by the server (Admin SDK): uploads and downloads go through
+    // /api/bill-tracking/*, which checks the caller's access to the bill's project. Invoices, bank
+    // advices and TDS certificates must not be readable by any signed-in user who guesses a path,
+    // so this prefix is closed to clients and kept out of the catch-all below.
+    match /bill-tracking/{allPaths=**} {
+      allow read, write: if false;
+    }
+
     // Profile photos: profile-photos/{uid}/{file}, written by Settings → Profile.
     //
     // Only the owner writes their own folder (keyed by auth uid), and only a JPEG, PNG or WebP under
@@ -127,6 +137,7 @@ service firebase.storage {
         && !allPaths.matches('chat/.*')
         && !allPaths.matches('office-hub/.*')
         && !allPaths.matches('mail-hub/.*')
+        && !allPaths.matches('bill-tracking/.*')
         && !allPaths.matches('branding/.*')
         && !allPaths.matches('profile-photos/.*')
         && !allPaths.matches('organizations/[^/]+/fixed-deposits/.*')

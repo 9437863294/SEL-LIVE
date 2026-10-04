@@ -57,6 +57,7 @@ export const moduleIconRegistry: Record<string, ModuleIconEntry> = {
   Receipt: { Icon: ReceiptIcon, gradient: "from-rose-500 to-red-600" },
   Coins: { Icon: BanknoteIcon, gradient: "from-orange-500 to-amber-600" },
   RefreshCard: { Icon: RefreshCardIcon, gradient: "from-fuchsia-500 to-pink-600" },
+  BillTracking: { Icon: LedgerChartIcon, gradient: "from-emerald-600 to-teal-700" },
   BookOpenCheck: { Icon: EnvelopeSealIcon, gradient: "from-teal-600 to-emerald-700" },
   ShieldCheck: { Icon: ShieldCheckIcon, gradient: "from-blue-500 to-sky-600" },
   Shield: { Icon: ShieldUmbrellaIcon, gradient: "from-green-600 to-emerald-700" },

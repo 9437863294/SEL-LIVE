@@ -3345,6 +3345,190 @@
           "order": "ASCENDING"
         }
       ]
+    },
+    {
+      "collectionGroup": "billTrackingActivity",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "organizationId",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "at",
+          "order": "DESCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "billTrackingBills",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "organizationId",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "financialYear",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "billDate",
+          "order": "DESCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "billTrackingBills",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "organizationId",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "financialYear",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "projectId",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "billDate",
+          "order": "DESCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "billTrackingBills",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "organizationId",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "financialYear",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "clientId",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "billDate",
+          "order": "DESCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "billTrackingBills",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "organizationId",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "financialYear",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "paymentStatus",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "billDate",
+          "order": "DESCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "billTrackingBills",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "organizationId",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "projectId",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "billDate",
+          "order": "DESCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "billTrackingBills",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "organizationId",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "paymentStatus",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "dueDate",
+          "order": "ASCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "billTrackingBills",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "organizationId",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "billTypeName",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "billDate",
+          "order": "DESCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "billTrackingBills",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "organizationId",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "workflowStatus",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "projectId",
+          "order": "ASCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "billTrackingCollections",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "organizationId",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "receiptDate",
+          "order": "DESCENDING"
+        }
+      ]
     }
   ],
   "fieldOverrides": [

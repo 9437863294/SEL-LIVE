@@ -902,6 +902,23 @@ export const permissionModules = {
     AI: ["Use"],
     Audit: ["View"],
   },
+  // Client billing and collections (Bill Tracking & Collection Management). Separate from Billing
+  // Recon, which raises subcontractor bills. "All Projects" lifts the project scope; without it a
+  // holder sees only the projects granted to them in Access Management. Recording a receipt and
+  // verifying it are separate actions on purpose — only verified receipts reduce the outstanding.
+  "Bill Tracking": {
+    "View Module": [],
+    "All Projects": ["View"],
+    Dashboard: ["View"],
+    Bills: ["View", "Add", "Edit", "Delete", "Verify", "Approve", "Override Status", "Edit After Approval"],
+    Collections: ["View", "Add", "Edit", "Verify", "Cancel", "Hold Unallocated"],
+    Retention: ["View", "Manage"],
+    "Follow-ups": ["View", "Add", "Edit"],
+    Targets: ["View", "Manage"],
+    Import: ["View", "Import", "Rollback"],
+    Reports: ["View", "Export"],
+    Settings: ["View", "Manage", "Close Month"],
+  },
   "Site Account Statement": {
     "View Module": [],
     "All Projects": ["View"],

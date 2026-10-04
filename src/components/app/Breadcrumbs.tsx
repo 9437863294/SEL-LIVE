@@ -40,6 +40,7 @@ export const MODULE_LABELS: Record<string, string> = {
   'office-hub': 'Office Hub',
   'project-management': 'Project Management',
   'recurring-payments': 'Recurring Payments',
+  'bill-tracking': 'Bill Tracking',
   settings: 'Settings',
   'site-account-statement': 'Site Account Statement',
   'site-fund-request': 'Site Fund Request',

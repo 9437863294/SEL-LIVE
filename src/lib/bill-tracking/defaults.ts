@@ -1,0 +1,148 @@
+/**
+ * Default configuration for Bill Tracking, seeded from the legacy workbook.
+ *
+ * The bill types are exactly the values the `Bill Tracking` sheet uses in "Type of Bill Status",
+ * plus the ones its month-wise summary QUERY formulas name (INCEPTION, F&I, the `- F` variants).
+ * The deduction types are the sheet's eleven deduction columns in sheet order, with the codes the
+ * importer posts to. All of it is editable in Settings; these only apply until an administrator
+ * saves the configuration for the first time, and `withConfigDefaults` back-fills anything a saved
+ * configuration lacks (a deduction type added in a later release, for example).
+ */
+
+import { DEFAULT_AGEING_BUCKETS } from './calculations.ts';
+import { inferBillCategory, LEGACY_RETENTION_BILL_TYPES } from './import.ts';
+import type {
+  BillStageMaster,
+  BillTrackingConfig,
+  BillTrackingSettings,
+  BillTypeMaster,
+  DeductionTypeMaster,
+} from './types';
+
+const LEGACY_BILL_TYPES = [
+  'SUPPLY',
+  'SUPPLY-PV',
+  'SUPPLY-80%',
+  'SUPPLY-70%',
+  'SUPPLY-60%',
+  'SUPPLY-40%',
+  'SUPPLY-30%',
+  'SUPPLY-25%',
+  'SUPPLY-20%',
+  'SUPPLY-15%',
+  'SUPPLY-10%',
+  'SUPPLY-10% - F',
+  'SUPPLY-5%',
+  'INCEPTION-5% (SUPPLY-STAGE-I)',
+  'INCEPTION-5% (SUPPLY-STAGE-II)',
+  'ERECTION',
+  'ERECTION-PV',
+  'ERECTION-20%',
+  'ERECTION-10%',
+  'ERECTION-10% - F',
+  'ERECTION-10%-GST',
+  'ERECTION-5%',
+  'ERECTION-5%-GST',
+  'CIVIL',
+  'CIVIL-PV',
+  'CIVIL-80%',
+  'CIVIL-10%',
+  'CIVIL-10% - F',
+  'CIVIL-5%',
+  'F&I',
+  'CROP COMPENSATION',
+];
+
+const slug = (value: string) =>
+  value
+    .toLowerCase()
+    .replace(/%/g, 'pct')
+    .replace(/&/g, 'and')
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-|-$/g, '');
+
+export const DEFAULT_BILL_TYPES: BillTypeMaster[] = LEGACY_BILL_TYPES.map((name) => ({
+  id: `bt-${slug(name)}`,
+  name,
+  code: name.replace(/[^A-Z0-9%&]+/g, '-'),
+  category: inferBillCategory(name),
+  isRetentionBill: LEGACY_RETENTION_BILL_TYPES.includes(name),
+  isPriceVariation: /-PV$/.test(name),
+  active: true,
+}));
+
+export const DEFAULT_DEDUCTION_TYPES: DeductionTypeMaster[] = [
+  { id: 'dt-bcess', code: 'BCESS', name: 'Building Cess', kind: 'statutory', calculation: 'percentage', percentBase: 'taxable', defaultPercent: 1, sequence: 1, active: true },
+  { id: 'dt-itds', code: 'ITDS', name: 'Income TDS', kind: 'statutory', calculation: 'percentage', percentBase: 'taxable', defaultPercent: 2, sequence: 2, active: true },
+  { id: 'dt-cgsttds', code: 'CGSTTDS', name: 'CGST TDS', kind: 'statutory', calculation: 'percentage', percentBase: 'taxable', defaultPercent: 1, sequence: 3, active: true },
+  { id: 'dt-sgsttds', code: 'SGSTTDS', name: 'SGST TDS', kind: 'statutory', calculation: 'percentage', percentBase: 'taxable', defaultPercent: 1, sequence: 4, active: true },
+  { id: 'dt-mobadv', code: 'MOBADV', name: 'Mobilization Advance', kind: 'mobilization_advance', calculation: 'fixed', percentBase: 'taxable', sequence: 5, active: true },
+  { id: 'dt-mobint', code: 'MOBINT', name: 'Interest on Mobilization Advance', kind: 'mobilization_interest', calculation: 'fixed', percentBase: 'taxable', sequence: 6, active: true },
+  { id: 'dt-ret-cpbg', code: 'RET_CPBG', name: 'Retention Against CPBG', kind: 'retention_cpbg', calculation: 'percentage', percentBase: 'taxable', defaultPercent: 10, sequence: 7, active: true },
+  { id: 'dt-ret-inv', code: 'RET_INV', name: 'Retention Against Invoice', kind: 'retention_invoice', calculation: 'percentage', percentBase: 'taxable', defaultPercent: 10, sequence: 8, active: true },
+  { id: 'dt-ret-te', code: 'RET_TE', name: 'Retention – Time Extension', kind: 'retention_time_extension', calculation: 'fixed', percentBase: 'taxable', sequence: 9, active: true },
+  { id: 'dt-lccomm', code: 'LCCOMM', name: 'LC Commission', kind: 'lc_commission', calculation: 'fixed', percentBase: 'gross', sequence: 10, active: true },
+  { id: 'dt-other', code: 'OTHER', name: 'Other', kind: 'other', calculation: 'fixed', percentBase: 'taxable', sequence: 11, active: true },
+];
+
+export const DEFAULT_STAGES: BillStageMaster[] = [
+  'Measurement',
+  'Bill Preparation',
+  'Submitted to Client',
+  'Client Verification',
+  'Bill Passed',
+  'Payment Processing',
+  'Payment Released',
+].map((name, index) => ({ id: `st-${slug(name)}`, name, sequence: index + 1, active: true }));
+
+export const DEFAULT_SETTINGS: BillTrackingSettings = {
+  tolerance: 1,
+  roundNetToRupee: true,
+  defaultCreditDays: 45,
+  defaultAgeingBasis: 'billDate',
+  ageingBuckets: DEFAULT_AGEING_BUCKETS,
+  noFollowUpDays: 15,
+  oldOutstandingDays: 180,
+  highValueThreshold: 5000000,
+  numbering: { enabled: true, pattern: 'SEL/BILL/{FY}/{SEQ}', padding: 6 },
+  closedMonths: [],
+  piMarker: 'PI',
+};
+
+export const DEFAULT_CONFIG: BillTrackingConfig = {
+  settings: DEFAULT_SETTINGS,
+  billTypes: DEFAULT_BILL_TYPES,
+  deductionTypes: DEFAULT_DEDUCTION_TYPES,
+  stages: DEFAULT_STAGES,
+  projectMappings: [],
+  projectProfiles: [],
+};
+
+/**
+ * Merges a stored configuration over the defaults. Lists are taken whole from storage once saved
+ * (an administrator deleting a stage must stay deleted), except deduction types, where a code the
+ * stored list lacks is appended inactive-safe — the importer posts to codes, so every code it knows
+ * must resolve to a type.
+ */
+export function withConfigDefaults(stored: Partial<BillTrackingConfig> | null | undefined): BillTrackingConfig {
+  const settings = { ...DEFAULT_SETTINGS, ...(stored?.settings ?? {}) };
+  settings.numbering = { ...DEFAULT_SETTINGS.numbering, ...(stored?.settings?.numbering ?? {}) };
+  if (!settings.ageingBuckets?.length) settings.ageingBuckets = DEFAULT_AGEING_BUCKETS;
+  const deductionTypes = stored?.deductionTypes?.length ? [...stored.deductionTypes] : [...DEFAULT_DEDUCTION_TYPES];
+  for (const type of DEFAULT_DEDUCTION_TYPES) {
+    if (!deductionTypes.some((entry) => entry.code === type.code)) deductionTypes.push(type);
+  }
+  return {
+    settings,
+    billTypes: stored?.billTypes?.length ? stored.billTypes : DEFAULT_BILL_TYPES,
+    deductionTypes: deductionTypes.sort((a, b) => a.sequence - b.sequence),
+    stages: stored?.stages?.length ? stored.stages : DEFAULT_STAGES,
+    projectMappings: stored?.projectMappings ?? [],
+    projectProfiles: stored?.projectProfiles ?? [],
+  };
+}
+
+/** Formats the next generated bill number. Imported bills keep their own numbers. */
+export function formatBillNumber(pattern: string, financialYear: string, sequence: number, padding: number): string {
+  return pattern.replace('{FY}', financialYear).replace('{SEQ}', String(sequence).padStart(Math.max(1, padding), '0'));
+}
