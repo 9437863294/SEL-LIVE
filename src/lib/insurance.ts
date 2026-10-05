@@ -14,16 +14,44 @@ import { addDays, addMonths, differenceInCalendarDays, format, startOfDay, start
 // ─── vocabulary ───────────────────────────────────────────────────────────────
 
 export const PREMIUM_FREQUENCIES = ['Monthly', 'Quarterly', 'Half-Yearly', 'Yearly', 'One-Time'] as const;
-export type PremiumFrequency = (typeof PREMIUM_FREQUENCIES)[number];
+type FixedFrequency = (typeof PREMIUM_FREQUENCIES)[number];
+/**
+ * A premium paid once every N years (N ≥ 2), e.g. "Every 5 Years". The interval lives in the stored
+ * frequency itself, so badges, exports and every rule below read it without a second field.
+ */
+export type MultiYearFrequency = `Every ${number} Years`;
+export type PremiumFrequency = FixedFrequency | MultiYearFrequency;
+
+/** Longest multi-year interval the form accepts. */
+export const MAX_INTERVAL_YEARS = 50;
+
+const MULTI_YEAR = /^Every (\d{1,2}) Years$/;
+
+export function multiYearFrequency(years: number): MultiYearFrequency {
+  return `Every ${years} Years`;
+}
+
+/** The N of "Every N Years", or null for any other frequency. */
+export function intervalYears(frequency: string | null | undefined): number | null {
+  const m = typeof frequency === 'string' ? MULTI_YEAR.exec(frequency) : null;
+  if (!m) return null;
+  const n = Number(m[1]);
+  return n >= 2 && n <= MAX_INTERVAL_YEARS ? n : null;
+}
 
 /** Months between two instalments; One-Time has a single instalment at commencement. */
-const MONTHS_BETWEEN: Record<PremiumFrequency, number> = {
+const FIXED_MONTHS: Record<FixedFrequency, number> = {
   Monthly: 1,
   Quarterly: 3,
   'Half-Yearly': 6,
   Yearly: 12,
   'One-Time': 0,
 };
+
+function monthsBetween(frequency: PremiumFrequency): number {
+  const years = intervalYears(frequency);
+  return years ? years * 12 : FIXED_MONTHS[frequency as FixedFrequency] ?? 12;
+}
 
 /**
  * The stored standing of a personal policy — what a person decided, not what the calendar says.
@@ -70,7 +98,7 @@ export const dayKey = (date: Date) => format(date, 'yyyy-MM-dd');
 export const daysUntil = (date: Date, now: Date = new Date()) => differenceInCalendarDays(date, now);
 
 export function isPremiumFrequency(value: unknown): value is PremiumFrequency {
-  return typeof value === 'string' && (PREMIUM_FREQUENCIES as readonly string[]).includes(value);
+  return typeof value === 'string' && ((PREMIUM_FREQUENCIES as readonly string[]).includes(value) || intervalYears(value) !== null);
 }
 
 // ─── premium schedule ─────────────────────────────────────────────────────────
@@ -85,15 +113,16 @@ export function isPremiumFrequency(value: unknown): value is PremiumFrequency {
 export function premiumSchedule(commencement: Date | null, frequency: PremiumFrequency, termYears: number): Date[] {
   if (!commencement) return [];
   if (frequency === 'One-Time') return [commencement];
-  const step = MONTHS_BETWEEN[frequency];
+  const step = monthsBetween(frequency);
   const years = Number.isFinite(termYears) ? Math.max(0, Math.floor(termYears)) : 0;
-  const count = Math.min((years * 12) / step, 1200);
+  // Rounded up: every 5 years over a 12-year term pays in years 0, 5 and 10.
+  const count = Math.min(Math.ceil((years * 12) / step), 1200);
   return Array.from({ length: count }, (_, i) => addMonths(commencement, i * step));
 }
 
-/** Instalments per year — the multiplier from one premium to the yearly outgo. */
+/** Instalments per year — the multiplier from one premium to the yearly outgo (0.2 for every 5 years). */
 export function instalmentsPerYear(frequency: PremiumFrequency): number {
-  return frequency === 'One-Time' ? 0 : 12 / MONTHS_BETWEEN[frequency];
+  return frequency === 'One-Time' ? 0 : 12 / monthsBetween(frequency);
 }
 
 /** The yearly premium outgo; a One-Time (single-premium) policy has none after its first year. */
@@ -128,7 +157,7 @@ export function nextDueAfterPayment(inputs: ScheduleInputs, paidDue: Date): Date
   if (schedule.length > 0) {
     next = schedule.find((d) => dayKey(d) > paidKey) ?? null;
   } else {
-    next = addMonths(paidDue, MONTHS_BETWEEN[inputs.frequency]);
+    next = addMonths(paidDue, monthsBetween(inputs.frequency));
   }
   if (next && inputs.maturity && startOfDay(next) >= startOfDay(inputs.maturity)) return null;
   return next;

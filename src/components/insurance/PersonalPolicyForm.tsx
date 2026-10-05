@@ -19,6 +19,9 @@ import {
   formatDay,
   formatInr,
   graceDays,
+  intervalYears,
+  MAX_INTERVAL_YEARS,
+  multiYearFrequency,
   NOMINEE_RELATIONSHIPS,
   PERSONAL_LIFECYCLE,
   PREMIUM_FREQUENCIES,
@@ -38,6 +41,9 @@ import { PageHeader } from '@/components/shared/page-header';
 import { AttachmentList, DateField, PendingFiles } from '@/components/insurance/insurance-ui';
 
 const NONE = '__none__';
+/** Select value for "Every N Years"; the N comes from `interval_years` and is folded into the stored frequency. */
+const MULTI_YEAR = 'Multi-Year';
+const FREQUENCY_CHOICES = [...PREMIUM_FREQUENCIES, MULTI_YEAR] as const;
 
 const policySchema = z
   .object({
@@ -49,7 +55,8 @@ const policySchema = z
     status: z.enum(PERSONAL_LIFECYCLE),
     premium: z.coerce.number().min(0, 'Premium cannot be negative'),
     sum_insured: z.coerce.number().min(0, 'Sum assured cannot be negative'),
-    payment_type: z.enum(PREMIUM_FREQUENCIES),
+    payment_type: z.enum(FREQUENCY_CHOICES),
+    interval_years: z.union([z.literal(''), z.coerce.number()]).optional(),
     tenure: z.coerce.number().int('Whole years only').min(0, 'Cannot be negative').max(100, 'Check the term'),
     policy_issue_date: z.date().optional(),
     date_of_comm: z.date().optional(),
@@ -64,6 +71,12 @@ const policySchema = z
     remarks: z.string().optional(),
   })
   .superRefine((v, ctx) => {
+    if (v.payment_type === MULTI_YEAR) {
+      const n = Number(v.interval_years);
+      if (v.interval_years === '' || !Number.isInteger(n) || n < 2 || n > MAX_INTERVAL_YEARS) {
+        ctx.addIssue({ code: 'custom', path: ['interval_years'], message: `Whole years, 2 to ${MAX_INTERVAL_YEARS}` });
+      }
+    }
     if (v.payment_type !== 'One-Time' && v.tenure < 1) {
       ctx.addIssue({ code: 'custom', path: ['tenure'], message: 'Enter the premium-paying term in years' });
     }
@@ -77,6 +90,13 @@ const policySchema = z
 
 type FormValues = z.infer<typeof policySchema>;
 
+/** The frequency as stored and as the schedule rules read it, e.g. "Every 5 Years". */
+function frequencyOf(v: Pick<FormValues, 'payment_type' | 'interval_years'>): PremiumFrequency {
+  if (v.payment_type !== MULTI_YEAR) return v.payment_type;
+  const n = Number(v.interval_years);
+  return Number.isInteger(n) && n >= 2 && n <= MAX_INTERVAL_YEARS ? multiYearFrequency(n) : 'Yearly';
+}
+
 const EMPTY: FormValues = {
   insured_person: '',
   policy_no: '',
@@ -87,6 +107,7 @@ const EMPTY: FormValues = {
   premium: 0,
   sum_insured: 0,
   payment_type: 'Yearly',
+  interval_years: '',
   tenure: 0,
   auto_debit: false,
   due_date: null,
@@ -99,6 +120,7 @@ const EMPTY: FormValues = {
 };
 
 function valuesFrom(policy: InsurancePolicy): FormValues {
+  const everyYears = intervalYears(policy.payment_type);
   return {
     ...EMPTY,
     insured_person: policy.insured_person || '',
@@ -109,7 +131,10 @@ function valuesFrom(policy: InsurancePolicy): FormValues {
     status: policy.status || 'Active',
     premium: policy.premium || 0,
     sum_insured: policy.sum_insured || 0,
-    payment_type: (PREMIUM_FREQUENCIES as readonly string[]).includes(policy.payment_type) ? policy.payment_type : 'Yearly',
+    payment_type: everyYears
+      ? MULTI_YEAR
+      : (PREMIUM_FREQUENCIES as readonly string[]).includes(policy.payment_type) ? (policy.payment_type as FormValues['payment_type']) : 'Yearly',
+    interval_years: everyYears ?? '',
     tenure: policy.tenure || 0,
     policy_issue_date: toDate(policy.policy_issue_date) ?? undefined,
     date_of_comm: toDate(policy.date_of_comm) ?? undefined,
@@ -180,7 +205,9 @@ export function PersonalPolicyForm({ policy }: Props) {
   }, [toast]);
 
   const commencement = form.watch('date_of_comm');
-  const frequency = form.watch('payment_type') as PremiumFrequency;
+  const frequencyChoice = form.watch('payment_type');
+  const everyYears = form.watch('interval_years');
+  const frequency = frequencyOf({ payment_type: frequencyChoice, interval_years: everyYears });
   const tenure = Number(form.watch('tenure')) || 0;
   const maturity = form.watch('date_of_maturity');
   const dueDate = form.watch('due_date');
@@ -198,7 +225,7 @@ export function PersonalPolicyForm({ policy }: Props) {
   const resuggestDue = () => {
     queueMicrotask(() => {
       const v = form.getValues();
-      const s = premiumSchedule(v.date_of_comm ?? null, v.payment_type as PremiumFrequency, Number(v.tenure) || 0)
+      const s = premiumSchedule(v.date_of_comm ?? null, frequencyOf(v), Number(v.tenure) || 0)
         .filter((d) => !v.date_of_maturity || d < v.date_of_maturity);
       const current = v.due_date ? dayKey(v.due_date) : null;
       if (!current || !s.some((d) => dayKey(d) === current)) form.setValue('due_date', firstInstalmentFrom(s));
@@ -236,7 +263,7 @@ export function PersonalPolicyForm({ policy }: Props) {
         status: data.status,
         premium: data.premium,
         sum_insured: data.sum_insured,
-        payment_type: data.payment_type,
+        payment_type: frequencyOf(data),
         tenure: data.tenure,
         auto_debit: data.auto_debit,
         policy_issue_date: ts(data.policy_issue_date),
@@ -354,7 +381,7 @@ export function PersonalPolicyForm({ policy }: Props) {
               <CardTitle>Premium &amp; Term</CardTitle>
               <CardDescription>
                 {premium > 0 && frequency !== 'One-Time'
-                  ? `Yearly outgo ${formatInr(annualisedPremium(premium, frequency))} · ${schedule.length} instalments`
+                  ? `Yearly outgo ${formatInr(annualisedPremium(premium, frequency))}${intervalYears(frequency) ? ' (averaged)' : ''} · ${schedule.length} instalments`
                   : 'The schedule is built from commencement, frequency and term.'}
               </CardDescription>
             </CardHeader>
@@ -367,11 +394,30 @@ export function PersonalPolicyForm({ policy }: Props) {
                   <FormLabel>Premium Frequency</FormLabel>
                   <Select onValueChange={(v) => { field.onChange(v); resuggestDue(); }} value={field.value}>
                     <FormControl><SelectTrigger><SelectValue /></SelectTrigger></FormControl>
-                    <SelectContent>{PREMIUM_FREQUENCIES.map((f) => <SelectItem key={f} value={f}>{f === 'One-Time' ? 'One-Time (single premium)' : f}</SelectItem>)}</SelectContent>
+                    <SelectContent>
+                      {PREMIUM_FREQUENCIES.map((f) => <SelectItem key={f} value={f}>{f === 'One-Time' ? 'One-Time (single premium)' : f}</SelectItem>)}
+                      <SelectItem value={MULTI_YEAR}>Every N Years (2, 3, 5…)</SelectItem>
+                    </SelectContent>
                   </Select>
                   <FormMessage />
                 </FormItem>
               )} />
+              {frequencyChoice === MULTI_YEAR && (
+                <FormField control={form.control} name="interval_years" render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Pay Every (years)</FormLabel>
+                    <FormControl>
+                      <Input
+                        type="number" inputMode="numeric" min={2} max={MAX_INTERVAL_YEARS} placeholder="e.g. 2, 3 or 5"
+                        {...field} value={field.value ?? ''}
+                        onChange={(e) => { field.onChange(e); resuggestDue(); }}
+                      />
+                    </FormControl>
+                    <FormDescription>One premium every {Number(field.value) >= 2 ? `${field.value} years` : 'N years'}.</FormDescription>
+                    <FormMessage />
+                  </FormItem>
+                )} />
+              )}
               <FormField control={form.control} name="tenure" render={({ field }) => (
                 <FormItem>
                   <FormLabel>Premium-Paying Term (years)</FormLabel>

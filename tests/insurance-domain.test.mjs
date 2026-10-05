@@ -11,11 +11,14 @@ import {
   firstInstalmentFrom,
   graceDays,
   instalmentRegister,
+  intervalYears,
+  isPremiumFrequency,
   nextDueAfterPayment,
   normalisePolicyNo,
   personalPolicyState,
   premiumOutflows,
   premiumSchedule,
+  policyFrequency,
   projectPolicyState,
   taskCheckId,
   toDate,
@@ -148,6 +151,23 @@ test('annualised premium', () => {
   assert.equal(annualisedPremium(1000, 'Monthly'), 12000);
   assert.equal(annualisedPremium(1000, 'Half-Yearly'), 2000);
   assert.equal(annualisedPremium(1000, 'One-Time'), 0);
+});
+
+test('every-N-years frequency drives schedule, outgo and next due', () => {
+  assert.equal(intervalYears('Every 5 Years'), 5);
+  assert.equal(intervalYears('Every 1 Years'), null, 'one year is Yearly');
+  assert.equal(intervalYears('Yearly'), null);
+  assert.ok(isPremiumFrequency('Every 2 Years'));
+  assert.ok(!isPremiumFrequency('Every Two Years'));
+  assert.equal(policyFrequency({ payment_type: 'Every 3 Years' }), 'Every 3 Years');
+  assert.deepEqual(keys(premiumSchedule(at('2024-04-01'), 'Every 2 Years', 6)), ['2024-04-01', '2026-04-01', '2028-04-01']);
+  assert.deepEqual(keys(premiumSchedule(at('2024-04-01'), 'Every 5 Years', 12)), ['2024-04-01', '2029-04-01', '2034-04-01'], 'partial cycle still pays');
+  assert.equal(annualisedPremium(50000, 'Every 5 Years'), 10000);
+  const inputs = { commencement: at('2024-04-01'), frequency: 'Every 3 Years', termYears: 9, maturity: null };
+  assert.equal(dayKey(nextDueAfterPayment(inputs, at('2024-04-01'))), '2027-04-01');
+  assert.equal(nextDueAfterPayment(inputs, at('2030-04-01')), null, 'last instalment');
+  assert.equal(dayKey(nextDueAfterPayment({ ...inputs, commencement: null }, at('2024-04-01'))), '2027-04-01', 'no schedule: one step on');
+  assert.equal(graceDays('Every 2 Years'), 30);
 });
 
 test('toDate accepts Firestore-like values', () => {

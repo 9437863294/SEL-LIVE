@@ -1264,7 +1264,8 @@ export interface InsurancePolicy {
   date_of_comm: Timestamp | null;
   date_of_maturity: Timestamp | null;
   last_premium_date: Timestamp | null;
-  payment_type: "Monthly" | "Quarterly" | "Half-Yearly" | "Yearly" | "One-Time";
+  /** A fixed frequency, or "Every N Years" for a premium paid once every N (≥ 2) years. */
+  payment_type: "Monthly" | "Quarterly" | "Half-Yearly" | "Yearly" | "One-Time" | `Every ${number} Years`;
   auto_debit: boolean;
   due_date: Timestamp | null;
   last_renewed_at?: Timestamp;
