@@ -521,8 +521,10 @@ export default function SiteExpensesPage() {
     { key: 'expensedBy', label: 'Expensed By', required: true, hint: 'Name of person who spent the amount' },
     {
       key: 'expenseDate', label: 'Expense Date', required: true,
+      // "allowed range" no longer fits: the hint can also name closed accounting months, which are
+      // holes inside the range rather than its ends.
       hint: dateControl.hint
-        ? `YYYY-MM-DD — allowed range: ${dateControl.hint}`
+        ? `YYYY-MM-DD — ${dateControl.hint}`
         : 'YYYY-MM-DD  e.g. 2024-07-15',
       validate: (v) => {
         if (!/^\d{4}-\d{2}-\d{2}$/.test(v.trim())) return 'Date must be in YYYY-MM-DD format';

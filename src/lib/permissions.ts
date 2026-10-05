@@ -945,6 +945,11 @@ export const permissionModules = {
     // Recording an allocation and verifying one are separate on purpose: the point of the
     // ledger is that a second person signs off the amount, so one role holding both defeats it.
     "Budget Allocation": ["View", "Add", "Verify", "Delete"],
+    // Freezing an accounting period. `Close` also lets its holder post into a month they have
+    // closed — they are the one accountable for it, and a lock whose only escape is to unlock the
+    // month for everybody is a lock people route around. `Reopen` is separate because undoing a
+    // closure is the act that needs a second pair of hands.
+    "Month Closure": ["View", "Close", "Reopen"],
     Reports: ["View", "Export"],
   },
   // The Windows desktop agent: office PCs, work sessions, foreground-application time, desktop

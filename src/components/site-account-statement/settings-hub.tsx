@@ -3,6 +3,7 @@
 import Link from 'next/link';
 import {
   CalendarClock,
+  CalendarRange,
   ChevronRight,
   ClipboardList,
   Loader2,
@@ -90,6 +91,22 @@ const SETTINGS_ITEMS = [
      * and are meant for renames.
      */
     fallbackResource: 'Field Control',
+  },
+  {
+    icon: CalendarRange,
+    text: 'Month Closure',
+    href: '/site-account-statement/settings/month-closure',
+    description: 'Freeze an accounting period once it has been reported on, and reopen it on record.',
+    gradient: 'from-slate-600 to-slate-800',
+    bg: 'bg-slate-50',
+    iconColor: 'text-slate-700',
+    resource: 'Month Closure',
+    /*
+     * Same reasoning as Date Control's fallback, pointed at a different neighbour: whoever
+     * administers the project master owns the accounting calendar. One-directional — holding
+     * Month Closure never implies Project Settings.
+     */
+    fallbackResource: 'Project Settings',
   },
 ] as const;
 

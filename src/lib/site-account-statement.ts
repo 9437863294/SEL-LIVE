@@ -26,6 +26,11 @@ export const SAS_SORT_CONTROL_DOC_ID = 'sortControl';
 // Doc id (inside SAS_COLLECTIONS.settings) holding how far back a transaction may be dated.
 export const SAS_DATE_CONTROL_DOC_ID = 'dateControl';
 
+// Doc id (inside SAS_COLLECTIONS.settings) holding which accounting months are frozen. Separate
+// from Date Control because the two answer different questions — a rolling window versus a hard
+// boundary on a period — and either may change without the other.
+export const SAS_MONTH_CLOSURE_DOC_ID = 'monthClosure';
+
 // The back-dating settings shape and its defaults live with the policy that interprets them, in
 // site-account-statement-date-policy.ts — an import-free module so `node --test` can load the rules
 // directly. Re-exported here so call sites can keep reaching for the module's domain file.
@@ -40,6 +45,14 @@ export {
   type SASBudgetAllocation,
   type SASAllocationStatus,
 } from './site-account-statement-allocations';
+
+// Likewise for month closure — the rules live with an importless module so `node --test` can load
+// the period arithmetic that decides whether a site may still record work.
+export {
+  EMPTY_MONTH_CLOSURE,
+  type SASMonthClosure,
+  type SASMonthClosureSettings,
+} from './site-account-statement-month-closure';
 
 export interface SASProject {
   id: string;

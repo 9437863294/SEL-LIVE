@@ -6,7 +6,14 @@ import { db } from '@/lib/firebase';
 import {
   SAS_COLLECTIONS,
   SAS_DATE_CONTROL_DOC_ID,
+  SAS_MONTH_CLOSURE_DOC_ID,
 } from '@/lib/site-account-statement';
+import {
+  closedPeriods as listClosedPeriods,
+  resolveMonthClosure,
+  validateAgainstClosure,
+  type SASMonthClosureSettings,
+} from '@/lib/site-account-statement-month-closure';
 import {
   describeDateWindow,
   resolveDateControl,
@@ -32,6 +39,10 @@ export interface DateControl {
   hint: string | null;
   /** Submit-time check. The form must call this — `min`/`max` on an input is only a hint. */
   check: (date: string) => DateCheck;
+  /** Frozen accounting periods, `YYYY-MM`, oldest first. Empty when the user may post into them. */
+  closedPeriods: string[];
+  /** True when the user holds `Month Closure` / `Close` and closed months do not stop them. */
+  canPostToClosedMonths: boolean;
   loading: boolean;
 }
 
@@ -49,6 +60,7 @@ export interface DateControl {
 export function useDateControl(kind: SASDatedRecord): DateControl {
   const { can } = useAuthorization();
   const [settings, setSettings] = useState<SASDateControlSettings>(() => resolveDateControl(null));
+  const [closure, setClosure] = useState<SASMonthClosureSettings>(() => resolveMonthClosure(null));
   const [loading, setLoading] = useState(true);
   const [today] = useState(todayLocal);
 
@@ -67,6 +79,25 @@ export function useDateControl(kind: SASDatedRecord): DateControl {
     );
   }, []);
 
+  /*
+   * Month closure rides along on the same hook rather than getting one of its own.
+   *
+   * Every surface that writes a dated record already calls this — the expenses page, the receipts
+   * page and the dashboard's quick-add — so folding the frozen periods in here means the lock
+   * cannot be forgotten on a form, which is exactly how a half-enforced period control ends up
+   * worse than none.
+   *
+   * A read failure leaves nothing closed, matching the Date Control fallback: an outage must not
+   * stop a site recording its work.
+   */
+  useEffect(() => {
+    return onSnapshot(
+      doc(db, SAS_COLLECTIONS.settings, SAS_MONTH_CLOSURE_DOC_ID),
+      (snapshot) => setClosure(resolveMonthClosure(snapshot.data() as Partial<SASMonthClosureSettings> | undefined)),
+      () => { /* leave nothing closed */ },
+    );
+  }, []);
+
   const canBypass =
     can('Add', `${MODULE}.Backdated Entry`) ||
     can('Edit', `${MODULE}.Backdated Entry`) ||
@@ -77,11 +108,43 @@ export function useDateControl(kind: SASDatedRecord): DateControl {
     [settings, kind, canBypass, today],
   );
 
-  const hint = useMemo(() => describeDateWindow(window, settings), [window, settings]);
+  /*
+   * Closing a period is not the same authority as back-dating within an open one, so
+   * `Backdated Entry` deliberately does not unlock a closed month. All Projects does, because that
+   * is the module's administrator and the person who would otherwise be reopening the month to
+   * make the same correction.
+   */
+  const canPostToClosedMonths =
+    can('Close', `${MODULE}.Month Closure`) ||
+    can('View', `${MODULE}.All Projects`);
+
+  const hint = useMemo(() => {
+    const windowHint = describeDateWindow(window, settings);
+    if (canPostToClosedMonths) return windowHint;
+    const frozen = listClosedPeriods(closure);
+    if (frozen.length === 0) return windowHint;
+    const closedHint = frozen.length === 1
+      ? `${frozen[0]} is closed`
+      : `${frozen.length} months are closed`;
+    return windowHint ? `${windowHint} · ${closedHint}` : closedHint;
+  }, [window, settings, closure, canPostToClosedMonths]);
 
   function check(date: string): DateCheck {
-    return validateEntryDate({ date, settings, kind, canBypass, today });
+    // The rolling window first: when both would reject, its message is the more actionable one,
+    // since it names a date the person can actually use.
+    const windowCheck = validateEntryDate({ date, settings, kind, canBypass, today });
+    if (!windowCheck.ok) return windowCheck;
+    return validateAgainstClosure({ date, settings: closure, kind, canOverride: canPostToClosedMonths });
   }
 
-  return { settings, window, canBypass, hint, check, loading };
+  return {
+    settings,
+    window,
+    canBypass,
+    hint,
+    check,
+    closedPeriods: canPostToClosedMonths ? [] : listClosedPeriods(closure),
+    canPostToClosedMonths,
+    loading,
+  };
 }

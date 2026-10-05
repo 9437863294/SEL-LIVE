@@ -459,11 +459,25 @@ service cloud.firestore {
     }
 
     /** Module settings, including the Field Control configuration every form subscribes to. */
+    /**
+     * Module settings documents — field control, date control, sort order, month closure.
+     *
+     * Readable by any signed-in user because every form in the module reads them before it can
+     * render. Writing is for administrators, with one exception carved out: the month closure
+     * document is what makes a closed period actually closed, so a role that can relabel a form
+     * field must not be able to unlock an accounting month as a side effect of that same grant.
+     */
     match /siteAccountSettings/{docId} {
       allow get, list: if signedIn();
-      allow create, update, delete: if sasPerm('Field Control', 'Edit')
-        || sasPerm('Field Control', 'Add')
-        || sasPerm('Project Settings', 'Edit');
+
+      allow create, update, delete: if docId == 'monthClosure'
+        ? (sasPerm('Month Closure', 'Close')
+           || sasPerm('Month Closure', 'Reopen')
+           || sasPerm('Project Settings', 'Edit'))
+        : (sasPerm('Field Control', 'Edit')
+           || sasPerm('Field Control', 'Add')
+           || sasPerm('Date Control', 'Edit')
+           || sasPerm('Project Settings', 'Edit'));
     }
 
     /** Who gets told when a budget threshold is crossed. */
