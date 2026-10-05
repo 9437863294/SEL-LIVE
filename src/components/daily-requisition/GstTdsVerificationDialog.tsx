@@ -17,7 +17,7 @@ import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { useToast } from '@/hooks/use-toast';
 import { db } from '@/lib/firebase';
-import { doc, updateDoc } from 'firebase/firestore';
+import { doc, runTransaction } from 'firebase/firestore';
 import { AlertCircle, Loader2 } from 'lucide-react';
 import type { DailyRequisitionEntry } from '@/lib/types';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
@@ -28,6 +28,7 @@ import { diffFields } from '@/lib/activity-logger';
 import { ACTIVITY_MODULES } from '@/lib/activity-modules';
 import { RegistrationSelect, treatmentWarning, useBillRegistration } from '@/components/expenses/bill-registration';
 import { registrationLabel } from '@/lib/gst-registrations';
+import { isPaymentLocked } from '@/lib/requisition-progress';
 import { checkGstin, suggestGstType } from '@/lib/statutory';
 
 interface GstTdsVerificationDialogProps {
@@ -38,6 +39,19 @@ interface GstTdsVerificationDialogProps {
 }
 
 type GstType = 'igst' | 'cgst-sgst' | 'none';
+
+/**
+ * The statuses GST & TDS Verification owns. Verification rewrites the status and (when the figures
+ * agree) the net amount, so it must only ever write to a requisition still sitting at this stage: a
+ * requisition sent on for payment — or already part paid by a voucher — would otherwise be dragged
+ * back to "Verified" with its payments still attached, reading as paid and still due at once.
+ */
+const VERIFIABLE_STATUSES = ['Received', 'Verified', 'Needs Review'] as const;
+
+/** Thrown inside the save transaction when the stored requisition no longer allows verifying. */
+const BLOCKED = 'VerificationBlocked';
+const blocked = (message: string) => Object.assign(new Error(message), { name: BLOCKED });
+const isBlocked = (error: unknown): error is Error => error instanceof Error && error.name === BLOCKED;
 
 export function GstTdsVerificationDialog({
   isOpen,
@@ -211,7 +225,26 @@ export function GstTdsVerificationDialog({
           updateData.netAmount = parseFloat(taxDetails.calculatedNetAmount) || 0;
       }
 
-      await updateDoc(doc(db, 'dailyRequisitions', entry.id), updateData);
+      // Re-read inside a transaction: a voucher may have paid this requisition, or someone else may
+      // have sent it on, while the dialog was open. Either way the verification is refused rather
+      // than written over what has happened since.
+      const requisitionRef = doc(db, 'dailyRequisitions', entry.id);
+      await runTransaction(db, async (tx) => {
+        const snap = await tx.get(requisitionRef);
+        if (!snap.exists()) throw blocked(`${entry.receptionNo || 'This requisition'} no longer exists.`);
+        const current = snap.data() as DailyRequisitionEntry;
+        if (isPaymentLocked(current)) {
+          throw blocked(
+            `${entry.receptionNo || 'This requisition'} has payments against it, so its verification can no longer be changed. Reverse the voucher in the Bank Balance Cheque Register first.`,
+          );
+        }
+        if (!VERIFIABLE_STATUSES.includes((current.status ?? '') as (typeof VERIFIABLE_STATUSES)[number])) {
+          throw blocked(
+            `${entry.receptionNo || 'This requisition'} is now "${current.status || 'Pending'}", so it was not verified. Refresh and try again.`,
+          );
+        }
+        tx.update(requisitionRef, updateData);
+      });
 
       // Audit: what the verifier changed. Only the tax / amount fields this dialog owns are
       // compared — status is reported separately as from/to, verifiedAt changes every time.
@@ -240,8 +273,15 @@ export function GstTdsVerificationDialog({
       onSuccess();
       onOpenChange(false);
     } catch (error) {
-      console.error("Error verifying entry: ", error);
-      toast({ title: 'Error', description: 'Failed to save verification details.', variant: 'destructive' });
+      if (isBlocked(error)) {
+        toast({ title: 'Not verified', description: error.message, variant: 'destructive' });
+        // The queue is out of date: refresh it and close, so the row is reopened as it now stands.
+        onSuccess();
+        onOpenChange(false);
+      } else {
+        console.error("Error verifying entry: ", error);
+        toast({ title: 'Error', description: 'Failed to save verification details.', variant: 'destructive' });
+      }
     } finally {
       setIsLoading(false);
     }

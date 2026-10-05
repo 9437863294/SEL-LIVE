@@ -231,7 +231,11 @@ export function reversePayment(req: PayableRequisition, bankPaymentId: string, l
   const payments = req.payments ?? [];
   const removed = payments.filter((p) => p.bankPaymentId === bankPaymentId && p.lineId === lineId);
   const kept = payments.filter((p) => !(p.bankPaymentId === bankPaymentId && p.lineId === lineId));
-  const paidAmount = round2(Math.max(0, (Number(req.paidAmount) || 0) - removed.reduce((sum, p) => sum + p.amount, 0)));
+  // Number(), not p.amount: a figure stored as a string would make `sum + p.amount` a STRING
+  // concatenation — two such lines reversed together read as ₹1,00,100 off ₹200 and would zero the
+  // requisition's paid amount, making the whole bill payable again.
+  const givenBack = removed.reduce((sum, p) => sum + (Number(p.amount) || 0), 0);
+  const paidAmount = round2(Math.max(0, (Number(req.paidAmount) || 0) - givenBack));
   const status = req.status === undefined || isPaymentStageStatus(req.status) ? statusForPaid(Number(req.netAmount) || 0, paidAmount) : req.status;
   return { paidAmount, payments: kept, status };
 }

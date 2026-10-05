@@ -23,26 +23,17 @@ import {
 } from 'lucide-react';
 import { useAuthorization } from '@/hooks/useAuthorization';
 import { db } from '@/lib/firebase';
+import { DR_STATIC_SEGMENTS, dailyStepNameProblem, dailyStepSlug } from '@/lib/daily-requisition-settings';
 import type { WorkflowStep } from '@/lib/types';
 
 export const DAILY_REQUISITION_BASE = '/daily-requisition';
 
 /**
- * The slug a workflow stage is linked by. `[step]/page.tsx` resolves a stage with the same
- * function, so the two must not drift.
+ * The slug a workflow stage is linked by, and why a name has no page of its own: one definition in
+ * `src/lib/daily-requisition-settings.ts` (pure, so it is unit-tested), shared with `[step]/page.tsx`
+ * and Workflow Configuration. Re-exported here because the menus are where it is reached for.
  */
-export function dailyStepSlug(name: string): string {
-  return name
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-|-$/g, '');
-}
-
-/**
- * The module's own static pages. A stage whose name slugs to one of these can never be opened (the
- * static route wins over `[step]`), so it is left out of the menu rather than linked to the wrong page.
- */
-const STATIC_SEGMENTS = new Set(['entry-sheet', 'manage-documents', 'reports', 'settings', 'audit-log']);
+export { dailyStepNameProblem, dailyStepSlug };
 
 /** Each stage's icon and chip colours, by position. The dashboard's stage cards use the same icons. */
 const STAGE_LOOKS: ReadonlyArray<{ icon: LucideIcon; color: string; bg: string }> = [
@@ -169,7 +160,7 @@ export function useDailyRequisitionNav(): { items: DailyRequisitionNavItem[]; is
         label: step.name,
         group: 'Workflow',
         ...(STAGE_LOOKS[index] ?? LATER_STAGE_LOOK),
-        allowed: slug !== '' && !STATIC_SEGMENTS.has(slug) && access.stage(step.name),
+        allowed: slug !== '' && !DR_STATIC_SEGMENTS.includes(slug) && access.stage(step.name),
       };
     });
 

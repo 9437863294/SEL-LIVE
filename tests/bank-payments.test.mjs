@@ -113,3 +113,36 @@ test('instrument numbers are reserved per account and series', () => {
   assert.equal(instrumentKey('acc', 'RTGS', 'BATCH-1'), null);
   assert.equal(instrumentKey('acc', 'Cheque', ''), null);
 });
+
+test('reversing two lines gives back exactly their amounts, even stored as strings', () => {
+  // `sum + p.amount` concatenated a string amount: 0 + '100' + '100' read as 100100, which zeroed
+  // the paid amount and made the whole requisition payable again instead of just these two lines.
+  const line = (lineId, amount) => ({
+    bankPaymentId: 'v1',
+    voucherNo: 'BP/2026-27/0001',
+    lineId,
+    amount,
+    mode: 'Cheque',
+    instrumentNo: '451',
+    instrumentDate: '2026-10-05',
+    accountId: 'a',
+  });
+  const req = { netAmount: 1000, paidAmount: 200, payments: [line('l1', '100'), line('l2', '100')], status: 'Partially Paid' };
+  const once = reversePayment(req, 'v1', 'l1');
+  assert.equal(once.paidAmount, 100);
+  assert.equal(once.status, 'Partially Paid');
+  const twice = reversePayment({ ...req, ...once }, 'v1', 'l2');
+  assert.equal(twice.paidAmount, 0);
+  assert.equal(twice.status, 'Received for Payment');
+});
+
+test('voucher numbering never runs backwards across 1 April', () => {
+  // The guard lives in the save transaction (a device whose date is behind would renumber into the
+  // closed year and reset the shared counter); this records what the function itself does, so the
+  // guard is not quietly dropped.
+  assert.equal(nextVoucherNo({ fy: '2025-26', next: 400 }, '2026-04-01').voucherNo, 'BP/2026-27/0001');
+  const backwards = nextVoucherNo({ fy: '2026-27', next: 5 }, '2026-03-31');
+  assert.equal(backwards.voucherNo, 'BP/2025-26/0001');
+  assert.equal(backwards.counter.fy, '2025-26');
+  assert.ok(financialYear('2026-03-31') < '2026-27', 'the save transaction refuses exactly this case');
+});

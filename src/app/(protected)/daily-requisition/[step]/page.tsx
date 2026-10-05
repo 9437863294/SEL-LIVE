@@ -57,16 +57,16 @@ import {
   dailyTabsListClass,
 } from '@/components/daily-requisition/module-shell';
 import { PageHeader } from '@/components/shared/page-header';
+import { dailyStepSlug } from '@/lib/daily-requisition-settings';
 
 /* ──────────────────── helpers ──────────────────── */
 
-/** Convert a step name to a URL-safe slug. */
-function toSlug(name: string): string {
-  return name
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-|-$/g, '');
-}
+/**
+ * The slug a stage is reached at. One definition (src/lib/daily-requisition-settings.ts), shared
+ * with the menus and Workflow Configuration — a second copy here is one stage rename away from a
+ * page the menu links to but this function cannot resolve.
+ */
+const toSlug = dailyStepSlug;
 
 const formatCurrency = (amount: number) =>
   new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR' }).format(amount);
@@ -772,6 +772,11 @@ function DynamicWorkflowStepContent() {
       else setSelectedIds(new Set());
     };
 
+    // Only the rows this tab is showing, so the header checkbox cannot read as ticked because rows
+    // on another tab (the selection is shared) happen to add up to the same count.
+    const allHereSelected = data.length > 0 && data.every((item) => selectedIds.has(item.id));
+    const someHereSelected = data.some((item) => selectedIds.has(item.id));
+
     const showBulkHeader = Boolean(isBulkTab && stepConfig?.bulkAction);
     // On the payment step a selection can hold part-paid rows. Pay via voucher takes them, but
     // Mark as Paid doesn't.
@@ -828,7 +833,7 @@ function DynamicWorkflowStepContent() {
                   <TableHead className="w-[50px]">
                     <Checkbox
                       disabled={!canBulkAction}
-                      checked={data.length > 0 && selectedIds.size === data.length}
+                      checked={allHereSelected ? true : someHereSelected ? 'indeterminate' : false}
                       onCheckedChange={handleSelectAll}
                     />
                   </TableHead>

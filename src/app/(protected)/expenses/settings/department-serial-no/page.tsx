@@ -2,7 +2,7 @@
 
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import Link from 'next/link';
 import { Save, ShieldAlert, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -43,7 +43,13 @@ export default function DepartmentSerialNoPage() {
   const [configs, setConfigs] = useState<Record<string, SerialNumberConfig>>({});
   const [isLoading, setIsLoading] = useState(true);
   const [savingStates, setSavingStates] = useState<Record<string, boolean>>({});
-  
+  /**
+   * The index each department's series stood at when this page read it, so a save can tell an index
+   * the administrator actually typed from one that is merely the figure the page happens to be
+   * showing. Raising a request moves the counter on; writing the page's copy back would rewind it.
+   */
+  const loadedIndexRef = useRef<Record<string, number | undefined>>({});
+
   const canViewPage = can('View', 'Expenses.Settings');
   /**
    * The series is set per department, and so is the authority for it: `manage-serials` is
@@ -81,6 +87,9 @@ export default function DepartmentSerialNoPage() {
         const results = await Promise.all(configPromises);
         const newConfigs = results.reduce((acc, current) => ({ ...acc, ...current }), {});
         setConfigs(newConfigs);
+        loadedIndexRef.current = Object.fromEntries(
+          Object.entries(newConfigs as Record<string, SerialNumberConfig>).map(([id, config]) => [id, config.startingIndex]),
+        );
 
       } catch (error) {
         console.error("Error fetching data:", error);
@@ -109,13 +118,32 @@ export default function DepartmentSerialNoPage() {
     }
     setSavingStates(prev => ({ ...prev, [deptId]: true }));
     try {
-      const after = configs[deptId];
       const ref = doc(db, 'departmentSerialConfigs', deptId);
       // Read fresh rather than trusting what this page loaded: raising a request moves the index on,
       // and the log should record what this save really changed.
       const beforeSnap = await getDoc(ref);
       const before = beforeSnap.exists() ? (beforeSnap.data() as SerialNumberConfig) : null;
+      // An index the administrator did not touch keeps whatever the series has reached since this
+      // page loaded. Writing the loaded figure back would rewind the counter over every request
+      // raised in the meantime — so changing a prefix would hand out numbers already in use.
+      const draft = configs[deptId];
+      const untouched = before !== null && draft.startingIndex === loadedIndexRef.current[deptId];
+      // Never `undefined` and never NaN: `allocateRequestNos` silently restarts the series at 1 for
+      // anything that is not a finite number, which would hand out numbers already in use.
+      const liveIndex = before?.startingIndex;
+      const index = Number(untouched && liveIndex !== undefined ? liveIndex : draft.startingIndex);
+      const after: SerialNumberConfig = {
+        ...draft,
+        prefix: draft.prefix ?? '',
+        format: draft.format ?? '',
+        suffix: draft.suffix ?? '',
+        startingIndex: Number.isFinite(index) && index >= 1 ? Math.floor(index) : 1,
+      };
       await setDoc(ref, after);
+      loadedIndexRef.current[deptId] = after.startingIndex;
+      if (untouched && after.startingIndex !== draft.startingIndex) {
+        setConfigs(prev => ({ ...prev, [deptId]: { ...prev[deptId], startingIndex: after.startingIndex } }));
+      }
       const changes = diffFields(before, after);
       await logUserActivity({
           userId: user.id,

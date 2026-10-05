@@ -119,7 +119,10 @@ export default function ManageAccountsPage() {
       toast({ title: 'Not allowed', description: accountsDecision.reason, variant: 'destructive' });
       return;
     }
-    if (!name.trim()) {
+    // Stored trimmed: the name is matched exactly wherever a request names its sub-head, so a
+    // stray space makes a second account that looks identical to the one already there.
+    const trimmedName = name.trim();
+    if (!trimmedName) {
       toast({ title: 'Validation Error', description: 'Name cannot be empty.', variant: 'destructive' });
       return;
     }
@@ -133,54 +136,54 @@ export default function ManageAccountsPage() {
 
       switch (dialogMode) {
         case 'addHead': {
-          const ref = await addDoc(collection(db, 'accountHeads'), { name });
+          const ref = await addDoc(collection(db, 'accountHeads'), { name: trimmedName });
           action = 'Add Account Head';
-          details = { headName: name, changes: diffFields(null, { name }) };
+          details = { headName: trimmedName, changes: diffFields(null, { name: trimmedName }) };
           recordId = ref.id;
-          recordRef = name;
+          recordRef = trimmedName;
           break;
         }
         case 'addSubHead': {
           if (!selectedHeadId) return;
-          const ref = await addDoc(collection(db, 'subAccountHeads'), { name, headId: selectedHeadId });
+          const ref = await addDoc(collection(db, 'subAccountHeads'), { name: trimmedName, headId: selectedHeadId });
           action = 'Add Sub-Account Head';
           details = {
-            subHeadName: name,
+            subHeadName: trimmedName,
             parentHeadId: selectedHeadId,
-            changes: diffFields(null, { name, headOfAccount: headName(selectedHeadId) }),
+            changes: diffFields(null, { name: trimmedName, headOfAccount: headName(selectedHeadId) }),
           };
           recordId = ref.id;
-          recordRef = name;
+          recordRef = trimmedName;
           break;
         }
         case 'editHead':
           if (!currentHead) return;
-          await updateDoc(doc(db, 'accountHeads', currentHead.id), { name });
+          await updateDoc(doc(db, 'accountHeads', currentHead.id), { name: trimmedName });
           action = 'Edit Account Head';
           details = {
             headId: currentHead.id,
-            newName: name,
+            newName: trimmedName,
             oldName: currentHead.name,
-            changes: diffFields({ name: currentHead.name }, { name }),
+            changes: diffFields({ name: currentHead.name }, { name: trimmedName }),
           };
           recordId = currentHead.id;
-          recordRef = name;
+          recordRef = trimmedName;
           break;
         case 'editSubHead':
           if (!currentSubHead) return;
-          await updateDoc(doc(db, 'subAccountHeads', currentSubHead.id), { name, headId: selectedHeadId });
+          await updateDoc(doc(db, 'subAccountHeads', currentSubHead.id), { name: trimmedName, headId: selectedHeadId });
           action = 'Edit Sub-Account Head';
           details = {
             subHeadId: currentSubHead.id,
-            newName: name,
+            newName: trimmedName,
             oldName: currentSubHead.name,
             changes: diffFields(
               { name: currentSubHead.name, headOfAccount: headName(currentSubHead.headId) },
-              { name, headOfAccount: headName(selectedHeadId) },
+              { name: trimmedName, headOfAccount: headName(selectedHeadId) },
             ),
           };
           recordId = currentSubHead.id;
-          recordRef = name;
+          recordRef = trimmedName;
           break;
       }
       await logUserActivity({

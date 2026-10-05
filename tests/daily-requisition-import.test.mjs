@@ -404,6 +404,25 @@ test('the generated format is the one the entry sheet uses', () => {
   assert.equal(formatReceptionNo(config, 1), 'SEL\\REC\\2026-27\\0001', 'four-digit pad, as the entry sheet does');
 });
 
+test('a half-written serial config cannot poison the counter', () => {
+  // The entry sheet, the import and the multi-receive all allocate through here. A serial config
+  // whose startingIndex is missing, non-numeric or below 1 must still produce a usable number and
+  // leave a usable counter: a NaN written back to startingIndex poisons the series for good, and
+  // every Reception No allocated afterwards reads "0NaN".
+  assert.deepEqual(allocateReceptionNos({ prefix: 'SEL/REC/', format: '2026-27/' }, 1), {
+    receptionNos: ['SEL/REC/2026-27/0001'],
+    nextIndex: 2,
+  });
+  assert.deepEqual(allocateReceptionNos({ startingIndex: Number.NaN }, 2).receptionNos, ['0001', '0002']);
+  assert.equal(allocateReceptionNos({ startingIndex: Number.NaN }, 2).nextIndex, 3);
+  // Zero, a negative or a fractional counter all start the series at 1 rather than at 0000.
+  assert.deepEqual(allocateReceptionNos({ startingIndex: 0 }, 1).receptionNos, ['0001']);
+  assert.deepEqual(allocateReceptionNos({ startingIndex: -5 }, 1).receptionNos, ['0001']);
+  assert.deepEqual(allocateReceptionNos({ startingIndex: 7.9 }, 1).receptionNos, ['0007']);
+  // Missing prefix, format or suffix contribute nothing rather than the text "undefined".
+  assert.equal(formatReceptionNo({}, 12), '0012');
+});
+
 test('allocating none leaves the counter alone', () => {
   const { receptionNos, nextIndex } = allocateReceptionNos({ startingIndex: 42 }, 0);
   assert.deepEqual(receptionNos, []);

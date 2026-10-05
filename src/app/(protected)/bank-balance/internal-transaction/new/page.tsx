@@ -31,7 +31,7 @@ import {
 } from '@/components/ui/popover';
 import { Calendar } from '@/components/ui/calendar';
 import { cn } from '@/lib/utils';
-import { endOfDay, format } from 'date-fns';
+import { endOfDay, format, startOfDay } from 'date-fns';
 import { useToast } from '@/hooks/use-toast';
 import { db } from '@/lib/firebase';
 import {
@@ -46,7 +46,7 @@ import { useAuthorization } from '@/hooks/useAuthorization';
 import { useActivityLogger } from '@/hooks/useActivityLogger';
 import { ACTIVITY_MODULES } from '@/lib/activity-modules';
 import { getApplicableCcLimit } from '@/lib/bank-balance-limit';
-import { balanceAt, buildLedger, dayKey, formatInr, isCashCredit } from '@/lib/bank-balance-ledger';
+import { balanceAt, buildLedger, dayKey, formatDay, formatInr, isCashCredit, parseDay } from '@/lib/bank-balance-ledger';
 import {
   BANK_PAGE,
   BankAccessDenied,
@@ -180,6 +180,23 @@ export default function NewInternalTransactionPage() {
 
   const totalAmount = transactions.reduce((sum, t) => sum + (t.amount || 0), 0);
 
+  /**
+   * Accounts on this batch whose opening date is after the transfer date. The engine treats an
+   * entry dated before an account's opening date as already inside its opening figure and ignores
+   * it, so such a transfer saves but never moves either balance — and on a Cash Credit source the
+   * funds check reads the whole limit as free, because the utilisation is ignored too. New Payment
+   * refuses the same date; so does this.
+   */
+  const beforeOpening = useMemo(() => {
+    if (!date) return [];
+    const ids = new Set(transactions.flatMap((t) => [t.fromAccountId, t.toAccountId].filter(Boolean)));
+    return bankAccounts.filter((account) => {
+      if (!ids.has(account.id)) return false;
+      const start = parseDay(account.openingDate);
+      return !!start && startOfDay(date) < start;
+    });
+  }, [date, transactions, bankAccounts]);
+
   const handleSave = async () => {
     if (!canAdd) {
       toast({
@@ -216,6 +233,21 @@ export default function NewInternalTransactionPage() {
       toast({
         title: 'Validation Error',
         description: 'A transfer cannot be dated after today.',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    // A transfer dated before an account's opening date is inside its opening figure already: it
+    // would save and move nothing.
+    if (beforeOpening.length) {
+      toast({
+        title: 'Date before the account opened',
+        description: `${beforeOpening
+          .map((account) => `${accountLabel(account)} opened ${formatDay(account.openingDate)}`)
+          .join('; ')}. A transfer dated ${formatDay(date)} would not count toward ${
+          beforeOpening.length === 1 ? 'its balance' : 'their balances'
+        }.`,
         variant: 'destructive',
       });
       return;
@@ -414,6 +446,14 @@ export default function NewInternalTransactionPage() {
               </div>
             </div>
 
+            {beforeOpening.length > 0 && (
+              <p className="rounded-md border border-destructive/40 bg-destructive/5 px-3 py-2 text-sm text-destructive">
+                {beforeOpening.map((account) => `${accountLabel(account)} opened ${formatDay(account.openingDate)}`).join('; ')}. A transfer dated{' '}
+                {formatDay(date)} is before that, so it would not count toward{' '}
+                {beforeOpening.length === 1 ? 'its balance' : 'their balances'} — pick a later date.
+              </p>
+            )}
+
             <div className="space-y-4">
               {transactions.map((item, index) => {
                 const source = item.fromAccountId ? sources.get(item.fromAccountId) : undefined;
@@ -508,7 +548,7 @@ export default function NewInternalTransactionPage() {
               <Button variant="outline" onClick={addTransaction}>
                 <Plus className="mr-2 h-4 w-4" /> Add Another Transaction
               </Button>
-              <Button onClick={handleSave} disabled={isSaving || activeBankAccounts.length < 2}>
+              <Button onClick={handleSave} disabled={isSaving || activeBankAccounts.length < 2 || beforeOpening.length > 0}>
                 {isSaving ? (
                   <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                 ) : (

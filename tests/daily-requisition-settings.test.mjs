@@ -4,8 +4,11 @@ import assert from 'node:assert/strict';
 import {
   DAILY_REQUISITION_SETTINGS_PATH,
   DR_COLUMN_REGISTRY,
+  DR_STATIC_SEGMENTS,
   DR_FIELD_REGISTRY,
   applyColumnSettings,
+  dailyStepNameProblem,
+  dailyStepSlug,
   defaultDailyRequisitionSettings,
   describeDateWindow,
   flattenDataControl,
@@ -324,4 +327,37 @@ test('audit flattening names exactly what changed', () => {
     ['Reception date window · enabled', 'Default date range'],
   );
   assert.equal(d2['Default date range'], 'This month');
+});
+
+test('a workflow stage name becomes the page it is reached at', () => {
+  assert.equal(dailyStepSlug('Receiving at Finance'), 'receiving-at-finance');
+  assert.equal(dailyStepSlug('GST & TDS Verification'), 'gst-tds-verification');
+  // Leading, trailing and repeated punctuation collapse rather than leaving a stray dash.
+  assert.equal(dailyStepSlug('  Processed / for  Payment!  '), 'processed-for-payment');
+  assert.equal(dailyStepSlug('Stage 2'), 'stage-2');
+  assert.equal(dailyStepSlug(undefined), '');
+});
+
+test('a stage name that could never be opened is rejected', () => {
+  // A real stage name is fine.
+  assert.equal(dailyStepNameProblem('Receiving at Finance'), null);
+  assert.equal(dailyStepNameProblem('Processed for Payment'), null);
+
+  // Every static route of the module: the static page wins over [step], so the stage is lost.
+  for (const segment of DR_STATIC_SEGMENTS) {
+    const problem = dailyStepNameProblem(segment.replace(/-/g, ' '));
+    assert.ok(problem, segment + ' must be refused as a stage name');
+    assert.match(problem, new RegExp(segment));
+  }
+  // Case and punctuation do not get round it.
+  assert.ok(dailyStepNameProblem('Reports'));
+  assert.ok(dailyStepNameProblem('Entry  Sheet!'));
+  assert.ok(dailyStepNameProblem('Audit-Log'));
+
+  // A name with nothing to slug would address the dashboard itself.
+  assert.match(dailyStepNameProblem('###'), /no letters or digits/);
+  assert.match(dailyStepNameProblem('   '), /no letters or digits/);
+
+  // Two stages whose names slug alike share one page — Workflow Configuration compares slugs.
+  assert.equal(dailyStepSlug('Payment Stage'), dailyStepSlug('payment  stage'));
 });

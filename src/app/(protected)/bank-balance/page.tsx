@@ -20,7 +20,7 @@ import { collection, getDocs } from 'firebase/firestore';
 import type { BankAccount, BankExpense } from '@/lib/types';
 import { useAuthorization } from '@/hooks/useAuthorization';
 import { endOfDay, format, isToday, subDays, startOfMonth, subMonths } from 'date-fns';
-import { balancesAt, buildLedgers, dailyRows, formatDay, formatInr } from '@/lib/bank-balance-ledger';
+import { balancesAt, buildLedgers, dailyRows, formatDay, formatInr, parseDay } from '@/lib/bank-balance-ledger';
 import { CHEQUE_VALIDITY_MONTHS, displayStatus, type BankPaymentVoucher } from '@/lib/bank-payments';
 import { Badge } from '@/components/ui/badge';
 import { StatusBadge } from '@/components/shared/status-badge';
@@ -38,6 +38,16 @@ import { cn } from '@/lib/utils';
 import { getApplicableCcLimit } from '@/lib/bank-balance-limit';
 
 const voucherCount = (n: number) => `${n} voucher${n === 1 ? '' : 's'}`;
+
+/**
+ * The account card's "Since MMM yy". Through `parseDay`, not `new Date(…)`: an opening date that
+ * does not parse gives an Invalid Date, and `format` throws on one — which would take the whole
+ * dashboard down, not just the card.
+ */
+const openingMonth = (openingDate: string | null | undefined) => {
+  const day = parseDay(openingDate);
+  return day ? format(day, 'MMM yy') : '—';
+};
 
 export default function BankBalanceDashboard() {
   const { toast } = useToast();
@@ -241,7 +251,15 @@ export default function BankBalanceDashboard() {
     const datedAhead: FlowDatedAhead = { payments: 0, paymentCount: 0, receipts: 0, receiptCount: 0 };
     allTransactions.forEach(t => {
       if (t.isContra) return;
-      const at = t.date.toDate();
+      // Guarded like today's totals above: a row whose date cannot be read is left out rather than
+      // throwing out of this useMemo and blanking the dashboard.
+      let at: Date;
+      try {
+        at = t.date.toDate();
+      } catch {
+        return;
+      }
+      if (!at || Number.isNaN(at.getTime())) return;
       const amount = Number(t.amount) || 0;
       if (at > cutoff) {
         if (t.type === 'Credit') { datedAhead.receipts += amount; datedAhead.receiptCount += 1; }
@@ -482,7 +500,10 @@ export default function BankBalanceDashboard() {
               const currentBalance = calculatedBalances[account.id] || 0;
               const latestDp = getLatestDp(account);
               const displayBalance = isCC ? latestDp - currentBalance : currentBalance;
-              const utilizationPct = isCC && latestDp > 0 ? Math.min(100, (currentBalance / latestDp) * 100) : 0;
+              // Clamped at both ends: a Cash Credit account in credit gives a negative percentage,
+              // and `width: -5%` is invalid CSS — the browser dropped the declaration and drew the
+              // progress bar FULL.
+              const utilizationPct = isCC && latestDp > 0 ? Math.min(100, Math.max(0, (currentBalance / latestDp) * 100)) : 0;
 
               const utilizationColor =
                 utilizationPct >= 90 ? 'text-red-600 dark:text-red-400' :
@@ -578,7 +599,7 @@ export default function BankBalanceDashboard() {
                     {/* Footer */}
                     <div className="pt-1 border-t border-border/40 flex justify-between items-center">
                       <span className="text-[10px] text-muted-foreground">{account.branch || '—'}</span>
-                      <span className="text-[10px] text-muted-foreground">Since {account.openingDate ? format(new Date(account.openingDate), 'MMM yy') : '—'}</span>
+                      <span className="text-[10px] text-muted-foreground">Since {openingMonth(account.openingDate)}</span>
                     </div>
                   </CardContent>
                 </Card>

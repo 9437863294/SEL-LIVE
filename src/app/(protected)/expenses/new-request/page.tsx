@@ -129,7 +129,10 @@ function NewExpenseRequestForm() {
   const { toast } = useToast();
   const { user } = useAuth();
   const { isLoading: isAuthLoading } = useAuthorization();
-  const { may } = useExpensesActor();
+  // The module's own assignment is part of the answer, so the refusal below has to wait for it:
+  // `assigned-only` can name someone the permission map does not, and showing Access Denied for the
+  // moment before the assignment arrives would turn their own page into a locked door.
+  const { may, isLoading: isActorLoading } = useExpensesActor();
   const { settings } = useExpensesSettings();
   const searchParams = useSearchParams();
 
@@ -137,7 +140,18 @@ function NewExpenseRequestForm() {
   const fieldFor = (key: Parameters<typeof resolveFormField>[1]) => resolveFormField(settings, key);
 
   const departmentIdFromUrl = searchParams?.get('departmentId') ?? null;
-  const amountFromUrl = searchParams?.get('amount') ?? null;
+  /**
+   * `?amount=` is typed by whoever built the link. `parseFloat('')` and `parseFloat('abc')` are
+   * both `NaN`, which React warns about on the amount box and which Zod then rejects with "expected
+   * number, received nan" rather than with anything a user can act on — so an unreadable figure is
+   * treated as no figure at all.
+   */
+  const amountFromUrl = (() => {
+    const raw = searchParams?.get('amount');
+    if (!raw) return null;
+    const parsed = Number.parseFloat(raw);
+    return Number.isFinite(parsed) && parsed >= 0 ? parsed : null;
+  })();
   const projectIdFromUrl = searchParams?.get('projectId') ?? null;
   const partyNameFromUrl = searchParams?.get('partyName') ?? null;
   const descriptionFromUrl = searchParams?.get('description') ?? null;
@@ -173,7 +187,7 @@ function NewExpenseRequestForm() {
     defaultValues: {
       departmentId: departmentIdFromUrl || '',
       projectId: projectIdFromUrl || '',
-      amount: amountFromUrl ? parseFloat(amountFromUrl) : 0,
+      amount: amountFromUrl ?? 0,
       headOfAccount: '',
       subHeadOfAccount: '',
       remarks: '',
@@ -218,7 +232,7 @@ function NewExpenseRequestForm() {
     : true;
 
   const isDenied =
-    !isAuthLoading && !isLoadingData && (!canUseUrlDepartment || raisableDepartments.length === 0);
+    !isAuthLoading && !isActorLoading && !isLoadingData && (!canUseUrlDepartment || raisableDepartments.length === 0);
 
   /** The verdict for what is on the form now — the Save button's state and the words for a refusal. */
   const raiseDecision = watchedDepartmentId
@@ -264,7 +278,7 @@ function NewExpenseRequestForm() {
   useEffect(() => {
     form.setValue('departmentId', departmentIdFromUrl || '');
     form.setValue('projectId', projectIdFromUrl || '');
-    form.setValue('amount', amountFromUrl ? parseFloat(amountFromUrl) : 0);
+    form.setValue('amount', amountFromUrl ?? 0);
     form.setValue('partyName', partyNameFromUrl || '');
     form.setValue('description', descriptionFromUrl || '');
   }, [departmentIdFromUrl, projectIdFromUrl, amountFromUrl, partyNameFromUrl, descriptionFromUrl, form]);
@@ -378,13 +392,19 @@ function NewExpenseRequestForm() {
           ? findRecordedParty(data.partyName, recordedPartyNames)
           : undefined) ?? data.partyName ?? '';
 
+      // A field hidden under Field Control is saved empty — that is what hiding it means, and the
+      // form no longer shows it, so a value could otherwise only have come from the query string.
+      const shown = (key: Parameters<typeof resolveFormField>[1], value: string) =>
+        fieldFor(key).visible ? value : '';
+      const savedPartyName = shown('partyName', partyName);
+
       // A field the configuration has made optional arrives as undefined, which Firestore rejects
       // — and a request whose remarks are missing should read as empty, not as absent.
       const requestFields = {
         ...data,
-        partyName,
-        description: data.description ?? '',
-        remarks: data.remarks ?? '',
+        partyName: savedPartyName,
+        description: shown('description', data.description ?? ''),
+        remarks: shown('remarks', data.remarks ?? ''),
         generatedByDepartment: selectedDept.name,
         generatedByUser: user?.name || 'Unknown',
         generatedByUserId: user?.id || 'Unknown',
@@ -433,11 +453,11 @@ function NewExpenseRequestForm() {
       setRecordedRequestNos(prev => [...prev, newRequestNo]);
       setRecentRequests(prev => [
         ...prev,
-        { requestNo: newRequestNo, partyName, amount: data.amount, createdAt: requestFields.createdAt },
+        { requestNo: newRequestNo, partyName: savedPartyName, amount: data.amount, createdAt: requestFields.createdAt },
       ]);
-      if (partyName) {
-        if (!partyNames.includes(partyName)) setPartyNames(prev => [...prev, partyName].sort());
-        if (!recordedPartyNames.includes(partyName)) setRecordedPartyNames(prev => [...prev, partyName].sort());
+      if (savedPartyName) {
+        if (!partyNames.includes(savedPartyName)) setPartyNames(prev => [...prev, savedPartyName].sort());
+        if (!recordedPartyNames.includes(savedPartyName)) setRecordedPartyNames(prev => [...prev, savedPartyName].sort());
       }
 
       toast({ title: 'Request Created', description: `Expense request ${newRequestNo} has been successfully created.` });
@@ -493,7 +513,7 @@ function NewExpenseRequestForm() {
         badge={<ExpenseBadge accent="emerald"><Sparkles className="h-2.5 w-2.5" /> New</ExpenseBadge>}
       />
 
-      {isLoadingData || isAuthLoading ? (
+      {isLoadingData || isAuthLoading || isActorLoading ? (
         <div className="space-y-4">
           <Skeleton className="h-14 w-full rounded-xl" />
           <Skeleton className="h-80 w-full rounded-xl" />
@@ -575,7 +595,7 @@ function NewExpenseRequestForm() {
                   )}
                 />
 
-                <FormField
+                {fieldFor('partyName').visible && <FormField
                   control={form.control}
                   name="partyName"
                   render={({ field }) => (
@@ -640,7 +660,7 @@ function NewExpenseRequestForm() {
                       <FormMessage className="text-[11px]" />
                     </FormItem>
                   )}
-                />
+                />}
 
                 <FormField
                   control={form.control}
@@ -705,7 +725,7 @@ function NewExpenseRequestForm() {
                   </div>
                 </div>
 
-                <FormField
+                {fieldFor('description').visible && <FormField
                   control={form.control}
                   name="description"
                   render={({ field }) => (
@@ -718,9 +738,9 @@ function NewExpenseRequestForm() {
                       <FormMessage className="text-[11px]" />
                     </FormItem>
                   )}
-                />
+                />}
 
-                <FormField
+                {fieldFor('remarks').visible && <FormField
                   control={form.control}
                   name="remarks"
                   render={({ field }) => (
@@ -733,7 +753,7 @@ function NewExpenseRequestForm() {
                       <FormMessage className="text-[11px]" />
                     </FormItem>
                   )}
-                />
+                />}
               </CardContent>
 
               {/* Only as much tax detail as the bill has — and none when Data Control turns GST & TDS capture off */}

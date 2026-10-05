@@ -167,7 +167,10 @@ export function enrichExpenses(
       departmentById.get(expense.departmentId ?? '') || expense.generatedByDepartment || UNKNOWN_DEPARTMENT,
     projectId: expense.projectId ?? '',
     projectName: projectById.get(expense.projectId ?? '') || UNKNOWN_PROJECT,
-    amount: Number.isFinite(expense.amount) ? Number(expense.amount) : 0,
+    // `Number.isFinite` on the raw field rejected a figure stored as text, which the registers
+    // show (their formatter coerces) and every report then totalled as zero — the same request
+    // worth two different amounts on two screens. Coerced first, so only real junk reads as 0.
+    amount: Number(expense.amount) || 0,
     headOfAccount: expense.headOfAccount || UNATTRIBUTED,
     subHeadOfAccount: expense.subHeadOfAccount || UNATTRIBUTED,
     partyName: expense.partyName || UNATTRIBUTED,

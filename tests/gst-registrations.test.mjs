@@ -178,3 +178,11 @@ test('TDS groups per TAN only when configured to', () => {
   );
   assert.equal(summariseGst(bills, docOf({ maps })).company.tds, 2500);
 });
+
+test('a duplicate GSTIN is reported even when the first copy has a bad TAN', () => {
+  const first = { ...ODISHA, id: 'r-1', tan: 'NOTATAN' };
+  const second = { ...ODISHA, id: 'r-2' };
+  const errors = validateRegistrations([first, second]);
+  assert.match(errors['r-1'], /TAN/);
+  assert.match(errors['r-2'], /already in the list/, 'the second copy is the duplicate, whatever is wrong with the first');
+});

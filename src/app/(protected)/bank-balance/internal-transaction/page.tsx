@@ -309,6 +309,26 @@ export default function InternalTransactionPage() {
       return;
     }
 
+    // A transfer dated before an account's opening date is already inside its opening figure, so
+    // the engine ignores it: it would save and move neither balance. (On a Cash Credit source the
+    // funds check below would also read the whole limit as free.) New Transfer refuses it too.
+    const opensAfter = [fromAccount, toAccount].filter((account) => {
+      const start = parseDay(account.openingDate);
+      return !!start && startOfDay(editDate) < start;
+    });
+    if (opensAfter.length) {
+      toast({
+        title: 'Date before the account opened',
+        description: `${opensAfter
+          .map((account) => `${accountLabel(account)} opened ${formatDay(account.openingDate)}`)
+          .join('; ')}. A transfer dated ${formatDay(editDate)} would not count toward ${
+          opensAfter.length === 1 ? 'its balance' : 'their balances'
+        }.`,
+        variant: 'destructive',
+      });
+      return;
+    }
+
     const availableFunds = availableOn(
       fromAccount,
       allTransactions.filter((txn) => txn.contraId !== editingEntry.contraId),

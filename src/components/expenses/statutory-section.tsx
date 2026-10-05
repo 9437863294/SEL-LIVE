@@ -61,6 +61,56 @@ const numberOrZero = (value: string) => {
 const CONTROL = 'h-9 text-sm';
 const AMOUNT = 'text-right tabular-nums';
 
+/**
+ * A number box that keeps what is being typed.
+ *
+ * Rendering `String(parsedNumber)` on every keystroke loses the half-typed figures a decimal has to
+ * pass through: "0." parses to 0, so the box snapped back to "0" and 0.1% (194Q) or ₹0.50 could not
+ * be entered at all — "0.1" came out as 1. The draft is what the user typed, and it is kept only
+ * while it still parses to the value the caller holds, so a value changed from outside (choosing
+ * another TDS section, resetting the form) replaces it without an effect.
+ */
+function DecimalInput({
+  id,
+  value,
+  text,
+  onChange,
+  disabled,
+  className,
+  placeholder,
+}: {
+  id: string;
+  /** The number the caller holds — what a draft has to still parse to for it to be kept. */
+  value: number;
+  /** What the box reads once nothing is being typed. Each caller's own formatting, unchanged. */
+  text: string;
+  onChange: (next: number) => void;
+  disabled?: boolean;
+  className?: string;
+  placeholder?: string;
+}) {
+  const [draft, setDraft] = useState<string | null>(null);
+  const shown = draft !== null && numberOrZero(draft) === (Number(value) || 0) ? draft : text;
+  return (
+    <Input
+      id={id}
+      type="number"
+      inputMode="decimal"
+      min={0}
+      step="0.01"
+      className={className}
+      disabled={disabled}
+      placeholder={placeholder}
+      value={shown}
+      onChange={(event) => {
+        setDraft(event.target.value);
+        onChange(numberOrZero(event.target.value));
+      }}
+      onBlur={() => setDraft(null)}
+    />
+  );
+}
+
 function Field({
   label,
   required,
@@ -371,17 +421,14 @@ export function StatutorySection({
                 </Select>
               </Field>
               <Field label="Rate %" htmlFor="st-tds-rate" error={errors.tdsRate}>
-                <Input
+                <DecimalInput
                   id="st-tds-rate"
-                  type="number"
-                  inputMode="decimal"
-                  min={0}
-                  step="0.01"
                   className={cn(CONTROL, AMOUNT, invalid('tdsRate'))}
                   disabled={!value.tdsSection}
                   placeholder="—"
-                  value={value.tdsSection ? String(value.tdsRate) : ''}
-                  onChange={(e) => set({ tdsRate: numberOrZero(e.target.value), tdsOverride: null })}
+                  value={value.tdsRate}
+                  text={value.tdsSection ? String(value.tdsRate) : ''}
+                  onChange={(rate) => set({ tdsRate: rate, tdsOverride: null })}
                 />
               </Field>
               <Field
@@ -397,17 +444,16 @@ export function StatutorySection({
                   )
                 }
               >
-                <Input
+                <DecimalInput
                   id="st-tds-amount"
-                  type="number"
-                  inputMode="decimal"
-                  min={0}
-                  step="0.01"
                   className={cn(CONTROL, AMOUNT)}
                   disabled={!value.tdsSection}
                   placeholder="—"
-                  value={value.tdsSection ? String(value.tdsOverride ?? totals.tds) : ''}
-                  onChange={(e) => set({ tdsOverride: e.target.value === '' ? null : numberOrZero(e.target.value) })}
+                  value={value.tdsOverride ?? totals.tds}
+                  text={value.tdsSection ? String(value.tdsOverride ?? totals.tds) : ''}
+                  // A typed amount of ₹0 is a typed amount. "Use the rate instead" is the link
+                  // under the box, not an empty box — which is a figure half-typed as often as not.
+                  onChange={(amount) => set({ tdsOverride: amount })}
                 />
               </Field>
               <Field
@@ -478,16 +524,13 @@ function MoneyInput({ id, value, onChange }: { id: string; value: number; onChan
   return (
     <div className="relative">
       <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-sm text-muted-foreground">₹</span>
-      <Input
+      <DecimalInput
         id={id}
-        type="number"
-        inputMode="decimal"
-        min={0}
-        step="0.01"
         className={cn(CONTROL, AMOUNT, 'pl-7')}
         placeholder="0.00"
-        value={value ? String(value) : ''}
-        onChange={(e) => onChange(numberOrZero(e.target.value))}
+        value={value}
+        text={value ? String(value) : ''}
+        onChange={onChange}
       />
     </div>
   );

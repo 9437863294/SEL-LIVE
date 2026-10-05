@@ -1,12 +1,19 @@
 import type { BankAccount, DpLogEntry } from '@/lib/types';
 import { entryAppliesOn } from '@/lib/bank-balance-ledger';
 
+/**
+ * DP + OD + TOD. Each part is coerced: a figure stored as a string (an imported or hand-edited
+ * `drawingPower` row) would otherwise be CONCATENATED — "500000" + 0 + 0 reads as 50,000,000,
+ * a hundredfold limit — instead of added.
+ */
+const num = (value: unknown) => Number(value) || 0;
+
 export const getEffectiveCcLimitFromEntry = (
   entry?: DpLogEntry | null
 ) =>
-  (entry?.amount || 0) +
-  (entry?.odAmount || 0) +
-  (entry?.todAmount || 0);
+  num(entry?.amount) +
+  num(entry?.odAmount) +
+  num(entry?.todAmount);
 
 export const getApplicableCcLimitEntry = (
   account: BankAccount,

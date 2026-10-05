@@ -685,8 +685,12 @@ export function allocateReceptionNos(
   config: RequisitionSerialConfig,
   count: number,
 ): { receptionNos: string[]; nextIndex: number } {
-  const start = Math.max(1, Math.trunc(config.startingIndex ?? 1));
-  const wanted = Math.max(0, count);
+  // The counter has to survive a half-written config document. `Math.max(1, NaN)` is NaN, so a
+  // missing, blank or non-numeric startingIndex used to allocate "0NaN" and then write NaN back —
+  // poisoning the series for every entry after it. Anything unusable starts the series at 1.
+  const raw = Math.trunc(Number(config.startingIndex));
+  const start = Number.isFinite(raw) && raw >= 1 ? raw : 1;
+  const wanted = Number.isFinite(count) ? Math.max(0, Math.trunc(count)) : 0;
   const receptionNos = Array.from({ length: wanted }, (_, offset) => formatReceptionNo(config, start + offset));
   return { receptionNos, nextIndex: start + wanted };
 }

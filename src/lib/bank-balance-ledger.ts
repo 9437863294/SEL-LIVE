@@ -46,6 +46,30 @@ export const isCashCredit = (account: Pick<LedgerAccount, 'accountType'>) => acc
 export const txnDate = (txn: Pick<LedgerTxn, 'date'>): Date =>
   txn.date instanceof Date ? txn.date : txn.date.toDate();
 
+/**
+ * The entry's date, or null when the document has none that can be read (a missing `date` field,
+ * or a Timestamp that converts to an Invalid Date — imported or hand-edited rows).
+ *
+ * The ledger drops such an entry rather than carrying it: an Invalid Date compares false against
+ * everything, so it used to be added to `balanceAt` (every comparison that would have stopped it
+ * failed) while `dailyRows` stalled its cursor on it and silently dropped every LATER entry for
+ * that account. One unreadable row made the dashboard and the Daily Log disagree.
+ */
+function entryDate(txn: Pick<LedgerTxn, 'date'>): Date | null {
+  const value = txn.date as unknown;
+  if (!value) return null;
+  let date: Date;
+  if (value instanceof Date) date = value;
+  else if (typeof (value as { toDate?: unknown }).toDate === 'function') {
+    try {
+      date = (value as { toDate(): Date }).toDate();
+    } catch {
+      return null;
+    }
+  } else return null;
+  return date instanceof Date && isValid(date) ? date : null;
+}
+
 /** A `yyyy-MM-dd` string as the start of that day in local time, or null when blank/invalid. */
 export function parseDay(value: string | null | undefined): Date | null {
   if (!value) return null;
@@ -91,7 +115,8 @@ export function buildLedgers<A extends LedgerAccount, T extends LedgerTxn>(accou
   for (const txn of txns) {
     const ledger = ledgers.get(txn.accountId);
     if (!ledger) continue;
-    const at = txnDate(txn);
+    const at = entryDate(txn);
+    if (!at) continue;
     if (ledger.start && at < ledger.start) continue;
     ledger.entries.push({ txn, at, effect: signedEffect(ledger.account, txn) });
   }
@@ -130,9 +155,13 @@ export function lowestAvailableFrom(
   fromDay: Date,
   availableOn: (day: Date, figure: number) => number,
 ): { amount: number; day: Date } {
-  const first = endOfDay(fromDay);
-  let figure = balanceAt(ledger, fromDay);
-  let lowest = { amount: availableOn(startOfDay(fromDay), figure), day: startOfDay(fromDay) };
+  // Before its opening date the account has no position yet — `balanceAt` reads 0 there, and
+  // adding the later entries to that 0 dropped the opening figure, overstating the funds by it.
+  // The scan therefore starts no earlier than the opening date.
+  const base = ledger.start && startOfDay(fromDay) < ledger.start ? ledger.start : startOfDay(fromDay);
+  const first = endOfDay(base);
+  let figure = balanceAt(ledger, base);
+  let lowest = { amount: availableOn(base, figure), day: base };
   const later = ledger.entries.filter((entry) => entry.at > first);
   for (let i = 0; i < later.length; i += 1) {
     figure += later[i].effect;
@@ -270,7 +299,9 @@ export function formatInr(value: number | null | undefined, decimals = 2): strin
 }
 
 /** Axis- and tile-sized rupees in the units a treasury desk reads: crore, lakh, thousand. */
-export function compactInr(value: number): string {
+export function compactInr(input: number): string {
+  // Guarded like formatInr: an unset or non-numeric figure reads as ₹0, never "₹NaN".
+  const value = Number(input) || 0;
   const abs = Math.abs(value);
   const sign = value < 0 ? '−' : '';
   const trim = (n: number) => String(Number(n >= 100 ? n.toFixed(0) : n >= 10 ? n.toFixed(1) : n.toFixed(2)));
@@ -283,6 +314,7 @@ export function compactInr(value: number): string {
 /** The module's one date format for tables and headers. */
 export const formatDay = (value: Date | string | null | undefined): string => {
   if (!value) return '—';
-  const date = value instanceof Date ? value : parseDay(value);
+  // An Invalid Date reads as "no date", like a blank string: `format` throws on one.
+  const date = value instanceof Date ? (isValid(value) ? value : null) : parseDay(value);
   return date ? format(date, 'dd MMM yyyy') : '—';
 };

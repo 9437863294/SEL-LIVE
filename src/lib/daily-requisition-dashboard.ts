@@ -15,9 +15,14 @@ export const OPEN_STAGES = ['receiving', 'verification', 'payment'] as const;
 export type OpenStage = (typeof OPEN_STAGES)[number];
 
 /**
- * Mirrors the stage pages' queues (`STAGE_OPEN_STATUSES` on the old landing page and `getStepConfig`
- * in `[step]/page.tsx`): Pending waits at receiving; Received, Verified and Needs Review at GST & TDS
- * verification; Received for Payment and Partially Paid at payment.
+ * Where a requisition's *next* action is, which is how the pipeline reads: Pending waits at
+ * receiving; Received, Verified and Needs Review at GST & TDS verification; Received for Payment and
+ * Partially Paid at payment.
+ *
+ * This is deliberately narrower than what each stage page lists. `getStepConfig` in `[step]/page.tsx`
+ * also shows a stage the statuses it has finished with — Receiving at Finance keeps Received and
+ * Cancelled on their own tabs — so a stage page's total is not this count and must not be compared
+ * to it. Both are position-based on the configured workflow, so a reordered workflow moves both.
  */
 export function stageOfStatus(status: string | undefined | null): DashboardStage {
   switch ((status || 'Pending').trim()) {

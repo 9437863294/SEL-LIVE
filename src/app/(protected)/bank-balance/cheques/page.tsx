@@ -710,7 +710,7 @@ export default function ChequeRegisterPage() {
                     </tr>
                   </thead>
                   <tbody className="divide-y">
-                    {viewing.lines.map((line, index) => (
+                    {(viewing.lines || []).map((line, index) => (
                       <tr key={line.lineId}>
                         <td className="px-3 py-2 text-xs text-muted-foreground">{index + 1}</td>
                         <td className="whitespace-nowrap px-2 py-2 font-mono text-xs">

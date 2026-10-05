@@ -26,6 +26,48 @@ export const DAILY_REQUISITION_SETTINGS_PATH = {
   doc: 'module-config',
 } as const;
 
+/* ── workflow stage addressing ───────────────────────────────────────────── */
+
+/**
+ * The module's own static routes under `/daily-requisition`. A configured stage whose name slugs to
+ * one of these can never be opened: Next.js serves the static route in preference to `[step]`.
+ */
+export const DR_STATIC_SEGMENTS: readonly string[] = [
+  'entry-sheet',
+  'manage-documents',
+  'reports',
+  'settings',
+  'audit-log',
+];
+
+/**
+ * The URL segment a workflow stage is reached at: `/daily-requisition/<slug of its name>`.
+ *
+ * One definition, here, because three places need it — the menus (`components/daily-requisition/nav.ts`),
+ * the stage page that resolves a slug back to a stage (`[step]/page.tsx`) and Workflow Configuration,
+ * which must refuse a name none of them could address. Two copies of this is one renamed stage away
+ * from a page that cannot be opened from the menu that links to it.
+ */
+export function dailyStepSlug(name: string): string {
+  return String(name ?? '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-|-$/g, '');
+}
+
+/**
+ * Why a stage name could never be opened as a page, as a sentence completing "this name …", or null
+ * when it can. Workflow Configuration checks it before saving.
+ */
+export function dailyStepNameProblem(name: string): string | null {
+  const slug = dailyStepSlug(name);
+  if (!slug) return 'has no letters or digits, so it has no page of its own. Give it a name.';
+  if (DR_STATIC_SEGMENTS.includes(slug)) {
+    return `is also the address of Daily Requisition's own "${slug}" page, so this stage could never be opened. Choose another name.`;
+  }
+  return null;
+}
+
 /* ── entry-form fields ───────────────────────────────────────────────────── */
 
 export type DRFieldKey =

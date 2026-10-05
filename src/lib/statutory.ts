@@ -249,6 +249,45 @@ export const hasStatutory = (input: StatutoryInput) =>
   (Number(input.otherDeduction) || 0) > 0 ||
   Boolean(input.invoiceNo.trim() || input.invoiceDate || input.gstNo.trim() || input.panNo.trim() || input.hsnSac.trim());
 
+/**
+ * A stored statutory block read back as the inputs it was built from.
+ *
+ * Every field is coerced and defaulted, because a block written by an earlier version of the form
+ * may be missing one — and `buildExpenseStatutory` spreads its input straight into the document, so
+ * a single missing key would otherwise be written back as `undefined`, which Firestore rejects and
+ * which would fail the whole update. Only the *inputs* come back: the figures are worked out again
+ * from whatever taxable value the caller is recomputing against.
+ */
+export function statutoryInputFrom(stored: unknown): StatutoryInput {
+  const raw = (stored ?? {}) as Partial<ExpenseStatutory>;
+  const str = (value: unknown) => (typeof value === 'string' ? value : '');
+  const num = (value: unknown) => {
+    const n = Number(value);
+    return Number.isFinite(n) ? n : 0;
+  };
+  const gstType: GstType = raw.gstType === 'igst' ? 'igst' : raw.gstType === 'cgst-sgst' ? 'cgst-sgst' : 'none';
+  const section = str(raw.tdsSection) || 'none';
+  const override = raw.tdsOverride;
+  return {
+    invoiceNo: str(raw.invoiceNo),
+    invoiceDate: str(raw.invoiceDate),
+    gstType,
+    gstRate: gstType === 'none' ? 0 : num(raw.gstRate),
+    gstNo: str(raw.gstNo),
+    panNo: str(raw.panNo),
+    hsnSac: str(raw.hsnSac),
+    reverseCharge: raw.reverseCharge === true,
+    tdsSection: section,
+    tdsRate: section === 'none' ? 0 : num(raw.tdsRate),
+    // A stored amount that was typed rather than worked out; anything unreadable falls back to the
+    // rate rather than to a figure nobody entered.
+    tdsOverride: section !== 'none' && typeof override === 'number' && Number.isFinite(override) ? override : null,
+    retentionAmount: num(raw.retentionAmount),
+    otherDeduction: num(raw.otherDeduction),
+    otherDeductionReason: str(raw.otherDeductionReason),
+  };
+}
+
 /** The record stored on the expense request — inputs normalised, figures worked out. */
 export function buildExpenseStatutory(taxableAmount: number, input: StatutoryInput): ExpenseStatutory {
   const totals = computeStatutory(taxableAmount, input);

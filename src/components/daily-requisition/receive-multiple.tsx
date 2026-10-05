@@ -54,7 +54,10 @@ export function carriedStatutory(request: Pick<ExpenseRequest, 'statutory' | 'gs
   const chosen: { gstRegistrationId?: string } = request.gstRegistrationId ? { gstRegistrationId: request.gstRegistrationId } : {};
   if (!request.statutory) return chosen;
   const { grossAmount: _gross, netAmount: _net, ...rest } = requisitionStatutoryFields(request.statutory);
-  return { ...chosen, ...rest };
+  // Only the fields the request actually carries. A request saved before one of these existed has
+  // no value for it, and Firestore rejects the whole write for a single `undefined` — which would
+  // fail the receipt rather than carry one field less.
+  return { ...chosen, ...Object.fromEntries(Object.entries(rest).filter(([, value]) => value !== undefined)) };
 }
 
 /** Gross is the request's taxable value and net what is payable, when GST & TDS were captured on it. */
@@ -235,7 +238,9 @@ export function ReceiveMultiplePanel({
           const entryRef = doc(collection(db, 'dailyRequisitions'));
           tx.set(entryRef, {
             receptionNo,
-            depNo: request.requestNo,
+            // Every other field here is defaulted, and Firestore rejects the whole write for one
+            // `undefined` — a request with no Request No must not fail the rest of the receipt.
+            depNo: request.requestNo ?? '',
             date: Timestamp.fromDate(receptionDate),
             projectId: request.projectId ?? '',
             departmentId: request.departmentId ?? '',
@@ -256,7 +261,7 @@ export function ReceiveMultiplePanel({
             'Create Daily Requisition',
             {
               receptionNo,
-              depNo: request.requestNo,
+              depNo: request.requestNo ?? '',
               partyName: request.partyName ?? '',
               amount: netOf(request),
               receivedTogether: items.length,
@@ -266,7 +271,7 @@ export function ReceiveMultiplePanel({
           if (created) tx.set(doc(collection(db, 'userLogs')), created);
         });
 
-        return items.map(({ request, receptionNo }) => ({ depNo: request.requestNo, receptionNo }));
+        return items.map(({ request, receptionNo }) => ({ depNo: request.requestNo ?? '', receptionNo }));
       });
 
       void log('Receive Expense Requests', {

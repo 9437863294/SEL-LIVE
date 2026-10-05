@@ -78,10 +78,13 @@ export function validateRegistrations(registrations: readonly GstRegistration[])
       errors[registration.id] = check.error ?? 'Not a valid GSTIN.';
     } else if (seen.has(gstin)) {
       errors[registration.id] = 'This GSTIN is already in the list.';
-    } else if (registration.tan && !isValidTan(registration.tan)) {
-      errors[registration.id] = 'Not a TAN: 4 letters, 5 digits and a letter.';
     } else {
+      // Recorded on the strength of the GSTIN alone: a bad TAN on the first of two copies of one
+      // GSTIN must not stop the second being reported as the duplicate it is.
       seen.set(gstin, registration.id);
+      if (registration.tan && !isValidTan(registration.tan)) {
+        errors[registration.id] = 'Not a TAN: 4 letters, 5 digits and a letter.';
+      }
     }
   }
   if (registrations.length > 0 && !registrations.some((registration) => registration.active)) {

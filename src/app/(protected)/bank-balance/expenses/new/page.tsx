@@ -29,6 +29,7 @@ import { getApplicableCcLimit } from '@/lib/bank-balance-limit';
 import { balanceAt, buildLedger, formatDay, formatInr, isCashCredit, lowestAvailableFrom, parseDay } from '@/lib/bank-balance-ledger';
 import {
   applyPayments,
+  financialYear,
   instrumentKey,
   modeConfig,
   nextVoucherNo,
@@ -472,7 +473,17 @@ function NewPaymentForm() {
         }
 
         const reqById = new Map(reqSnaps.map((snap) => [snap.id, snap]));
-        const { voucherNo: number, counter } = nextVoucherNo(counterSnap.exists() ? (counterSnap.data() as { fy?: string; next?: number }) : undefined, issueDay);
+        const storedCounter = counterSnap.exists() ? (counterSnap.data() as { fy?: string; next?: number }) : undefined;
+        // The number series restarts at 1 each financial year and must never run backwards: on a
+        // device whose date is behind (a day either side of 1 April), numbering into the closed year
+        // would re-issue a number already used AND reset the shared counter, so the next voucher of
+        // the new year would collide too. Refuse rather than duplicate.
+        if (storedCounter?.fy && storedCounter.fy > financialYear(issueDay)) {
+          throw new Error(
+            `Voucher numbering is already in FY ${storedCounter.fy}, but this device's date reads ${formatDay(issueDay)} (FY ${financialYear(issueDay)}). Check the date on this device and try again.`,
+          );
+        }
+        const { voucherNo: number, counter } = nextVoucherNo(storedCounter, issueDay);
         const instrumentTs = Timestamp.fromDate(day);
         const now = Timestamp.now();
 

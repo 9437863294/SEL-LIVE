@@ -100,7 +100,8 @@ export function useExpensesActor(): ExpensesActor {
     [rolesDoc],
   );
 
-  const [roleIdsByName, setRoleIdsByName] = useState<Record<string, string>>({});
+  /** `null` until the bridge has run (or until it is needed at all). */
+  const [roleIdsByName, setRoleIdsByName] = useState<Record<string, string> | null>(null);
   useEffect(() => {
     if (!needsRoleIds) return;
     let alive = true;
@@ -111,6 +112,13 @@ export function useExpensesActor(): ExpensesActor {
       alive = false;
     };
   }, [needsRoleIds]);
+  /**
+   * Whether the bridge above still has to land. A by-role assignment stores role *document ids*
+   * (that is what the settings screen picks), so until this read arrives the session knows its
+   * roles only by name and `assigned-only` would refuse the very people the assignment names. It
+   * is part of `isLoading` so a gate can wait rather than show a refusal it is about to take back.
+   */
+  const roleIdsPending = needsRoleIds && roleIdsByName === null;
 
   /**
    * Every role the user holds, by id *and* by name — an assignment saved either way still matches,
@@ -122,7 +130,8 @@ export function useExpensesActor(): ExpensesActor {
       : user?.role
         ? [user.role]
         : [];
-    const ids = names.map(name => roleIdsByName[name.trim().toLowerCase()]).filter(Boolean) as string[];
+    const byName = roleIdsByName ?? {};
+    const ids = names.map(name => byName[name.trim().toLowerCase()]).filter(Boolean) as string[];
     return [...new Set([...names, ...ids])];
   }, [effectiveAccess, user, roleIdsByName]);
 
@@ -171,5 +180,11 @@ export function useExpensesActor(): ExpensesActor {
     [assignment],
   );
 
-  return { may, mayWith, assignment, restrictedToAssignees, isLoading: isAuthLoading || isRolesLoading };
+  return {
+    may,
+    mayWith,
+    assignment,
+    restrictedToAssignees,
+    isLoading: isAuthLoading || isRolesLoading || roleIdsPending,
+  };
 }

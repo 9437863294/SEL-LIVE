@@ -64,6 +64,7 @@ import { useExpensesActor } from '@/components/expenses/use-expenses-actor';
 import { applyColumnSettings, resolveDatePreset } from '@/lib/expenses-settings';
 import { formatInr } from '@/lib/bank-balance-ledger';
 import { isPaymentLocked, requisitionsByRequestNo } from '@/lib/requisition-progress';
+import { buildExpenseStatutory, statutoryInputFrom } from '@/lib/statutory';
 import { PageHeader } from '@/components/shared/page-header';
 
 /* ── editing ─────────────────────────────────────────────────────────────── */
@@ -482,7 +483,23 @@ export default function DepartmentExpensesPage() {
             `${lock.reason}. Undo the change to the ${blocked.map(key => FIELD_LABELS[key]).join(', ')} — the description and remarks can still be edited.`,
           );
         }
-        transaction.update(expenseRef, changes);
+        // GST, TDS and the net payable were worked out from the amount this request was raised
+        // for. Changing the amount without working them out again leaves `statutory.taxableAmount`
+        // and `statutory.netPayable` describing a figure the request no longer carries — and Daily
+        // Requisition's GST & TDS verification starts from those, so the wrong gross and net would
+        // follow the request into the payment. The deductions are absolute amounts and stay as
+        // entered; only the figures that scale with the taxable value move.
+        const write: Record<string, unknown> = { ...changes };
+        if (changes.amount !== undefined && live.statutory) {
+          const recomputed = buildExpenseStatutory(Number(changes.amount) || 0, statutoryInputFrom(live.statutory));
+          if (recomputed.netPayable < 0) {
+            throw refusal(
+              'At that amount the deductions recorded for this request come to more than the invoice value. Nothing was saved.',
+            );
+          }
+          write.statutory = recomputed;
+        }
+        transaction.update(expenseRef, write);
       });
       await logUserActivity({
         userId: user.id,

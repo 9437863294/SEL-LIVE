@@ -6,7 +6,7 @@ import React, { Suspense } from 'react';
 import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
 import { DailyRequisitionImportDialog } from '@/components/daily-requisition/import-dialog';
-import { requisitionFingerprint } from '@/lib/daily-requisition-import';
+import { allocateReceptionNos, requisitionFingerprint } from '@/lib/daily-requisition-import';
 import {
   Plus,
   ArrowUpDown,
@@ -480,12 +480,14 @@ function EntrySheetPageComponent() {
       );
 
       if (configSnap.exists()) {
-        const config = configSnap.data() as SerialNumberConfig;
-        const formattedIndex = String(config.startingIndex).padStart(4, '0');
-        const receptionNo = `${config.prefix}${config.format}${formattedIndex}${config.suffix}`;
-        form.setValue('receptionNo', receptionNo);
+        // The shared formatter, so this preview cannot disagree with what the save allocates — and
+        // so a config document missing a field shows `0001` rather than `undefinedundefinedNaN`.
+        const { receptionNos } = allocateReceptionNos(configSnap.data() as SerialNumberConfig, 1);
+        form.setValue('receptionNo', receptionNos[0]);
       } else {
-        form.setValue('receptionNo', 'SEL\\REC\\2025-26\\7340'); // Fallback
+        // No series configured: the save says so plainly, so show nothing rather than a made-up
+        // number that could never be allocated.
+        form.setValue('receptionNo', '');
       }
     } catch (error) {
       console.error('Error fetching data:', error);
@@ -528,6 +530,30 @@ function EntrySheetPageComponent() {
   };
 
 
+  /**
+   * Add New Entry, opened empty. Without this the form keeps whatever was typed the last time the
+   * dialog was closed or a save failed, so the next entry starts as a copy of the one before it —
+   * same party, project and amounts — which is exactly the duplicate no one notices.
+   * The allocated Reception No is kept: `fetchAllData` is what sets it.
+   */
+  const openAddDialog = () => {
+    form.reset({
+      receptionNo: form.getValues('receptionNo'),
+      depNo: '',
+      date: new Date(),
+      description: '',
+      partyName: '',
+      projectId: '',
+      departmentId: '',
+      grossAmount: '',
+      netAmount: '',
+    });
+    setSelectedFiles([]);
+    setAttachmentError(null);
+    setAddMode('single');
+    setIsAddDialogOpen(true);
+  };
+
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files) {
       setAttachmentError(null);
@@ -566,12 +592,15 @@ function EntrySheetPageComponent() {
 
       await runTransaction(db, async (transaction) => {
         const configDoc = await transaction.get(configRef);
-        if (!configDoc.exists()) throw new Error('Serial number configuration not found!');
-        const configData = configDoc.data() as SerialNumberConfig;
-        const newIndex = configData.startingIndex;
-        const formattedIndex = String(newIndex).padStart(4, '0');
-        generatedReceptionNo = `${configData.prefix}${configData.format}${formattedIndex}${configData.suffix}`;
-        transaction.update(configRef, { startingIndex: newIndex + 1 });
+        if (!configDoc.exists()) {
+          throw new Error('Daily Requisition has no serial number configuration. Set one under Settings first.');
+        }
+        // The same allocator the import and the multi-receive use: one definition of the format, and
+        // a missing or non-numeric startingIndex falls back to 1 instead of writing NaN to the
+        // counter — which would hand every entry after it a Reception No reading "…NaN".
+        const { receptionNos, nextIndex } = allocateReceptionNos(configDoc.data() as SerialNumberConfig, 1);
+        generatedReceptionNo = receptionNos[0];
+        transaction.update(configRef, { startingIndex: nextIndex });
       });
 
       const attachmentUrls: Attachment[] = [];
@@ -987,6 +1016,14 @@ function EntrySheetPageComponent() {
     }
   };
 
+  /** How much of the page on screen is ticked, for the header checkbox. */
+  const pageSelected: 'all' | 'some' | 'none' =
+    paginatedEntries.length > 0 && paginatedEntries.every((entry) => selectedIds.has(entry.id))
+      ? 'all'
+      : paginatedEntries.some((entry) => selectedIds.has(entry.id))
+        ? 'some'
+        : 'none';
+
   const handleSelectRow = (id: string, checked: boolean) => {
     const newSelectedIds = new Set(selectedIds);
     if (checked) {
@@ -1069,7 +1106,7 @@ function EntrySheetPageComponent() {
                 <Button variant="outline" onClick={() => setIsImportOpen(true)} disabled={!canAdd}>
                   <Upload className="mr-2 h-4 w-4" /> Import
                 </Button>
-                <Button onClick={() => { form.clearErrors(); setAttachmentError(null); setIsAddDialogOpen(true); }} disabled={!canAdd}>
+                <Button onClick={() => { openAddDialog(); }} disabled={!canAdd}>
                   <Plus className="mr-2 h-4 w-4" /> Add Entry
                 </Button>
               </>
@@ -1152,9 +1189,11 @@ function EntrySheetPageComponent() {
                     {isSelectionMode && (
                       <TableHead>
                         <Checkbox
-                          checked={selectedIds.size > 0 && selectedIds.size === paginatedEntries.length}
+                          // This page's rows, not the whole selection: ticking 25 on page 1 and
+                          // turning to page 2 used to show every row there as already ticked.
+                          checked={pageSelected === 'all' ? true : pageSelected === 'some' ? 'indeterminate' : false}
                           onCheckedChange={handleSelectAll}
-                          aria-label="Select all"
+                          aria-label="Select all on this page"
                         />
                       </TableHead>
                     )}

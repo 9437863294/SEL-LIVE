@@ -43,6 +43,7 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { useAuthorization } from '@/hooks/useAuthorization';
 import { useAuth } from '@/components/auth/AuthProvider';
+import { dailyStepNameProblem, dailyStepSlug } from '@/lib/daily-requisition-settings';
 import { diffFields, type FieldChange } from '@/lib/activity-logger';
 import { useActivityLogger } from '@/hooks/useActivityLogger';
 import { ACTIVITY_MODULES } from '@/lib/activity-modules';
@@ -298,10 +299,27 @@ export default function DailyRequisitionWorkflowConfigurationPage() {
     | { ok: false; msg: string } {
     const normalized = normalizeIds(steps);
 
+    // Each stage is reached at /daily-requisition/<slug of its name>, so two stages whose names
+    // slug alike would share one page and one of their queues would be unreachable.
+    const slugOwner = new Map<string, string>();
+
     for (const s of normalized) {
       if (!s.name || !s.name.trim()) {
         return { ok: false, msg: `Step ${s.id}: name is required.` };
       }
+      const nameProblem = dailyStepNameProblem(s.name);
+      if (nameProblem) {
+        return { ok: false, msg: `Step ${s.id} ("${s.name}"): this name ${nameProblem}` };
+      }
+      const slug = dailyStepSlug(s.name);
+      const owner = slugOwner.get(slug);
+      if (owner) {
+        return {
+          ok: false,
+          msg: `Step ${s.id} ("${s.name}") would open the same page as "${owner}" (/daily-requisition/${slug}). Give the two stages names that differ by more than punctuation.`,
+        };
+      }
+      slugOwner.set(slug, s.name);
       const tatNum = Number(s.tat);
       if (!Number.isFinite(tatNum) || tatNum <= 0) {
         return { ok: false, msg: `Step ${s.id} ("${s.name}"): TAT must be a positive number.` };

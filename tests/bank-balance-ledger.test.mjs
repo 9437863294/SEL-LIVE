@@ -118,3 +118,48 @@ test('the lowest available figure counts post-dated entries after the date', () 
   assert.equal(lowest.day.getDate(), 10);
   assert.equal(lowestAvailableFrom(ledger, at('2026-10-25'), (_d, f) => f).amount, 800);
 });
+
+test('a row whose date cannot be read is left out, not carried', () => {
+  // An Invalid Date compares false against everything: it used to be ADDED by balanceAt (every
+  // comparison that would have stopped it failed) while dailyRows stalled its cursor on it and
+  // dropped every later entry for that account, so the two disagreed.
+  const account = { id: 'bad', accountType: 'Cash Credit', openingUtilization: 1000, openingDate: '2026-09-10' };
+  const ledger = buildLedgers([account], [
+    { accountId: 'bad', amount: 100, type: 'Debit', date: new Date('nonsense') },
+    { accountId: 'bad', amount: 7, type: 'Debit', date: at('2026-09-11') },
+  ]).get('bad');
+  assert.equal(ledger.entries.length, 1);
+  assert.equal(balanceAt(ledger, at('2026-09-11')), 1007);
+  assert.deepEqual(dailyRows(ledger, at('2026-09-10'), at('2026-09-11')).map((row) => row.closing), [1000, 1007]);
+});
+
+test('a row with no date at all does not throw the ledger', () => {
+  const account = { id: 'nd', accountType: 'Current Account', openingBalance: 500, openingDate: '' };
+  const ledger = buildLedgers([account], [
+    { accountId: 'nd', amount: 100, type: 'Credit', date: undefined },
+    { accountId: 'nd', amount: 50, type: 'Credit', date: null },
+    { accountId: 'nd', amount: 25, type: 'Credit', date: at('2026-09-11') },
+  ]).get('nd');
+  assert.equal(ledger.entries.length, 1);
+  assert.equal(balanceAt(ledger, at('2026-09-11')), 525);
+});
+
+test('the lowest available figure keeps the opening figure when asked from before the opening date', () => {
+  // Asked from a day the account does not exist yet, the scan used to start from balanceAt's 0 and
+  // so dropped the opening utilisation, overstating the funds available by it.
+  const account = { id: 'cc3', accountType: 'Cash Credit', openingUtilization: 1000, openingDate: '2026-09-10' };
+  const ledger = buildLedgers([account], [{ accountId: 'cc3', amount: 100, type: 'Debit', date: at('2026-09-20') }]).get('cc3');
+  const limitLess = (_day, figure) => 5000 - figure;
+  assert.equal(lowestAvailableFrom(ledger, at('2026-09-01'), limitLess).amount, 3900);
+  // Unchanged from the opening date on, which is the only case the payment form can reach.
+  assert.equal(lowestAvailableFrom(ledger, at('2026-09-10'), limitLess).amount, 3900);
+  assert.equal(lowestAvailableFrom(ledger, at('2026-09-01'), limitLess).day.getDate(), 20);
+});
+
+test('money reads as rupees even when the figure is unusable', () => {
+  assert.equal(compactInr(Number.NaN), '₹0');
+  assert.equal(compactInr(undefined), '₹0');
+  assert.equal(formatInr(Number.NaN), '₹0.00');
+  assert.equal(formatDay(new Date('nonsense')), '—');
+  assert.equal(formatDay('nonsense'), '—');
+});

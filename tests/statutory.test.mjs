@@ -9,6 +9,7 @@ import {
   isValidPan,
   requisitionStatutoryFields,
   statutoryErrors,
+  statutoryInputFrom,
   suggestGstType,
 } from '../src/lib/statutory.ts';
 
@@ -83,4 +84,66 @@ test('the stored record and what the requisition starts with', () => {
 
 test('TDS switched on needs a section', () => {
   assert.match(statutoryErrors(1000, withInput({ tdsSection: '', panNo: 'AAPFU0939F' })).tdsSection, /section/);
+});
+
+test('a stored statutory block reads back as complete inputs', () => {
+  // What an earlier version of the form wrote: no tdsOverride, no hsnSac, numbers as text.
+  const stored = {
+    invoiceNo: 'INV-9',
+    invoiceDate: '2026-09-30',
+    gstType: 'igst',
+    gstRate: '18',
+    gstNo: '27AAPFU0939F1ZV',
+    panNo: 'AAPFU0939F',
+    reverseCharge: false,
+    tdsSection: '194C-OTH',
+    tdsRate: '2',
+    retentionAmount: 500,
+    taxableAmount: 100000,
+    netPayable: 115500,
+  };
+  const input = statutoryInputFrom(stored);
+  assert.ok(
+    Object.values(input).every((value) => value !== undefined),
+    'every input is present — buildExpenseStatutory spreads them straight into Firestore',
+  );
+  assert.equal(input.tdsOverride, null, 'a missing typed amount falls back to the rate, not to undefined');
+  assert.equal(input.hsnSac, '');
+  assert.equal(input.gstRate, 18, 'a rate stored as text still works out the GST');
+  assert.equal(input.otherDeductionReason, '');
+
+  // Nothing at all still gives a usable, empty set of inputs.
+  assert.deepEqual(statutoryInputFrom(undefined), EMPTY_STATUTORY);
+  assert.deepEqual(statutoryInputFrom({ gstType: 'nonsense', tdsSection: 'none', tdsRate: 5, gstRate: 18 }), EMPTY_STATUTORY);
+});
+
+test('a corrected amount reworks the figures that scale with it', () => {
+  // The request was raised for 100000 with 18% IGST, 2% TDS and 500 retention; the amount is then
+  // corrected to 90000 before it is received. GST and TDS move with it; the retention does not.
+  const raised = buildExpenseStatutory(100000, withInput({
+    gstType: 'igst',
+    gstRate: 18,
+    gstNo: '27AAPFU0939F1ZV',
+    invoiceNo: 'INV-9',
+    invoiceDate: '2026-09-30',
+    tdsSection: '194C-OTH',
+    tdsRate: 2,
+    retentionAmount: 500,
+  }));
+  assert.equal(raised.netPayable, 115500);
+
+  const corrected = buildExpenseStatutory(90000, statutoryInputFrom(raised));
+  assert.equal(corrected.taxableAmount, 90000);
+  assert.equal(corrected.igstAmount, 16200);
+  assert.equal(corrected.tdsAmount, 1800);
+  assert.equal(corrected.retentionAmount, 500, 'a deduction is an amount, not a rate');
+  assert.equal(corrected.netPayable, 103900);
+  assert.ok(
+    Object.values(corrected).every((value) => value !== undefined),
+    'Firestore rejects undefined, and this is written back onto the request',
+  );
+
+  // A typed TDS amount is kept as typed rather than silently rescaled.
+  const typed = buildExpenseStatutory(90000, statutoryInputFrom({ ...raised, tdsOverride: 1500 }));
+  assert.equal(typed.tdsAmount, 1500);
 });
