@@ -85,6 +85,9 @@ const QUEUES: Array<{ key: Queue; label: string; empty: string; viewAll: string;
 
 const MAX_ROWS = 7;
 
+/** Personal and project insurance are separate books, each with its own dashboard page. */
+export type DashboardScope = 'personal' | 'project';
+
 export function DashboardSkeleton() {
   return (
     <div className="space-y-4">
@@ -116,6 +119,8 @@ export interface DashboardAccess {
 }
 
 interface Props {
+  /** Which book this dashboard is for; its policies and tasks are the only ones counted. */
+  scope: DashboardScope;
   personalPolicies: InsurancePolicy[];
   projectPolicies: ProjectInsurancePolicy[];
   tasks: InsuranceTask[];
@@ -131,15 +136,18 @@ interface Props {
  * The insurance dashboard, drawn from policies and tasks already loaded. Kept apart from the page so
  * it renders from plain data: the page owns fetching and access, this owns what the numbers mean.
  */
-export function InsuranceDashboard({ personalPolicies, projectPolicies, tasks, userId, access, loadedAt, isRefreshing, onRefresh }: Props) {
-  const {
-    personal: canViewPersonal,
-    project: canViewProject,
-    tasks: canViewTasks,
-    reports: canViewReports,
-    addPersonal: canAddPersonal,
-    addProject: canAddProject,
-  } = access;
+export function InsuranceDashboard({ scope, personalPolicies: allPersonal, projectPolicies: allProject, tasks, userId, access, loadedAt, isRefreshing, onRefresh }: Props) {
+  // Everything below reads only this dashboard's book, so no figure adds personal and project together.
+  const isPersonal = scope === 'personal';
+  const canViewPersonal = access.personal && isPersonal;
+  const canViewProject = access.project && !isPersonal;
+  const canAddPersonal = access.addPersonal && isPersonal;
+  const canAddProject = access.addProject && !isPersonal;
+  const { tasks: canViewTasks, reports: canViewReports } = access;
+  const personalPolicies = useMemo(() => (canViewPersonal ? allPersonal : []), [canViewPersonal, allPersonal]);
+  const projectPolicies = useMemo(() => (canViewProject ? allProject : []), [canViewProject, allProject]);
+  const dueHref = isPersonal ? '/insurance/premium-due' : '/insurance/project/premium-due';
+
   const series = useInsuranceSeries();
   const [queue, setQueue] = useState<Queue | null>(null);
   const [forecastView, setForecastView] = useState<'chart' | 'table'>('chart');
@@ -235,7 +243,10 @@ export function InsuranceDashboard({ personalPolicies, projectPolicies, tasks, u
       : q.key === 'maturing' || q.key === 'overdue' ? canViewPersonal
       : canViewPersonal || canViewProject);
   const activeQueue = queue ?? visibleQueues.find((q) => queues[q.key].length > 0)?.key ?? visibleQueues[0]?.key ?? 'upcoming';
-  const activeMeta = QUEUES.find((q) => q.key === activeQueue)!;
+  const baseMeta = QUEUES.find((q) => q.key === activeQueue)!;
+  const activeMeta = baseMeta.key === 'upcoming' && !isPersonal
+    ? { ...baseMeta, viewAll: dueHref, viewLabel: 'Project renewals' }
+    : baseMeta;
   const activeItems = queues[activeQueue];
   const attentionCount = queues.overdue.length + queues.expired.length;
 
@@ -268,8 +279,8 @@ export function InsuranceDashboard({ personalPolicies, projectPolicies, tasks, u
   return (
     <div className="space-y-4">
       <PageHeader
-        icon={ShieldHalf}
-        title="Insurance"
+        icon={isPersonal ? Users : HardHat}
+        title={isPersonal ? 'Personal Insurance Dashboard' : 'Project Insurance Dashboard'}
         description={loadedAt ? `Portfolio overview · updated ${format(loadedAt, 'dd MMM, HH:mm')}` : 'Portfolio overview'}
         badge={attentionCount > 0 && (
           <Badge variant="danger" className="gap-1.5">
@@ -342,7 +353,7 @@ export function InsuranceDashboard({ personalPolicies, projectPolicies, tasks, u
                 value={compactInr(next30Total)}
                 sub={`${next30.length} payment${next30.length === 1 ? '' : 's'}`}
                 icon={CalendarClock}
-                href="/insurance/premium-due"
+                href={dueHref}
               />
               {canViewPersonal && (
                 <StatTile

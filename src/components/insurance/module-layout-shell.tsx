@@ -42,9 +42,14 @@ export default function InsuranceLayoutShell({ children }: { children: React.Rea
   const { can } = useAuthorization();
 
   const mainNavItems: NavItem[] = [
+    // Each book has its own dashboard; neither adds the other's figures in.
     {
-      href: '/insurance', label: 'Dashboard', icon: LayoutDashboard,
+      href: '/insurance/dashboard/personal', label: 'Personal Dashboard', icon: LayoutDashboard,
       iconBg: 'bg-blue-100', iconColor: 'text-blue-600', activeGradient: 'from-blue-500 to-indigo-600',
+    },
+    {
+      href: '/insurance/dashboard/project', label: 'Project Dashboard', icon: LayoutDashboard,
+      iconBg: 'bg-teal-100', iconColor: 'text-teal-600', activeGradient: 'from-teal-500 to-emerald-600',
     },
     {
       href: '/insurance/personal', label: 'Personal Insurance', icon: Users,
@@ -75,7 +80,8 @@ export default function InsuranceLayoutShell({ children }: { children: React.Rea
       iconBg: 'bg-indigo-100', iconColor: 'text-indigo-600', activeGradient: 'from-indigo-500 to-blue-600',
     },
   ].filter(item => {
-    if (item.href === '/insurance') return can('View Module', 'Insurance');
+    if (item.href === '/insurance/dashboard/personal') return can('View Module', 'Insurance') && can('View', 'Insurance.Personal Insurance');
+    if (item.href === '/insurance/dashboard/project') return can('View Module', 'Insurance') && can('View', 'Insurance.Project Insurance');
     if (item.href === '/insurance/personal') return can('View', 'Insurance.Personal Insurance');
     if (item.href === '/insurance/project') return can('View', 'Insurance.Project Insurance');
     if (item.href === '/insurance/my-tasks') return can('View', 'Insurance.My Tasks');
@@ -93,8 +99,12 @@ export default function InsuranceLayoutShell({ children }: { children: React.Rea
   // permission filtering decides both.
   const isVisible = (href: string) => mainNavItems.some(item => item.href === href);
   const personalItem = mainNavItems.find(item => item.href === '/insurance/personal');
+  // "Home" opens the first dashboard the viewer has and lights up on either; the other sits in More.
+  const dashboards = mainNavItems.filter(item => item.href.startsWith('/insurance/dashboard/'));
   const bottomTabs: ModuleNavTab[] = [
-    ...(isVisible('/insurance') ? [{ href: '/insurance', label: 'Home', icon: LayoutDashboard, exact: true }] : []),
+    ...(dashboards.length
+      ? [{ href: dashboards[0].href, label: 'Home', icon: LayoutDashboard, match: (path: string) => path.startsWith('/insurance/dashboard/') }]
+      : []),
     ...(personalItem
       ? [{
           href: personalItem.href, label: 'Personal', icon: Users, ariaLabel: 'Personal insurance',
@@ -106,6 +116,7 @@ export default function InsuranceLayoutShell({ children }: { children: React.Rea
     ...(isVisible('/insurance/my-tasks') ? [{ href: '/insurance/my-tasks', label: 'My Tasks', icon: ClipboardCheck }] : []),
   ];
   const bottomMoreLinks: ModuleMoreLink[] = [
+    ...dashboards.map(item => ({ href: item.href, label: item.label, icon: item.icon, group: 'Dashboards' })),
     ...mainNavItems.flatMap(item => (item.subItems ?? []).map(sub => ({ href: sub.href, label: sub.label, icon: sub.icon, group: item.label }))),
     ...mainNavItems
       .filter(item => item.href === '/insurance/reports')
@@ -119,7 +130,6 @@ export default function InsuranceLayoutShell({ children }: { children: React.Rea
   if (isPrintPage) return <>{children}</>;
 
   function isItemActive(item: NavItem) {
-    if (item.href === '/insurance') return pathname === '/insurance';
     const patterns = item.subActivePatterns ?? [item.href];
     return patterns.some(p => pathname?.startsWith(p));
   }

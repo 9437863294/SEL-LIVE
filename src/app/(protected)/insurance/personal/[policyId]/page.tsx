@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { collection, deleteDoc, doc, getDoc, getDocs, writeBatch } from 'firebase/firestore';
-import { Edit, ExternalLink, Loader2, RotateCcw, Trash2 } from 'lucide-react';
+import { Edit, ExternalLink, Loader2, Pencil, Plus, RotateCcw, Trash2 } from 'lucide-react';
 import { db } from '@/lib/firebase';
 import { useToast } from '@/hooks/use-toast';
 import { useAuthorization } from '@/hooks/useAuthorization';
@@ -57,6 +57,14 @@ export default function PolicyDetailsPage() {
   const [renewals, setRenewals] = useState<PolicyRenewal[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isRenewOpen, setIsRenewOpen] = useState(false);
+  /** What the payment dialog opens on: the current premium (both null), a recorded payment, or a paid instalment with none on record. */
+  const [editPayment, setEditPayment] = useState<PolicyRenewal | null>(null);
+  const [backfillDue, setBackfillDue] = useState<Date | null>(null);
+  const openPayment = (target: { payment?: PolicyRenewal; due?: Date } = {}) => {
+    setEditPayment(target.payment ?? null);
+    setBackfillDue(target.due ?? null);
+    setIsRenewOpen(true);
+  };
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
 
@@ -145,6 +153,8 @@ export default function PolicyDetailsPage() {
 
   const { state, frequency, grace, nextDue, rows, recordedPaid, unmatched } = derived;
   const canRecordPayment = canRenew && !!nextDue && ['active', 'due-soon', 'grace', 'lapsed'].includes(state);
+  /** Correcting a payment or adding a paid instalment's receipt never moves the due date. */
+  const canManagePayments = canRenew || canEdit;
   const updatedLine = formatUpdatedBy(policy);
 
   return (
@@ -163,7 +173,7 @@ export default function PolicyDetailsPage() {
           actions={
             <>
               {canRecordPayment && (
-                <Button size="sm" className="gap-1.5" onClick={() => setIsRenewOpen(true)}>
+                <Button size="sm" className="gap-1.5" onClick={() => openPayment()}>
                   <RotateCcw className="h-3.5 w-3.5" /> Record Payment
                 </Button>
               )}
@@ -264,8 +274,18 @@ export default function PolicyDetailsPage() {
                       </TableCell>
                       <TableCell className="text-right">
                         {row.isCurrent && canRecordPayment && (
-                          <Button size="sm" className="h-7 gap-1 text-xs" onClick={() => setIsRenewOpen(true)}>
+                          <Button size="sm" className="h-7 gap-1 text-xs" onClick={() => openPayment()}>
                             <RotateCcw className="h-3 w-3" /> Pay
+                          </Button>
+                        )}
+                        {row.payment && canManagePayments && (
+                          <Button size="sm" variant="outline" className="h-7 gap-1 text-xs" onClick={() => openPayment({ payment: row.payment! })}>
+                            <Pencil className="h-3 w-3" /> Edit
+                          </Button>
+                        )}
+                        {!row.payment && row.state === 'paid' && canManagePayments && (
+                          <Button size="sm" variant="outline" className="h-7 gap-1 text-xs" onClick={() => openPayment({ due: row.dueDate })}>
+                            <Plus className="h-3 w-3" /> Add Details
                           </Button>
                         )}
                       </TableCell>
@@ -279,8 +299,21 @@ export default function PolicyDetailsPage() {
                       <TableCell className="whitespace-nowrap text-right tabular-nums">{r.amount ? formatInr(r.amount) : '—'}</TableCell>
                       <TableCell className="whitespace-nowrap">{formatDay(r.paymentDate)}</TableCell>
                       <TableCell>{r.paymentType || '—'}</TableCell>
-                      <TableCell>{r.referenceNo || '—'}</TableCell>
-                      <TableCell />
+                      <TableCell className="whitespace-nowrap">
+                        {r.referenceNo || '—'}
+                        {r.renewalCopyUrl && (
+                          <a href={r.renewalCopyUrl} target="_blank" rel="noopener noreferrer" className="ml-2 inline-flex items-center gap-1 text-xs text-primary hover:underline">
+                            Receipt <ExternalLink className="h-3 w-3" />
+                          </a>
+                        )}
+                      </TableCell>
+                      <TableCell className="text-right">
+                        {canManagePayments && (
+                          <Button size="sm" variant="outline" className="h-7 gap-1 text-xs" onClick={() => openPayment({ payment: r })}>
+                            <Pencil className="h-3 w-3" /> Edit
+                          </Button>
+                        )}
+                      </TableCell>
                     </TableRow>
                   ))}
                 </>
@@ -290,8 +323,15 @@ export default function PolicyDetailsPage() {
         </TableCard>
       </div>
 
-      {canRecordPayment && (
-        <RenewalDialog isOpen={isRenewOpen} onOpenChange={setIsRenewOpen} policy={policy} onSuccess={fetchPolicyData} />
+      {(canRecordPayment || canManagePayments) && (
+        <RenewalDialog
+          isOpen={isRenewOpen}
+          onOpenChange={setIsRenewOpen}
+          policy={policy}
+          onSuccess={fetchPolicyData}
+          payment={editPayment}
+          forInstalment={backfillDue}
+        />
       )}
 
       <AlertDialog open={confirmDelete} onOpenChange={(o) => !isDeleting && setConfirmDelete(o)}>
