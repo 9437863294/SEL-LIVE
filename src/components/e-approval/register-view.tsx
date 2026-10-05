@@ -8,6 +8,7 @@ import { useToast } from '@/hooks/use-toast';
 import {
   eApprovalDelegators,
   E_APPROVAL_BASE_PATH,
+  E_APPROVAL_STATUSES,
   OPEN_E_APPROVAL_STATUSES,
   isTerminalEApprovalStatus,
   type EApprovalRequest,
@@ -22,6 +23,7 @@ import { PageHeader } from '@/components/shared/page-header';
 export type RegisterScope =
   | 'inbox'
   | 'created-by-me'
+  | 'copied'
   | 'drafts'
   | 'department'
   | 'all'
@@ -54,6 +56,18 @@ const scopes: Record<RegisterScope, ScopeConfig> = {
     emptyTitle: 'You have not raised any approvals',
     emptyDescription: 'Use Create Approval to raise your first note-sheet.',
     showRequester: false,
+    showPendingWith: true,
+  },
+  copied: {
+    title: 'Copied to Me',
+    description: 'Approvals you have been copied on. Follow them and comment — you are not being asked to act.',
+    // Every status but Draft. CC users are recorded the moment a draft is saved, but a draft is still
+    // the requester’s own working copy: it appears here when it is submitted, which is also when
+    // the copied people are notified.
+    statuses: E_APPROVAL_STATUSES.filter((status) => status !== 'Draft'),
+    emptyTitle: 'Nothing has been copied to you',
+    emptyDescription: 'When someone adds you in CC on a request, it appears here once they submit it.',
+    showRequester: true,
     showPendingWith: true,
   },
   drafts: {
@@ -185,6 +199,8 @@ export function RegisterView({ scope }: { scope: RegisterScope }) {
         setRows(Array.from(byId.values()));
       } else if (scope === 'all') {
         setRows(await listEApprovals({ organizationId, limit: 400 }));
+      } else if (scope === 'copied') {
+        setRows(await listEApprovals({ organizationId, participantId: serviceActor.userId, statuses: config.statuses }));
       } else if (scope === 'completed' || scope === 'rejected') {
         // Scoped to the user's own files unless they can see the whole register — the same rule the
         // detail screen enforces, applied to the list so the two never disagree.

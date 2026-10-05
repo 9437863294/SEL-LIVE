@@ -10,6 +10,8 @@ import {
   canActOnEApprovalStep,
   canAssignEApprovalStep,
   canDeleteEApprovalRequest,
+  eApprovalCopiedUserIds,
+  reconcileEApprovalParticipants,
   eApprovalAdHocAssigneeKinds,
   eApprovalAdHocKindAllowed,
   E_APPROVAL_AD_HOC_ASSIGNEE_KINDS,
@@ -2386,4 +2388,91 @@ test('a non-array value falls back to all four rather than throwing', () => {
   assert.deepEqual(eApprovalAdHocAssigneeKinds({ adHocAssigneeKinds: 'Department' }), [
     ...E_APPROVAL_AD_HOC_ASSIGNEE_KINDS,
   ]);
+});
+
+/* ── people copied on a file ─────────────────────────────────────────────────────────────────── */
+
+/*
+ * CC used to be invisible: nothing listed the request for a copied colleague and nothing told them
+ * it existed, so they heard of it only if someone commented. They are now told when it is submitted
+ * and when it reaches its final decision — and only then, so CC does not become a stream of noise.
+ */
+
+const twoStageChain = [
+  { id: 't1', name: 'Manager', assignments: [user('u-mgr', 'Manager')], slaHours: 24 },
+  { id: 't2', name: 'Finance', assignments: [user('u-fin', 'Finance Manager')], slaHours: 24 },
+];
+const copiedNotices = (notifications) => notifications.filter((intent) => intent.kind === 'Copied');
+const withCc = (cc, participants = cc) => ({ ccUserIds: cc, participantUserIds: participants });
+
+test('submitting tells the people in CC that they have been copied', () => {
+  // The requester listed twice, and one colleague twice: each copied person is told exactly once,
+  // and the requester is never told about their own request.
+  const state = submitted(twoStageChain, withCc(['u-cc1', 'u-cc2', 'u-req', 'u-cc1']));
+  const notices = copiedNotices(state.notifications);
+  assert.equal(notices.length, 1);
+  assert.deepEqual([...notices[0].userIds].sort(), ['u-cc1', 'u-cc2']);
+  assert.match(notices[0].title, /copied/i);
+  assert.match(notices[0].body, /Copied to Me/);
+});
+
+test('a request with nobody in CC sends no copied notice', () => {
+  assert.equal(copiedNotices(submitted(twoStageChain).notifications).length, 0);
+  assert.equal(copiedNotices(submitted(twoStageChain, withCc([])).notifications).length, 0);
+});
+
+test('copied people are not told about each approval along the way — only the final decision', () => {
+  let state = submitted(twoStageChain, withCc(['u-cc1'], ['u-cc1', 'u-added']));
+  state = act(state, { kind: 'Approve', actor: { userId: 'u-mgr' }, now: '2026-08-22T11:00:00.000Z' });
+  assert.equal(copiedNotices(state.notifications).length, 0, 'an intermediate approval is not news to a CC');
+
+  state = act(state, { kind: 'Approve', actor: { userId: 'u-fin' }, now: '2026-08-22T12:00:00.000Z' });
+  assert.equal(state.request.status, 'Approved');
+  const notices = copiedNotices(state.notifications);
+  assert.equal(notices.length, 1);
+  assert.match(notices[0].title, /approved/i);
+  // Somebody added as a participant mid-flight hears the outcome too.
+  assert.deepEqual([...notices[0].userIds].sort(), ['u-added', 'u-cc1']);
+});
+
+test('a rejection reaches the copied people, marked as a warning', () => {
+  let state = submitted(twoStageChain, withCc(['u-cc1']));
+  state = act(state, { kind: 'Reject', actor: { userId: 'u-mgr' }, reason: 'Over budget', now: '2026-08-22T11:00:00.000Z' });
+  const notices = copiedNotices(state.notifications);
+  assert.equal(notices.length, 1);
+  assert.match(notices[0].title, /rejected/i);
+  assert.equal(notices[0].severity, 'WARNING');
+  assert.deepEqual(notices[0].userIds, ['u-cc1']);
+});
+
+test('whoever made the decision is not told about it, even if they were also copied', () => {
+  let state = submitted(twoStageChain, withCc(['u-cc1', 'u-mgr']));
+  state = act(state, { kind: 'Reject', actor: { userId: 'u-mgr' }, reason: 'No', now: '2026-08-22T11:00:00.000Z' });
+  assert.deepEqual(copiedNotices(state.notifications)[0].userIds, ['u-cc1']);
+});
+
+test('the copied list merges CC and participants without duplicates or blanks', () => {
+  assert.deepEqual(eApprovalCopiedUserIds({ ccUserIds: ['a', 'b', ''], participantUserIds: ['b', 'c'] }), ['a', 'b', 'c']);
+  assert.deepEqual(eApprovalCopiedUserIds({}), []);
+});
+
+test('taking someone off CC on an edit takes away their access too', () => {
+  // An edit used to rewrite the CC list and leave participants alone — and participants are what
+  // grant sight of the file, so a colleague removed from CC could still open it.
+  assert.deepEqual(reconcileEApprovalParticipants({ ccUserIds: ['a', 'b'], participantUserIds: ['a', 'b'] }, ['a']), ['a']);
+});
+
+test('adding someone to CC on an edit gives them access', () => {
+  assert.deepEqual(
+    [...reconcileEApprovalParticipants({ ccUserIds: ['a'], participantUserIds: ['a'] }, ['a', 'c'])].sort(),
+    ['a', 'c'],
+  );
+});
+
+test('a participant added mid-flight keeps access when the CC list is edited', () => {
+  // "x" was added with Add Participant, not through CC, so editing the CC list must not drop them.
+  assert.deepEqual(
+    [...reconcileEApprovalParticipants({ ccUserIds: ['a'], participantUserIds: ['a', 'x'] }, [])].sort(),
+    ['x'],
+  );
 });

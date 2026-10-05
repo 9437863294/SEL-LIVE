@@ -8,6 +8,7 @@ import {
   BookOpen,
   Building2,
   CheckCircle2,
+  Eye,
   FilePlus2,
   FileStack,
   FileText,
@@ -59,6 +60,8 @@ const sections: Array<{
   { href: `${E_APPROVAL_BASE_PATH}/create`, label: 'Create Approval', icon: FilePlus2, color: 'text-emerald-600', bg: 'bg-emerald-100', group: 'work', gate: 'create' },
   { href: `${E_APPROVAL_BASE_PATH}/inbox`, label: 'My Inbox', icon: Inbox, color: 'text-indigo-600', bg: 'bg-indigo-100', group: 'work', gate: 'inbox' },
   { href: `${E_APPROVAL_BASE_PATH}/created-by-me`, label: 'Created by Me', icon: FileText, color: 'text-violet-600', bg: 'bg-violet-100', group: 'work', gate: 'mine' },
+  // Ungated beyond module access: anybody can be put in CC, including people who may not raise requests.
+  { href: `${E_APPROVAL_BASE_PATH}/copied-to-me`, label: 'Copied to Me', icon: Eye, color: 'text-sky-600', bg: 'bg-sky-100', group: 'work', gate: 'always' },
   { href: `${E_APPROVAL_BASE_PATH}/drafts`, label: 'Drafts', icon: FileStack, color: 'text-slate-600', bg: 'bg-slate-200', group: 'work', gate: 'mine' },
   { href: `${E_APPROVAL_BASE_PATH}/my-activity`, label: 'My Activity', icon: History, color: 'text-emerald-600', bg: 'bg-emerald-100', group: 'work', gate: 'mine' },
 

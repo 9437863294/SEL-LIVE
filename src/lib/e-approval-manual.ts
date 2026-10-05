@@ -127,6 +127,7 @@ export const E_APPROVAL_MANUAL: ManualPart[] = [
               ['Create Approval', 'Raise a new note-sheet.'],
               ['My Inbox', 'Everything waiting on you — approvals, verifications, clarifications and returns.'],
               ['Created by Me', 'Every request you have raised, at whatever stage.'],
+              ['Copied to Me', 'Requests someone has put you in CC on, with their status and who they are pending with. You can follow and comment; you are not asked to act.'],
               ['Drafts', 'Saved but not submitted. A draft has no reference number yet.'],
               ['My Activity', 'Everything you have personally done — approved, verified, returned and the rest — across every approval.'],
               ['Department Inbox', 'Approvals sent to your department rather than to you by name.'],
@@ -162,7 +163,7 @@ export const E_APPROVAL_MANUAL: ManualPart[] = [
             'Supporting documents — drag files in, or tap to choose. They upload when you save or submit.',
             'Financial details — amount, vendor, cost centre, budget head.',
             'Filing details — department, project or site, priority, required-by date, your own reference number.',
-            'Visibility — CC people who should see it, and mark the file confidential.',
+            'Visibility — CC people who should see it, and mark the file confidential. Everyone in CC is notified when you submit, finds the request under Copied to Me, and is told again when it is finally approved or rejected — not at every step in between. Taking someone off CC while editing takes away their access too.',
           ),
           note(
             'You only have to name the first approver. Whoever receives it can send it for verification, add approvers, or forward it on — the chain builds itself as the file moves.',

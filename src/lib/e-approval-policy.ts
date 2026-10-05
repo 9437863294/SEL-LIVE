@@ -2862,6 +2862,37 @@ export function eApprovalReturnTargets(
 }
 
 /**
+ * Everyone copied on the file — the CC list chosen on the form plus anybody added as a participant
+ * later — without duplicates or blanks. The "Copied to Me" list and the CC notifications both read
+ * this, so they cannot disagree about who counts as copied.
+ */
+export function eApprovalCopiedUserIds(
+  request: Pick<EApprovalRequestState, 'ccUserIds' | 'participantUserIds'>,
+): string[] {
+  return Array.from(new Set([...(request.ccUserIds ?? []), ...(request.participantUserIds ?? [])])).filter(Boolean);
+}
+
+/**
+ * The participant list after the requester edits the CC list on a draft or returned request.
+ *
+ * An edit used to rewrite `ccUserIds` and leave `participantUserIds` untouched — and participants
+ * are what grant sight of the file. So a colleague added to CC while editing never became a
+ * participant, and one *removed* from CC stayed one: still able to open the file, still notified of
+ * every comment, after the requester had deliberately taken them off it.
+ *
+ * Whoever was a participant for some other reason (added mid-flight with "Add Participant") is kept;
+ * whoever was there only because of the old CC list goes with it; the new CC list is added.
+ */
+export function reconcileEApprovalParticipants(
+  current: Pick<EApprovalRequestState, 'ccUserIds' | 'participantUserIds'>,
+  nextCcUserIds: string[],
+): string[] {
+  const previousCc = new Set(current.ccUserIds ?? []);
+  const keptForOtherReasons = (current.participantUserIds ?? []).filter((id) => id && !previousCc.has(id));
+  return Array.from(new Set([...keptForOtherReasons, ...nextCcUserIds.filter(Boolean)]));
+}
+
+/**
  * Whether `viewer` may open this request (spec section 26).
  *
  * Nobody sees every approval by default. The participant test comes first because it is the one that
@@ -3201,7 +3232,9 @@ export type EApprovalNotificationKind =
   | 'Approved'
   | 'Rejected'
   | 'Cancelled'
-  | 'Modified';
+  | 'Modified'
+  /** For people copied on the file: it was raised, or reached its final decision. Informational. */
+  | 'Copied';
 
 /** What the engine decided should be notified; the service resolves and delivers it. */
 export interface EApprovalNotificationIntent {
@@ -3931,6 +3964,25 @@ export function applyEApprovalAction(
         body: `${describeEApprovalSubject(request)} — ${request.pendingLabel || `pending with ${heldAfter.join(' & ')}`}.`,
       });
     }
+    // The outcome, for the people copied on the file. Raised here rather than beside each of the
+    // three places a file can be approved or rejected, so a new path to either cannot forget them.
+    // Only the final decision: copying somebody is not asking them to follow every step.
+    const outcome = notifications.find(
+      (intent) => (intent.kind === 'Approved' || intent.kind === 'Rejected') && intent.userIds?.includes(request.requesterId),
+    );
+    if (outcome) {
+      const watchers = eApprovalCopiedUserIds(request).filter((id) => id !== request.requesterId && id !== actor.userId);
+      if (watchers.length) {
+        const approved = outcome.kind === 'Approved';
+        notifications.push({
+          kind: 'Copied',
+          userIds: watchers,
+          title: approved ? 'An approval you were copied on was approved' : 'An approval you were copied on was rejected',
+          body: outcome.body,
+          ...(approved ? {} : { severity: 'WARNING' as const }),
+        });
+      }
+    }
     return { request, steps, events, notifications };
   };
 
@@ -3951,6 +4003,18 @@ export function applyEApprovalAction(
     request.status = 'Submitted';
     request.materialFingerprint = input.materialChange?.fingerprint ?? request.materialFingerprint;
     pushEvent({ kind: 'Submit', comment: input.comment, summary: `Submitted by ${actorLabel(actor)}` });
+    // The people the requester copied, told the moment the file exists for them. Before this a CC
+    // was invisible: nothing listed the request for them and nothing said it had been raised, so a
+    // copied colleague learnt of it only if somebody happened to comment.
+    const copied = (request.ccUserIds ?? []).filter((id) => id && id !== request.requesterId);
+    if (copied.length) {
+      notifications.push({
+        kind: 'Copied',
+        userIds: Array.from(new Set(copied)),
+        title: 'You have been copied on an approval',
+        body: `${describeEApprovalSubject(request)} — raised by ${actorLabel(actor)}. You can follow it and comment; it is listed under Copied to Me.`,
+      });
+    }
     advancePrimaryChain(request, steps, now, events, notifications, actor, selfSkip);
     if (!isTerminalEApprovalStatus(request.status)) {
       request.status = deriveEApprovalStatus(steps) ?? 'Pending Approval';

@@ -55,6 +55,7 @@ import {
   financialYearForEApprovalDate,
   isOpenEApprovalStatus,
   isTerminalEApprovalStatus,
+  reconcileEApprovalParticipants,
   resolveEApprovalRouting,
   SEED_E_APPROVAL_TEMPLATES,
   type EApprovalActionInput,
@@ -1053,6 +1054,8 @@ export interface EApprovalListFilter {
   /** Pending with any of these projects — a stage addressed to a site rather than to a person. */
   pendingProjectIds?: string[];
   requesterId?: string;
+  /** Copied on the file — CC'd at creation or added as a participant since. */
+  participantId?: string;
   statuses?: EApprovalStatus[];
   approvalTypeId?: string;
   projectId?: string;
@@ -1102,6 +1105,9 @@ function buildEApprovalListQuery(filter: EApprovalListFilter): {
     filterStatusInMemory = true;
   } else if (filter.pendingProjectIds?.length) {
     constraints.push(where('currentProjectIds', 'array-contains-any', filter.pendingProjectIds.slice(0, 30)));
+    filterStatusInMemory = true;
+  } else if (filter.participantId) {
+    constraints.push(where('participantUserIds', 'array-contains', filter.participantId));
     filterStatusInMemory = true;
   }
 
@@ -1349,6 +1355,9 @@ export async function updateEApprovalDraft(
     pruneUndefined({
       ...draft,
       ...reconcileEApprovalProposal(draft),
+      // Participants are what grant sight of the file, so they follow the CC list: a colleague taken
+      // off CC loses access, one added gains it. See `reconcileEApprovalParticipants`.
+      ...(draft.ccUserIds ? { participantUserIds: reconcileEApprovalParticipants(request, draft.ccUserIds) } : {}),
       ...withUpdateAudit(who),
     } as Record<string, unknown>),
   );
@@ -2549,9 +2558,9 @@ async function deliverEApprovalNotifications(
       await dispatchNotification(
         { userIds, roles: intent.roles, designations: intent.designations },
         {
-          // 'Moved' is the requester being kept informed, not somebody being asked to act, so it does
-          // not carry the type the bell renders as a call to action.
-          type: intent.kind === 'Moved' ? 'record_assigned' : 'approval_required',
+          // 'Moved' is the requester being kept informed and 'Copied' a CC being told, not somebody
+          // being asked to act, so neither carries the type the bell renders as a call to action.
+          type: intent.kind === 'Moved' || intent.kind === 'Copied' ? 'record_assigned' : 'approval_required',
           title: intent.title,
           body: intent.body,
           module: ACTIVITY_MODULES.E_APPROVAL,
