@@ -116,6 +116,47 @@ const millis = (value: string | Date | null | undefined): number | null => {
 
 const nowMs = (now: string | Date | undefined) => millis(now ?? new Date()) ?? Date.now();
 
+/*
+ * Report dates are calendar days in the reader's own time zone.
+ *
+ * Both ends of the pipeline used to disagree with that. `new Date('2026-04-01')` reads a bare date as
+ * UTC midnight — 05:30 in India — so every report range, typed or preset, started at 05:30 and ran to
+ * 05:29 the next morning: a file submitted at 2 a.m. on the 1st counted towards the day before. And
+ * the presets formatted their dates with `toISOString()`, which is UTC too, so "This financial year"
+ * was computed from local midnight on 1 April, printed as "2026-03-31", and quietly took in the last
+ * day of the previous year. Producer and consumer now both speak local days.
+ */
+
+/** Midnight at the start of a `YYYY-MM-DD` day, local time. Anything with a time on it is left alone. */
+const reportDayStart = (value: string | Date | null | undefined): number | null => {
+  if (typeof value === 'string') {
+    const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value.trim());
+    if (match) return new Date(Number(match[1]), Number(match[2]) - 1, Number(match[3])).getTime();
+  }
+  return millis(value);
+};
+
+/** A date as `YYYY-MM-DD` in local time — the form a date input produces and `reportDayStart` reads. */
+export function eApprovalLocalDay(date: Date): string {
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${date.getFullYear()}-${month}-${day}`;
+}
+
+/** 1 April of the financial year `now` falls in — April to March, matching the reference-number series. */
+export function eApprovalFinancialYearStart(now: Date): Date {
+  return new Date(now.getMonth() >= 3 ? now.getFullYear() : now.getFullYear() - 1, 3, 1);
+}
+
+/** The range a report preset selects: the last `days` days to today, or this financial year to today. */
+export function eApprovalPresetRange(days: number | null, now: Date): { from: string; to: string } {
+  const from =
+    days == null
+      ? eApprovalFinancialYearStart(now)
+      : new Date(now.getFullYear(), now.getMonth(), now.getDate() - days);
+  return { from: eApprovalLocalDay(from), to: eApprovalLocalDay(now) };
+}
+
 const round = (value: number, places = 1) => {
   const factor = 10 ** places;
   return Math.round(value * factor) / factor;
@@ -228,8 +269,8 @@ export function filterEApprovalRows(
   rows: AnalyticsRequestRow[],
   filter: EApprovalAnalyticsFilter = {},
 ): AnalyticsRequestRow[] {
-  const from = millis(filter.from);
-  const to = millis(filter.to);
+  const from = reportDayStart(filter.from);
+  const to = reportDayStart(filter.to);
   const term = filter.search?.trim().toLowerCase();
 
   return rows.filter((row) => {

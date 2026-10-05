@@ -23,9 +23,36 @@ import { ACTIVITY_MODULES } from '@/lib/activity-modules';
 
 type BankSnapshot = Pick<RecurringVendor, 'bankName' | 'maskedAccountNumber' | 'ifsc'>;
 
-const GSTIN_PATTERN = /^\d{2}[A-Z]{5}\d{4}[A-Z][1-9A-Z]Z[0-9A-Z]$/;
+// A shape check, not a checksum: state code, the holder's PAN, then three alphanumerics. The 14th
+// character is not forced to 'Z' — it is only conventionally so, and real GSTINs vary.
+const GSTIN_PATTERN = /^\d{2}[A-Z]{5}\d{4}[A-Z][0-9A-Z]{3}$/;
 const PAN_PATTERN = /^[A-Z]{5}\d{4}[A-Z]$/;
 const IFSC_PATTERN = /^[A-Z]{4}0[A-Z0-9]{6}$/;
+// Legacy vendor records hold these in place of a tax/bank code; they mean "not provided", not a
+// malformed code, so they are never format-checked.
+const PLACEHOLDER_CODES = new Set(['NA', 'N/A', 'URP', 'UNREGISTERED', 'NIL', '-']);
+
+function isPlaceholderCode(value: string) {
+  return PLACEHOLDER_CODES.has(value.replace(/\s/g, ''));
+}
+
+// Digits/letters only, upper-cased — the comparable core of an account number however it was typed.
+function accountDigits(value?: string) {
+  return (value || '').replace(/[^0-9A-Za-z]/g, '').toUpperCase();
+}
+
+// Compared on the raw input, not the masked form: two different accounts can share a length and
+// last four digits, and the same account re-typed at another length masks differently. A stored
+// value that is already masked ('•') only retains its last four, so against one of those (or when
+// the new value is itself a masked string) only the last four can be compared — a full number
+// typed with different last four digits is a change; one with the same last four can't be told
+// apart and is treated as unchanged.
+function accountChanged(previous?: string, next?: string) {
+  const previousRaw = accountDigits(previous);
+  const nextRaw = accountDigits(next);
+  if ((previous || '').includes('•') || (next || '').includes('•')) return previousRaw.slice(-4) !== nextRaw.slice(-4);
+  return previousRaw !== nextRaw;
+}
 
 // Normalised the same way on both sides, so an untouched legacy value (a full account number, a
 // lower-case IFSC) doesn't read as a banking change and fire a false alert when it is re-saved.
@@ -81,15 +108,32 @@ export default function VendorFormPage({ vendorId }: { vendorId?: string }) {
     };
     const missingLabel = validateFieldControlRequirements('vendor', normalized, field);
     if (missingLabel) return toast({ title: `${missingLabel} is required`, variant: 'destructive' });
-    if (normalized.gstin && !GSTIN_PATTERN.test(normalized.gstin)) return toast({ title: 'GSTIN is not valid', description: '15 characters, e.g. 27ABCDE1234F1Z5.', variant: 'destructive' });
-    if (normalized.pan && !PAN_PATTERN.test(normalized.pan)) return toast({ title: 'PAN is not valid', description: '10 characters, e.g. ABCDE1234F.', variant: 'destructive' });
-    if (normalized.ifsc && !IFSC_PATTERN.test(normalized.ifsc)) return toast({ title: 'IFSC is not valid', description: '11 characters, e.g. HDFC0001234.', variant: 'destructive' });
+    // Format-checked only when the field is shown (a hidden field can't be corrected) and its value
+    // was actually changed — an untouched stored value, however old its format, never blocks a save.
+    const original: Partial<RecurringVendor> = {
+      gstin: originalVendor.gstin?.trim().toUpperCase() || '',
+      pan: originalVendor.pan?.trim().toUpperCase() || '',
+      ifsc: originalVendor.ifsc?.trim().toUpperCase() || '',
+    };
+    const needsCheck = (key: 'gstin' | 'pan' | 'ifsc') => {
+      const value = normalized[key] || '';
+      return !!value && field(key).visible && value !== original[key] && !isPlaceholderCode(value);
+    };
+    if (needsCheck('gstin') && !GSTIN_PATTERN.test(normalized.gstin || '')) return toast({ title: 'GSTIN is not valid', description: '15 characters, e.g. 27ABCDE1234F1Z5.', variant: 'destructive' });
+    if (needsCheck('pan') && !PAN_PATTERN.test(normalized.pan || '')) return toast({ title: 'PAN is not valid', description: '10 characters, e.g. ABCDE1234F.', variant: 'destructive' });
+    if (needsCheck('ifsc') && !IFSC_PATTERN.test(normalized.ifsc || '')) return toast({ title: 'IFSC is not valid', description: '11 characters, e.g. HDFC0001234.', variant: 'destructive' });
     setSaving(true);
     try {
       const reference = vendorId ? doc(db, RP_COLLECTIONS.vendors, vendorId) : doc(collection(db, RP_COLLECTIONS.vendors));
       const previousBank = bankSnapshot(originalVendor);
       const nextBank = bankSnapshot(normalized);
-      const bankChanged = vendorId && JSON.stringify(previousBank) !== JSON.stringify(nextBank);
+      // Name and IFSC compare on the snapshot; the account on the raw typed value (see accountChanged).
+      // The masked snapshots are still what is stored and written to the audit log.
+      const bankChanged = !!vendorId && (
+        previousBank.bankName !== nextBank.bankName
+        || previousBank.ifsc !== nextBank.ifsc
+        || accountChanged(originalVendor.maskedAccountNumber, vendor.maskedAccountNumber)
+      );
       // Omit `id` rather than setting it to `undefined` — Firestore's set()/update() rejects
       // any field whose value is `undefined`.
       const { id: _vendorId, ...vendorFields } = normalized;

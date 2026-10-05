@@ -836,11 +836,15 @@ function PaymentDetail({
   recordOpen: boolean;
   setRecordOpen: (v: boolean) => void;
 }) {
-  const [transactions, setTransactions] = useState<PaymentTransaction[]>([]);
-  const [audit, setAudit] = useState<RecurringPaymentAuditLog[]>([]);
+  // Rows are stored with the payment they were loaded for, so switching payments shows nothing
+  // until the new snapshots arrive instead of flashing the previous payment's rows.
+  const [txState, setTxState] = useState<{ paymentId?: string; rows: PaymentTransaction[] }>({ rows: [] });
+  const [auditState, setAuditState] = useState<{ paymentId?: string; rows: RecurringPaymentAuditLog[] }>({ rows: [] });
   // Keyed on the id: `payment` is a fresh object on every register snapshot, and resubscribing to
   // both subcollections on each one would be wasted reads.
   const paymentId = payment?.id;
+  const transactions = txState.paymentId === paymentId ? txState.rows : [];
+  const audit = auditState.paymentId === paymentId ? auditState.rows : [];
   useEffect(() => {
     if (!paymentId) return;
     const stops = [
@@ -855,11 +859,12 @@ function PaymentDetail({
           orderBy("createdAt", "desc"),
         ),
         (s) =>
-          setTransactions(
-            s.docs.map(
+          setTxState({
+            paymentId,
+            rows: s.docs.map(
               (d) => ({ id: d.id, ...d.data() }) as PaymentTransaction,
             ),
-          ),
+          }),
       ),
       onSnapshot(
         query(
@@ -872,11 +877,12 @@ function PaymentDetail({
           orderBy("createdAt", "desc"),
         ),
         (s) =>
-          setAudit(
-            s.docs.map(
+          setAuditState({
+            paymentId,
+            rows: s.docs.map(
               (d) => ({ id: d.id, ...d.data() }) as RecurringPaymentAuditLog,
             ),
-          ),
+          }),
       ),
     ];
     return () => stops.forEach((stop) => stop());
@@ -1166,10 +1172,14 @@ function TransactionDialog({
           throw new Error(
             `A legacy transaction can no longer be recorded on this payment (${current.status}).`,
           );
-        const billAmount = current.billAmount || current.expectedAmount;
-        const newSettled =
-          (current.settledAmount || current.paidAmount || 0) + appliedAmount;
-        const newStatus: "Paid" | "Partially Paid" = newSettled >= billAmount ? "Paid" : "Partially Paid";
+        const billAmount = obligationAmountOf(current);
+        const oldSettled = current.settledAmount || current.paidAmount || 0;
+        if (appliedAmount > billAmount - oldSettled + 0.01)
+          throw new Error(
+            `This would over-settle the payment: only ${currency(Math.max(0, billAmount - oldSettled))} remains (payment plus TDS, deductions and adjustments).`,
+          );
+        const newSettled = oldSettled + appliedAmount;
+        const newStatus: "Paid" | "Partially Paid" = newSettled >= billAmount - 0.01 ? "Paid" : "Partially Paid";
         transaction.set(txRef, {
           organizationId: current.organizationId,
           paymentId: payment.id,

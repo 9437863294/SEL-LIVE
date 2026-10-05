@@ -163,7 +163,14 @@ export default function ManualPaymentForm() {
     const billDate = String(form.get("billDate") || "");
     const vendorName = String(form.get("vendorName") || "").trim();
     const billNumber = String(form.get("billNumber") || "").trim();
-    if (billingStart && billingEnd && billingEnd < billingStart)
+    // Validate the period as it will be stored, after the bill-date / due-date fallbacks.
+    const billingPeriodStart = billingStart || billDate || dueDate;
+    const billingPeriodEnd = billingEnd || billDate || dueDate;
+    // The obligation settles against the gross invoice (bill + tax). TDS, deductions and
+    // adjustments are recorded at payment time as settlement components of `settledAmount`, so
+    // they stay informational here and `netPayableAmount` is only the expected cash outflow.
+    const grossBill = amounts.bill + amounts.tax;
+    if (billingPeriodStart && billingPeriodEnd && billingPeriodEnd < billingPeriodStart)
       return toast({
         title: "Billing period end cannot be before the start date",
         variant: "destructive",
@@ -213,7 +220,8 @@ export default function ManualPaymentForm() {
           String(payment.billNumber || "").toLowerCase() ===
             billNumber.toLowerCase() &&
           String(payment.billDate || "") === billDate &&
-          Number(payment.billAmount || 0) === amounts.bill
+          // Older manual bills stored billAmount without tax; match either basis.
+          [grossBill, amounts.bill].includes(Number(payment.billAmount || 0))
         );
       });
       if (duplicate)
@@ -335,11 +343,11 @@ export default function ManualPaymentForm() {
         billNumber,
         billDate,
         billReceivedDate: dateOnly(new Date()),
-        billingPeriodStart: billingStart || billDate || dueDate,
-        billingPeriodEnd: billingEnd || billDate || dueDate,
+        billingPeriodStart,
+        billingPeriodEnd,
         dueDate,
-        expectedAmount: amounts.bill,
-        billAmount: amounts.bill,
+        expectedAmount: grossBill,
+        billAmount: grossBill,
         taxAmount: amounts.tax,
         tdsAmount: amounts.tds,
         deductionAmount: amounts.deduction,
@@ -347,7 +355,8 @@ export default function ManualPaymentForm() {
         netPayableAmount: netPayable,
         paidAmount: 0,
         settledAmount: 0,
-        outstandingAmount: netPayable,
+        // outstandingAmountOf with nothing settled yet.
+        outstandingAmount: grossBill,
         assignedTo: String(form.get("ownerId") || ""),
         verifierId,
         approverId: String(form.get("approverId") || ""),

@@ -24,6 +24,7 @@ import {
   isOpenObligation,
   maskAccount,
   mergeRecurringPaymentSettings,
+  obligationAmountOf,
   outstandingAmountOf,
   paymentTiming,
   type PaymentMode,
@@ -208,23 +209,30 @@ export default function RecurringPaymentDetailPage({ paymentId }: { paymentId: s
       paidBy,
       paidByName: users.find(entry => entry.id === paidBy)?.name || original.paidByName,
     };
+    // Totals don't depend on the receipt, so the over-settlement check runs before any upload.
+    const nextTransactions = transactions.map(item => (item.id === original.id ? updated : item));
+    const paidAmount = nextTransactions.reduce((sum, item) => sum + Number(item.amount || 0), 0);
+    const settledAmount = nextTransactions.reduce((sum, item) => sum + Number(item.amount || 0) + Number(item.tdsAmount || 0) + Number(item.deductionAmount || 0) + Number(item.adjustmentAmount || 0), 0);
+    const obligationAmount = obligationAmountOf(payment);
+    const outstandingAmount = Math.max(0, obligationAmount - settledAmount);
+    if (settledAmount > obligationAmount + 0.01) {
+      return toast({ title: 'This edit would over-settle the payment', description: `Settled ${currency(settledAmount)} (payments plus TDS, deductions and adjustments) would exceed the ${currency(obligationAmount)} obligation.`, variant: 'destructive' });
+    }
+    const derivedStatus = settledAmount >= obligationAmount - 0.01 ? 'Paid' : 'Partially Paid';
+    // While a workflow step is active the step owns the status; flipping it here would strand the
+    // obligation at that step (e.g. Paid while still sitting at Payment Processing).
+    const statusHeldByWorkflow = Boolean(payment.currentStepId) && ['Paid', 'Partially Paid'].includes(payment.status) && derivedStatus !== payment.status;
     setSaving(true);
     try {
       const receiptFile = form.get('receiptFile');
       const newReceiptUrl = receiptFile instanceof File && receiptFile.size ? await uploadReceipt(receiptFile) : '';
       if (newReceiptUrl) updated.receiptUrl = newReceiptUrl;
 
-      const nextTransactions = transactions.map(item => (item.id === original.id ? updated : item));
-      const paidAmount = nextTransactions.reduce((sum, item) => sum + Number(item.amount || 0), 0);
-      const settledAmount = nextTransactions.reduce((sum, item) => sum + Number(item.amount || 0) + Number(item.tdsAmount || 0) + Number(item.deductionAmount || 0) + Number(item.adjustmentAmount || 0), 0);
-      const obligationAmount = Number(payment.billAmount || payment.expectedAmount || 0);
-      const outstandingAmount = Math.max(0, obligationAmount - settledAmount);
-
       const batch = writeBatch(db);
       const { id: _txId, ...updatedFields } = updated;
       batch.update(doc(db, RP_COLLECTIONS.payments, payment.id, RP_COLLECTIONS.transactions, original.id), { ...updatedFields, updatedAt: serverTimestamp(), updatedBy: user.id });
       const paymentPatch: Record<string, unknown> = { paidAmount, settledAmount, outstandingAmount, updatedAt: serverTimestamp() };
-      if (['Paid', 'Partially Paid'].includes(payment.status)) paymentPatch.status = settledAmount >= obligationAmount - 0.01 ? 'Paid' : 'Partially Paid';
+      if (!payment.currentStepId && ['Paid', 'Partially Paid'].includes(payment.status)) paymentPatch.status = derivedStatus;
       if (newReceiptUrl) paymentPatch.documentReferences = proofReference(newReceiptUrl, receiptFile);
       batch.update(doc(db, RP_COLLECTIONS.payments, payment.id), paymentPatch);
       batch.set(doc(collection(db, RP_COLLECTIONS.payments, payment.id, RP_COLLECTIONS.auditLogs)), {
@@ -235,7 +243,9 @@ export default function RecurringPaymentDetailPage({ paymentId }: { paymentId: s
       });
       await batch.commit();
       setEditingTransaction(null);
-      toast({ title: 'Transaction updated' });
+      toast(statusHeldByWorkflow
+        ? { title: 'Transaction updated', description: `Status stays ${payment.status} while the payment is at a workflow step; complete it through the ${payment.stage || 'current'} step to move it on.` }
+        : { title: 'Transaction updated' });
     } catch (error) {
       saveFailed('Transaction could not be updated', error);
     } finally {
@@ -468,7 +478,7 @@ function EditTransactionDialog({
           </DialogDescription>
         </DialogHeader>
         <form onSubmit={onSubmit} className="space-y-4">
-          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
             <FieldRow label="Payment date">
               <Input name="paymentDate" type="date" defaultValue={transaction.paymentDate} required />
             </FieldRow>

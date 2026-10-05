@@ -9,6 +9,9 @@ import {
   eApprovalAgeBucketOf,
   eApprovalClosureRates,
   eApprovalTrend,
+  eApprovalFinancialYearStart,
+  eApprovalLocalDay,
+  eApprovalPresetRange,
   filterEApprovalRows,
   oldestPendingEApprovals,
   percentOf,
@@ -104,8 +107,41 @@ test('the date range filters on submission, so a draft is never in it', () => {
 });
 
 test('the end of a date range includes the whole day', () => {
-  const rows = [req({ id: 'late', submittedAt: '2026-06-30T23:30:00.000Z' })];
+  // Built from local time on purpose. This used to be '2026-06-30T23:30:00.000Z' — which is 05:00
+  // on 1 July in India — and passed only because the filter read report days as UTC, the very bug
+  // that put early-morning submissions on the wrong day.
+  const rows = [req({ id: 'late', submittedAt: new Date(2026, 5, 30, 23, 30).toISOString() })];
   assert.equal(filterEApprovalRows(rows, { from: '2026-06-01', to: '2026-06-30' }).length, 1);
+});
+
+/* ── report days are local calendar days ─────────────────────────────────────────────────────── */
+
+test('a file submitted in the small hours belongs to that day, not the day before', () => {
+  // 02:00 local on 1 April. Read as UTC, a bare "2026-04-01" starts at 05:30 in India, so this file
+  // fell outside a range starting on the 1st and inside one ending on 31 March.
+  const rows = [req({ id: 'early', submittedAt: new Date(2026, 3, 1, 2, 0).toISOString() })];
+  assert.equal(filterEApprovalRows(rows, { from: '2026-04-01', to: '2026-04-30' }).length, 1);
+  assert.equal(filterEApprovalRows(rows, { from: '2026-03-01', to: '2026-03-31' }).length, 0);
+});
+
+test('a local day is printed as the local date, not the UTC one', () => {
+  // Local midnight is the previous UTC day anywhere east of Greenwich; toISOString printed that.
+  assert.equal(eApprovalLocalDay(new Date(2026, 3, 1)), '2026-04-01');
+  assert.equal(eApprovalLocalDay(new Date(2026, 11, 31, 23, 59)), '2026-12-31');
+});
+
+test('"This financial year" starts on 1 April, not 31 March', () => {
+  assert.deepEqual(eApprovalPresetRange(null, new Date(2026, 6, 15, 10, 0)), { from: '2026-04-01', to: '2026-07-15' });
+  // January still belongs to the year that began the previous April.
+  assert.deepEqual(eApprovalPresetRange(null, new Date(2027, 0, 10, 10, 0)), { from: '2026-04-01', to: '2027-01-10' });
+  // And 1 April itself starts the new year rather than closing the old one.
+  assert.equal(eApprovalPresetRange(null, new Date(2026, 3, 1, 9, 0)).from, '2026-04-01');
+  assert.equal(eApprovalFinancialYearStart(new Date(2026, 2, 31, 23, 0)).getFullYear(), 2025);
+});
+
+test('"Last 7 days" just after midnight still ends today', () => {
+  // 00:30 local. The UTC-based preset printed yesterday as the end date until 05:30 in India.
+  assert.deepEqual(eApprovalPresetRange(7, new Date(2026, 6, 15, 0, 30)), { from: '2026-07-08', to: '2026-07-15' });
 });
 
 test('filters combine, and an empty list means "no restriction"', () => {

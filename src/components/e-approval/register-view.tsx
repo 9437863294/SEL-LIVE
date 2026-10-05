@@ -207,7 +207,7 @@ export function RegisterView({ scope }: { scope: RegisterScope }) {
     } finally {
       setIsLoading(false);
     }
-  }, [scope, serviceActor, engineActor, config.statuses, permissions.canViewAll, pendingSources, toast]);
+  }, [scope, serviceActor, config.statuses, permissions.canViewAll, pendingSources, toast]);
 
   /**
    * The queues people wait on are live; the registers they browse are not.

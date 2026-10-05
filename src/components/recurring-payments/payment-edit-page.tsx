@@ -64,8 +64,13 @@ export default function PaymentEditPage({ paymentId }: { paymentId: string }) {
   const { can } = useAuthorization();
   const { toast } = useToast();
   const { field } = useFieldControl("paymentEdit");
-  const { projects, departments, activeProjects, activeDepartments } =
-    useGlobalScopes();
+  const {
+    projects,
+    departments,
+    activeProjects,
+    activeDepartments,
+    loading: scopesLoading,
+  } = useGlobalScopes();
   const [payment, setPayment] = useState<PaymentObligation | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -215,7 +220,9 @@ export default function PaymentEditPage({ paymentId }: { paymentId: string }) {
       setSaving(false);
     }
   }
-  if (loading)
+  // Also waits for projects/departments: the Selects' defaultValue is fixed at mount, and a legacy
+  // obligation matched only by name would otherwise mount as "none" and save '' over its scope.
+  if (loading || scopesLoading)
     return (
       <div className="flex min-h-[45vh] items-center justify-center">
         <Loader2 className="h-7 w-7 animate-spin" />

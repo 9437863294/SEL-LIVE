@@ -233,18 +233,37 @@ export default function EApprovalNotePage() {
   const fitRef = useRef<EApprovalPrintFit | null>(null);
   /** Likewise the override: `beforeprint` fires from Ctrl+P long after this effect was bound. */
   const orientationRef = useRef<'auto' | PrintOrientation>('auto');
-  orientationRef.current = orientation;
-
-  const load = useCallback(async () => {
-    if (!approvalId) return;
-    setIsLoading(true);
-    setDetail(await loadEApprovalDetail(approvalId));
-    setIsLoading(false);
-  }, [approvalId]);
-
+  // In an effect, not during render: a render can be thrown away under concurrent rendering, and a
+  // ref written there would then hold an orientation the screen never showed.
   useEffect(() => {
-    void load();
-  }, [load]);
+    orientationRef.current = orientation;
+  }, [orientation]);
+
+  const [loadError, setLoadError] = useState<string | null>(null);
+
+  /*
+   * A failed read used to leave the note on its loading skeleton for good — there was no catch, so
+   * `isLoading` never came back down — and the only other outcome on offer was "Approval not found",
+   * the wrong thing to say when the network dropped or a permission was refused. The fetch lives in
+   * the effect so its result can be ignored once the page has moved on.
+   */
+  useEffect(() => {
+    if (!approvalId) return;
+    let cancelled = false;
+    loadEApprovalDetail(approvalId)
+      .then((next) => {
+        if (!cancelled) setDetail(next);
+      })
+      .catch((error: unknown) => {
+        if (!cancelled) setLoadError(error instanceof Error ? error.message : 'Something went wrong.');
+      })
+      .finally(() => {
+        if (!cancelled) setIsLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [approvalId]);
 
   /**
    * What the proposal wants to be, in CSS pixels. Reads only — never mutates.
@@ -369,6 +388,17 @@ export default function EApprovalNotePage() {
   }, [isLoading, detail, measureProposalWidth]);
 
   if (isLoading) return <Skeleton className="h-96 w-full" />;
+
+  if (loadError) {
+    return (
+      <Card>
+        <CardHeader>
+          <CardTitle>Could not load this approval</CardTitle>
+          <CardDescription>{loadError} Reload the page to try again.</CardDescription>
+        </CardHeader>
+      </Card>
+    );
+  }
 
   if (!detail) {
     return (

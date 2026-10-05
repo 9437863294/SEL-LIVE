@@ -8,7 +8,7 @@ import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { FilterBar } from '@/components/shared/filter-bar';
 import { E_APPROVAL_PRIORITIES, E_APPROVAL_STATUSES, type EApprovalPriority } from '@/lib/e-approval';
-import type { EApprovalAnalyticsFilter } from '@/lib/e-approval-analytics';
+import { eApprovalPresetRange, type EApprovalAnalyticsFilter } from '@/lib/e-approval-analytics';
 import { useEApprovalDirectory } from '../hooks';
 
 const PRESETS = [
@@ -18,11 +18,6 @@ const PRESETS = [
   { label: 'This financial year', days: null },
 ] as const;
 
-const isoDay = (date: Date) => date.toISOString().slice(0, 10);
-
-/** April–March, matching the reference-number series. */
-const financialYearStart = (now = new Date()) =>
-  new Date(now.getMonth() >= 3 ? now.getFullYear() : now.getFullYear() - 1, 3, 1);
 
 /**
  * The single filter row that scopes every chart on a report page.
@@ -100,9 +95,9 @@ export function EApprovalFilterBar({
   }, [value]);
 
   const applyPreset = (days: number | null) => {
-    const to = isoDay(new Date());
-    const from = days == null ? isoDay(financialYearStart()) : isoDay(new Date(Date.now() - days * 86_400_000));
-    set({ from, to });
+    // Local calendar days, read off the clock at the click. The previous helpers printed dates in UTC,
+    // which in India put the start of the financial year on 31 March.
+    set(eApprovalPresetRange(days, new Date()));
   };
 
   return (

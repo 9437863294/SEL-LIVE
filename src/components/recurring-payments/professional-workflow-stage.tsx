@@ -191,7 +191,7 @@ export default function ProfessionalRecurringWorkflowStage({ stageId }: { stageI
       start: String(form.get('billingPeriodStart') || selected.billingPeriodStart || '').trim(),
       end: String(form.get('billingPeriodEnd') || selected.billingPeriodEnd || '').trim(),
     };
-    const periodChanged = (payment: PaymentObligation) => proposedPeriod.start !== payment.billingPeriodStart || proposedPeriod.end !== payment.billingPeriodEnd;
+    const periodChanged = (payment: PaymentObligation) => proposedPeriod.start !== (payment.billingPeriodStart || '') || proposedPeriod.end !== (payment.billingPeriodEnd || '');
     const periodError = (payment: PaymentObligation) => billingPeriodAdjustmentError(generatedPeriodOf(payment), proposedPeriod, settings.controls.billingPeriodAdjustmentDays);
     if (action === 'Submit Bill' && periodChanged(selected)) {
       const problem = periodError(selected);
@@ -213,12 +213,16 @@ export default function ProfessionalRecurringWorkflowStage({ stageId }: { stageI
     const checkedChecklist = form.getAll('verificationChecklist').map(String);
     const missingChecklist = activeChecklist.some(item => item.required && !checkedChecklist.includes(item.label));
     if (action === 'Verify' && missingChecklist) return toast({ title: 'Complete the bill verification checklist', description: 'Every required verification control must be confirmed before the bill can proceed.', variant: 'destructive' });
-    if (action === 'Record Payment' && paymentAmount <= 0) return toast({ title: 'Paid amount is required', variant: 'destructive' });
+    // A bill returned from Receipt & Closure arrives here already settled in full. There is nothing
+    // left to pay, so the step is completed with a zero amount — otherwise every check below refused
+    // it and the payment could only sit at this step.
+    const confirmingSettled = action === 'Record Payment' && currentOutstanding <= 0.01 && appliedAmount === 0;
+    if (action === 'Record Payment' && paymentAmount <= 0 && !confirmingSettled) return toast({ title: 'Paid amount is required', variant: 'destructive' });
     // A transaction reference is only meaningful for non-cash modes — a cash payment has no UTR
     // or transaction number to record, so it's exempt from this setting regardless.
-    if (action === 'Record Payment' && paymentMode !== 'Cash' && settings.controls.requireTransactionReference && !transactionReference) return toast({ title: 'Transaction reference is required', variant: 'destructive' });
-    if (action === 'Record Payment' && paymentMode === 'Cheque' && !chequeNumber) return toast({ title: 'Cheque number is required for cheque payments', variant: 'destructive' });
-    if (action === 'Record Payment' && BANK_ACCOUNT_REQUIRED_MODES.includes(paymentMode) && !bankAccount) return toast({ title: 'Bank account is required for electronic payments', variant: 'destructive' });
+    if (action === 'Record Payment' && !confirmingSettled && paymentMode !== 'Cash' && settings.controls.requireTransactionReference && !transactionReference) return toast({ title: 'Transaction reference is required', variant: 'destructive' });
+    if (action === 'Record Payment' && !confirmingSettled && paymentMode === 'Cheque' && !chequeNumber) return toast({ title: 'Cheque number is required for cheque payments', variant: 'destructive' });
+    if (action === 'Record Payment' && !confirmingSettled && BANK_ACCOUNT_REQUIRED_MODES.includes(paymentMode) && !bankAccount) return toast({ title: 'Bank account is required for electronic payments', variant: 'destructive' });
     const approvalDate = [...(selected.workflowHistory || [])].reverse().find(item => item.action === 'Approve')?.timestamp;
     const approvedOn = timestampDateOnly(approvalDate);
     if (action === 'Record Payment' && paymentDate && approvedOn && paymentDate < approvedOn) return toast({ title: 'Payment date cannot be before the approval date', variant: 'destructive' });
@@ -237,7 +241,7 @@ export default function ProfessionalRecurringWorkflowStage({ stageId }: { stageI
     if (action === 'Create Expense Request' && expenseAmount <= 0) return toast({ title: 'Expense amount is required', variant: 'destructive' });
     if (action === 'Create Expense Request' && (!expenseHeadOfAccount || !expenseSubHeadOfAccount)) return toast({ title: 'Select a head and sub-head of account', variant: 'destructive' });
 
-    if (action === 'Record Payment') {
+    if (action === 'Record Payment' && !confirmingSettled) {
       const missingLabel = validateFieldControlRequirements('recordPayment', { ...Object.fromEntries(form.entries()), paymentAmount, tdsAmount, gstAmount, deductionAmount, adjustmentAmount }, recordPaymentField);
       if (missingLabel) return toast({ title: `${missingLabel} is required`, variant: 'destructive' });
     }
@@ -355,7 +359,7 @@ export default function ProfessionalRecurringWorkflowStage({ stageId }: { stageI
         // The receipt is also listed as a document under 'Record Payment' — that entry is what
         // `hasPaymentProof` reads, so a receipt kept only on the transaction left the payment
         // flagged "Missing payment proof".
-        if (receiptUrl) newDocuments.push({ stepId: stage.id, action: 'Record Payment', reference: receiptUrl, addedBy: user.id, addedAt: Timestamp.now(), category: 'Payment receipt', fileType: receiptFile instanceof File ? (receiptFile.type || receiptFile.name.split('.').pop() || 'file') : 'file', version: (current.documentReferences || []).filter(item => item.stepId === stage.id && item.category === 'Payment receipt').length + 1 });
+        if (receiptUrl) newDocuments.push({ stepId: stage.id, action: 'Record Payment', reference: receiptUrl, addedBy: user.id, addedAt: Timestamp.now(), category: 'Payment Proof', fileType: receiptFile instanceof File ? (receiptFile.type || receiptFile.name.split('.').pop() || 'file') : 'file', version: (current.documentReferences || []).filter(item => item.stepId === stage.id && item.category === 'Payment Proof').length + 1 });
         if (newDocuments.length) patch.documentReferences = arrayUnion(...newDocuments);
         if (action === 'Submit Bill') Object.assign(patch, { billAmount, billNumber, billReceivedDate, varianceBaseline, variancePercent, varianceWarning, varianceComparisons, amountLimitExceeded, outstandingAmount: Math.max(0, billAmount - (current.settledAmount || current.paidAmount || 0)) });
         if (action === 'Submit Bill' && periodChanged(current)) {
@@ -382,16 +386,20 @@ export default function ProfessionalRecurringWorkflowStage({ stageId }: { stageI
           // Re-checked against the live record: the form's check used the row as it was when the
           // dialog opened, and another instalment may have been recorded since.
           if (appliedAmount > obligationAmount - oldSettled + 0.01) throw new Error(`Settlement exceeds the outstanding amount — only ${currency(Math.max(0, obligationAmount - oldSettled))} is still outstanding.`);
+          if (confirmingSettled && obligationAmount - oldSettled > 0.01) throw new Error(`An amount is outstanding again (${currency(obligationAmount - oldSettled)}) — enter the paid amount.`);
           advance = totalSettled >= obligationAmount - 0.01;
-          Object.assign(patch, {
-            paidAmount: totalPaid,
-            settledAmount: totalSettled,
-            outstandingAmount: Math.max(0, obligationAmount - totalSettled),
-            paymentDate,
-            transactionReference,
-            status: advance ? 'Paid' : 'Partially Paid',
-          });
-          transaction.set(transactionRef!, {
+          // A zero confirmation leaves the recorded payment — its date, UTR and amounts — as it was.
+          Object.assign(patch, confirmingSettled
+            ? { status: 'Paid' }
+            : {
+                paidAmount: totalPaid,
+                settledAmount: totalSettled,
+                outstandingAmount: Math.max(0, obligationAmount - totalSettled),
+                paymentDate,
+                transactionReference,
+                status: advance ? 'Paid' : 'Partially Paid',
+              });
+          if (!confirmingSettled) transaction.set(transactionRef!, {
             organizationId: current.organizationId,
             paymentId: current.id,
             paymentDate,
@@ -446,7 +454,7 @@ export default function ProfessionalRecurringWorkflowStage({ stageId }: { stageI
           organizationId: current.organizationId,
           paymentId: current.id,
           action,
-          summary: action === 'Record Payment' ? `${currency(paymentAmount)} recorded against ${currency(currentOutstanding)} outstanding.` : action === 'Create Expense Request' ? `Expense request ${expenseRequestNo} created for ${currency(expenseAmount)}.` : `${stage.name}: ${action}${periodNote}`,
+          summary: action === 'Record Payment' ? (confirmingSettled ? 'Already settled in full — confirmed with no new payment.' : `${currency(paymentAmount)} recorded against ${currency(currentOutstanding)} outstanding.`) : action === 'Create Expense Request' ? `Expense request ${expenseRequestNo} created for ${currency(expenseAmount)}.` : `${stage.name}: ${action}${periodNote}`,
           userId: user.id,
           userName: user.name,
           metadata: { fromStep: stage.name, destination, comment, transactionReference: transactionReference || null, expenseRequestNo: expenseRequestNo || null, verificationChecklist: action === 'Verify' ? checkedChecklist : null },
@@ -517,7 +525,7 @@ export default function ProfessionalRecurringWorkflowStage({ stageId }: { stageI
   return <div className="space-y-5">
     <PageHeader eyebrow={`Recurring payment workflow · Step ${stage.id}`} title={stage.name} description={stage.description} />
     <div className="grid grid-cols-3 gap-3"><StageMetric label="My queue" value={pending.length} /><StageMetric label="Due ≤ 3 days" value={dueSoon} /><StageMetric label="Overdue" value={overdue} /></div>
-    <Tabs defaultValue="pending"><TabsList><TabsTrigger value="pending">My pending tasks ({pending.length})</TabsTrigger><TabsTrigger value="completed">My completed tasks ({completed.length})</TabsTrigger></TabsList><TabsContent value="pending"><TaskTable rows={pending} stage={stage} title={`${stage.name} — awaiting my action`} description="Assigned to you and not yet actioned" onView={payment => setSelectedId(payment.id)} onAction={(payment, nextAction) => { setSelectedId(payment.id); setAction(nextAction); }} /></TabsContent><TabsContent value="completed"><TaskTable rows={completed} stage={stage} title={`${stage.name} — actioned by me`} description="Payments you have already moved through this step" onView={payment => setSelectedId(payment.id)} /></TabsContent></Tabs>
+    <Tabs defaultValue="pending"><TabsList><TabsTrigger value="pending">My pending tasks ({pending.length})</TabsTrigger><TabsTrigger value="completed">My completed tasks ({completed.length})</TabsTrigger></TabsList><TabsContent value="pending"><TaskTable rows={pending} stage={stage} title={`${stage.name} — awaiting my action`} description="Assigned to you and not yet actioned" onView={payment => { setSelectedId(payment.id); setAction(null); }} onAction={(payment, nextAction) => { setSelectedId(payment.id); setAction(nextAction); }} /></TabsContent><TabsContent value="completed"><TaskTable rows={completed} stage={stage} title={`${stage.name} — actioned by me`} description="Payments you have already moved through this step" onView={payment => { setSelectedId(payment.id); setAction(null); }} /></TabsContent></Tabs>
     <ActionDialog payment={selected} stage={stage} action={action} canAct={!!selected && pending.some(item => item.id === selected.id)} onAction={setAction} onClose={() => { setSelectedId(null); setAction(null); }} onSubmit={perform} working={working} departments={departments} accountHeads={accountHeads} subAccountHeads={subAccountHeads} submitBillField={submitBillField} activeChecklist={activeChecklist} recordPaymentField={recordPaymentField} expenseField={expenseField} commonField={commonField} requireTransactionReference={settings.controls.requireTransactionReference} billingPeriodAdjustmentDays={settings.controls.billingPeriodAdjustmentDays} />
   </div>;
 }
@@ -541,11 +549,11 @@ function ActionDialog({ payment, stage, action, canAct, onAction, onClose, onSub
     <div><Label>Workflow history</Label><div className="mt-2 max-h-48 space-y-2 overflow-y-auto">{(payment.workflowHistory || []).map((item, index) => <div key={index} className="flex gap-3 rounded-lg border p-3 text-sm"><ShieldCheck className="mt-0.5 h-4 w-4 text-indigo-500" /><div><p className="font-medium">{item.action} · {item.stepName}</p><p className="text-xs text-muted-foreground">{item.userName}{item.comment ? ` — ${item.comment}` : ''} · {formatTimestamp(item.timestamp)}</p></div></div>)}{!(payment.workflowHistory || []).length && <p className="text-sm text-muted-foreground">Workflow has just started.</p>}</div></div>
     {canAct && (!action ? <div className="flex flex-wrap gap-2 border-t pt-4">{stage.actions.map(item => <Button key={item} variant={['Reject', 'Payment Failed'].includes(item) ? 'destructive' : 'default'} onClick={() => onAction(item)}>{item}</Button>)}</div> : <form onSubmit={onSubmit} className="space-y-4 border-t pt-4"><p className="font-semibold">Action: {action}</p>
       {action === 'Submit Bill' && <div className="grid grid-cols-1 gap-3 sm:grid-cols-3"><ControlledField setting={submitBillField('billNumber')}><Input name="billNumber" defaultValue={payment.billNumber || ''} required /></ControlledField><ControlledField setting={submitBillField('billReceivedDate')}><Input name="billReceivedDate" type="date" defaultValue={payment.billReceivedDate || recurringDateOnly(new Date())} required /></ControlledField><ControlledField setting={submitBillField('billAmount')}><Input name="billAmount" type="number" min="0.01" step="0.01" defaultValue={payment.billAmount || payment.expectedAmount} required /></ControlledField></div>}
-      {action === 'Submit Bill' && payment.billingPeriodStart && payment.billingPeriodEnd && <BillingPeriodFields key={payment.id} payment={payment} days={billingPeriodAdjustmentDays} field={submitBillField} />}
+      {action === 'Submit Bill' && payment.billingPeriodStart && payment.billingPeriodEnd && (submitBillField('billingPeriodStart').visible || submitBillField('billingPeriodEnd').visible) && <BillingPeriodFields key={payment.id} payment={payment} days={billingPeriodAdjustmentDays} field={submitBillField} />}
       {action === 'Verify' && <div className="space-y-3 rounded-xl border bg-muted/20 p-4"><div><p className="font-semibold">Bill verification checklist</p><p className="text-xs text-muted-foreground">Confirm every required control. The completed checklist is captured in the audit record.</p></div><div className="grid grid-cols-1 gap-3 sm:grid-cols-2">{activeChecklist.map(item => <label key={item.key} className="flex items-start gap-2 rounded-lg border bg-background p-3 text-sm"><Checkbox name="verificationChecklist" value={item.label} required={item.required} className="mt-0.5" /><span>{item.label}{item.required && <span className="text-destructive"> *</span>}</span></label>)}</div></div>}
       {action === 'Record Payment' && <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
         <ControlledField setting={recordPaymentField('paymentDate')}><Input name="paymentDate" type="date" defaultValue={recurringDateOnly(new Date())} required /></ControlledField>
-        <ControlledField setting={recordPaymentField('paymentAmount')}><Input name="paymentAmount" type="number" min="0.01" step="0.01" max={outstanding || undefined} required /></ControlledField>
+        <ControlledField setting={recordPaymentField('paymentAmount')}><Input name="paymentAmount" type="number" min={outstanding > 0.01 ? "0.01" : "0"} step="0.01" max={outstanding || undefined} required={outstanding > 0.01} placeholder={outstanding > 0.01 ? undefined : "Fully settled — leave at 0 to continue"} /></ControlledField>
         {recordPaymentField('mode').visible && <ControlledField setting={recordPaymentField('mode')}><Select name="mode" value={paymentMode} onValueChange={value => setPaymentMode(value as PaymentMode)}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent>{PAYMENT_MODES.map(mode => <SelectItem value={mode} key={mode}>{mode}</SelectItem>)}</SelectContent></Select></ControlledField>}
         {/* Bank account and UTR/transaction reference only apply once money actually moves
             through a bank — a cash payment has neither, so they're hidden rather than shown

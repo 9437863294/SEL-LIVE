@@ -372,7 +372,10 @@ export function useEApprovalWorkload() {
 
   useEffect(() => {
     if (!serviceActor || !engineActor) return;
-    setIsLoading(true);
+    // No `setIsLoading(true)` here. The first subscription starts from the initial `true`; a
+    // resubscription happens on every actor-context refresh (see below), usually with nothing
+    // changed, and flagging those as loading dimmed the inbox for a moment each time for no reason.
+    // The rows already on screen stay until the new snapshot replaces them.
     const unsubscribe = subscribeEApprovalWorkload(
       engineActor,
       serviceActor.organizationId,
@@ -478,11 +481,13 @@ export function useEApprovalRefreshOnReturn(refresh: () => void, minimumGapMs = 
   useEffect(() => {
     latest.current = refresh;
   }, [refresh]);
-  // Seeded to now, so a tab that is focused moments after mounting does not immediately refetch
-  // what the mount has just loaded.
-  const lastRun = useRef(Date.now());
+  const lastRun = useRef(0);
 
   useEffect(() => {
+    // Seeded to now on mount, so a tab that is focused moments after mounting does not immediately
+    // refetch what the mount has just loaded. Here rather than as the ref's initial value, which would
+    // read the clock on every render only to throw the result away.
+    lastRun.current = Date.now();
     const run = () => {
       const now = Date.now();
       if (now - lastRun.current < minimumGapMs) return;

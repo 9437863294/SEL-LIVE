@@ -38,6 +38,8 @@ import {
   BILL_DATE_RULES,
   buildRecurringCycle,
   DUE_DATE_RULES,
+  normalizeDueDateRule,
+  recurrenceLeadDays,
   pendingRecurringCycles,
   currency,
   downloadCsv,
@@ -50,7 +52,6 @@ import {
   RP_COLLECTIONS,
 } from "@/lib/recurring-payments";
 import {
-  generatedCyclePredicate,
   generateMasterCycle,
   loadManualGenerationContext,
 } from "@/lib/recurring-payments-generation";
@@ -106,8 +107,9 @@ const MAX_IMPORT_ROWS = 400;
 /** Export headers, which are also the columns the import reads (case-insensitively). */
 const IMPORT_COLUMNS = [
   "Title", "Category", "Vendor", "Branch", "Project", "Department", "Frequency", "Amount Type",
-  "Amount", "Due Day", "Due Date Rule", "Bill Date Rule", "Period Anchor Day", "Owner ID",
-  "Owner Name", "Start Date", "End Date", "Status",
+  "Amount", "Due Day", "Due Date Rule", "Bill Date Rule", "Bill Day Offset", "Period Anchor Day",
+  "Lead Days", "Grace Days", "Custom Interval Days", "Owner ID", "Owner Name", "Start Date",
+  "End Date", "Status",
 ] as const;
 
 export default function RecurringMasterRegister() {
@@ -172,13 +174,15 @@ export default function RecurringMasterRegister() {
   const nextCycles = useMemo(() => {
     const isWorkingDay = makeIsWorkingDay(calendar?.workingHours, calendar?.holidays);
     const now = new Date();
+    // Built once per run: a per-master Set re-copied every obligation id for every master.
+    const generatedIds = new Set(obligationIds);
     return new Map(
       rows.map((master) => [
         master.id,
         master.startDate
           ? actionableRecurringCycle(master, now, {
               isWorkingDay,
-              isGenerated: generatedCyclePredicate(organizationId, master.id, obligationIds),
+              isGenerated: (cycle) => generatedIds.has(recurringObligationId(organizationId, master.id, cycle.key)),
             })
           : null,
       ]),
@@ -442,9 +446,13 @@ export default function RecurringMasterRegister() {
         master.amountType,
         master.amount,
         master.dueDay,
-        master.dueDateRule || "",
-        master.billDateRule || "",
+        normalizeDueDateRule(master.dueDateRule),
+        master.billDateRule || "Start of billing period",
+        master.billDayOffset ?? 1,
         master.periodAnchorDay || 1,
+        recurrenceLeadDays(master),
+        master.gracePeriodDays || 0,
+        master.customIntervalDays || "",
         master.assignedTo || "",
         master.assignedToName || "",
         master.startDate,
@@ -516,8 +524,6 @@ export default function RecurringMasterRegister() {
         if (!AMOUNT_TYPES.includes(amountType)) issue(`amount type "${amountType}" is not one of ${AMOUNT_TYPES.join(", ")}`);
         const amount = Number(get("amount") || 0);
         if (!Number.isFinite(amount) || amount < 0) issue(`amount "${get("amount")}" is not a number`);
-        const dueDay = Number(get("due day") || 1);
-        if (!Number.isInteger(dueDay) || dueDay < 0 || dueDay > 31) issue(`due day "${get("due day")}" must be 0–31`);
         const startDate = get("start date");
         if (!isValidIsoDate(startDate)) issue(`start date "${startDate}" must be a real date in YYYY-MM-DD format`);
         const endDate = get("end date");
@@ -528,6 +534,22 @@ export default function RecurringMasterRegister() {
         if (ownerId && !owner) issue(`owner id "${ownerId}" is not a known user`);
         const dueDateRule = get("due date rule");
         if (dueDateRule && !(DUE_DATE_RULES as string[]).includes(dueDateRule)) issue(`due date rule "${dueDateRule}" is not one of ${DUE_DATE_RULES.join(", ")}`);
+        // A bare "due day" column means a day of the month; with a rule, it is that rule's number.
+        const effectiveDueRule = dueDateRule || "Fixed day of month";
+        const dueDay = Number(get("due day") || 1);
+        const dueDayMax = effectiveDueRule === "Fixed day of month" ? 31 : 180;
+        if (!Number.isInteger(dueDay) || dueDay < 0 || dueDay > dueDayMax) issue(`due day "${get("due day")}" must be 0–${dueDayMax} for "${effectiveDueRule}"`);
+        const whole = (name: string, fallback: number, max: number) => {
+          const raw = get(name);
+          if (!raw) return fallback;
+          const value = Number(raw);
+          if (!Number.isInteger(value) || value < 0 || value > max) issue(`${name} "${raw}" must be a whole number 0–${max}`);
+          return Math.min(max, Math.max(0, Math.round(value) || 0));
+        };
+        const billDayOffset = whole("bill day offset", 1, 31);
+        const generateLeadDays = whole("lead days", 7, 365);
+        const gracePeriodDays = whole("grace days", 0, 365);
+        const customIntervalDays = whole("custom interval days", 30, 3660);
         const billDateRule = get("bill date rule");
         if (billDateRule && !(BILL_DATE_RULES as string[]).includes(billDateRule)) issue(`bill date rule "${billDateRule}" is not one of ${BILL_DATE_RULES.join(", ")}`);
         return {
@@ -545,10 +567,14 @@ export default function RecurringMasterRegister() {
           amountType,
           amount,
           dueDay,
-          // A bare "due day" column means a day of the month. Left unset, the schedule reads it as
-          // "N days after the bill date", which is not what anyone filling in the column meant.
-          dueDateRule: dueDateRule || "Fixed day of month",
+          // Left unset, the schedule would read a bare due day as "N days after the bill date",
+          // which is not what anyone filling in that column meant.
+          dueDateRule: effectiveDueRule,
           ...(billDateRule ? { billDateRule } : {}),
+          billDayOffset,
+          generateLeadDays,
+          gracePeriodDays,
+          ...(frequency === "Custom" ? { customIntervalDays } : {}),
           periodAnchorDay: Math.min(31, Math.max(1, Number(get("period anchor day") || 1) || 1)),
           assignedTo: ownerId,
           assignedToName: owner?.name || "",

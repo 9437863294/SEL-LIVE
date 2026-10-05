@@ -655,9 +655,15 @@ export function matchApprovalRule(
   // org-wide, then the narrowest amount band — rather than whichever document Firestore happened
   // to return first, which made the approvers for an amount depend on document ids.
   const specificity = (rule: ApprovalRule) => (scoped(rule.project) ? 2 : 0) + (scoped(rule.category) ? 1 : 0);
+  // Band width compares unbounded rules by their floor instead — Infinity − Infinity is NaN, which
+  // would otherwise skip straight to the id tie-break and let "≥ 0" beat "≥ 1 lakh" for ₹2 lakh.
+  const narrower = (a: ApprovalRule, b: ApprovalRule) =>
+    ceiling(a) === Number.POSITIVE_INFINITY && ceiling(b) === Number.POSITIVE_INFINITY
+      ? Number(b.minAmount || 0) - Number(a.minAmount || 0)
+      : (ceiling(a) - Number(a.minAmount || 0)) - (ceiling(b) - Number(b.minAmount || 0));
   return matches.sort((a, b) =>
     specificity(b) - specificity(a) ||
-    (ceiling(a) - Number(a.minAmount || 0)) - (ceiling(b) - Number(b.minAmount || 0)) ||
+    narrower(a, b) ||
     a.id.localeCompare(b.id))[0];
 }
 
@@ -712,10 +718,12 @@ export function buildPaymentObligationFields(input: GeneratedObligationInput) {
     department: input.department || '',
     costCentre: input.costCentre || '',
     ledger: input.ledger || '',
-    amountType: input.amountType,
+    // Defaulted here rather than by each caller: a master saved before amount types existed has none,
+    // and both SDKs reject `undefined` — the cron's create() threw on every such master, every night.
+    amountType: input.amountType || 'Fixed',
     title: `${input.title} — ${cycle.label}`,
-    category: input.category,
-    vendorName: input.vendorName,
+    category: input.category || '',
+    vendorName: input.vendorName || '',
     description: input.description || '',
     accountNumber: input.accountNumber || '',
     billingPeriodStart: cycle.billingPeriodStart,

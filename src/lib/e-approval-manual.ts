@@ -214,13 +214,16 @@ export const E_APPROVAL_MANUAL: ManualPart[] = [
               ['Overview', 'The proposal and all its filing details.'],
               [
                 'Workflow',
-                'The chain as it actually happened. Verifications appear indented inside the approver who asked for them, with the arrow back.',
+                'The chain as it actually happened, drawn as a tree. Everyone who held the file is a step of their own — a forward adds the next person underneath — and the covering note, instruction or remark each of them wrote appears at their step, with their name and the time. Verifications and clarifications appear indented inside the person who asked for them, with the arrow back.',
               ],
               ['Comments', 'Discussion. Nothing here can be deleted.'],
               ['Attachments', 'Files, grouped by the version of the request they belong to.'],
               ['Activity', 'The full audit trail, append-only.'],
               ['Versions', 'Superseded content, with the approvals that had been given against it.'],
             ],
+          ),
+          p(
+            'Print produces the Approval Note: the proposal, then a row for every person the file passed through with what they wrote, then the remarks and attachments. A wide proposal table is shrunk to fit the width of A4 portrait — it never runs off the edge of the paper, whatever the print dialog\'s scaling is set to. When shrinking would make the figures hard to read, the print bar says so and offers landscape instead.',
           ),
         ],
       },
@@ -695,26 +698,30 @@ export const E_APPROVAL_MANUAL: ManualPart[] = [
         number: '3.7',
         title: 'Policies',
         audience: 'administrator',
-        summary: 'Change control, approver powers, recall, reminders and numbering.',
+        summary: 'Six tabs: approver powers, who to send to, editing after approval, deadlines, undo and numbering.',
         route: '/e-approval/settings/policies',
         blocks: [
-          p('Five groups of settings, all held in one record and saved together.'),
-          p('Change control — which edits invalidate approvals already given.'),
+          p(
+            'Six tabs of settings, all held in one record and saved together. A tab with unsaved changes carries an orange dot, and the bar at the bottom names every tab you have changed — click a name to go back to it — until you save or discard. The tab you are on is kept in the page address, so a link to …/policies#reminders opens straight on that tab.',
+          ),
+          p(
+            'What approvers can do — organisation-wide ceilings: sending for further verification and how many levels deep, returning to any earlier step, whether a return goes through the requester, Approve & Complete, and automatic sign-off of a stage that lands on the requester. A workflow stage can switch any of these off for itself; it can never switch one on that is off here.',
+          ),
+          p(
+            'Who to send to — the choices offered when somebody picks an approver on the request form or in the Forward, Delegate, Add approver and verification dialogs: Person, Department, Project and Designation. Person is always on, because a form on which nobody can be named cannot be submitted. Workflows and the approval matrix keep all four, so switching one off here never breaks a workflow that already uses it.',
+          ),
+          p(
+            'Editing after approval — which fields, when changed, cancel the approvals already given. Small amount changes allowed treats a change within that percentage as a correction; 0 means any change counts. Restart-from decides where approval begins again.',
+          ),
           warn(
-            'Leave Amount ticked unless you have a specific reason. With it off, a figure can be raised after approval without superseding anything.',
+            'Leave Amount selected unless you have a specific reason. With it off, a figure can be raised after approval without cancelling anything.',
           ),
           p(
-            'Amount tolerance treats a change within that percentage as a correction rather than a new proposal; 0 means any change supersedes. Restart-from decides where the chain resumes afterwards.',
+            'Deadlines & reminders — the default time per step, and the reminder schedule, measured from when a step started waiting and excluding time on hold. "Use recommended" restores the standard schedule; "Run now" processes it on demand. Saving with no rules at all uses the recommended schedule.',
           ),
+          p('Undoing actions — recall and reversal, their on/off switches and time limits. See 2.5.'),
           p(
-            'What approvers may do — organisation-wide ceilings on nesting depth, return-to-any-step and approve-&-complete. A workflow stage can switch any of these off for itself; it can never switch one on that is off here.',
-          ),
-          p('Recall & reverse — the two windows and their on/off switches. See 2.5.'),
-          p(
-            'Reminders & escalation — the ladder, measured from when a step became active and excluding time paused. Each rule carries a level from Level 1 to Management. "Run now" processes it on demand.',
-          ),
-          p(
-            'Numbering — prefix, separator, digits, and whether the department code appears. The example updates as you type.',
+            'Reference numbers — prefix, separator, digits, and whether the department code appears. The example updates as you type.',
           ),
         ],
       },
@@ -762,15 +769,15 @@ export const E_APPROVAL_MANUAL: ManualPart[] = [
         number: '3.9',
         title: 'Scheduling the reminder sweep',
         audience: 'administrator',
-        summary: 'Reminders and escalations need a scheduler.',
+        summary: 'Reminders and escalations run every hour.',
         blocks: [
           p(
-            'The endpoint /api/e-approval/escalations processes the ladder. It is safe to call as often as you like — each step records which rules have already fired, so nothing is sent twice.',
+            'The endpoint /api/e-approval/escalations processes the ladder. It is scheduled to run every hour (at twenty past) in vercel.json, alongside the other modules\' scheduled jobs. It is safe to call as often as you like — each step records which rules have already fired, so nothing is sent twice. The "Run now" button on the Policies page runs the same sweep on demand.',
           ),
           warn(
-            'Until this is scheduled, no reminder or escalation is ever sent. The "Run now" button on the Policies page is a manual substitute, not a replacement.',
+            'On the first run after the schedule was switched on, a file that had already been waiting a long time receives every reminder it had missed at once — a file stuck for four days produces its reminders, its escalation to the HOD and its notice to the requester together. Expect that burst once; afterwards each rule fires at its own time.',
           ),
-          note('Guard the endpoint with the CRON_SECRET environment variable if it is reachable publicly.'),
+          note('Set the CRON_SECRET environment variable in the hosting project. Without it the endpoint answers anyone who calls it; with it, only the scheduler can.'),
         ],
       },
       {
@@ -815,7 +822,7 @@ export const E_APPROVAL_MANUAL: ManualPart[] = [
             'Notifications reach the in-app bell and whatever channels the central notification system already serves. There is no WhatsApp integration.',
             'Comments do not support voice notes.',
             'The workflow builder is a structured list editor, not a drag-and-drop canvas.',
-            'No other module yet routes its approvals through this engine, though it is built to accept them.',
+            'Recurring Payments raises its approvals through this engine; the other modules do not yet, though it is built to accept them.',
             'Signing a document places a visual mark, not a certificate-backed digital signature (DSC) — see 1.8.',
           ),
         ],

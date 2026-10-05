@@ -128,10 +128,18 @@ export function WorkflowTemplatesPanel({
       ]);
       setRows(templateRows.sort((a, b) => a.name.localeCompare(b.name)));
       setTypes(typeRows);
+    } catch (error) {
+      // Said out loud: an empty list here reads as "nothing configured", and an admin who
+      // believes that starts re-creating what is already there.
+      toast({
+        variant: 'destructive',
+        title: 'Could not load workflows',
+        description: error instanceof Error ? error.message : 'Something went wrong.',
+      });
     } finally {
       setIsLoading(false);
     }
-  }, [serviceActor?.organizationId]);
+  }, [serviceActor?.organizationId, toast]);
 
   useEffect(() => {
     void load();

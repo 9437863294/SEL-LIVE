@@ -37,15 +37,36 @@ export default function EditEApprovalPage() {
   const [detail, setDetail] = useState<EApprovalDetail | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
-  const load = useCallback(async () => {
+  const [loadError, setLoadError] = useState<string | null>(null);
+
+  /*
+   * A failed read used to leave this page on its loading skeleton forever: there was no catch, so
+   * `isLoading` never came back down. And had it come down, the empty branch below says "Approval
+   * not found — it may have been deleted", which is the wrong thing to tell somebody whose network
+   * dropped or whose permission was refused. The error is kept apart from "not found" for that reason.
+   *
+   * Every load still shows the skeleton, including the reload after a save. That is deliberate: it
+   * remounts the form on the freshly saved record, version number included, rather than leaving the
+   * form holding the version it was opened with.
+   */
+  const load = useCallback(async ({ initial = false }: { initial?: boolean } = {}) => {
     if (!approvalId) return;
-    setIsLoading(true);
-    setDetail(await loadEApprovalDetail(approvalId));
-    setIsLoading(false);
+    // The first load starts from the initial state already; only a reload needs to reset it.
+    if (!initial) {
+      setIsLoading(true);
+      setLoadError(null);
+    }
+    try {
+      setDetail(await loadEApprovalDetail(approvalId));
+    } catch (error) {
+      setLoadError(error instanceof Error ? error.message : 'Something went wrong.');
+    } finally {
+      setIsLoading(false);
+    }
   }, [approvalId]);
 
   useEffect(() => {
-    void load();
+    void load({ initial: true });
   }, [load]);
 
   if (isLoading) {
@@ -54,6 +75,24 @@ export default function EditEApprovalPage() {
         <Skeleton className="h-20 w-full" />
         <Skeleton className="h-96 w-full" />
       </div>
+    );
+  }
+
+  // Only when there is nothing to show. A reload that fails after a save keeps the page it already
+  // has, rather than replacing a working form with an error.
+  if (loadError && !detail) {
+    return (
+      <Card>
+        <CardHeader>
+          <CardTitle>Could not load this approval</CardTitle>
+          <CardDescription>{loadError}</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <Button size="sm" variant="outline" onClick={() => void load()}>
+            Try again
+          </Button>
+        </CardContent>
+      </Card>
     );
   }
 
@@ -159,7 +198,7 @@ export default function EditEApprovalPage() {
           // This screen only opens on a draft or a returned request, so a document here is always
           // still correctable — which is the whole reason the requester was sent back here.
           canRevise
-          onChanged={load}
+          onChanged={() => void load()}
         />
       </FormSection>
     </div>

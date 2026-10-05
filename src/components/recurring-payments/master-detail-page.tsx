@@ -240,20 +240,25 @@ export default function RecurringMasterDetailPage({
   const generate = () =>
     guarded("Generation", async () => {
       if (!master || !user || !nextCycle || archived) return;
-      const outcome = await generateMasterCycle(
-        master,
-        nextCycle,
-        await loadManualGenerationContext(organizationId, user),
-      );
+      const context = await loadManualGenerationContext(organizationId, user);
+      // Re-resolved on the calendar just loaded: `nextCycle` may have been computed on the Mon–Fri
+      // fallback before the page's own calendar arrived, and a "last working day" due date must
+      // match the one the cron would write.
+      const cycle =
+        actionableRecurringCycle(master, new Date(), {
+          ...context.scheduleOptions,
+          isGenerated: generatedCyclePredicate(organizationId, master.id, obligationIds),
+        }) ?? nextCycle;
+      const outcome = await generateMasterCycle(master, cycle, context);
       if (outcome.kind === "exists") {
         toast({
-          title: `The cycle ${nextCycle.billingPeriodStart} to ${nextCycle.billingPeriodEnd} already exists`,
+          title: `The cycle ${cycle.billingPeriodStart} to ${cycle.billingPeriodEnd} already exists`,
           variant: "destructive",
         });
         return;
       }
       toast({
-        title: `Payment generated for ${nextCycle.billingPeriodStart} to ${nextCycle.billingPeriodEnd}`,
+        title: `Payment generated for ${cycle.billingPeriodStart} to ${cycle.billingPeriodEnd}`,
         description: outcome.activationStage
           ? `Sent to ${outcome.activationStage} for action.`
           : outcome.noAssignee

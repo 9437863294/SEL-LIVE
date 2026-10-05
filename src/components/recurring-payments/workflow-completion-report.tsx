@@ -104,7 +104,9 @@ function buildStepReport(
   };
 
   rows.forEach(payment => {
-    const history = payment.workflowHistory || [];
+    // In timestamp order, so "the latest outcome wins" below really is the latest (a stable sort
+    // keeps the stored order for entries sharing a timestamp).
+    const history = [...(payment.workflowHistory || [])].sort((a, b) => toMillis(a.timestamp) - toMillis(b.timestamp));
     let previousTime = toMillis(payment.workflowStartedAt) || toMillis(payment.createdAt) || 0;
     const countedTotal = new Set<string>();
     // Total counts each payment once per step/user, so Done/On time/Rejected must too — a step
@@ -134,11 +136,16 @@ function buildStepReport(
           const stepDeadlineMillis = addBusinessHours(new Date(previousTime), step.tat, workingHours, holidays).getTime();
           onTime = entryMillis <= stepDeadlineMillis;
         }
+        // Completed and rejected are one outcome, not two sticky flags — otherwise a rejected then
+        // resubmitted step counts in both Done and Rejected, and the two exceed Total.
         outcome.completed = true;
+        outcome.rejected = false;
         outcome.onTime = onTime;
         completions.push({ paymentId: payment.id, title: payment.title, vendorName: payment.vendorName, stepName: entry.stepName, action: entry.action, userName, comment: entry.comment, timestamp: entry.timestamp, onTime });
       } else if (isRejection) {
         outcome.rejected = true;
+        outcome.completed = false;
+        outcome.onTime = null;
         completions.push({ paymentId: payment.id, title: payment.title, vendorName: payment.vendorName, stepName: entry.stepName, action: entry.action, userName, comment: entry.comment, timestamp: entry.timestamp, onTime: null });
       }
       if (isCompletion || isRejection) previousTime = entryMillis || previousTime;

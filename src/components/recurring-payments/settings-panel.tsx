@@ -84,6 +84,7 @@ const parseNumbers = (value: string) =>
     ),
   ].sort((a, b) => b - a);
 const clampVariance = (value: number) => Math.min(1000, Math.max(1, value));
+const clampPeriodAdjustment = (value: number) => Math.min(31, Math.max(0, Math.round(value)));
 
 /** A rule's upper bound — 0 or blank means "no limit", exactly as the matcher reads it. */
 const ruleCeiling = (rule: Pick<ApprovalRule, "maxAmount">) =>
@@ -125,7 +126,7 @@ export default function RecurringPaymentSettingsPanel({
   const { users } = useAuth();
   const { can } = useAuthorization();
   const { toast } = useToast();
-  const { projects } = useGlobalScopes();
+  const { projects, loading: scopesLoading } = useGlobalScopes();
   const [settings, setSettings] = useState<RecurringPaymentSettings>({
     ...DEFAULT_RECURRING_PAYMENT_SETTINGS,
     organizationId,
@@ -141,6 +142,9 @@ export default function RecurringPaymentSettingsPanel({
   );
   const [varianceText, setVarianceText] = useState(
     String(DEFAULT_RECURRING_PAYMENT_SETTINGS.controls.varianceWarningPercent),
+  );
+  const [periodAdjustmentText, setPeriodAdjustmentText] = useState(
+    String(DEFAULT_RECURRING_PAYMENT_SETTINGS.controls.billingPeriodAdjustmentDays),
   );
   const canEdit = can("Edit", "Recurring Payments.Settings");
 
@@ -161,6 +165,7 @@ export default function RecurringPaymentSettingsPanel({
       setDaysAfterText(merged.notifications.daysAfter.join(", "));
       setRecipientsText(merged.notifications.recipients.join(", "));
       setVarianceText(String(merged.controls.varianceWarningPercent));
+      setPeriodAdjustmentText(String(merged.controls.billingPeriodAdjustmentDays));
     });
     const stopRules = onSnapshot(
       query(
@@ -216,7 +221,12 @@ export default function RecurringPaymentSettingsPanel({
                     varianceText.trim() && Number.isFinite(Number(varianceText))
                       ? clampVariance(Number(varianceText))
                       : settings.controls.varianceWarningPercent,
-                  billingPeriodAdjustmentDays: Math.min(31, Math.max(0, Math.round(Number(settings.controls.billingPeriodAdjustmentDays) || 0))),
+                  // Held as text too: a cleared box used to read as Number('') = 0, which locks
+                  // every billing period. Blank or non-numeric keeps the previous value.
+                  billingPeriodAdjustmentDays:
+                    periodAdjustmentText.trim() && Number.isFinite(Number(periodAdjustmentText))
+                      ? clampPeriodAdjustment(Number(periodAdjustmentText))
+                      : settings.controls.billingPeriodAdjustmentDays,
                 },
               }
             : settings;
@@ -231,6 +241,7 @@ export default function RecurringPaymentSettingsPanel({
       );
       setSettings(valueToSave);
       setVarianceText(String(valueToSave.controls.varianceWarningPercent));
+      setPeriodAdjustmentText(String(valueToSave.controls.billingPeriodAdjustmentDays));
       toast({
         title: `${section === "organization" ? "Organization controls" : section[0].toUpperCase() + section.slice(1)} saved`,
       });
@@ -342,8 +353,9 @@ export default function RecurringPaymentSettingsPanel({
                         Edit
                       </Button>
                     )}
+                    {/* Held until projects load: the overlap check resolves legacy project names to ids. */}
                     <Switch
-                      disabled={!canEdit}
+                      disabled={!canEdit || scopesLoading}
                       checked={rule.active}
                       onCheckedChange={(active) => toggleRule(rule, active)}
                     />
@@ -656,16 +668,12 @@ export default function RecurringPaymentSettingsPanel({
                   type="number"
                   min={0}
                   max={31}
-                  value={settings.controls.billingPeriodAdjustmentDays}
-                  onChange={(e) =>
-                    setSettings((s) => ({
-                      ...s,
-                      controls: {
-                        ...s.controls,
-                        billingPeriodAdjustmentDays: Number(e.target.value),
-                      },
-                    }))
-                  }
+                  value={periodAdjustmentText}
+                  onChange={(e) => setPeriodAdjustmentText(e.target.value)}
+                  onBlur={() => {
+                    if (periodAdjustmentText.trim() && Number.isFinite(Number(periodAdjustmentText)))
+                      setPeriodAdjustmentText(String(clampPeriodAdjustment(Number(periodAdjustmentText))));
+                  }}
                 />
               </SettingField>
               {canEdit && (
@@ -707,7 +715,7 @@ function ApprovalRuleDialog({
   rules: ApprovalRule[];
 }) {
   const { users } = useAuth();
-  const { projects, activeProjects } = useGlobalScopes();
+  const { projects, activeProjects, loading: scopesLoading } = useGlobalScopes();
   const { toast } = useToast();
   const { field } = useFieldControl("approvalRule");
   const [saving, setSaving] = useState(false);
@@ -1007,7 +1015,8 @@ function ApprovalRuleDialog({
             <Button type="button" variant="outline" onClick={onClose}>
               Cancel
             </Button>
-            <Button disabled={saving}>
+            {/* Held until projects load: the overlap check resolves legacy project names to ids. */}
+            <Button disabled={saving || scopesLoading}>
               {saving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
               {rule ? "Save changes" : "Create rule"}
             </Button>

@@ -101,6 +101,5 @@ export function useEApprovalAnalytics(filter: EApprovalAnalyticsFilter = {}): An
       loadedAt: data?.loadedAt ?? null,
       reload,
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [data, filterKey, settings, isLoading, reload]);
 }

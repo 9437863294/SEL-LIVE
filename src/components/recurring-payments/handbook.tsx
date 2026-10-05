@@ -298,7 +298,7 @@ export default function RecurringPaymentsHandbook() {
           <p className="mt-5 rounded-lg bg-muted p-3 text-xs text-muted-foreground">
             At any actionable step, "Return for Correction" sends the obligation back one step, "Reject"/"Dispute"
             stop or flag it, and "On Hold" pauses it without deciding. Closed and Rejected payments are final — this
-            module has no reopen action yet, whatever "Allow authorized reopening" is set to.
+            module has no reopen action yet, whatever “Allow authorized reopening” is set to.
           </p>
         </CardContent>
       </Card>

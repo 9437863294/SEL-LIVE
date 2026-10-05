@@ -63,11 +63,12 @@ export default function RecurringPaymentReports() {
     [payments, filters, activeProjects, activeDepartments],
   );
 
-  // "Non-void" excludes Cancelled/Waived — those never happened, so counting them into expense
-  // exposure (category/vendor totals, the monthly trend) overstated spend. Draft/Scheduled
+  // "Non-void" excludes Cancelled/Waived/Rejected (as Vendor Spend does) — those never happened,
+  // so counting them into expense exposure (category/vendor totals, the monthly trend) overstated
+  // spend. Draft/Scheduled
   // obligations are still included here (at their expected amount) since they're a real forecast,
   // not yet-realized spend — that distinction is what "open" (below) narrows further for ageing.
-  const nonVoid = useMemo(() => scopedPayments.filter(p => !['Cancelled', 'Waived'].includes(p.status)), [scopedPayments]);
+  const nonVoid = useMemo(() => scopedPayments.filter(p => !['Cancelled', 'Waived', 'Rejected'].includes(p.status)), [scopedPayments]);
   const open = useMemo(() => scopedPayments.filter(isOpenObligation), [scopedPayments]);
   const now = new Date();
   const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
@@ -254,7 +255,7 @@ export default function RecurringPaymentReports() {
       <TableCard
         title="Overdue ageing"
         icon={BarChart3}
-        description="Outstanding obligations grouped by days past due"
+        description="Outstanding obligations grouped by days overdue (past due date and grace)"
         scroll="natural"
       >
         <Table>

@@ -109,10 +109,14 @@ export default function EApprovalDashboardPage() {
   const { rows, engineActor, serviceActor, isLoading, hasLoadedOnce, isRevalidating, lastUpdated, error } =
     useEApprovalWorkload();
 
-  const now = useMemo(() => new Date(), [lastUpdated]);
+  // "Now" as of the data on screen: the moment the last snapshot arrived, so every SLA and agenda
+  // figure below is measured against the same instant the rows were read at.
+  const now = useMemo(() => lastUpdated ?? new Date(), [lastUpdated]);
 
   const queue = useMemo(() => (engineActor ? eApprovalWorkQueue(rows, engineActor, now) : null), [rows, engineActor, now]);
-  const withMe = queue?.rows ?? [];
+  // Memoised so the empty fallback is one stable array, not a new one each render re-running every
+  // memo below while the actor is still loading.
+  const withMe = useMemo(() => queue?.rows ?? [], [queue]);
 
   const breaches = useMemo(() => projectEApprovalBreaches(withMe, now, [24]), [withMe, now]);
   const agenda = useMemo(() => eApprovalAgenda(withMe, now), [withMe, now]);

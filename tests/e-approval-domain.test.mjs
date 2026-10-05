@@ -1582,6 +1582,24 @@ test('the pending label names who is holding the file', () => {
   assert.equal(eApprovalPendingLabel(state.request, state.steps), 'Rejected');
 });
 
+test('a file on hold says who is holding it, not just that it is held', () => {
+  // The register's "Pending with" column read plain "On Hold" — a stuck file with no name on it.
+  let state = submitted();
+  state = act(state, {
+    kind: 'Hold',
+    actor: { userId: 'u-mgr' },
+    reason: 'Waiting for the revised quotation',
+    now: '2026-08-22T11:00:00.000Z',
+  });
+  assert.equal(state.request.status, 'On Hold');
+  assert.equal(eApprovalPendingLabel(state.request, state.steps), 'On hold with Manager');
+  // Stored on the request too, which is what the register actually reads.
+  assert.equal(state.request.pendingLabel, 'On hold with Manager');
+  // Resuming puts it straight back to an ordinary pending label.
+  state = act(state, { kind: 'Resume', actor: { userId: 'u-mgr' }, now: '2026-08-22T12:00:00.000Z' });
+  assert.equal(eApprovalPendingLabel(state.request, state.steps), 'Pending with Manager');
+});
+
 test('derived status never disagrees with the live steps', () => {
   const state = submitted();
   assert.equal(deriveEApprovalStatus(state.steps), 'Pending Approval');

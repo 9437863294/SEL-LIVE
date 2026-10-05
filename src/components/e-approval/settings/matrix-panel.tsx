@@ -96,10 +96,18 @@ export function ApprovalMatrixPanel({
       );
       setTemplates(templateRows);
       setTypes(typeRows);
+    } catch (error) {
+      // Said out loud: an empty list here reads as "nothing configured", and an admin who
+      // believes that starts re-creating what is already there.
+      toast({
+        variant: 'destructive',
+        title: 'Could not load the approval matrix',
+        description: error instanceof Error ? error.message : 'Something went wrong.',
+      });
     } finally {
       setIsLoading(false);
     }
-  }, [serviceActor?.organizationId]);
+  }, [serviceActor?.organizationId, toast]);
 
   useEffect(() => {
     void load();

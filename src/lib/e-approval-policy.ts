@@ -2276,6 +2276,15 @@ export function eApprovalPendingLabel(
   const active = activeEApprovalSteps(steps);
   if (!active.length) {
     if (request.status === 'Returned') return `Pending with ${request.requesterName || 'requester'}`;
+    // A hold pauses the step rather than closing it, so the file is still on that person's desk. The
+    // register's "Pending with" column used to read just "On Hold" here — which says a file is stuck
+    // without saying with whom, and "with whom" is the whole question that column exists to answer.
+    const held = steps.filter((step) => step.status === 'On Hold');
+    if (held.length) {
+      const holders = Array.from(new Set(held.map((step) => describeEApprovalAssignment(step.assignment))));
+      const extraHolders = holders.length > 2 ? ` +${holders.length - 2}` : '';
+      return `On hold with ${holders.slice(0, 2).join(' & ')}${extraHolders}`;
+    }
     return request.status;
   }
   const names = Array.from(new Set(active.map((step) => describeEApprovalAssignment(step.assignment))));
