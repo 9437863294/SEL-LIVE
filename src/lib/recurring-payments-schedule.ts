@@ -512,6 +512,65 @@ export function describeRecurrence(master: RecurrenceRuleInput): string {
   ].join(' · ');
 }
 
+/* ------------------------------------------------------------------------------------------------
+ * Billing-period adjustment at bill collection
+ * ---------------------------------------------------------------------------------------------- */
+
+/** Default for `controls.billingPeriodAdjustmentDays`: how far either end of a period may move. */
+export const DEFAULT_BILLING_PERIOD_ADJUSTMENT_DAYS = 5;
+
+/** A billing period as two `YYYY-MM-DD` dates. */
+export interface BillingPeriod {
+  start: string;
+  end: string;
+}
+
+const isRealDate = (value: string) => {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
+  const [year, month, day] = value.split('-').map(Number);
+  const date = new Date(year, month - 1, day);
+  return date.getFullYear() === year && date.getMonth() === month - 1 && date.getDate() === day;
+};
+
+/**
+ * The window each end of a billing period may be moved within when the bill is collected: `days`
+ * either side of the period the obligation was *generated* with.
+ *
+ * Measured from the generated period, never from the current one — otherwise a bill returned for
+ * correction could be nudged another five days on every pass and drift arbitrarily far from the
+ * cycle it belongs to.
+ */
+export function billingPeriodAdjustmentWindow(generated: BillingPeriod, days: number) {
+  const span = Math.max(0, Math.round(Number(days) || 0));
+  const shift = (value: string, by: number) => recurringDateOnly(addDays(localDate(value), by));
+  return {
+    days: span,
+    startMin: shift(generated.start, -span),
+    startMax: shift(generated.start, span),
+    endMin: shift(generated.end, -span),
+    endMax: shift(generated.end, span),
+  };
+}
+
+/**
+ * Why a proposed billing period is not acceptable, or null when it is. Shared by the Submit Bill
+ * form and its transaction, so the browser's check and the one that guards the write cannot drift.
+ */
+export function billingPeriodAdjustmentError(generated: BillingPeriod, proposed: BillingPeriod, days: number): string | null {
+  if (!isRealDate(proposed.start) || !isRealDate(proposed.end)) return 'Enter both billing period dates.';
+  if (proposed.start > proposed.end) return 'The billing period cannot end before it starts.';
+  const window = billingPeriodAdjustmentWindow(generated, days);
+  if (proposed.start < window.startMin || proposed.start > window.startMax)
+    return window.days
+      ? `The period start can only move ${window.days} day(s) either way — between ${window.startMin} and ${window.startMax}.`
+      : 'The billing period cannot be changed.';
+  if (proposed.end < window.endMin || proposed.end > window.endMax)
+    return window.days
+      ? `The period end can only move ${window.days} day(s) either way — between ${window.endMin} and ${window.endMax}.`
+      : 'The billing period cannot be changed.';
+  return null;
+}
+
 /** The two dates an obligation's timing is read from; a structural subset of `PaymentObligation`. */
 export interface ObligationTimingDates {
   dueDate: string;

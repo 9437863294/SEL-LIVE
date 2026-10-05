@@ -4,6 +4,8 @@ import assert from 'node:assert/strict';
 // Firestore-client helper that only resolves inside the bundler.
 import {
   actionableRecurringCycle,
+  billingPeriodAdjustmentError,
+  billingPeriodAdjustmentWindow,
   buildRecurringCycle,
   buildRecurringCycleSchedule,
   describeRecurrence,
@@ -712,4 +714,29 @@ test('daysUntilDate is a plain local-calendar day count', () => {
   assert.equal(daysUntilDate('2026-09-18', asOf('2026-09-18')), 0);
   assert.equal(daysUntilDate('2026-10-01', asOf('2026-09-18')), 13, 'counts across a month boundary');
   assert.equal(daysUntilDate('2026-09-11', asOf('2026-09-18')), -7);
+});
+
+test('bill collection may move either end of the billing period up to N days', () => {
+  const generated = { start: '2026-09-01', end: '2026-09-30' };
+  assert.deepEqual(billingPeriodAdjustmentWindow(generated, 5), {
+    days: 5, startMin: '2026-08-27', startMax: '2026-09-06', endMin: '2026-09-25', endMax: '2026-10-05',
+  });
+  assert.equal(billingPeriodAdjustmentError(generated, { start: '2026-08-27', end: '2026-10-05' }, 5), null, 'the limits themselves are allowed');
+  assert.equal(billingPeriodAdjustmentError(generated, generated, 5), null, 'unchanged is always fine');
+  assert.match(billingPeriodAdjustmentError(generated, { start: '2026-08-26', end: '2026-09-30' }, 5), /start can only move 5 day/);
+  assert.match(billingPeriodAdjustmentError(generated, { start: '2026-09-01', end: '2026-10-06' }, 5), /end can only move 5 day/);
+});
+
+test('a billing period adjustment is checked against the generated period, not the last edit', () => {
+  // Already moved +5 once: moving it again from there must still be bounded by the original.
+  const generated = { start: '2026-09-01', end: '2026-09-30' };
+  assert.match(billingPeriodAdjustmentError(generated, { start: '2026-09-08', end: '2026-09-30' }, 5), /between 2026-08-27 and 2026-09-06/);
+});
+
+test('a billing period adjustment rejects reversed, malformed and disabled changes', () => {
+  const generated = { start: '2026-09-01', end: '2026-09-30' };
+  assert.match(billingPeriodAdjustmentError({ start: '2026-09-01', end: '2026-09-03' }, { start: '2026-09-05', end: '2026-09-02' }, 5), /cannot end before it starts/);
+  assert.match(billingPeriodAdjustmentError(generated, { start: '2026-02-30', end: '2026-09-30' }, 5), /Enter both/);
+  assert.match(billingPeriodAdjustmentError(generated, { start: '2026-09-02', end: '2026-09-30' }, 0), /cannot be changed/);
+  assert.equal(billingPeriodAdjustmentError(generated, generated, 0), null, 'a window of 0 still accepts the period as generated');
 });

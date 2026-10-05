@@ -216,6 +216,7 @@ export default function RecurringPaymentSettingsPanel({
                     varianceText.trim() && Number.isFinite(Number(varianceText))
                       ? clampVariance(Number(varianceText))
                       : settings.controls.varianceWarningPercent,
+                  billingPeriodAdjustmentDays: Math.min(31, Math.max(0, Math.round(Number(settings.controls.billingPeriodAdjustmentDays) || 0))),
                 },
               }
             : settings;
@@ -644,6 +645,27 @@ export default function RecurringPaymentSettingsPanel({
                     if (varianceText.trim() && Number.isFinite(Number(varianceText)))
                       setVarianceText(String(clampVariance(Number(varianceText))));
                   }}
+                />
+              </SettingField>
+              <SettingField
+                label="Billing period adjustment (days)"
+                help="How far either end of a billing period may be moved at bill collection, from the period as generated. 0 locks the period."
+              >
+                <Input
+                  className="max-w-xs"
+                  type="number"
+                  min={0}
+                  max={31}
+                  value={settings.controls.billingPeriodAdjustmentDays}
+                  onChange={(e) =>
+                    setSettings((s) => ({
+                      ...s,
+                      controls: {
+                        ...s.controls,
+                        billingPeriodAdjustmentDays: Number(e.target.value),
+                      },
+                    }))
+                  }
                 />
               </SettingField>
               {canEdit && (

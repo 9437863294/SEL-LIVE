@@ -64,7 +64,7 @@ const lifecycle: { title: string; who: string; detail: string }[] = [
     title: 'Bill Collection',
     who: 'Bill / Payment Owner',
     detail:
-      'The assigned owner submits the bill number, bill date and final amount, and uploads the bill copy (required at this step). They can also raise a Dispute or put the payment On Hold instead.',
+      'The assigned owner submits the bill number, bill date and final amount, and uploads the bill copy (required at this step). If the bill covers slightly different dates, they can move the billing period start and end up to 5 days either way of the generated period (the limit is set in Settings › Organization). They can also raise a Dispute or put the payment On Hold instead.',
   },
   {
     title: 'Bill Verification',
@@ -199,7 +199,7 @@ export default function RecurringPaymentsHandbook() {
               <StepList
                 items={[
                   { title: 'Open your task queue', detail: 'Go to Bill Collection in the left menu (your organization may have renamed it) and switch to "My pending tasks".' },
-                  { title: 'Submit the bill', detail: 'Click "Submit Bill" on the payment, enter the bill number, bill date and final amount, then upload the bill copy — it is required at this step.' },
+                  { title: 'Submit the bill', detail: 'Click "Submit Bill" on the payment, enter the bill number, bill date and final amount — and adjust the billing period dates if the bill covers slightly different ones (up to 5 days either way, by default) — then upload the bill copy, which is required at this step.' },
                   { title: 'Or flag a problem', detail: 'Use "Dispute" if the vendor amount or details are wrong, or "On Hold" to pause it without rejecting.' },
                   { title: 'Track what’s due', detail: 'Check Upcoming and Overdue regularly — reminders are sent automatically before and after the due date based on Settings › Notifications.' },
                 ]}

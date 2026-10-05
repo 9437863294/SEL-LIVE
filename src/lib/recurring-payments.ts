@@ -1,5 +1,6 @@
 import type { Timestamp } from 'firebase/firestore';
 import type { RecurrenceRuleInput, RecurringCycle } from './recurring-payments-schedule';
+import { DEFAULT_BILLING_PERIOD_ADJUSTMENT_DAYS } from './recurring-payments-schedule';
 
 export { loadWorkingCalendar } from './working-hours-client';
 // The schedule math lives in its own dependency-free module (see recurring-payments-schedule.ts)
@@ -7,6 +8,9 @@ export { loadWorkingCalendar } from './working-hours-client';
 export {
   actionableRecurringCycle,
   BILL_DATE_RULES,
+  billingPeriodAdjustmentError,
+  billingPeriodAdjustmentWindow,
+  DEFAULT_BILLING_PERIOD_ADJUSTMENT_DAYS,
   buildRecurringCycle,
   buildRecurringCycleSchedule,
   daysUntilDate,
@@ -18,6 +22,7 @@ export {
   recurrenceLeadDays,
   recurringDateOnly,
   type BillDateRule,
+  type BillingPeriod,
   type DueDateRule,
   type LegacyDueDateRule,
   type ObligationTimingDates,
@@ -181,6 +186,11 @@ export interface RecurringPaymentSettings {
     requireTransactionReference: boolean;
     allowAuthorizedReopen: boolean;
     varianceWarningPercent: number;
+    /**
+     * How many days either end of a billing period may be moved when the bill is collected, measured
+     * from the period the obligation was generated with. 0 locks the period.
+     */
+    billingPeriodAdjustmentDays: number;
   };
   eApproval: RecurringEApprovalSettings;
 }
@@ -235,6 +245,7 @@ export const DEFAULT_RECURRING_PAYMENT_SETTINGS: RecurringPaymentSettings = {
     lockClosedPayments: true, requireBillBeforeApproval: true,
     requireTransactionReference: true, allowAuthorizedReopen: false,
     varianceWarningPercent: 20,
+    billingPeriodAdjustmentDays: DEFAULT_BILLING_PERIOD_ADJUSTMENT_DAYS,
   },
   eApproval: DEFAULT_RECURRING_E_APPROVAL_SETTINGS,
 };
@@ -392,6 +403,12 @@ export interface PaymentObligation {
   vendorName: string;
   billingPeriodStart: string;
   billingPeriodEnd: string;
+  /**
+   * The period as generated, stamped the first time bill collection moves it. Every later adjustment
+   * is bounded against these, not against the last edit. Absent while the period is unchanged.
+   */
+  generatedBillingPeriodStart?: string;
+  generatedBillingPeriodEnd?: string;
   /** When the vendor's bill is expected — distinct from `billDate`, which is the date on the bill actually received. */
   expectedBillDate?: string;
   dueDate: string;

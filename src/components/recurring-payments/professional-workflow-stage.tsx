@@ -15,7 +15,7 @@ import {
   where,
 } from 'firebase/firestore';
 import { getDownloadURL, ref as storageRef, uploadBytes } from 'firebase/storage';
-import { AlertTriangle, CheckCircle2, Clock3, Eye, FileText, Loader2, MoreHorizontal, ShieldCheck } from 'lucide-react';
+import { AlertTriangle, CheckCircle2, ChevronLeft, ChevronRight, Clock3, Eye, FileText, Loader2, MoreHorizontal, ShieldCheck } from 'lucide-react';
 import { db } from '@/lib/firebase';
 import { storage } from '@/lib/firebase-storage';
 import { useAuth } from '@/components/auth/AuthProvider';
@@ -24,6 +24,9 @@ import { createExpenseRequest } from '@/ai';
 import type { AccountHead, Department, SubAccountHead } from '@/lib/types';
 import {
   BANK_ACCOUNT_REQUIRED_MODES,
+  billingPeriodAdjustmentError,
+  billingPeriodAdjustmentWindow,
+  daysUntilDate,
   DEFAULT_RECURRING_PAYMENT_SETTINGS,
   DEFAULT_RECURRING_WORKFLOW,
   isOpenObligation,
@@ -65,6 +68,11 @@ import { ACTIVITY_MODULES } from '@/lib/activity-modules';
 import { syncRecurringPaymentApprovalInBackground } from '@/lib/recurring-payments-e-approval-service';
 import { PaymentEApprovalCard } from './e-approval-link-card';
 
+/** The billing period an obligation was generated with — the fixed point every adjustment is bounded by. */
+const generatedPeriodOf = (payment: PaymentObligation) => ({
+  start: payment.generatedBillingPeriodStart || payment.billingPeriodStart,
+  end: payment.generatedBillingPeriodEnd || payment.billingPeriodEnd,
+});
 const FORWARD_ACTIONS = ['Submit Bill', 'Verify', 'Approve', 'Record Payment', 'Close', 'Create Expense Request'];
 const COMMENT_REQUIRED = ['Return for Correction', 'Reject', 'Dispute', 'On Hold', 'Payment Failed'];
 const VERIFICATION_CHECKLIST = [
@@ -176,6 +184,19 @@ export default function ProfessionalRecurringWorkflowStage({ stageId }: { stageI
     const billNumber = String(form.get('billNumber') || selected.billNumber || '').trim();
     const billReceivedDate = String(form.get('billReceivedDate') || selected.billReceivedDate || '').trim();
     if (action === 'Submit Bill' && (billAmount <= 0 || !billNumber || !billReceivedDate)) return toast({ title: 'Bill number, received date, and final amount are required', variant: 'destructive' });
+    // The bill on hand can cover a slightly different period than the one generated — a meter read a
+    // few days late, a cycle the vendor shifted. A field hidden in Field Control isn't submitted, so
+    // it falls back to the period as it stands, i.e. no change.
+    const proposedPeriod = {
+      start: String(form.get('billingPeriodStart') || selected.billingPeriodStart || '').trim(),
+      end: String(form.get('billingPeriodEnd') || selected.billingPeriodEnd || '').trim(),
+    };
+    const periodChanged = (payment: PaymentObligation) => proposedPeriod.start !== payment.billingPeriodStart || proposedPeriod.end !== payment.billingPeriodEnd;
+    const periodError = (payment: PaymentObligation) => billingPeriodAdjustmentError(generatedPeriodOf(payment), proposedPeriod, settings.controls.billingPeriodAdjustmentDays);
+    if (action === 'Submit Bill' && periodChanged(selected)) {
+      const problem = periodError(selected);
+      if (problem) return toast({ title: 'Billing period not accepted', description: problem, variant: 'destructive' });
+    }
 
     const paymentAmount = Number(form.get('paymentAmount') || 0);
     const tdsAmount = Number(form.get('tdsAmount') || 0);
@@ -315,6 +336,7 @@ export default function ProfessionalRecurringWorkflowStage({ stageId }: { stageI
       let notify: string[] = [];
       let destination = stage.name;
       let destinationStepId = stage.id;
+      let periodNote = '';
 
       await runTransaction(db, async transaction => {
         const snapshot = await transaction.get(paymentRef);
@@ -336,6 +358,19 @@ export default function ProfessionalRecurringWorkflowStage({ stageId }: { stageI
         if (receiptUrl) newDocuments.push({ stepId: stage.id, action: 'Record Payment', reference: receiptUrl, addedBy: user.id, addedAt: Timestamp.now(), category: 'Payment receipt', fileType: receiptFile instanceof File ? (receiptFile.type || receiptFile.name.split('.').pop() || 'file') : 'file', version: (current.documentReferences || []).filter(item => item.stepId === stage.id && item.category === 'Payment receipt').length + 1 });
         if (newDocuments.length) patch.documentReferences = arrayUnion(...newDocuments);
         if (action === 'Submit Bill') Object.assign(patch, { billAmount, billNumber, billReceivedDate, varianceBaseline, variancePercent, varianceWarning, varianceComparisons, amountLimitExceeded, outstandingAmount: Math.max(0, billAmount - (current.settledAmount || current.paidAmount || 0)) });
+        if (action === 'Submit Bill' && periodChanged(current)) {
+          // Re-checked against the live record, which is what the write is bounded by.
+          const problem = periodError(current);
+          if (problem) throw new Error(problem);
+          const generated = generatedPeriodOf(current);
+          Object.assign(patch, {
+            billingPeriodStart: proposedPeriod.start,
+            billingPeriodEnd: proposedPeriod.end,
+            generatedBillingPeriodStart: generated.start,
+            generatedBillingPeriodEnd: generated.end,
+          });
+          periodNote = ` Billing period changed from ${current.billingPeriodStart} – ${current.billingPeriodEnd} to ${proposedPeriod.start} – ${proposedPeriod.end}.`;
+        }
         if (action === 'Create Expense Request') patch.expenseRequestNo = expenseRequestNo;
 
         let advance = FORWARD_ACTIONS.includes(action);
@@ -411,7 +446,7 @@ export default function ProfessionalRecurringWorkflowStage({ stageId }: { stageI
           organizationId: current.organizationId,
           paymentId: current.id,
           action,
-          summary: action === 'Record Payment' ? `${currency(paymentAmount)} recorded against ${currency(currentOutstanding)} outstanding.` : action === 'Create Expense Request' ? `Expense request ${expenseRequestNo} created for ${currency(expenseAmount)}.` : `${stage.name}: ${action}`,
+          summary: action === 'Record Payment' ? `${currency(paymentAmount)} recorded against ${currency(currentOutstanding)} outstanding.` : action === 'Create Expense Request' ? `Expense request ${expenseRequestNo} created for ${currency(expenseAmount)}.` : `${stage.name}: ${action}${periodNote}`,
           userId: user.id,
           userName: user.name,
           metadata: { fromStep: stage.name, destination, comment, transactionReference: transactionReference || null, expenseRequestNo: expenseRequestNo || null, verificationChecklist: action === 'Verify' ? checkedChecklist : null },
@@ -483,7 +518,7 @@ export default function ProfessionalRecurringWorkflowStage({ stageId }: { stageI
     <PageHeader eyebrow={`Recurring payment workflow · Step ${stage.id}`} title={stage.name} description={stage.description} />
     <div className="grid grid-cols-3 gap-3"><StageMetric label="My queue" value={pending.length} /><StageMetric label="Due ≤ 3 days" value={dueSoon} /><StageMetric label="Overdue" value={overdue} /></div>
     <Tabs defaultValue="pending"><TabsList><TabsTrigger value="pending">My pending tasks ({pending.length})</TabsTrigger><TabsTrigger value="completed">My completed tasks ({completed.length})</TabsTrigger></TabsList><TabsContent value="pending"><TaskTable rows={pending} stage={stage} title={`${stage.name} — awaiting my action`} description="Assigned to you and not yet actioned" onView={payment => setSelectedId(payment.id)} onAction={(payment, nextAction) => { setSelectedId(payment.id); setAction(nextAction); }} /></TabsContent><TabsContent value="completed"><TaskTable rows={completed} stage={stage} title={`${stage.name} — actioned by me`} description="Payments you have already moved through this step" onView={payment => setSelectedId(payment.id)} /></TabsContent></Tabs>
-    <ActionDialog payment={selected} stage={stage} action={action} canAct={!!selected && pending.some(item => item.id === selected.id)} onAction={setAction} onClose={() => { setSelectedId(null); setAction(null); }} onSubmit={perform} working={working} departments={departments} accountHeads={accountHeads} subAccountHeads={subAccountHeads} submitBillField={submitBillField} activeChecklist={activeChecklist} recordPaymentField={recordPaymentField} expenseField={expenseField} commonField={commonField} requireTransactionReference={settings.controls.requireTransactionReference} />
+    <ActionDialog payment={selected} stage={stage} action={action} canAct={!!selected && pending.some(item => item.id === selected.id)} onAction={setAction} onClose={() => { setSelectedId(null); setAction(null); }} onSubmit={perform} working={working} departments={departments} accountHeads={accountHeads} subAccountHeads={subAccountHeads} submitBillField={submitBillField} activeChecklist={activeChecklist} recordPaymentField={recordPaymentField} expenseField={expenseField} commonField={commonField} requireTransactionReference={settings.controls.requireTransactionReference} billingPeriodAdjustmentDays={settings.controls.billingPeriodAdjustmentDays} />
   </div>;
 }
 
@@ -491,7 +526,7 @@ function TaskTable({ rows, stage, title, description, onView, onAction }: { rows
   return <TableCard title={title} description={description} count={rows.length} noun="task"><Table><TableHeader><TableRow><TableHead>Payment</TableHead><TableHead>Category</TableHead><TableHead>Vendor</TableHead><TableHead>Due date</TableHead><TableHead>Status</TableHead><TableHead className="text-right">Amount</TableHead><TableHead>Variance</TableHead><TableHead>SLA deadline</TableHead><TableHead className="text-right">Actions</TableHead></TableRow></TableHeader><TableBody>{rows.length ? rows.map(payment => <TableRow key={payment.id} className="cursor-pointer" onClick={() => onView(payment)}><TableCell className="whitespace-nowrap"><div className="flex items-center gap-2">{payment.varianceWarning && <AlertTriangle className="h-4 w-4 text-amber-500" />}<span className="font-medium">{payment.title}</span></div></TableCell><TableCell className="whitespace-nowrap">{payment.category}</TableCell><TableCell className="whitespace-nowrap">{payment.vendorName}</TableCell><TableCell className="whitespace-nowrap">{payment.dueDate}</TableCell><TableCell className="whitespace-nowrap">{isOpenObligation(payment) ? <StatusBadge tone={paymentTiming(payment).isOverdue ? 'danger' : paymentTiming(payment).withinGrace ? 'warning' : 'neutral'}>{paymentTiming(payment).label}</StatusBadge> : <StatusBadge status={payment.status} />}</TableCell><TableCell className="whitespace-nowrap text-right tabular-nums">{currency(payment.billAmount || payment.expectedAmount)}</TableCell><TableCell className="whitespace-nowrap"><StatusBadge tone={payment.varianceWarning ? 'danger' : 'neutral'}>{payment.varianceWarning ? `${Number(payment.variancePercent || 0).toFixed(1)}% variance` : 'Normal'}</StatusBadge></TableCell><TableCell className="whitespace-nowrap">{formatTimestamp(payment.workflowDeadline)}</TableCell><TableCell className="whitespace-nowrap text-right">{onAction ? <DropdownMenu><DropdownMenuTrigger asChild><Button size="icon" variant="ghost" onClick={event => event.stopPropagation()}><MoreHorizontal className="h-4 w-4" /></Button></DropdownMenuTrigger><DropdownMenuContent align="end">{stage.actions.map(item => <DropdownMenuItem key={item} onSelect={() => onAction(payment, item)}>{item}</DropdownMenuItem>)}</DropdownMenuContent></DropdownMenu> : <Button variant="ghost" size="icon"><Eye className="h-4 w-4" /></Button>}</TableCell></TableRow>) : <TableRow><TableCell colSpan={9} className="h-36 text-center text-muted-foreground"><CheckCircle2 className="mx-auto mb-2 h-8 w-8 text-emerald-400" />No tasks in this queue.</TableCell></TableRow>}</TableBody></Table></TableCard>;
 }
 
-function ActionDialog({ payment, stage, action, canAct, onAction, onClose, onSubmit, working, departments, accountHeads, subAccountHeads, submitBillField, activeChecklist, recordPaymentField, expenseField, commonField, requireTransactionReference }: { payment: PaymentObligation | null; stage: RecurringWorkflowStep; action: string | null; canAct: boolean; onAction: (action: string | null) => void; onClose: () => void; onSubmit: (event: React.FormEvent<HTMLFormElement>) => void; working: boolean; departments: Department[]; accountHeads: AccountHead[]; subAccountHeads: SubAccountHead[]; submitBillField: (key: string) => RPFieldSetting; activeChecklist: { key: string; label: string; required: boolean; visible: boolean }[]; recordPaymentField: (key: string) => RPFieldSetting; expenseField: (key: string) => RPFieldSetting; commonField: (key: string) => RPFieldSetting; requireTransactionReference: boolean }) {
+function ActionDialog({ payment, stage, action, canAct, onAction, onClose, onSubmit, working, departments, accountHeads, subAccountHeads, submitBillField, activeChecklist, recordPaymentField, expenseField, commonField, requireTransactionReference, billingPeriodAdjustmentDays }: { payment: PaymentObligation | null; stage: RecurringWorkflowStep; action: string | null; canAct: boolean; onAction: (action: string | null) => void; onClose: () => void; onSubmit: (event: React.FormEvent<HTMLFormElement>) => void; working: boolean; departments: Department[]; accountHeads: AccountHead[]; subAccountHeads: SubAccountHead[]; submitBillField: (key: string) => RPFieldSetting; activeChecklist: { key: string; label: string; required: boolean; visible: boolean }[]; recordPaymentField: (key: string) => RPFieldSetting; expenseField: (key: string) => RPFieldSetting; commonField: (key: string) => RPFieldSetting; requireTransactionReference: boolean; billingPeriodAdjustmentDays: number }) {
   // Drives which of the mode-specific fields below (bank account / UTR / cheque number) are
   // shown for "Record Payment" — a cash payment has none of these, so showing them unconditionally
   // just confused whoever was recording the payment into thinking they were required.
@@ -506,6 +541,7 @@ function ActionDialog({ payment, stage, action, canAct, onAction, onClose, onSub
     <div><Label>Workflow history</Label><div className="mt-2 max-h-48 space-y-2 overflow-y-auto">{(payment.workflowHistory || []).map((item, index) => <div key={index} className="flex gap-3 rounded-lg border p-3 text-sm"><ShieldCheck className="mt-0.5 h-4 w-4 text-indigo-500" /><div><p className="font-medium">{item.action} · {item.stepName}</p><p className="text-xs text-muted-foreground">{item.userName}{item.comment ? ` — ${item.comment}` : ''} · {formatTimestamp(item.timestamp)}</p></div></div>)}{!(payment.workflowHistory || []).length && <p className="text-sm text-muted-foreground">Workflow has just started.</p>}</div></div>
     {canAct && (!action ? <div className="flex flex-wrap gap-2 border-t pt-4">{stage.actions.map(item => <Button key={item} variant={['Reject', 'Payment Failed'].includes(item) ? 'destructive' : 'default'} onClick={() => onAction(item)}>{item}</Button>)}</div> : <form onSubmit={onSubmit} className="space-y-4 border-t pt-4"><p className="font-semibold">Action: {action}</p>
       {action === 'Submit Bill' && <div className="grid grid-cols-1 gap-3 sm:grid-cols-3"><ControlledField setting={submitBillField('billNumber')}><Input name="billNumber" defaultValue={payment.billNumber || ''} required /></ControlledField><ControlledField setting={submitBillField('billReceivedDate')}><Input name="billReceivedDate" type="date" defaultValue={payment.billReceivedDate || recurringDateOnly(new Date())} required /></ControlledField><ControlledField setting={submitBillField('billAmount')}><Input name="billAmount" type="number" min="0.01" step="0.01" defaultValue={payment.billAmount || payment.expectedAmount} required /></ControlledField></div>}
+      {action === 'Submit Bill' && payment.billingPeriodStart && payment.billingPeriodEnd && <BillingPeriodFields key={payment.id} payment={payment} days={billingPeriodAdjustmentDays} field={submitBillField} />}
       {action === 'Verify' && <div className="space-y-3 rounded-xl border bg-muted/20 p-4"><div><p className="font-semibold">Bill verification checklist</p><p className="text-xs text-muted-foreground">Confirm every required control. The completed checklist is captured in the audit record.</p></div><div className="grid grid-cols-1 gap-3 sm:grid-cols-2">{activeChecklist.map(item => <label key={item.key} className="flex items-start gap-2 rounded-lg border bg-background p-3 text-sm"><Checkbox name="verificationChecklist" value={item.label} required={item.required} className="mt-0.5" /><span>{item.label}{item.required && <span className="text-destructive"> *</span>}</span></label>)}</div></div>}
       {action === 'Record Payment' && <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
         <ControlledField setting={recordPaymentField('paymentDate')}><Input name="paymentDate" type="date" defaultValue={recurringDateOnly(new Date())} required /></ControlledField>
@@ -551,3 +587,48 @@ function Summary({ label, value }: { label: string; value: string }) { return <d
 // date cannot be before the approval date" guard silently let a backdated payment through.
 function timestampDateOnly(value: unknown) { const data = value as { toDate?: () => Date; seconds?: number } | null | undefined; const date = data?.toDate ? data.toDate() : data?.seconds ? new Date(data.seconds * 1000) : null; return date ? recurringDateOnly(date) : ''; }
 function formatTimestamp(value: unknown) { const data = value as { toDate?: () => Date; seconds?: number } | null; if (data?.toDate) return data.toDate().toLocaleString('en-IN'); if (data?.seconds) return new Date(data.seconds * 1000).toLocaleString('en-IN'); return '—'; }
+
+/**
+ * The billing period on the Submit Bill form. Each end moves on its own — the start date up to the
+ * configured number of days earlier or later than the generated start, the end date likewise around
+ * the generated end — so the bill on hand can be recorded against the dates it actually covers.
+ * The pickers and day buttons stay inside that window; the save re-checks it.
+ */
+function BillingPeriodFields({ payment, days, field }: { payment: PaymentObligation; days: number; field: (key: string) => RPFieldSetting }) {
+  const generated = generatedPeriodOf(payment);
+  const window = billingPeriodAdjustmentWindow(generated, days);
+  const locked = window.days === 0;
+  const [start, setStart] = useState(payment.billingPeriodStart);
+  const [end, setEnd] = useState(payment.billingPeriodEnd);
+  return <div className="space-y-2 rounded-xl border bg-muted/20 p-3">
+    <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+      <PeriodDateField name="billingPeriodStart" setting={field('billingPeriodStart')} value={start} onChange={setStart} original={generated.start} min={window.startMin} max={window.startMax} locked={locked} />
+      <PeriodDateField name="billingPeriodEnd" setting={field('billingPeriodEnd')} value={end} onChange={setEnd} original={generated.end} min={window.endMin} max={window.endMax} locked={locked} />
+    </div>
+    <p className="text-xs text-muted-foreground">
+      {locked
+        ? 'The billing period is locked in Settings › Organization.'
+        : `Match the bill if it covers different dates — the start and end can each move up to ${window.days} day(s) earlier or later than generated.`}
+      {start > end && <span className="text-destructive"> The end date is before the start date.</span>}
+    </p>
+  </div>;
+}
+
+/** One end of the billing period: a date picker with one-day back/forward buttons, bounded to its window. */
+function PeriodDateField({ name, setting, value, onChange, original, min, max, locked }: { name: string; setting: RPFieldSetting; value: string; onChange: (value: string) => void; original: string; min: string; max: string; locked: boolean }) {
+  const shift = (by: number) => {
+    const [year, month, day] = (value || original).split('-').map(Number);
+    onChange(recurringDateOnly(new Date(year, month - 1, day + by)));
+  };
+  const moved = value && value !== original ? daysUntilDate(value, new Date(`${original}T00:00:00`)) : 0;
+  return <ControlledField setting={setting}>
+    <div className="flex items-center gap-1">
+      <Button type="button" size="icon" variant="outline" className="h-9 w-9 shrink-0" aria-label="One day earlier" disabled={locked || !value || value <= min} onClick={() => shift(-1)}><ChevronLeft className="h-4 w-4" /></Button>
+      <Input className="min-w-0" name={name} type="date" value={value} min={min} max={max} readOnly={locked} required onChange={event => onChange(event.target.value)} />
+      <Button type="button" size="icon" variant="outline" className="h-9 w-9 shrink-0" aria-label="One day later" disabled={locked || !value || value >= max} onClick={() => shift(1)}><ChevronRight className="h-4 w-4" /></Button>
+    </div>
+    <p className="text-xs text-muted-foreground">
+      Generated {original}{moved ? <span className="font-medium text-amber-700"> · {moved > 0 ? `${moved} day(s) later` : `${-moved} day(s) earlier`}</span> : null}{!locked && ` · allowed ${min} to ${max}`}
+    </p>
+  </ControlledField>;
+}

@@ -192,11 +192,13 @@ export const RP_FORM_REGISTRY: Record<RPFormKey, RPFormDef> = {
   },
   submitBill: {
     title: "Submit Bill",
-    description: "The Bill Collection step's action dialog. All three fields are required by the step's own logic, so only their labels can be customized.",
+    description: "The Bill Collection step's action dialog. The bill number, date and amount are required by the step's own logic, so only their labels can be customized. The billing period dates can be hidden to stop them being adjusted; how far they may move is set under Settings › Organization.",
     fields: [
       { key: "billNumber", defaultLabel: "Bill number", defaultRequired: true, locked: true },
       { key: "billReceivedDate", defaultLabel: "Bill received date", defaultRequired: true, locked: true },
       { key: "billAmount", defaultLabel: "Final bill amount", defaultRequired: true, locked: true },
+      { key: "billingPeriodStart", defaultLabel: "Billing period start", defaultRequired: true },
+      { key: "billingPeriodEnd", defaultLabel: "Billing period end", defaultRequired: true },
     ],
   },
   verifyBill: {
