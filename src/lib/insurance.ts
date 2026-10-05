@@ -97,6 +97,42 @@ export const dayKey = (date: Date) => format(date, 'yyyy-MM-dd');
 /** Whole calendar days from `now` to `date` — negative once it has passed. */
 export const daysUntil = (date: Date, now: Date = new Date()) => differenceInCalendarDays(date, now);
 
+const MONTH_NAMES = ['january', 'february', 'march', 'april', 'may', 'june', 'july', 'august', 'september', 'october', 'november', 'december'];
+
+/**
+ * A date typed by hand, day first as written in India: 15/03/2026, 15-3-26, 15.03.2026, 15032026,
+ * 15 Mar 2026, 15-March-2026, or ISO 2026-03-15. Two-digit years up to 79 are 20xx, the rest 19xx.
+ * Returns null for anything that is not a real calendar date (31/02 is rejected, not rolled over).
+ */
+export function parseTypedDate(text: string): Date | null {
+  const s = text.trim().toLowerCase().replace(/,/g, ' ').replace(/\s+/g, ' ');
+  if (!s) return null;
+  let d: number, m: number, y: number;
+  let match: RegExpExecArray | null;
+  if ((match = /^(\d{4})-(\d{1,2})-(\d{1,2})$/.exec(s))) {
+    [y, m, d] = [Number(match[1]), Number(match[2]), Number(match[3])];
+  } else if ((match = /^(\d{1,2})[/\-. ](\d{1,2})[/\-. ](\d{2}|\d{4})$/.exec(s))) {
+    [d, m, y] = [Number(match[1]), Number(match[2]), Number(match[3])];
+    if (match[3].length === 2) y += y <= 79 ? 2000 : 1900;
+  } else if ((match = /^(\d{2})(\d{2})(\d{4})$/.exec(s))) {
+    [d, m, y] = [Number(match[1]), Number(match[2]), Number(match[3])];
+  } else if ((match = /^(\d{1,2})[\-. ]?([a-z]{3,9})[\-. ]?(\d{2}|\d{4})$/.exec(s))) {
+    // "Mar", "march" and "sept" all name a month; "marc h" or "xyz" do not.
+    const word = match[2];
+    const idx = MONTH_NAMES.findIndex((name) => name.startsWith(word));
+    if (idx < 0) return null;
+    [d, m, y] = [Number(match[1]), idx + 1, Number(match[3])];
+    if (match[3].length === 2) y += y <= 79 ? 2000 : 1900;
+  } else {
+    return null;
+  }
+  if (m < 1 || m > 12 || d < 1 || d > 31) return null;
+  const date = new Date(y, m - 1, d);
+  // new Date rolls 31/02 over into March; a typed date must be exactly the day written.
+  if (date.getFullYear() !== y || date.getMonth() !== m - 1 || date.getDate() !== d) return null;
+  return date;
+}
+
 export function isPremiumFrequency(value: unknown): value is PremiumFrequency {
   return typeof value === 'string' && ((PREMIUM_FREQUENCIES as readonly string[]).includes(value) || intervalYears(value) !== null);
 }

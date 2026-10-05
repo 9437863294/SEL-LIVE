@@ -1,15 +1,19 @@
 'use client';
 
-import { format } from 'date-fns';
-import { Calendar as CalendarIcon, ExternalLink, File as FileIcon, ShieldAlert, X } from 'lucide-react';
+import { useState } from 'react';
+import { format, startOfDay } from 'date-fns';
+import type { DropdownProps } from 'react-day-picker';
+import { Calendar as CalendarIcon, ChevronLeft, ChevronRight, ExternalLink, File as FileIcon, ShieldAlert, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Calendar } from '@/components/ui/calendar';
+import { Input } from '@/components/ui/input';
 import { Card, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { StatusBadge, type StatusTone } from '@/components/shared/status-badge';
 import { cn } from '@/lib/utils';
 import type { Attachment } from '@/lib/types';
 import {
+  parseTypedDate,
   PERSONAL_STATE_LABEL,
   PROJECT_STATE_LABEL,
   type InstalmentState,
@@ -35,12 +39,41 @@ export function AccessDenied({ what }: { what: string }) {
   );
 }
 
-/** A date chosen from a calendar popover; `type="button"` so it never submits the form it sits in. */
+/** Month and year pickers as native selects: they scroll on every device and sit beside the arrows. */
+function CalendarDropdown({ value, onChange, children, name, 'aria-label': ariaLabel }: DropdownProps) {
+  return (
+    <select
+      name={name}
+      aria-label={ariaLabel}
+      value={value}
+      onChange={onChange}
+      className="h-8 cursor-pointer rounded-md border border-input bg-background px-2 text-sm font-medium text-foreground focus:outline-none focus:ring-2 focus:ring-ring"
+    >
+      {children}
+    </select>
+  );
+}
+
+const CALENDAR_CLASSES = {
+  caption: 'flex items-center justify-between gap-2 px-1 pb-1',
+  caption_dropdowns: 'flex items-center gap-1.5',
+  caption_label: 'hidden',
+  vhidden: 'sr-only',
+  nav: 'flex items-center gap-1',
+  nav_button_previous: 'static',
+  nav_button_next: 'static',
+};
+
+/**
+ * A date typed by hand or chosen from a calendar. Typing accepts DD/MM/YYYY and the other common
+ * day-first forms (see `parseTypedDate`); the typed text is committed on blur or Enter, and a
+ * date that is not real stays on screen, marked, rather than being silently dropped or rolled over.
+ */
 export function DateField({
   value,
   onChange,
   disabled,
-  placeholder = 'Pick a date',
+  placeholder,
   fromYear = 1950,
   toYear = new Date().getFullYear() + 60,
   className,
@@ -55,33 +88,102 @@ export function DateField({
   className?: string;
   id?: string;
 }) {
+  const [open, setOpen] = useState(false);
+  // What is being typed; null while the field simply shows the current value.
+  const [draft, setDraft] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const shown = draft ?? (value ? format(value, 'dd/MM/yyyy') : '');
+
+  const commit = () => {
+    if (draft === null) return;
+    if (!draft.trim()) {
+      onChange(undefined);
+      setDraft(null);
+      setError(null);
+      return;
+    }
+    const parsed = parseTypedDate(draft);
+    if (!parsed) { setError('Not a valid date — use DD/MM/YYYY'); return; }
+    if (parsed.getFullYear() < fromYear || parsed.getFullYear() > toYear) {
+      setError(`Year must be between ${fromYear} and ${toYear}`);
+      return;
+    }
+    onChange(parsed);
+    setDraft(null);
+    setError(null);
+  };
+
+  const pick = (date: Date | undefined) => {
+    onChange(date);
+    setDraft(null);
+    setError(null);
+    setOpen(false);
+  };
+
+  const today = new Date();
+  const todayAllowed = today.getFullYear() >= fromYear && today.getFullYear() <= toYear;
+
   return (
-    <Popover>
-      <PopoverTrigger asChild>
-        <Button
+    <div className={cn('space-y-1', className)}>
+      <div className="relative">
+        <Input
           id={id}
-          type="button"
-          variant="outline"
+          value={shown}
+          onChange={(e) => { setDraft(e.target.value); setError(null); }}
+          onBlur={commit}
+          onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); commit(); } }}
           disabled={disabled}
-          className={cn('w-full justify-start pl-3 text-left font-normal', !value && 'text-muted-foreground', className)}
-        >
-          {value ? format(value, 'dd MMM yyyy') : <span>{placeholder}</span>}
-          <CalendarIcon className="ml-auto h-4 w-4 opacity-50" />
-        </Button>
-      </PopoverTrigger>
-      <PopoverContent className="w-auto p-0" align="start">
-        <Calendar
-          mode="single"
-          selected={value ?? undefined}
-          defaultMonth={value ?? undefined}
-          onSelect={onChange}
-          captionLayout="dropdown-buttons"
-          fromYear={fromYear}
-          toYear={toYear}
-          initialFocus
+          placeholder={placeholder ? `${placeholder} · DD/MM/YYYY` : 'DD/MM/YYYY'}
+          inputMode="numeric"
+          autoComplete="off"
+          aria-invalid={!!error}
+          className={cn('pr-10', error && 'border-destructive focus-visible:ring-destructive')}
         />
-      </PopoverContent>
-    </Popover>
+        <Popover open={open} onOpenChange={setOpen}>
+          <PopoverTrigger asChild>
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              disabled={disabled}
+              aria-label="Open calendar"
+              className="absolute right-0.5 top-1/2 h-8 w-8 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+            >
+              <CalendarIcon className="h-4 w-4" />
+            </Button>
+          </PopoverTrigger>
+          <PopoverContent className="w-auto p-0" align="end">
+            <Calendar
+              mode="single"
+              selected={value ?? undefined}
+              defaultMonth={value ?? undefined}
+              onSelect={pick}
+              captionLayout="dropdown-buttons"
+              fromYear={fromYear}
+              toYear={toYear}
+              classNames={CALENDAR_CLASSES}
+              components={{
+                IconLeft: () => <ChevronLeft className="h-4 w-4" />,
+                IconRight: () => <ChevronRight className="h-4 w-4" />,
+                Dropdown: CalendarDropdown,
+              }}
+              initialFocus
+            />
+            <div className="flex items-center justify-between gap-2 border-t border-border/60 px-3 py-2">
+              <Button type="button" variant="ghost" size="sm" className="h-7 text-xs" onClick={() => pick(undefined)} disabled={!value}>
+                Clear
+              </Button>
+              {todayAllowed && (
+                <Button type="button" variant="outline" size="sm" className="h-7 text-xs" onClick={() => pick(startOfDay(today))}>
+                  Today
+                </Button>
+              )}
+            </div>
+          </PopoverContent>
+        </Popover>
+      </div>
+      {error && <p className="text-xs font-medium text-destructive">{error}</p>}
+    </div>
   );
 }
 

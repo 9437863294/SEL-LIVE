@@ -15,6 +15,7 @@ import {
   isPremiumFrequency,
   nextDueAfterPayment,
   normalisePolicyNo,
+  parseTypedDate,
   personalPolicyState,
   premiumOutflows,
   premiumSchedule,
@@ -168,6 +169,26 @@ test('every-N-years frequency drives schedule, outgo and next due', () => {
   assert.equal(nextDueAfterPayment(inputs, at('2030-04-01')), null, 'last instalment');
   assert.equal(dayKey(nextDueAfterPayment({ ...inputs, commencement: null }, at('2024-04-01'))), '2027-04-01', 'no schedule: one step on');
   assert.equal(graceDays('Every 2 Years'), 30);
+});
+
+test('typed dates are day first and must be real', () => {
+  const k = (t) => { const d = parseTypedDate(t); return d ? dayKey(d) : null; };
+  assert.equal(k('15/03/2026'), '2026-03-15');
+  assert.equal(k('5-3-2026'), '2026-03-05');
+  assert.equal(k('15.03.26'), '2026-03-15');
+  assert.equal(k('01/01/85'), '1985-01-01');
+  assert.equal(k('15032026'), '2026-03-15');
+  assert.equal(k('15 Mar 2026'), '2026-03-15');
+  assert.equal(k('15-march-2026'), '2026-03-15');
+  assert.equal(k('3 Sept 2026'), '2026-09-03');
+  assert.equal(k(' 2026-03-15 '), '2026-03-15');
+  assert.equal(k('29/02/2024'), '2024-02-29');
+  assert.equal(k('29/02/2026'), null, 'not a leap year');
+  assert.equal(k('31/04/2026'), null);
+  assert.equal(k('13/13/2026'), null);
+  assert.equal(k('15 Xyz 2026'), null);
+  assert.equal(k('2026'), null);
+  assert.equal(k(''), null);
 });
 
 test('toDate accepts Firestore-like values', () => {
