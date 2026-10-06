@@ -365,10 +365,15 @@ export type WorkflowActivation = {
 export function resolveWorkflowActivation(
   step: RecurringWorkflowStep | undefined,
   payment: AssigneeResolutionPayment & ActivationTimingPayment,
-  options: { activationDays: number; today: Date },
+  /**
+   * Omit to activate regardless of timing — which is what generation does now: an obligation enters
+   * its first step the moment "Generate all" (scheduled or manual) creates it, since the master's own
+   * lead time already decided when that should be. The window remains for callers that ask for it.
+   */
+  options?: { activationDays: number; today: Date },
 ): WorkflowActivation | null {
   if (!step) return null;
-  if (!isWorkflowActivationDue(payment, options)) return null;
+  if (options && !isWorkflowActivationDue(payment, options)) return null;
   const assignees = resolveEntryAssignees(step, payment);
   if (!assignees.length) return null;
   return {

@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server';
 import { FieldValue, Timestamp, type DocumentData } from 'firebase-admin/firestore';
 import { getFirebaseAdminFirestore } from '@/lib/firebase-admin';
 import { accessErrorResponse, authenticateAccess, requireAnyAccess } from '@/lib/access-control-server';
-import { buildPaymentObligationFields, CONCLUDED_PAYMENT_STATUSES, DEFAULT_RECURRING_WORKFLOW, isWorkflowActivationDue, matchApprovalRule, pendingRecurringCycles, recurringObligationId, resolveEntryAssignees, stepStatus, type ApprovalRule, type PaymentObligation, type RecurringPaymentMaster, type RecurringWorkflowStep } from '@/lib/recurring-payments';
+import { ALL_WEEKDAYS, automationRunDue, DEFAULT_AUTOMATION_RUN_TIME, buildPaymentObligationFields, CONCLUDED_PAYMENT_STATUSES, DEFAULT_RECURRING_WORKFLOW, matchApprovalRule, pendingRecurringCycles, recurringObligationId, resolveEntryAssignees, stepStatus, type ApprovalRule, type PaymentObligation, type RecurringPaymentMaster, type RecurringWorkflowStep } from '@/lib/recurring-payments';
 import { addBusinessHours, makeIsWorkingDay, normalizeWorkingHoursDoc } from '@/lib/working-hours';
 import { dispatchNotificationOnce } from '@/lib/notifications-server';
 import { ACTIVITY_MODULES } from '@/lib/activity-modules';
@@ -36,15 +36,85 @@ function organizationToday(now: Date, timeZone: string): Date {
   }
 }
 
+export const runtime = 'nodejs';
+/** A due organization's run reads every open obligation and can send hundreds of reminders. */
+export const maxDuration = 300;
+/** Never cached: every call is a scheduler tick that may do work. */
+export const dynamic = 'force-dynamic';
+
+/**
+ * The scheduler tick. Each organization's automatic run — "Generate all", workflow activation and
+ * reminders — happens at the time and on the days set in Settings › Automation, so this route is
+ * called every 15 minutes and asks `automationRunDue` which organizations are due.
+ *
+ * Why it asks instead of running: this app is on Firebase App Hosting, which has no scheduler and
+ * never reads `vercel.json`. The cron declared there for this route was therefore never called, and
+ * "Generate all" only ever happened when somebody pressed it. The tick now comes from
+ * `.github/workflows/recurring-payments-automation.yml` (or Cloud Scheduler via
+ * `scripts/setup-cloud-scheduler.sh`); a tick with nothing due costs a few reads and returns.
+ *
+ * Each organization's day is claimed with `create()` on `recurringPaymentAutomationRuns/{org}_{date}`
+ * before it runs, so overlapping ticks, a scheduler retry or anybody re-calling this URL cannot run
+ * the same organization twice in a day. That claim is also what makes the open-when-no-secret
+ * convention this route shares with the app's other cron routes tolerable: a caller can only trigger
+ * the run that was due anyway.
+ */
 export async function GET(request: Request) {
   const secret = process.env.CRON_SECRET;
   if (secret && request.headers.get('authorization') !== `Bearer ${secret}`) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
-  return NextResponse.json(await runRecurringAutomation(String(request.headers.get('x-recurring-organization') || '').trim()));
+  const db = getFirebaseAdminFirestore();
+  const now = new Date();
+  // Organizations to consider: every one with settings saved, plus every one with an active master.
+  // The second catches an organization that never opened Settings and so runs on the defaults.
+  const [settingsSnap, mastersSnap] = await Promise.all([
+    db.collection('recurringPaymentSettings').get(),
+    db.collection('recurringPaymentMasters').where('status', '==', 'Active').select('organizationId').get(),
+  ]);
+  const settingsByOrg = new Map<string, DocumentData>();
+  for (const item of settingsSnap.docs) settingsByOrg.set(String(item.data().organizationId || item.id), item.data());
+  const organizations = new Set<string>([
+    ...settingsByOrg.keys(),
+    ...mastersSnap.docs.map((item) => String(item.data().organizationId || 'default')),
+  ]);
+
+  const ran: Array<{ organizationId: string; localDate: string; result?: unknown; error?: string }> = [];
+  const waiting: Array<{ organizationId: string; reason: string }> = [];
+  for (const organizationId of organizations) {
+    const automation = settingsByOrg.get(organizationId)?.automation || {};
+    const schedule = {
+      enabled: automation.enabled !== false,
+      runTime: String(automation.runTime || DEFAULT_AUTOMATION_RUN_TIME),
+      runDays: Array.isArray(automation.runDays) ? automation.runDays.map(Number) : ALL_WEEKDAYS,
+      timezone: String(automation.timezone || 'Asia/Kolkata'),
+    };
+    const check = automationRunDue(schedule, now);
+    if (!check.due) { waiting.push({ organizationId, reason: check.reason }); continue; }
+    const claim = db.collection('recurringPaymentAutomationRuns')
+      .doc(`${organizationId}_${check.localDate}`.replace(/[^a-zA-Z0-9_-]/g, '_'));
+    try {
+      await claim.create({ organizationId, localDate: check.localDate, status: 'Running', startedAt: FieldValue.serverTimestamp() });
+    } catch (error) {
+      // ALREADY_EXISTS: today's run for this organization has been claimed already.
+      if ((error as { code?: number })?.code === 6) { waiting.push({ organizationId, reason: 'Already ran today' }); continue; }
+      throw error;
+    }
+    try {
+      const result = await runRecurringAutomation(organizationId, 'Scheduled automation run');
+      await claim.update({ status: 'Completed', completedAt: FieldValue.serverTimestamp(), result });
+      ran.push({ organizationId, localDate: check.localDate, result });
+    } catch (error) {
+      // A run that died outright (not a per-record failure, which the run absorbs) releases its
+      // claim, so the next tick tries again rather than the day being lost.
+      await claim.delete().catch(() => undefined);
+      ran.push({ organizationId, localDate: check.localDate, error: error instanceof Error ? error.message : String(error) });
+    }
+  }
+  return NextResponse.json({ ok: ran.every((item) => !item.error), checkedAt: now.toISOString(), ran, waiting });
 }
 
-async function runRecurringAutomation(targetOrganizationId: string) {
+async function runRecurringAutomation(targetOrganizationId: string, jobName = 'Manual organization automation run') {
   const runStartedAt = Date.now();
   const db = getFirebaseAdminFirestore();
   const now = new Date();
@@ -56,7 +126,7 @@ async function runRecurringAutomation(targetOrganizationId: string) {
    * 800 open obligations therefore paid for ~1,600 reads of a single unchanging document every
    * night, and the same document was re-read on every manual "run automation now". Settings cannot
    * change mid-run, so caching them is also the only way the three loops are guaranteed to agree on
-   * the timezone and activation window they are working from.
+   * the timezone and schedule they are working from.
    */
   const settingsCache = new Map<string, DocumentData | undefined>();
   const loadSettings = async (organizationId: string) => {
@@ -194,11 +264,9 @@ async function runRecurringAutomation(targetOrganizationId: string) {
         if (payment.deleted || payment.currentStepId || CONCLUDED_PAYMENT_STATUSES.includes(payment.status) || !payment.dueDate) continue;
         const organizationId = String(payment.organizationId || 'default');
         const settings = await loadSettings(organizationId);
-        const activationDays = Math.min(90, Math.max(0, Number(settings?.automation?.workflowActivationDays ?? 7)));
-        const orgToday = organizationToday(now, String(settings?.automation?.timezone || 'Asia/Kolkata'));
-        // Shared with the client-side generate actions rather than re-derived here, so an obligation
-        // enters its first step on the same day whichever path created it.
-        if (!isWorkflowActivationDue(payment, { activationDays, today: orgToday })) continue;
+        // No activation window: an obligation enters its first step as soon as it exists, exactly as
+        // the client generate actions do. This sweep picks up any still sitting at Scheduled — just
+        // generated above, created before this rule, or waiting on an owner that is now set.
         // Entry-step resolution, so an unconfigured first step falls back to the payment owner
         // rather than parking the obligation in nobody's queue.
         const assignees = resolveEntryAssignees(firstStep, payment);
@@ -326,7 +394,7 @@ async function runRecurringAutomation(targetOrganizationId: string) {
   const result = { ok: true, runDate: dateOnly(now), checked: masterDocs.length, generated, skipped, automationDisabled: disabled, workflowTriggered, assigneeMissing, remindersQueued, failed };
   await db.collection('recurringPaymentAutomationLogs').add({
     organizationId: targetOrganizationId || 'all',
-    jobName: targetOrganizationId ? 'Manual organization automation run' : 'Daily recurring payment generation',
+    jobName,
     startedAt: Timestamp.fromMillis(runStartedAt), completedAt: FieldValue.serverTimestamp(),
     recordsProcessed: masterDocs.length, successCount: generated + workflowTriggered + remindersQueued,
     failureCount: assigneeMissing + failed,

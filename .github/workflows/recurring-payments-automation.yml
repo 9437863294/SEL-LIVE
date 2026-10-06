@@ -1,0 +1,76 @@
+# Ticks the Recurring Payments automation every 15 minutes, so each organization's daily run
+# ("Generate all", workflow activation and reminders) happens at the time set in
+# Recurring Payments › Settings › Automation.
+#
+# Why this exists: `vercel.json` registered this route as a daily cron, but the app deploys to
+# Firebase App Hosting, which never reads that file and has no scheduler of its own. Nothing ever
+# called it, so payments were generated only when someone pressed "Generate all".
+#
+# The route decides for itself which organizations are due (`automationRunDue` against each one's
+# saved run time, run days and timezone) and claims each organization's day before running it, so
+# this workflow does not need to know the schedule and a repeated or overlapping tick runs nothing
+# twice. A tick with nothing due returns `"ran": []` in well under a second.
+#
+# Optional repository secret (Settings → Secrets and variables → Actions):
+#   CRON_SECRET   sent as `Authorization: Bearer …`. Set the same value in BOTH places — this
+#                 secret and the App Hosting backend's environment — or the route answers 401.
+#
+# Optional repository variable:
+#   APP_BASE_URL  defaults to https://seltech.store
+#
+# GitHub's scheduler runs only from the default branch and is best-effort: a tick can be late or,
+# rarely, skipped. The next tick still finds the day's run due, so that costs at most a few minutes.
+# GitHub also disables scheduled workflows in repositories with no activity for 60 days.
+
+name: Recurring payments automation (scheduled)
+
+on:
+  schedule:
+    # Every 15 minutes (UTC). The run time itself is set in the app, in the organization's timezone.
+    - cron: '*/15 * * * *'
+  workflow_dispatch:
+
+permissions: {}
+
+# A due organization's run writes obligations and sends reminders; let a slow tick finish rather
+# than overlap it (the per-day claim would make an overlap harmless, but there is no reason to race).
+concurrency:
+  group: recurring-payments-automation
+  cancel-in-progress: false
+
+jobs:
+  tick:
+    name: Run the organizations that are due
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Tick the automation endpoint
+        env:
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+          BASE_URL: ${{ vars.APP_BASE_URL || 'https://seltech.store' }}
+        run: |
+          set -uo pipefail
+          args=(--silent --show-error --fail-with-body --max-time 330)
+          if [ -n "${CRON_SECRET:-}" ]; then
+            args+=(--header "Authorization: Bearer ${CRON_SECRET}")
+          fi
+
+          echo "Ticking ${BASE_URL}/api/recurring-payments/generate"
+          body="$(curl "${args[@]}" "${BASE_URL}/api/recurring-payments/generate")"
+          status=$?
+          echo "${body}" | jq . || echo "${body}"
+
+          if [ "${status}" -ne 0 ]; then
+            echo "::error::Could not reach the automation endpoint (curl exit ${status})."
+            exit 1
+          fi
+          if [ "$(jq -r '.ok' <<<"${body}")" != "true" ]; then
+            echo "::error::An organization's run failed — see the body above."
+            exit 1
+          fi
+
+          jq -r '
+            if (.ran | length) == 0 then "**Nothing due** — " + ([.waiting[] | "\(.organizationId): \(.reason)"] | join("; "))
+            else "**Ran** — " + ([.ran[] | "\(.organizationId) (\(.localDate)): generated \(.result.generated // 0), activated \(.result.workflowTriggered // 0), reminders \(.result.remindersQueued // 0)"] | join("; "))
+            end
+          ' <<<"${body}" >> "${GITHUB_STEP_SUMMARY}"

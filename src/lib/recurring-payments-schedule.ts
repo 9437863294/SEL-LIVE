@@ -513,6 +513,92 @@ export function describeRecurrence(master: RecurrenceRuleInput): string {
 }
 
 /* ------------------------------------------------------------------------------------------------
+ * The daily automation schedule
+ * ---------------------------------------------------------------------------------------------- */
+
+/**
+ * When an organization's automatic run ("Generate all", then workflow activation and reminders)
+ * happens. Held as data, not as a cron expression: the scheduler ticks the route every few minutes
+ * and the route asks `automationRunDue` whether this organization is due, so an administrator can
+ * change the time or the days without a redeploy.
+ */
+export interface AutomationSchedule {
+  enabled: boolean;
+  /** Local time of day, `HH:MM` (24-hour), in `timezone`. */
+  runTime: string;
+  /** Days of the week the run happens on, 0 = Sunday … 6 = Saturday. */
+  runDays: number[];
+  timezone: string;
+}
+
+export const DEFAULT_AUTOMATION_RUN_TIME = '06:00';
+export const ALL_WEEKDAYS = [0, 1, 2, 3, 4, 5, 6];
+const WEEKDAY_NAMES = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+
+/** Minutes after midnight for an `HH:MM` value, or null when it isn't one. */
+export function parseRunTime(value: string | undefined): number | null {
+  const match = /^([01]?\d|2[0-3]):([0-5]\d)$/.exec(String(value || '').trim());
+  return match ? Number(match[1]) * 60 + Number(match[2]) : null;
+}
+
+/** The calendar date, weekday and minute-of-day at `now` in `timeZone` (server-local if the zone is unknown). */
+export function zonedClock(now: Date, timeZone: string): { date: string; weekday: number; minutes: number } {
+  try {
+    const parts = Object.fromEntries(
+      new Intl.DateTimeFormat('en-US', {
+        timeZone, year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hourCycle: 'h23', weekday: 'short',
+      }).formatToParts(now).map((part) => [part.type, part.value]),
+    );
+    return {
+      date: `${parts.year}-${parts.month}-${parts.day}`,
+      weekday: ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].indexOf(parts.weekday),
+      minutes: Number(parts.hour) * 60 + Number(parts.minute),
+    };
+  } catch {
+    return { date: recurringDateOnly(now), weekday: now.getDay(), minutes: now.getHours() * 60 + now.getMinutes() };
+  }
+}
+
+/**
+ * Whether the organization's run is due at `now`: switched on, today is a run day, the run time
+ * has passed, and today's run hasn't happened. "Has passed" rather than "is now" — a scheduler tick
+ * that arrives late, or one skipped altogether, still runs that day on the next tick.
+ */
+export function automationRunDue(
+  schedule: AutomationSchedule,
+  now: Date,
+  lastRunDate?: string,
+): { due: boolean; reason: string; localDate: string } {
+  const clock = zonedClock(now, schedule.timezone);
+  const at = parseRunTime(schedule.runTime) ?? parseRunTime(DEFAULT_AUTOMATION_RUN_TIME)!;
+  const result = (due: boolean, reason: string) => ({ due, reason, localDate: clock.date });
+  if (!schedule.enabled) return result(false, 'Automatic runs are switched off');
+  if (!(schedule.runDays || []).includes(clock.weekday)) return result(false, `No run on ${WEEKDAY_NAMES[clock.weekday]}`);
+  if (clock.minutes < at) return result(false, `Runs at ${schedule.runTime}`);
+  if (lastRunDate === clock.date) return result(false, 'Already ran today');
+  return result(true, 'Due');
+}
+
+/**
+ * The next run after `now` as a local date and time, for showing on the settings screen. `ranToday`
+ * says whether today's run has already happened; null when the schedule can never run.
+ */
+export function nextAutomationRun(schedule: AutomationSchedule, now: Date, ranToday: boolean): { date: string; weekday: string; time: string } | null {
+  if (!schedule.enabled || !(schedule.runDays || []).length) return null;
+  const at = parseRunTime(schedule.runTime) ?? parseRunTime(DEFAULT_AUTOMATION_RUN_TIME)!;
+  const clock = zonedClock(now, schedule.timezone);
+  const time = `${padDatePart(Math.floor(at / 60))}:${padDatePart(at % 60)}`;
+  for (let offset = 0; offset < 8; offset += 1) {
+    const weekday = (clock.weekday + offset) % 7;
+    if (!schedule.runDays.includes(weekday)) continue;
+    // Today still counts when the run hasn't happened — it goes on the next tick if its time passed.
+    if (offset === 0 && ranToday) continue;
+    return { date: recurringDateOnly(addDays(localDate(clock.date), offset)), weekday: WEEKDAY_NAMES[weekday], time };
+  }
+  return null;
+}
+
+/* ------------------------------------------------------------------------------------------------
  * Billing-period adjustment at bill collection
  * ---------------------------------------------------------------------------------------------- */
 

@@ -263,7 +263,7 @@ export default function RecurringMasterDetailPage({
           ? `Sent to ${outcome.activationStage} for action.`
           : outcome.noAssignee
             ? "Due to enter the workflow, but nobody could be assigned — check the payment owner, or the first step's users in Settings › Workflow."
-            : "Not due soon enough yet to enter the workflow — it'll activate automatically as the bill date approaches.",
+            : "The workflow has no first step configured — check Settings › Workflow.",
         variant: outcome.noAssignee ? "destructive" : undefined,
       });
       router.push(`/recurring-payments/payments/${outcome.paymentId}`);

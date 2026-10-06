@@ -499,7 +499,7 @@ export default function RecurringMasterFormPage({
                 ? `First payment (${cycle.billingPeriodStart} to ${cycle.billingPeriodEnd}) generated and sent to ${outcome.activationStage} for action.`
                 : outcome.noAssignee
                   ? `First payment generated, but nobody could be assigned to its first step — check the payment owner, or that step's users in Settings › Workflow.`
-                  : `First payment (${cycle.billingPeriodStart} to ${cycle.billingPeriodEnd}) generated; it enters the workflow automatically as its bill date approaches.`;
+                  : `First payment (${cycle.billingPeriodStart} to ${cycle.billingPeriodEnd}) generated, but the workflow has no first step configured — check Settings › Workflow.`;
             generationFailed = outcome.kind === "created" && outcome.noAssignee;
           }
         } catch (error) {

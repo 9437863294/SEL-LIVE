@@ -32,6 +32,9 @@ import {
   DEFAULT_PAYMENT_CATEGORIES,
   DEFAULT_RECURRING_PAYMENT_SETTINGS,
   mergeRecurringPaymentSettings,
+  nextAutomationRun,
+  parseRunTime,
+  zonedClock,
   RecurringPaymentSettings,
   RP_COLLECTIONS,
   currency,
@@ -195,6 +198,12 @@ export default function RecurringPaymentSettingsPanel({
         title: "You do not have permission to edit settings",
         variant: "destructive",
       });
+    if (section === "automation") {
+      if (!(settings.automation.runDays ?? []).length)
+        return toast({ title: "Pick at least one day for the automatic run", variant: "destructive" });
+      if (parseRunTime(settings.automation.runTime) === null)
+        return toast({ title: "Enter a run time such as 06:00", variant: "destructive" });
+    }
     setSaving(true);
     try {
       const valueToSave =
@@ -465,15 +474,15 @@ export default function RecurringPaymentSettingsPanel({
                 Automation
               </CardTitle>
               <CardDescription>
-                The daily cron checks these settings before generating
-                cycle records. Each master has its own "Generate before due
-                (days)" setting that controls exactly when its obligation is
-                created.
+                Once a day, at the time and on the days below, the system runs
+                &ldquo;Generate all&rdquo; for this organization, starts the
+                workflow of payments that are due, and sends reminders. Each
+                master&apos;s own lead time decides which cycles are created.
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-6">
               <ToggleRow
-                label="Enable automatic payment generation"
+                label="Run automatically every scheduled day"
                 checked={settings.automation.enabled}
                 onChange={(value) =>
                   setSettings((s) => ({
@@ -484,28 +493,55 @@ export default function RecurringPaymentSettingsPanel({
               />
               <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                 <SettingField
-                  label="Workflow starts before due"
-                  help="Days before due date; default is 7"
+                  label="Run time"
+                  help={`Local time in ${settings.automation.timezone}; the run starts within 15 minutes of it`}
                 >
                   <Input
-                    type="number"
-                    min={0}
-                    max={90}
-                    value={settings.automation.workflowActivationDays}
+                    id="automation-run-time"
+                    type="time"
+                    step={900}
+                    value={settings.automation.runTime ?? "06:00"}
                     onChange={(e) =>
                       setSettings((s) => ({
                         ...s,
-                        automation: {
-                          ...s.automation,
-                          workflowActivationDays: Math.min(
-                            90,
-                            Math.max(0, Number(e.target.value)),
-                          ),
-                        },
+                        automation: { ...s.automation, runTime: e.target.value || s.automation.runTime },
                       }))
                     }
                   />
                 </SettingField>
+                <SettingField label="Run on" help="Pick at least one day">
+                  <div className="flex flex-wrap gap-1.5">
+                    {["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].map((label, day) => {
+                      const on = (settings.automation.runDays ?? []).includes(day);
+                      return (
+                        <Button
+                          key={label}
+                          type="button"
+                          size="sm"
+                          variant={on ? "default" : "outline"}
+                          aria-pressed={on}
+                          className="h-8 w-11 px-0"
+                          onClick={() =>
+                            setSettings((s) => ({
+                              ...s,
+                              automation: {
+                                ...s.automation,
+                                runDays: on
+                                  ? (s.automation.runDays ?? []).filter((item) => item !== day)
+                                  : [...(s.automation.runDays ?? []), day].sort(),
+                              },
+                            }))
+                          }
+                        >
+                          {label}
+                        </Button>
+                      );
+                    })}
+                  </div>
+                </SettingField>
+              </div>
+              <ScheduleSummary automation={settings.automation} />
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                 <SettingField label="Timezone">
                   <Select
                     value={settings.automation.timezone}
@@ -1039,6 +1075,41 @@ function ToggleRow({
     <div className="flex items-center justify-between rounded-lg border p-3">
       <Label>{label}</Label>
       <Switch checked={checked} onCheckedChange={onChange} />
+    </div>
+  );
+}
+/**
+ * The schedule as a sentence, plus when the next run is. "Ran today" is inferred from the clock —
+ * once today's run time has passed, the scheduler runs it within 15 minutes — so this needs no read
+ * of the run records; the Scheduler Operations table below shows what actually happened.
+ */
+function ScheduleSummary({ automation }: { automation: RecurringPaymentSettings["automation"] }) {
+  const now = new Date();
+  const runAt = parseRunTime(automation.runTime);
+  const clock = zonedClock(now, automation.timezone);
+  const runDays = automation.runDays ?? [];
+  const ranToday = runAt !== null && clock.minutes >= runAt + 15 && runDays.includes(clock.weekday);
+  const next = nextAutomationRun({ ...automation, runDays }, now, ranToday);
+  const days =
+    runDays.length === 7
+      ? "every day"
+      : runDays.length
+        ? `on ${runDays.map((day) => ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"][day]).join(", ")}`
+        : "on no days";
+  return (
+    <div className="rounded-lg border bg-muted/40 p-3 text-sm">
+      {automation.enabled ? (
+        <>
+          Runs {days} at <span className="font-medium">{automation.runTime}</span> ({automation.timezone}).
+          {next && (
+            <>
+              {" "}Next run: <span className="font-medium">{next.weekday} {next.date}, {next.time}</span>.
+            </>
+          )}
+        </>
+      ) : (
+        "Automatic runs are off — payments are generated only when someone presses Generate all or Run automation now."
+      )}
     </div>
   );
 }

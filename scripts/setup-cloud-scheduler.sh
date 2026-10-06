@@ -112,7 +112,8 @@ fi
 JOBS=(
   "greythr-sync|/api/greythr/sync|5 * * * *"
   "workflow-escalations|/api/workflow/check-escalations|0 * * * *"
-  "recurring-payments|/api/recurring-payments/generate|15 0 * * *"
+  # Recurring Payments: ticks every 15 min; each organization runs at its own time set in the app.
+  "recurring-payments|/api/recurring-payments/generate|*/15 * * * *"
   "insurance-workflow|/api/vehicle-management/insurance-workflow|30 0 * * *"
   "fixed-deposit-controls|/api/fixed-deposit/daily-controls|45 0 * * *"
   "hr-sla|/api/hr/sla|0 1 * * *"

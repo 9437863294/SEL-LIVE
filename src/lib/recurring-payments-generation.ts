@@ -18,7 +18,6 @@ import { addBusinessHours, makeIsWorkingDay } from '@/lib/working-hours';
 import {
   buildPaymentObligationFields,
   DEFAULT_RECURRING_WORKFLOW,
-  isWorkflowActivationDue,
   loadWorkingCalendar,
   matchApprovalRule,
   recurringObligationId,
@@ -53,7 +52,6 @@ export interface ManualGenerationContext {
   actor: { id: string; name: string };
   rules: ApprovalRule[];
   workflow: RecurringWorkflowStep[];
-  activationDays: number;
   calendar: Awaited<ReturnType<typeof loadWorkingCalendar>>;
   /** The org's working calendar as the schedule math consumes it, so due dates match the cron's. */
   scheduleOptions: RecurrenceOptions;
@@ -76,7 +74,6 @@ export async function loadManualGenerationContext(
     rules: ruleSnapshot.docs.map((item) => ({ id: item.id, ...item.data() }) as ApprovalRule),
     // An empty saved list is not a workflow; fall back exactly as the cron and the stage screen do.
     workflow: steps?.length ? steps : DEFAULT_RECURRING_WORKFLOW,
-    activationDays: Math.min(90, Math.max(0, Number(settingsSnap.data()?.automation?.workflowActivationDays ?? 7))),
     calendar,
     scheduleOptions: { isWorkingDay: makeIsWorkingDay(calendar.workingHours, calendar.holidays) },
   };
@@ -145,9 +142,9 @@ export async function generateMasterCycle(
     }),
   });
   const firstStep = workflow[0];
-  const today = new Date();
-  const activation = resolveWorkflowActivation(firstStep, fields, { activationDays: context.activationDays, today });
-  const noAssignee = !activation && Boolean(firstStep) && isWorkflowActivationDue(fields, { activationDays: context.activationDays, today });
+  // Enters its first step the moment it is created — no waiting window before the due date.
+  const activation = resolveWorkflowActivation(firstStep, fields);
+  const noAssignee = !activation && Boolean(firstStep);
 
   const created = await runTransaction(db, async (transaction) => {
     if ((await transaction.get(paymentRef)).exists()) return false;

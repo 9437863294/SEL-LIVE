@@ -1,16 +1,22 @@
 import type { Timestamp } from 'firebase/firestore';
 import type { RecurrenceRuleInput, RecurringCycle } from './recurring-payments-schedule';
-import { DEFAULT_BILLING_PERIOD_ADJUSTMENT_DAYS } from './recurring-payments-schedule';
+import { DEFAULT_BILLING_PERIOD_ADJUSTMENT_DAYS, parseRunTime } from './recurring-payments-schedule';
 
 export { loadWorkingCalendar } from './working-hours-client';
 // The schedule math lives in its own dependency-free module (see recurring-payments-schedule.ts)
 // but stays reachable from here, so every consumer keeps importing the module from one place.
 export {
   actionableRecurringCycle,
+  ALL_WEEKDAYS,
+  automationRunDue,
   BILL_DATE_RULES,
   billingPeriodAdjustmentError,
   billingPeriodAdjustmentWindow,
+  DEFAULT_AUTOMATION_RUN_TIME,
   DEFAULT_BILLING_PERIOD_ADJUSTMENT_DAYS,
+  nextAutomationRun,
+  parseRunTime,
+  zonedClock,
   buildRecurringCycle,
   buildRecurringCycleSchedule,
   daysUntilDate,
@@ -21,6 +27,7 @@ export {
   pendingRecurringCycles,
   recurrenceLeadDays,
   recurringDateOnly,
+  type AutomationSchedule,
   type BillDateRule,
   type BillingPeriod,
   type DueDateRule,
@@ -176,8 +183,11 @@ export interface RecurringPaymentSettings {
   };
   automation: {
     enabled: boolean;
-    workflowActivationDays: number;
     timezone: string;
+    /** Local time (`HH:MM`, in `timezone`) the daily automatic run starts. */
+    runTime: string;
+    /** Days of the week the automatic run happens, 0 = Sunday … 6 = Saturday. */
+    runDays: number[];
     retryFailedNotifications: boolean;
   };
   controls: {
@@ -240,7 +250,12 @@ export const DEFAULT_RECURRING_PAYMENT_SETTINGS: RecurringPaymentSettings = {
     daysBefore: [7, 3, 1, 0], daysAfter: [1], dailyOverdueEscalation: true,
     recipients: ['Assigned Employee', 'Accounts Team'],
   },
-  automation: { enabled: true, workflowActivationDays: 7, timezone: 'Asia/Kolkata', retryFailedNotifications: true },
+  automation: {
+    enabled: true, timezone: 'Asia/Kolkata', retryFailedNotifications: true,
+    // Literals rather than the schedule module's constants: this object is built at module load, and
+    // an imported binding that isn't initialised yet there left the defaults without run days.
+    runTime: '06:00', runDays: [0, 1, 2, 3, 4, 5, 6],
+  },
   controls: {
     lockClosedPayments: true, requireBillBeforeApproval: true,
     requireTransactionReference: true, allowAuthorizedReopen: false,
@@ -267,9 +282,25 @@ export function mergeRecurringPaymentSettings(
     ...(data || {}),
     organizationId,
     notifications: { ...DEFAULT_RECURRING_PAYMENT_SETTINGS.notifications, ...data?.notifications },
-    automation: { ...DEFAULT_RECURRING_PAYMENT_SETTINGS.automation, ...data?.automation },
+    automation: normalizeAutomation({ ...DEFAULT_RECURRING_PAYMENT_SETTINGS.automation, ...data?.automation }),
     controls: { ...DEFAULT_RECURRING_PAYMENT_SETTINGS.controls, ...data?.controls },
     eApproval: { ...DEFAULT_RECURRING_E_APPROVAL_SETTINGS, ...data?.eApproval },
+  };
+}
+
+/**
+ * The automation group with its schedule fields made safe to read: a run-days list that isn't an
+ * array of weekdays, or a run time that isn't HH:MM, falls back to the default rather than reaching
+ * the screen (or the scheduler) as something it cannot use.
+ */
+function normalizeAutomation(automation: RecurringPaymentSettings['automation']): RecurringPaymentSettings['automation'] {
+  const days = Array.isArray(automation.runDays)
+    ? [...new Set(automation.runDays.map(Number).filter((day) => Number.isInteger(day) && day >= 0 && day <= 6))].sort()
+    : null;
+  return {
+    ...automation,
+    runDays: days ?? [0, 1, 2, 3, 4, 5, 6],
+    runTime: parseRunTime(automation.runTime) === null ? '06:00' : automation.runTime,
   };
 }
 

@@ -7,9 +7,7 @@ import { db } from "@/lib/firebase";
 import { useAuth } from "@/components/auth/AuthProvider";
 import { useAuthorization } from "@/hooks/useAuthorization";
 import {
-  daysUntilDate,
   DEFAULT_RECURRING_WORKFLOW,
-  isWorkflowActivationDue,
   resolveWorkflowActivation,
   RP_COLLECTIONS,
   currency,
@@ -71,7 +69,6 @@ export default function AutomationHealthReport() {
   const [masters, setMasters] = useState<RecurringPaymentMaster[]>([]);
   const [payments, setPayments] = useState<PaymentObligation[]>([]);
   const [workflow, setWorkflow] = useState<RecurringWorkflowStep[]>(DEFAULT_RECURRING_WORKFLOW);
-  const [activationDays, setActivationDays] = useState(7);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
@@ -125,13 +122,7 @@ export default function AutomationHealthReport() {
       ),
     ];
     (async () => {
-      const [settingsSnap, workflowSnap] = await Promise.all([
-        getDoc(doc(db, RP_COLLECTIONS.settings, organizationId.replace(/[^a-zA-Z0-9_-]/g, "_"))),
-        getDoc(doc(db, "workflows", "recurring-payments-workflow")),
-      ]);
-      setActivationDays(
-        Math.min(90, Math.max(0, Number(settingsSnap.data()?.automation?.workflowActivationDays ?? 7))),
-      );
+      const workflowSnap = await getDoc(doc(db, "workflows", "recurring-payments-workflow"));
       // An empty saved list falls back too — `[]` is truthy, and with no first step every stuck
       // item would read as "No assignee resolved".
       const steps = workflowSnap.data()?.steps as RecurringWorkflowStep[] | undefined;
@@ -153,11 +144,6 @@ export default function AutomationHealthReport() {
     [masters],
   );
 
-  const today = useMemo(() => {
-    const now = new Date();
-    return new Date(now.getFullYear(), now.getMonth(), now.getDate());
-  }, []);
-
   const stuck = useMemo(
     () =>
       payments
@@ -167,9 +153,9 @@ export default function AutomationHealthReport() {
             !item.currentStepId &&
             !["Cancelled", "Waived"].includes(item.status),
         )
-        .map((item) => ({ item, diagnosis: diagnose(item, workflow, activationDays, today) }))
+        .map((item) => ({ item, diagnosis: diagnose(item, workflow) }))
         .sort((a, b) => a.item.dueDate.localeCompare(b.item.dueDate)),
-    [payments, workflow, activationDays, today],
+    [payments, workflow],
   );
 
   const stuckNeedingAttention = stuck.filter((row) => row.diagnosis.actionable);
@@ -319,8 +305,8 @@ export default function AutomationHealthReport() {
         noun="obligation"
         description={
           <>
-            Generated, but never entered a workflow step — diagnosed against the org&apos;s
-            current activation window ({activationDays} day(s) before due)
+            Generated, but never entered a workflow step — each enters its first step on the next
+            automation run once it has an owner
           </>
         }
       >
@@ -417,23 +403,11 @@ export default function AutomationHealthReport() {
 function diagnose(
   payment: PaymentObligation,
   workflow: RecurringWorkflowStep[],
-  activationDays: number,
-  today: Date,
 ): { label: string; actionable: boolean } {
   if (!payment.dueDate) return { label: "Missing due date", actionable: true };
-  // The same test the generation route applies (expected bill date reached, or due date inside the
-  // activation window), so "Not due yet" never contradicts what the next run will actually do.
-  if (!isWorkflowActivationDue(payment, { activationDays, today })) {
-    const byDueDate = daysUntilDate(payment.dueDate, today) - activationDays;
-    const days = payment.expectedBillDate
-      ? Math.min(byDueDate, daysUntilDate(payment.expectedBillDate, today))
-      : byDueDate;
-    return {
-      label: `Not due yet — activates automatically in ${days} day(s)`,
-      actionable: false,
-    };
-  }
-  const activation = resolveWorkflowActivation(workflow[0], payment, { activationDays, today });
+  // The same rule the generation route applies: there is no waiting window, so a Scheduled
+  // obligation either has an owner and activates on the next run, or needs one assigned.
+  const activation = resolveWorkflowActivation(workflow[0], payment);
   if (!activation)
     return {
       label: "No assignee resolved — check the master's owner / backup owner",

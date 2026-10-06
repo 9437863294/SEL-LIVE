@@ -402,7 +402,7 @@ export default function RecurringMasterRegister() {
       const detailParts = [
         workflowTriggered && `${workflowTriggered} entered their workflow`,
         awaitingBillDateCount &&
-          `${awaitingBillDateCount} at "Scheduled" until their bill date`,
+          `${awaitingBillDateCount} waiting at "Scheduled" (no workflow step configured)`,
         noAssigneeCount &&
           `${noAssigneeCount} could not be assigned — check the payment owner, or the first step's users in Settings › Workflow`,
         skippedParts.length && `skipped: ${skippedParts.join(", ")}`,

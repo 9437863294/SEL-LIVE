@@ -137,7 +137,7 @@ const faqs: { q: string; a: string }[] = [
   },
   {
     q: 'How does auto-generation decide exactly when to create a payment?',
-    a: 'Each master sets when its bill is expected (start or end of the billing period, a fixed day of the month, or a number of days after the period ends) and a lead time before that date. The daily automation creates the obligation once that generation date arrives — and only if Settings › Automation has auto-generation switched on. The due date is then measured from the bill date, and a grace period can delay when it reads as overdue. Separately, an org-wide "Workflow starts before due" setting decides when a Scheduled obligation actually enters the workflow’s first step. The master form shows the next three cycles with all of these dates resolved.',
+    a: 'Each master sets when its bill is expected (start or end of the billing period, a fixed day of the month, or a number of days after the period ends) and a lead time before that date. The daily automatic run — the same as pressing “Generate all” — creates the obligation once that generation date arrives. It runs at the time and on the days set in Settings › Automation (06:00 every day by default), and only while automatic runs are switched on there. The due date is then measured from the bill date, and a grace period can delay when it reads as overdue. The obligation enters the workflow’s first step as soon as it is created, so its owner sees it straight away. The master form shows the next three cycles with all of these dates resolved.',
   },
   {
     q: 'Can I generate a payment outside the automatic schedule?',

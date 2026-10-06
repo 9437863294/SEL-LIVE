@@ -4,6 +4,9 @@ import assert from 'node:assert/strict';
 // Firestore-client helper that only resolves inside the bundler.
 import {
   actionableRecurringCycle,
+  automationRunDue,
+  nextAutomationRun,
+  zonedClock,
   billingPeriodAdjustmentError,
   billingPeriodAdjustmentWindow,
   buildRecurringCycle,
@@ -739,4 +742,47 @@ test('a billing period adjustment rejects reversed, malformed and disabled chang
   assert.match(billingPeriodAdjustmentError(generated, { start: '2026-02-30', end: '2026-09-30' }, 5), /Enter both/);
   assert.match(billingPeriodAdjustmentError(generated, { start: '2026-09-02', end: '2026-09-30' }, 0), /cannot be changed/);
   assert.equal(billingPeriodAdjustmentError(generated, generated, 0), null, 'a window of 0 still accepts the period as generated');
+});
+
+/* The daily automation schedule. Instants are UTC; the schedule reads them in Asia/Kolkata (+05:30). */
+const ist = { enabled: true, runTime: '06:00', runDays: [0, 1, 2, 3, 4, 5, 6], timezone: 'Asia/Kolkata' };
+
+test('the run clock reads the organization timezone, not the server', () => {
+  // 2026-10-05 23:00 UTC is already 6 Oct, 04:30 in India.
+  assert.deepEqual(zonedClock(new Date('2026-10-05T23:00:00Z'), 'Asia/Kolkata'), { date: '2026-10-06', weekday: 2, minutes: 270 });
+});
+
+test('the daily run is due once its time has passed, and only once a day', () => {
+  assert.equal(automationRunDue(ist, new Date('2026-10-06T00:15:00Z')).due, false, '05:45 IST is before 06:00');
+  const due = automationRunDue(ist, new Date('2026-10-06T00:35:00Z'));
+  assert.equal(due.due, true, '06:05 IST');
+  assert.equal(due.localDate, '2026-10-06');
+  assert.equal(automationRunDue(ist, new Date('2026-10-06T09:00:00Z'), '2026-10-06').due, false, 'already ran today');
+  assert.equal(automationRunDue(ist, new Date('2026-10-06T09:00:00Z'), '2026-10-05').due, true, 'a late tick still runs that day');
+});
+
+test('the daily run respects its days and its switch', () => {
+  const weekdays = { ...ist, runDays: [1, 2, 3, 4, 5] };
+  assert.match(automationRunDue(weekdays, new Date('2026-10-04T03:00:00Z')).reason, /No run on Sunday/);
+  assert.equal(automationRunDue(weekdays, new Date('2026-10-05T03:00:00Z')).due, true, 'Monday');
+  assert.equal(automationRunDue({ ...ist, enabled: false }, new Date('2026-10-06T03:00:00Z')).due, false);
+  assert.equal(automationRunDue({ ...ist, runTime: 'nonsense' }, new Date('2026-10-06T00:35:00Z')).due, true, 'a bad time falls back to 06:00');
+});
+
+test('the next run skips today once it has run, and non-run days', () => {
+  const tuesdayMorning = new Date('2026-10-06T02:00:00Z'); // Tue 07:30 IST
+  assert.deepEqual(nextAutomationRun(ist, tuesdayMorning, false), { date: '2026-10-06', weekday: 'Tuesday', time: '06:00' });
+  assert.deepEqual(nextAutomationRun(ist, tuesdayMorning, true), { date: '2026-10-07', weekday: 'Wednesday', time: '06:00' });
+  assert.deepEqual(nextAutomationRun({ ...ist, runDays: [1] }, tuesdayMorning, false), { date: '2026-10-12', weekday: 'Monday', time: '06:00' });
+  assert.equal(nextAutomationRun({ ...ist, enabled: false }, tuesdayMorning, false), null);
+});
+
+test('without a timing window, activation happens as soon as an owner resolves', () => {
+  const step = { id: '1', name: 'Bill Collection', description: '', tat: 24, assignmentType: 'Payment-owner', assignedTo: [], actions: ['Submit Bill'], uploadRequired: true };
+  // Due months away — the old 7-day window would have left it Scheduled.
+  const far = { dueDate: '2027-03-01', expectedBillDate: '2027-02-20', assignedTo: 'u-owner' };
+  const activation = resolveWorkflowActivation(step, far);
+  assert.equal(activation.currentStepId, '1');
+  assert.deepEqual(activation.assignees, ['u-owner']);
+  assert.equal(resolveWorkflowActivation(step, { ...far, assignedTo: '' }), null, 'still null with nobody to hold it');
 });
