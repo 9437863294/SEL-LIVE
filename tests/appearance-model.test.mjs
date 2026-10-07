@@ -5,9 +5,13 @@ import { contrastRatio, ensureContrast, hexToHsl, hslToHex, isHex, readableOn } 
 import {
   ACCENTS,
   BUILT_IN_ACCENTS,
+  DEFAULT_BRANDING,
   DEFAULT_CONFIG,
+  LOGIN_DESIGNS,
+  LOGIN_DESIGN_META,
   cleanText,
   sanitizeAsset,
+  sanitizeBranding,
   sanitizeConfig,
   sanitizePreferences,
 } from '../src/lib/appearance/model.ts';
@@ -117,6 +121,45 @@ test('a company config is repaired, not trusted', () => {
   // The default accent must be one users may choose, so an unapproved one falls back.
   assert.equal(config.defaults.accent, 'teal');
   assert.equal(config.defaults.font, 'inter');
+});
+
+test('sign-in design choices are validated; a document saved before them gets the defaults', () => {
+  // A branding document saved before designs existed gets the defaults for every new field.
+  const old = sanitizeBranding({ companyName: 'SEL', loginHeadline: 'Hello' });
+  assert.equal(old.loginDesign, DEFAULT_BRANDING.loginDesign);
+  assert.equal(old.loginShowClock, true);
+  assert.deepEqual(old.loginHighlights, DEFAULT_BRANDING.loginHighlights);
+
+  const chosen = sanitizeBranding({ loginDesign: 'blueprint', loginShowClock: false, loginShowHighlights: 'yes' });
+  assert.equal(chosen.loginDesign, 'blueprint');
+  assert.equal(chosen.loginShowClock, false);
+  assert.equal(chosen.loginShowHighlights, true, 'a non-boolean falls back');
+  assert.equal(sanitizeBranding({ loginDesign: 'neon' }).loginDesign, DEFAULT_BRANDING.loginDesign);
+  // An unknown design never replaces a valid published one.
+  assert.equal(sanitizeBranding({ loginDesign: 'neon' }, chosen).loginDesign, 'blueprint');
+
+  for (const id of LOGIN_DESIGNS) assert.ok(LOGIN_DESIGN_META[id]?.label, id);
+});
+
+test('sign-in highlights are plain text, need a title, and stop at three', () => {
+  const { loginHighlights } = sanitizeBranding({
+    loginHighlights: [
+      { label: '  <i>Live</i> workflows ', description: 'x'.repeat(200) },
+      { label: '', description: 'no title, dropped' },
+      'not an object',
+      { label: 'Two' },
+      { label: 'Three', description: 'c' },
+      { label: 'Four', description: 'd' },
+    ],
+  });
+  assert.deepEqual(
+    loginHighlights.map((h) => h.label),
+    ['iLive/i workflows', 'Two', 'Three'],
+  );
+  assert.equal(loginHighlights[0].description.length, 80);
+  assert.equal(loginHighlights[1].description, '');
+  // Removing every highlight is a choice, not a reason to bring the defaults back.
+  assert.deepEqual(sanitizeBranding({ loginHighlights: [] }).loginHighlights, []);
 });
 
 // ── Precedence ─────────────────────────────────────────────────────────────────────────────────

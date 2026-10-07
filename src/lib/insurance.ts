@@ -65,6 +65,37 @@ export type ProjectLifecycle = (typeof PROJECT_LIFECYCLE)[number];
 
 export const PAYMENT_MODES = ['Auto Debit', 'Net Banking', 'UPI', 'Cheque', 'Card', 'Cash', 'NEFT/RTGS'] as const;
 
+// ─── settlement ───────────────────────────────────────────────────────────────
+
+/** Ways a personal policy ends with money paid out by the insurer. */
+export const SETTLEMENT_TYPES = ['Maturity Claim', 'Death Claim', 'Surrender', 'Premature Closure'] as const;
+export type SettlementType = (typeof SETTLEMENT_TYPES)[number];
+
+/** The stored lifecycle each settlement leaves the policy in. */
+export const SETTLEMENT_STATUS: Record<SettlementType, PersonalLifecycle> = {
+  'Maturity Claim': 'Claimed',
+  'Death Claim': 'Claimed',
+  Surrender: 'Surrendered',
+  'Premature Closure': 'Closed',
+};
+
+export const SETTLEMENT_HINT: Record<SettlementType, string> = {
+  'Maturity Claim': 'The policy reached maturity and the maturity value is claimed.',
+  'Death Claim': 'The insured has died and the nominee claims the sum assured.',
+  Surrender: 'The policy is given up early for its surrender value.',
+  'Premature Closure': 'The policy is closed before maturity, e.g. foreclosure or free-look cancellation.',
+};
+
+/** Ways money comes back from an insurer. */
+export const RECEIPT_MODES = ['NEFT/RTGS', 'Cheque', 'Net Banking', 'UPI', 'Cash'] as const;
+
+/** Net payout: gross less deductions, never below zero; null until a gross amount is known. */
+export function settlementNet(gross: number | null | undefined, deductions: number | null | undefined): number | null {
+  if (gross === null || gross === undefined || !Number.isFinite(gross)) return null;
+  const less = deductions && Number.isFinite(deductions) ? deductions : 0;
+  return Math.max(0, gross - less);
+}
+
 export const NOMINEE_RELATIONSHIPS = ['Spouse', 'Son', 'Daughter', 'Father', 'Mother', 'Brother', 'Sister', 'Other'] as const;
 
 /** Window, in days, in which an upcoming premium or expiry counts as "due soon". */

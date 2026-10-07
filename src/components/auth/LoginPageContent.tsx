@@ -3,7 +3,6 @@
 import { useEffect, useRef, useState } from "react";
 import ReCAPTCHA from "react-google-recaptcha";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import Image from "next/image";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -28,14 +27,10 @@ import { Capacitor } from "@capacitor/core";
 import {
   ArrowLeft,
   CheckCircle2,
-  Eye,
-  EyeOff,
   Loader2,
-  Lock,
   Mail,
   RefreshCw,
   ShieldCheck,
-  User as UserIcon,
 } from "lucide-react";
 import { Checkbox } from "@/components/ui/checkbox";
 import { useAuth } from "@/components/auth/AuthProvider";
@@ -43,6 +38,9 @@ import { useAppearance } from "@/components/theme/ThemeProvider";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import type { SavedUser } from "@/lib/types";
 import { cn } from "@/lib/utils";
+import { LoginDesignFrame } from "@/components/auth/login/designs";
+import { GoogleIcon, IconInput, LoginSplash, OrDivider, PasswordInput } from "@/components/auth/login/parts";
+import { LOGIN_TONES } from "@/components/auth/login/tones";
 
 // ─── helpers ──────────────────────────────────────────────────────────────────
 
@@ -79,218 +77,12 @@ const getInitials = (name: string) =>
     .substring(0, 2)
     .toUpperCase();
 
-/** The SEL logo, shown until the company publishes one of its own. */
-const LOGO_URL =
-  "https://firebasestorage.googleapis.com/v0/b/module-hub-uc7tw.firebasestorage.app/o/Logo%2FSEL%20%20logo2%20.png?alt=media&token=39b0f804-0610-4f3a-b26e-8ce334f94788";
-
-function GoogleIcon() {
-  return (
-    <svg className="h-4 w-4 shrink-0" viewBox="0 0 24 24" aria-hidden>
-      <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" />
-      <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" />
-      <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l3.66-2.84z" />
-      <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" />
-    </svg>
-  );
-}
-
-// ─── Left panel feature highlights ────────────────────────────────────────────
-
-const FEATURES = [
-  { label: "Live workflows", desc: "Real-time approvals and status tracking" },
-  { label: "Field operations", desc: "Monitor execution across all sites" },
-  { label: "Smart finance", desc: "Requisitions, billing and loan management" },
-];
-
-// ─── sub-components ────────────────────────────────────────────────────────────
-
-// The page is dark whatever the theme, so it wants the logo drawn for dark backgrounds.
-function LogoBlock() {
-  const { branding } = useAppearance().company;
-  const logo = branding.logoDark ?? branding.logoLight;
-  return (
-    <div className="relative mx-auto h-20 w-[65%]">
-      <Image
-        src={logo?.url ?? LOGO_URL}
-        alt={`${branding.companyName} logo`}
-        fill
-        sizes="260px"
-        style={{ objectFit: "contain" }}
-        preload
-      />
-    </div>
-  );
-}
+// ─── main component ────────────────────────────────────────────────────────────
 
 /**
- * The hero headline with its highlighted phrase. The headline's last word goes onto the second
- * line with the highlight — how "Powering every project / through live intelligence" was always
- * set — so the default reads exactly as before and a custom one keeps the same shape.
+ * The sign-in flow — profiles, email and password, reset, two-factor — drawn inside whichever
+ * design the company chose in Settings → Appearance → Branding (see `login/designs.tsx`).
  */
-function Headline({ headline, highlight }: { headline: string; highlight: string }) {
-  const words = headline.split(" ").filter(Boolean);
-  const lead = words.slice(0, -1).join(" ");
-  const joiner = words[words.length - 1] ?? "";
-  return (
-    <h1 className="mb-4 text-3xl font-bold leading-tight tracking-tight text-white lg:text-4xl">
-      {lead && (
-        <>
-          {lead}
-          <br />
-        </>
-      )}
-      {joiner}
-      {joiner && highlight ? " " : null}
-      {highlight && <span className="text-cyan-300">{highlight}</span>}
-    </h1>
-  );
-}
-
-function PasswordInput({
-  value,
-  onChange,
-  placeholder = "Enter your password",
-  autoFocus,
-  error,
-}: {
-  value: string;
-  onChange: (v: string) => void;
-  placeholder?: string;
-  autoFocus?: boolean;
-  error?: string;
-}) {
-  const [show, setShow] = useState(false);
-  return (
-    <div className="space-y-1.5">
-      <div className="relative">
-        <Lock className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400 pointer-events-none" />
-        <Input
-          type={show ? "text" : "password"}
-          required
-          placeholder={placeholder}
-          value={value}
-          onChange={(e) => onChange(e.target.value)}
-          autoFocus={autoFocus}
-          autoComplete="current-password"
-          aria-invalid={!!error}
-          className={cn(
-            "pl-9 pr-10 bg-slate-900/40 border-white/10 focus-visible:ring-primary/60 focus-visible:border-primary/50 transition-colors",
-            error && "border-rose-500/60 focus-visible:ring-rose-500/30"
-          )}
-        />
-        <button
-          type="button"
-          tabIndex={-1}
-          onClick={() => setShow((s) => !s)}
-          className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-200 transition-colors"
-          aria-label={show ? "Hide password" : "Show password"}
-        >
-          {show ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-        </button>
-      </div>
-      {error && <p className="text-xs text-rose-400">{error}</p>}
-    </div>
-  );
-}
-
-// ─── Fancy digital clock ──────────────────────────────────────────────────────
-
-function DigitalClock() {
-  // Server rendering and the browser's first hydration pass must produce the
-  // same text. Start with a deterministic placeholder, then enable the live
-  // clock after the component has mounted in the browser.
-  const [now, setNow] = useState<Date | null>(null);
-  useEffect(() => {
-    setNow(new Date());
-    const id = setInterval(() => setNow(new Date()), 1000);
-    return () => clearInterval(id);
-  }, []);
-
-  const hh   = now ? String(now.getHours()).padStart(2, '0') : '--';
-  const mm   = now ? String(now.getMinutes()).padStart(2, '0') : '--';
-  const ss   = now ? String(now.getSeconds()).padStart(2, '0') : '--';
-  const ampm = now ? (now.getHours() >= 12 ? 'PM' : 'AM') : '\u00a0';
-  const date = now
-    ? now.toLocaleDateString('en-IN', {
-        weekday: 'long', day: '2-digit', month: 'long', year: 'numeric',
-      })
-    : '\u00a0';
-
-  const glow  = '0 0 12px rgba(34,211,238,0.9), 0 0 32px rgba(34,211,238,0.45), 0 0 64px rgba(34,211,238,0.2)';
-  const dimGlow = '0 0 8px rgba(34,211,238,0.5)';
-
-  return (
-    <div className="flex flex-col items-center gap-4 select-none">
-
-      {/* Top decorative line */}
-      <div className="w-40 h-px bg-gradient-to-r from-transparent via-cyan-400/50 to-transparent" />
-
-      {/* Main time display */}
-      <div className="flex items-end gap-1 font-mono leading-none">
-
-        {/* Hours */}
-        <span
-          className="text-6xl font-thin tracking-widest text-cyan-300"
-          style={{ textShadow: glow }}
-        >
-          {hh}
-        </span>
-
-        {/* Blinking colon */}
-        <span
-          className="text-5xl font-thin text-cyan-400 mb-1 animate-pulse"
-          style={{ textShadow: dimGlow }}
-        >
-          :
-        </span>
-
-        {/* Minutes */}
-        <span
-          className="text-6xl font-thin tracking-widest text-cyan-300"
-          style={{ textShadow: glow }}
-        >
-          {mm}
-        </span>
-
-        {/* Seconds + AM/PM stacked */}
-        <div className="flex flex-col items-start ml-1 mb-1 gap-0.5">
-          <span
-            className="text-xs font-mono tracking-widest text-cyan-400/70 leading-none"
-            style={{ textShadow: dimGlow }}
-          >
-            {ampm}
-          </span>
-          <span
-            className="text-2xl font-thin tracking-wider text-cyan-400/80 leading-none"
-            style={{ textShadow: dimGlow }}
-          >
-            {ss}
-          </span>
-        </div>
-      </div>
-
-      {/* Date */}
-      <p
-        className="text-[11px] font-mono tracking-[0.18em] text-cyan-200/55 uppercase text-center"
-        style={{ textShadow: '0 0 8px rgba(34,211,238,0.3)' }}
-      >
-        {date}
-      </p>
-
-      {/* Bottom decorative line */}
-      <div className="w-40 h-px bg-gradient-to-r from-transparent via-cyan-400/50 to-transparent" />
-
-    </div>
-  );
-}
-
-function CurrentYear() {
-  const [year, setYear] = useState<number | null>(null);
-  useEffect(() => setYear(new Date().getFullYear()), []);
-  return <>{year ?? '\u00a0\u00a0\u00a0\u00a0'}</>;
-}
-
-// ─── main component ────────────────────────────────────────────────────────────
 
 export function LoginPageContent() {
   const { toast } = useToast();
@@ -301,7 +93,10 @@ export function LoginPageContent() {
 
   const { setShouldRemember, savedUsers, loadSavedUsers, loading: authLoading } = useAuth();
   // The company's published name and sign-in texts; today's wording until any are published.
-  const { branding } = useAppearance().company;
+  const { company, companyKnown } = useAppearance();
+  const { branding } = company;
+  // The company's chosen design decides the surface, so the form is drawn in that design's tone.
+  const tone = LOGIN_TONES[branding.loginDesign] ?? LOGIN_TONES.horizon;
 
   // ── form state ──
   const [email, setEmail] = useState("");
@@ -345,7 +140,7 @@ export function LoginPageContent() {
     if (view === "password" && !activeUser) {
       setTimeout(() => emailRef.current?.focus(), 50);
     }
-  }, [view, activeUser]);
+  }, [view, activeUser, companyKnown]);
 
   // ── routing ──
   const resolvePostLoginPath = () => {
@@ -602,43 +397,41 @@ export function LoginPageContent() {
 
   const renderProfiles = () => (
     <div className="text-center w-full space-y-6">
-      <LogoBlock />
       <div>
-        <h2 className="text-xl font-semibold text-white">Who's signing in?</h2>
-        <p className="text-sm text-slate-400 mt-1">Select your profile to continue</p>
+        <h2 className={cn("text-xl font-semibold", tone.title)}>Who&apos;s signing in?</h2>
+        <p className={cn("text-sm mt-1", tone.subtitle)}>Select your profile to continue</p>
       </div>
       <div className="flex justify-center flex-wrap gap-4">
         {savedUsers.map((u) => (
           <button
             key={u.id}
             onClick={() => handleProfileClick(u)}
-            className="flex flex-col items-center gap-2 p-4 rounded-xl border border-white/10 bg-slate-900/30 hover:bg-slate-800/50 hover:border-cyan-400/30 transition-all duration-200 w-28 group focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+            className={cn(
+              "flex flex-col items-center gap-2 p-4 rounded-xl border transition-all duration-200 w-28 group focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary",
+              tone.profileCard
+            )}
           >
-            <Avatar className="h-16 w-16 ring-2 ring-white/10 group-hover:ring-cyan-400/40 transition-all">
+            <Avatar className={cn("h-16 w-16 ring-2 transition-all", tone.avatarRing)}>
               <AvatarImage src={u.photoURL} alt={u.name} />
-              <AvatarFallback className="text-lg font-semibold bg-slate-800 text-cyan-300">
+              <AvatarFallback className={cn("text-lg font-semibold", tone.avatarFallback)}>
                 {getInitials(u.name)}
               </AvatarFallback>
             </Avatar>
-            <p className="text-sm font-medium text-slate-100 text-center leading-tight line-clamp-2">{u.name}</p>
+            <p className={cn("text-sm font-medium text-center leading-tight line-clamp-2", tone.profileName)}>{u.name}</p>
           </button>
         ))}
       </div>
-      <Button variant="ghost" size="sm" className="text-slate-400 hover:text-slate-100 hover:bg-white/5 text-xs"
+      <Button variant="ghost" size="sm" className={cn("text-xs", tone.ghostButton)}
         onClick={() => { setActiveUser(null); setView("password"); }}>
         <Mail className="mr-1.5 h-3.5 w-3.5" /> Use email & password
       </Button>
 
-      <div className="relative flex items-center gap-3 w-full">
-        <div className="flex-1 border-t border-white/10" />
-        <span className="text-xs text-slate-500">or</span>
-        <div className="flex-1 border-t border-white/10" />
-      </div>
+      <OrDivider tone={tone} />
 
       <Button
         type="button"
         variant="outline"
-        className="w-full border-white/10 bg-slate-900/40 text-slate-200 hover:bg-slate-800/60 hover:border-white/20 gap-2 transition-all"
+        className={cn("w-full gap-2 transition-all", tone.outlineButton)}
         onClick={handleGoogleSignIn}
         disabled={isGoogleLoading}
       >
@@ -651,22 +444,21 @@ export function LoginPageContent() {
   const renderPassword = () => (
     <div className="w-full space-y-6">
       <div className="text-center">
-        <LogoBlock />
         {activeUser ? (
-          <div className="mt-4 space-y-2">
-            <Avatar className="h-16 w-16 mx-auto ring-2 ring-cyan-400/30">
+          <div className="space-y-2">
+            <Avatar className={cn("h-16 w-16 mx-auto ring-2", tone.avatarRing)}>
               <AvatarImage src={activeUser.photoURL} alt={activeUser.name} />
-              <AvatarFallback className="text-xl font-semibold bg-slate-800 text-cyan-300">
+              <AvatarFallback className={cn("text-xl font-semibold", tone.avatarFallback)}>
                 {getInitials(activeUser.name)}
               </AvatarFallback>
             </Avatar>
-            <h2 className="text-lg font-semibold text-white">{activeUser.name}</h2>
-            <p className="text-xs text-slate-400">{activeUser.email}</p>
+            <h2 className={cn("text-lg font-semibold", tone.title)}>{activeUser.name}</h2>
+            <p className={cn("text-xs", tone.subtitle)}>{activeUser.email}</p>
           </div>
         ) : (
-          <div className="mt-3">
-            <h2 className="text-xl font-semibold text-white">Welcome back</h2>
-            <p className="text-sm text-slate-400 mt-1">Sign in to your account</p>
+          <div>
+            <h2 className={cn("text-xl font-semibold", tone.title)}>Welcome back</h2>
+            <p className={cn("text-sm mt-1", tone.subtitle)}>Sign in to your account</p>
           </div>
         )}
       </div>
@@ -674,42 +466,39 @@ export function LoginPageContent() {
       <form onSubmit={handleSignIn} className="space-y-4 w-full" noValidate>
         {!activeUser && (
           <div className="space-y-1.5">
-            <Label htmlFor="email" className="text-sm font-medium text-slate-300">Email</Label>
-            <div className="relative">
-              <Mail className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400 pointer-events-none" />
-              <Input
-                ref={emailRef}
-                id="email"
-                type="email"
-                placeholder="you@example.com"
-                required
-                value={email}
-                onChange={(e) => { setEmail(e.target.value.toLowerCase()); if (emailError) setEmailError(""); }}
-                onBlur={() => { if (email && !isValidEmail(email)) setEmailError("Enter a valid email address."); else setEmailError(""); }}
-                className={cn(
-                  "pl-9 bg-slate-900/40 border-white/10 focus-visible:ring-primary/60 focus-visible:border-primary/50 transition-colors",
-                  emailError && "border-rose-500/60 focus-visible:ring-rose-500/30"
-                )}
-                autoComplete="email"
-                aria-invalid={!!emailError}
-              />
-            </div>
-            {emailError && <p className="text-xs text-rose-400">{emailError}</p>}
+            <Label htmlFor="email" className={cn("text-sm font-medium", tone.label)}>Email</Label>
+            <IconInput
+              ref={emailRef}
+              tone={tone}
+              icon={Mail}
+              id="email"
+              type="email"
+              placeholder="you@example.com"
+              required
+              value={email}
+              onChange={(e) => { setEmail(e.target.value.toLowerCase()); if (emailError) setEmailError(""); }}
+              onBlur={() => { if (email && !isValidEmail(email)) setEmailError("Enter a valid email address."); else setEmailError(""); }}
+              invalid={!!emailError}
+              autoComplete="email"
+            />
+            {emailError && <p className={cn("text-xs", tone.error)}>{emailError}</p>}
           </div>
         )}
 
         <div className="space-y-1.5">
           <div className="flex items-center justify-between">
-            <Label htmlFor="password" className="text-sm font-medium text-slate-300">Password</Label>
+            <Label htmlFor="password" className={cn("text-sm font-medium", tone.label)}>Password</Label>
             <button
               type="button"
               onClick={() => { setForgotEmail((activeUser ? activeUser.email : email).trim().toLowerCase()); setView("forgot"); }}
-              className="text-xs text-cyan-400/80 hover:text-cyan-300 transition-colors"
+              className={cn("text-xs transition-colors", tone.link)}
             >
               Forgot password?
             </button>
           </div>
           <PasswordInput
+            tone={tone}
+            id="password"
             value={password}
             onChange={(v) => { setPassword(v); if (passwordError) setPasswordError(""); }}
             autoFocus={!!activeUser}
@@ -717,13 +506,15 @@ export function LoginPageContent() {
           />
         </div>
 
-        {/* reCAPTCHA v2 visible checkbox */}
+        {/* reCAPTCHA v2 visible checkbox — a fixed 304px widget, so it lines up with the inputs' left edge */}
         {RECAPTCHA_SITE_KEY && (
-          <div className="flex justify-center py-1">
+          <div className="flex justify-start py-1">
             <ReCAPTCHA
+              // A new widget when the design changes surface: the theme is read once, on mount.
+              key={tone.recaptcha}
               ref={recaptchaRef}
               sitekey={RECAPTCHA_SITE_KEY}
-              theme="dark"
+              theme={tone.recaptcha}
               onChange={(token) => setRecaptchaToken(token ?? '')}
               onExpired={() => setRecaptchaToken('')}
               onError={() => setRecaptchaToken('')}
@@ -733,8 +524,8 @@ export function LoginPageContent() {
 
         {!activeUser && (
           <div className="flex items-center gap-2">
-            <Checkbox id="remember" checked={rememberMe} onCheckedChange={(c) => setRememberMe(!!c)} />
-            <label htmlFor="remember" className="text-sm text-slate-300 cursor-pointer select-none">
+            <Checkbox id="remember" className={tone.checkbox} checked={rememberMe} onCheckedChange={(c) => setRememberMe(!!c)} />
+            <label htmlFor="remember" className={cn("text-sm cursor-pointer select-none", tone.checkLabel)}>
               Keep me signed in
             </label>
           </div>
@@ -742,22 +533,18 @@ export function LoginPageContent() {
 
         <Button
           type="submit"
-          className="w-full bg-primary hover:bg-primary/90 text-white shadow-lg shadow-primary/25 transition-all duration-200 active:scale-[0.98]"
+          className={cn("w-full transition-all duration-200 active:scale-[0.98]", tone.primaryButton)}
           disabled={isLoading}
         >
           {isLoading ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Signing in…</> : "Sign In"}
         </Button>
 
-        <div className="relative flex items-center gap-3 py-1">
-          <div className="flex-1 border-t border-white/10" />
-          <span className="text-xs text-slate-500">or</span>
-          <div className="flex-1 border-t border-white/10" />
-        </div>
+        <OrDivider tone={tone} />
 
         <Button
           type="button"
           variant="outline"
-          className="w-full border-white/10 bg-slate-900/40 text-slate-200 hover:bg-slate-800/60 hover:border-white/20 gap-2 transition-all"
+          className={cn("w-full gap-2 transition-all", tone.outlineButton)}
           onClick={handleGoogleSignIn}
           disabled={isGoogleLoading || isLoading}
         >
@@ -767,7 +554,7 @@ export function LoginPageContent() {
 
         {savedUsers.length > 0 && (
           <Button variant="ghost" type="button" size="sm"
-            className="w-full text-slate-400 hover:text-slate-100 hover:bg-white/5 text-xs"
+            className={cn("w-full text-xs", tone.ghostButton)}
             onClick={() => { setView("profiles"); setActiveUser(null); setPassword(""); setPasswordError(""); }}>
             <ArrowLeft className="mr-1.5 h-3.5 w-3.5" /> Back to profiles
           </Button>
@@ -779,42 +566,35 @@ export function LoginPageContent() {
   const renderForgot = () => (
     <div className="w-full space-y-6">
       <div className="text-center">
-        <LogoBlock />
-        <div className="mt-4">
-          <h2 className="text-xl font-semibold text-white">Reset Password</h2>
-          <p className="text-sm text-slate-400 mt-1">
-            Enter your email and we'll send you a reset link.
-          </p>
-        </div>
+        <h2 className={cn("text-xl font-semibold", tone.title)}>Reset Password</h2>
+        <p className={cn("text-sm mt-1", tone.subtitle)}>
+          Enter your email and we&apos;ll send you a reset link.
+        </p>
       </div>
 
       <form onSubmit={handleForgotPassword} className="space-y-4 w-full" noValidate>
         <div className="space-y-1.5">
-          <Label htmlFor="forgot-email" className="text-sm font-medium text-slate-300">Email address</Label>
-          <div className="relative">
-            <Mail className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400 pointer-events-none" />
-            <Input
-              id="forgot-email"
-              type="email"
-              placeholder="you@example.com"
-              required
-              value={forgotEmail}
-              onChange={(e) => { setForgotEmail(e.target.value.toLowerCase()); if (forgotEmailError) setForgotEmailError(""); }}
-              className={cn(
-                "pl-9 bg-slate-900/40 border-white/10 focus-visible:ring-primary/60 focus-visible:border-primary/50 transition-colors",
-                forgotEmailError && "border-rose-500/60"
-              )}
-              autoFocus
-            />
-          </div>
-          {forgotEmailError && <p className="text-xs text-rose-400">{forgotEmailError}</p>}
+          <Label htmlFor="forgot-email" className={cn("text-sm font-medium", tone.label)}>Email address</Label>
+          <IconInput
+            tone={tone}
+            icon={Mail}
+            id="forgot-email"
+            type="email"
+            placeholder="you@example.com"
+            required
+            value={forgotEmail}
+            onChange={(e) => { setForgotEmail(e.target.value.toLowerCase()); if (forgotEmailError) setForgotEmailError(""); }}
+            invalid={!!forgotEmailError}
+            autoFocus
+          />
+          {forgotEmailError && <p className={cn("text-xs", tone.error)}>{forgotEmailError}</p>}
         </div>
 
-        <Button type="submit" className="w-full" disabled={isForgotLoading}>
+        <Button type="submit" className={cn("w-full", tone.primaryButton)} disabled={isForgotLoading}>
           {isForgotLoading ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Sending…</> : "Send Reset Link"}
         </Button>
         <Button variant="ghost" type="button" size="sm"
-          className="w-full text-slate-400 hover:text-slate-100 hover:bg-white/5 text-xs"
+          className={cn("w-full text-xs", tone.ghostButton)}
           onClick={() => { setView("password"); setForgotEmailError(""); }}>
           <ArrowLeft className="mr-1.5 h-3.5 w-3.5" /> Back to sign in
         </Button>
@@ -824,27 +604,26 @@ export function LoginPageContent() {
 
   const renderForgotSent = () => (
     <div className="w-full text-center space-y-6">
-      <LogoBlock />
       <div className="flex flex-col items-center gap-4">
-        <div className="flex h-16 w-16 items-center justify-center rounded-full bg-emerald-500/15 ring-2 ring-emerald-400/30">
-          <CheckCircle2 className="h-8 w-8 text-emerald-400" />
+        <div className={cn("flex h-16 w-16 items-center justify-center rounded-full ring-2", tone.successBadge)}>
+          <CheckCircle2 className="h-8 w-8" />
         </div>
         <div>
-          <h2 className="text-xl font-semibold text-white">Check your inbox</h2>
-          <p className="text-sm text-slate-400 mt-2 max-w-xs mx-auto">
-            If <span className="text-slate-200 font-medium">{forgotEmail}</span> is registered,
+          <h2 className={cn("text-xl font-semibold", tone.title)}>Check your inbox</h2>
+          <p className={cn("text-sm mt-2 max-w-xs mx-auto", tone.subtitle)}>
+            If <span className={tone.strong}>{forgotEmail}</span> is registered,
             a password reset link has been sent.
           </p>
         </div>
-        <p className="text-xs text-slate-500">Didn't receive it? Check spam or</p>
+        <p className={cn("text-xs", tone.faint)}>Didn&apos;t receive it? Check spam or</p>
         <Button variant="ghost" size="sm"
-          className="gap-1.5 text-xs text-cyan-400 hover:text-cyan-300 hover:bg-white/5"
+          className={cn("gap-1.5 text-xs", tone.ghostButton)}
           onClick={() => { setView("forgot"); }}>
           <RefreshCw className="h-3.5 w-3.5" /> Try again
         </Button>
       </div>
       <Button variant="ghost" size="sm"
-        className="text-slate-400 hover:text-slate-100 hover:bg-white/5 text-xs"
+        className={cn("text-xs", tone.ghostButton)}
         onClick={() => { setView("password"); setForgotEmailError(""); }}>
         <ArrowLeft className="mr-1.5 h-3.5 w-3.5" /> Back to sign in
       </Button>
@@ -854,13 +633,12 @@ export function LoginPageContent() {
   const renderMfa = () => (
     <div className="w-full space-y-6">
       <div className="text-center">
-        <LogoBlock />
-        <div className="mt-5 flex flex-col items-center gap-2">
-          <div className="flex h-14 w-14 items-center justify-center rounded-full bg-cyan-500/15 ring-2 ring-cyan-400/30">
-            <ShieldCheck className="h-7 w-7 text-cyan-400" />
+        <div className="flex flex-col items-center gap-2">
+          <div className={cn("flex h-14 w-14 items-center justify-center rounded-full ring-2", tone.infoBadge)}>
+            <ShieldCheck className="h-7 w-7" />
           </div>
-          <h2 className="text-xl font-semibold text-white">Two-Factor Authentication</h2>
-          <p className="text-sm text-slate-400 text-center max-w-xs">
+          <h2 className={cn("text-xl font-semibold", tone.title)}>Two-Factor Authentication</h2>
+          <p className={cn("text-sm text-center max-w-xs", tone.subtitle)}>
             Open your authenticator app and enter the 6-digit code for this account.
           </p>
         </div>
@@ -868,7 +646,7 @@ export function LoginPageContent() {
 
       <form onSubmit={handleMfaSignIn} className="space-y-4 w-full" noValidate>
         <div className="space-y-1.5">
-          <Label htmlFor="mfa-code" className="text-sm font-medium text-slate-300">
+          <Label htmlFor="mfa-code" className={cn("text-sm font-medium", tone.label)}>
             Verification code
           </Label>
           <Input
@@ -885,18 +663,19 @@ export function LoginPageContent() {
               if (mfaCodeError) setMfaCodeError("");
             }}
             className={cn(
-              "text-center font-mono text-2xl tracking-[0.5em] bg-slate-900/40 border-white/10 focus-visible:ring-primary/60 focus-visible:border-primary/50 h-14 transition-colors",
-              mfaCodeError && "border-rose-500/60 focus-visible:ring-rose-500/30"
+              "text-center font-mono text-2xl tracking-[0.5em] h-14 transition-colors",
+              tone.input,
+              mfaCodeError && tone.inputError
             )}
             autoFocus
             autoComplete="one-time-code"
           />
-          {mfaCodeError && <p className="text-xs text-rose-400">{mfaCodeError}</p>}
+          {mfaCodeError && <p className={cn("text-xs", tone.error)}>{mfaCodeError}</p>}
         </div>
 
         <Button
           type="submit"
-          className="w-full bg-primary hover:bg-primary/90 text-white shadow-lg shadow-primary/25"
+          className={cn("w-full", tone.primaryButton)}
           disabled={isMfaLoading || mfaCode.length < 6}
         >
           {isMfaLoading
@@ -908,7 +687,7 @@ export function LoginPageContent() {
           variant="ghost"
           type="button"
           size="sm"
-          className="w-full text-slate-400 hover:text-slate-100 hover:bg-white/5 text-xs"
+          className={cn("w-full text-xs", tone.ghostButton)}
           onClick={() => {
             setView("password");
             setMfaResolver(null);
@@ -932,61 +711,9 @@ export function LoginPageContent() {
     }
   };
 
-  return (
-    <div className="min-h-screen w-full bg-[#020617] text-slate-100">
-      <main className="flex min-h-screen items-center justify-center px-4 py-8">
-        <div className="grid w-full max-w-5xl grid-cols-1 overflow-hidden rounded-2xl border border-cyan-300/15 bg-slate-950/50 shadow-[0_30px_120px_-40px_rgba(14,116,255,0.7)] backdrop-blur-xl md:grid-cols-2">
+  // Until the company's design is known (first visit on this device), show a neutral screen
+  // rather than one design that then turns into another.
+  if (!companyKnown) return <LoginSplash />;
 
-          {/* ── Left: Branding panel ── */}
-          <div className="relative hidden flex-col justify-between overflow-hidden border-r border-white/10 bg-gradient-to-br from-cyan-500/12 via-slate-900/80 to-blue-900/20 p-10 md:flex">
-            <div className="absolute inset-0 opacity-15"
-              style={{ backgroundImage: 'radial-gradient(circle at 1px 1px, rgba(100,200,255,0.25) 1px, transparent 0)', backgroundSize: '28px 28px' }} />
-            <div className="absolute left-[-8rem] top-[-5rem] h-64 w-64 rounded-full bg-cyan-300/12 blur-[80px]" />
-            <div className="absolute bottom-[-8rem] right-[-7rem] h-72 w-72 rounded-full bg-blue-500/15 blur-[100px]" />
-
-            <div className="relative z-10">
-              <div className="mb-6 flex items-center gap-2.5">
-                <div className="flex h-9 w-9 items-center justify-center rounded-xl border border-cyan-300/40 bg-cyan-400/15 shadow-lg shadow-cyan-500/20">
-                  <div className="h-2 w-2 rounded-full bg-cyan-200 animate-electric-flicker" />
-                </div>
-                <span className="text-lg font-semibold tracking-[0.18em] text-cyan-100">{branding.shortName.toUpperCase()}</span>
-              </div>
-
-              <Headline headline={branding.loginHeadline} highlight={branding.loginHighlight} />
-              <p className="text-sm text-cyan-100/65 max-w-xs leading-relaxed">
-                {branding.loginSubheadline}
-              </p>
-            </div>
-
-            {/* Digital clock — fills the blank space between tagline and features */}
-            <div className="relative z-10 flex justify-center items-center py-4">
-              <DigitalClock />
-            </div>
-
-            <div className="relative z-10 space-y-3">
-              {FEATURES.map((f) => (
-                <div key={f.label} className="flex items-start gap-3 rounded-xl border border-cyan-300/15 bg-cyan-500/8 px-4 py-3">
-                  <div className="mt-0.5 h-1.5 w-1.5 shrink-0 rounded-full bg-cyan-300 animate-electric-flicker" />
-                  <div>
-                    <p className="text-xs font-semibold text-cyan-100">{f.label}</p>
-                    <p className="text-xs text-cyan-200/55">{f.desc}</p>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-
-          {/* ── Right: Auth panel ── */}
-          <div className="flex min-h-[600px] flex-col items-center justify-center bg-[#020617] px-8 py-10 md:px-12">
-            <div className="w-full max-w-sm">
-              {renderContent()}
-            </div>
-            <p className="mt-8 text-center text-[11px] text-slate-500/70">
-              &copy; <CurrentYear /> {branding.companyName} · All rights reserved
-            </p>
-          </div>
-        </div>
-      </main>
-    </div>
-  );
+  return <LoginDesignFrame branding={branding}>{renderContent()}</LoginDesignFrame>;
 }

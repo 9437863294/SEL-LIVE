@@ -2,32 +2,28 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { collection, doc, getDocs, Timestamp, updateDoc } from 'firebase/firestore';
+import { collection, getDocs } from 'firebase/firestore';
 import { format, getYear } from 'date-fns';
-import { BadgeCheck, CalendarCheck, CheckCircle2, Download, Loader2, RefreshCw } from 'lucide-react';
+import { BadgeCheck, CalendarCheck, CheckCircle2, Download, RefreshCw } from 'lucide-react';
 import { db } from '@/lib/firebase';
-import { useAuth } from '@/components/auth/AuthProvider';
 import { useToast } from '@/hooks/use-toast';
 import { useAuthorization } from '@/hooks/useAuthorization';
-import { actorFromUser, withUpdateAudit } from '@/lib/audit-fields';
 import type { InsurancePolicy } from '@/lib/types';
 import { daysUntil, formatDay, formatInr, MATURITY_SOON_DAYS, relativeDays, toDate } from '@/lib/insurance';
-import { completeTasksForDue, PERSONAL_POLICIES } from '@/lib/insurance-service';
+import { PERSONAL_POLICIES } from '@/lib/insurance-service';
 import { exportRowsToExcel } from '@/lib/report-excel';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { Textarea } from '@/components/ui/textarea';
 import { PageHeader } from '@/components/shared/page-header';
 import { TableCard } from '@/components/shared/table-card';
 import { FilterBar } from '@/components/shared/filter-bar';
 import { StatusBadge, type StatusTone } from '@/components/shared/status-badge';
-import { AccessDenied, DateField } from '@/components/insurance/insurance-ui';
+import { AccessDenied } from '@/components/insurance/insurance-ui';
+import { SettlementDialog } from '@/components/insurance/SettlementDialog';
 import { cn } from '@/lib/utils';
 
 type MaturityStatus = 'matured' | 'near' | 'upcoming' | 'claimed';
@@ -54,7 +50,6 @@ type Row = InsurancePolicy & { _mat: Date; _status: MaturityStatus };
 export default function MaturityDuePage() {
   const { toast } = useToast();
   const router = useRouter();
-  const { user } = useAuth();
   const { can, isLoading: authLoading } = useAuthorization();
   const canView = can('View', 'Insurance.Personal Insurance') || can('View', 'Insurance.Maturity Due');
   const canClaim = can('Edit', 'Insurance.Personal Insurance');
@@ -67,10 +62,6 @@ export default function MaturityDuePage() {
   const [showClaimed, setShowClaimed] = useState(false);
 
   const [claimPolicy, setClaimPolicy] = useState<Row | null>(null);
-  const [claimAmount, setClaimAmount] = useState('');
-  const [claimDate, setClaimDate] = useState<Date | undefined>();
-  const [claimNote, setClaimNote] = useState('');
-  const [isClaiming, setIsClaiming] = useState(false);
 
   const fetchPolicies = useCallback(async () => {
     setIsLoading(true);
@@ -124,44 +115,7 @@ export default function MaturityDuePage() {
     totalSum: enriched.filter((p) => p._status === 'matured' || p._status === 'near').reduce((s, p) => s + (p.sum_insured || 0), 0),
   }), [enriched]);
 
-  const openClaim = (p: Row) => {
-    setClaimPolicy(p);
-    setClaimAmount(String(p.sum_insured || ''));
-    setClaimDate(new Date());
-    setClaimNote('');
-  };
-
-  const saveClaim = async () => {
-    const actor = actorFromUser(user);
-    const amount = Number(claimAmount);
-    if (!claimPolicy || !claimDate || !Number.isFinite(amount) || amount < 0 || !user || !actor) {
-      toast({ title: 'Missing details', description: 'Enter the amount and date received.', variant: 'destructive' });
-      return;
-    }
-    setIsClaiming(true);
-    try {
-      const note = claimNote.trim();
-      await updateDoc(doc(db, PERSONAL_POLICIES, claimPolicy.id), {
-        status: 'Claimed',
-        closed_on: Timestamp.fromDate(claimDate),
-        closure_amount: amount,
-        due_date: null,
-        remarks: [claimPolicy.remarks, `Maturity claim of ${formatInr(amount)} received ${formatDay(claimDate)}.${note ? ` ${note}` : ''}`]
-          .filter(Boolean).join('\n'),
-        ...withUpdateAudit(actor),
-      });
-      await completeTasksForDue(claimPolicy.id, claimPolicy._mat, user, `Maturity claim of ${formatInr(amount)} received.`, 'maturity')
-        .catch((e) => console.warn('Claim saved, but its task could not be closed:', e));
-      toast({ title: 'Claim recorded', description: `${claimPolicy.policy_no} is marked as claimed.` });
-      setClaimPolicy(null);
-      fetchPolicies();
-    } catch (error) {
-      console.error('Error recording claim:', error);
-      toast({ title: 'Error', description: 'Failed to record the claim.', variant: 'destructive' });
-    } finally {
-      setIsClaiming(false);
-    }
-  };
+  const openClaim = (p: Row) => setClaimPolicy(p);
 
   const exportList = () =>
     exportRowsToExcel('Maturity Due', filtered.map((p) => ({
@@ -320,6 +274,9 @@ export default function MaturityDuePage() {
                     {policy._status === 'claimed' && policy.closure_amount != null && (
                       <p className="text-[11px] text-emerald-600">received {formatInr(policy.closure_amount)}</p>
                     )}
+                    {policy._status === 'claimed' && policy.settlement?.status === 'Requested' && (
+                      <p className="text-[11px] text-amber-600">payment awaited</p>
+                    )}
                   </TableCell>
                   <TableCell className="whitespace-nowrap">
                     <div className="space-y-0.5">
@@ -335,6 +292,11 @@ export default function MaturityDuePage() {
                           <BadgeCheck className="h-3 w-3" /> Record Claim
                         </Button>
                       )}
+                      {policy._status === 'claimed' && policy.settlement?.status === 'Requested' && (
+                        <Button size="sm" variant="outline" className="h-7 gap-1 text-xs" onClick={(e) => { e.stopPropagation(); openClaim(policy); }}>
+                          <BadgeCheck className="h-3 w-3" /> Payment Received
+                        </Button>
+                      )}
                     </TableCell>
                   )}
                 </TableRow>
@@ -344,37 +306,16 @@ export default function MaturityDuePage() {
         </Table>
       </TableCard>
 
-      <Dialog open={!!claimPolicy} onOpenChange={(o) => !isClaiming && !o && setClaimPolicy(null)}>
-        <DialogContent className="sm:max-w-md">
-          <DialogHeader>
-            <DialogTitle>Record Maturity Claim</DialogTitle>
-            <DialogDescription>
-              {claimPolicy?.policy_no} · {claimPolicy?.insured_person} · matures {claimPolicy ? formatDay(claimPolicy._mat) : ''}
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-4 py-2">
-            <div className="space-y-2">
-              <Label htmlFor="claim-amount">Amount Received (₹)</Label>
-              <Input id="claim-amount" type="number" inputMode="decimal" min={0} value={claimAmount} onChange={(e) => setClaimAmount(e.target.value)} disabled={isClaiming} />
-              <p className="text-xs text-muted-foreground">Maturity value including bonuses, as credited.</p>
-            </div>
-            <div className="space-y-2">
-              <Label>Date Received</Label>
-              <DateField value={claimDate} onChange={setClaimDate} disabled={isClaiming} toYear={new Date().getFullYear()} />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="claim-note">Remarks</Label>
-              <Textarea id="claim-note" rows={2} value={claimNote} onChange={(e) => setClaimNote(e.target.value)} disabled={isClaiming} placeholder="Bank account credited, UTR no., etc." />
-            </div>
-          </div>
-          <DialogFooter>
-            <Button type="button" variant="outline" onClick={() => setClaimPolicy(null)} disabled={isClaiming}>Cancel</Button>
-            <Button type="button" onClick={saveClaim} disabled={isClaiming}>
-              {isClaiming && <Loader2 className="mr-2 h-4 w-4 animate-spin" />} Mark as Claimed
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      {claimPolicy && (
+        <SettlementDialog
+          isOpen={!!claimPolicy}
+          onOpenChange={(o) => !o && setClaimPolicy(null)}
+          policy={claimPolicy}
+          initialType="Maturity Claim"
+          focusPayment
+          onSuccess={fetchPolicies}
+        />
+      )}
     </div>
   );
 }

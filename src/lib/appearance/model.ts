@@ -54,6 +54,34 @@ export type SidebarMode = (typeof SIDEBAR_MODES)[number];
 export const MODULE_GROUPINGS = ['none', 'category'] as const;
 export type ModuleGrouping = (typeof MODULE_GROUPINGS)[number];
 
+/**
+ * Sign-in page designs, each a complete layout. Kept in step with `LOGIN_DESIGN_META` and the
+ * layouts in src/components/auth/login/designs.tsx.
+ */
+export const LOGIN_DESIGNS = ['horizon', 'midnight', 'glass', 'minimal', 'blueprint'] as const;
+export type LoginDesignId = (typeof LOGIN_DESIGNS)[number];
+
+/**
+ * What each design shows, so Settings can say which choices do nothing in it. The headline and
+ * highlights appear on wide screens only; on a phone every design is the form.
+ */
+export const LOGIN_DESIGN_META: Record<LoginDesignId, { label: string; description: string; headline: boolean; clock: boolean; highlights: boolean }> = {
+  horizon: { label: 'Horizon', description: 'Transmission towers at dusk, the form on frosted glass over the sky.', headline: true, clock: true, highlights: true },
+  midnight: { label: 'Midnight', description: 'The original dark card with the glowing cyan clock.', headline: true, clock: true, highlights: true },
+  glass: { label: 'Glass', description: 'A frosted card floating over drifting colour.', headline: true, clock: true, highlights: true },
+  minimal: { label: 'Minimal', description: 'Light and quiet: the date, the logo and the form.', headline: false, clock: true, highlights: false },
+  blueprint: { label: 'Blueprint', description: 'An engineering drawing sheet with a title block.', headline: true, clock: true, highlights: true },
+};
+
+export interface LoginHighlight {
+  label: string;
+  description: string;
+}
+
+export const MAX_LOGIN_HIGHLIGHTS = 3;
+export const LOGIN_HIGHLIGHT_LABEL_MAX = 40;
+export const LOGIN_HIGHLIGHT_DESCRIPTION_MAX = 80;
+
 export const LIGHT_PRESETS = ['sel-classic', 'high-contrast', 'custom'] as const;
 export type LightPresetId = (typeof LIGHT_PRESETS)[number];
 export const DARK_PRESETS = ['sel-midnight', 'high-contrast', 'custom'] as const;
@@ -188,6 +216,12 @@ export interface CompanyBranding {
   loginHeadline: string;
   loginHighlight: string;
   loginSubheadline: string;
+  /** The sign-in design everyone sees. */
+  loginDesign: LoginDesignId;
+  loginShowClock: boolean;
+  loginShowHighlights: boolean;
+  /** Short points beside the form, in the designs that have room for them. */
+  loginHighlights: LoginHighlight[];
 }
 
 export interface CompanyTheme {
@@ -245,6 +279,14 @@ export const DEFAULT_BRANDING: CompanyBranding = {
   loginHeadline: 'Powering every project through',
   loginHighlight: 'live intelligence',
   loginSubheadline: 'Monitor execution, approvals, and field operations from one control layer built for engineering teams.',
+  loginDesign: 'horizon',
+  loginShowClock: true,
+  loginShowHighlights: true,
+  loginHighlights: [
+    { label: 'Live workflows', description: 'Real-time approvals and status tracking' },
+    { label: 'Field operations', description: 'Monitor execution across all sites' },
+    { label: 'Smart finance', description: 'Requisitions, billing and loan management' },
+  ],
 };
 
 export const DEFAULT_THEME: CompanyTheme = {
@@ -372,6 +414,20 @@ export function sanitizeAsset(value: unknown): BrandAsset | null {
 
 export const MAX_ASSET_BYTES = 1024 * 1024;
 
+/** Highlights with a label, plain text, capped; an empty list is a valid choice. */
+export function sanitizeLoginHighlights(value: unknown[]): LoginHighlight[] {
+  const out: LoginHighlight[] = [];
+  for (const entry of value) {
+    if (!entry || typeof entry !== 'object') continue;
+    const raw = entry as Record<string, unknown>;
+    const label = cleanText(raw.label, LOGIN_HIGHLIGHT_LABEL_MAX);
+    if (!label) continue;
+    out.push({ label, description: cleanText(raw.description, LOGIN_HIGHLIGHT_DESCRIPTION_MAX) ?? '' });
+    if (out.length >= MAX_LOGIN_HIGHLIGHTS) break;
+  }
+  return out;
+}
+
 export function sanitizeBranding(input: unknown, fallback: CompanyBranding = DEFAULT_BRANDING): CompanyBranding {
   const raw = (input && typeof input === 'object' ? input : {}) as Record<string, unknown>;
   return {
@@ -384,6 +440,10 @@ export function sanitizeBranding(input: unknown, fallback: CompanyBranding = DEF
     loginHeadline: cleanText(raw.loginHeadline, 60) ?? fallback.loginHeadline,
     loginHighlight: cleanText(raw.loginHighlight, 40) ?? fallback.loginHighlight,
     loginSubheadline: cleanText(raw.loginSubheadline, 200) ?? fallback.loginSubheadline,
+    loginDesign: pick(LOGIN_DESIGNS, raw.loginDesign) ?? fallback.loginDesign,
+    loginShowClock: bool(raw.loginShowClock) ?? fallback.loginShowClock,
+    loginShowHighlights: bool(raw.loginShowHighlights) ?? fallback.loginShowHighlights,
+    loginHighlights: Array.isArray(raw.loginHighlights) ? sanitizeLoginHighlights(raw.loginHighlights) : fallback.loginHighlights,
   };
 }
 

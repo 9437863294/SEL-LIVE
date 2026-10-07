@@ -49,6 +49,11 @@ export interface AppearancePreview {
 interface AppearanceContextValue {
   /** The published company appearance (branding, theme, defaults). */
   company: PublishedAppearance;
+  /**
+   * `company` is the real one — from this device's cache or the server — not the built-in
+   * placeholder. The sign-in page waits for it so it never shows one design and swaps to another.
+   */
+  companyKnown: boolean;
   /** The signed-in user's own choices; `{}` means "all company defaults". */
   preferences: UserAppearancePreferences;
   /** What applies after precedence — see `resolveAppearance`. */
@@ -128,6 +133,7 @@ async function authorizedFetch(user: FirebaseUser, input: string, init: RequestI
  */
 export function ThemeProvider({ children }: { children: ReactNode }) {
   const [company, setCompany] = useState<PublishedAppearance>(DEFAULT_PUBLISHED);
+  const [companyKnown, setCompanyKnown] = useState(false);
   const [preferences, setPreferences] = useState<UserAppearancePreferences>({});
   const [firebaseUser, setFirebaseUser] = useState<FirebaseUser | null>(null);
   const [authKnown, setAuthKnown] = useState(false);
@@ -146,7 +152,10 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
   // device, their cached preferences — the same values the inline script already applied.
   useIsoLayoutEffect(() => {
     const cachedCompany = read<unknown>(COMPANY_CONFIG_KEY);
-    if (cachedCompany) setCompany(sanitizePublished(cachedCompany));
+    if (cachedCompany) {
+      setCompany(sanitizePublished(cachedCompany));
+      setCompanyKnown(true);
+    }
     const pointer = (() => {
       try {
         return window.localStorage.getItem(APPEARANCE_USER_KEY);
@@ -175,6 +184,9 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
       write(COMPANY_CONFIG_KEY, published);
     } catch {
       // Offline: the cached appearance stays.
+    } finally {
+      // Answered, failed or offline: what we have is all there will be, so stop waiting.
+      setCompanyKnown(true);
     }
   }, []);
 
@@ -352,6 +364,7 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
   const value = useMemo<AppearanceContextValue>(
     () => ({
       company,
+      companyKnown,
       preferences,
       effective,
       resolvedMode,
@@ -366,7 +379,7 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
       setPreview,
       preview,
     }),
-    [company, preferences, effective, resolvedMode, uid, authKnown, prefsLoaded, saveStatus, saveError, updatePreferences, resetPreferences, retrySave, refreshCompany, preview],
+    [company, companyKnown, preferences, effective, resolvedMode, uid, authKnown, prefsLoaded, saveStatus, saveError, updatePreferences, resetPreferences, retrySave, refreshCompany, preview],
   );
   return <AppearanceContext.Provider value={value}>{children}</AppearanceContext.Provider>;
 }

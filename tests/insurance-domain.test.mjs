@@ -21,6 +21,9 @@ import {
   premiumSchedule,
   policyFrequency,
   projectPolicyState,
+  SETTLEMENT_STATUS,
+  SETTLEMENT_TYPES,
+  settlementNet,
   taskCheckId,
   toDate,
 } from '../src/lib/insurance.ts';
@@ -189,6 +192,20 @@ test('typed dates are day first and must be real', () => {
   assert.equal(k('15 Xyz 2026'), null);
   assert.equal(k('2026'), null);
   assert.equal(k(''), null);
+});
+
+test('settlement nets deductions and ends the policy in the right state', () => {
+  assert.equal(settlementNet(500000, 52000), 448000);
+  assert.equal(settlementNet(500000, null), 500000);
+  assert.equal(settlementNet(1000, 5000), 0, 'never negative');
+  assert.equal(settlementNet(null, 100), null, 'nothing received yet');
+  assert.equal(SETTLEMENT_STATUS['Maturity Claim'], 'Claimed');
+  assert.equal(SETTLEMENT_STATUS['Death Claim'], 'Claimed');
+  assert.equal(SETTLEMENT_STATUS.Surrender, 'Surrendered');
+  assert.equal(SETTLEMENT_STATUS['Premature Closure'], 'Closed');
+  for (const t of SETTLEMENT_TYPES) {
+    assert.equal(personalPolicyState({ status: SETTLEMENT_STATUS[t], due_date: at('2026-01-01') }, at('2026-10-07')) === 'lapsed', false, `${t} is never lapsed`);
+  }
 });
 
 test('toDate accepts Firestore-like values', () => {

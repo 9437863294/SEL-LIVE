@@ -22,7 +22,11 @@
     "src/app/appearance-preview/**/*.tsx",
     "src/app/(protected)/settings/appearance/**/*.tsx",
     "src/app/(protected)/settings/layout.tsx",
-    "src/components/app/Header.tsx"
+    "src/components/app/Header.tsx",
+    "src/components/auth/login/**/*.ts",
+    "src/components/auth/login/**/*.tsx",
+    "src/components/auth/LoginPageContent.tsx",
+    "src/app/(public)/login/page.tsx"
   ],
   "exclude": [
     "node_modules"

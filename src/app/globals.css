@@ -2253,3 +2253,63 @@ html[data-contrast='high'] .tabs-indicator {
 .dark .ea-rich-text [style*='background'] {
   color: #111827;
 }
+
+/* ── Sign-in designs (src/components/auth/login) ── */
+
+/* Horizon: a spark of light running along each conductor. The path is normalised to a length of
+   100 (`pathLength`) with a 100-unit dash pattern, so one cycle is one full run of the wire. */
+@keyframes login-wire-flow {
+  from { stroke-dashoffset: 100; }
+  to { stroke-dashoffset: 0; }
+}
+
+@keyframes login-twinkle {
+  0%, 100% { opacity: 0.85; }
+  50% { opacity: 0.15; }
+}
+
+/* Glass: the colour fields drift. Transform only — the blur is never resampled. */
+@keyframes login-drift-a {
+  0%, 100% { transform: translate(0, 0) scale(1); }
+  50% { transform: translate(8vmax, 6vmax) scale(1.08); }
+}
+@keyframes login-drift-b {
+  0%, 100% { transform: translate(0, 0) scale(1); }
+  50% { transform: translate(-7vmax, 9vmax) scale(0.94); }
+}
+@keyframes login-drift-c {
+  0%, 100% { transform: translate(0, 0) scale(1); }
+  50% { transform: translate(6vmax, -8vmax) scale(1.06); }
+}
+
+.login-wire-pulse {
+  animation: login-wire-flow 8s linear infinite;
+}
+.login-twinkle {
+  animation: login-twinkle 4.5s ease-in-out infinite;
+}
+.login-blob-a {
+  animation: login-drift-a 22s ease-in-out infinite;
+  will-change: transform;
+}
+.login-blob-b {
+  animation: login-drift-b 26s ease-in-out infinite;
+  will-change: transform;
+}
+.login-blob-c {
+  animation: login-drift-c 30s ease-in-out infinite;
+  will-change: transform;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .login-wire-pulse {
+    animation: none;
+    opacity: 0;
+  }
+  .login-twinkle,
+  .login-blob-a,
+  .login-blob-b,
+  .login-blob-c {
+    animation: none;
+  }
+}

@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { collection, deleteDoc, doc, getDoc, getDocs, writeBatch } from 'firebase/firestore';
-import { Edit, ExternalLink, Loader2, Pencil, Plus, RotateCcw, Trash2 } from 'lucide-react';
+import { BadgeCheck, ChevronDown, Edit, ExternalLink, Loader2, Pencil, Plus, RotateCcw, Trash2 } from 'lucide-react';
 import { db } from '@/lib/firebase';
 import { useToast } from '@/hooks/use-toast';
 import { useAuthorization } from '@/hooks/useAuthorization';
@@ -20,7 +20,9 @@ import {
   policyFrequency,
   premiumSchedule,
   relativeDays,
+  SETTLEMENT_TYPES,
   toDate,
+  type SettlementType,
 } from '@/lib/insurance';
 import { PERSONAL_POLICIES } from '@/lib/insurance-service';
 import { Button } from '@/components/ui/button';
@@ -40,6 +42,9 @@ import {
 import { PageHeader } from '@/components/shared/page-header';
 import { TableCard } from '@/components/shared/table-card';
 import { RenewalDialog } from '@/components/insurance/RenewalDialog';
+import { SettlementDialog } from '@/components/insurance/SettlementDialog';
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
+import { StatusBadge } from '@/components/shared/status-badge';
 import { AccessDenied, AttachmentList, Fact, InstalmentBadge, PersonalStateBadge } from '@/components/insurance/insurance-ui';
 import { cn } from '@/lib/utils';
 
@@ -64,6 +69,14 @@ export default function PolicyDetailsPage() {
     setEditPayment(target.payment ?? null);
     setBackfillDue(target.due ?? null);
     setIsRenewOpen(true);
+  };
+  const [settlementOpen, setSettlementOpen] = useState(false);
+  const [settlementType, setSettlementType] = useState<SettlementType | undefined>();
+  const [settlementPayment, setSettlementPayment] = useState(false);
+  const openSettlement = (type?: SettlementType, payment = false) => {
+    setSettlementType(type);
+    setSettlementPayment(payment);
+    setSettlementOpen(true);
   };
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
@@ -156,6 +169,9 @@ export default function PolicyDetailsPage() {
   /** Correcting a payment or adding a paid instalment's receipt never moves the due date. */
   const canManagePayments = canRenew || canEdit;
   const updatedLine = formatUpdatedBy(policy);
+  const settlement = policy.settlement ?? null;
+  // Closing is for a policy still on the books; one already settled is corrected from its card.
+  const canClose = canEdit && !settlement && !['claimed', 'surrendered', 'closed'].includes(state);
 
   return (
     <>
@@ -176,6 +192,20 @@ export default function PolicyDetailsPage() {
                 <Button size="sm" className="gap-1.5" onClick={() => openPayment()}>
                   <RotateCcw className="h-3.5 w-3.5" /> Record Payment
                 </Button>
+              )}
+              {canClose && (
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button size="sm" variant="outline" className="gap-1.5">
+                      <BadgeCheck className="h-3.5 w-3.5" /> Close Policy <ChevronDown className="h-3.5 w-3.5 opacity-70" />
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end">
+                    {SETTLEMENT_TYPES.map((t) => (
+                      <DropdownMenuItem key={t} onSelect={() => openSettlement(t)}>{t}</DropdownMenuItem>
+                    ))}
+                  </DropdownMenuContent>
+                </DropdownMenu>
               )}
               {canEdit && (
                 <Link href={`/insurance/personal/edit/${policy.id}`}>
@@ -199,6 +229,71 @@ export default function PolicyDetailsPage() {
         {state === 'grace' && nextDue && (
           <div className="rounded-xl border border-amber-200 bg-amber-50/60 px-4 py-3 text-sm text-amber-800">
             The premium due {formatDay(nextDue)} is in its grace period — pay by {formatDay(new Date(nextDue.getTime() + grace * 86_400_000))} to keep cover in force.
+          </div>
+        )}
+
+        {settlement && (
+          <Card className={cn(settlement.status === 'Requested' && 'border-amber-300')}>
+            <CardHeader className="flex flex-row flex-wrap items-start justify-between gap-3 space-y-0">
+              <div className="min-w-0 space-y-1">
+                <CardTitle className="flex flex-wrap items-center gap-2">
+                  {settlement.type}
+                  <StatusBadge
+                    status={settlement.status === 'Received' ? 'Payment Received' : 'Payment Awaited'}
+                    tone={settlement.status === 'Received' ? 'success' : 'warning'}
+                  />
+                </CardTitle>
+                <div className="text-sm text-muted-foreground">
+                  {settlement.status === 'Received'
+                    ? `${formatInr(settlement.netAmount ?? 0)} received on ${formatDay(settlement.receivedDate)}`
+                    : `Requested on ${formatDay(settlement.requestDate)} — the insurer's payment has not been recorded yet`}
+                </div>
+              </div>
+              {canEdit && (
+                <div className="flex flex-wrap gap-2">
+                  {settlement.status === 'Requested' && (
+                    <Button size="sm" className="gap-1.5" onClick={() => openSettlement(undefined, true)}>
+                      <Plus className="h-3.5 w-3.5" /> Record Payment Received
+                    </Button>
+                  )}
+                  <Button size="sm" variant="outline" className="gap-1.5" onClick={() => openSettlement()}>
+                    <Pencil className="h-3.5 w-3.5" /> Edit
+                  </Button>
+                </div>
+              )}
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="grid grid-cols-2 gap-5 md:grid-cols-3 lg:grid-cols-4">
+                <Fact label="Request Date">{formatDay(settlement.requestDate)}</Fact>
+                <Fact label={settlement.type.endsWith('Claim') ? 'Claim No.' : 'Reference No.'}>{settlement.requestRef || '—'}</Fact>
+                <Fact label={settlement.type.endsWith('Claim') ? 'Amount Claimed' : 'Value Quoted'}>{settlement.claimedAmount != null ? formatInr(settlement.claimedAmount) : '—'}</Fact>
+                {settlement.reason && <Fact label={settlement.type === 'Death Claim' ? 'Date & Cause of Death' : 'Reason'}>{settlement.reason}</Fact>}
+                {settlement.status === 'Received' && (
+                  <>
+                    <Fact label="Date Received">{formatDay(settlement.receivedDate)}</Fact>
+                    <Fact label="Gross Amount">{formatInr(settlement.grossAmount ?? 0)}</Fact>
+                    <Fact label="Deductions">{formatInr(settlement.deductions ?? 0)}</Fact>
+                    <Fact label="Net Received"><span className="text-emerald-600">{formatInr(settlement.netAmount ?? 0)}</span></Fact>
+                    <Fact label="Received By">{settlement.paymentMode || '—'}</Fact>
+                    <Fact label="UTR / Cheque No.">{settlement.paymentRef || '—'}</Fact>
+                    <Fact label="Credited To">{settlement.creditedTo || '—'}</Fact>
+                  </>
+                )}
+                <Fact label="Recorded">{settlement.recordedByName || '—'}{settlement.recordedAt ? ` · ${formatDay(settlement.recordedAt)}` : ''}</Fact>
+                {settlement.remarks && <Fact label="Remarks" className="col-span-2 md:col-span-3 lg:col-span-4"><span className="font-normal">{settlement.remarks}</span></Fact>}
+              </div>
+              {(settlement.documents?.length ?? 0) > 0 && <AttachmentList attachments={settlement.documents ?? []} />}
+            </CardContent>
+          </Card>
+        )}
+        {!settlement && state === 'claimed' && policy.closure_amount != null && (
+          <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-border/60 bg-muted/30 px-4 py-3 text-sm">
+            <span>Claim of <span className="font-semibold">{formatInr(policy.closure_amount)}</span> received {formatDay(policy.closed_on)}. Add the payment details and documents if you have them.</span>
+            {canEdit && (
+              <Button size="sm" variant="outline" className="gap-1.5" onClick={() => openSettlement('Maturity Claim', true)}>
+                <Plus className="h-3.5 w-3.5" /> Add Details
+              </Button>
+            )}
           </div>
         )}
 
@@ -331,6 +426,17 @@ export default function PolicyDetailsPage() {
           onSuccess={fetchPolicyData}
           payment={editPayment}
           forInstalment={backfillDue}
+        />
+      )}
+
+      {canEdit && (
+        <SettlementDialog
+          isOpen={settlementOpen}
+          onOpenChange={setSettlementOpen}
+          policy={policy}
+          initialType={settlementType}
+          focusPayment={settlementPayment}
+          onSuccess={fetchPolicyData}
         />
       )}
 

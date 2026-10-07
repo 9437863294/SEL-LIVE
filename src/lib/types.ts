@@ -1283,14 +1283,46 @@ export interface InsurancePolicy {
   /** Overrides the frequency's default grace period, in days. */
   grace_period_days?: number | null;
   remarks?: string;
+  /** When the policy ended — the settlement's received date, else its request date. */
   closed_on?: Timestamp | null;
+  /** Net amount received on settlement; null while the payment is still awaited. */
   closure_amount?: number | null;
+  /** How the policy ended — maturity or death claim, surrender or premature closure — and what was paid out. */
+  settlement?: PolicySettlement | null;
   createdBy?: string | null;
   createdByName?: string | null;
   createdAt?: Timestamp;
   updatedBy?: string | null;
   updatedByName?: string | null;
   updatedAt?: Timestamp;
+}
+
+/** The close-out of a personal policy: the request to the insurer, then the money received. */
+export interface PolicySettlement {
+  type: "Maturity Claim" | "Death Claim" | "Surrender" | "Premature Closure";
+  /** "Requested" while the insurer's payment is awaited; "Received" once it has been credited. */
+  status: "Requested" | "Received";
+  requestDate: Timestamp | null;
+  /** Claim, surrender or service-request number given by the insurer. */
+  requestRef?: string | null;
+  /** Amount claimed, or the surrender / foreclosure value quoted. */
+  claimedAmount?: number | null;
+  reason?: string | null;
+  receivedDate?: Timestamp | null;
+  grossAmount?: number | null;
+  /** TDS, surrender charges, outstanding loan and other deductions. */
+  deductions?: number | null;
+  netAmount?: number | null;
+  paymentMode?: string | null;
+  /** UTR, cheque or transaction number. */
+  paymentRef?: string | null;
+  /** Bank account the money was credited to. */
+  creditedTo?: string | null;
+  remarks?: string | null;
+  documents?: Attachment[];
+  recordedBy?: string | null;
+  recordedByName?: string | null;
+  recordedAt?: Timestamp | null;
 }
 
 export interface PolicyRenewal {

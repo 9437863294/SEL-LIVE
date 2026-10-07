@@ -21,7 +21,7 @@ import { SearchInput } from '@/components/shared/filter-bar';
 import { StatusBadge } from '@/components/shared/status-badge';
 import { cn } from '@/lib/utils';
 
-type EventType = 'Policy Created' | 'Premium Paid' | 'Claimed';
+type EventType = 'Policy Created' | 'Premium Paid' | 'Claimed' | 'Closure Requested' | 'Settlement Received';
 
 type HistoryEvent = {
   id: string;
@@ -68,7 +68,34 @@ export default function PersonalInsuranceHistoryPage() {
           });
         }
         const closedOn = toDate(policy.closed_on);
-        if (policy.status === 'Claimed' && closedOn) {
+        const st = policy.settlement;
+        if (st) {
+          const by = st.recordedByName || policy.updatedByName || 'Unknown';
+          const requested = toDate(st.requestDate);
+          if (requested) {
+            all.push({
+              id: `settle-req-${policy.id}`,
+              date: requested,
+              policyNo: policy.policy_no,
+              policyHolder: policy.insured_person,
+              eventType: 'Closure Requested',
+              user: by,
+              details: [st.type, st.requestRef && `ref ${st.requestRef}`, st.claimedAmount != null && formatInr(st.claimedAmount)].filter(Boolean).join(' · '),
+            });
+          }
+          const receivedOn = toDate(st.receivedDate);
+          if (st.status === 'Received' && receivedOn) {
+            all.push({
+              id: `settle-rcv-${policy.id}`,
+              date: receivedOn,
+              policyNo: policy.policy_no,
+              policyHolder: policy.insured_person,
+              eventType: 'Settlement Received',
+              user: by,
+              details: [`${st.type} ${formatInr(st.netAmount ?? 0)} net`, st.paymentMode, st.paymentRef && `UTR ${st.paymentRef}`].filter(Boolean).join(' · '),
+            });
+          }
+        } else if (policy.status === 'Claimed' && closedOn) {
           all.push({
             id: `claim-${policy.id}`,
             date: closedOn,
