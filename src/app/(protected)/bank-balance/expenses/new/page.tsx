@@ -184,6 +184,8 @@ function NewPaymentForm() {
   const [vouchers, setVouchers] = useState<BankPaymentVoucher[]>([]);
   const [payables, setPayables] = useState<Payable[]>([]);
   const [mandatory, setMandatory] = useState<MandatoryFields>(NO_MANDATORY);
+  /** Settings › Payment Entry: may a row be paid against a typed reference with no requisition behind it? */
+  const [allowDirect, setAllowDirect] = useState(true);
   const [customMethods, setCustomMethods] = useState<string[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   /** The first load has finished; later reloads (after a save) refresh in place instead of blanking the form. */
@@ -227,6 +229,8 @@ function NewPaymentForm() {
       setVouchers(voucherSnap.docs.map((d) => ({ id: d.id, ...d.data() } as BankPaymentVoucher)));
       setPayables(payable);
       setMandatory({ ...NO_MANDATORY, ...(settingsSnap.exists() ? settingsSnap.data().mandatoryFields || {} : {}) });
+      // Absent means allowed, so nothing changes for a site that has never opened the setting.
+      setAllowDirect(settingsSnap.exists() ? settingsSnap.data().allowDirectPayments !== false : true);
       setCustomMethods(methodSnap.docs.map((d) => String(d.data().name ?? '')));
       setHasLoaded(true);
 
@@ -331,7 +335,8 @@ function NewPaymentForm() {
     const payable = line.requisitionId ? payableById.get(line.requisitionId) : undefined;
     const amount = amountOf(line);
     return {
-      ref: mandatory.paymentRequestRefNo && !line.ref.trim(),
+      // With direct payments off, a reference alone is not enough — the row must settle a requisition.
+      ref: (mandatory.paymentRequestRefNo && !line.ref.trim()) || (!allowDirect && !line.requisitionId),
       party: !line.partyName.trim(),
       description: !line.description.trim(),
       amount: !(amount > 0) || (payable ? amount > payable.balance + 0.01 : false),
@@ -362,7 +367,11 @@ function NewPaymentForm() {
     if (!code || line.requisitionId) return;
     const match = payables.find((p) => norm(p.receptionNo) === code || (p.depNo && norm(p.depNo) === code));
     if (!match) {
-      update(line.id, { refNote: 'No requisition waiting for payment has this number — kept as a plain reference.' });
+      update(line.id, {
+        refNote: allowDirect
+          ? 'Not waiting for payment in the system — this row will be paid directly against this reference.'
+          : 'No requisition waiting for payment has this number. Payments without a requisition are switched off in Settings › Payment Entry.',
+      });
       return;
     }
     if (linkedIds.has(match.id)) {
@@ -679,6 +688,13 @@ function NewPaymentForm() {
     });
   if (showErrors && incomplete.length)
     notes.push({ tone: 'error', text: `Incomplete rows (marked in red): ${incomplete.map((line) => lines.indexOf(line) + 1).join(', ')}.` });
+  // Why a row with a perfectly good reference is being refused — and, before anything is typed,
+  // why there is no way to add one by hand.
+  if (!allowDirect && lines.some((line) => !line.requisitionId))
+    notes.push({
+      tone: lines.some((line) => hasContent(line) && !line.requisitionId) ? 'error' : 'warning',
+      text: 'Every row has to settle a requisition waiting for payment — add them with "Choose requisitions". Payments without a requisition are switched off in Settings › Payment Entry.',
+    });
   if (duplicateInstrument)
     notes.push({ tone: 'warning', text: `${cfg.instrumentLabel} ${instrumentNo} is already on voucher ${duplicateInstrument.voucherNo} (${formatDay(duplicateInstrument.instrumentDate)}) for this account.` });
   if (!accountId) notes.push({ tone: 'warning', text: 'Pick the bank account to see the funds available on the instrument date.' });
@@ -952,7 +968,14 @@ function NewPaymentForm() {
                             }
                           }}
                         />
-                        {line.refNote && <p className="mt-1 text-[11px] leading-snug text-amber-700">{line.refNote}</p>}
+                        {line.refNote && (
+                          <p className={cn('mt-1 text-[11px] leading-snug', allowDirect ? 'text-slate-500' : 'text-destructive')}>{line.refNote}</p>
+                        )}
+                        {allowDirect && line.ref.trim() && !line.requisitionId && (
+                          <span className="mt-1 inline-block rounded bg-slate-100 px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-slate-600">
+                            Direct payment
+                          </span>
+                        )}
                       </>
                     )}
                   </TD>
@@ -1042,8 +1065,8 @@ function NewPaymentForm() {
           </EntryTable>
 
           <EntryFooter
-            addLabel="Add manual row"
-            onAdd={() => setLines((prev) => [...prev, newLine()])}
+            addLabel={allowDirect ? 'Add payment without a requisition' : undefined}
+            onAdd={allowDirect ? () => setLines((prev) => [...prev, newLine()]) : undefined}
             figures={figures}
             notes={notes}
             saveLabel={`Issue Voucher${lines.length > 1 ? ` (${lines.length} payees)` : ''}`}

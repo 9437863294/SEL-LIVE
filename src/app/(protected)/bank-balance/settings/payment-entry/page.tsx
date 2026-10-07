@@ -67,6 +67,9 @@ export default function PaymentEntrySettingsPage() {
 
   const [mandatoryFields, setMandatoryFields] = useState<MandatoryFields>(DEFAULT_MANDATORY_FIELDS);
   const [savedFields, setSavedFields] = useState<MandatoryFields>(DEFAULT_MANDATORY_FIELDS);
+  /** Whether a voucher row may be paid against a typed reference when no requisition exists for it. */
+  const [allowDirect, setAllowDirect] = useState(true);
+  const [savedAllowDirect, setSavedAllowDirect] = useState(true);
   const [paymentMethods, setPaymentMethods] = useState<PaymentMethod[]>([]);
   const [newMethodName, setNewMethodName] = useState('');
   const [deleteTarget, setDeleteTarget] = useState<PaymentMethod | null>(null);
@@ -92,6 +95,10 @@ export default function PaymentEntrySettingsPage() {
       const loaded = { ...DEFAULT_MANDATORY_FIELDS, ...(settingsDoc.exists() ? settingsDoc.data().mandatoryFields || {} : {}) };
       setMandatoryFields(loaded);
       setSavedFields(loaded);
+      // Absent means allowed, so an existing site keeps the behaviour it has today.
+      const direct = settingsDoc.exists() ? settingsDoc.data().allowDirectPayments !== false : true;
+      setAllowDirect(direct);
+      setSavedAllowDirect(direct);
       setPaymentMethods(
         methodsSnap.docs
           .map((d) => ({ id: d.id, name: String(d.data().name ?? '') }))
@@ -113,15 +120,18 @@ export default function PaymentEntrySettingsPage() {
   if (authLoading || (isLoading && canView)) return <BankPageSkeleton kpis={0} blocks={1} />;
   if (!canView) return <BankAccessDenied title="Payment Entry Settings" backHref="/bank-balance/settings" backLabel="Back to settings" />;
 
-  const isDirty = (Object.keys(mandatoryFields) as Array<keyof MandatoryFields>).some((key) => mandatoryFields[key] !== savedFields[key]);
+  const isDirty =
+    (Object.keys(mandatoryFields) as Array<keyof MandatoryFields>).some((key) => mandatoryFields[key] !== savedFields[key]) ||
+    allowDirect !== savedAllowDirect;
 
   const handleSaveMandatoryFields = async () => {
     if (!canEdit) return;
     setIsSavingFields(true);
     try {
-      await setDoc(doc(db, 'bankBalanceSettings', 'paymentEntry'), { mandatoryFields }, { merge: true });
+      await setDoc(doc(db, 'bankBalanceSettings', 'paymentEntry'), { mandatoryFields, allowDirectPayments: allowDirect }, { merge: true });
       setSavedFields(mandatoryFields);
-      toast({ title: 'Saved', description: 'Mandatory fields updated.' });
+      setSavedAllowDirect(allowDirect);
+      toast({ title: 'Saved', description: 'Payment entry settings updated.' });
     } catch (e) {
       console.error(e);
       toast({ title: 'Error', description: 'Failed to save settings.', variant: 'destructive' });
@@ -205,11 +215,27 @@ export default function PaymentEntrySettingsPage() {
                   />
                 </div>
               ))}
+              {/* Not a field rule but the same document and the same Save, so it sits with them. */}
+              <div className="flex items-center justify-between gap-3 rounded-lg border border-sky-200 bg-sky-50/60 p-3">
+                <Label htmlFor="field-allow-direct" className="min-w-0 cursor-pointer">
+                  <span className="block font-medium">Payments without a requisition</span>
+                  <span className="block text-xs font-normal text-muted-foreground">
+                    Allow a row to be paid against a typed reference when the requisition is not in the system. Switch this off
+                    to insist every row settles a requisition waiting for payment.
+                  </span>
+                </Label>
+                <Switch
+                  id="field-allow-direct"
+                  checked={allowDirect}
+                  onCheckedChange={(checked) => canEdit && setAllowDirect(checked)}
+                  disabled={!canEdit}
+                />
+              </div>
               {canEdit && (
                 <div className="flex flex-wrap items-center gap-3 pt-2">
                   <Button onClick={() => void handleSaveMandatoryFields()} disabled={isSavingFields || !isDirty}>
                     {isSavingFields ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
-                    Save Fields
+                    Save Settings
                   </Button>
                   {isDirty && <span className="text-xs text-amber-700">Unsaved changes</span>}
                 </div>

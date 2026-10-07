@@ -76,6 +76,7 @@ export function DateField({
   placeholder,
   fromYear = 1950,
   toYear = new Date().getFullYear() + 60,
+  maxDate,
   className,
   id,
 }: {
@@ -85,6 +86,8 @@ export function DateField({
   placeholder?: string;
   fromYear?: number;
   toYear?: number;
+  /** Latest allowed day, e.g. today for a date of birth; later days are greyed out and refused when typed. */
+  maxDate?: Date;
   className?: string;
   id?: string;
 }) {
@@ -108,6 +111,10 @@ export function DateField({
       setError(`Year must be between ${fromYear} and ${toYear}`);
       return;
     }
+    if (maxDate && startOfDay(parsed) > startOfDay(maxDate)) {
+      setError(`Cannot be after ${format(maxDate, 'dd/MM/yyyy')}`);
+      return;
+    }
     onChange(parsed);
     setDraft(null);
     setError(null);
@@ -121,7 +128,8 @@ export function DateField({
   };
 
   const today = new Date();
-  const todayAllowed = today.getFullYear() >= fromYear && today.getFullYear() <= toYear;
+  const todayAllowed = today.getFullYear() >= fromYear && today.getFullYear() <= toYear
+    && (!maxDate || startOfDay(today) <= startOfDay(maxDate));
 
   return (
     <div className={cn('space-y-1', className)}>
@@ -162,6 +170,8 @@ export function DateField({
               fromYear={fromYear}
               toYear={toYear}
               classNames={CALENDAR_CLASSES}
+              disabled={maxDate ? { after: maxDate } : undefined}
+              toDate={maxDate}
               components={{
                 IconLeft: () => <ChevronLeft className="h-4 w-4" />,
                 IconRight: () => <ChevronRight className="h-4 w-4" />,

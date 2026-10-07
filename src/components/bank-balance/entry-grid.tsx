@@ -201,8 +201,9 @@ export function EntryFooter({
   saveDisabled,
   onSave,
 }: {
-  addLabel: string;
-  onAdd: () => void;
+  /** Left out together when the grid may not be added to by hand. */
+  addLabel?: string;
+  onAdd?: () => void;
   figures: FooterFigure[];
   notes: FooterNote[];
   saveLabel: string;
@@ -229,10 +230,15 @@ export function EntryFooter({
         </div>
       )}
       <div className="flex flex-col gap-3 border-t pt-4 lg:flex-row lg:items-center lg:justify-between">
-        <Button type="button" variant="outline" className="border-dashed lg:w-auto" onClick={onAdd}>
-          <Plus className="mr-2 h-4 w-4" />
-          {addLabel}
-        </Button>
+        {onAdd ? (
+          <Button type="button" variant="outline" className="border-dashed lg:w-auto" onClick={onAdd}>
+            <Plus className="mr-2 h-4 w-4" />
+            {addLabel}
+          </Button>
+        ) : (
+          // Keeps the figures pushed to the right when there is no button.
+          <span aria-hidden />
+        )}
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-end sm:gap-6">
           <dl className="grid grid-cols-1 gap-2 text-sm sm:flex sm:items-center sm:gap-6">
             {figures.map((figure) => (

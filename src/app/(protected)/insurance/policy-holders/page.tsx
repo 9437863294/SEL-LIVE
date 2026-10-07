@@ -22,14 +22,11 @@ import { db } from '@/lib/firebase';
 import { collection, getDocs, addDoc, doc, updateDoc, deleteDoc, Timestamp, query, where, writeBatch } from 'firebase/firestore';
 import { useAuthorization } from '@/hooks/useAuthorization';
 import { countPolicyReferences, PERSONAL_POLICIES } from '@/lib/insurance-service';
-import { AccessDenied } from '@/components/insurance/insurance-ui';
+import { AccessDenied, DateField } from '@/components/insurance/insurance-ui';
+import { Textarea } from '@/components/ui/textarea';
 import type { PolicyHolder } from '@/lib/types';
 import { Skeleton } from '@/components/ui/skeleton';
 import { format } from 'date-fns';
-import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
-import { Calendar } from '@/components/ui/calendar';
-import { Calendar as CalendarIcon } from 'lucide-react';
-import { cn } from '@/lib/utils';
 import { PageHeader } from '@/components/shared/page-header';
 import { TableCard } from '@/components/shared/table-card';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogHeader, AlertDialogTitle, AlertDialogDescription, AlertDialogFooter, AlertDialogTrigger } from '@/components/ui/alert-dialog';
@@ -233,42 +230,47 @@ export default function ManagePolicyHoldersPage() {
       </TableCard>
 
       <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
-          <DialogContent className="sm:max-w-xl">
+          <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-xl">
             <DialogHeader>
               <DialogTitle>{dialogMode === 'add' ? 'Add New' : 'Edit'} Policy Holder</DialogTitle>
+              <DialogDescription>
+                {dialogMode === 'add'
+                  ? 'The person a personal policy is taken out for. Only the name is required.'
+                  : 'Renaming a holder also renames every policy recorded against them.'}
+              </DialogDescription>
             </DialogHeader>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 py-4">
-               <div className="space-y-2"><Label htmlFor="name">Name</Label><Input id="name" value={formData.name} onChange={e => handleFormChange('name', e.target.value)} /></div>
-               <div className="space-y-2 flex flex-col">
-                  <Label>Date of Birth</Label>
-                   <Popover>
-                        <PopoverTrigger asChild>
-                            <Button variant={"outline"} className={cn("justify-start text-left font-normal", !formData.date_of_birth && "text-muted-foreground")}>
-                                <CalendarIcon className="mr-2 h-4 w-4" />
-                                {formData.date_of_birth ? format(formData.date_of_birth, "PPP") : <span>Pick a date</span>}
-                            </Button>
-                        </PopoverTrigger>
-                        <PopoverContent className="w-auto p-0">
-                            <Calendar
-                                mode="single"
-                                selected={formData.date_of_birth}
-                                onSelect={(date) => handleFormChange('date_of_birth', date)}
-                                captionLayout="dropdown-buttons"
-                                fromYear={1900}
-                                toYear={new Date().getFullYear()}
-                                disabled={(date) => date > new Date() || date < new Date("1900-01-01")}
-                                initialFocus
-                            />
-                        </PopoverContent>
-                    </Popover>
-               </div>
-                <div className="space-y-2"><Label htmlFor="contact">Contact No</Label><Input id="contact" value={formData.contact} onChange={e => handleFormChange('contact', e.target.value)} /></div>
-                <div className="space-y-2"><Label htmlFor="email">Email</Label><Input id="email" type="email" value={formData.email} onChange={e => handleFormChange('email', e.target.value)} /></div>
-                <div className="md:col-span-2 space-y-2"><Label htmlFor="address">Address</Label><Input id="address" value={formData.address} onChange={e => handleFormChange('address', e.target.value)} /></div>
+            <div className="grid grid-cols-1 gap-x-4 gap-y-5 py-2 md:grid-cols-2">
+              <div className="space-y-2">
+                <Label htmlFor="name">Name <span className="text-destructive">*</span></Label>
+                <Input id="name" value={formData.name} onChange={e => handleFormChange('name', e.target.value)} placeholder="Full name as on the policy" autoComplete="off" />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="dob">Date of Birth</Label>
+                <DateField
+                  id="dob"
+                  value={formData.date_of_birth}
+                  onChange={(date) => handleFormChange('date_of_birth', date)}
+                  fromYear={1900}
+                  toYear={new Date().getFullYear()}
+                  maxDate={new Date()}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="contact">Contact No</Label>
+                <Input id="contact" type="tel" inputMode="tel" value={formData.contact} onChange={e => handleFormChange('contact', e.target.value)} placeholder="10-digit mobile" autoComplete="off" />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="email">Email</Label>
+                <Input id="email" type="email" value={formData.email} onChange={e => handleFormChange('email', e.target.value)} placeholder="name@example.com" autoComplete="off" />
+              </div>
+              <div className="space-y-2 md:col-span-2">
+                <Label htmlFor="address">Address</Label>
+                <Textarea id="address" rows={2} value={formData.address} onChange={e => handleFormChange('address', e.target.value)} placeholder="House, street, city, PIN" />
+              </div>
             </div>
-            <DialogFooter>
+            <DialogFooter className="gap-2 sm:gap-0">
               <DialogClose asChild><Button type="button" variant="outline">Cancel</Button></DialogClose>
-              <Button type="button" onClick={handleSubmit}>Save</Button>
+              <Button type="button" onClick={handleSubmit}>{dialogMode === 'add' ? 'Add Holder' : 'Save Changes'}</Button>
             </DialogFooter>
           </DialogContent>
         </Dialog>

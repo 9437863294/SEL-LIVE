@@ -20,11 +20,8 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Switch } from '@/components/ui/switch';
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from '@/components/ui/form';
-import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
-import { Calendar } from '@/components/ui/calendar';
-import { Calendar as CalendarIcon, Loader2, Save, ChevronsUpDown, Check } from 'lucide-react';
-import { cn } from '@/lib/utils';
-import { format } from 'date-fns';
+import { Loader2, Save, ChevronsUpDown, Check } from 'lucide-react';
+import { DateField } from '@/components/insurance/insurance-ui';
 import { useToast } from '@/hooks/use-toast';
 import { db } from '@/lib/firebase';
 import { collection, addDoc, Timestamp, getDocs } from 'firebase/firestore';
@@ -113,26 +110,16 @@ export function AddPolicyDialog({ isOpen, onOpenChange, onPolicyAdded }: AddPoli
     setIsSaving(false);
   };
   
-  const DatePickerField = ({ name, label }: { name: keyof PolicyFormValues, label: string }) => (
+  // A render function, not a component: a component defined here would remount on every render
+  // and drop whatever date was half typed.
+  const datePickerField = (name: keyof PolicyFormValues, label: string) => (
     <FormField
       control={form.control}
       name={name as any}
       render={({ field }) => (
         <FormItem className="flex flex-col">
           <FormLabel>{label}</FormLabel>
-          <Popover>
-            <PopoverTrigger asChild>
-              <FormControl>
-                <Button variant="outline" className={cn('pl-3 text-left font-normal', !field.value && 'text-muted-foreground')}>
-                  {field.value ? format(field.value, 'PPP') : <span>Pick a date</span>}
-                  <CalendarIcon className="ml-auto h-4 w-4 opacity-50" />
-                </Button>
-              </FormControl>
-            </PopoverTrigger>
-            <PopoverContent className="w-auto p-0" align="start">
-              <Calendar mode="single" selected={field.value} onSelect={field.onChange} captionLayout="dropdown-buttons" fromYear={1900} toYear={new Date().getFullYear() + 5} />
-            </PopoverContent>
-          </Popover>
+          <DateField value={field.value} onChange={field.onChange} fromYear={1900} toYear={new Date().getFullYear() + 60} />
           <FormMessage />
         </FormItem>
       )}
@@ -180,11 +167,11 @@ export function AddPolicyDialog({ isOpen, onOpenChange, onPolicyAdded }: AddPoli
                     <FormField control={form.control} name="policy_category" render={({ field }) => (<FormItem><FormLabel>Category</FormLabel><FormControl><Input {...field} /></FormControl><FormMessage /></FormItem>)} />
                     <FormField control={form.control} name="policy_name" render={({ field }) => (<FormItem><FormLabel>Policy Name</FormLabel><FormControl><Input {...field} /></FormControl><FormMessage /></FormItem>)} />
                     <FormField control={form.control} name="premium" render={({ field }) => (<FormItem><FormLabel>Premium</FormLabel><FormControl><Input type="number" {...field} /></FormControl><FormMessage /></FormItem>)} />
-                    <DatePickerField name="due_date" label="Next Due Date"/>
+                    {datePickerField('due_date', 'Next Due Date')}
                     <FormField control={form.control} name="sum_insured" render={({ field }) => (<FormItem><FormLabel>Sum Insured</FormLabel><FormControl><Input type="number" {...field} /></FormControl><FormMessage /></FormItem>)} />
-                    <DatePickerField name="date_of_comm" label="Date of Commencement"/>
-                    <DatePickerField name="date_of_maturity" label="Date of Maturity"/>
-                    <DatePickerField name="last_premium_date" label="Last Premium Date"/>
+                    {datePickerField('date_of_comm', 'Date of Commencement')}
+                    {datePickerField('date_of_maturity', 'Date of Maturity')}
+                    {datePickerField('last_premium_date', 'Last Premium Date')}
                      <FormField
                         control={form.control}
                         name="payment_type"

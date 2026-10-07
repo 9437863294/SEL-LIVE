@@ -250,8 +250,11 @@ export function BankTransactionLog({ kind }: { kind: TransactionLogKind }) {
   /** Only voucher lines the bank has not cleared yet. */
   const [unclearedOnly, setUnclearedOnly] = useState(false);
   const [viewMode, setViewMode] = useState<ViewMode>('grouped');
-  /** Collapsed group keys in the grouped view; everything starts expanded. */
-  const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
+  /**
+   * Collapsed group keys in the grouped view. `null` means nobody has opened or closed anything yet,
+   * which reads as every day and bank collapsed — see `allGroupKeys`.
+   */
+  const [collapsed, setCollapsed] = useState<Set<string> | null>(null);
 
   const [deleteTarget, setDeleteTarget] = useState<BankExpense | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
@@ -422,9 +425,19 @@ export function BankTransactionLog({ kind }: { kind: TransactionLogKind }) {
     return tree;
   }, [filtered, kind, accountById, todayKey]);
 
+  /**
+   * Every day *and* every bank collapsed until the reader first opens or closes something: the register
+   * opens as a list of days, a day opens to its banks, and a bank opens to the instruments and payees.
+   */
+  const allGroupKeys = useMemo(
+    () => new Set(groupedTree.flatMap((day) => [day.key, ...day.banks.map((bank) => bank.key)])),
+    [groupedTree],
+  );
+  const collapsedKeys = collapsed ?? allGroupKeys;
+
   const toggle = (key: string) =>
     setCollapsed((prev) => {
-      const next = new Set(prev);
+      const next = new Set(prev ?? allGroupKeys);
       if (next.has(key)) next.delete(key);
       else next.add(key);
       return next;
@@ -686,12 +699,12 @@ export function BankTransactionLog({ kind }: { kind: TransactionLogKind }) {
                   size="sm"
                   variant="ghost"
                   onClick={() =>
-                    setCollapsed((prev) =>
-                      prev.size ? new Set() : new Set(groupedTree.flatMap((d) => [d.key, ...d.banks.map((b) => b.key)])),
+                    setCollapsed(
+                      collapsedKeys.size ? new Set() : new Set(allGroupKeys),
                     )
                   }
                 >
-                  {collapsed.size ? 'Expand all' : 'Collapse all'}
+                  {collapsedKeys.size ? 'Expand all' : 'Collapse all'}
                 </Button>
               )}
               {(
@@ -801,7 +814,7 @@ export function BankTransactionLog({ kind }: { kind: TransactionLogKind }) {
                 <tbody>
                   {groupedTree.map((dateGroup) => {
                     const span = kind === 'payment' ? 4 : 1;
-                    const dateOpen = !collapsed.has(dateGroup.key);
+                    const dateOpen = !collapsedKeys.has(dateGroup.key);
                     return (
                       <Fragment key={dateGroup.key}>
                         {/* Level 1 — the day */}
@@ -823,7 +836,7 @@ export function BankTransactionLog({ kind }: { kind: TransactionLogKind }) {
                         </tr>
                         {dateOpen &&
                           dateGroup.banks.map((bank) => {
-                            const bankOpen = !collapsed.has(bank.key);
+                            const bankOpen = !collapsedKeys.has(bank.key);
                             return (
                               <Fragment key={bank.key}>
                                 {/* Level 2 — the bank account */}
