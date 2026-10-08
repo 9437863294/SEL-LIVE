@@ -227,6 +227,91 @@ export function validateAgainstClosure({
   };
 }
 
+/**
+ * Whether an existing record is frozen by its own date.
+ *
+ * The entry-date check above asks "may this date be used?", which is the right question for a new
+ * record and the wrong one for an existing September expense being edited to an October date: that
+ * date is perfectly allowed, and the edit still takes money out of a month somebody has reported
+ * on. What locks a stored record is where it already sits.
+ */
+export function isRecordLocked({
+  date,
+  settings,
+  canOverride,
+}: {
+  date: string | undefined | null;
+  settings: SASMonthClosureSettings;
+  canOverride: boolean;
+}): boolean {
+  if (canOverride || !date) return false;
+  const period = date.slice(0, 7);
+  return isPeriodKey(period) && isMonthClosed(settings, period);
+}
+
+export type ClosureAction = 'edit' | 'delete';
+
+const ACTION_LABEL: Record<ClosureAction, string> = {
+  edit: 'changed',
+  delete: 'deleted',
+};
+
+const RECORD_NOUN: Record<SASClosureRecord, string> = {
+  expense: 'expense',
+  payment: 'receipt',
+};
+
+/**
+ * Whether a stored record may be edited or deleted.
+ *
+ * Two separate refusals, and both matter:
+ *
+ *   - The record's *current* month is closed. Nothing about it may change — not its amount, not
+ *     its category, and not its date, because moving it out is the most damaging edit of all: the
+ *     closed month silently loses a figure that has already been reported.
+ *   - The record is being moved *into* a closed month. Its own month is open, so the first rule
+ *     lets it through, but the destination is settled.
+ *
+ * `nextDate` is omitted for a delete, where there is no destination.
+ */
+export function validateRecordChange({
+  originalDate,
+  nextDate,
+  settings,
+  kind,
+  action,
+  canOverride,
+}: {
+  originalDate: string | undefined | null;
+  nextDate?: string | null;
+  settings: SASMonthClosureSettings;
+  kind: SASClosureRecord;
+  action: ClosureAction;
+  canOverride: boolean;
+}): ClosureCheck {
+  if (canOverride) return { ok: true };
+
+  const noun = RECORD_NOUN[kind];
+
+  if (isRecordLocked({ date: originalDate, settings, canOverride })) {
+    return {
+      ok: false,
+      reason: `This ${noun} is dated in ${originalDate!.slice(0, 7)}, which has been closed. `
+        + `A ${noun} in a closed month cannot be ${ACTION_LABEL[action]}. `
+        + 'Ask an administrator to reopen the month first.',
+    };
+  }
+
+  if (action === 'edit' && isRecordLocked({ date: nextDate, settings, canOverride })) {
+    return {
+      ok: false,
+      reason: `${nextDate!.slice(0, 7)} has been closed, so this ${noun} cannot be moved into it.`,
+    };
+  }
+
+  return { ok: true };
+}
+
 export interface ClosureSummary {
   total: number;
   closed: number;

@@ -315,22 +315,65 @@ service cloud.firestore {
      * *write-bearing* assignment — being the viewer on a project is not enough, which is the
      * server-side half of the per-project check the forms now make.
      */
+    /**
+     * Month closure, enforced where it actually binds.
+     *
+     * The forms already refuse a closed month, but a form is a courtesy — the rule is here. A
+     * closed period rejects writes dated inside it in every direction: creating a record in it,
+     * editing one that sits in it, moving one into it, moving one out of it, and deleting one.
+     * That last pair matter most: a date-only test would wave through an edit that carries a
+     * reported figure into an open month, and a delete that removes it altogether.
+     *
+     * One `get()` per write, against a single document the rules evaluator caches for the rest of
+     * the request — well inside the 20-access budget, and only paid by installations that have
+     * actually closed a month.
+     */
+    function sasClosedMonths() {
+      return get(/databases/$(database)/documents/siteAccountSettings/monthClosure).data.months;
+    }
+
+    function sasMonthIsClosed(period) {
+      let months = sasClosedMonths();
+      return months != null && months[period] != null && months[period].closed == true;
+    }
+
+    /** Whoever closes periods may post into them; nothing else lifts the lock. */
+    function sasBypassesClosure() {
+      return sasPerm('Month Closure', 'Close') || sasViewsAllProjects();
+    }
+
+    function sasDateIsPostable(date) {
+      return sasBypassesClosure()
+        || !(date is string)
+        || date.size() < 7
+        || !sasMonthIsClosed(date[0:7]);
+    }
+
     match /siteAccountPayments/{paymentId} {
       allow get, list: if sasViewsAllProjects()
         || sasPerm('Payments', 'View')
         || (resource != null && sasCanReadProject(resource.data.projectId));
-      allow create: if sasPerm('Payments', 'Add') || sasCanWriteProject(request.resource.data.projectId);
-      allow update: if sasPerm('Payments', 'Edit') || sasCanWriteProject(resource.data.projectId);
-      allow delete: if sasPerm('Payments', 'Delete');
+      allow create: if (sasPerm('Payments', 'Add') || sasCanWriteProject(request.resource.data.projectId))
+        && sasDateIsPostable(request.resource.data.receiptDate);
+      // Both ends checked: where the receipt sits now, and where the edit would put it.
+      allow update: if (sasPerm('Payments', 'Edit') || sasCanWriteProject(resource.data.projectId))
+        && sasDateIsPostable(resource.data.receiptDate)
+        && sasDateIsPostable(request.resource.data.receiptDate);
+      allow delete: if sasPerm('Payments', 'Delete')
+        && sasDateIsPostable(resource.data.receiptDate);
     }
 
     match /siteAccountExpenses/{expenseId} {
       allow get, list: if sasViewsAllProjects()
         || sasPerm('Expenses', 'View')
         || (resource != null && sasCanReadProject(resource.data.projectId));
-      allow create: if sasPerm('Expenses', 'Add') || sasCanWriteProject(request.resource.data.projectId);
-      allow update: if sasPerm('Expenses', 'Edit') || sasCanWriteProject(resource.data.projectId);
-      allow delete: if sasPerm('Expenses', 'Delete');
+      allow create: if (sasPerm('Expenses', 'Add') || sasCanWriteProject(request.resource.data.projectId))
+        && sasDateIsPostable(request.resource.data.expenseDate);
+      allow update: if (sasPerm('Expenses', 'Edit') || sasCanWriteProject(resource.data.projectId))
+        && sasDateIsPostable(resource.data.expenseDate)
+        && sasDateIsPostable(request.resource.data.expenseDate);
+      allow delete: if sasPerm('Expenses', 'Delete')
+        && sasDateIsPostable(resource.data.expenseDate);
     }
 
     /**

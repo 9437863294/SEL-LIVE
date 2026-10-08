@@ -49,7 +49,7 @@ import {
 } from '@/components/ui/alert-dialog';
 import {
   Camera, Calendar, ChevronDown, ChevronLeft, ChevronRight,
-  Download, ExternalLink, File, FileText, Image, Loader2,
+  Download, ExternalLink, File, FileText, Image, Loader2, Lock,
   Paperclip, Pencil, Plus, Receipt, TrendingDown, TrendingUp, Trash2, Upload, Wallet, X,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
@@ -526,6 +526,23 @@ export default function PaymentsPage() {
       toast({ title: 'Date not allowed', description: dateCheck.reason, variant: 'destructive' });
       return;
     }
+
+    /*
+     * A stored receipt is frozen by the month it already sits in, not by the date being typed.
+     * Without this, a September receipt could be edited to an October date — a date the check
+     * above accepts — and a closed month would silently lose money it had already reported.
+     */
+    if (editingRow) {
+      const changeCheck = dateControl.checkChange({
+        originalDate: editingRow.receiptDate,
+        nextDate: form.receiptDate,
+        action: 'edit',
+      });
+      if (!changeCheck.ok) {
+        toast({ title: 'Month closed', description: changeCheck.reason, variant: 'destructive' });
+        return;
+      }
+    }
     const amount = Number(form.receivedAmount);
     if (!amount || amount <= 0) {
       toast({ title: 'Validation', description: 'Enter a valid amount.', variant: 'destructive' });
@@ -603,6 +620,12 @@ export default function PaymentsPage() {
   async function handleDelete(row: SASPayment) {
     if (!canDelete && !canWriteToProject(row.projectId)) {
       toast({ title: 'Not allowed', description: 'You have read-only access to this project.', variant: 'destructive' });
+      return;
+    }
+    // Removing a receipt moves a closed month's total exactly as much as editing one does.
+    const closureCheck = dateControl.checkChange({ originalDate: row.receiptDate, action: 'delete' });
+    if (!closureCheck.ok) {
+      toast({ title: 'Month closed', description: closureCheck.reason, variant: 'destructive' });
       return;
     }
     try {
@@ -996,7 +1019,18 @@ export default function PaymentsPage() {
                       <TableCell className="whitespace-nowrap tabular-nums">{formatTimestamp(row.createdAt)}</TableCell>
                       {(effectiveCanEdit || canDelete) && (
                         <TableCell className="text-right">
+                          {/* A receipt in a closed month shows a padlock instead of its controls.
+                              The handlers refuse it anyway; this saves opening a form first. */}
                           <div className="flex justify-end gap-1" onClick={e => e.stopPropagation()}>
+                            {dateControl.isLocked(row.receiptDate) ? (
+                              <span
+                                title={`${row.receiptDate.slice(0, 7)} is closed — this receipt cannot be changed or deleted.`}
+                                className="inline-flex h-8 w-8 items-center justify-center text-muted-foreground/60"
+                              >
+                                <Lock className="h-3.5 w-3.5" />
+                              </span>
+                            ) : (
+                              <>
                             {effectiveCanEdit && (
                               <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => openEdit(row)}>
                                 <Pencil className="h-3.5 w-3.5" />
@@ -1022,6 +1056,8 @@ export default function PaymentsPage() {
                                   </AlertDialogFooter>
                                 </AlertDialogContent>
                               </AlertDialog>
+                            )}
+                              </>
                             )}
                           </div>
                         </TableCell>

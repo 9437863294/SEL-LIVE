@@ -53,7 +53,7 @@ import {
 } from '@/components/ui/alert-dialog';
 import {
   AlertTriangle, Calendar, CalendarClock, Camera, CheckCircle2, ChevronDown, ChevronLeft, ChevronRight,
-  Download, ExternalLink, File, FileText, Image, Loader2,
+  Download, ExternalLink, File, FileText, Image, Loader2, Lock,
   Paperclip, Pencil, Plus, Receipt, RotateCw, Trash2, TrendingDown, TrendingUp, Upload, Wallet, X,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
@@ -859,6 +859,24 @@ export default function SiteExpensesPage() {
       toast({ title: 'Date not allowed', description: dateCheck.reason, variant: 'destructive' });
       return;
     }
+
+    /*
+     * Editing a stored record is a different question from choosing a date for a new one. An
+     * expense already sitting in a closed September is frozen whatever it is being changed to —
+     * including a date in open October, which the check above would happily accept while the
+     * closed month quietly lost a figure that has already been reported.
+     */
+    if (editingRow) {
+      const changeCheck = dateControl.checkChange({
+        originalDate: editingRow.expenseDate,
+        nextDate: form.expenseDate,
+        action: 'edit',
+      });
+      if (!changeCheck.ok) {
+        toast({ title: 'Month closed', description: changeCheck.reason, variant: 'destructive' });
+        return;
+      }
+    }
     const amount = Number(form.expenseAmount);
     if (!amount || amount <= 0) { toast({ title: 'Validation', description: 'Enter a valid amount.',     variant: 'destructive' }); return; }
 
@@ -1011,6 +1029,13 @@ export default function SiteExpensesPage() {
   async function handleDelete(row: SASExpense) {
     if (!canDelete && !canWriteToProject(row.projectId)) {
       toast({ title: 'Not allowed', description: 'You have read-only access to this project.', variant: 'destructive' });
+      return;
+    }
+    // A closed month is closed to removals too — deleting a reported expense changes the month's
+    // total exactly as much as editing one does.
+    const closureCheck = dateControl.checkChange({ originalDate: row.expenseDate, action: 'delete' });
+    if (!closureCheck.ok) {
+      toast({ title: 'Month closed', description: closureCheck.reason, variant: 'destructive' });
       return;
     }
     try {
@@ -1558,7 +1583,21 @@ export default function SiteExpensesPage() {
                       <TableCell className="whitespace-nowrap tabular-nums">{formatTimestamp(row.createdAt)}</TableCell>
                       {(effectiveCanEdit || canDelete) && (
                         <TableCell className="text-right">
+                          {/*
+                            * A record in a closed month shows a padlock instead of its controls.
+                            * The submit handlers refuse it either way; this is so nobody fills in
+                            * a form before finding out.
+                            */}
                           <div className="flex justify-end gap-1" onClick={e => e.stopPropagation()}>
+                            {dateControl.isLocked(row.expenseDate) ? (
+                              <span
+                                title={`${row.expenseDate.slice(0, 7)} is closed — this expense cannot be changed or deleted.`}
+                                className="inline-flex h-8 w-8 items-center justify-center text-muted-foreground/60"
+                              >
+                                <Lock className="h-3.5 w-3.5" />
+                              </span>
+                            ) : (
+                              <>
                             {effectiveCanEdit && (
                               <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => openEdit(row)}>
                                 <Pencil className="h-3.5 w-3.5" />
@@ -1584,6 +1623,8 @@ export default function SiteExpensesPage() {
                                   </AlertDialogFooter>
                                 </AlertDialogContent>
                               </AlertDialog>
+                            )}
+                              </>
                             )}
                           </div>
                         </TableCell>
@@ -1745,12 +1786,19 @@ export default function SiteExpensesPage() {
           <DialogFooter>
             <Button variant="outline" onClick={() => setViewExpense(null)}>Close</Button>
             {effectiveCanEdit && viewExpense && (
-              <Button
-                className="bg-rose-600 hover:bg-rose-700"
-                onClick={() => { const e = viewExpense; setViewExpense(null); openEdit(e); }}
-              >
-                <Pencil className="h-3.5 w-3.5 mr-1.5" /> Edit
-              </Button>
+              dateControl.isLocked(viewExpense.expenseDate) ? (
+                <span className="inline-flex items-center gap-1.5 text-xs text-muted-foreground">
+                  <Lock className="h-3.5 w-3.5" />
+                  {viewExpense.expenseDate.slice(0, 7)} is closed
+                </span>
+              ) : (
+                <Button
+                  className="bg-rose-600 hover:bg-rose-700"
+                  onClick={() => { const e = viewExpense; setViewExpense(null); openEdit(e); }}
+                >
+                  <Pencil className="h-3.5 w-3.5 mr-1.5" /> Edit
+                </Button>
+              )
             )}
           </DialogFooter>
         </DialogContent>

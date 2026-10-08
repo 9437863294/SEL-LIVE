@@ -10,8 +10,10 @@ import {
 } from '@/lib/site-account-statement';
 import {
   closedPeriods as listClosedPeriods,
+  isRecordLocked,
   resolveMonthClosure,
   validateAgainstClosure,
+  validateRecordChange,
   type SASMonthClosureSettings,
 } from '@/lib/site-account-statement-month-closure';
 import {
@@ -37,8 +39,21 @@ export interface DateControl {
   canBypass: boolean;
   /** A short hint for under the date field, or null when unrestricted. */
   hint: string | null;
-  /** Submit-time check. The form must call this — `min`/`max` on an input is only a hint. */
+  /** Submit-time check for a *new* record's date. `min`/`max` on an input is only a hint. */
   check: (date: string) => DateCheck;
+  /**
+   * True when a stored record sits in a closed month, so nothing about it may change.
+   *
+   * Row actions use this to disable themselves. Disabling is the courtesy; `checkChange` below is
+   * the rule, and both pages call it.
+   */
+  isLocked: (date: string | undefined | null) => boolean;
+  /** Submit-time check for editing or deleting a record that already exists. */
+  checkChange: (args: {
+    originalDate: string | undefined | null;
+    nextDate?: string | null;
+    action: 'edit' | 'delete';
+  }) => DateCheck;
   /** Frozen accounting periods, `YYYY-MM`, oldest first. Empty when the user may post into them. */
   closedPeriods: string[];
   /** True when the user holds `Month Closure` / `Close` and closed months do not stop them. */
@@ -143,6 +158,10 @@ export function useDateControl(kind: SASDatedRecord): DateControl {
     canBypass,
     hint,
     check,
+    isLocked: (date) => isRecordLocked({ date, settings: closure, canOverride: canPostToClosedMonths }),
+    checkChange: ({ originalDate, nextDate, action }) => validateRecordChange({
+      originalDate, nextDate, settings: closure, kind, action, canOverride: canPostToClosedMonths,
+    }),
     closedPeriods: canPostToClosedMonths ? [] : listClosedPeriods(closure),
     canPostToClosedMonths,
     loading,
