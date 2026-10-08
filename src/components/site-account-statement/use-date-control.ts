@@ -54,10 +54,8 @@ export interface DateControl {
     nextDate?: string | null;
     action: 'edit' | 'delete';
   }) => DateCheck;
-  /** Frozen accounting periods, `YYYY-MM`, oldest first. Empty when the user may post into them. */
+  /** Frozen accounting periods, `YYYY-MM`, oldest first. The same list for every user. */
   closedPeriods: string[];
-  /** True when the user holds `Month Closure` / `Close` and closed months do not stop them. */
-  canPostToClosedMonths: boolean;
   loading: boolean;
 }
 
@@ -124,32 +122,30 @@ export function useDateControl(kind: SASDatedRecord): DateControl {
   );
 
   /*
-   * Closing a period is not the same authority as back-dating within an open one, so
-   * `Backdated Entry` deliberately does not unlock a closed month. All Projects does, because that
-   * is the module's administrator and the person who would otherwise be reopening the month to
-   * make the same correction.
+   * No role is consulted here, and that is the point.
+   *
+   * `Backdated Entry` lifts the rolling window because filing late is a question of trust. A
+   * closed month is not: the figures have been reported, and letting any permission move them
+   * would turn the lock into something that depends on who is looking at the form. Everybody —
+   * administrators included — goes through Settings → Month Closure and reopens the month, which
+   * takes a written reason and stays on the record.
    */
-  const canPostToClosedMonths =
-    can('Close', `${MODULE}.Month Closure`) ||
-    can('View', `${MODULE}.All Projects`);
-
   const hint = useMemo(() => {
     const windowHint = describeDateWindow(window, settings);
-    if (canPostToClosedMonths) return windowHint;
     const frozen = listClosedPeriods(closure);
     if (frozen.length === 0) return windowHint;
     const closedHint = frozen.length === 1
       ? `${frozen[0]} is closed`
       : `${frozen.length} months are closed`;
     return windowHint ? `${windowHint} · ${closedHint}` : closedHint;
-  }, [window, settings, closure, canPostToClosedMonths]);
+  }, [window, settings, closure]);
 
   function check(date: string): DateCheck {
     // The rolling window first: when both would reject, its message is the more actionable one,
     // since it names a date the person can actually use.
     const windowCheck = validateEntryDate({ date, settings, kind, canBypass, today });
     if (!windowCheck.ok) return windowCheck;
-    return validateAgainstClosure({ date, settings: closure, kind, canOverride: canPostToClosedMonths });
+    return validateAgainstClosure({ date, settings: closure, kind });
   }
 
   return {
@@ -158,12 +154,11 @@ export function useDateControl(kind: SASDatedRecord): DateControl {
     canBypass,
     hint,
     check,
-    isLocked: (date) => isRecordLocked({ date, settings: closure, canOverride: canPostToClosedMonths }),
+    isLocked: (date) => isRecordLocked({ date, settings: closure }),
     checkChange: ({ originalDate, nextDate, action }) => validateRecordChange({
-      originalDate, nextDate, settings: closure, kind, action, canOverride: canPostToClosedMonths,
+      originalDate, nextDate, settings: closure, kind, action,
     }),
-    closedPeriods: canPostToClosedMonths ? [] : listClosedPeriods(closure),
-    canPostToClosedMonths,
+    closedPeriods: listClosedPeriods(closure),
     loading,
   };
 }

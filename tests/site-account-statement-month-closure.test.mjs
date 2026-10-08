@@ -185,13 +185,13 @@ test('a reopen reason is measured after trimming', () => {
 
 test('a date in an open month passes', () => {
   assert.equal(validateAgainstClosure({
-    date: '2026-10-02', settings: closedOn('2026-09'), kind: 'expense', canOverride: false,
+    date: '2026-10-02', settings: closedOn('2026-09'), kind: 'expense',
   }).ok, true);
 });
 
 test('a date inside a closed month is refused, naming the month', () => {
   const check = validateAgainstClosure({
-    date: '2026-09-28', settings: closedOn('2026-09'), kind: 'expense', canOverride: false,
+    date: '2026-09-28', settings: closedOn('2026-09'), kind: 'expense',
   });
   assert.equal(check.ok, false);
   assert.match(check.reason, /2026-09/);
@@ -200,10 +200,10 @@ test('a date inside a closed month is refused, naming the month', () => {
 
 test('the message names the field the form actually shows', () => {
   const expense = validateAgainstClosure({
-    date: '2026-09-01', settings: closedOn('2026-09'), kind: 'expense', canOverride: false,
+    date: '2026-09-01', settings: closedOn('2026-09'), kind: 'expense',
   });
   const payment = validateAgainstClosure({
-    date: '2026-09-01', settings: closedOn('2026-09'), kind: 'payment', canOverride: false,
+    date: '2026-09-01', settings: closedOn('2026-09'), kind: 'payment',
   });
   assert.match(expense.reason, /^Expense date/);
   assert.match(payment.reason, /^Receipt date/);
@@ -212,33 +212,37 @@ test('the message names the field the form actually shows', () => {
 test('the first and last day of a closed month are both inside it', () => {
   for (const date of ['2026-09-01', '2026-09-30']) {
     assert.equal(validateAgainstClosure({
-      date, settings: closedOn('2026-09'), kind: 'expense', canOverride: false,
+      date, settings: closedOn('2026-09'), kind: 'expense',
     }).ok, false);
   }
   // And the days either side are not.
   for (const date of ['2026-08-31', '2026-10-01']) {
     assert.equal(validateAgainstClosure({
-      date, settings: closedOn('2026-09'), kind: 'expense', canOverride: false,
+      date, settings: closedOn('2026-09'), kind: 'expense',
     }).ok, true);
   }
 });
 
-test('whoever can close a month may post into it', () => {
-  assert.equal(validateAgainstClosure({
-    date: '2026-09-28', settings: closedOn('2026-09'), kind: 'expense', canOverride: true,
-  }).ok, true);
+test('nobody may post into a closed month — the check takes no permission at all', () => {
+  // The signature deliberately has no override parameter: a bypass would make the lock depend on
+  // who is writing rather than on the state of the period.
+  const check = validateAgainstClosure({
+    date: '2026-09-28', settings: closedOn('2026-09'), kind: 'expense',
+  });
+  assert.equal(check.ok, false);
+  assert.match(check.reason, /reopened/i);
 });
 
 test('an empty date is left to the field that owns it', () => {
   // Required-ness is Date Control's message to give; two errors for one blank field is noise.
   assert.equal(validateAgainstClosure({
-    date: '', settings: closedOn('2026-09'), kind: 'expense', canOverride: false,
+    date: '', settings: closedOn('2026-09'), kind: 'expense',
   }).ok, true);
 });
 
 test('a malformed date is not treated as closed', () => {
   assert.equal(validateAgainstClosure({
-    date: 'yesterday', settings: closedOn('2026-09'), kind: 'expense', canOverride: false,
+    date: 'yesterday', settings: closedOn('2026-09'), kind: 'expense',
   }).ok, true);
 });
 
@@ -246,21 +250,22 @@ test('a malformed date is not treated as closed', () => {
 
 test('a record dated in a closed month is locked', () => {
   const settings = closedOn('2026-09');
-  assert.equal(isRecordLocked({ date: '2026-09-15', settings, canOverride: false }), true);
-  assert.equal(isRecordLocked({ date: '2026-10-15', settings, canOverride: false }), false);
+  assert.equal(isRecordLocked({ date: '2026-09-15', settings }), true);
+  assert.equal(isRecordLocked({ date: '2026-10-15', settings }), false);
 });
 
-test('a record with no date, or an override, is never locked', () => {
+test('a record with no date is never locked', () => {
   const settings = closedOn('2026-09');
-  assert.equal(isRecordLocked({ date: '', settings, canOverride: false }), false);
-  assert.equal(isRecordLocked({ date: undefined, settings, canOverride: false }), false);
-  assert.equal(isRecordLocked({ date: '2026-09-15', settings, canOverride: true }), false);
+  assert.equal(isRecordLocked({ date: '', settings }), false);
+  assert.equal(isRecordLocked({ date: undefined, settings }), false);
+  // ...but one that does sit in the closed month is, for everyone.
+  assert.equal(isRecordLocked({ date: '2026-09-15', settings }), true);
 });
 
 test('an expense in a closed month cannot be edited', () => {
   const check = validateRecordChange({
     originalDate: '2026-09-15', nextDate: '2026-09-16',
-    settings: closedOn('2026-09'), kind: 'expense', action: 'edit', canOverride: false,
+    settings: closedOn('2026-09'), kind: 'expense', action: 'edit',
   });
   assert.equal(check.ok, false);
   assert.match(check.reason, /2026-09/);
@@ -270,7 +275,7 @@ test('an expense in a closed month cannot be edited', () => {
 test('an expense in a closed month cannot be deleted', () => {
   const check = validateRecordChange({
     originalDate: '2026-09-15',
-    settings: closedOn('2026-09'), kind: 'expense', action: 'delete', canOverride: false,
+    settings: closedOn('2026-09'), kind: 'expense', action: 'delete',
   });
   assert.equal(check.ok, false);
   assert.match(check.reason, /cannot be deleted/i);
@@ -281,7 +286,7 @@ test('a record cannot be moved OUT of a closed month', () => {
   // while the closed month quietly loses a reported figure.
   const check = validateRecordChange({
     originalDate: '2026-09-28', nextDate: '2026-10-02',
-    settings: closedOn('2026-09'), kind: 'expense', action: 'edit', canOverride: false,
+    settings: closedOn('2026-09'), kind: 'expense', action: 'edit',
   });
   assert.equal(check.ok, false);
   assert.match(check.reason, /2026-09/);
@@ -290,7 +295,7 @@ test('a record cannot be moved OUT of a closed month', () => {
 test('a record cannot be moved INTO a closed month', () => {
   const check = validateRecordChange({
     originalDate: '2026-10-02', nextDate: '2026-09-28',
-    settings: closedOn('2026-09'), kind: 'payment', action: 'edit', canOverride: false,
+    settings: closedOn('2026-09'), kind: 'payment', action: 'edit',
   });
   assert.equal(check.ok, false);
   assert.match(check.reason, /moved into it/i);
@@ -300,36 +305,40 @@ test('a record cannot be moved INTO a closed month', () => {
 test('an edit entirely within open months passes', () => {
   assert.equal(validateRecordChange({
     originalDate: '2026-10-02', nextDate: '2026-10-20',
-    settings: closedOn('2026-09'), kind: 'expense', action: 'edit', canOverride: false,
+    settings: closedOn('2026-09'), kind: 'expense', action: 'edit',
   }).ok, true);
 });
 
 test('the message names the kind of record the user is looking at', () => {
   const expense = validateRecordChange({
     originalDate: '2026-09-15', settings: closedOn('2026-09'),
-    kind: 'expense', action: 'delete', canOverride: false,
+    kind: 'expense', action: 'delete',
   });
   const payment = validateRecordChange({
     originalDate: '2026-09-15', settings: closedOn('2026-09'),
-    kind: 'payment', action: 'delete', canOverride: false,
+    kind: 'payment', action: 'delete',
   });
   assert.match(expense.reason, /expense/);
   assert.match(payment.reason, /receipt/);
 });
 
-test('whoever can close a month may still edit and delete inside it', () => {
+test('no role can edit or delete inside a closed month', () => {
+  // `validateRecordChange` takes no permission argument, so there is nothing a caller could pass
+  // to get a different answer — the lock cannot be argued with from the UI side.
   for (const action of ['edit', 'delete']) {
-    assert.equal(validateRecordChange({
+    const check = validateRecordChange({
       originalDate: '2026-09-15', nextDate: '2026-09-16',
-      settings: closedOn('2026-09'), kind: 'expense', action, canOverride: true,
-    }).ok, true);
+      settings: closedOn('2026-09'), kind: 'expense', action,
+    });
+    assert.equal(check.ok, false);
+    assert.match(check.reason, /by anyone/i);
   }
 });
 
 test('a delete needs no destination date to be allowed', () => {
   assert.equal(validateRecordChange({
     originalDate: '2026-10-02', settings: closedOn('2026-09'),
-    kind: 'expense', action: 'delete', canOverride: false,
+    kind: 'expense', action: 'delete',
   }).ok, true);
 });
 
@@ -337,7 +346,7 @@ test('an edit that clears the date is not treated as a move into a closed month'
   // Blank dates are the date field's own error to report, not closure's.
   assert.equal(validateRecordChange({
     originalDate: '2026-10-02', nextDate: '',
-    settings: closedOn('2026-09'), kind: 'expense', action: 'edit', canOverride: false,
+    settings: closedOn('2026-09'), kind: 'expense', action: 'edit',
   }).ok, true);
 });
 

@@ -337,14 +337,14 @@ service cloud.firestore {
       return months != null && months[period] != null && months[period].closed == true;
     }
 
-    /** Whoever closes periods may post into them; nothing else lifts the lock. */
-    function sasBypassesClosure() {
-      return sasPerm('Month Closure', 'Close') || sasViewsAllProjects();
-    }
-
+    /*
+     * No permission lifts this. A closed month is closed to everyone, administrators included;
+     * the only route in is to reopen it from Settings → Month Closure, which takes a reason and
+     * is recorded. A bypass here would make the lock depend on who is writing rather than on the
+     * state of the period, which is precisely what closing a month is meant to stop.
+     */
     function sasDateIsPostable(date) {
-      return sasBypassesClosure()
-        || !(date is string)
+      return !(date is string)
         || date.size() < 7
         || !sasMonthIsClosed(date[0:7]);
     }

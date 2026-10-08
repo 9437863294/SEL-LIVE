@@ -357,17 +357,17 @@ export default function SiteAccountMonthClosureSettings() {
             How closure works
           </CardTitle>
           <CardDescription>
-            A closed month refuses any expense or receipt dated inside it — new entries, edits, and
-            entries moved into it — no matter how recent today is. This is separate from Date
-            Control, which limits how late an entry may be filed while a month is still open; both
-            apply, and either can refuse a date.
+            A closed month refuses any expense or receipt dated inside it — new entries, edits,
+            deletions, and entries moved into or out of it — no matter how recent today is and no
+            matter who is signed in. This is separate from Date Control, which limits how late an
+            entry may be filed while a month is still open; both apply, and either can refuse.
           </CardDescription>
         </CardHeader>
         <CardContent className="grid grid-cols-1 gap-2 text-xs text-muted-foreground sm:grid-cols-3">
           <p className="rounded-lg border bg-muted/30 px-3 py-2">
-            <strong className="text-slate-700">Closing</strong> needs the Month Closure · Close
-            permission. Its holder can still post into months they have closed, so a single
-            correction does not require unlocking the period for everyone.
+            <strong className="text-slate-700">No permission overrides it.</strong> Once a month is
+            closed nobody can add, edit or delete anything dated in it — administrators included.
+            The only way in is to reopen the month.
           </p>
           <p className="rounded-lg border bg-muted/30 px-3 py-2">
             <strong className="text-slate-700">Reopening</strong> needs Month Closure · Reopen and a
@@ -527,8 +527,9 @@ export default function SiteAccountMonthClosureSettings() {
           <DialogHeader>
             <DialogTitle>Close {closeTarget ? periodLabel(closeTarget) : ''}</DialogTitle>
             <DialogDescription>
-              No expense or receipt dated in this month will be accepted afterwards, from anyone
-              without the Close permission. Reopening is possible but requires a reason.
+              Afterwards, no expense or receipt dated in this month can be added, edited or deleted
+              by anyone — including you. Reopening is possible but requires a written reason and
+              stays on the record.
             </DialogDescription>
           </DialogHeader>
 

@@ -201,29 +201,28 @@ const RECORD_LABEL: Record<SASClosureRecord, string> = {
  * Runs after the rolling Date Control window, not instead of it: the two answer different
  * questions and either can reject a date the other would allow.
  *
- * `canOverride` is the `Month Closure` / `Close` permission. Whoever is accountable for closing a
- * period is the one person who can reasonably post into it — typically to correct the very thing
- * that prompted the reopen request — and giving them the override avoids a lock whose only escape
- * is to unlock the whole month for everyone.
+ * There is deliberately no override. A permission that let its holder post into a closed month
+ * would make the lock a matter of who you are rather than what state the period is in, and the
+ * whole value of closing a month is that the figures cannot move without that movement being
+ * visible. The way in is to reopen the month — which needs a reason, is recorded against the
+ * month, and shows on the closure screen afterwards.
  */
 export function validateAgainstClosure({
   date,
   settings,
   kind,
-  canOverride,
 }: {
   date: string;
   settings: SASMonthClosureSettings;
   kind: SASClosureRecord;
-  canOverride: boolean;
 }): ClosureCheck {
-  if (!date || canOverride) return { ok: true };
+  if (!date) return { ok: true };
   const period = date.slice(0, 7);
   if (!isPeriodKey(period) || !isMonthClosed(settings, period)) return { ok: true };
   return {
     ok: false,
     reason: `${RECORD_LABEL[kind]} falls in ${period}, which has been closed. `
-      + 'Ask an administrator to reopen the month, or record this against an open one.',
+      + 'The month must be reopened before anything can be recorded against it.',
   };
 }
 
@@ -238,13 +237,11 @@ export function validateAgainstClosure({
 export function isRecordLocked({
   date,
   settings,
-  canOverride,
 }: {
   date: string | undefined | null;
   settings: SASMonthClosureSettings;
-  canOverride: boolean;
 }): boolean {
-  if (canOverride || !date) return false;
+  if (!date) return false;
   const period = date.slice(0, 7);
   return isPeriodKey(period) && isMonthClosed(settings, period);
 }
@@ -273,6 +270,9 @@ const RECORD_NOUN: Record<SASClosureRecord, string> = {
  *     lets it through, but the destination is settled.
  *
  * `nextDate` is omitted for a delete, where there is no destination.
+ *
+ * No permission lifts either refusal — see `validateAgainstClosure` for why. Reopening the month
+ * is the only route, and it leaves a record.
  */
 export function validateRecordChange({
   originalDate,
@@ -280,29 +280,25 @@ export function validateRecordChange({
   settings,
   kind,
   action,
-  canOverride,
 }: {
   originalDate: string | undefined | null;
   nextDate?: string | null;
   settings: SASMonthClosureSettings;
   kind: SASClosureRecord;
   action: ClosureAction;
-  canOverride: boolean;
 }): ClosureCheck {
-  if (canOverride) return { ok: true };
-
   const noun = RECORD_NOUN[kind];
 
-  if (isRecordLocked({ date: originalDate, settings, canOverride })) {
+  if (isRecordLocked({ date: originalDate, settings })) {
     return {
       ok: false,
       reason: `This ${noun} is dated in ${originalDate!.slice(0, 7)}, which has been closed. `
-        + `A ${noun} in a closed month cannot be ${ACTION_LABEL[action]}. `
-        + 'Ask an administrator to reopen the month first.',
+        + `A ${noun} in a closed month cannot be ${ACTION_LABEL[action]} by anyone. `
+        + 'The month has to be reopened first.',
     };
   }
 
-  if (action === 'edit' && isRecordLocked({ date: nextDate, settings, canOverride })) {
+  if (action === 'edit' && isRecordLocked({ date: nextDate, settings })) {
     return {
       ok: false,
       reason: `${nextDate!.slice(0, 7)} has been closed, so this ${noun} cannot be moved into it.`,
