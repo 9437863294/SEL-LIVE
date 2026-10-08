@@ -42,6 +42,7 @@ const PROJECTS = [
 const masters = {
   projects: PROJECTS,
   billTypes: DEFAULT_CONFIG.billTypes,
+  billCategories: DEFAULT_CONFIG.billCategories,
   deductionTypes: DEFAULT_CONFIG.deductionTypes,
   projectMappings: [],
   tolerance: 1,
@@ -212,7 +213,7 @@ test('project mapping: normalised exact, fuzzy needs confirmation, remembered, u
 
 test('unknown bill types are proposed with an inferred category', () => {
   assert.deepEqual(
-    { category: provisionalBillType('supply-35%').category, retention: provisionalBillType('CIVIL-10%').isRetentionBill, pv: provisionalBillType('CIVIL-PV').isPriceVariation },
+    { category: provisionalBillType('supply-35%').categoryId, retention: provisionalBillType('CIVIL-10%').isRetentionBill, pv: provisionalBillType('CIVIL-PV').isPriceVariation },
     { category: 'supply', retention: true, pv: true },
   );
 });

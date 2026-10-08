@@ -50,6 +50,7 @@ import { StatusBadge } from '@/components/shared/status-badge';
 import { PM_DIALOG } from '@/components/project-management/pm-shell';
 import { useToast } from '@/hooks/use-toast';
 import { daysBetween, type LedgerLine } from '@/lib/bill-tracking/calculations';
+import { categoryName } from '@/lib/bill-tracking/categories';
 import { formatINR } from '@/lib/bill-tracking/money';
 import {
   AGEING_BASIS_LABELS,
@@ -148,7 +149,7 @@ function DetailBody({ detail, reload, tab, setTab }: { detail: Detail; reload: (
         }
         meta={[
           { label: 'Bill date', value: dateText(bill.billDate) },
-          { label: 'Type', value: bill.billTypeName },
+          { label: 'Category', value: `${categoryName(bill.billCategory, lookups.config.billCategories, bill.billCategoryName)} › ${bill.billTypeName}` },
           { label: 'Client', value: bill.clientNameSnapshot ?? '—' },
           { label: 'FY', value: bill.financialYear },
           { label: 'Due', value: dateText(bill.dueDate) },
@@ -397,7 +398,8 @@ function OverviewTab({ bill }: { bill: BillRow }) {
             ['Project', bill.projectNameSnapshot],
             ['Client', bill.clientNameSnapshot ?? '—'],
             ['DGM office', bill.dgmOffice ?? '—'],
-            ['Bill type', `${bill.billTypeName} (${bill.billCategory})${bill.isRetentionBill ? ' · retention bill' : ''}`],
+            ['Main category', categoryName(bill.billCategory, lookups.config.billCategories, bill.billCategoryName)],
+            ['Sub category', `${bill.billTypeName}${bill.isRetentionBill ? ' · retention bill' : ''}`],
             ['Description', bill.description ?? '—'],
             ['Stage', bill.currentStage ?? '—'],
             ['Bill date', dateText(bill.billDate)],

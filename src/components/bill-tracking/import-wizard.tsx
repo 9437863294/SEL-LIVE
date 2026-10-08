@@ -382,10 +382,10 @@ export default function ImportWizard() {
           {preview.unknownBillTypes.length ? (
             <Card className="border-amber-200 bg-amber-50/70">
               <CardContent className="space-y-2 p-4 text-sm">
-                <p className="font-semibold text-amber-900">Bill types not in the master: {preview.unknownBillTypes.join(', ')}</p>
+                <p className="font-semibold text-amber-900">Sub categories not in Settings yet: {preview.unknownBillTypes.join(', ')}</p>
                 <label className="flex items-center gap-2">
                   <Checkbox checked={addUnknownBillTypes} onCheckedChange={(value) => setAddUnknownBillTypes(Boolean(value))} />
-                  Add them to the Bill Type master on import (category inferred from the name; editable in Settings)
+                  Add them on import — each under the main category its name suggests, enabled for the projects that use it — and enable known sub categories for any project in this file that uses them. Editable later in Settings → Bill categories.
                 </label>
               </CardContent>
             </Card>

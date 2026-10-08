@@ -19,7 +19,8 @@ import { Input } from '@/components/ui/input';
 import { PageHeader } from '@/components/shared/page-header';
 import { StatusBadge } from '@/components/shared/status-badge';
 import { monthLabel, type LedgerLine } from '@/lib/bill-tracking/calculations';
-import { AGEING_BASIS_LABELS, BILL_CATEGORY_LABELS, PAYMENT_STATUS_LABELS, RETENTION_STATUS_LABELS, type BillCategory, type DeductionTypeMaster, type RetentionRelease } from '@/lib/bill-tracking/types';
+import { AGEING_BASIS_LABELS, PAYMENT_STATUS_LABELS, RETENTION_STATUS_LABELS, type DeductionTypeMaster, type RetentionRelease } from '@/lib/bill-tracking/types';
+import { categoryName } from '@/lib/bill-tracking/categories';
 import type { AgeingReport, BillTotals, CollectionLine, ExceptionItem, ForecastItem, ForecastWindow, GroupRow, MonthlySummaryRow, RetentionRow, TargetPerformanceRow } from '@/lib/bill-tracking/reports';
 
 import { useBtQuery, useLookups } from './bt-client';
@@ -130,7 +131,7 @@ export function ReportView({ kind }: { kind: string }) {
   const extra = (() => {
     switch (kind) {
       case 'deductions':
-        return <Picker label="Group by" value={filters.get('by') || 'project'} onChange={(value) => filters.set({ by: value })} options={[{ value: 'project', label: 'Project' }, { value: 'client', label: 'Client' }, { value: 'month', label: 'Month' }, { value: 'financialYear', label: 'Financial year' }, { value: 'billType', label: 'Bill type' }, { value: 'dgmOffice', label: 'DGM office' }]} />;
+        return <Picker label="Group by" value={filters.get('by') || 'project'} onChange={(value) => filters.set({ by: value })} options={[{ value: 'project', label: 'Project' }, { value: 'client', label: 'Client' }, { value: 'month', label: 'Month' }, { value: 'financialYear', label: 'Financial year' }, { value: 'billType', label: 'Sub category' }, { value: 'dgmOffice', label: 'DGM office' }]} />;
       case 'ageing':
         return (
           <>
@@ -143,7 +144,7 @@ export function ReportView({ kind }: { kind: string }) {
           </>
         );
       case 'bill-type':
-        return <Picker label="Group by" value={filters.get('by') || 'billType'} onChange={(value) => filters.set({ by: value })} options={[{ value: 'billType', label: 'Bill type' }, { value: 'category', label: 'Category' }]} />;
+        return <Picker label="Group by" value={filters.get('by') || 'billType'} onChange={(value) => filters.set({ by: value })} options={[{ value: 'billType', label: 'Sub category' }, { value: 'category', label: 'Main category' }]} />;
       case 'performance':
         return <Picker label="By" value={filters.get('by') || 'project'} onChange={(value) => filters.set({ by: value })} options={[{ value: 'project', label: 'Project' }, { value: 'dgmOffice', label: 'DGM office' }, { value: 'owner', label: 'Collection owner' }]} />;
       case 'client-ledger':
@@ -187,7 +188,7 @@ function ReportBody({ kind, data, filters }: { kind: string; data: Record<string
     case 'client-wise':
     case 'dgm-office':
     case 'bill-type':
-      return <GroupTable kind={kind} rows={data.rows as GroupRow[]} totals={data.totals as BillTotals} carry={carry} />;
+      return <GroupTable kind={kind} rows={data.rows as GroupRow[]} totals={data.totals as BillTotals} carry={carry} byCategory={kind === 'bill-type' && filters.get('by') === 'category'} />;
     case 'collections':
       return <CollectionsReport data={data as { rows: CollectionLine[]; total: number; byMonth: { month: string; amount: number }[]; from?: string; to?: string }} />;
     case 'deductions':
@@ -289,14 +290,15 @@ function MonthlyTable({ rows, totals, carry, note }: { rows: MonthlySummaryRow[]
           </tfoot>
         </table>
       </div>
-      <p className="text-xs text-muted-foreground">Month = bill date, except “Collection in Month”, which is by receipt date. Each bill’s taxable value sits in exactly one category column (from the Bill Type master).</p>
+      <p className="text-xs text-muted-foreground">Month = bill date, except “Collection in Month”, which is by receipt date. Each bill’s taxable value sits in exactly one column, set by its main category (Settings → Bill categories).</p>
     </div>
   );
 }
 
 /* ── group tables ────────────────────────────────────────────────────────── */
 
-function GroupTable({ kind, rows, totals, carry }: { kind: string; rows: GroupRow[]; totals: BillTotals; carry: (extra: Record<string, string | undefined>) => string }) {
+function GroupTable({ kind, rows, totals, carry, byCategory = false }: { kind: string; rows: GroupRow[]; totals: BillTotals; carry: (extra: Record<string, string | undefined>) => string; byCategory?: boolean }) {
+  const lookups = useLookups();
   const drill = (row: GroupRow) =>
     kind === 'project-wise'
       ? `/bill-tracking/bills${carry({ project: row.key })}`
@@ -304,10 +306,10 @@ function GroupTable({ kind, rows, totals, carry }: { kind: string; rows: GroupRo
         ? `/bill-tracking/bills${carry({ client: row.key === '—' ? undefined : row.key })}`
         : kind === 'dgm-office'
           ? `/bill-tracking/bills${carry({ dgm: row.key === '—' ? undefined : row.key })}`
-          : `/bill-tracking/bills${carry(row.key in BILL_CATEGORY_LABELS ? { category: row.key } : { billType: row.key })}`;
-  const label = (row: GroupRow) => BILL_CATEGORY_LABELS[row.key as BillCategory] ?? row.label;
+          : `/bill-tracking/bills${carry(byCategory ? { category: row.key } : { billType: row.key })}`;
+  const label = (row: GroupRow) => (byCategory ? categoryName(row.key, lookups.config.billCategories, row.label) : row.label);
   const columns: BtColumn<GroupRow & { id: string }>[] = [
-    { key: 'label', header: kind === 'project-wise' ? 'Project' : kind === 'client-wise' ? 'Client' : kind === 'dgm-office' ? 'DGM office' : 'Bill type', pinned: true, mobile: 'title', sortValue: (row) => row.label, cell: (row) => <DrillLink href={drill(row)}>{label(row)}</DrillLink>, total: 'Total' },
+    { key: 'label', header: kind === 'project-wise' ? 'Project' : kind === 'client-wise' ? 'Client' : kind === 'dgm-office' ? 'DGM office' : byCategory ? 'Main category' : 'Sub category', pinned: true, mobile: 'title', sortValue: (row) => row.label, cell: (row) => <DrillLink href={drill(row)}>{label(row)}</DrillLink>, total: 'Total' },
     { key: 'count', header: 'Bills', align: 'right', sortValue: (row) => row.count, cell: (row) => row.count, total: totals.count },
     { key: 'taxable', header: 'Taxable', align: 'right', sortValue: (row) => row.taxable, cell: (row) => <Amount value={row.taxable} signed />, total: <Amount value={totals.taxable} /> },
     { key: 'gst', header: 'GST', align: 'right', cell: (row) => <Amount value={row.gst} signed />, total: <Amount value={totals.gst} /> },
@@ -657,7 +659,7 @@ function exportSpecFor(kind: string, data: Record<string, unknown>, base: { meta
         title,
         fileName,
         rows: (data.rows as Row[]) ?? [],
-        columns: [text('label', 'Name', (value, row) => BILL_CATEGORY_LABELS[row.key as BillCategory] ?? String(value)), text('count', 'Bills'), money('taxable', 'Taxable'), money('gst', 'GST'), money('gross', 'Gross'), money('deduction', 'Deductions'), money('net', 'Net'), money('received', 'Received'), money('outstanding', 'Outstanding'), text('collectionPercent', 'Collection %'), money('retention', 'Retention'), money('retentionBalance', 'Retention Balance'), text('oldestOutstandingDate', 'Oldest Outstanding'), text('averageCollectionDays', 'Avg Collection Days')],
+        columns: [text('label', 'Name'), text('count', 'Bills'), money('taxable', 'Taxable'), money('gst', 'GST'), money('gross', 'Gross'), money('deduction', 'Deductions'), money('net', 'Net'), money('received', 'Received'), money('outstanding', 'Outstanding'), text('collectionPercent', 'Collection %'), money('retention', 'Retention'), money('retentionBalance', 'Retention Balance'), text('oldestOutstandingDate', 'Oldest Outstanding'), text('averageCollectionDays', 'Avg Collection Days')],
         totals: data.totals as Record<string, number>,
       };
     case 'collections':

@@ -10,8 +10,10 @@
  */
 
 import { DEFAULT_AGEING_BUCKETS } from './calculations.ts';
-import { inferBillCategory, LEGACY_RETENTION_BILL_TYPES } from './import.ts';
+import { inferBillCategory, normaliseBillType } from './categories.ts';
+import { LEGACY_RETENTION_BILL_TYPES } from './import.ts';
 import type {
+  BillCategoryMaster,
   BillStageMaster,
   BillTrackingConfig,
   BillTrackingSettings,
@@ -61,11 +63,26 @@ const slug = (value: string) =>
     .replace(/[^a-z0-9]+/g, '-')
     .replace(/^-|-$/g, '');
 
+/**
+ * Main categories. Ids are the legacy category keys so bills saved before categories became
+ * configurable still resolve; Compensation reports under the summary's "Other" column.
+ */
+export const DEFAULT_BILL_CATEGORIES: BillCategoryMaster[] = [
+  { id: 'supply', name: 'Supply', code: 'SUPPLY', summaryColumn: 'supply', sequence: 1, active: true },
+  { id: 'erection', name: 'Erection', code: 'ERECTION', summaryColumn: 'erection', sequence: 2, active: true },
+  { id: 'civil', name: 'Civil', code: 'CIVIL', summaryColumn: 'civil', sequence: 3, active: true },
+  { id: 'fi', name: 'F&I', code: 'F&I', summaryColumn: 'fi', sequence: 4, active: true },
+  { id: 'compensation', name: 'Compensation', code: 'COMPENSATION', summaryColumn: 'other', sequence: 5, active: true },
+  { id: 'other', name: 'Other', code: 'OTHER', summaryColumn: 'other', sequence: 6, active: true },
+];
+
+/** Sub categories seeded from the workbook; enabled for every project until an admin narrows them. */
 export const DEFAULT_BILL_TYPES: BillTypeMaster[] = LEGACY_BILL_TYPES.map((name) => ({
   id: `bt-${slug(name)}`,
   name,
   code: name.replace(/[^A-Z0-9%&]+/g, '-'),
-  category: inferBillCategory(name),
+  categoryId: inferBillCategory(name),
+  projectIds: [],
   isRetentionBill: LEGACY_RETENTION_BILL_TYPES.includes(name),
   isPriceVariation: /-PV$/.test(name),
   active: true,
@@ -111,6 +128,7 @@ export const DEFAULT_SETTINGS: BillTrackingSettings = {
 
 export const DEFAULT_CONFIG: BillTrackingConfig = {
   settings: DEFAULT_SETTINGS,
+  billCategories: DEFAULT_BILL_CATEGORIES,
   billTypes: DEFAULT_BILL_TYPES,
   deductionTypes: DEFAULT_DEDUCTION_TYPES,
   stages: DEFAULT_STAGES,
@@ -134,7 +152,9 @@ export function withConfigDefaults(stored: Partial<BillTrackingConfig> | null | 
   }
   return {
     settings,
-    billTypes: stored?.billTypes?.length ? stored.billTypes : DEFAULT_BILL_TYPES,
+    billCategories: stored?.billCategories?.length ? stored.billCategories : DEFAULT_BILL_CATEGORIES,
+    // Older configurations stored a fixed `category` per bill type and no project list.
+    billTypes: (stored?.billTypes?.length ? stored.billTypes : DEFAULT_BILL_TYPES).map((type) => normaliseBillType(type)),
     deductionTypes: deductionTypes.sort((a, b) => a.sequence - b.sequence),
     stages: stored?.stages?.length ? stored.stages : DEFAULT_STAGES,
     projectMappings: stored?.projectMappings ?? [],

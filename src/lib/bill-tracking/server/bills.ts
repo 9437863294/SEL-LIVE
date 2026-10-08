@@ -25,6 +25,7 @@ import {
   nextWorkflowStatus,
   resubmitTarget,
 } from '../calculations.ts';
+import { isEnabledForProject } from '../categories.ts';
 import { formatBillNumber } from '../defaults.ts';
 import { roundMoney } from '../money.ts';
 import { buildSearchTokens } from '../reports.ts';
@@ -68,6 +69,7 @@ const AUDITED_FIELDS = [
   'dgmOffice',
   'description',
   'billTypeName',
+  'billCategoryName',
   'taxableAmount',
   'gstAmount',
   'deductions',
@@ -135,7 +137,14 @@ interface ComposeArgs {
 /** Builds every stored field of a bill from validated input plus masters; derived totals included. */
 export function composeBill({ context, input, config, project, client, existing, ownerName }: ComposeArgs): Omit<StoredBill, 'id' | 'createdAt' | 'createdBy' | 'version'> & Partial<Pick<StoredBill, 'createdAt' | 'createdBy' | 'version'>> {
   const billType = config.billTypes.find((entry) => entry.id === input.billTypeId);
-  if (!billType || (!billType.active && existing?.billTypeId !== billType.id)) throw new BtError('Choose an active bill type.');
+  const keeping = existing?.billTypeId === input.billTypeId;
+  if (!billType) throw new BtError(keeping ? 'This bill’s sub category was deleted from Settings — choose another.' : 'Choose a sub category.');
+  if (!billType.active && !keeping) throw new BtError(`Sub category ${billType.name} is inactive.`);
+  // A sub category is offered per project; one already on the bill survives a later narrowing.
+  if (!isEnabledForProject(billType, project.id) && !(keeping && existing?.projectId === project.id)) {
+    throw new BtError(`Sub category ${billType.name} is not enabled for ${project.name}. Enable it in Settings → Bill categories, or choose another.`);
+  }
+  const category = config.billCategories.find((entry) => entry.id === billType.categoryId);
 
   const derivedFy = financialYearOf(input.billDate);
   const financialYear = input.financialYear && input.financialYear !== derivedFy ? input.financialYear : derivedFy;
@@ -191,7 +200,8 @@ export function composeBill({ context, input, config, project, client, existing,
     description: input.description,
     billTypeId: billType.id,
     billTypeName: billType.name,
-    billCategory: billType.category,
+    billCategory: billType.categoryId,
+    billCategoryName: category?.name ?? existing?.billCategoryName,
     isRetentionBill: billType.isRetentionBill || input.transactionType === 'retention_bill',
     taxableAmount: roundMoney(input.taxableAmount),
     gstAmount: roundMoney(input.gstAmount),

@@ -145,27 +145,46 @@ export const RETENTION_STATUS_LABELS: Record<RetentionStatus, string> = {
 /* ── masters (configuration) ─────────────────────────────────────────────── */
 
 /**
- * Reporting category a bill type rolls up into. The legacy month-wise summary has one taxable column
- * per category (Supply / Erection / Civil / F&I), so every bill type names exactly one.
+ * Column of the legacy month-wise summary that a main category's taxable value is reported under.
+ * The workbook's summary has Supply / Erection / Civil / F&I columns; everything else is "Other".
  */
-export const BILL_CATEGORIES = ['supply', 'erection', 'civil', 'fi', 'compensation', 'other'] as const;
-export type BillCategory = (typeof BILL_CATEGORIES)[number];
+export const SUMMARY_COLUMNS = ['supply', 'erection', 'civil', 'fi', 'other'] as const;
+export type SummaryColumn = (typeof SUMMARY_COLUMNS)[number];
 
-export const BILL_CATEGORY_LABELS: Record<BillCategory, string> = {
+export const SUMMARY_COLUMN_LABELS: Record<SummaryColumn, string> = {
   supply: 'Supply',
   erection: 'Erection',
   civil: 'Civil',
   fi: 'F&I',
-  compensation: 'Compensation',
   other: 'Other',
 };
 
+/** A main category's id. The defaults keep the legacy ids (`supply`, `civil`…) so old bills resolve. */
+export type BillCategory = string;
+
+/** Main category — one list, the same for every project (Supply, Erection, Civil, F&I…). */
+export interface BillCategoryMaster {
+  id: string;
+  name: string;
+  code: string;
+  summaryColumn: SummaryColumn;
+  sequence: number;
+  active: boolean;
+}
+
+/**
+ * Sub category — the legacy "Type of Bill Status" (`SUPPLY-60%`, `CIVIL-PV`…). It sits under one main
+ * category and is enabled per project: an empty `projectIds` means every project.
+ */
 export interface BillTypeMaster {
   id: string;
   /** Exactly as finance writes it on the sheet, e.g. `SUPPLY-60%`, `CIVIL-PV`. */
   name: string;
   code: string;
-  category: BillCategory;
+  /** Main category id. */
+  categoryId: BillCategory;
+  /** Projects this sub category is offered on; empty = all projects. */
+  projectIds: string[];
   /**
    * A bill raised to recover retention (the legacy `SUPPLY-10%`, `CIVIL-10%`… rows). Its net feeds
    * "Retention Amount Raised" and its receipts feed "Retention Released by Client".
@@ -288,6 +307,9 @@ export interface ProjectProfile {
 
 export interface BillTrackingConfig {
   settings: BillTrackingSettings;
+  /** Main categories (shared by every project). */
+  billCategories: BillCategoryMaster[];
+  /** Sub categories (per project). */
   billTypes: BillTypeMaster[];
   deductionTypes: DeductionTypeMaster[];
   stages: BillStageMaster[];
@@ -358,7 +380,9 @@ export interface Bill {
   description?: string;
   billTypeId?: string;
   billTypeName: string;
+  /** Main category id, and its name when the bill was saved (kept if the category is later renamed or deleted). */
   billCategory: BillCategory;
+  billCategoryName?: string;
   isRetentionBill: boolean;
 
   taxableAmount: number;

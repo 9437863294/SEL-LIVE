@@ -33,7 +33,8 @@ import { KpiCard } from '@/components/shared/kpi-card';
 import { PageHeader } from '@/components/shared/page-header';
 import { FilterBar } from '@/components/shared/filter-bar';
 import { Input } from '@/components/ui/input';
-import { BILL_CATEGORY_LABELS, TRANSACTION_TYPE_LABELS, type BillCategory } from '@/lib/bill-tracking/types';
+import { TRANSACTION_TYPE_LABELS } from '@/lib/bill-tracking/types';
+import { categoryName } from '@/lib/bill-tracking/categories';
 import type { AgeingReport, CollectionLine, DashboardKpis, ExceptionItem, ForecastItem, ForecastWindow, GroupRow, MonthlyFlowPoint, TargetPerformanceRow } from '@/lib/bill-tracking/reports';
 
 import { useBtQuery, useLookups } from './bt-client';
@@ -123,7 +124,7 @@ export default function BillTrackingDashboard() {
         <MiniSelect label="Project" value={filters.get('project')} onChange={(value) => filters.set({ project: value })} options={lookups.projects.map((project) => ({ value: project.id, label: project.name }))} all="All projects" />
         <MiniSelect label="Client" value={filters.get('client')} onChange={(value) => filters.set({ client: value })} options={lookups.clients.map((client) => ({ value: client.id, label: client.name }))} all="All clients" />
         <MiniSelect label="DGM office" value={filters.get('dgm')} onChange={(value) => filters.set({ dgm: value })} options={lookups.dgmOffices.map((office) => ({ value: office, label: office }))} all="All offices" />
-        <MiniSelect label="Bill type" value={filters.get('billType')} onChange={(value) => filters.set({ billType: value })} options={lookups.config.billTypes.filter((type) => type.active).map((type) => ({ value: type.name, label: type.name }))} all="All types" />
+        <MiniSelect label="Sub category" value={filters.get('billType')} onChange={(value) => filters.set({ billType: value })} options={lookups.config.billTypes.filter((type) => type.active).map((type) => ({ value: type.name, label: type.name }))} all="All sub categories" />
         <MiniSelect label="Transaction" value={filters.get('txn')} onChange={(value) => filters.set({ txn: value })} options={Object.entries(TRANSACTION_TYPE_LABELS).map(([value, label]) => ({ value, label }))} all="All" />
         <div className="min-w-0 space-y-1">
           <Label className="text-xs text-muted-foreground">Bill date from</Label>
@@ -174,8 +175,8 @@ export default function BillTrackingDashboard() {
             <ChartPanel title="Client-wise outstanding" description="Top clients by outstanding.">
               <RankedBars valueLabel="Outstanding" data={data.clients.filter((row) => row.outstanding > 0).slice(0, 8).map((row) => ({ key: row.key, label: row.label, value: row.outstanding, href: link('/bill-tracking/outstanding', { client: row.key === '—' ? undefined : row.key }) }))} />
             </ChartPanel>
-            <ChartPanel title="Bill type contribution" description="Net billing by category.">
-              <RankedBars valueLabel="Net billing" data={data.billTypes.map((row) => ({ key: row.key, label: BILL_CATEGORY_LABELS[row.key as BillCategory] ?? row.label, value: row.net, href: link('/bill-tracking/bills', { category: row.key }) }))} />
+            <ChartPanel title="Main category contribution" description="Net billing by main category.">
+              <RankedBars valueLabel="Net billing" data={data.billTypes.map((row) => ({ key: row.key, label: categoryName(row.key, lookups.config.billCategories, row.label), value: row.net, href: link('/bill-tracking/bills', { category: row.key }) }))} />
             </ChartPanel>
             <ChartPanel title="Collection target vs actual" description="Last 12 weeks (ISO weeks).">
               <TargetActualChart data={data.targets} />

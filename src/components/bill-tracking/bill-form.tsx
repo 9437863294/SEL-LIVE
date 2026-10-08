@@ -24,6 +24,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { PageHeader, SectionHeader } from '@/components/shared/page-header';
 import { useToast } from '@/hooks/use-toast';
 import { addDays, deriveBillTotals, financialYearOf, isPastApproval, percentOf } from '@/lib/bill-tracking/calculations';
+import { categoryName, sortedCategories, subCategoriesFor } from '@/lib/bill-tracking/categories';
 import { TRANSACTION_TYPE_LABELS, TRANSACTION_TYPES, type Bill, type BillTransactionType } from '@/lib/bill-tracking/types';
 
 import { btFetch, useBt, useBtQuery, useLookups } from './bt-client';
@@ -52,6 +53,8 @@ interface FormState {
   clientId: string;
   dgmOffice: string;
   description: string;
+  /** Main category, chosen before the sub category. */
+  categoryId: string;
   billTypeId: string;
   taxableAmount: string;
   gstMode: string;
@@ -89,6 +92,7 @@ function fromBill(bill: Bill): FormState {
     clientId: bill.clientId ?? '',
     dgmOffice: bill.dgmOffice ?? '',
     description: bill.description ?? '',
+    categoryId: bill.billCategory ?? '',
     billTypeId: bill.billTypeId ?? '',
     taxableAmount: String(bill.taxableAmount ?? ''),
     gstMode: bill.gstPercent !== undefined && GST_PRESETS.includes(String(bill.gstPercent)) ? String(bill.gstPercent) : 'manual',
@@ -123,7 +127,7 @@ function BillFormInner({ existing }: { existing?: Bill }) {
 
   const [form, setForm] = useState<FormState>(() =>
     existing
-      ? fromBill(existing)
+      ? { ...fromBill(existing), categoryId: config.billTypes.find((type) => type.id === existing.billTypeId)?.categoryId ?? existing.billCategory ?? '' }
       : {
           billSerialNumber: '',
           autoNumber: config.settings.numbering.enabled,
@@ -139,6 +143,7 @@ function BillFormInner({ existing }: { existing?: Bill }) {
           clientId: '',
           dgmOffice: '',
           description: '',
+          categoryId: '',
           billTypeId: '',
           taxableAmount: '',
           gstMode: '18',
@@ -158,6 +163,9 @@ function BillFormInner({ existing }: { existing?: Bill }) {
   const set = <K extends keyof FormState>(key: K, value: FormState[K]) => setForm((current) => ({ ...current, [key]: value }));
 
   const project = lookups.projects.find((entry) => entry.id === form.projectId);
+  // A sub category already on the bill stays selectable on its own project even if since narrowed.
+  const keepTypeFor = (projectId: string) => (existing && existing.projectId === projectId ? existing.billTypeId : undefined);
+  const subCategories = subCategoriesFor(config.billTypes, form.categoryId, form.projectId, keepTypeFor(form.projectId));
   const client = lookups.clients.find((entry) => entry.id === (form.clientId || project?.clientId));
 
   // Project → client and DGM office (only fills blanks, never overwrites a choice).
@@ -345,7 +353,7 @@ function BillFormInner({ existing }: { existing?: Bill }) {
               <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
                 {field(
                   'Project *',
-                  <Select value={form.projectId} onValueChange={(value) => set('projectId', value)}>
+                  <Select value={form.projectId} onValueChange={(value) => setForm((current) => ({ ...current, projectId: value, billTypeId: subCategoriesFor(config.billTypes, current.categoryId, value, keepTypeFor(value)).some((type) => type.id === current.billTypeId) ? current.billTypeId : '' }))}>
                     <SelectTrigger aria-label="Project">
                       <SelectValue placeholder="Choose a project" />
                     </SelectTrigger>
@@ -360,6 +368,40 @@ function BillFormInner({ existing }: { existing?: Bill }) {
                     </SelectContent>
                   </Select>,
                   lookups.projects.length === 0 ? 'No projects are assigned to you in Access Management.' : undefined,
+                )}
+                {field(
+                  'Main category *',
+                  <Select value={form.categoryId} onValueChange={(value) => setForm((current) => ({ ...current, categoryId: value, billTypeId: '' }))}>
+                    <SelectTrigger aria-label="Main category">
+                      <SelectValue placeholder="Choose main category" />
+                    </SelectTrigger>
+                    <SelectContent className="max-h-80">
+                      {sortedCategories(config.billCategories)
+                        .filter((category) => category.active || category.id === form.categoryId)
+                        .map((category) => (
+                          <SelectItem key={category.id} value={category.id}>
+                            {category.name}
+                          </SelectItem>
+                        ))}
+                    </SelectContent>
+                  </Select>,
+                )}
+                {field(
+                  'Sub category *',
+                  <Select value={form.billTypeId} onValueChange={(value) => set('billTypeId', value)} disabled={!form.categoryId || !form.projectId}>
+                    <SelectTrigger aria-label="Sub category">
+                      <SelectValue placeholder={!form.projectId ? 'Choose the project first' : !form.categoryId ? 'Choose the main category first' : subCategories.length ? 'Choose sub category' : 'None for this project'} />
+                    </SelectTrigger>
+                    <SelectContent className="max-h-80">
+                      {subCategories.map((type) => (
+                        <SelectItem key={type.id} value={type.id}>
+                          {type.name}
+                          {type.isRetentionBill ? ' · retention' : ''}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>,
+                  form.projectId && form.categoryId && subCategories.length === 0 ? `No sub categories under ${categoryName(form.categoryId, config.billCategories)} are enabled for this project — add one in Settings → Bill categories.` : undefined,
                 )}
                 {field(
                   'Client',
@@ -383,24 +425,6 @@ function BillFormInner({ existing }: { existing?: Bill }) {
                     <option key={office} value={office} />
                   ))}
                 </datalist>
-                {field(
-                  'Bill type *',
-                  <Select value={form.billTypeId} onValueChange={(value) => set('billTypeId', value)}>
-                    <SelectTrigger aria-label="Bill type">
-                      <SelectValue placeholder="Choose a type" />
-                    </SelectTrigger>
-                    <SelectContent className="max-h-80">
-                      {config.billTypes
-                        .filter((type) => type.active || type.id === form.billTypeId)
-                        .map((type) => (
-                          <SelectItem key={type.id} value={type.id}>
-                            {type.name}
-                            {type.isRetentionBill ? ' · retention' : ''}
-                          </SelectItem>
-                        ))}
-                    </SelectContent>
-                  </Select>,
-                )}
                 <div className="sm:col-span-2">{field('Description', <Input value={form.description} onChange={(event) => set('description', event.target.value)} placeholder="e.g. RA Bill 4 — civil works" />)}</div>
                 {field(<Term tip="Pre-GST value of the work or supply billed. Negative for a credit note.">Taxable amount (₹) *</Term>, <Input inputMode="decimal" required value={form.taxableAmount} onChange={(event) => set('taxableAmount', event.target.value)} />)}
                 {field(
@@ -562,7 +586,7 @@ function BillFormInner({ existing }: { existing?: Bill }) {
             <Button asChild variant="outline" className="flex-1">
               <Link href={existing ? `/bill-tracking/bills/${existing.id}` : '/bill-tracking/bills'}>Cancel</Link>
             </Button>
-            <Button type="submit" className="flex-1 gap-1.5" disabled={saving || !canSave || !form.projectId || !form.billTypeId}>
+            <Button type="submit" className="flex-1 gap-1.5" disabled={saving || !canSave || !form.projectId || !form.categoryId || !form.billTypeId}>
               <Save className="h-4 w-4" />
               {saving ? 'Saving…' : existing ? 'Save changes' : 'Create bill'}
             </Button>

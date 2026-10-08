@@ -25,8 +25,10 @@
 
 import { compareNet, computePaymentStatus, netReceivable, financialYearOf, legacyStatusMismatch, normaliseWeekKey, toDateKey } from './calculations.ts';
 import { roundMoney, subtractMoney, sumMoney, toPaise, withinTolerance } from './money.ts';
+import { categoryName, inferBillCategory, inferCategoryId, isEnabledForProject } from './categories.ts';
 import type {
   BillCategory,
+  BillCategoryMaster,
   BillPaymentStatus,
   BillTransactionType,
   BillTypeMaster,
@@ -437,16 +439,7 @@ export function matchProject(
   return { excelName, kind: 'unmatched', candidates, score: best?.score ?? 0 };
 }
 
-/** Bill-type category from the legacy naming convention: the part before the first `-`. */
-export function inferBillCategory(name: string): BillCategory {
-  const text = name.toUpperCase();
-  if (text.startsWith('F&I') || text.startsWith('F & I') || text.startsWith('FI-')) return 'fi';
-  if (text.includes('COMPENSATION')) return 'compensation';
-  if (text.startsWith('SUPPLY') || text.includes('SUPPLY-STAGE') || text.startsWith('INCEPTION')) return 'supply';
-  if (text.startsWith('ERECTION')) return 'erection';
-  if (text.startsWith('CIVIL')) return 'civil';
-  return 'other';
-}
+export { inferBillCategory };
 
 /**
  * Legacy bill types the month-wise summary counts as retention bills ("RETENTION AMOUNT RAISED").
@@ -471,19 +464,26 @@ export const LEGACY_RETENTION_BILL_TYPES = [
   'CIVIL-5%',
 ];
 
-export function matchBillType(raw: string, types: readonly BillTypeMaster[]): BillTypeMaster | undefined {
+/**
+ * The sub category a sheet value names. Several sub categories can share a name when they are
+ * enabled for different projects, so one enabled for the row's project wins; otherwise the first
+ * match is returned and the row is told it is not enabled there.
+ */
+export function matchBillType(raw: string, types: readonly BillTypeMaster[], projectId?: string): BillTypeMaster | undefined {
   const key = normaliseToken(raw);
   if (!key) return undefined;
-  return types.find((type) => normaliseToken(type.name) === key || normaliseToken(type.code) === key);
+  const matches = types.filter((type) => normaliseToken(type.name) === key || normaliseToken(type.code) === key);
+  return matches.find((type) => isEnabledForProject(type, projectId)) ?? matches[0];
 }
 
-/** A provisional master for a bill type the workbook uses but Settings does not know yet. */
-export function provisionalBillType(name: string): Omit<BillTypeMaster, 'id'> {
+/** A provisional sub category for a value the workbook uses but Settings does not know yet. */
+export function provisionalBillType(name: string, categories: readonly BillCategoryMaster[] = [], projectIds: string[] = []): Omit<BillTypeMaster, 'id'> {
   const clean = name.trim().toUpperCase();
   return {
     name: clean,
     code: clean.replace(/[^A-Z0-9%&]+/g, '-'),
-    category: inferBillCategory(clean),
+    categoryId: inferCategoryId(clean, categories),
+    projectIds,
     isRetentionBill: LEGACY_RETENTION_BILL_TYPES.includes(clean),
     isPriceVariation: /-PV$/.test(clean),
     active: true,
@@ -571,6 +571,8 @@ export interface ImportMasters {
   tolerance: number;
   roundNetToRupee?: boolean;
   piMarker: string;
+  /** Main categories, for placing sub categories the workbook introduces. */
+  billCategories?: readonly BillCategoryMaster[];
 }
 
 export interface ImportOptions {
@@ -710,16 +712,24 @@ export function parseImportRow(
     }
   }
 
-  /* bill type */
+  /* sub category ("Type of Bill Status") and its main category */
+  const categories = masters.billCategories ?? [];
   const billTypeName = text('billType').toUpperCase() || undefined;
-  const billType = billTypeName ? matchBillType(billTypeName, masters.billTypes) : undefined;
-  const provisional = billTypeName && !billType ? provisionalBillType(billTypeName) : undefined;
+  const billType = billTypeName ? matchBillType(billTypeName, masters.billTypes, projectId) : undefined;
+  const provisional = billTypeName && !billType ? provisionalBillType(billTypeName, categories) : undefined;
   if (!billTypeName) {
-    issues.push({ level: 'warning', field: 'billType', code: 'missing_bill_type', message: 'Bill type is blank.' });
+    issues.push({ level: 'warning', field: 'billType', code: 'missing_bill_type', message: 'Sub category (Type of Bill Status) is blank.' });
   } else if (!billType) {
-    issues.push({ level: 'warning', field: 'billType', code: 'unknown_bill_type', message: `Bill type "${billTypeName}" is not in the master; it will be added as ${provisional?.category}.` });
+    issues.push({
+      level: 'warning',
+      field: 'billType',
+      code: 'unknown_bill_type',
+      message: `Sub category "${billTypeName}" is not in the master; it will be added under ${categoryName(provisional?.categoryId, categories)} for this project.`,
+    });
+  } else if (projectId && !isEnabledForProject(billType, projectId)) {
+    issues.push({ level: 'warning', field: 'billType', code: 'bill_type_not_in_project', message: `Sub category "${billType.name}" is not enabled for ${projectName}; it will be enabled for it on import.` });
   }
-  const billCategory = billType?.category ?? provisional?.category ?? 'other';
+  const billCategory = billType?.categoryId ?? provisional?.categoryId ?? 'other';
   const isRetentionBill = billType?.isRetentionBill ?? provisional?.isRetentionBill ?? false;
 
   /* amounts */

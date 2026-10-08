@@ -10,6 +10,7 @@ import 'server-only';
  */
 
 import { billLedger, combinedLedger, financialYearOf, financialYearRange, isoWeekOf } from '../calculations.ts';
+import { isEnabledForProject } from '../categories.ts';
 import { sumBy } from '../money.ts';
 import {
   ageingReport,
@@ -45,7 +46,6 @@ import {
 } from '../reports.ts';
 import {
   AGEING_BASES,
-  BILL_CATEGORIES,
   PAYMENT_STATUSES,
   TRANSACTION_TYPES,
   WORKFLOW_STATUSES,
@@ -94,7 +94,7 @@ export function parseFilters(params: URLSearchParams, today: string): BillFilter
     clientIds: list(params, 'client'),
     dgmOffices: list(params, 'dgm'),
     billTypeNames: list(params, 'billType'),
-    categories: oneOf(BILL_CATEGORIES, list(params, 'category')),
+    categories: list(params, 'category'),
     transactionTypes: oneOf(TRANSACTION_TYPES, list(params, 'txn')),
     paymentStatuses: oneOf(PAYMENT_STATUSES, list(params, 'payment')),
     workflowStatuses: oneOf(WORKFLOW_STATUSES, list(params, 'workflow')),
@@ -358,7 +358,7 @@ export async function report(context: BtContext, kind: ReportKind, params: URLSe
     case 'monthly':
     case 'pi': {
       const subset = kind === 'pi' ? bills.filter((bill) => (bill.taxableOrAdvance ?? '').toUpperCase() === config.settings.piMarker.toUpperCase() || bill.transactionType === 'advance') : bills;
-      const rows = monthlySummary(subset, fy);
+      const rows = monthlySummary(subset, fy, config.billCategories);
       return { ...base, financialYear: fy, rows, totals: sumMonthlyRows(rows), piMarker: config.settings.piMarker, billCount: subset.length };
     }
     case 'project-wise':
@@ -456,7 +456,16 @@ function dataQuality(bills: readonly Bill[], config: BillTrackingConfig) {
     { key: 'net_mismatch', label: 'Net mismatch (unresolved)', test: (bill: Bill) => Boolean(bill.netMismatch && !bill.netMismatch.resolvedAt) },
     { key: 'receipt_mismatch', label: 'Receipt differs from workbook', test: (bill: Bill) => bill.importedReceived !== undefined && Math.abs((bill.importedReceived ?? 0) - bill.totalReceived) > config.settings.tolerance },
     { key: 'missing_due_date', label: 'Missing due date', test: (bill: Bill) => !bill.dueDate },
-    { key: 'unknown_bill_type', label: 'Unknown bill type', test: (bill: Bill) => !bill.billTypeId || !knownTypes.has(bill.billTypeId) },
+    { key: 'unknown_bill_type', label: 'Sub category missing or deleted', test: (bill: Bill) => !bill.billTypeId || !knownTypes.has(bill.billTypeId) },
+    {
+      key: 'bill_type_not_in_project',
+      label: 'Sub category not enabled for the bill’s project',
+      test: (bill: Bill) => {
+        const type = config.billTypes.find((entry) => entry.id === bill.billTypeId);
+        return Boolean(type) && !isEnabledForProject(type as NonNullable<typeof type>, bill.projectId);
+      },
+    },
+    { key: 'unknown_category', label: 'Main category missing or deleted', test: (bill: Bill) => !config.billCategories.some((category) => category.id === bill.billCategory) },
     { key: 'legacy_status_mismatch', label: 'Legacy status mismatch', test: (bill: Bill) => Boolean(bill.legacyStatus) && ((bill.legacyStatus?.toUpperCase() === 'RECEIVED' && bill.paymentStatus !== 'received') || (bill.legacyStatus?.toUpperCase() === 'NOT RECEIVED' && bill.paymentStatus !== 'not_received')) },
     { key: 'no_dgm_office', label: 'No DGM office on project', test: (bill: Bill) => !bill.dgmOffice },
   ];

@@ -37,6 +37,25 @@ the browser sends for derived fields are ignored.
 Attachments and imported workbooks are stored under `bill-tracking/{org}/…` in Storage. They are
 written and served only by the API.
 
+### Bill categories
+
+Categories are configured in Settings → Bill categories.
+
+| | Main category | Sub category |
+|---|---|---|
+| Examples | Supply, Erection, Civil, F&I, Compensation, Other | The legacy "Type of Bill Status", e.g. `SUPPLY-60%`, `CIVIL-PV` |
+| Scope | One list, the same for every project | Belongs to one main category; enabled for **all projects** or a chosen list |
+| Reporting | Says which month-wise-summary column (Supply / Erection / Civil / F&I / Other) its taxable value is reported under | — |
+
+- **New bill:** pick the project, then the main category, then a sub category. The list shows only
+  sub categories of that main category that are enabled for that project. The server enforces the
+  same rule.
+- **Duplicate names:** two sub categories under one main category may share a name only if their
+  project lists don't overlap.
+- **Deleting:** main categories and sub categories can both be deleted. Deleting a main category
+  also deletes its sub categories. Bills keep the names they were saved with.
+- **Logic:** `src/lib/bill-tracking/categories.ts`.
+
 ## Deployment checklist
 
 1. **Firestore rules (console).** Copy the "Bill Tracking & Collection Management" block from

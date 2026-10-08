@@ -23,7 +23,6 @@ import { FilterBar } from '@/components/shared/filter-bar';
 import { useToast } from '@/hooks/use-toast';
 import {
   AGEING_BASIS_LABELS,
-  BILL_CATEGORY_LABELS,
   PAYMENT_STATUS_LABELS,
   TRANSACTION_TYPE_LABELS,
   WORKFLOW_STATUS_LABELS,
@@ -119,7 +118,11 @@ export function BillFilterBar({ filters, page, extra, summary, actions, hide = [
   };
 
   const projectOptions = lookups.projects.map((project) => ({ value: project.id, label: project.name }));
-  const billTypes = lookups.config.billTypes.filter((type) => type.active).map((type) => ({ value: type.name, label: type.name }));
+  // Sub categories narrow to the chosen main category; names repeat across projects, so dedupe.
+  const chosenCategory = filters.get('category');
+  const billTypes = [...new Set(lookups.config.billTypes.filter((type) => !chosenCategory || type.categoryId === chosenCategory).map((type) => type.name))]
+    .sort()
+    .map((name) => ({ value: name, label: name }));
   const buckets = lookups.config.settings.ageingBuckets.map((bucket) => ({ value: bucket.label, label: `${bucket.label} days` }));
 
   return (
@@ -167,8 +170,8 @@ export function BillFilterBar({ filters, page, extra, summary, actions, hide = [
           <div className="mt-4 grid grid-cols-1 gap-3">
             <FilterSelect label="Client" value={filters.get('client')} onChange={(value) => filters.set({ client: value })} options={lookups.clients.map((client) => ({ value: client.id, label: client.name }))} placeholder="All clients" />
             <FilterSelect label="DGM office" value={filters.get('dgm')} onChange={(value) => filters.set({ dgm: value })} options={lookups.dgmOffices.map((office) => ({ value: office, label: office }))} placeholder="All offices" />
-            <FilterSelect label="Bill type" value={filters.get('billType')} onChange={(value) => filters.set({ billType: value })} options={billTypes} placeholder="All bill types" />
-            <FilterSelect label="Category" value={filters.get('category')} onChange={(value) => filters.set({ category: value })} options={entries(BILL_CATEGORY_LABELS)} placeholder="All categories" />
+            <FilterSelect label="Main category" value={filters.get('category')} onChange={(value) => filters.set({ category: value, billType: undefined })} options={lookups.config.billCategories.map((category) => ({ value: category.id, label: category.name }))} placeholder="All main categories" />
+            <FilterSelect label="Sub category" value={filters.get('billType')} onChange={(value) => filters.set({ billType: value })} options={billTypes} placeholder="All sub categories" />
             <FilterSelect label="Transaction type" value={filters.get('txn')} onChange={(value) => filters.set({ txn: value })} options={entries(TRANSACTION_TYPE_LABELS)} />
             <FilterSelect label="Workflow status" value={filters.get('workflow')} onChange={(value) => filters.set({ workflow: value })} options={entries(WORKFLOW_STATUS_LABELS)} />
             <FilterSelect label="Ageing bucket" value={filters.get('ageing')} onChange={(value) => filters.set({ ageing: value })} options={buckets} placeholder="Any age" />

@@ -31,6 +31,7 @@ import {
   IMPORT_COLUMNS,
   parseImportRows,
   projectKey,
+  matchBillType,
   provisionalBillType,
   readSheetLayout,
   type ExistingBillKey,
@@ -156,6 +157,7 @@ async function analyse(context: BtContext, input: ImportPreviewInput): Promise<A
     {
       projects: projects.map((project) => ({ id: project.id, name: project.name, code: project.code, clientName: project.clientName ?? (project.clientId ? clientName.get(project.clientId) : undefined), dgmOffice: project.dgmOffice })),
       billTypes: config.billTypes,
+      billCategories: config.billCategories,
       deductionTypes: config.deductionTypes,
       projectMappings: config.projectMappings,
       tolerance: config.settings.tolerance,
@@ -246,11 +248,20 @@ export async function startImport(context: BtContext, input: ImportPreviewInput,
   const grid = input.grid as ImportCell[][];
   const financialYears = [...new Set(preview.rows.filter((row) => row.financialYear).map((row) => row.financialYear as string))];
 
-  // Configuration first: bill types the rows will post to, and the mappings to remember.
-  const billTypes: BillTypeMaster[] = [...config.billTypes];
+  // Configuration first: the sub categories the rows will post to, and the mappings to remember.
+  // A sub category the workbook introduces is created under its inferred main category for the
+  // projects that use it; a known one used on a project it is not enabled for is enabled there.
+  const imported = preview.rows.filter((row) => row.action !== 'skip' && row.billTypeName && row.projectId);
+  const projectsUsing = (name: string) => [...new Set(imported.filter((row) => row.billTypeName === name).map((row) => row.projectId as string))];
+  const billTypes: BillTypeMaster[] = config.billTypes.map((type) => ({ ...type, projectIds: [...type.projectIds] }));
   if (options.addUnknownBillTypes) {
     for (const name of preview.unknownBillTypes) {
-      billTypes.push({ id: `bt-imp-${projectKey(name)}`, ...provisionalBillType(name) });
+      billTypes.push({ id: `bt-imp-${projectKey(name)}-${Date.now().toString(36)}`, ...provisionalBillType(name, config.billCategories, projectsUsing(name)) });
+    }
+    for (const row of imported) {
+      if (!row.billTypeId) continue;
+      const type = billTypes.find((entry) => entry.id === row.billTypeId);
+      if (type && type.projectIds.length && !type.projectIds.includes(row.projectId as string)) type.projectIds.push(row.projectId as string);
     }
   }
   const mappings: ProjectNameMapping[] = [...config.projectMappings];
@@ -263,7 +274,7 @@ export async function startImport(context: BtContext, input: ImportPreviewInput,
       else mappings.push(entry);
     }
   }
-  if (billTypes.length !== config.billTypes.length || mappings.length !== config.projectMappings.length || options.rememberMappings) {
+  if (options.addUnknownBillTypes || mappings.length !== config.projectMappings.length || options.rememberMappings) {
     await configRef(firestore, context.organizationId).set(clean({ ...config, billTypes, projectMappings: mappings, updatedAt: nowIso(), updatedBy: context.userId }), { merge: true });
   }
 
@@ -382,7 +393,7 @@ function deductionsOf(row: StoredRow['parsed'], config: BillTrackingConfig): Bil
 }
 
 /** The source values an "update existing" row writes — never receipts, never workflow. */
-const SOURCE_FIELDS = ['taxableAmount', 'gstAmount', 'deductions', 'gstInvoiceNumber', 'billSerialNumber', 'serialNumber', 'billDate', 'financialYear', 'description', 'billTypeId', 'billTypeName', 'billCategory', 'isRetentionBill', 'transactionType', 'legacyStatus', 'importedNetAmount', 'importedTotalDeduction', 'importedReceived', 'targetWeek', 'receivedWeek', 'currentStage', 'remarks', 'typeV2', 'taxableOrAdvance', 'netMismatch'] as const;
+const SOURCE_FIELDS = ['taxableAmount', 'gstAmount', 'deductions', 'gstInvoiceNumber', 'billSerialNumber', 'serialNumber', 'billDate', 'financialYear', 'description', 'billTypeId', 'billTypeName', 'billCategory', 'billCategoryName', 'isRetentionBill', 'transactionType', 'legacyStatus', 'importedNetAmount', 'importedTotalDeduction', 'importedReceived', 'targetWeek', 'receivedWeek', 'currentStage', 'remarks', 'typeV2', 'taxableOrAdvance', 'netMismatch'] as const;
 
 export async function processImport(context: BtContext, jobId: string, chunkSize: number, retryFailed = false): Promise<{ job: BillImportJob; processed: number }> {
   context.require('Import', 'Import');
@@ -414,7 +425,8 @@ export async function processImport(context: BtContext, jobId: string, chunkSize
       if (!project) throw new BtError(`Project for "${row.projectExcelName}" is not available to you.`);
       if (!row.billDate) throw new BtError('Bill date missing.');
       if (config.settings.closedMonths.includes(monthKeyOf(row.billDate)) && !context.can('Settings', 'Close Month')) throw new BtError(`${monthKeyOf(row.billDate)} is closed.`);
-      const billType = config.billTypes.find((type) => type.id === row.billTypeId) ?? config.billTypes.find((type) => type.name === row.billTypeName);
+      const billType = config.billTypes.find((type) => type.id === row.billTypeId) ?? (row.billTypeName ? matchBillType(row.billTypeName, config.billTypes, project.id) : undefined);
+      const category = config.billCategories.find((entry) => entry.id === (billType?.categoryId ?? row.billCategory));
       const client = project.clientId ? clients.find((entry) => entry.id === project.clientId) : undefined;
       const deductions = deductionsOf(row, config);
       const sourceValues = {
@@ -427,7 +439,8 @@ export async function processImport(context: BtContext, jobId: string, chunkSize
         description: row.description,
         billTypeId: billType?.id,
         billTypeName: billType?.name ?? row.billTypeName ?? 'UNCLASSIFIED',
-        billCategory: billType?.category ?? row.billCategory,
+        billCategory: billType?.categoryId ?? row.billCategory,
+        billCategoryName: category?.name,
         isRetentionBill: billType?.isRetentionBill ?? row.isRetentionBill,
         taxableAmount: row.taxableAmount,
         gstAmount: row.gstAmount,

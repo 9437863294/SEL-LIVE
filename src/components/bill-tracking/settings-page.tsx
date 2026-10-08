@@ -29,14 +29,15 @@ import { db } from '@/lib/firebase';
 import { financialYearMonths, monthLabel, validateAgeingBuckets } from '@/lib/bill-tracking/calculations';
 import {
   AGEING_BASIS_LABELS,
-  BILL_CATEGORIES,
-  BILL_CATEGORY_LABELS,
   DEDUCTION_KINDS,
   type BillTrackingConfig,
   type BillTypeMaster,
   type DeductionTypeMaster,
 } from '@/lib/bill-tracking/types';
 
+import { validateCategoryConfig } from '@/lib/bill-tracking/categories';
+
+import { BillCategoriesEditor } from './bill-categories-settings';
 import { btFetch, useBt, useBtQuery, useLookups } from './bt-client';
 import { BtError, BtLoading, FySelect, Notice } from './bt-ui';
 
@@ -66,7 +67,7 @@ export default function SettingsPage() {
   const setSettings = (patch: Partial<BillTrackingConfig['settings']>) => setConfig((current) => ({ ...current, settings: { ...current.settings, ...patch } }));
 
   const save = async () => {
-    const bucketError = validateAgeingBuckets(settings.ageingBuckets);
+    const bucketError = validateAgeingBuckets(settings.ageingBuckets) ?? validateCategoryConfig(config.billCategories, config.billTypes);
     if (bucketError) {
       setError(bucketError);
       return;
@@ -78,6 +79,7 @@ export default function SettingsPage() {
         method: 'PUT',
         body: {
           settings: { tolerance: settings.tolerance, roundNetToRupee: settings.roundNetToRupee, defaultCreditDays: settings.defaultCreditDays, defaultAgeingBasis: settings.defaultAgeingBasis, ageingBuckets: settings.ageingBuckets, noFollowUpDays: settings.noFollowUpDays, oldOutstandingDays: settings.oldOutstandingDays, highValueThreshold: settings.highValueThreshold, numbering: settings.numbering, piMarker: settings.piMarker },
+          billCategories: config.billCategories,
           billTypes: config.billTypes,
           deductionTypes: config.deductionTypes,
           stages: config.stages,
@@ -117,7 +119,7 @@ export default function SettingsPage() {
         <TabsList className="flex h-auto w-full flex-wrap justify-start gap-1 bg-white/70 p-1">
           <TabsTrigger value="general">General</TabsTrigger>
           <TabsTrigger value="ageing">Ageing</TabsTrigger>
-          <TabsTrigger value="billTypes">Bill types ({config.billTypes.length})</TabsTrigger>
+          <TabsTrigger value="billTypes">Bill categories</TabsTrigger>
           <TabsTrigger value="deductions">Deduction types</TabsTrigger>
           <TabsTrigger value="stages">Stages</TabsTrigger>
           <TabsTrigger value="projects">Projects & DGM offices</TabsTrigger>
@@ -202,45 +204,7 @@ export default function SettingsPage() {
         </TabsContent>
 
         <TabsContent value="billTypes">
-          <Card className="border-white/60 bg-white/85 shadow-sm">
-            <CardContent className="space-y-3 p-4">
-              <SectionHeader
-                title="Bill type master"
-                as="h3"
-                description="Category drives the month-wise summary's taxable columns. Retention bills feed “Retention raised / released”."
-                actions={manage ? <Button size="sm" variant="outline" className="gap-1.5" onClick={() => setConfig((current) => ({ ...current, billTypes: [...current.billTypes, { id: newId('bt'), name: '', code: '', category: 'other', isRetentionBill: false, isPriceVariation: false, active: true }] }))}><Plus className="h-4 w-4" /> Add type</Button> : null}
-              />
-              <MasterTable<BillTypeMaster>
-                rows={config.billTypes}
-                disabled={!manage}
-                onChange={(rows) => setConfig((current) => ({ ...current, billTypes: rows }))}
-                columns={[
-                  { label: 'Name', render: (row, set) => <Input value={row.name} onChange={(event) => set({ name: event.target.value.toUpperCase() })} /> },
-                  { label: 'Code', render: (row, set) => <Input value={row.code} onChange={(event) => set({ code: event.target.value.toUpperCase() })} /> },
-                  {
-                    label: 'Category',
-                    render: (row, set) => (
-                      <Select value={row.category} onValueChange={(value) => set({ category: value as BillTypeMaster['category'] })}>
-                        <SelectTrigger>
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {BILL_CATEGORIES.map((category) => (
-                            <SelectItem key={category} value={category}>
-                              {BILL_CATEGORY_LABELS[category]}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    ),
-                  },
-                  { label: 'Retention bill', render: (row, set) => <Switch checked={row.isRetentionBill} onCheckedChange={(value) => set({ isRetentionBill: value })} /> },
-                  { label: 'Price variation', render: (row, set) => <Switch checked={row.isPriceVariation} onCheckedChange={(value) => set({ isPriceVariation: value })} /> },
-                  { label: 'Active', render: (row, set) => <Switch checked={row.active} onCheckedChange={(value) => set({ active: value })} /> },
-                ]}
-              />
-            </CardContent>
-          </Card>
+          <BillCategoriesEditor categories={config.billCategories} types={config.billTypes} disabled={!manage} onChange={(billCategories, billTypes) => setConfig((current) => ({ ...current, billCategories, billTypes }))} />
         </TabsContent>
 
         <TabsContent value="deductions">

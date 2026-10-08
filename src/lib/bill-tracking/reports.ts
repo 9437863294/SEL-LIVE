@@ -38,6 +38,7 @@ import type {
   AgeingBucketConfig,
   Bill,
   BillCategory,
+  BillCategoryMaster,
   BillFollowUp,
   BillPaymentStatus,
   BillTrackingSettings,
@@ -48,7 +49,9 @@ import type {
   DeductionTypeMaster,
   RetentionRelease,
   RetentionStatus,
+  SummaryColumn,
 } from './types';
+import { summaryColumnOf } from './categories.ts';
 
 /* ── filters ─────────────────────────────────────────────────────────────── */
 
@@ -276,7 +279,7 @@ const dimensionOf = (bill: Bill, dimension: GroupDimension): { key: string; labe
     case 'billType':
       return { key: bill.billTypeName || '—', label: bill.billTypeName || 'Unclassified' };
     case 'category':
-      return { key: bill.billCategory, label: bill.billCategory };
+      return { key: bill.billCategory, label: bill.billCategoryName ?? bill.billCategory };
     case 'dgmOffice':
       return { key: bill.dgmOffice || '—', label: bill.dgmOffice || 'No DGM office' };
     case 'month':
@@ -467,19 +470,20 @@ const kindSum = (bill: Bill, kinds: readonly DeductionKind[]) => sumBy((bill.ded
  *   Collection in this Month            SUM(Received) by *receipt* date
  *
  * The legacy sheet's taxable columns name bill types explicitly and two of them (SUPPLY-20%,
- * SUPPLY-10%) appear in both the Supply and the Retention lists; here the category comes from the
- * bill-type master, so every bill lands in exactly one taxable column. "Retention withheld against
+ * SUPPLY-10%) appear in both the Supply and the Retention lists; here each bill's main category
+ * names the column (Settings → Bill categories), so every bill lands in exactly one taxable column. "Retention withheld against
  * invoice" is the retention-against-invoice deduction (the legacy column summed retention-bill
  * shortfalls under that heading, which double counts with "Difference").
  */
-export function monthlySummary(bills: readonly Bill[], financialYear: string): MonthlySummaryRow[] {
+export function monthlySummary(bills: readonly Bill[], financialYear: string, categories: readonly Pick<BillCategoryMaster, 'id' | 'summaryColumn'>[] = []): MonthlySummaryRow[] {
+  const columnOf = (bill: Bill) => summaryColumnOf(bill.billCategory, categories);
   const months = financialYearMonths(financialYear);
   return months.map((month) => {
     const { from, to } = monthRange(month);
     const inMonth = bills.filter((bill) => !bill.isDeleted && bill.billDate >= from && bill.billDate <= to);
     const regular = inMonth.filter((bill) => !bill.isRetentionBill);
     const retentionBills = inMonth.filter((bill) => bill.isRetentionBill);
-    const taxableOf = (category: BillCategory) => sumBy(regular.filter((bill) => bill.billCategory === category), (bill) => bill.taxableAmount);
+    const taxableOf = (column: SummaryColumn) => sumBy(regular.filter((bill) => columnOf(bill) === column), (bill) => bill.taxableAmount);
     const totalTaxable = sumBy(inMonth, (bill) => bill.taxableAmount);
     const gst = sumBy(inMonth, (bill) => bill.gstAmount);
     const net = sumBy(inMonth, (bill) => bill.netReceivable);
@@ -497,7 +501,7 @@ export function monthlySummary(bills: readonly Bill[], financialYear: string): M
       taxableErection: taxableOf('erection'),
       taxableCivil: taxableOf('civil'),
       taxableFi: taxableOf('fi'),
-      taxableOther: sumMoney([taxableOf('compensation'), taxableOf('other')]),
+      taxableOther: taxableOf('other'),
       retentionRaised: sumBy(retentionBills, (bill) => bill.netReceivable),
       totalTaxable,
       gst,

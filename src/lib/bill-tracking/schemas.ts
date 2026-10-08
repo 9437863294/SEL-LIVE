@@ -11,7 +11,6 @@ import { z } from 'zod';
 
 import {
   AGEING_BASES,
-  BILL_CATEGORIES,
   COMMITMENT_STATUSES,
   DEDUCTION_KINDS,
   DOCUMENT_CATEGORIES,
@@ -19,6 +18,7 @@ import {
   PAYMENT_MODES,
   PAYMENT_STATUSES,
   TRANSACTION_TYPES,
+  SUMMARY_COLUMNS,
   WORKFLOW_STATUSES,
 } from './types.ts';
 
@@ -60,7 +60,7 @@ export const billInputSchema = z.object({
   clientId: optionalText(128),
   dgmOffice: optionalText(120),
   description: optionalText(1000),
-  billTypeId: z.string().min(1, 'Choose a bill type.').max(64),
+  billTypeId: z.string().min(1, 'Choose a sub category.').max(64),
   taxableAmount: money,
   gstAmount: money,
   gstPercent: z.coerce.number().min(0).max(100).optional(),
@@ -184,11 +184,22 @@ export const bulkActionSchema = z.object({
   date: optionalDate,
 });
 
+export const billCategorySchema = z.object({
+  id: z.string().min(1).max(64),
+  name: z.string().trim().min(1, 'Name every main category.').max(80),
+  code: z.string().trim().max(40).default(''),
+  summaryColumn: z.enum(SUMMARY_COLUMNS),
+  sequence: z.coerce.number().int(),
+  active: z.boolean(),
+});
+
 export const billTypeSchema = z.object({
   id: z.string().min(1).max(64),
-  name: z.string().trim().min(1).max(80),
-  code: z.string().trim().min(1).max(40),
-  category: z.enum(BILL_CATEGORIES),
+  name: z.string().trim().min(1, 'Name every sub category.').max(80),
+  code: z.string().trim().max(40).default(''),
+  categoryId: z.string().min(1).max(64),
+  /** Empty = enabled for every project. */
+  projectIds: z.array(z.string().min(1).max(128)).max(2000).default([]),
   isRetentionBill: z.boolean(),
   isPriceVariation: z.boolean(),
   active: z.boolean(),
@@ -219,7 +230,8 @@ export const configInputSchema = z.object({
     numbering: z.object({ enabled: z.boolean(), pattern: z.string().trim().min(1).max(80), padding: z.coerce.number().int().min(1).max(10) }),
     piMarker: z.string().trim().max(20),
   }),
-  billTypes: z.array(billTypeSchema).max(300),
+  billCategories: z.array(billCategorySchema).min(1, 'Keep at least one main category.').max(100),
+  billTypes: z.array(billTypeSchema).max(1000),
   deductionTypes: z.array(deductionTypeSchema).min(1).max(60),
   stages: z.array(z.object({ id: z.string().min(1).max(64), name: z.string().trim().min(1).max(80), sequence: z.coerce.number().int(), active: z.boolean() })).max(60),
   projectProfiles: z

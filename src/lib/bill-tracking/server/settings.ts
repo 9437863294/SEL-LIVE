@@ -6,6 +6,7 @@ import 'server-only';
  */
 
 import { validateAgeingBuckets } from '../calculations.ts';
+import { validateCategoryConfig } from '../categories.ts';
 import type { ConfigInput } from '../schemas';
 import type { BillTrackingConfig } from '../types';
 import { BtError, db, type BtContext } from './context';
@@ -17,8 +18,11 @@ export async function saveConfig(context: BtContext, input: ConfigInput): Promis
   const bucketError = validateAgeingBuckets(input.settings.ageingBuckets);
   if (bucketError) throw new BtError(bucketError);
   const duplicate = (values: string[]) => values.find((value, index) => values.indexOf(value) !== index);
-  const dupType = duplicate(input.billTypes.map((type) => type.name.toUpperCase()));
-  if (dupType) throw new BtError(`Bill type ${dupType} appears twice.`);
+  // Codes default to the name, so an administrator only has to type the name.
+  const billCategories = input.billCategories.map((category) => ({ ...category, code: category.code || category.name.toUpperCase() }));
+  const billTypes = input.billTypes.map((type) => ({ ...type, code: type.code || type.name.toUpperCase(), projectIds: [...new Set(type.projectIds)] }));
+  const categoryError = validateCategoryConfig(billCategories, billTypes);
+  if (categoryError) throw new BtError(categoryError);
   const dupCode = duplicate(input.deductionTypes.map((type) => type.code.toUpperCase()));
   if (dupCode) throw new BtError(`Deduction code ${dupCode} appears twice.`);
   // Deduction codes the importer posts to must keep resolving — they can be deactivated, not removed.
@@ -27,7 +31,8 @@ export async function saveConfig(context: BtContext, input: ConfigInput): Promis
 
   const next: BillTrackingConfig = clean({
     settings: { ...current.settings, ...input.settings, closedMonths: current.settings.closedMonths, updatedAt: nowIso(), updatedBy: context.userId },
-    billTypes: input.billTypes,
+    billCategories,
+    billTypes,
     deductionTypes: input.deductionTypes,
     stages: input.stages,
     projectProfiles: input.projectProfiles,

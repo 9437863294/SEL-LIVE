@@ -22,6 +22,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { PageHeader } from '@/components/shared/page-header';
 import { PM_DIALOG } from '@/components/project-management/pm-shell';
 import { useToast } from '@/hooks/use-toast';
+import { categoryName } from '@/lib/bill-tracking/categories';
 import { LEGACY_EXPORT_HEADERS, legacyExportRows } from '@/lib/bill-tracking/legacy-export';
 import { formatINRCompact } from '@/lib/bill-tracking/money';
 import { exportWorkbook } from '@/lib/report-excel';
@@ -125,7 +126,16 @@ export default function BillRegister({ mode = 'all' }: { mode?: 'all' | 'outstan
     { key: 'date', header: 'Date', sortKey: 'billDate', cell: (bill) => <span className="whitespace-nowrap">{dateText(bill.billDate)}</span> },
     { key: 'project', header: 'Project', sortKey: 'projectNameSnapshot', className: 'max-w-[220px]', cell: (bill) => <span className="line-clamp-2">{bill.projectNameSnapshot}</span> },
     { key: 'client', header: 'Client', defaultHidden: !outstanding, cell: (bill) => bill.clientNameSnapshot || '—' },
-    { key: 'type', header: 'Type', cell: (bill) => <span className="whitespace-nowrap text-xs">{bill.billTypeName}</span> },
+    {
+      key: 'type',
+      header: 'Category',
+      cell: (bill) => (
+        <div className="whitespace-nowrap text-xs">
+          <div>{bill.billTypeName}</div>
+          <div className="text-[10px] text-muted-foreground">{categoryName(bill.billCategory, lookups.config.billCategories, bill.billCategoryName)}</div>
+        </div>
+      ),
+    },
     { key: 'taxable', header: 'Taxable', align: 'right', sortKey: 'taxableAmount', defaultHidden: outstanding, cell: (bill) => <Amount value={bill.taxableAmount} signed />, total: <Amount value={data?.totals.taxable} /> },
     { key: 'gst', header: 'GST', align: 'right', defaultHidden: outstanding, cell: (bill) => <Amount value={bill.gstAmount} signed />, total: <Amount value={data?.totals.gst} /> },
     { key: 'gross', header: 'Gross', align: 'right', cell: (bill) => <Amount value={bill.grossAmount} signed />, total: <Amount value={data?.totals.gross} /> },
@@ -184,7 +194,8 @@ export default function BillRegister({ mode = 'all' }: { mode?: 'all' | 'outstan
     { key: 'project', label: 'Project', value: (bill) => bill.projectNameSnapshot },
     { key: 'client', label: 'Client', value: (bill) => bill.clientNameSnapshot },
     { key: 'dgm', label: 'DGM Office', value: (bill) => bill.dgmOffice },
-    { key: 'type', label: 'Bill Type', value: (bill) => bill.billTypeName },
+    { key: 'category', label: 'Main Category', value: (bill) => categoryName(bill.billCategory, lookups.config.billCategories, bill.billCategoryName) },
+    { key: 'type', label: 'Sub Category', value: (bill) => bill.billTypeName },
     { key: 'taxable', label: 'Taxable', value: (bill) => bill.taxableAmount, money: true },
     { key: 'gst', label: 'GST', value: (bill) => bill.gstAmount, money: true },
     { key: 'gross', label: 'Gross', value: (bill) => bill.grossAmount, money: true },
