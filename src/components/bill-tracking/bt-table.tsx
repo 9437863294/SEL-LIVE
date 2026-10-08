@@ -186,28 +186,30 @@ export function BtTable<T extends { id: string }>({
           {/* Phone: cards */}
           <div className="space-y-2 sm:hidden">
             {sortedRows.map((row) => {
-              const content = (
-                <div className={cn('rounded-xl border border-slate-200 bg-white p-3 shadow-sm', rowClassName?.(row))}>
-                  <div className="flex items-start justify-between gap-2">
-                    <div className="min-w-0 flex-1 font-medium text-slate-800">{titleColumn.cell(row)}</div>
-                    {asideColumn ? <div className="shrink-0 text-right">{asideColumn.cell(row)}</div> : null}
+              const href = rowHref?.(row);
+              // A card's own links and buttons (the bill number, "Receive", drill-downs) cannot sit
+              // inside a link — <a> in <a> is invalid HTML and breaks hydration. So the row link is a
+              // "stretched" layer beside the content instead of around it, and the card's own
+              // interactive elements are lifted above that layer so they stay clickable. The lifting
+              // rules sit on the content wrapper, not the card, so they never match the layer itself.
+              return (
+                <div key={row.id} className={cn('relative rounded-xl border border-slate-200 bg-white p-3 shadow-sm', href && 'transition hover:border-emerald-300', rowClassName?.(row))}>
+                  {href ? <Link href={href} className="absolute inset-0 rounded-xl focus-visible:outline focus-visible:outline-2 focus-visible:outline-emerald-500" aria-label="Open details" /> : null}
+                  <div className={cn(href && '[&_a]:relative [&_a]:z-10 [&_button]:relative [&_button]:z-10 [&_input]:relative [&_input]:z-10 [&_label]:relative [&_label]:z-10')}>
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="min-w-0 flex-1 font-medium text-slate-800">{titleColumn.cell(row)}</div>
+                      {asideColumn ? <div className="shrink-0 text-right">{asideColumn.cell(row)}</div> : null}
+                    </div>
+                    <dl className="mt-2 grid grid-cols-2 gap-x-3 gap-y-1.5 text-xs">
+                      {detailColumns.map((column) => (
+                        <div key={column.key} className="min-w-0">
+                          <dt className="text-muted-foreground">{column.label ?? (typeof column.header === 'string' ? column.header : column.key)}</dt>
+                          <dd className="truncate text-slate-700">{column.cell(row)}</dd>
+                        </div>
+                      ))}
+                    </dl>
                   </div>
-                  <dl className="mt-2 grid grid-cols-2 gap-x-3 gap-y-1.5 text-xs">
-                    {detailColumns.map((column) => (
-                      <div key={column.key} className="min-w-0">
-                        <dt className="text-muted-foreground">{column.label ?? (typeof column.header === 'string' ? column.header : column.key)}</dt>
-                        <dd className="truncate text-slate-700">{column.cell(row)}</dd>
-                      </div>
-                    ))}
-                  </dl>
                 </div>
-              );
-              return rowHref ? (
-                <Link key={row.id} href={rowHref(row)} className="block">
-                  {content}
-                </Link>
-              ) : (
-                <div key={row.id}>{content}</div>
               );
             })}
           </div>
