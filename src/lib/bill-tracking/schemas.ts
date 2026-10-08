@@ -33,12 +33,18 @@ const optionalText = (max = 500) =>
     .transform((value) => (value?.trim() ? value.trim() : undefined));
 const reason = z.string().trim().min(3, 'Give a reason (at least 3 characters).').max(1000);
 
+/**
+ * A deduction line as the form sends it. For a percentage line only the % matters — the server takes
+ * it of the configured base; for a fixed line the base amount (before any GST on it) is the input.
+ * `amount` is accepted for lines that carry nothing else (legacy rows) and is otherwise recomputed.
+ */
 export const deductionLineSchema = z.object({
   id: z.string().min(1).max(64),
   deductionTypeId: z.string().min(1).max(64),
-  amount: money,
+  amount: money.optional(),
+  baseAmount: money.optional(),
+  gstRate: z.coerce.number().min(0).max(100).optional(),
   percentage: z.coerce.number().min(-100).max(100).optional(),
-  calculationBase: money.optional(),
   remarks: optionalText(300),
   deductionDate: optionalDate,
 });
@@ -62,8 +68,17 @@ export const billInputSchema = z.object({
   description: optionalText(1000),
   billTypeId: z.string().min(1, 'Choose a sub category.').max(64),
   taxableAmount: money,
-  gstAmount: money,
+  /** Total GST — used only when no GST type is given (the components decide otherwise). */
+  gstAmount: money.default(0),
   gstPercent: z.coerce.number().min(0).max(100).optional(),
+  gstType: z.enum(['cgst-sgst', 'igst', 'none']).optional(),
+  cgstAmount: money.optional(),
+  sgstAmount: money.optional(),
+  igstAmount: money.optional(),
+  /** SEL's issuing registration; blank lets the attribution chain decide. */
+  gstRegistrationId: optionalText(64),
+  /** Credit / debit note: the invoice it adjusts. Required for a credit note. */
+  againstBillId: optionalText(128),
   deductions: z.array(deductionLineSchema).max(60).default([]),
   targetWeek: optionalText(10),
   collectionOwnerId: optionalText(128),
@@ -212,7 +227,10 @@ export const deductionTypeSchema = z.object({
   kind: z.enum(DEDUCTION_KINDS),
   calculation: z.enum(['fixed', 'percentage']),
   percentBase: z.enum(['taxable', 'gross']),
+  baseLessTypeIds: z.array(z.string().min(1).max(64)).max(20).default([]),
   defaultPercent: z.coerce.number().min(0).max(100).optional(),
+  gstApplicable: z.boolean().default(false),
+  gstRate: z.coerce.number().min(0).max(100).optional(),
   sequence: z.coerce.number().int(),
   active: z.boolean(),
 });
@@ -221,6 +239,8 @@ export const configInputSchema = z.object({
   settings: z.object({
     tolerance: z.coerce.number().min(0).max(1000),
     roundNetToRupee: z.boolean(),
+    defaultGstRate: z.coerce.number().min(0).max(100),
+    roundDeductionsToRupee: z.boolean(),
     defaultCreditDays: z.coerce.number().int().min(0).max(730),
     defaultAgeingBasis: z.enum(AGEING_BASES),
     ageingBuckets: z.array(z.object({ from: z.coerce.number().int().min(0), to: z.coerce.number().int().min(0).nullable(), label: z.string().trim().min(1).max(30) })).min(1).max(12),

@@ -90,7 +90,8 @@ export const DEFAULT_BILL_TYPES: BillTypeMaster[] = LEGACY_BILL_TYPES.map((name)
 
 export const DEFAULT_DEDUCTION_TYPES: DeductionTypeMaster[] = [
   { id: 'dt-bcess', code: 'BCESS', name: 'Building Cess', kind: 'statutory', calculation: 'percentage', percentBase: 'taxable', defaultPercent: 1, sequence: 1, active: true },
-  { id: 'dt-itds', code: 'ITDS', name: 'Income TDS', kind: 'statutory', calculation: 'percentage', percentBase: 'taxable', defaultPercent: 2, sequence: 2, active: true },
+  // Income TDS is taken of the taxable value less the mobilisation advance recovered on the bill.
+  { id: 'dt-itds', code: 'ITDS', name: 'Income TDS', kind: 'statutory', calculation: 'percentage', percentBase: 'taxable', baseLessTypeIds: ['dt-mobadv'], defaultPercent: 2, sequence: 2, active: true },
   { id: 'dt-cgsttds', code: 'CGSTTDS', name: 'CGST TDS', kind: 'statutory', calculation: 'percentage', percentBase: 'taxable', defaultPercent: 1, sequence: 3, active: true },
   { id: 'dt-sgsttds', code: 'SGSTTDS', name: 'SGST TDS', kind: 'statutory', calculation: 'percentage', percentBase: 'taxable', defaultPercent: 1, sequence: 4, active: true },
   { id: 'dt-mobadv', code: 'MOBADV', name: 'Mobilization Advance', kind: 'mobilization_advance', calculation: 'fixed', percentBase: 'taxable', sequence: 5, active: true },
@@ -115,6 +116,8 @@ export const DEFAULT_STAGES: BillStageMaster[] = [
 export const DEFAULT_SETTINGS: BillTrackingSettings = {
   tolerance: 1,
   roundNetToRupee: true,
+  defaultGstRate: 18,
+  roundDeductionsToRupee: true,
   defaultCreditDays: 45,
   defaultAgeingBasis: 'billDate',
   ageingBuckets: DEFAULT_AGEING_BUCKETS,
@@ -149,6 +152,12 @@ export function withConfigDefaults(stored: Partial<BillTrackingConfig> | null | 
   const deductionTypes = stored?.deductionTypes?.length ? [...stored.deductionTypes] : [...DEFAULT_DEDUCTION_TYPES];
   for (const type of DEFAULT_DEDUCTION_TYPES) {
     if (!deductionTypes.some((entry) => entry.code === type.code)) deductionTypes.push(type);
+  }
+  // A type saved before the base formula existed takes the default formula (Income TDS: less the
+  // mobilisation advance); one an administrator has configured keeps its own, even if empty.
+  for (const [index, type] of deductionTypes.entries()) {
+    const fallback = DEFAULT_DEDUCTION_TYPES.find((entry) => entry.code === type.code);
+    if (type.baseLessTypeIds === undefined && fallback?.baseLessTypeIds) deductionTypes[index] = { ...type, baseLessTypeIds: fallback.baseLessTypeIds };
   }
   return {
     settings,

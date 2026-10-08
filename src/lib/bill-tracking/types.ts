@@ -30,6 +30,16 @@
  * `node --test` suite alike.
  */
 
+import type { GstType } from '../statutory';
+
+export type { GstType };
+
+export const GST_TYPE_LABELS: Record<GstType, string> = {
+  'cgst-sgst': 'CGST + SGST',
+  igst: 'IGST',
+  none: 'No GST',
+};
+
 /* ── transaction & status vocabularies ───────────────────────────────────── */
 
 export const TRANSACTION_TYPES = ['invoice', 'credit_note', 'debit_note', 'adjustment', 'advance', 'retention_bill'] as const;
@@ -226,9 +236,18 @@ export interface DeductionTypeMaster {
   kind: DeductionKind;
   /** `percentage` types offer `defaultPercent` of the base when a row is added on the form. */
   calculation: 'fixed' | 'percentage';
-  /** Base the percentage applies to. */
+  /** Base the percentage applies to… */
   percentBase: 'taxable' | 'gross';
+  /**
+   * …less these other deductions on the same bill. Income TDS defaults to
+   * (Taxable − Mobilisation Advance) × rate.
+   */
+  baseLessTypeIds?: string[];
   defaultPercent?: number;
+  /** The client adds GST on top of this deduction (e.g. recovered testing or LC charges). */
+  gstApplicable?: boolean;
+  /** GST % added on the deduction when `gstApplicable`. */
+  gstRate?: number;
   /** Column order on the register, the legacy export and the import mapping. */
   sequence: number;
   active: boolean;
@@ -261,6 +280,10 @@ export interface BillTrackingSettings {
   tolerance: number;
   /** Round net receivable to the whole rupee, as the legacy sheet's ROUND(…, 0) does. */
   roundNetToRupee: boolean;
+  /** GST rate the bill form starts with. */
+  defaultGstRate: number;
+  /** Round percentage-calculated deductions (TDS, cess…) to the whole rupee. */
+  roundDeductionsToRupee: boolean;
   defaultCreditDays: number;
   defaultAgeingBasis: AgeingBasis;
   ageingBuckets: AgeingBucketConfig[];
@@ -325,9 +348,18 @@ export interface BillDeduction {
   deductionTypeId: string;
   deductionTypeName: string;
   kind: DeductionKind;
-  /** Signed: a negative deduction adds to the net (legacy crop-compensation rows rely on this). */
+  /**
+   * The total deducted (base + GST on it). Signed: a negative deduction adds to the net (legacy
+   * crop-compensation rows rely on this).
+   */
   amount: number;
+  /** Deduction before GST; equals `amount` when no GST applies. */
+  baseAmount?: number;
+  /** GST % and amount added on the deduction, for GST-applicable deduction types. */
+  gstRate?: number;
+  gstAmount?: number;
   percentage?: number;
+  /** What the percentage was taken of (taxable or gross, less any configured deductions). */
   calculationBase?: number;
   remarks?: string;
   deductionDate?: string;
@@ -360,6 +392,11 @@ export interface Bill {
   /** Legacy `Bill Sl No.` / generated bill number. */
   billSerialNumber?: string;
   transactionType: BillTransactionType;
+  /** Credit/debit note: the invoice it adjusts (required for a credit note entered in SEL LIVE). */
+  againstBillId?: string;
+  /** Snapshot of that invoice's reference and date, so the link reads even if it is later edited. */
+  againstBillRef?: string;
+  againstBillDate?: string;
   /** `undefined` for non-GST rows (the legacy sheet writes `NA`). */
   gstInvoiceNumber?: string;
   billDate: string;
@@ -386,8 +423,24 @@ export interface Bill {
   isRetentionBill: boolean;
 
   taxableAmount: number;
+  /** Total GST: CGST + SGST, or IGST. Imported legacy rows carry only this total. */
   gstAmount: number;
+  /** Total GST rate %. */
   gstPercent?: number;
+  /** `cgst-sgst` within the issuing registration's state, `igst` across states, `none` for non-GST. */
+  gstType?: GstType;
+  cgstRate?: number;
+  sgstRate?: number;
+  igstRate?: number;
+  cgstAmount?: number;
+  sgstAmount?: number;
+  igstAmount?: number;
+  /** SEL's GST registration that issues the invoice, with its GSTIN at the time. */
+  gstRegistrationId?: string;
+  gstRegistrationLabel?: string;
+  gstRegistrationGstin?: string;
+  /** The client's GSTIN at the time of the bill. */
+  clientGstin?: string;
   deductions: BillDeduction[];
 
   /* derived — written only by the server from the source values above */

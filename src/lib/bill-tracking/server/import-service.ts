@@ -31,6 +31,7 @@ import {
   IMPORT_COLUMNS,
   parseImportRows,
   projectKey,
+  againstInvoiceFromDescription,
   matchBillType,
   provisionalBillType,
   readSheetLayout,
@@ -410,6 +411,20 @@ export async function processImport(context: BtContext, jobId: string, chunkSize
   const projectById = new Map(projects.map((project) => [project.id, project]));
   const options = calculationOptions(config);
 
+  // Legacy credit/debit notes name their invoice in the description ("Against Inv No -OD-168/…");
+  // when that invoice is in SEL LIVE for the same project, the note is linked to it. One read per
+  // project per run.
+  const invoicesByProject = new Map<string, StoredBill[]>();
+  const findInvoice = async (projectId: string, reference: string | undefined): Promise<StoredBill | undefined> => {
+    if (!reference) return undefined;
+    if (!invoicesByProject.has(projectId)) {
+      const found = await firestore.collection(BT_COLLECTIONS.bills).where('organizationId', '==', context.organizationId).where('projectId', '==', projectId).where('isDeleted', '==', false).get();
+      invoicesByProject.set(projectId, found.docs.map((doc) => ({ ...(doc.data() as StoredBill), id: doc.id })));
+    }
+    const key = reference.toLowerCase().replace(/[^a-z0-9]/g, '');
+    return invoicesByProject.get(projectId)?.find((bill) => bill.transactionType !== 'credit_note' && bill.transactionType !== 'debit_note' && (bill.gstInvoiceNumber ?? '').toLowerCase().replace(/[^a-z0-9]/g, '') === key);
+  };
+
   // "Retry failed rows" re-queues rows whose cause may since be fixed (a reopened month, a project
   // granted). Sorted here rather than with orderBy so the rows subcollection needs no composite index.
   const candidates = await jobRef.collection(BT_COLLECTIONS.importRows).where('state', 'in', retryFailed ? ['pending', 'failed'] : ['pending']).get();
@@ -506,6 +521,8 @@ export async function processImport(context: BtContext, jobId: string, chunkSize
       // import / import_new
       const billId = importedBillId(jobId, row.row);
       const billRef = firestore.collection(BT_COLLECTIONS.bills).doc(billId);
+      const isNote = row.transactionType === 'credit_note' || row.transactionType === 'debit_note';
+      const againstInvoice = isNote ? await findInvoice(project.id, againstInvoiceFromDescription(row.description)) : undefined;
       const hasReceipt = toPaise(row.calculated.received) !== 0;
       const collectionRef = firestore.collection(BT_COLLECTIONS.collections).doc(`${billId}-c`);
       await firestore.runTransaction(async (transaction) => {
@@ -525,6 +542,9 @@ export async function processImport(context: BtContext, jobId: string, chunkSize
           organizationId: context.organizationId,
           dueDate,
           originalDueDate: dueDate,
+          againstBillId: againstInvoice?.id,
+          againstBillRef: againstInvoice ? againstInvoice.gstInvoiceNumber || againstInvoice.billSerialNumber : undefined,
+          againstBillDate: againstInvoice?.billDate,
           projectId: project.id,
           projectNameSnapshot: project.name,
           clientId: project.clientId,

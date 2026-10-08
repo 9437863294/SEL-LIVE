@@ -439,6 +439,11 @@ export interface MonthlySummaryRow {
   retentionRaised: number;
   totalTaxable: number;
   gst: number;
+  /** GST split; legacy bills imported with a single GST figure are counted in `gstUnsplit`. */
+  cgst: number;
+  sgst: number;
+  igst: number;
+  gstUnsplit: number;
   totalInclGst: number;
   statutoryDeduction: number;
   retentionCpbg: number;
@@ -505,6 +510,10 @@ export function monthlySummary(bills: readonly Bill[], financialYear: string, ca
       retentionRaised: sumBy(retentionBills, (bill) => bill.netReceivable),
       totalTaxable,
       gst,
+      cgst: sumBy(inMonth, (bill) => bill.cgstAmount ?? 0),
+      sgst: sumBy(inMonth, (bill) => bill.sgstAmount ?? 0),
+      igst: sumBy(inMonth, (bill) => bill.igstAmount ?? 0),
+      gstUnsplit: sumBy(inMonth.filter((bill) => !bill.gstType), (bill) => bill.gstAmount),
       totalInclGst: sumMoney([totalTaxable, gst]),
       statutoryDeduction: sumBy(inMonth, (bill) => kindSum(bill, ['statutory'])),
       retentionCpbg: sumBy(inMonth, (bill) => kindSum(bill, ['retention_cpbg'])),

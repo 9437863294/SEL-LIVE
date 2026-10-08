@@ -61,7 +61,7 @@ import {
   type RetentionRelease,
 } from '../types.ts';
 import { BtError, db, type BtContext } from './context';
-import { BT_COLLECTIONS, loadBill, loadClients, loadConfig, loadProjects, loadScopedBills, loadScopedDocs, loadUsers } from './store';
+import { BT_COLLECTIONS, loadBill, loadClients, loadConfig, loadGstSetup, loadProjects, loadScopedBills, loadScopedDocs, loadUsers } from './store';
 
 /* ── filters from the URL ────────────────────────────────────────────────── */
 
@@ -136,7 +136,7 @@ async function load(btContext: BtContext, params: URLSearchParams): Promise<Load
 
 export async function lookups(context: BtContext) {
   const config = await loadConfig(context.organizationId);
-  const [projects, clients, users] = await Promise.all([loadProjects(context, config.projectProfiles), loadClients(), loadUsers()]);
+  const [projects, clients, users, gstSetup] = await Promise.all([loadProjects(context, config.projectProfiles), loadClients(), loadUsers(), loadGstSetup()]);
   const resources = ['Dashboard', 'Bills', 'Collections', 'Retention', 'Follow-ups', 'Targets', 'Import', 'Reports', 'Settings'] as const;
   const actions = ['View', 'Add', 'Edit', 'Delete', 'Verify', 'Approve', 'Override Status', 'Edit After Approval', 'Cancel', 'Hold Unallocated', 'Manage', 'Import', 'Rollback', 'Export', 'Close Month'];
   const permissions: Record<string, string[]> = {};
@@ -146,6 +146,7 @@ export async function lookups(context: BtContext) {
     projects,
     clients,
     users,
+    gstSetup: { ...gstSetup, registrations: gstSetup.registrations.filter((registration) => registration.active) },
     dgmOffices: [...new Set(config.projectProfiles.map((profile) => profile.dgmOffice).filter((value): value is string => Boolean(value)))].sort(),
     permissions,
     allProjects: context.scope === null,
@@ -204,6 +205,26 @@ export async function openBillsForAllocation(context: BtContext, params: URLSear
     .map((bill) => ({ id: bill.id, billSerialNumber: bill.billSerialNumber, gstInvoiceNumber: bill.gstInvoiceNumber, billDate: bill.billDate, projectId: bill.projectId, projectNameSnapshot: bill.projectNameSnapshot, clientNameSnapshot: bill.clientNameSnapshot, netReceivable: bill.netReceivable, totalReceived: bill.totalReceived, outstandingAmount: bill.outstandingAmount, paymentStatus: bill.paymentStatus, isRetentionBill: bill.isRetentionBill }));
 }
 
+/**
+ * Invoices of one project that a credit or debit note can be raised against — any payment status
+ * (fully paid invoices get credit notes too), never another note.
+ */
+export async function invoicesForNote(context: BtContext, params: URLSearchParams) {
+  context.require('Bills', 'View');
+  const projectId = params.get('project');
+  if (!projectId) return [];
+  context.requireProject(projectId);
+  const snapshot = await db().collection(BT_COLLECTIONS.bills).where('organizationId', '==', context.organizationId).where('projectId', '==', projectId).where('isDeleted', '==', false).get();
+  const search = params.get('q')?.trim().toLowerCase();
+  return snapshot.docs
+    .map((doc) => ({ ...(doc.data() as Bill), id: doc.id }))
+    .filter((bill) => bill.transactionType !== 'credit_note' && bill.transactionType !== 'debit_note' && bill.id !== params.get('exclude'))
+    .filter((bill) => !search || [bill.gstInvoiceNumber, bill.billSerialNumber, bill.description, bill.billTypeName].some((value) => value?.toLowerCase().includes(search)))
+    .sort((a, b) => b.billDate.localeCompare(a.billDate))
+    .slice(0, 200)
+    .map((bill) => ({ id: bill.id, billSerialNumber: bill.billSerialNumber, gstInvoiceNumber: bill.gstInvoiceNumber, billDate: bill.billDate, description: bill.description, billTypeId: bill.billTypeId, billTypeName: bill.billTypeName, billCategory: bill.billCategory, taxableAmount: bill.taxableAmount, gstAmount: bill.gstAmount, gstType: bill.gstType, gstPercent: bill.gstPercent, cgstAmount: bill.cgstAmount, sgstAmount: bill.sgstAmount, igstAmount: bill.igstAmount, grossAmount: bill.grossAmount, netReceivable: bill.netReceivable }));
+}
+
 /* ── bill detail ─────────────────────────────────────────────────────────── */
 
 export async function billDetail(context: BtContext, billId: string) {
@@ -213,7 +234,7 @@ export async function billDetail(context: BtContext, billId: string) {
   const rc = reportContext(config, context.today);
   const firestore = db();
   const byBill = (collection: string) => firestore.collection(collection).where('billId', '==', billId).get();
-  const [collections, followUps, comments, documents, activity, retentionByBill, retentionReleases] = await Promise.all([
+  const [collections, followUps, comments, documents, activity, retentionByBill, retentionReleases, notes] = await Promise.all([
     firestore.collection(BT_COLLECTIONS.collections).where('billIds', 'array-contains', billId).get(),
     byBill(BT_COLLECTIONS.followUps),
     byBill(BT_COLLECTIONS.comments),
@@ -221,6 +242,7 @@ export async function billDetail(context: BtContext, billId: string) {
     byBill(BT_COLLECTIONS.activity),
     firestore.collection(BT_COLLECTIONS.retention).where('againstBillId', '==', billId).get(),
     firestore.collection(BT_COLLECTIONS.retention).where('retentionBillId', '==', billId).get(),
+    firestore.collection(BT_COLLECTIONS.bills).where('againstBillId', '==', billId).get(),
   ]);
   const docs = <T>(snapshot: FirebaseFirestore.QuerySnapshot) => snapshot.docs.map((doc) => ({ ...(doc.data() as T), id: doc.id }));
   const releases = [...docs<RetentionRelease>(retentionByBill), ...docs<RetentionRelease>(retentionReleases)].filter((release, index, all) => all.findIndex((other) => other.id === release.id) === index);
@@ -233,6 +255,11 @@ export async function billDetail(context: BtContext, billId: string) {
     documents: docs<BillDocument>(documents).filter((document) => !document.isDeleted).sort((a, b) => b.uploadedAt.localeCompare(a.uploadedAt)),
     activity: docs<BillActivity>(activity).sort((a, b) => b.at.localeCompare(a.at)),
     retention: releases.sort((a, b) => b.releaseDate.localeCompare(a.releaseDate)),
+    // Credit / debit notes raised against this invoice (live ones only).
+    notes: docs<Bill>(notes)
+      .filter((note) => !note.isDeleted && (note as Bill & { organizationId?: string }).organizationId === context.organizationId)
+      .sort((a, b) => a.billDate.localeCompare(b.billDate))
+      .map((note) => ({ id: note.id, transactionType: note.transactionType, billSerialNumber: note.billSerialNumber, gstInvoiceNumber: note.gstInvoiceNumber, billDate: note.billDate, taxableAmount: note.taxableAmount, gstAmount: note.gstAmount, grossAmount: note.grossAmount, netReceivable: note.netReceivable })),
   };
 }
 
@@ -468,6 +495,8 @@ function dataQuality(bills: readonly Bill[], config: BillTrackingConfig) {
     { key: 'unknown_category', label: 'Main category missing or deleted', test: (bill: Bill) => !config.billCategories.some((category) => category.id === bill.billCategory) },
     { key: 'legacy_status_mismatch', label: 'Legacy status mismatch', test: (bill: Bill) => Boolean(bill.legacyStatus) && ((bill.legacyStatus?.toUpperCase() === 'RECEIVED' && bill.paymentStatus !== 'received') || (bill.legacyStatus?.toUpperCase() === 'NOT RECEIVED' && bill.paymentStatus !== 'not_received')) },
     { key: 'no_dgm_office', label: 'No DGM office on project', test: (bill: Bill) => !bill.dgmOffice },
+    { key: 'credit_note_unlinked', label: 'Credit note not linked to an invoice', test: (bill: Bill) => bill.transactionType === 'credit_note' && !bill.againstBillId },
+    { key: 'gst_not_split', label: 'GST not split into CGST / SGST / IGST', test: (bill: Bill) => bill.gstAmount !== 0 && !bill.gstType },
   ];
   const duplicates = new Map<string, Bill[]>();
   for (const bill of bills) {

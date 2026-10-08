@@ -14,6 +14,7 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useRef, use
 
 import { auth } from '@/lib/firebase';
 import type { BillTrackingConfig } from '@/lib/bill-tracking/types';
+import type { RegistrationSetup } from '@/lib/bill-tracking/gst';
 
 export class BtApiError extends Error {
   constructor(
@@ -93,6 +94,8 @@ export interface Lookups {
   projects: ProjectOption[];
   clients: { id: string; name: string; gstin?: string; paymentTermsDays?: number; status?: string }[];
   users: { id: string; name: string; email?: string }[];
+  /** SEL's active GST registrations and the attribution chain (Expenses → GST registrations). */
+  gstSetup: RegistrationSetup;
   dgmOffices: string[];
   permissions: Record<string, string[]>;
   allProjects: boolean;

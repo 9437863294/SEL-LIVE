@@ -16,6 +16,8 @@ import { collection, getDocs, limit, query } from 'firebase/firestore';
 import { Database, Lock, Plus, Save, Settings, ShieldCheck, Trash2, Unlock } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
+import { Checkbox } from '@/components/ui/checkbox';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Card, CardContent } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -78,7 +80,7 @@ export default function SettingsPage() {
       await btFetch('config', {
         method: 'PUT',
         body: {
-          settings: { tolerance: settings.tolerance, roundNetToRupee: settings.roundNetToRupee, defaultCreditDays: settings.defaultCreditDays, defaultAgeingBasis: settings.defaultAgeingBasis, ageingBuckets: settings.ageingBuckets, noFollowUpDays: settings.noFollowUpDays, oldOutstandingDays: settings.oldOutstandingDays, highValueThreshold: settings.highValueThreshold, numbering: settings.numbering, piMarker: settings.piMarker },
+          settings: { tolerance: settings.tolerance, roundNetToRupee: settings.roundNetToRupee, defaultGstRate: settings.defaultGstRate, roundDeductionsToRupee: settings.roundDeductionsToRupee, defaultCreditDays: settings.defaultCreditDays, defaultAgeingBasis: settings.defaultAgeingBasis, ageingBuckets: settings.ageingBuckets, noFollowUpDays: settings.noFollowUpDays, oldOutstandingDays: settings.oldOutstandingDays, highValueThreshold: settings.highValueThreshold, numbering: settings.numbering, piMarker: settings.piMarker },
           billCategories: config.billCategories,
           billTypes: config.billTypes,
           deductionTypes: config.deductionTypes,
@@ -133,6 +135,14 @@ export default function SettingsPage() {
             <CardContent className="grid grid-cols-1 gap-4 p-4 sm:grid-cols-2 lg:grid-cols-3">
               <Field label="Amount tolerance (₹)" hint="Receipts within this of the net count as fully received; net mismatches within it are not flagged.">
                 <Input inputMode="decimal" disabled={!manage} value={settings.tolerance} onChange={(event) => setSettings({ tolerance: number(event.target.value) })} />
+              </Field>
+              <Field label="Default GST rate %" hint="The rate a new bill starts with. CGST and SGST each take half; IGST the whole.">
+                <Input inputMode="decimal" disabled={!manage} value={settings.defaultGstRate} onChange={(event) => setSettings({ defaultGstRate: number(event.target.value) })} />
+              </Field>
+              <Field label="Round % deductions to the rupee" hint="TDS, cess and other percentage deductions — as clients usually deduct them.">
+                <div className="flex h-10 items-center">
+                  <Switch disabled={!manage} checked={settings.roundDeductionsToRupee} onCheckedChange={(value) => setSettings({ roundDeductionsToRupee: value })} />
+                </div>
               </Field>
               <Field label="Round net to the rupee" hint="As the legacy sheet's ROUND(Taxable + GST − Deductions, 0).">
                 <div className="flex h-10 items-center">
@@ -271,9 +281,18 @@ export default function SettingsPage() {
                       </Select>
                     ),
                   },
+                  {
+                    label: 'Less (base)',
+                    render: (row, set) => <BaseLessPicker type={row} types={config.deductionTypes} onChange={(baseLessTypeIds) => set({ baseLessTypeIds })} disabled={!manage} />,
+                  },
+                  { label: 'GST on it', render: (row, set) => <Switch checked={Boolean(row.gstApplicable)} onCheckedChange={(value) => set({ gstApplicable: value, gstRate: value ? (row.gstRate ?? settings.defaultGstRate) : row.gstRate })} aria-label="GST applicable on this deduction" /> },
+                  { label: 'GST %', render: (row, set) => <Input className="w-16" inputMode="decimal" disabled={!row.gstApplicable} value={row.gstApplicable ? (row.gstRate ?? '') : ''} onChange={(event) => set({ gstRate: event.target.value === '' ? undefined : Number(event.target.value) })} aria-label="GST rate on this deduction" /> },
                   { label: 'Active', render: (row, set) => <Switch checked={row.active} onCheckedChange={(value) => set({ active: value })} /> },
                 ]}
               />
+              <p className="text-xs text-muted-foreground">
+                A percentage deduction is taken of <b>Taxable</b> or <b>Gross</b>, less the deductions ticked under “Less (base)” — e.g. Income TDS = (Taxable − Mobilisation Advance) × rate. “GST on it” adds GST at the given % on top of the deduction (for charges the client recovers with GST).
+              </p>
             </CardContent>
           </Card>
         </TabsContent>
@@ -385,6 +404,37 @@ export default function SettingsPage() {
         </TabsContent>
       </Tabs>
     </div>
+  );
+}
+
+/** Which other deductions are subtracted from a percentage deduction's base. */
+function BaseLessPicker({ type, types, onChange, disabled }: { type: DeductionTypeMaster; types: DeductionTypeMaster[]; onChange: (ids: string[]) => void; disabled?: boolean }) {
+  const selected = type.baseLessTypeIds ?? [];
+  const others = types.filter((entry) => entry.id !== type.id);
+  const label = type.calculation !== 'percentage' ? '—' : selected.length ? selected.map((id) => types.find((entry) => entry.id === id)?.name ?? id).join(', ') : 'Nothing';
+  return (
+    <Popover>
+      <PopoverTrigger asChild>
+        <Button type="button" variant="outline" size="sm" disabled={disabled || type.calculation !== 'percentage'} className="h-9 max-w-[200px] justify-start truncate font-normal" title={label}>
+          <span className="truncate">{type.calculation === 'percentage' ? `− ${label}` : '—'}</span>
+        </Button>
+      </PopoverTrigger>
+      <PopoverContent align="start" className="w-72 p-2">
+        <p className="px-2 pb-1 text-xs text-muted-foreground">
+          {type.name || 'This deduction'} = ({type.percentBase === 'gross' ? 'Gross' : 'Taxable'} − ticked) × %
+        </p>
+        <ul className="max-h-64 overflow-y-auto">
+          {others.map((entry) => (
+            <li key={entry.id}>
+              <label className="flex items-center gap-2 rounded-md px-2 py-1.5 text-sm hover:bg-slate-50">
+                <Checkbox checked={selected.includes(entry.id)} onCheckedChange={(checked) => onChange(checked ? [...selected, entry.id] : selected.filter((id) => id !== entry.id))} />
+                {entry.name}
+              </label>
+            </li>
+          ))}
+        </ul>
+      </PopoverContent>
+    </Popover>
   );
 }
 

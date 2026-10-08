@@ -82,6 +82,8 @@ interface Detail {
   documents: BillDocument[];
   activity: BillActivity[];
   retention: RetentionRelease[];
+  /** Credit / debit notes raised against this invoice. */
+  notes: { id: string; transactionType: Bill['transactionType']; billSerialNumber?: string; gstInvoiceNumber?: string; billDate: string; taxableAmount: number; gstAmount: number; grossAmount: number; netReceivable: number }[];
 }
 
 type WorkflowAction = 'submit' | 'start_verification' | 'verify' | 'approve' | 'raise' | 'start_followup' | 'reconcile' | 'close' | 'return' | 'resubmit' | 'reopen';
@@ -199,6 +201,16 @@ function DetailBody({ detail, reload, tab, setTab }: { detail: Detail; reload: (
                       <PhoneCall className="mr-2 h-4 w-4" /> Add follow-up
                     </DropdownMenuItem>
                   ) : null}
+                  {can('Bills', 'Add') && bill.transactionType !== 'credit_note' && bill.transactionType !== 'debit_note' ? (
+                    <>
+                      <DropdownMenuItem onSelect={() => router.push(`/bill-tracking/bills/new?type=credit_note&project=${bill.projectId}&against=${bill.id}`)}>
+                        <Undo2 className="mr-2 h-4 w-4" /> Raise credit note
+                      </DropdownMenuItem>
+                      <DropdownMenuItem onSelect={() => router.push(`/bill-tracking/bills/new?type=debit_note&project=${bill.projectId}&against=${bill.id}`)}>
+                        <FileText className="mr-2 h-4 w-4" /> Raise debit note
+                      </DropdownMenuItem>
+                    </>
+                  ) : null}
                   <DropdownMenuItem onSelect={() => setDialog('email')}>
                     <Mail className="mr-2 h-4 w-4" /> Draft follow-up email
                   </DropdownMenuItem>
@@ -233,6 +245,17 @@ function DetailBody({ detail, reload, tab, setTab }: { detail: Detail; reload: (
       />
 
       {bill.isDeleted ? <Notice tone="rose" title="This bill has been deleted">{bill.deleteReason ?? 'No reason recorded.'} It is excluded from every total.</Notice> : null}
+      {bill.againstBillId ? (
+        <Notice tone="blue" title={`${bill.transactionType === 'credit_note' ? 'Credit' : 'Debit'} note against invoice ${bill.againstBillRef ?? ''}`}>
+          Raised against the invoice of {dateText(bill.againstBillDate)}.{' '}
+          <Link className="font-medium text-emerald-700 hover:underline" href={`/bill-tracking/bills/${bill.againstBillId}`}>
+            Open the invoice
+          </Link>
+        </Notice>
+      ) : bill.transactionType === 'credit_note' ? (
+        <Notice tone="amber" title="Credit note not linked to an invoice">Edit it to choose the invoice it is against.</Notice>
+      ) : null}
+      {detail.notes.length ? <NotesAgainst bill={bill} notes={detail.notes} /> : null}
       {bill.workflowStatus === 'returned' ? <Notice tone="rose" title="Returned for correction">See the activity tab for what needs correcting, then edit and resubmit.</Notice> : null}
       {bill.netMismatch && !bill.netMismatch.resolvedAt ? (
         <Notice tone="amber" title="Net amount mismatch from the legacy workbook">
@@ -394,6 +417,9 @@ function OverviewTab({ bill }: { bill: BillRow }) {
           items={[
             ['Bill number', bill.billSerialNumber ?? '—'],
             ['GST invoice', bill.gstInvoiceNumber ?? 'NA'],
+            ['GST', gstSummary(bill)],
+            ['SEL GST registration', bill.gstRegistrationLabel ? `${bill.gstRegistrationLabel}${bill.gstRegistrationGstin ? ` · ${bill.gstRegistrationGstin}` : ''}` : '—'],
+            ['Client GSTIN', bill.clientGstin ?? '—'],
             ['Legacy Sl. No.', bill.serialNumber ?? '—'],
             ['Project', bill.projectNameSnapshot],
             ['Client', bill.clientNameSnapshot ?? '—'],
@@ -446,7 +472,46 @@ function OverviewTab({ bill }: { bill: BillRow }) {
   );
 }
 
+/** "CGST 9% ₹1,000 + SGST 9% ₹1,000", "IGST 18% ₹2,000", or the single imported figure. */
+function gstSummary(bill: Bill): string {
+  if (bill.gstType === 'cgst-sgst') return `CGST ${bill.cgstRate ?? 0}% ${formatINR(bill.cgstAmount ?? 0)} + SGST ${bill.sgstRate ?? 0}% ${formatINR(bill.sgstAmount ?? 0)} = ${formatINR(bill.gstAmount)}`;
+  if (bill.gstType === 'igst') return `IGST ${bill.igstRate ?? 0}% = ${formatINR(bill.gstAmount)}`;
+  if (bill.gstType === 'none') return 'No GST';
+  return bill.gstAmount ? `${formatINR(bill.gstAmount)} (not split into CGST / SGST / IGST)` : '—';
+}
+
+function NotesAgainst({ bill, notes }: { bill: BillRow; notes: Detail['notes'] }) {
+  const credited = notes.reduce((sum, note) => sum + note.netReceivable, 0);
+  return (
+    <Card className="border-violet-200 bg-violet-50/50 shadow-sm">
+      <CardContent className="space-y-2 p-4">
+        <SectionHeader title="Credit / debit notes against this invoice" as="h3" description="Each note is its own document with its own receivable; this shows their effect on the invoice." />
+        <ul className="divide-y divide-violet-100 text-sm">
+          {notes.map((note) => (
+            <li key={note.id} className="flex flex-wrap items-center justify-between gap-2 py-1.5">
+              <span>
+                <Link className="font-medium text-emerald-700 hover:underline" href={`/bill-tracking/bills/${note.id}`}>
+                  {note.gstInvoiceNumber || note.billSerialNumber || 'Note'}
+                </Link>{' '}
+                · {note.transactionType === 'credit_note' ? 'Credit note' : 'Debit note'} · {dateText(note.billDate)}
+              </span>
+              <Amount value={note.netReceivable} signed />
+            </li>
+          ))}
+        </ul>
+        <div className="flex flex-wrap justify-between gap-2 border-t border-violet-200 pt-2 text-sm font-semibold">
+          <span>Invoice net {formatINR(bill.netReceivable)} {credited < 0 ? '−' : '+'} notes {formatINR(Math.abs(credited))}</span>
+          <span>
+            Net after notes <Amount value={bill.netReceivable + credited} signed />
+          </span>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
 function DeductionsTab({ bill }: { bill: BillRow }) {
+  const withGst = bill.deductions.some((line) => line.gstAmount);
   return (
     <Card className="border-white/60 bg-white/85 shadow-sm">
       <CardContent className="p-0">
@@ -459,6 +524,9 @@ function DeductionsTab({ bill }: { bill: BillRow }) {
                 <tr>
                   <th className="px-3 py-2 text-left">Deduction</th>
                   <th className="px-3 py-2 text-right">%</th>
+                  <th className="px-3 py-2 text-right">Of</th>
+                  {withGst ? <th className="px-3 py-2 text-right">Base</th> : null}
+                  {withGst ? <th className="px-3 py-2 text-right">GST</th> : null}
                   <th className="px-3 py-2 text-right">Amount</th>
                   <th className="px-3 py-2 text-left">Remarks</th>
                 </tr>
@@ -471,6 +539,13 @@ function DeductionsTab({ bill }: { bill: BillRow }) {
                       {line.deductionTypeName}
                     </td>
                     <td className="px-3 py-2 text-right">{line.percentage !== undefined ? `${line.percentage}%` : '—'}</td>
+                    <td className="px-3 py-2 text-right text-muted-foreground">{line.calculationBase !== undefined ? <Amount value={line.calculationBase} /> : '—'}</td>
+                    {withGst ? (
+                      <td className="px-3 py-2 text-right">
+                        <Amount value={line.baseAmount ?? line.amount} signed />
+                      </td>
+                    ) : null}
+                    {withGst ? <td className="px-3 py-2 text-right">{line.gstAmount ? <span title={`${line.gstRate}%`}><Amount value={line.gstAmount} /> <span className="text-xs text-muted-foreground">@{line.gstRate}%</span></span> : '—'}</td> : null}
                     <td className="px-3 py-2 text-right">
                       <Amount value={line.amount} signed />
                     </td>
@@ -482,6 +557,9 @@ function DeductionsTab({ bill }: { bill: BillRow }) {
                 <tr>
                   <td className="px-3 py-2">Total deduction</td>
                   <td />
+                  <td />
+                  {withGst ? <td /> : null}
+                  {withGst ? <td /> : null}
                   <td className="px-3 py-2 text-right">
                     <Amount value={bill.totalDeduction} signed />
                   </td>

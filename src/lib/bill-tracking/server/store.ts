@@ -8,7 +8,10 @@ import 'server-only';
 
 import { FieldValue, type DocumentReference, type Firestore, type Transaction } from 'firebase-admin/firestore';
 
+import { resolveRegistrationsDoc } from '@/lib/gst-registrations';
+
 import { DEFAULT_CONFIG, withConfigDefaults } from '../defaults.ts';
+import type { RegistrationSetup } from '../gst.ts';
 import type { Bill, BillActivity, BillTrackingConfig, ProjectProfile } from '../types';
 import { BtError, db, type BtContext } from './context';
 
@@ -147,6 +150,16 @@ export async function userName(userId: string | undefined): Promise<string | und
   if (!userId) return undefined;
   const snapshot = await db().collection('users').doc(userId).get();
   return snapshot.exists ? String(snapshot.data()?.name ?? snapshot.data()?.email ?? userId) : undefined;
+}
+
+/**
+ * SEL's GST registrations and the attribution chain, from the shared settings document Expenses
+ * maintains (Expenses → GST registrations). Bill Tracking reads it; it never edits it.
+ */
+export async function loadGstSetup(): Promise<RegistrationSetup> {
+  const snapshot = await db().collection('expensesSettings').doc('gst-registrations').get();
+  const doc = resolveRegistrationsDoc(snapshot.exists ? snapshot.data() : null);
+  return { registrations: doc.registrations, attribution: doc.attribution, maps: doc.maps };
 }
 
 /* ── scoped loading ──────────────────────────────────────────────────────── */

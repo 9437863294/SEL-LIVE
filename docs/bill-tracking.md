@@ -37,6 +37,30 @@ the browser sends for derived fields are ignored.
 Attachments and imported workbooks are stored under `bill-tracking/{org}/…` in Storage. They are
 written and served only by the API.
 
+### GST, deduction formulas, credit notes
+
+- **GST split.** Each bill has a GST type: CGST + SGST (half the rate each), IGST (the full rate) or
+  No GST. It also has a rate and the component amounts; the components decide the total.
+  - **Suggested type.** The form compares the SEL registration that raises the bill with the
+    client's GSTIN state. The registration comes from the shared attribution chain in Expenses → GST
+    registrations. The form shows its reason, and finance can change the type, the rate or any
+    component.
+  - **Snapshots.** Each bill keeps the registration, its GSTIN and the client's GSTIN as they were
+    when the bill was saved.
+  - **Legacy bills.** Imported bills keep their single GST figure until someone splits it.
+- **Deduction formulas.** In Settings → Deduction types, a percentage deduction is "% of Taxable
+  (or Gross), less the deductions ticked under *Less (base)*".
+  - Income TDS defaults to (Taxable − Mobilisation Advance) × rate.
+  - *GST on it* adds GST at the given % on top of a deduction.
+  - The server recomputes every line on save (`computeDeductions` in `gst.ts`). Percentage lines
+    are rounded to the rupee unless that setting is off.
+- **Credit notes.**
+  - **Linking.** A credit note must name an invoice of the same project; a debit note may. Legacy
+    notes whose description says "Against Inv No -…" are linked on import if that invoice exists.
+  - **Invoice page.** It lists the notes against the invoice and shows its net after notes, and
+    offers *Raise credit note*.
+  - **Receivables.** Each note keeps its own receivable.
+
 ### Bill categories
 
 Categories are configured in Settings → Bill categories.

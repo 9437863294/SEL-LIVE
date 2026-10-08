@@ -490,6 +490,17 @@ export function provisionalBillType(name: string, categories: readonly BillCateg
   };
 }
 
+/**
+ * The invoice a legacy credit/debit note names in its description — the sheet writes
+ * "Against Inv No -OD-168/2025-26". `undefined` when the description names none.
+ */
+export function againstInvoiceFromDescription(description: string | undefined): string | undefined {
+  // No bracketed "property:value" class in this pattern: Tailwind scans source files and reads one
+  // as an arbitrary CSS property, emitting invalid CSS that breaks every page of the app.
+  const match = /against\s+inv(?:oice)?\.?\s*(?:no\.?)?\s*(?:-|:|#)?\s*([A-Za-z0-9][A-Za-z0-9/\-]*[A-Za-z0-9])/i.exec(description ?? '');
+  return match?.[1];
+}
+
 /* ── row parsing ─────────────────────────────────────────────────────────── */
 
 export type IssueLevel = 'error' | 'warning';

@@ -26,6 +26,7 @@ import {
   resubmitTarget,
 } from '../calculations.ts';
 import { isEnabledForProject } from '../categories.ts';
+import { computeDeductions, splitGst, suggestGst, totalFromComponents, type RegistrationSetup } from '../gst.ts';
 import { formatBillNumber } from '../defaults.ts';
 import { roundMoney } from '../money.ts';
 import { buildSearchTokens } from '../reports.ts';
@@ -45,6 +46,7 @@ import {
   diffFields,
   loadClient,
   loadConfig,
+  loadGstSetup,
   loadProject,
   logActivityTx,
   nowIso,
@@ -72,6 +74,13 @@ const AUDITED_FIELDS = [
   'billCategoryName',
   'taxableAmount',
   'gstAmount',
+  'gstType',
+  'gstPercent',
+  'cgstAmount',
+  'sgstAmount',
+  'igstAmount',
+  'gstRegistrationId',
+  'againstBillId',
   'deductions',
   'netReceivable',
   'targetWeek',
@@ -83,7 +92,7 @@ const AUDITED_FIELDS = [
 ] as const;
 
 /** Fields that, once a bill is approved, change only with `Edit After Approval` and a reason. */
-const PROTECTED_FIELDS = ['taxableAmount', 'gstAmount', 'deductions', 'gstInvoiceNumber', 'billDate', 'projectId', 'transactionType'] as const;
+const PROTECTED_FIELDS = ['taxableAmount', 'gstAmount', 'deductions', 'gstInvoiceNumber', 'billDate', 'projectId', 'transactionType', 'againstBillId'] as const;
 
 export const calculationOptions = (config: BillTrackingConfig) => ({
   tolerance: config.settings.tolerance,
@@ -98,30 +107,68 @@ export function assertMonthOpen(context: BtContext, config: BillTrackingConfig, 
   }
 }
 
-function resolveDeductions(lines: BillInput['deductions'], config: BillTrackingConfig, existing: readonly BillDeduction[] = []): BillDeduction[] {
-  return lines.map((line) => {
+/**
+ * Deduction lines, recomputed from the bill's own figures with the configured formulas (a % of the
+ * taxable or gross less other deductions; GST on GST-applicable deductions). The form's figures are a
+ * preview only.
+ */
+function resolveDeductions(lines: BillInput['deductions'], config: BillTrackingConfig, context: { taxable: number; gross: number }, existing: readonly BillDeduction[] = []): BillDeduction[] {
+  for (const line of lines) {
     const type = config.deductionTypes.find((entry) => entry.id === line.deductionTypeId);
     // A type retired after a bill used it stays valid on that bill; a new line needs an active type.
     const previously = existing.find((entry) => entry.id === line.id && entry.deductionTypeId === line.deductionTypeId);
     if (!type || (!type.active && !previously)) throw new BtError(`Deduction type ${line.deductionTypeId} is not available.`);
-    return clean({
-      id: line.id,
-      deductionTypeId: type.id,
-      deductionTypeName: type.name,
-      kind: type.kind,
-      amount: roundMoney(line.amount),
-      percentage: line.percentage,
-      calculationBase: line.calculationBase,
-      remarks: line.remarks,
-      deductionDate: line.deductionDate,
-    });
-  });
+  }
+  return computeDeductions(lines, config.deductionTypes, { ...context, roundToRupee: config.settings.roundDeductionsToRupee }).map((line) => clean(line));
 }
 
 /** Due date from the project's (or client's, or the module's) credit days. */
 export function computeDueDate(baseDate: string, project: ProjectRecord, client: ClientRecord | undefined, config: BillTrackingConfig): string {
   const days = project.creditDays ?? client?.paymentTermsDays ?? config.settings.defaultCreditDays;
   return addDays(baseDate, days);
+}
+
+/** GST fields of a bill from the input: CGST + SGST or IGST components, or the legacy single total. */
+export function composeGst(input: BillInput) {
+  if (!input.gstType) {
+    return { gstAmount: roundMoney(input.gstAmount), gstPercent: input.gstPercent, gstType: undefined, cgstRate: undefined, sgstRate: undefined, igstRate: undefined, cgstAmount: undefined, sgstAmount: undefined, igstAmount: undefined };
+  }
+  const rate = input.gstType === 'none' ? 0 : (input.gstPercent ?? 0);
+  const computed = splitGst(input.taxableAmount, input.gstType, rate);
+  const cgstAmount = input.gstType === 'cgst-sgst' ? roundMoney(input.cgstAmount ?? computed.cgstAmount) : 0;
+  const sgstAmount = input.gstType === 'cgst-sgst' ? roundMoney(input.sgstAmount ?? computed.sgstAmount) : 0;
+  const igstAmount = input.gstType === 'igst' ? roundMoney(input.igstAmount ?? computed.igstAmount) : 0;
+  return {
+    gstType: input.gstType,
+    gstPercent: rate,
+    cgstRate: computed.cgstRate,
+    sgstRate: computed.sgstRate,
+    igstRate: computed.igstRate,
+    cgstAmount,
+    sgstAmount,
+    igstAmount,
+    gstAmount: totalFromComponents(input.gstType, { cgstAmount, sgstAmount, igstAmount }),
+  };
+}
+
+/**
+ * A credit note must name the invoice it adjusts (a debit note may). The invoice has to be a live
+ * bill of the same project that is not itself a note. Credit notes brought in from the legacy
+ * workbook carry no reference, so they are not forced to have one until someone links them.
+ */
+function composeNoteLink(input: BillInput, against: StoredBill | undefined, existing: StoredBill | undefined, projectId: string) {
+  const isNote = input.transactionType === 'credit_note' || input.transactionType === 'debit_note';
+  if (!isNote) return { againstBillId: undefined, againstBillRef: undefined, againstBillDate: undefined };
+  if (!input.againstBillId) {
+    if (input.transactionType === 'credit_note' && existing?.source !== 'excel_import') throw new BtError('Choose the invoice this credit note is against.');
+    return { againstBillId: undefined, againstBillRef: undefined, againstBillDate: undefined };
+  }
+  if (!against || against.id !== input.againstBillId) throw new BtError('The invoice this note is against was not found.', 404);
+  if (against.isDeleted) throw new BtError('The invoice this note is against has been deleted.');
+  if (against.projectId !== projectId) throw new BtError('A credit or debit note must be against an invoice of the same project.');
+  if (against.transactionType === 'credit_note' || against.transactionType === 'debit_note') throw new BtError('Choose an invoice, not another credit or debit note.');
+  if (existing && against.id === existing.id) throw new BtError('A note cannot be against itself.');
+  return { againstBillId: against.id, againstBillRef: against.gstInvoiceNumber || against.billSerialNumber || against.id, againstBillDate: against.billDate };
 }
 
 interface ComposeArgs {
@@ -132,10 +179,13 @@ interface ComposeArgs {
   client?: ClientRecord;
   existing?: StoredBill;
   ownerName?: string;
+  /** The invoice a credit/debit note adjusts, loaded by the caller. */
+  against?: StoredBill;
+  gstSetup?: RegistrationSetup;
 }
 
 /** Builds every stored field of a bill from validated input plus masters; derived totals included. */
-export function composeBill({ context, input, config, project, client, existing, ownerName }: ComposeArgs): Omit<StoredBill, 'id' | 'createdAt' | 'createdBy' | 'version'> & Partial<Pick<StoredBill, 'createdAt' | 'createdBy' | 'version'>> {
+export function composeBill({ context, input, config, project, client, existing, ownerName, against, gstSetup }: ComposeArgs): Omit<StoredBill, 'id' | 'createdAt' | 'createdBy' | 'version'> & Partial<Pick<StoredBill, 'createdAt' | 'createdBy' | 'version'>> {
   const billType = config.billTypes.find((entry) => entry.id === input.billTypeId);
   const keeping = existing?.billTypeId === input.billTypeId;
   if (!billType) throw new BtError(keeping ? 'This bill’s sub category was deleted from Settings — choose another.' : 'Choose a sub category.');
@@ -152,21 +202,30 @@ export function composeBill({ context, input, config, project, client, existing,
     throw new BtError(`The bill date falls in FY ${derivedFy}; only an approver can file it under ${financialYear}.`, 403);
   }
 
-  const deductions = resolveDeductions(input.deductions, config, existing?.deductions);
+  const clientId = input.clientId ?? project.clientId;
+  const clientName = client?.name ?? (clientId === project.clientId ? project.clientName : undefined);
+
+  // GST: from the type, rate and the components entered (the components decide the total); a bill
+  // without a type (imported legacy rows) keeps its single GST figure.
+  const gst = composeGst(input);
+  const suggestion = suggestGst(gstSetup, { projectId: project.id, chosenRegistrationId: input.gstRegistrationId, clientGstin: client?.gstin });
+  if (input.gstRegistrationId && !gstSetup?.registrations.some((entry) => entry.id === input.gstRegistrationId)) {
+    throw new BtError('That GST registration is not in Expenses → GST registrations.');
+  }
+
+  const note = composeNoteLink(input, against, existing, project.id);
+  const deductions = resolveDeductions(input.deductions, config, { taxable: input.taxableAmount, gross: roundMoney(input.taxableAmount + gst.gstAmount) }, existing?.deductions);
   const collections = existing?.collections ?? [];
   const totals = deriveBillTotals(
     {
       taxableAmount: input.taxableAmount,
-      gstAmount: input.gstAmount,
+      gstAmount: gst.gstAmount,
       deductions,
       collections,
       paymentStatusOverride: existing?.paymentStatusOverride,
     },
     calculationOptions(config),
   );
-
-  const clientId = input.clientId ?? project.clientId;
-  const clientName = client?.name ?? (clientId === project.clientId ? project.clientName : undefined);
 
   // Due date: kept as is on edit (revisions go through `changeDueDate`), computed or typed on create.
   let dueDate = existing?.dueDate;
@@ -184,6 +243,7 @@ export function composeBill({ context, input, config, project, client, existing,
     serialNumber: input.serialNumber ?? existing?.serialNumber,
     billSerialNumber: input.billSerialNumber ?? existing?.billSerialNumber,
     transactionType: input.transactionType,
+    ...note,
     gstInvoiceNumber: input.gstInvoiceNumber,
     billDate: input.billDate,
     submissionDate: input.submissionDate,
@@ -204,8 +264,11 @@ export function composeBill({ context, input, config, project, client, existing,
     billCategoryName: category?.name ?? existing?.billCategoryName,
     isRetentionBill: billType.isRetentionBill || input.transactionType === 'retention_bill',
     taxableAmount: roundMoney(input.taxableAmount),
-    gstAmount: roundMoney(input.gstAmount),
-    gstPercent: input.gstPercent,
+    ...gst,
+    gstRegistrationId: suggestion.registration?.id,
+    gstRegistrationLabel: suggestion.registration ? suggestion.registration.label || suggestion.registration.stateName : undefined,
+    gstRegistrationGstin: suggestion.registration?.gstin,
+    clientGstin: client?.gstin,
     deductions,
     grossAmount: totals.grossAmount,
     totalDeduction: totals.totalDeduction,
@@ -255,6 +318,15 @@ export function composeBill({ context, input, config, project, client, existing,
   return { ...bill, searchTokens: buildSearchTokens(bill) } as ReturnType<typeof composeBill>;
 }
 
+/** The invoice a credit/debit note names, if any (scope is checked by composeBill's same-project rule). */
+async function loadAgainst(context: BtContext, billId: string | undefined): Promise<StoredBill | undefined> {
+  if (!billId) return undefined;
+  const snapshot = await db().collection(BT_COLLECTIONS.bills).doc(billId).get();
+  if (!snapshot.exists) return undefined;
+  const bill = { ...(snapshot.data() as StoredBill), id: snapshot.id };
+  return bill.organizationId === context.organizationId ? bill : undefined;
+}
+
 /** Rejects a second live bill with the same non-empty GST invoice number in the same project. */
 async function assertUniqueInvoice(context: BtContext, projectId: string, invoice: string | undefined, ignoreId?: string): Promise<void> {
   if (!invoice) return;
@@ -278,11 +350,12 @@ export async function createBill(context: BtContext, input: BillInput): Promise<
   const client = await loadClient(input.clientId ?? project.clientId);
   await assertUniqueInvoice(context, project.id, input.gstInvoiceNumber);
   const ownerName = await userName(input.collectionOwnerId);
+  const [against, gstSetup] = await Promise.all([loadAgainst(context, input.againstBillId), loadGstSetup()]);
 
   const firestore = db();
   const ref = firestore.collection(BT_COLLECTIONS.bills).doc();
   await firestore.runTransaction(async (transaction) => {
-    const composed = composeBill({ context, input, config, project, client, ownerName });
+    const composed = composeBill({ context, input, config, project, client, ownerName, against, gstSetup });
     let billSerialNumber = composed.billSerialNumber;
     if ((input.autoNumber || !billSerialNumber) && config.settings.numbering.enabled) {
       const counterRef = firestore.collection(BT_COLLECTIONS.counters).doc(`${context.organizationId}_${composed.financialYear}`);
@@ -330,6 +403,7 @@ export async function updateBill(context: BtContext, billId: string, input: Bill
   const client = await loadClient(input.clientId ?? project.clientId);
   await assertUniqueInvoice(context, project.id, input.gstInvoiceNumber, billId);
   const ownerName = await userName(input.collectionOwnerId);
+  const [against, gstSetup] = await Promise.all([loadAgainst(context, input.againstBillId), loadGstSetup()]);
 
   let version = 0;
   await firestore.runTransaction(async (transaction) => {
@@ -338,7 +412,7 @@ export async function updateBill(context: BtContext, billId: string, input: Bill
     if (input.expectedVersion !== undefined && input.expectedVersion !== current.version) {
       throw new BtError('Someone else changed this bill while you were editing it. Reload to see their changes, then edit again.', 409);
     }
-    const composed = composeBill({ context, input, config, project, client, existing: current, ownerName });
+    const composed = composeBill({ context, input, config, project, client, existing: current, ownerName, against, gstSetup });
 
     const protectedChange = PROTECTED_FIELDS.filter((key) => JSON.stringify(current[key] ?? null) !== JSON.stringify((composed as Record<string, unknown>)[key] ?? null));
     if (protectedChange.length && isPastApproval(current.workflowStatus)) {

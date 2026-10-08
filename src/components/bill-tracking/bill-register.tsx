@@ -26,7 +26,7 @@ import { categoryName } from '@/lib/bill-tracking/categories';
 import { LEGACY_EXPORT_HEADERS, legacyExportRows } from '@/lib/bill-tracking/legacy-export';
 import { formatINRCompact } from '@/lib/bill-tracking/money';
 import { exportWorkbook } from '@/lib/report-excel';
-import { PAYMENT_STATUS_LABELS, WORKFLOW_STATUS_LABELS, type Bill } from '@/lib/bill-tracking/types';
+import { GST_TYPE_LABELS, PAYMENT_STATUS_LABELS, WORKFLOW_STATUS_LABELS, type Bill } from '@/lib/bill-tracking/types';
 import type { BillTotals } from '@/lib/bill-tracking/reports';
 
 import { btFetch, useBtQuery, useLookups, useBt } from './bt-client';
@@ -138,6 +138,10 @@ export default function BillRegister({ mode = 'all' }: { mode?: 'all' | 'outstan
     },
     { key: 'taxable', header: 'Taxable', align: 'right', sortKey: 'taxableAmount', defaultHidden: outstanding, cell: (bill) => <Amount value={bill.taxableAmount} signed />, total: <Amount value={data?.totals.taxable} /> },
     { key: 'gst', header: 'GST', align: 'right', defaultHidden: outstanding, cell: (bill) => <Amount value={bill.gstAmount} signed />, total: <Amount value={data?.totals.gst} /> },
+    { key: 'gstType', header: 'GST type', defaultHidden: true, cell: (bill) => (bill.gstType ? `${GST_TYPE_LABELS[bill.gstType]}${bill.gstPercent ? ` @ ${bill.gstPercent}%` : ''}` : bill.gstAmount ? 'Not split' : '—') },
+    { key: 'cgst', header: 'CGST', align: 'right', defaultHidden: true, cell: (bill) => <Amount value={bill.cgstAmount ?? 0} muted signed /> },
+    { key: 'sgst', header: 'SGST', align: 'right', defaultHidden: true, cell: (bill) => <Amount value={bill.sgstAmount ?? 0} muted signed /> },
+    { key: 'igst', header: 'IGST', align: 'right', defaultHidden: true, cell: (bill) => <Amount value={bill.igstAmount ?? 0} muted signed /> },
     { key: 'gross', header: 'Gross', align: 'right', cell: (bill) => <Amount value={bill.grossAmount} signed />, total: <Amount value={data?.totals.gross} /> },
     { key: 'deduction', header: 'Deduction', align: 'right', defaultHidden: outstanding, cell: (bill) => <Amount value={bill.totalDeduction} muted />, total: <Amount value={data?.totals.deduction} /> },
     { key: 'net', header: 'Net', align: 'right', sortKey: 'netReceivable', cell: (bill) => <Amount value={bill.netReceivable} signed />, total: <Amount value={data?.totals.net} /> },
@@ -198,6 +202,12 @@ export default function BillRegister({ mode = 'all' }: { mode?: 'all' | 'outstan
     { key: 'type', label: 'Sub Category', value: (bill) => bill.billTypeName },
     { key: 'taxable', label: 'Taxable', value: (bill) => bill.taxableAmount, money: true },
     { key: 'gst', label: 'GST', value: (bill) => bill.gstAmount, money: true },
+    { key: 'gstType', label: 'GST Type', value: (bill) => (bill.gstType ? GST_TYPE_LABELS[bill.gstType] : bill.gstAmount ? 'Not split' : '') },
+    { key: 'gstRate', label: 'GST %', value: (bill) => bill.gstPercent },
+    { key: 'cgst', label: 'CGST', value: (bill) => bill.cgstAmount ?? 0, money: true },
+    { key: 'sgst', label: 'SGST', value: (bill) => bill.sgstAmount ?? 0, money: true },
+    { key: 'igst', label: 'IGST', value: (bill) => bill.igstAmount ?? 0, money: true },
+    { key: 'against', label: 'Against Invoice', value: (bill) => bill.againstBillRef },
     { key: 'gross', label: 'Gross', value: (bill) => bill.grossAmount, money: true },
     { key: 'deduction', label: 'Deduction', value: (bill) => bill.totalDeduction, money: true },
     { key: 'net', label: 'Net', value: (bill) => bill.netReceivable, money: true },
