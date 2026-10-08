@@ -2,11 +2,11 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import {
-  collection, doc, getDocs, onSnapshot, query, serverTimestamp, setDoc, where,
+  collection, deleteField, doc, getDocs, onSnapshot, orderBy, query, serverTimestamp, setDoc, where,
 } from 'firebase/firestore';
 import {
-  AlertTriangle, CalendarRange, CheckCircle2, ChevronLeft, ChevronRight, Clock,
-  Loader2, Lock, LockOpen, ShieldAlert, ShieldCheck,
+  AlertTriangle, Building2, CalendarRange, CheckCircle2, ChevronLeft, ChevronRight, Clock,
+  Loader2, Lock, LockOpen, ShieldAlert, ShieldCheck, Undo2,
 } from 'lucide-react';
 import { db } from '@/lib/firebase';
 import { PageHeader } from '@/components/shared/page-header';
@@ -16,17 +16,23 @@ import { useActivityLogger } from '@/hooks/useActivityLogger';
 import { useToast } from '@/hooks/use-toast';
 import {
   formatINR, SAS_COLLECTIONS, SAS_MONTH_CLOSURE_DOC_ID,
-  type SASExpense, type SASPayment,
+  type SASExpense, type SASPayment, type SASProject,
 } from '@/lib/site-account-statement';
 import {
+  ALL_PROJECTS,
   canClosePeriod,
+  canFollowAllProjects,
   canReopenPeriod,
   closureFor,
+  effectiveClosure,
+  isAllProjectsScope,
   monthState,
   periodsToBulkClose,
+  projectsWithOverride,
   resolveMonthClosure,
   summariseClosure,
   validateReopenReason,
+  type ClosureScope,
   type MonthState,
   type SASMonthClosureSettings,
 } from '@/lib/site-account-statement-month-closure';
@@ -94,6 +100,9 @@ export default function SiteAccountMonthClosureSettings() {
 
   const now = currentPeriod();
   const [fyStart, setFyStart] = useState(() => fyStartOf(now));
+  /** `ALL_PROJECTS`, or one project id. Everything on this screen is read through it. */
+  const [scope, setScope] = useState<ClosureScope>(ALL_PROJECTS);
+  const [projects, setProjects] = useState<SASProject[]>([]);
   const [closure, setClosure] = useState<SASMonthClosureSettings>(() => resolveMonthClosure(null));
   const [loading, setLoading] = useState(true);
   const [contents, setContents] = useState<Record<string, MonthContents>>({});
@@ -107,8 +116,36 @@ export default function SiteAccountMonthClosureSettings() {
   const [reopenReason, setReopenReason] = useState('');
   const [bulkThrough, setBulkThrough] = useState<string | null>(null);
 
+  /*
+   * `undefined` for the all-projects view, a project id otherwise.
+   *
+   * Every closure helper takes the project as an optional last argument and treats its absence as
+   * "the organisation's calendar", so this single value steers the whole screen rather than each
+   * call site deciding for itself.
+   */
+  const scopeProject = isAllProjectsScope(scope) ? undefined : scope;
+  const scopeName = scopeProject
+    ? projects.find(p => p.id === scopeProject)?.projectName ?? 'this project'
+    : 'all projects';
+
   const periods = useMemo(() => fyPeriods(fyStart), [fyStart]);
-  const summary = useMemo(() => summariseClosure(periods, closure, now), [periods, closure, now]);
+  const summary = useMemo(
+    () => summariseClosure(periods, closure, now, scopeProject),
+    [periods, closure, now, scopeProject],
+  );
+
+  useEffect(() => {
+    void (async () => {
+      try {
+        const snap = await getDocs(query(collection(db, SAS_COLLECTIONS.projects), orderBy('projectName')));
+        setProjects(
+          snap.docs
+            .map(d => ({ id: d.id, ...d.data() } as SASProject))
+            .filter(p => p.enabledForSiteAccount && p.status === 'Active'),
+        );
+      } catch { /* the scope picker falls back to all-projects only */ }
+    })();
+  }, []);
 
   useEffect(
     () =>
@@ -153,12 +190,14 @@ export default function SiteAccountMonthClosureSettings() {
         ]);
         for (const d of expenseSnap.docs) {
           const row = d.data() as SASExpense;
+          if (scopeProject && row.projectId !== scopeProject) continue;
           const b = bucket((row.expenseDate ?? '').slice(0, 7));
           b.expenseCount++;
           b.expenseTotal += Number(row.expenseAmount) || 0;
         }
         for (const d of receiptSnap.docs) {
           const row = d.data() as SASPayment;
+          if (scopeProject && row.projectId !== scopeProject) continue;
           const b = bucket((row.receiptDate ?? '').slice(0, 7));
           b.receiptCount++;
           b.receiptTotal += Number(row.receivedAmount) || 0;
@@ -171,7 +210,8 @@ export default function SiteAccountMonthClosureSettings() {
             where('status', '==', 'pending'),
           ));
           for (const d of allocSnap.docs) {
-            const row = d.data() as { period?: string };
+            const row = d.data() as { period?: string; projectId?: string };
+            if (scopeProject && row.projectId !== scopeProject) continue;
             if (!row.period?.startsWith(String(fyStart)) && !row.period?.startsWith(String(fyStart + 1))) continue;
             bucket(row.period).pendingAllocations++;
           }
@@ -188,26 +228,37 @@ export default function SiteAccountMonthClosureSettings() {
 
     void loadContents();
     return () => { cancelled = true; };
-  }, [fyStart]);
+  }, [fyStart, scopeProject]);
 
-  async function writeClosure(next: Record<string, unknown>, activity: string, detail: Record<string, unknown>) {
+  /**
+   * Writes period entries into whichever calendar is in scope.
+   *
+   * The all-projects calendar lives at `months`, a project's exceptions at `projects.<id>`. Both
+   * are maps keyed by period, so the shape written is the same either way and only the path
+   * differs — which is what lets one set of handlers serve both.
+   */
+  async function writeClosure(
+    entries: Record<string, unknown>,
+    activity: string,
+    detail: Record<string, unknown>,
+  ) {
     await setDoc(
       doc(db, SAS_COLLECTIONS.settings, SAS_MONTH_CLOSURE_DOC_ID),
       {
-        months: next,
+        ...(scopeProject ? { projects: { [scopeProject]: entries } } : { months: entries }),
         updatedAt: serverTimestamp(),
         updatedBy: user?.id ?? '',
         updatedByName: user?.name ?? '',
       },
-      // Merged, so two administrators closing different months in the same minute do not overwrite
-      // each other's month — a whole-document write would.
+      // Merged, so two administrators acting on different months — or different projects — in the
+      // same minute do not overwrite each other. A whole-document write would.
       { merge: true },
     );
-    void log(activity, detail);
+    void log(activity, { scope: scopeProject ? scopeName : 'All projects', ...detail });
   }
 
   async function handleClose(period: string) {
-    const check = canClosePeriod(period, closure, now);
+    const check = canClosePeriod(period, closure, now, scopeProject);
     if (!check.ok) {
       toast({ title: 'Cannot close', description: check.reason, variant: 'destructive' });
       return;
@@ -245,7 +296,7 @@ export default function SiteAccountMonthClosureSettings() {
   }
 
   async function handleReopen(period: string) {
-    const allowed = canReopenPeriod(period, closure);
+    const allowed = canReopenPeriod(period, closure, scopeProject);
     if (!allowed.ok) {
       toast({ title: 'Cannot reopen', description: allowed.reason, variant: 'destructive' });
       return;
@@ -260,7 +311,7 @@ export default function SiteAccountMonthClosureSettings() {
       await writeClosure(
         {
           [period]: {
-            ...(closureFor(closure, period) ?? { period }),
+            ...(closureFor(closure, period, scopeProject) ?? { period }),
             period,
             closed: false,
             reopenedAt: serverTimestamp(),
@@ -285,8 +336,41 @@ export default function SiteAccountMonthClosureSettings() {
     }
   }
 
+  /**
+   * Drops a project's exception, putting it back on the organisation's calendar.
+   *
+   * Distinct from reopening, and the distinction is the point: reopening a project leaves a
+   * standing "this site is different" entry that keeps overriding every later all-projects
+   * change. Removing it means the site simply follows along again.
+   */
+  async function handleFollowAll(period: string) {
+    if (!scopeProject) return;
+    setBusy(period);
+    try {
+      await setDoc(
+        doc(db, SAS_COLLECTIONS.settings, SAS_MONTH_CLOSURE_DOC_ID),
+        {
+          projects: { [scopeProject]: { [period]: deleteField() } },
+          updatedAt: serverTimestamp(),
+          updatedBy: user?.id ?? '',
+          updatedByName: user?.name ?? '',
+        },
+        { merge: true },
+      );
+      void log('Clear SAS Month Exception', { scope: scopeName, period });
+      toast({
+        title: `${periodLabel(period)} follows all projects`,
+        description: `${scopeName} no longer has its own setting for this month.`,
+      });
+    } catch (e: any) {
+      toast({ title: 'Error', description: e.message, variant: 'destructive' });
+    } finally {
+      setBusy(null);
+    }
+  }
+
   async function handleBulkClose(through: string) {
-    const targets = periodsToBulkClose(periods, through, closure, now);
+    const targets = periodsToBulkClose(periods, through, closure, now, scopeProject);
     if (targets.length === 0) {
       toast({ title: 'Nothing to close', description: 'Every month up to there is already closed.' });
       return;
@@ -337,8 +421,10 @@ export default function SiteAccountMonthClosureSettings() {
   }
 
   const fyOptions = Array.from({ length: 7 }, (_, i) => fyStartOf(now) + 1 - i);
-  const bulkCandidates = periods.filter(p => canClosePeriod(p, closure, now).ok);
-  const bulkTargets = bulkThrough ? periodsToBulkClose(periods, bulkThrough, closure, now) : [];
+  const bulkCandidates = periods.filter(p => canClosePeriod(p, closure, now, scopeProject).ok);
+  const bulkTargets = bulkThrough
+    ? periodsToBulkClose(periods, bulkThrough, closure, now, scopeProject)
+    : [];
   const closeContents = closeTarget ? contents[closeTarget] ?? EMPTY_CONTENTS : EMPTY_CONTENTS;
 
   return (
@@ -374,8 +460,10 @@ export default function SiteAccountMonthClosureSettings() {
             written reason, which is kept with the month and in the activity log.
           </p>
           <p className="rounded-lg border bg-muted/30 px-3 py-2">
-            <strong className="text-slate-700">The current month</strong> cannot be closed while it
-            is still running, and neither can a month that has not started.
+            <strong className="text-slate-700">All projects, or one.</strong> Use the picker to
+            close a month everywhere, or to freeze — or let back in — a single site. A project&apos;s
+            own setting always wins over the all-projects one; &ldquo;Follow all&rdquo; removes it
+            again. The current month and months that have not started cannot be closed either way.
           </p>
         </CardContent>
       </Card>
@@ -384,14 +472,33 @@ export default function SiteAccountMonthClosureSettings() {
       <Card>
         <CardHeader className="pb-3">
           <div className="flex flex-wrap items-center justify-between gap-3">
-            <div>
-              <CardTitle className="text-base">FY {fyLabelOf(fyStart)}</CardTitle>
+            <div className="min-w-0">
+              <CardTitle className="text-base">
+                FY {fyLabelOf(fyStart)} · {scopeProject ? scopeName : 'All projects'}
+              </CardTitle>
               <CardDescription>
                 {summary.closed} of {summary.total} months closed
                 {summary.closable > 0 && <> · {summary.closable} can be closed now</>}
               </CardDescription>
             </div>
             <div className="flex flex-wrap items-center gap-2">
+              {/*
+                * The scope picker drives the whole screen: which months read as closed, what the
+                * close and reopen buttons write, and which project's figures are counted.
+                */}
+              <Select value={scope} onValueChange={v => setScope(v as ClosureScope)}>
+                <SelectTrigger className="w-[220px]" aria-label="Closure scope">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value={ALL_PROJECTS}>All projects</SelectItem>
+                  {projects.map(p => (
+                    <SelectItem key={p.id} value={p.id}>
+                      {p.projectName}{p.projectCode ? ` (${p.projectCode})` : ''}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
               <Button
                 variant="outline" size="icon" className="h-9 w-9"
                 aria-label="Previous financial year"
@@ -434,12 +541,16 @@ export default function SiteAccountMonthClosureSettings() {
           {/* `grid-cols-1` is explicit: without it the cards stretch past a phone's width. */}
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
             {periods.map(period => {
-              const state = monthState(period, closure, now);
+              const state = monthState(period, closure, now, scopeProject);
               const style = STATE_STYLE[state];
-              const record = closureFor(closure, period);
+              const effect = effectiveClosure(closure, period, scopeProject);
+              const record = effect.record;
               const held = contents[period] ?? EMPTY_CONTENTS;
               const isBusy = busy === period;
               const hasActivity = held.expenseCount > 0 || held.receiptCount > 0;
+              // On the all-projects view, the sites that are somewhere else this month.
+              const differing = scopeProject ? [] : projectsWithOverride(closure, period);
+              const hasOwnEntry = Boolean(scopeProject && effect.source === 'project');
 
               return (
                 <div key={period} className={cn('rounded-xl border p-3', style.ring)}>
@@ -453,29 +564,68 @@ export default function SiteAccountMonthClosureSettings() {
                           : null}
                         {style.label}
                       </span>
+                      {/*
+                        * Where the state came from. "Closed because everyone is" and "closed
+                        * because this site was frozen early" need different actions, and an
+                        * administrator who cannot tell them apart undoes the wrong one.
+                        */}
+                      {scopeProject && (
+                        <span className={cn(
+                          'ml-1 inline-flex items-center rounded px-1.5 py-0.5 text-[10px] font-medium',
+                          hasOwnEntry ? 'bg-violet-100 text-violet-800' : 'bg-slate-100 text-slate-600',
+                        )}>
+                          {hasOwnEntry ? 'This project only' : 'Follows all projects'}
+                        </span>
+                      )}
+                      {differing.length > 0 && (
+                        <span
+                          title={`${differing.length} project(s) have their own setting for this month`}
+                          className="ml-1 inline-flex items-center gap-0.5 rounded bg-violet-100 px-1.5 py-0.5 text-[10px] font-medium text-violet-800"
+                        >
+                          <Building2 className="h-2.5 w-2.5" />
+                          {differing.length} differ{differing.length === 1 ? 's' : ''}
+                        </span>
+                      )}
                     </div>
 
-                    {state === 'closed'
-                      ? canReopen && (
+                    <div className="flex shrink-0 flex-col items-end gap-1">
+                      {state === 'closed'
+                        ? canReopen && (
+                          <Button
+                            variant="outline" size="sm" className="h-7 gap-1 px-2 text-xs"
+                            disabled={isBusy}
+                            onClick={() => { setReopenTarget(period); setReopenReason(''); }}
+                          >
+                            {isBusy ? <Loader2 className="h-3 w-3 animate-spin" /> : <LockOpen className="h-3 w-3" />}
+                            Reopen{scopeProject ? ' here' : ''}
+                          </Button>
+                        )
+                        : canClose && canClosePeriod(period, closure, now, scopeProject).ok && (
+                          <Button
+                            size="sm" className="h-7 gap-1 bg-slate-700 px-2 text-xs hover:bg-slate-800"
+                            disabled={isBusy}
+                            onClick={() => { setCloseTarget(period); setCloseNote(''); }}
+                          >
+                            {isBusy ? <Loader2 className="h-3 w-3 animate-spin" /> : <Lock className="h-3 w-3" />}
+                            Close{scopeProject ? ' here' : ''}
+                          </Button>
+                        )}
+
+                      {/* Dropping the exception differs from reopening: it stops this site
+                          overriding every later all-projects change. */}
+                      {hasOwnEntry && (canClose || canReopen)
+                        && canFollowAllProjects(period, closure, scopeProject!).ok && (
                         <Button
-                          variant="outline" size="sm" className="h-7 shrink-0 gap-1 px-2 text-xs"
+                          variant="ghost" size="sm" className="h-6 gap-1 px-2 text-[11px] text-muted-foreground"
                           disabled={isBusy}
-                          onClick={() => { setReopenTarget(period); setReopenReason(''); }}
+                          title="Remove this project's own setting and follow the all-projects calendar"
+                          onClick={() => void handleFollowAll(period)}
                         >
-                          {isBusy ? <Loader2 className="h-3 w-3 animate-spin" /> : <LockOpen className="h-3 w-3" />}
-                          Reopen
-                        </Button>
-                      )
-                      : canClose && canClosePeriod(period, closure, now).ok && (
-                        <Button
-                          size="sm" className="h-7 shrink-0 gap-1 bg-slate-700 px-2 text-xs hover:bg-slate-800"
-                          disabled={isBusy}
-                          onClick={() => { setCloseTarget(period); setCloseNote(''); }}
-                        >
-                          {isBusy ? <Loader2 className="h-3 w-3 animate-spin" /> : <Lock className="h-3 w-3" />}
-                          Close
+                          <Undo2 className="h-3 w-3" />
+                          Follow all
                         </Button>
                       )}
+                    </div>
                   </div>
 
                   {/* What the month holds — the fact that should drive the decision. */}
@@ -525,7 +675,9 @@ export default function SiteAccountMonthClosureSettings() {
       <Dialog open={Boolean(closeTarget)} onOpenChange={open => { if (!open) setCloseTarget(null); }}>
         <DialogContent className="max-w-[95vw] sm:max-w-lg">
           <DialogHeader>
-            <DialogTitle>Close {closeTarget ? periodLabel(closeTarget) : ''}</DialogTitle>
+            <DialogTitle>
+              Close {closeTarget ? periodLabel(closeTarget) : ''} · {scopeProject ? scopeName : 'all projects'}
+            </DialogTitle>
             <DialogDescription>
               Afterwards, no expense or receipt dated in this month can be added, edited or deleted
               by anyone — including you. Reopening is possible but requires a written reason and
@@ -583,7 +735,9 @@ export default function SiteAccountMonthClosureSettings() {
       <Dialog open={Boolean(reopenTarget)} onOpenChange={open => { if (!open) setReopenTarget(null); }}>
         <DialogContent className="max-w-[95vw] sm:max-w-lg">
           <DialogHeader>
-            <DialogTitle>Reopen {reopenTarget ? periodLabel(reopenTarget) : ''}</DialogTitle>
+            <DialogTitle>
+              Reopen {reopenTarget ? periodLabel(reopenTarget) : ''} · {scopeProject ? scopeName : 'all projects'}
+            </DialogTitle>
             <DialogDescription>
               This month has already been reported on. The reason below is kept with the month and
               in the activity log, and stays visible on this screen.

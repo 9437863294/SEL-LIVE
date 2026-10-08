@@ -587,7 +587,7 @@ export default function SiteExpensesPage() {
 
     // The date window binds on import too. A spreadsheet is the easiest way to file a hundred
     // back-dated rows into a closed period, so it is the last place the rule should be optional.
-    const importDateCheck = dateControl.check(expenseDate);
+    const importDateCheck = dateControl.check(expenseDate, proj.id);
     if (!importDateCheck.ok) throw new Error(importDateCheck.reason);
 
     const record = {
@@ -854,7 +854,7 @@ export default function SiteExpensesPage() {
 
     // `min`/`max` on the date input is a hint the browser enforces loosely and a determined user can
     // walk straight past, so the window is re-checked here where it actually binds.
-    const dateCheck = dateControl.check(form.expenseDate);
+    const dateCheck = dateControl.check(form.expenseDate, form.projectId);
     if (!dateCheck.ok) {
       toast({ title: 'Date not allowed', description: dateCheck.reason, variant: 'destructive' });
       return;
@@ -871,6 +871,10 @@ export default function SiteExpensesPage() {
         originalDate: editingRow.expenseDate,
         nextDate: form.expenseDate,
         action: 'edit',
+        originalProjectId: editingRow.projectId,
+        // An expense can be reassigned, and the destination project may have its own closed
+        // months — so the new date is judged against the calendar that will actually hold it.
+        nextProjectId: form.projectId,
       });
       if (!changeCheck.ok) {
         toast({ title: 'Month closed', description: changeCheck.reason, variant: 'destructive' });
@@ -1033,7 +1037,9 @@ export default function SiteExpensesPage() {
     }
     // A closed month is closed to removals too — deleting a reported expense changes the month's
     // total exactly as much as editing one does.
-    const closureCheck = dateControl.checkChange({ originalDate: row.expenseDate, action: 'delete' });
+    const closureCheck = dateControl.checkChange({
+      originalDate: row.expenseDate, action: 'delete', originalProjectId: row.projectId,
+    });
     if (!closureCheck.ok) {
       toast({ title: 'Month closed', description: closureCheck.reason, variant: 'destructive' });
       return;
@@ -1172,7 +1178,7 @@ export default function SiteExpensesPage() {
    * date cannot be submitted no matter how it got into the field.
    */
   const dateIssue = useMemo(
-    () => (form.expenseDate ? dateControl.check(form.expenseDate).reason ?? null : null),
+    () => (form.expenseDate ? dateControl.check(form.expenseDate, form.projectId).reason ?? null : null),
     [form.expenseDate, dateControl],
   );
 
@@ -1589,7 +1595,7 @@ export default function SiteExpensesPage() {
                             * a form before finding out.
                             */}
                           <div className="flex justify-end gap-1" onClick={e => e.stopPropagation()}>
-                            {dateControl.isLocked(row.expenseDate) ? (
+                            {dateControl.isLocked(row.expenseDate, row.projectId) ? (
                               <span
                                 title={`${row.expenseDate.slice(0, 7)} is closed — this expense cannot be changed or deleted.`}
                                 className="inline-flex h-8 w-8 items-center justify-center text-muted-foreground/60"
@@ -1786,7 +1792,7 @@ export default function SiteExpensesPage() {
           <DialogFooter>
             <Button variant="outline" onClick={() => setViewExpense(null)}>Close</Button>
             {effectiveCanEdit && viewExpense && (
-              dateControl.isLocked(viewExpense.expenseDate) ? (
+              dateControl.isLocked(viewExpense.expenseDate, viewExpense.projectId) ? (
                 <span className="inline-flex items-center gap-1.5 text-xs text-muted-foreground">
                   <Lock className="h-3.5 w-3.5" />
                   {viewExpense.expenseDate.slice(0, 7)} is closed

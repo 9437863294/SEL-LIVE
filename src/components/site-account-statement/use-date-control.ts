@@ -37,25 +37,40 @@ export interface DateControl {
   window: DateWindow;
   /** True when the user holds `Backdated Entry` and the window does not apply to them. */
   canBypass: boolean;
-  /** A short hint for under the date field, or null when unrestricted. */
-  hint: string | null;
-  /** Submit-time check for a *new* record's date. `min`/`max` on an input is only a hint. */
-  check: (date: string) => DateCheck;
   /**
-   * True when a stored record sits in a closed month, so nothing about it may change.
+   * A short hint for under the date field, or null when unrestricted.
+   *
+   * Describes the all-projects calendar, which is what the field can say before a project has
+   * even been chosen. A project's own exception shows up in the submit-time message, which is
+   * where it can be precise about which site it is talking about.
+   */
+  hint: string | null;
+  /**
+   * Submit-time check for a *new* record's date. `min`/`max` on an input is only a hint.
+   *
+   * `projectId` matters: a month can be closed for one site and open for another, so the answer
+   * is only correct once the project is known.
+   */
+  check: (date: string, projectId?: string) => DateCheck;
+  /**
+   * True when a stored record sits in a month closed for its project, so nothing about it may
+   * change.
    *
    * Row actions use this to disable themselves. Disabling is the courtesy; `checkChange` below is
    * the rule, and both pages call it.
    */
-  isLocked: (date: string | undefined | null) => boolean;
+  isLocked: (date: string | undefined | null, projectId?: string) => boolean;
   /** Submit-time check for editing or deleting a record that already exists. */
   checkChange: (args: {
     originalDate: string | undefined | null;
     nextDate?: string | null;
     action: 'edit' | 'delete';
+    originalProjectId?: string;
+    /** Set when the edit also reassigns the record to a different project. */
+    nextProjectId?: string;
   }) => DateCheck;
-  /** Frozen accounting periods, `YYYY-MM`, oldest first. The same list for every user. */
-  closedPeriods: string[];
+  /** Frozen accounting periods, `YYYY-MM`, oldest first, for one project or the organisation. */
+  closedPeriodsFor: (projectId?: string) => string[];
   loading: boolean;
 }
 
@@ -140,12 +155,12 @@ export function useDateControl(kind: SASDatedRecord): DateControl {
     return windowHint ? `${windowHint} · ${closedHint}` : closedHint;
   }, [window, settings, closure]);
 
-  function check(date: string): DateCheck {
+  function check(date: string, projectId?: string): DateCheck {
     // The rolling window first: when both would reject, its message is the more actionable one,
     // since it names a date the person can actually use.
     const windowCheck = validateEntryDate({ date, settings, kind, canBypass, today });
     if (!windowCheck.ok) return windowCheck;
-    return validateAgainstClosure({ date, settings: closure, kind });
+    return validateAgainstClosure({ date, settings: closure, kind, projectId });
   }
 
   return {
@@ -154,11 +169,12 @@ export function useDateControl(kind: SASDatedRecord): DateControl {
     canBypass,
     hint,
     check,
-    isLocked: (date) => isRecordLocked({ date, settings: closure }),
-    checkChange: ({ originalDate, nextDate, action }) => validateRecordChange({
-      originalDate, nextDate, settings: closure, kind, action,
-    }),
-    closedPeriods: listClosedPeriods(closure),
+    isLocked: (date, projectId) => isRecordLocked({ date, settings: closure, projectId }),
+    checkChange: ({ originalDate, nextDate, action, originalProjectId, nextProjectId }) =>
+      validateRecordChange({
+        originalDate, nextDate, settings: closure, kind, action, originalProjectId, nextProjectId,
+      }),
+    closedPeriodsFor: (projectId) => listClosedPeriods(closure, projectId),
     loading,
   };
 }

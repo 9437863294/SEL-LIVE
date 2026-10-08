@@ -150,7 +150,7 @@ function QuickExpenseDialog({
   function setF(key: string, value: string) { setForm(f => ({ ...f, [key]: value })); }
 
   /** Live complaint about the date in the form — see the Site Expenses form for the reasoning. */
-  const dateIssue = form.expenseDate ? dateControl.check(form.expenseDate).reason ?? null : null;
+  const dateIssue = form.expenseDate ? dateControl.check(form.expenseDate, project.id).reason ?? null : null;
 
   function handleMainCategoryChange(catId: string) {
     if (catId === '_none_') { setForm(f => ({ ...f, expenseCategoryId: '', expenseCategory: '', expenseSubCategory: '' })); return; }
@@ -186,7 +186,7 @@ function QuickExpenseDialog({
   async function submit() {
     if (!form.expenseDate) { toast({ title: 'Validation', description: 'Date is required.', variant: 'destructive' }); return; }
     // Same window as the Site Expenses form — the quick-add is a shortcut, not an exemption.
-    const dateCheck = dateControl.check(form.expenseDate);
+    const dateCheck = dateControl.check(form.expenseDate, project.id);
     if (!dateCheck.ok) { toast({ title: 'Date not allowed', description: dateCheck.reason, variant: 'destructive' }); return; }
     const amount = Number(form.expenseAmount);
     if (!amount || amount <= 0) { toast({ title: 'Validation', description: 'Enter a valid amount.', variant: 'destructive' }); return; }

@@ -16,6 +16,10 @@ const {
   validateAgainstClosure,
   isRecordLocked,
   validateRecordChange,
+  effectiveClosure,
+  projectsWithOverride,
+  canFollowAllProjects,
+  ALL_PROJECTS,
   summariseClosure,
   periodsToBulkClose,
 } = await import('../src/lib/site-account-statement-month-closure.ts');
@@ -348,6 +352,187 @@ test('an edit that clears the date is not treated as a move into a closed month'
     originalDate: '2026-10-02', nextDate: '',
     settings: closedOn('2026-09'), kind: 'expense', action: 'edit',
   }).ok, true);
+});
+
+// ── Per-project closure ───────────────────────────────────────────────────────
+
+/** The organisation's calendar, plus per-project exceptions. */
+function withProjects(allClosed, projects) {
+  return resolveMonthClosure({
+    months: Object.fromEntries(allClosed.map(p => [p, { period: p, closed: true }])),
+    projects,
+  });
+}
+
+test('a project with no exception follows the all-projects calendar', () => {
+  const settings = withProjects(['2026-09'], {});
+  const effect = effectiveClosure(settings, '2026-09', 'p1');
+  assert.equal(effect.closed, true);
+  assert.equal(effect.source, 'all');
+  assert.equal(isMonthClosed(settings, '2026-09', 'p1'), true);
+});
+
+test('one project can be closed while the rest stay open', () => {
+  const settings = withProjects([], { p1: { '2026-09': { period: '2026-09', closed: true } } });
+  assert.equal(isMonthClosed(settings, '2026-09', 'p1'), true);
+  assert.equal(isMonthClosed(settings, '2026-09', 'p2'), false);
+  // And the organisation's own calendar is untouched.
+  assert.equal(isMonthClosed(settings, '2026-09'), false);
+});
+
+test('one project can be reopened while everyone else stays closed', () => {
+  // The reason the override has to be a tri-state: present-and-false is a real answer.
+  const settings = withProjects(['2026-09'], {
+    p1: { '2026-09': { period: '2026-09', closed: false, reopenReason: 'Late vendor bill.' } },
+  });
+  assert.equal(isMonthClosed(settings, '2026-09', 'p1'), false);
+  assert.equal(isMonthClosed(settings, '2026-09', 'p2'), true);
+  assert.equal(effectiveClosure(settings, '2026-09', 'p1').source, 'project');
+});
+
+test('a project exception wins over the all-projects calendar in both directions', () => {
+  const closedEverywhere = withProjects(['2026-09'], {
+    open1: { '2026-09': { period: '2026-09', closed: false } },
+  });
+  const openEverywhere = withProjects([], {
+    shut1: { '2026-09': { period: '2026-09', closed: true } },
+  });
+  assert.equal(isMonthClosed(closedEverywhere, '2026-09', 'open1'), false);
+  assert.equal(isMonthClosed(openEverywhere, '2026-09', 'shut1'), true);
+});
+
+test('with no project given, only the all-projects calendar is consulted', () => {
+  const settings = withProjects([], { p1: { '2026-09': { period: '2026-09', closed: true } } });
+  assert.equal(isMonthClosed(settings, '2026-09'), false);
+});
+
+test('a project map with nothing usable in it is dropped, not kept as an empty exception', () => {
+  const settings = resolveMonthClosure({ months: {}, projects: { p1: { 'nope': { closed: true } } } });
+  assert.deepEqual(settings.projects, {});
+});
+
+test('a projects field of the wrong shape is survived', () => {
+  assert.deepEqual(resolveMonthClosure({ projects: 'all' }).projects, {});
+  assert.deepEqual(resolveMonthClosure({ projects: [] }).projects, {});
+  assert.deepEqual(resolveMonthClosure(null).projects, {});
+});
+
+test('closed periods are listed per project, merging both layers', () => {
+  const settings = withProjects(['2026-04'], {
+    p1: { '2026-06': { period: '2026-06', closed: true }, '2026-04': { period: '2026-04', closed: false } },
+  });
+  // p1 is let back into April but frozen in June; everyone else just has April.
+  assert.deepEqual(closedPeriods(settings, 'p1'), ['2026-06']);
+  assert.deepEqual(closedPeriods(settings, 'p2'), ['2026-04']);
+  assert.deepEqual(closedPeriods(settings), ['2026-04']);
+});
+
+test('projects that depart from the all-projects calendar are listed', () => {
+  const settings = withProjects(['2026-09'], {
+    p1: { '2026-09': { period: '2026-09', closed: false } },
+    p2: { '2026-09': { period: '2026-09', closed: true } },  // agrees — not an exception
+  });
+  assert.deepEqual(projectsWithOverride(settings, '2026-09'), [{ projectId: 'p1', closed: false }]);
+});
+
+test('an exception can be dropped only when there is one', () => {
+  const settings = withProjects(['2026-09'], {
+    p1: { '2026-09': { period: '2026-09', closed: false } },
+  });
+  assert.equal(canFollowAllProjects('2026-09', settings, 'p1').ok, true);
+  assert.equal(canFollowAllProjects('2026-09', settings, 'p2').ok, false);
+});
+
+test('close and reopen eligibility are judged per project', () => {
+  const settings = withProjects([], { p1: { '2026-09': { period: '2026-09', closed: true } } });
+  assert.equal(canClosePeriod('2026-09', settings, NOW, 'p1').ok, false);  // already closed there
+  assert.equal(canClosePeriod('2026-09', settings, NOW, 'p2').ok, true);
+  assert.equal(canReopenPeriod('2026-09', settings, 'p1').ok, true);
+  assert.equal(canReopenPeriod('2026-09', settings, 'p2').ok, false);
+});
+
+test('a month state is read through the project lens', () => {
+  const settings = withProjects([], { p1: { '2026-09': { period: '2026-09', closed: true } } });
+  assert.equal(monthState('2026-09', settings, NOW, 'p1'), 'closed');
+  assert.equal(monthState('2026-09', settings, NOW, 'p2'), 'open');
+});
+
+// ── Enforcement respects the project ──────────────────────────────────────────
+
+test('an entry date is judged against its own project calendar', () => {
+  const settings = withProjects([], { p1: { '2026-09': { period: '2026-09', closed: true } } });
+  assert.equal(validateAgainstClosure({
+    date: '2026-09-15', settings, kind: 'expense', projectId: 'p1',
+  }).ok, false);
+  assert.equal(validateAgainstClosure({
+    date: '2026-09-15', settings, kind: 'expense', projectId: 'p2',
+  }).ok, true);
+});
+
+test('a project let back in can record again while the rest cannot', () => {
+  const settings = withProjects(['2026-09'], {
+    p1: { '2026-09': { period: '2026-09', closed: false } },
+  });
+  assert.equal(validateAgainstClosure({
+    date: '2026-09-15', settings, kind: 'expense', projectId: 'p1',
+  }).ok, true);
+  assert.equal(validateAgainstClosure({
+    date: '2026-09-15', settings, kind: 'expense', projectId: 'p2',
+  }).ok, false);
+});
+
+test('editing is judged against the project the record belongs to', () => {
+  const settings = withProjects([], { p1: { '2026-09': { period: '2026-09', closed: true } } });
+  assert.equal(validateRecordChange({
+    originalDate: '2026-09-15', nextDate: '2026-09-16', settings,
+    kind: 'expense', action: 'edit', originalProjectId: 'p1',
+  }).ok, false);
+  assert.equal(validateRecordChange({
+    originalDate: '2026-09-15', nextDate: '2026-09-16', settings,
+    kind: 'expense', action: 'edit', originalProjectId: 'p2',
+  }).ok, true);
+});
+
+test('moving a record to another project is judged against that project calendar', () => {
+  // p2 is frozen in September; an expense cannot be reassigned into it.
+  const settings = withProjects([], { p2: { '2026-09': { period: '2026-09', closed: true } } });
+  const check = validateRecordChange({
+    originalDate: '2026-09-15', nextDate: '2026-09-15', settings,
+    kind: 'expense', action: 'edit', originalProjectId: 'p1', nextProjectId: 'p2',
+  });
+  assert.equal(check.ok, false);
+  assert.match(check.reason, /project you are moving this to/i);
+});
+
+test('reassigning out of a frozen project is still refused', () => {
+  const settings = withProjects([], { p1: { '2026-09': { period: '2026-09', closed: true } } });
+  assert.equal(validateRecordChange({
+    originalDate: '2026-09-15', nextDate: '2026-09-15', settings,
+    kind: 'expense', action: 'edit', originalProjectId: 'p1', nextProjectId: 'p2',
+  }).ok, false);
+});
+
+test('deleting is judged against the record own project', () => {
+  const settings = withProjects([], { p1: { '2026-09': { period: '2026-09', closed: true } } });
+  assert.equal(validateRecordChange({
+    originalDate: '2026-09-15', settings, kind: 'expense',
+    action: 'delete', originalProjectId: 'p1',
+  }).ok, false);
+  assert.equal(validateRecordChange({
+    originalDate: '2026-09-15', settings, kind: 'expense',
+    action: 'delete', originalProjectId: 'p2',
+  }).ok, true);
+});
+
+test('bulk close and the summary are both per project', () => {
+  const settings = withProjects(['2026-04'], {
+    p1: { '2026-04': { period: '2026-04', closed: false } },
+  });
+  // p1 is open in April, so a bulk close through June picks it up again; others skip it.
+  assert.ok(periodsToBulkClose(FY, '2026-06', settings, NOW, 'p1').includes('2026-04'));
+  assert.equal(periodsToBulkClose(FY, '2026-06', settings, NOW, 'p2').includes('2026-04'), false);
+  assert.equal(summariseClosure(FY, settings, NOW, 'p1').closed, 0);
+  assert.equal(summariseClosure(FY, settings, NOW, 'p2').closed, 1);
 });
 
 // ── Summary and bulk close ────────────────────────────────────────────────────

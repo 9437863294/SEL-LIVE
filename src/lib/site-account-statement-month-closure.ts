@@ -44,15 +44,37 @@ export interface SASMonthClosure {
   reopenReason?: string;
 }
 
-/** The stored document: one map of period → closure, under a single settings document. */
+/**
+ * The stored document.
+ *
+ * Two layers, because sites do not close in step. `months` is the organisation's calendar — the
+ * usual case, where September is settled everywhere at once. `projects` holds exceptions for a
+ * single site, in both directions: a site that reported early and can be frozen ahead of the
+ * others, and a site that has to be let back in to fix one bill without reopening the month for
+ * everybody.
+ *
+ * A project's own entry always wins over the organisation's. That is what makes the exception an
+ * exception rather than a second opinion.
+ */
 export interface SASMonthClosureSettings {
+  /** All-projects calendar, keyed by period. */
   months: Record<SASPeriodKey, SASMonthClosure>;
+  /** Per-project overrides, keyed by project id and then period. */
+  projects: Record<string, Record<SASPeriodKey, SASMonthClosure>>;
   updatedAt?: unknown;
   updatedBy?: string;
   updatedByName?: string;
 }
 
-export const EMPTY_MONTH_CLOSURE: SASMonthClosureSettings = { months: {} };
+export const EMPTY_MONTH_CLOSURE: SASMonthClosureSettings = { months: {}, projects: {} };
+
+/** Which calendar an action applies to: the whole organisation, or one project. */
+export const ALL_PROJECTS = 'all' as const;
+export type ClosureScope = typeof ALL_PROJECTS | string;
+
+export function isAllProjectsScope(scope: ClosureScope): boolean {
+  return scope === ALL_PROJECTS;
+}
 
 const PERIOD_RE = /^\d{4}-(0[1-9]|1[0-2])$/;
 
@@ -67,49 +89,120 @@ export function isPeriodKey(value: unknown): value is SASPeriodKey {
  * would either lock a month nobody closed or, worse, silently unlock one somebody did; discarding
  * it leaves the month open, which is the state the rest of the system already copes with.
  */
+function resolvePeriodMap(raw: unknown): Record<SASPeriodKey, SASMonthClosure> {
+  const months: Record<SASPeriodKey, SASMonthClosure> = {};
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return months;
+  for (const [key, value] of Object.entries(raw)) {
+    if (!isPeriodKey(key) || !value || typeof value !== 'object') continue;
+    const entry = value as Partial<SASMonthClosure>;
+    months[key] = {
+      period: key,
+      closed: entry.closed === true,
+      closedAt: entry.closedAt,
+      closedBy: typeof entry.closedBy === 'string' ? entry.closedBy : undefined,
+      closedByName: typeof entry.closedByName === 'string' ? entry.closedByName : undefined,
+      note: typeof entry.note === 'string' ? entry.note : undefined,
+      reopenedAt: entry.reopenedAt,
+      reopenedBy: typeof entry.reopenedBy === 'string' ? entry.reopenedBy : undefined,
+      reopenedByName: typeof entry.reopenedByName === 'string' ? entry.reopenedByName : undefined,
+      reopenReason: typeof entry.reopenReason === 'string' ? entry.reopenReason : undefined,
+    };
+  }
+  return months;
+}
+
 export function resolveMonthClosure(
   stored: Partial<SASMonthClosureSettings> | undefined | null,
 ): SASMonthClosureSettings {
-  const months: Record<SASPeriodKey, SASMonthClosure> = {};
-  const raw = stored?.months;
-  if (raw && typeof raw === 'object') {
-    for (const [key, value] of Object.entries(raw)) {
-      if (!isPeriodKey(key) || !value || typeof value !== 'object') continue;
-      const entry = value as Partial<SASMonthClosure>;
-      months[key] = {
-        period: key,
-        closed: entry.closed === true,
-        closedAt: entry.closedAt,
-        closedBy: typeof entry.closedBy === 'string' ? entry.closedBy : undefined,
-        closedByName: typeof entry.closedByName === 'string' ? entry.closedByName : undefined,
-        note: typeof entry.note === 'string' ? entry.note : undefined,
-        reopenedAt: entry.reopenedAt,
-        reopenedBy: typeof entry.reopenedBy === 'string' ? entry.reopenedBy : undefined,
-        reopenedByName: typeof entry.reopenedByName === 'string' ? entry.reopenedByName : undefined,
-        reopenReason: typeof entry.reopenReason === 'string' ? entry.reopenReason : undefined,
-      };
+  const projects: Record<string, Record<SASPeriodKey, SASMonthClosure>> = {};
+  const rawProjects = stored?.projects;
+  if (rawProjects && typeof rawProjects === 'object' && !Array.isArray(rawProjects)) {
+    for (const [projectId, value] of Object.entries(rawProjects)) {
+      if (!projectId) continue;
+      const periods = resolvePeriodMap(value);
+      // A project whose every entry was malformed carries no exception, so it is left out
+      // entirely rather than kept as an empty object that reads like a deliberate one.
+      if (Object.keys(periods).length > 0) projects[projectId] = periods;
     }
   }
-  return { months };
+  return { months: resolvePeriodMap(stored?.months), projects };
 }
 
+/**
+ * Where a month's state for a project comes from.
+ *
+ * `source` matters to the screen as much as `closed` does: "closed because the whole organisation
+ * closed September" and "closed because this one site was frozen early" call for different
+ * actions, and an administrator who cannot tell them apart will reopen the wrong one.
+ */
+export interface EffectiveClosure {
+  closed: boolean;
+  source: 'all' | 'project' | 'none';
+  record: SASMonthClosure | null;
+}
+
+export function effectiveClosure(
+  settings: SASMonthClosureSettings,
+  period: SASPeriodKey,
+  projectId?: string,
+): EffectiveClosure {
+  const own = projectId ? settings.projects[projectId]?.[period] : undefined;
+  // Present and explicitly false is a real answer — it is how a single site is let back in while
+  // the organisation's month stays shut — so this tests for presence, not for truthiness.
+  if (own) return { closed: own.closed === true, source: 'project', record: own };
+
+  const all = settings.months[period];
+  if (all) return { closed: all.closed === true, source: 'all', record: all };
+
+  return { closed: false, source: 'none', record: null };
+}
+
+/** The record governing this period for this project — its own, or the organisation's. */
 export function closureFor(
   settings: SASMonthClosureSettings,
   period: SASPeriodKey,
+  projectId?: string,
 ): SASMonthClosure | null {
-  return settings.months[period] ?? null;
+  return effectiveClosure(settings, period, projectId).record;
 }
 
-export function isMonthClosed(settings: SASMonthClosureSettings, period: SASPeriodKey): boolean {
-  return settings.months[period]?.closed === true;
+/** Whether the period is closed for a given project; without one, for the organisation. */
+export function isMonthClosed(
+  settings: SASMonthClosureSettings,
+  period: SASPeriodKey,
+  projectId?: string,
+): boolean {
+  return effectiveClosure(settings, period, projectId).closed;
 }
 
-/** Every closed period, oldest first. */
-export function closedPeriods(settings: SASMonthClosureSettings): SASPeriodKey[] {
-  return Object.values(settings.months)
-    .filter(m => m.closed)
-    .map(m => m.period)
-    .sort();
+/** Every closed period for a project (or for the organisation), oldest first. */
+export function closedPeriods(
+  settings: SASMonthClosureSettings,
+  projectId?: string,
+): SASPeriodKey[] {
+  const keys = new Set<SASPeriodKey>([
+    ...Object.keys(settings.months),
+    ...(projectId ? Object.keys(settings.projects[projectId] ?? {}) : []),
+  ]);
+  return [...keys].filter(period => isMonthClosed(settings, period, projectId)).sort();
+}
+
+/**
+ * Projects that depart from the organisation's calendar for this period.
+ *
+ * Shown on the all-projects view so closing or reopening everywhere never silently hides the fact
+ * that two sites are somewhere else.
+ */
+export function projectsWithOverride(
+  settings: SASMonthClosureSettings,
+  period: SASPeriodKey,
+): { projectId: string; closed: boolean }[] {
+  const all = settings.months[period]?.closed === true;
+  return Object.entries(settings.projects)
+    .filter(([, periods]) => periods[period])
+    .map(([projectId, periods]) => ({ projectId, closed: periods[period].closed === true }))
+    .filter(entry => entry.closed !== all)
+    .sort((a, b) => a.projectId.localeCompare(b.projectId));
 }
 
 /**
@@ -118,8 +211,11 @@ export function closedPeriods(settings: SASMonthClosureSettings): SASPeriodKey[]
  * Useful as a floor: everything up to here is settled, so a form can start a new entry after it
  * rather than offering a date it will refuse.
  */
-export function latestClosedPeriod(settings: SASMonthClosureSettings): SASPeriodKey | null {
-  const all = closedPeriods(settings);
+export function latestClosedPeriod(
+  settings: SASMonthClosureSettings,
+  projectId?: string,
+): SASPeriodKey | null {
+  const all = closedPeriods(settings, projectId);
   return all.length ? all[all.length - 1] : null;
 }
 
@@ -136,8 +232,9 @@ export function monthState(
   period: SASPeriodKey,
   settings: SASMonthClosureSettings,
   currentPeriodKey: SASPeriodKey,
+  projectId?: string,
 ): MonthState {
-  if (isMonthClosed(settings, period)) return 'closed';
+  if (isMonthClosed(settings, period, projectId)) return 'closed';
   if (period === currentPeriodKey) return 'current';
   return period > currentPeriodKey ? 'future' : 'open';
 }
@@ -158,9 +255,12 @@ export function canClosePeriod(
   period: SASPeriodKey,
   settings: SASMonthClosureSettings,
   currentPeriodKey: SASPeriodKey,
+  projectId?: string,
 ): ClosureCheck {
   if (!isPeriodKey(period)) return { ok: false, reason: 'Not a valid month.' };
-  if (isMonthClosed(settings, period)) return { ok: false, reason: 'This month is already closed.' };
+  if (isMonthClosed(settings, period, projectId)) {
+    return { ok: false, reason: 'This month is already closed.' };
+  }
   if (period === currentPeriodKey) {
     return { ok: false, reason: 'The current month is still in progress. Close it once it has ended.' };
   }
@@ -173,8 +273,30 @@ export function canClosePeriod(
 export function canReopenPeriod(
   period: SASPeriodKey,
   settings: SASMonthClosureSettings,
+  projectId?: string,
 ): ClosureCheck {
-  if (!isMonthClosed(settings, period)) return { ok: false, reason: 'This month is not closed.' };
+  if (!isMonthClosed(settings, period, projectId)) {
+    return { ok: false, reason: 'This month is not closed.' };
+  }
+  return { ok: true };
+}
+
+/**
+ * Whether a project's exception can simply be dropped, putting it back on the organisation's
+ * calendar.
+ *
+ * Offered instead of "reopen" when a site's own entry already agrees with everyone else's — the
+ * useful action there is to stop carrying an exception, not to change a state that is not
+ * actually different.
+ */
+export function canFollowAllProjects(
+  period: SASPeriodKey,
+  settings: SASMonthClosureSettings,
+  projectId: string,
+): ClosureCheck {
+  if (!settings.projects[projectId]?.[period]) {
+    return { ok: false, reason: 'This project already follows the all-projects calendar.' };
+  }
   return { ok: true };
 }
 
@@ -211,14 +333,17 @@ export function validateAgainstClosure({
   date,
   settings,
   kind,
+  projectId,
 }: {
   date: string;
   settings: SASMonthClosureSettings;
   kind: SASClosureRecord;
+  /** The record's project. Omitted, only the all-projects calendar applies. */
+  projectId?: string;
 }): ClosureCheck {
   if (!date) return { ok: true };
   const period = date.slice(0, 7);
-  if (!isPeriodKey(period) || !isMonthClosed(settings, period)) return { ok: true };
+  if (!isPeriodKey(period) || !isMonthClosed(settings, period, projectId)) return { ok: true };
   return {
     ok: false,
     reason: `${RECORD_LABEL[kind]} falls in ${period}, which has been closed. `
@@ -237,13 +362,15 @@ export function validateAgainstClosure({
 export function isRecordLocked({
   date,
   settings,
+  projectId,
 }: {
   date: string | undefined | null;
   settings: SASMonthClosureSettings;
+  projectId?: string;
 }): boolean {
   if (!date) return false;
   const period = date.slice(0, 7);
-  return isPeriodKey(period) && isMonthClosed(settings, period);
+  return isPeriodKey(period) && isMonthClosed(settings, period, projectId);
 }
 
 export type ClosureAction = 'edit' | 'delete';
@@ -280,16 +407,25 @@ export function validateRecordChange({
   settings,
   kind,
   action,
+  originalProjectId,
+  nextProjectId,
 }: {
   originalDate: string | undefined | null;
   nextDate?: string | null;
   settings: SASMonthClosureSettings;
   kind: SASClosureRecord;
   action: ClosureAction;
+  /** The project the record belongs to now. */
+  originalProjectId?: string;
+  /** The project the edit would move it to; defaults to the original. */
+  nextProjectId?: string;
 }): ClosureCheck {
   const noun = RECORD_NOUN[kind];
+  // An expense can be reassigned between projects, so the destination is checked against the
+  // destination project's calendar — the one that will actually hold the figure.
+  const destinationProject = nextProjectId ?? originalProjectId;
 
-  if (isRecordLocked({ date: originalDate, settings })) {
+  if (isRecordLocked({ date: originalDate, settings, projectId: originalProjectId })) {
     return {
       ok: false,
       reason: `This ${noun} is dated in ${originalDate!.slice(0, 7)}, which has been closed. `
@@ -298,10 +434,12 @@ export function validateRecordChange({
     };
   }
 
-  if (action === 'edit' && isRecordLocked({ date: nextDate, settings })) {
+  if (action === 'edit' && isRecordLocked({ date: nextDate, settings, projectId: destinationProject })) {
     return {
       ok: false,
-      reason: `${nextDate!.slice(0, 7)} has been closed, so this ${noun} cannot be moved into it.`,
+      reason: `${nextDate!.slice(0, 7)} has been closed`
+        + `${nextProjectId && nextProjectId !== originalProjectId ? ' for the project you are moving this to' : ''}`
+        + `, so this ${noun} cannot be moved into it.`,
     };
   }
 
@@ -321,10 +459,11 @@ export function summariseClosure(
   periods: SASPeriodKey[],
   settings: SASMonthClosureSettings,
   currentPeriodKey: SASPeriodKey,
+  projectId?: string,
 ): ClosureSummary {
   let closed = 0, closable = 0;
   for (const period of periods) {
-    const state = monthState(period, settings, currentPeriodKey);
+    const state = monthState(period, settings, currentPeriodKey, projectId);
     if (state === 'closed') closed++;
     else if (state === 'open') closable++;
   }
@@ -343,8 +482,9 @@ export function periodsToBulkClose(
   through: SASPeriodKey,
   settings: SASMonthClosureSettings,
   currentPeriodKey: SASPeriodKey,
+  projectId?: string,
 ): SASPeriodKey[] {
   return periods
-    .filter(period => period <= through && canClosePeriod(period, settings, currentPeriodKey).ok)
+    .filter(period => period <= through && canClosePeriod(period, settings, currentPeriodKey, projectId).ok)
     .sort();
 }

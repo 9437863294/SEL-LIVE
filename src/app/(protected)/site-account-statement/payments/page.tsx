@@ -438,7 +438,7 @@ export default function PaymentsPage() {
     const mode = PAYMENT_MODES.includes(row.paymentMode as any) ? row.paymentMode : 'Cash';
 
     // The window binds on import too — a spreadsheet is the easiest way to file back-dated rows.
-    const importDateCheck = dateControl.check(String(row.receiptDate || '').trim());
+    const importDateCheck = dateControl.check(String(row.receiptDate || '').trim(), proj.id);
     if (!importDateCheck.ok) throw new Error(importDateCheck.reason);
 
     await addDoc(collection(db, SAS_COLLECTIONS.payments), {
@@ -521,7 +521,7 @@ export default function PaymentsPage() {
       return;
     }
     // `min`/`max` on the input is only a hint; the window binds here.
-    const dateCheck = dateControl.check(form.receiptDate);
+    const dateCheck = dateControl.check(form.receiptDate, form.projectId);
     if (!dateCheck.ok) {
       toast({ title: 'Date not allowed', description: dateCheck.reason, variant: 'destructive' });
       return;
@@ -537,6 +537,9 @@ export default function PaymentsPage() {
         originalDate: editingRow.receiptDate,
         nextDate: form.receiptDate,
         action: 'edit',
+        originalProjectId: editingRow.projectId,
+        // A receipt can be reassigned; the destination project has its own closed months.
+        nextProjectId: form.projectId,
       });
       if (!changeCheck.ok) {
         toast({ title: 'Month closed', description: changeCheck.reason, variant: 'destructive' });
@@ -623,7 +626,9 @@ export default function PaymentsPage() {
       return;
     }
     // Removing a receipt moves a closed month's total exactly as much as editing one does.
-    const closureCheck = dateControl.checkChange({ originalDate: row.receiptDate, action: 'delete' });
+    const closureCheck = dateControl.checkChange({
+      originalDate: row.receiptDate, action: 'delete', originalProjectId: row.projectId,
+    });
     if (!closureCheck.ok) {
       toast({ title: 'Month closed', description: closureCheck.reason, variant: 'destructive' });
       return;
@@ -724,7 +729,7 @@ export default function PaymentsPage() {
    * cannot be submitted however it got into the field — `min`/`max` only constrain the picker.
    */
   const dateIssue = useMemo(
-    () => (form.receiptDate ? dateControl.check(form.receiptDate).reason ?? null : null),
+    () => (form.receiptDate ? dateControl.check(form.receiptDate, form.projectId).reason ?? null : null),
     [form.receiptDate, dateControl],
   );
 
@@ -1022,7 +1027,7 @@ export default function PaymentsPage() {
                           {/* A receipt in a closed month shows a padlock instead of its controls.
                               The handlers refuse it anyway; this saves opening a form first. */}
                           <div className="flex justify-end gap-1" onClick={e => e.stopPropagation()}>
-                            {dateControl.isLocked(row.receiptDate) ? (
+                            {dateControl.isLocked(row.receiptDate, row.projectId) ? (
                               <span
                                 title={`${row.receiptDate.slice(0, 7)} is closed — this receipt cannot be changed or deleted.`}
                                 className="inline-flex h-8 w-8 items-center justify-center text-muted-foreground/60"

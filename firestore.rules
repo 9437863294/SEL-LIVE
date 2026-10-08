@@ -328,13 +328,21 @@ service cloud.firestore {
      * the request — well inside the 20-access budget, and only paid by installations that have
      * actually closed a month.
      */
-    function sasClosedMonths() {
-      return get(/databases/$(database)/documents/siteAccountSettings/monthClosure).data.months;
+    function sasClosureDoc() {
+      return get(/databases/$(database)/documents/siteAccountSettings/monthClosure).data;
     }
 
-    function sasMonthIsClosed(period) {
-      let months = sasClosedMonths();
-      return months != null && months[period] != null && months[period].closed == true;
+    /*
+     * A project's own entry beats the organisation's, in both directions — a site frozen ahead of
+     * the others, and a site let back in while everyone else stays shut. Present-and-false is a
+     * real answer, so this tests for the key's presence before reading `closed`.
+     */
+    function sasMonthIsClosedFor(period, projectId) {
+      let closure = sasClosureDoc();
+      let own = closure.get('projects', {}).get(projectId, {});
+      return own.get(period, {}).keys().hasAny(['closed'])
+        ? own[period].get('closed', false) == true
+        : closure.get('months', {}).get(period, {}).get('closed', false) == true;
     }
 
     /*
@@ -343,10 +351,10 @@ service cloud.firestore {
      * is recorded. A bypass here would make the lock depend on who is writing rather than on the
      * state of the period, which is precisely what closing a month is meant to stop.
      */
-    function sasDateIsPostable(date) {
+    function sasDateIsPostable(date, projectId) {
       return !(date is string)
         || date.size() < 7
-        || !sasMonthIsClosed(date[0:7]);
+        || !sasMonthIsClosedFor(date[0:7], projectId);
     }
 
     match /siteAccountPayments/{paymentId} {
@@ -354,13 +362,13 @@ service cloud.firestore {
         || sasPerm('Payments', 'View')
         || (resource != null && sasCanReadProject(resource.data.projectId));
       allow create: if (sasPerm('Payments', 'Add') || sasCanWriteProject(request.resource.data.projectId))
-        && sasDateIsPostable(request.resource.data.receiptDate);
+        && sasDateIsPostable(request.resource.data.receiptDate, request.resource.data.projectId);
       // Both ends checked: where the receipt sits now, and where the edit would put it.
       allow update: if (sasPerm('Payments', 'Edit') || sasCanWriteProject(resource.data.projectId))
-        && sasDateIsPostable(resource.data.receiptDate)
-        && sasDateIsPostable(request.resource.data.receiptDate);
+        && sasDateIsPostable(resource.data.receiptDate, resource.data.projectId)
+        && sasDateIsPostable(request.resource.data.receiptDate, request.resource.data.projectId);
       allow delete: if sasPerm('Payments', 'Delete')
-        && sasDateIsPostable(resource.data.receiptDate);
+        && sasDateIsPostable(resource.data.receiptDate, resource.data.projectId);
     }
 
     match /siteAccountExpenses/{expenseId} {
@@ -368,12 +376,12 @@ service cloud.firestore {
         || sasPerm('Expenses', 'View')
         || (resource != null && sasCanReadProject(resource.data.projectId));
       allow create: if (sasPerm('Expenses', 'Add') || sasCanWriteProject(request.resource.data.projectId))
-        && sasDateIsPostable(request.resource.data.expenseDate);
+        && sasDateIsPostable(request.resource.data.expenseDate, request.resource.data.projectId);
       allow update: if (sasPerm('Expenses', 'Edit') || sasCanWriteProject(resource.data.projectId))
-        && sasDateIsPostable(resource.data.expenseDate)
-        && sasDateIsPostable(request.resource.data.expenseDate);
+        && sasDateIsPostable(resource.data.expenseDate, resource.data.projectId)
+        && sasDateIsPostable(request.resource.data.expenseDate, request.resource.data.projectId);
       allow delete: if sasPerm('Expenses', 'Delete')
-        && sasDateIsPostable(resource.data.expenseDate);
+        && sasDateIsPostable(resource.data.expenseDate, resource.data.projectId);
     }
 
     /**
