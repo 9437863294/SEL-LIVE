@@ -12,22 +12,21 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { Plus, Search, Trash2, Wallet } from 'lucide-react';
+import { Calculator, Plus, Trash2, Wallet } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
-import { Card, CardContent } from '@/components/ui/card';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
-import { PageHeader, SectionHeader } from '@/components/shared/page-header';
+import { PageHeader } from '@/components/shared/page-header';
 import { useToast } from '@/hooks/use-toast';
 import { roundMoney, subtractMoney, sumMoney } from '@/lib/bill-tracking/money';
 import { PAYMENT_MODES } from '@/lib/bill-tracking/types';
 
 import { btFetch, useBt, useBtQuery, useDebounced, useLookups } from './bt-client';
-import { Amount, BtError, Notice, dateText } from './bt-ui';
+import { ToolbarSearch, ToolbarSelect } from './bt-toolbar';
+import { Amount, BtError, FormField, FormSection, Notice, dateText } from './bt-ui';
 
 interface OpenBill {
   id: string;
@@ -154,71 +153,67 @@ export default function CollectionForm() {
 
       <div className="grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,1fr)_340px]">
         <div className="min-w-0 space-y-4">
-          <Card className="border-white/60 bg-white/85 shadow-sm">
-            <CardContent className="space-y-3 p-4">
-              <SectionHeader title="Receipt" as="h3" />
-              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
-                <div className="space-y-1">
-                  <Label htmlFor="receipt-date">Receipt date *</Label>
-                  <Input id="receipt-date" type="date" value={receiptDate} max={lookups.today} onChange={(event) => setReceiptDate(event.target.value)} />
-                </div>
-                <div className="space-y-1">
-                  <Label htmlFor="receipt-amount">Amount received (₹) *</Label>
-                  <Input id="receipt-amount" inputMode="decimal" value={amount} onChange={(event) => setAmount(event.target.value)} placeholder="e.g. 2500000" />
-                </div>
-                <div className="space-y-1">
-                  <Label>Payment mode</Label>
-                  <Select value={mode} onValueChange={setMode}>
-                    <SelectTrigger>
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {PAYMENT_MODES.map((entry) => (
-                        <SelectItem key={entry} value={entry}>
-                          {entry.replace('_', ' ')}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div className="space-y-1">
-                  <Label htmlFor="utr">UTR number</Label>
-                  <Input id="utr" value={utr} onChange={(event) => setUtr(event.target.value)} />
-                </div>
-                <div className="space-y-1">
-                  <Label htmlFor="bank-ref">Bank reference</Label>
-                  <Input id="bank-ref" value={bankReference} onChange={(event) => setBankReference(event.target.value)} />
-                </div>
-                <div className="space-y-1">
-                  <Label htmlFor="bank-account">Received in account</Label>
-                  <Input id="bank-account" value={bankAccountName} onChange={(event) => setBankAccountName(event.target.value)} placeholder="e.g. SBI CC A/c" />
-                </div>
-              </div>
-              <div className="space-y-1">
-                <Label htmlFor="receipt-remarks">Remarks</Label>
-                <Textarea id="receipt-remarks" rows={2} value={remarks} onChange={(event) => setRemarks(event.target.value)} />
-              </div>
-            </CardContent>
-          </Card>
+          <FormSection step={1} title="Receipt" description="As it appears on the bank statement.">
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+              <FormField label="Receipt date *" htmlFor="receipt-date">
+                <Input id="receipt-date" type="date" value={receiptDate} max={lookups.today} onChange={(event) => setReceiptDate(event.target.value)} />
+              </FormField>
+              <FormField label="Amount received (₹) *" htmlFor="receipt-amount">
+                <Input id="receipt-amount" inputMode="decimal" className="tabular-nums" value={amount} onChange={(event) => setAmount(event.target.value)} placeholder="e.g. 2500000" />
+              </FormField>
+              <FormField label="Payment mode">
+                <Select value={mode} onValueChange={setMode}>
+                  <SelectTrigger aria-label="Payment mode">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {PAYMENT_MODES.map((entry) => (
+                      <SelectItem key={entry} value={entry}>
+                        {entry.replace('_', ' ')}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </FormField>
+              <FormField label="UTR number" htmlFor="utr">
+                <Input id="utr" value={utr} onChange={(event) => setUtr(event.target.value)} />
+              </FormField>
+              <FormField label="Bank reference" htmlFor="bank-ref">
+                <Input id="bank-ref" value={bankReference} onChange={(event) => setBankReference(event.target.value)} />
+              </FormField>
+              <FormField label="Received in account" htmlFor="bank-account">
+                <Input id="bank-account" value={bankAccountName} onChange={(event) => setBankAccountName(event.target.value)} placeholder="e.g. SBI CC A/c" />
+              </FormField>
+            </div>
+            <FormField label="Remarks" htmlFor="receipt-remarks">
+              <Textarea id="receipt-remarks" rows={2} value={remarks} onChange={(event) => setRemarks(event.target.value)} />
+            </FormField>
+          </FormSection>
 
-          <Card className="border-white/60 bg-white/85 shadow-sm">
-            <CardContent className="space-y-3 p-4">
-              <SectionHeader
-                title="Allocation"
-                as="h3"
-                description="Which bills this receipt pays."
-                actions={
-                  lines.length > 1 && receipt ? (
-                    <Button size="sm" variant="outline" onClick={autoAllocate}>
-                      Allocate oldest first
-                    </Button>
-                  ) : null
-                }
-              />
-              {lines.length === 0 ? <p className="text-sm text-muted-foreground">Add the bills this receipt pays from the list below.</p> : null}
+          <FormSection
+            step={2}
+            title="Allocation"
+            description="Which bills this receipt pays — find them below and add them."
+            actions={
+              lines.length > 1 && receipt ? (
+                <Button size="sm" variant="outline" onClick={autoAllocate}>
+                  Allocate oldest first
+                </Button>
+              ) : null
+            }
+          >
+              {lines.length === 0 ? (
+                <div className="rounded-lg border border-dashed border-slate-200 px-4 py-5 text-center text-sm text-slate-500">No bills added yet — add the bills this receipt pays from the list below.</div>
+              ) : (
+                <div className="hidden grid-cols-[minmax(0,1fr)_160px_40px] gap-2 px-2 text-[11px] font-semibold uppercase tracking-wider text-slate-500 sm:grid">
+                  <span>Bill</span>
+                  <span className="text-right">Allocated ₹</span>
+                  <span className="sr-only">Remove</span>
+                </div>
+              )}
               <div className="space-y-2">
                 {lines.map((line) => (
-                  <div key={line.bill.id} className="grid grid-cols-1 items-center gap-2 rounded-lg border border-slate-200 bg-white p-2 sm:grid-cols-[minmax(0,1fr)_160px_auto]">
+                  <div key={line.bill.id} className="grid grid-cols-[minmax(0,1fr)_40px] items-center gap-2 rounded-lg border border-slate-200 bg-white p-2 sm:grid-cols-[minmax(0,1fr)_160px_40px]">
                     <div className="min-w-0 text-sm">
                       <p className="truncate font-medium text-slate-800">
                         {line.bill.gstInvoiceNumber || line.bill.billSerialNumber} · {line.bill.projectNameSnapshot}
@@ -228,33 +223,19 @@ export default function CollectionForm() {
                         {line.bill.isRetentionBill ? ' · retention bill (posts a retention release)' : ''}
                       </p>
                     </div>
-                    <Input inputMode="decimal" aria-label="Allocated amount" value={line.amount} onChange={(event) => setLines((current) => current.map((entry) => (entry.bill.id === line.bill.id ? { ...entry, amount: event.target.value } : entry)))} />
-                    <Button variant="ghost" size="icon" aria-label="Remove bill" onClick={() => setLines((current) => current.filter((entry) => entry.bill.id !== line.bill.id))}>
+                    <Input inputMode="decimal" aria-label="Allocated amount" className="col-start-1 row-start-2 text-right tabular-nums sm:col-start-auto sm:row-start-auto" value={line.amount} onChange={(event) => setLines((current) => current.map((entry) => (entry.bill.id === line.bill.id ? { ...entry, amount: event.target.value } : entry)))} />
+                    <Button variant="ghost" size="icon" className="col-start-2 row-start-1 sm:col-start-auto sm:row-start-auto" aria-label="Remove bill" onClick={() => setLines((current) => current.filter((entry) => entry.bill.id !== line.bill.id))}>
                       <Trash2 className="h-4 w-4 text-rose-600" />
                     </Button>
                   </div>
                 ))}
               </div>
 
-              <div className="rounded-lg border border-dashed border-slate-300 p-3">
-                <div className="flex flex-wrap gap-2">
-                  <div className="relative min-w-[220px] flex-1">
-                    <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
-                    <Input className="pl-8" placeholder="Find open bills — invoice, bill no, project, amount" value={search} onChange={(event) => setSearch(event.target.value)} />
-                  </div>
-                  <Select value={projectFilter || 'any'} onValueChange={(value) => setProjectFilter(value === 'any' ? '' : value)}>
-                    <SelectTrigger className="w-full sm:w-56">
-                      <SelectValue placeholder="All projects" />
-                    </SelectTrigger>
-                    <SelectContent className="max-h-72">
-                      <SelectItem value="any">All projects</SelectItem>
-                      {lookups.projects.map((project) => (
-                        <SelectItem key={project.id} value={project.id}>
-                          {project.name}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+              <div className="rounded-lg border border-slate-200 bg-slate-50/60 p-3">
+                <p className="mb-2 text-[11px] font-semibold uppercase tracking-wider text-slate-500">Find open bills</p>
+                <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+                  <ToolbarSearch className="flex-1" placeholder="Invoice, bill no, project, amount" value={search} onChange={setSearch} />
+                  <ToolbarSelect label="Project" value={projectFilter} onChange={setProjectFilter} options={lookups.projects.map((project) => ({ value: project.id, label: project.name }))} allLabel="All projects" />
                 </div>
                 <ul className="mt-2 max-h-72 divide-y divide-slate-100 overflow-y-auto">
                   {searching && !candidates ? <li className="py-2 text-sm text-muted-foreground">Searching…</li> : null}
@@ -274,14 +255,11 @@ export default function CollectionForm() {
                   ))}
                 </ul>
               </div>
-            </CardContent>
-          </Card>
+          </FormSection>
         </div>
 
         <div className="space-y-3 xl:sticky xl:top-[calc(var(--app-header-offset,4rem)+1rem)] xl:self-start">
-          <Card className="border-emerald-200 bg-white shadow-sm">
-            <CardContent className="space-y-2 p-4 text-sm">
-              <SectionHeader title="Summary" as="h3" />
+          <FormSection icon={Calculator} title="Summary" className="border-emerald-200" bodyClassName="space-y-2 p-4 text-sm">
               <div className="flex justify-between">
                 <span>Receipt</span>
                 <Amount value={receipt} className="font-semibold" />
@@ -312,8 +290,7 @@ export default function CollectionForm() {
               ) : (
                 <p className="border-t pt-2 text-xs text-muted-foreground">The receipt will await verification by someone with Verify permission.</p>
               )}
-            </CardContent>
-          </Card>
+          </FormSection>
           {overAllocated.length ? (
             <Notice tone="amber" title="More than the outstanding">
               {overAllocated.map((line) => line.bill.gstInvoiceNumber || line.bill.billSerialNumber).join(', ')} will show as over received.

@@ -20,7 +20,6 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Card, CardContent } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Switch } from '@/components/ui/switch';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
@@ -33,7 +32,6 @@ import {
   AGEING_BASIS_LABELS,
   DEDUCTION_KINDS,
   type BillTrackingConfig,
-  type BillTypeMaster,
   type DeductionTypeMaster,
 } from '@/lib/bill-tracking/types';
 
@@ -41,7 +39,7 @@ import { validateCategoryConfig } from '@/lib/bill-tracking/categories';
 
 import { BillCategoriesEditor } from './bill-categories-settings';
 import { btFetch, useBt, useBtQuery, useLookups } from './bt-client';
-import { BtError, BtLoading, FySelect, Notice } from './bt-ui';
+import { BtError, BtLoading, FySelect, Notice, BT_TAB, BT_TABS_LIST, FormField } from './bt-ui';
 
 const KIND_LABELS: Record<string, string> = {
   statutory: 'Statutory (Cess / TDS)',
@@ -118,20 +116,20 @@ export default function SettingsPage() {
       <BtError message={error} />
 
       <Tabs defaultValue="general">
-        <TabsList className="flex h-auto w-full flex-wrap justify-start gap-1 bg-white/70 p-1">
-          <TabsTrigger value="general">General</TabsTrigger>
-          <TabsTrigger value="ageing">Ageing</TabsTrigger>
-          <TabsTrigger value="billTypes">Bill categories</TabsTrigger>
-          <TabsTrigger value="deductions">Deduction types</TabsTrigger>
-          <TabsTrigger value="stages">Stages</TabsTrigger>
-          <TabsTrigger value="projects">Projects & DGM offices</TabsTrigger>
-          <TabsTrigger value="months">Month closure</TabsTrigger>
-          <TabsTrigger value="quality">Data quality</TabsTrigger>
-          <TabsTrigger value="security">Security & permissions</TabsTrigger>
+        <TabsList className={BT_TABS_LIST}>
+          <TabsTrigger className={BT_TAB} value="general">General</TabsTrigger>
+          <TabsTrigger className={BT_TAB} value="ageing">Ageing</TabsTrigger>
+          <TabsTrigger className={BT_TAB} value="billTypes">Bill categories</TabsTrigger>
+          <TabsTrigger className={BT_TAB} value="deductions">Deduction types</TabsTrigger>
+          <TabsTrigger className={BT_TAB} value="stages">Stages</TabsTrigger>
+          <TabsTrigger className={BT_TAB} value="projects">Projects & DGM offices</TabsTrigger>
+          <TabsTrigger className={BT_TAB} value="months">Month closure</TabsTrigger>
+          <TabsTrigger className={BT_TAB} value="quality">Data quality</TabsTrigger>
+          <TabsTrigger className={BT_TAB} value="security">Security & permissions</TabsTrigger>
         </TabsList>
 
         <TabsContent value="general">
-          <Card className="border-white/60 bg-white/85 shadow-sm">
+          <Card className="border-slate-200 bg-white shadow-sm">
             <CardContent className="grid grid-cols-1 gap-4 p-4 sm:grid-cols-2 lg:grid-cols-3">
               <Field label="Amount tolerance (₹)" hint="Receipts within this of the net count as fully received; net mismatches within it are not flagged.">
                 <Input inputMode="decimal" disabled={!manage} value={settings.tolerance} onChange={(event) => setSettings({ tolerance: number(event.target.value) })} />
@@ -190,7 +188,7 @@ export default function SettingsPage() {
         </TabsContent>
 
         <TabsContent value="ageing">
-          <Card className="border-white/60 bg-white/85 shadow-sm">
+          <Card className="border-slate-200 bg-white shadow-sm">
             <CardContent className="space-y-3 p-4">
               <SectionHeader title="Ageing buckets" as="h3" description="Contiguous from day 0; the last bucket is open-ended. Changing them re-buckets every report immediately." />
               {settings.ageingBuckets.map((bucket, index) => (
@@ -218,7 +216,7 @@ export default function SettingsPage() {
         </TabsContent>
 
         <TabsContent value="deductions">
-          <Card className="border-white/60 bg-white/85 shadow-sm">
+          <Card className="border-slate-200 bg-white shadow-sm">
             <CardContent className="space-y-3 p-4">
               <SectionHeader
                 title="Deduction type master"
@@ -298,7 +296,7 @@ export default function SettingsPage() {
         </TabsContent>
 
         <TabsContent value="stages">
-          <Card className="border-white/60 bg-white/85 shadow-sm">
+          <Card className="border-slate-200 bg-white shadow-sm">
             <CardContent className="space-y-3 p-4">
               <SectionHeader title="Bill stage master" as="h3" description="Free-form stages (the legacy STAGES column) shown on the bill — separate from the approval workflow." actions={manage ? <Button size="sm" variant="outline" className="gap-1.5" onClick={() => setConfig((current) => ({ ...current, stages: [...current.stages, { id: newId('st'), name: '', sequence: current.stages.length + 1, active: true }] }))}><Plus className="h-4 w-4" /> Add stage</Button> : null} />
               <MasterTable
@@ -317,12 +315,12 @@ export default function SettingsPage() {
         </TabsContent>
 
         <TabsContent value="projects">
-          <Card className="border-white/60 bg-white/85 shadow-sm">
+          <Card className="border-slate-200 bg-white shadow-sm">
             <CardContent className="space-y-3 p-4">
               <SectionHeader title="Project attributes for billing" as="h3" description="The project master has no DGM office, and its client link is optional — set them here (keyed to the master's project, never a second project list). Credit days override the client's payment terms." />
               <div className="max-h-[60vh] overflow-auto rounded-lg border border-slate-200">
                 <table className="w-full text-sm">
-                  <thead className="sticky top-0 bg-slate-50 text-[11px] uppercase tracking-wide text-slate-500">
+                  <thead className="sticky top-0 bg-slate-50 text-[11px] font-semibold uppercase tracking-wider text-slate-500">
                     <tr>
                       <th className="px-3 py-2 text-left">Project</th>
                       <th className="px-3 py-2 text-left">DGM office</th>
@@ -440,11 +438,9 @@ function BaseLessPicker({ type, types, onChange, disabled }: { type: DeductionTy
 
 function Field({ label, hint, children }: { label: string; hint?: string; children: React.ReactNode }) {
   return (
-    <div className="space-y-1">
-      <Label className="text-xs font-medium text-slate-600">{label}</Label>
+    <FormField label={label} hint={hint}>
       {children}
-      {hint ? <p className="text-[11px] text-muted-foreground">{hint}</p> : null}
-    </div>
+    </FormField>
   );
 }
 
@@ -452,7 +448,7 @@ function MasterTable<T extends { id: string }>({ rows, columns, onChange, disabl
   return (
     <div className="max-h-[60vh] overflow-auto rounded-lg border border-slate-200">
       <table className="w-full text-sm">
-        <thead className="sticky top-0 z-10 bg-slate-50 text-[11px] uppercase tracking-wide text-slate-500">
+        <thead className="sticky top-0 z-10 bg-slate-50 text-[11px] font-semibold uppercase tracking-wider text-slate-500">
           <tr>
             {columns.map((column) => (
               <th key={column.label} className="px-2 py-2 text-left">
@@ -507,7 +503,7 @@ function MonthClosure() {
     }
   };
   return (
-    <Card className="border-white/60 bg-white/85 shadow-sm">
+    <Card className="border-slate-200 bg-white shadow-sm">
       <CardContent className="space-y-3 p-4">
         <SectionHeader title="Month closure" as="h3" description="A closed month accepts no new, changed, deleted or cancelled bills and receipts dated in it — except by someone holding Close Month. Reopening needs a reason; both are audited." actions={<FySelect value={fy} onChange={setFy} allowAll={false} />} />
         <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-4">
@@ -537,7 +533,7 @@ function DataQuality() {
   const { data, loading, error, reload } = useBtQuery<{ checks: { key: string; label: string; count: number; billIds: string[] }[]; billCount: number }>('config/data-quality');
   if (loading && !data) return <BtLoading />;
   return (
-    <Card className="border-white/60 bg-white/85 shadow-sm">
+    <Card className="border-slate-200 bg-white shadow-sm">
       <CardContent className="space-y-3 p-4">
         <SectionHeader title="Data quality" icon={Database} as="h3" description={data ? `Checks over all ${data.billCount} live bills in your scope — most useful straight after a workbook migration.` : undefined} />
         <BtError message={error} onRetry={reload} />
@@ -597,7 +593,7 @@ function SecurityPanel() {
   };
   return (
     <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-      <Card className="border-white/60 bg-white/85 shadow-sm">
+      <Card className="border-slate-200 bg-white shadow-sm">
         <CardContent className="space-y-3 p-4">
           <SectionHeader title="Check security rules" icon={ShieldCheck} as="h3" description="Bill Tracking reads and writes only through its API. This tries each collection directly from your browser — every one should be closed. If any answer, copy the Bill Tracking blocks from firestore.rules into the Firebase console." />
           <Button size="sm" variant="outline" disabled={running} onClick={() => void run()}>
@@ -616,7 +612,7 @@ function SecurityPanel() {
           {results?.some((result) => result.open) ? <Notice tone="rose" title="Rules need updating">Some collections can be read directly by any signed-in user, bypassing project scope. Deploy the Bill Tracking blocks in firestore.rules to the console.</Notice> : null}
         </CardContent>
       </Card>
-      <Card className="border-white/60 bg-white/85 shadow-sm">
+      <Card className="border-slate-200 bg-white shadow-sm">
         <CardContent className="space-y-3 p-4">
           <SectionHeader title="Permissions" as="h3" description="Granted per role in Settings → Access Management under “Bill Tracking”. Project-scoped grants limit a user to those projects." />
           <table className="w-full text-xs">

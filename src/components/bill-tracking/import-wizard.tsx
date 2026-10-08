@@ -229,7 +229,7 @@ export default function ImportWizard() {
       ) : null}
 
       {step === 1 ? (
-        <Card className="border-white/60 bg-white/85 shadow-sm">
+        <Card className="border-slate-200 bg-white shadow-sm">
           <CardContent className="p-6">
             <label
               className="flex cursor-pointer flex-col items-center justify-center gap-3 rounded-xl border-2 border-dashed border-slate-300 bg-slate-50/60 px-6 py-14 text-center hover:border-emerald-400"
@@ -249,7 +249,7 @@ export default function ImportWizard() {
       ) : null}
 
       {step === 2 && workbook ? (
-        <Card className="border-white/60 bg-white/85 shadow-sm">
+        <Card className="border-slate-200 bg-white shadow-sm">
           <CardContent className="space-y-4 p-4">
             <SectionHeader title="Sheet and heading row" as="h3" description={`${workbook.file.name} · ${(workbook.file.size / 1024).toFixed(0)} KB · ${workbook.sheets.length} sheets`} />
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
@@ -308,7 +308,7 @@ export default function ImportWizard() {
       ) : null}
 
       {step === 3 && layout ? (
-        <Card className="border-white/60 bg-white/85 shadow-sm">
+        <Card className="border-slate-200 bg-white shadow-sm">
           <CardContent className="space-y-4 p-4">
             <SectionHeader title="Map columns" as="h3" description="Matched automatically by heading (case, spacing and punctuation ignored). Change any that are wrong." />
             <div className="grid grid-cols-1 gap-2 md:grid-cols-2">
@@ -364,7 +364,7 @@ export default function ImportWizard() {
               ['Receipts to create', preview.summary.receipts, 'text-teal-700'],
               ['Undecided', preview.summary.undecided, 'text-rose-700'],
             ].map(([label, value, tone]) => (
-              <div key={label as string} className="rounded-xl border border-white/60 bg-white/85 p-3 shadow-sm">
+              <div key={label as string} className="rounded-xl border border-slate-200 bg-white p-3 shadow-sm">
                 <p className="text-[11px] uppercase tracking-wide text-muted-foreground">{label}</p>
                 <p className={`text-lg font-semibold ${tone}`}>{value as number}</p>
               </div>
@@ -393,7 +393,7 @@ export default function ImportWizard() {
 
           <FinancialPanel excel={preview.excelTotals} calculated={preview.calculatedTotals} tolerance={lookups.config.settings.tolerance} />
 
-          <Card className="border-white/60 bg-white/85 shadow-sm">
+          <Card className="border-slate-200 bg-white shadow-sm">
             <CardContent className="space-y-3 p-4">
               <SectionHeader
                 title="Preview"
@@ -451,7 +451,7 @@ export default function ImportWizard() {
       ) : null}
 
       {step === 5 ? (
-        <Card className="border-white/60 bg-white/85 shadow-sm">
+        <Card className="border-slate-200 bg-white shadow-sm">
           <CardContent className="space-y-3 p-6">
             <SectionHeader title="Importing" as="h3" description="Rows are written in small batches. You can leave this page — the job resumes from History." />
             {job ? (
@@ -493,7 +493,7 @@ function ProjectMapper({
   const lookups = useLookups();
   const needsAction = preview.projects.filter((project) => project.kind === 'unmatched' || (project.kind === 'fuzzy' && !confirmedFuzzy.includes(project.key)));
   return (
-    <Card className={cn('shadow-sm', needsAction.length ? 'border-amber-300 bg-amber-50/40' : 'border-white/60 bg-white/85')}>
+    <Card className={cn('shadow-sm', needsAction.length ? 'border-amber-300 bg-amber-50/40' : 'border-slate-200 bg-white')}>
       <CardContent className="space-y-3 p-4">
         <SectionHeader
           title={`Project mapping (${preview.projects.length} names in the workbook)`}
@@ -507,7 +507,7 @@ function ProjectMapper({
         />
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
-            <thead className="bg-slate-50 text-[11px] uppercase tracking-wide text-slate-500">
+            <thead className="bg-slate-50 text-[11px] font-semibold uppercase tracking-wider text-slate-500">
               <tr>
                 <th className="px-3 py-2 text-left">Excel project</th>
                 <th className="px-3 py-2 text-left">Rows</th>
@@ -585,12 +585,12 @@ export function FinancialPanel({ excel, calculated, tolerance, liveLabel = 'Calc
     ['Retention', 'retention'],
   ];
   return (
-    <Card className="border-white/60 bg-white/85 shadow-sm">
+    <Card className="border-slate-200 bg-white shadow-sm">
       <CardContent className="space-y-2 p-4">
         <SectionHeader title="Financial validation" as="h3" description={`Workbook figures (its own Net, Total Deduction and Shortfall columns) against SEL LIVE’s calculation, over the rows selected for import. Tolerance ₹${tolerance}.`} />
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
-            <thead className="bg-slate-50 text-[11px] uppercase tracking-wide text-slate-500">
+            <thead className="bg-slate-50 text-[11px] font-semibold uppercase tracking-wider text-slate-500">
               <tr>
                 <th className="px-3 py-2 text-left">Metric</th>
                 <th className="px-3 py-2 text-right">Excel</th>
@@ -624,7 +624,7 @@ function ImportPreviewTable({ rows, onAction }: { rows: PreviewRow[]; onAction: 
   return (
     <div className="max-h-[60vh] overflow-auto rounded-lg border border-slate-200">
       <table className="w-full text-xs">
-        <thead className="sticky top-0 z-10 bg-slate-50 text-[11px] uppercase tracking-wide text-slate-500">
+        <thead className="sticky top-0 z-10 bg-slate-50 text-[11px] font-semibold uppercase tracking-wider text-slate-500">
           <tr>
             {['Row', 'Bill No', 'Invoice', 'Date', 'Project', 'Type', 'Taxable', 'GST', 'Deduction', 'Net', 'Received', 'Status', 'Validation', 'Action'].map((heading) => (
               <th key={heading} className={cn('whitespace-nowrap px-2 py-2', ['Taxable', 'GST', 'Deduction', 'Net', 'Received'].includes(heading) ? 'text-right' : 'text-left')}>
@@ -727,7 +727,7 @@ function ImportPreviewTable({ rows, onAction }: { rows: PreviewRow[]; onAction: 
 function ImportResult({ job }: { job: BillImportJob }) {
   const failed = job.rowsFailed;
   return (
-    <Card className="border-white/60 bg-white/85 shadow-sm">
+    <Card className="border-slate-200 bg-white shadow-sm">
       <CardContent className="space-y-4 p-6">
         <SectionHeader title={job.status === 'completed' ? 'Import complete' : job.status === 'partial' ? 'Import finished with failures' : 'Import paused'} as="h3" description={`${job.jobNumber} · ${job.fileName}`} />
         <dl className="grid grid-cols-2 gap-3 text-sm sm:grid-cols-3 lg:grid-cols-6">

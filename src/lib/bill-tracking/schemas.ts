@@ -44,6 +44,10 @@ export const deductionLineSchema = z.object({
   amount: money.optional(),
   baseAmount: money.optional(),
   gstRate: z.coerce.number().min(0).max(100).optional(),
+  /** GST amounts typed to match the client's deduction (else computed from the rate). */
+  cgstAmount: money.optional(),
+  sgstAmount: money.optional(),
+  igstAmount: money.optional(),
   percentage: z.coerce.number().min(-100).max(100).optional(),
   remarks: optionalText(300),
   deductionDate: optionalDate,

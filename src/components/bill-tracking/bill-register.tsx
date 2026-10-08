@@ -32,7 +32,7 @@ import type { BillTotals } from '@/lib/bill-tracking/reports';
 import { btFetch, useBtQuery, useLookups, useBt } from './bt-client';
 import { BillFilterBar, FilterChips, useUrlFilters } from './bt-filters';
 import { BtTable, Pager, type BtColumn } from './bt-table';
-import { AgeingBadge, Amount, BtEmpty, BtError, BtLoading, ExportMenu, PaymentStatusBadge, TransactionTypeBadge, WorkflowStatusBadge, dateText, percentText, type ExportColumn } from './bt-ui';
+import { AgeingBadge, Amount, BtEmpty, BtError, BtLoading, ExportMenu, PaymentStatusBadge, TransactionTypeBadge, WorkflowStatusBadge, dateText, percentText, type ExportColumn, StatStrip } from './bt-ui';
 
 export interface BillRow extends Bill {
   ageingDays: number;
@@ -68,21 +68,17 @@ export function billReference(bill: Pick<Bill, 'gstInvoiceNumber' | 'billSerialN
 }
 
 export function TotalsStrip({ totals }: { totals: BillTotals }) {
-  const item = (label: string, value: React.ReactNode, tone = 'text-slate-800') => (
-    <div className="min-w-0">
-      <p className="text-[11px] uppercase tracking-wide text-muted-foreground">{label}</p>
-      <p className={`truncate font-semibold tabular-nums ${tone}`}>{value}</p>
-    </div>
-  );
   return (
-    <div className="grid grid-cols-2 gap-3 rounded-xl border border-white/60 bg-white/80 p-3 shadow-sm sm:grid-cols-3 lg:grid-cols-6">
-      {item('Bills', totals.count.toLocaleString('en-IN'))}
-      {item('Gross', <Amount value={totals.gross} compact />)}
-      {item('Net receivable', <Amount value={totals.net} compact />)}
-      {item('Received', <Amount value={totals.received} compact />, 'text-emerald-700')}
-      {item('Outstanding', <Amount value={totals.outstanding} compact />, 'text-rose-700')}
-      {item('Collection %', percentText(totals.collectionPercent))}
-    </div>
+    <StatStrip
+      items={[
+        { label: 'Bills', value: totals.count.toLocaleString('en-IN') },
+        { label: 'Gross', value: <Amount value={totals.gross} compact /> },
+        { label: 'Net receivable', value: <Amount value={totals.net} compact /> },
+        { label: 'Received', value: <Amount value={totals.received} compact />, tone: 'text-emerald-700' },
+        { label: 'Outstanding', value: <Amount value={totals.outstanding} compact />, tone: 'text-rose-700' },
+        { label: 'Collection %', value: percentText(totals.collectionPercent) },
+      ]}
+    />
   );
 }
 
@@ -259,7 +255,6 @@ export default function BillRegister({ mode = 'all' }: { mode?: 'all' | 'outstan
       <BillFilterBar
         filters={filters}
         page={outstanding ? 'outstanding' : 'bills'}
-        summary={data ? `${data.total.toLocaleString('en-IN')} bill${data.total === 1 ? '' : 's'}` : undefined}
         actions={
           <ExportMenu<BillRow>
             loadAll
@@ -272,37 +267,6 @@ export default function BillRegister({ mode = 'all' }: { mode?: 'all' | 'outstan
       {outstanding ? <FilterChips filters={filters} chips={OUTSTANDING_CHIPS} /> : null}
       {data ? <TotalsStrip totals={data.totals} /> : null}
       <BtError message={error} onRetry={reload} />
-
-      {selected.size > 0 && can('Bills', 'Edit') ? (
-        <div className="flex flex-wrap items-center gap-2 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm">
-          <span className="font-medium text-emerald-900">{selected.size} selected</span>
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button size="sm" variant="outline">
-                Bulk action
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent>
-              <DropdownMenuItem onSelect={() => setBulk('assign_owner')}>
-                <UserCheck className="mr-2 h-4 w-4" /> Assign collection owner
-              </DropdownMenuItem>
-              <DropdownMenuItem onSelect={() => setBulk('set_target_week')}>
-                <CalendarClock className="mr-2 h-4 w-4" /> Set target week
-              </DropdownMenuItem>
-              <DropdownMenuItem onSelect={() => setBulk('set_next_follow_up')}>
-                <Clock className="mr-2 h-4 w-4" /> Set next follow-up date
-              </DropdownMenuItem>
-              <DropdownMenuItem onSelect={() => setBulk('set_expected_date')}>
-                <HandCoins className="mr-2 h-4 w-4" /> Set expected payment date
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
-          <Button size="sm" variant="ghost" onClick={() => setSelected(new Set())}>
-            Clear
-          </Button>
-          <span className="text-xs text-emerald-800">Amounts are never bulk-edited.</span>
-        </div>
-      ) : null}
 
       {loading && !data ? (
         <BtLoading />
@@ -319,6 +283,43 @@ export default function BillRegister({ mode = 'all' }: { mode?: 'all' | 'outstan
           rowHref={(bill) => `/bill-tracking/bills/${bill.id}`}
           rowClassName={(bill) => (bill.isDeleted ? 'opacity-50' : undefined)}
           showTotals
+          caption={
+            selected.size > 0 && can('Bills', 'Edit') ? (
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="rounded-full bg-emerald-600 px-2 py-0.5 text-xs font-semibold text-white">{selected.size} selected</span>
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button size="sm" variant="outline" className="h-8">
+                      Bulk action
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent>
+                    <DropdownMenuItem onSelect={() => setBulk('assign_owner')}>
+                      <UserCheck className="mr-2 h-4 w-4" /> Assign collection owner
+                    </DropdownMenuItem>
+                    <DropdownMenuItem onSelect={() => setBulk('set_target_week')}>
+                      <CalendarClock className="mr-2 h-4 w-4" /> Set target week
+                    </DropdownMenuItem>
+                    <DropdownMenuItem onSelect={() => setBulk('set_next_follow_up')}>
+                      <Clock className="mr-2 h-4 w-4" /> Set next follow-up date
+                    </DropdownMenuItem>
+                    <DropdownMenuItem onSelect={() => setBulk('set_expected_date')}>
+                      <HandCoins className="mr-2 h-4 w-4" /> Set expected payment date
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
+                <Button size="sm" variant="ghost" className="h-8" onClick={() => setSelected(new Set())}>
+                  Clear
+                </Button>
+                <span className="hidden text-xs font-normal text-slate-500 md:inline">Amounts are never bulk-edited.</span>
+              </div>
+            ) : data ? (
+              <span>
+                {data.total.toLocaleString('en-IN')} {outstanding ? 'outstanding ' : ''}bill{data.total === 1 ? '' : 's'}
+              </span>
+            ) : null
+          }
+          footer={data && data.total > 0 ? <Pager page={data.page} pages={data.pages} total={data.total} pageSize={data.pageSize} onPage={(next) => filters.set({ page: String(next) }, false)} onPageSize={(size) => filters.set({ pageSize: String(size) })} /> : undefined}
           empty={
             <BtEmpty
               title={outstanding ? 'No outstanding bills for the selected filters.' : 'No bills found for the selected filters.'}
@@ -334,7 +335,6 @@ export default function BillRegister({ mode = 'all' }: { mode?: 'all' | 'outstan
           }
         />
       )}
-      {data ? <Pager page={data.page} pages={data.pages} total={data.total} pageSize={data.pageSize} onPage={(next) => filters.set({ page: String(next) }, false)} onPageSize={(size) => filters.set({ pageSize: String(size) })} /> : null}
 
       <BulkDialog
         action={bulk}

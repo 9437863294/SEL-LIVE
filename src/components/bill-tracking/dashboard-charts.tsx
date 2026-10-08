@@ -44,11 +44,13 @@ const tooltipMoney = (value: unknown) => formatINR(Number(value));
 
 export function ChartPanel({ title, description, children, footer }: { title: string; description?: string; children: React.ReactNode; footer?: React.ReactNode }) {
   return (
-    <section className="min-w-0 rounded-xl border border-white/60 bg-white/85 p-4 shadow-sm">
-      <h3 className="text-sm font-semibold text-slate-800">{title}</h3>
-      {description ? <p className="text-xs text-muted-foreground">{description}</p> : null}
-      <div className="mt-3">{children}</div>
-      {footer ? <div className="mt-2 text-xs text-muted-foreground">{footer}</div> : null}
+    <section className="flex min-w-0 flex-col rounded-xl border border-slate-200 bg-white shadow-sm">
+      <header className="border-b border-slate-100 px-4 py-3">
+        <h3 className="text-sm font-semibold text-slate-800">{title}</h3>
+        {description ? <p className="mt-0.5 text-xs leading-relaxed text-slate-500">{description}</p> : null}
+      </header>
+      <div className="flex-1 p-4">{children}</div>
+      {footer ? <div className="border-t border-slate-100 bg-slate-50/60 px-4 py-2 text-xs text-slate-500">{footer}</div> : null}
     </section>
   );
 }

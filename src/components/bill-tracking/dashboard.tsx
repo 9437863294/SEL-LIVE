@@ -27,18 +27,15 @@ import {
   Wallet,
 } from 'lucide-react';
 
-import { Label } from '@/components/ui/label';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { KpiCard } from '@/components/shared/kpi-card';
 import { PageHeader } from '@/components/shared/page-header';
-import { FilterBar } from '@/components/shared/filter-bar';
-import { Input } from '@/components/ui/input';
 import { TRANSACTION_TYPE_LABELS } from '@/lib/bill-tracking/types';
 import { categoryName } from '@/lib/bill-tracking/categories';
 import type { AgeingReport, CollectionLine, DashboardKpis, ExceptionItem, ForecastItem, ForecastWindow, GroupRow, MonthlyFlowPoint, TargetPerformanceRow } from '@/lib/bill-tracking/reports';
 
 import { useBtQuery, useLookups } from './bt-client';
 import { useUrlFilters } from './bt-filters';
+import { BtToolbar, ToolbarDate, ToolbarSelect } from './bt-toolbar';
 import { billReference, type BillRow } from './bill-register';
 import { AgeingChart, BillingCollectionChart, ChartPanel, RankedBars, RetentionBar, TargetActualChart } from './dashboard-charts';
 import { AgeingBadge, Amount, BtError, BtLoading, DrillLink, FySelect, MoneyKpi, dateText, percentText, toQuery } from './bt-ui';
@@ -64,29 +61,12 @@ interface DashboardData {
 }
 
 function MiniSelect({ label, value, onChange, options, all }: { label: string; value: string; onChange: (value: string) => void; options: { value: string; label: string }[]; all: string }) {
-  return (
-    <div className="min-w-0 space-y-1">
-      <Label className="text-xs text-muted-foreground">{label}</Label>
-      <Select value={value || 'any'} onValueChange={onChange}>
-        <SelectTrigger className="h-9">
-          <SelectValue />
-        </SelectTrigger>
-        <SelectContent className="max-h-72">
-          <SelectItem value="any">{all}</SelectItem>
-          {options.map((option) => (
-            <SelectItem key={option.value} value={option.value}>
-              {option.label}
-            </SelectItem>
-          ))}
-        </SelectContent>
-      </Select>
-    </div>
-  );
+  return <ToolbarSelect label={label} value={value} onChange={onChange} options={options} allLabel={all} />;
 }
 
 function TableBlock({ title, children, href, linkLabel = 'View all' }: { title: string; children: React.ReactNode; href?: string; linkLabel?: string }) {
   return (
-    <section className="min-w-0 rounded-xl border border-white/60 bg-white/85 shadow-sm">
+    <section className="min-w-0 rounded-xl border border-slate-200 bg-white shadow-sm">
       <div className="flex items-center justify-between gap-2 border-b border-slate-100 px-4 py-3">
         <h3 className="text-sm font-semibold text-slate-800">{title}</h3>
         {href ? (
@@ -100,8 +80,8 @@ function TableBlock({ title, children, href, linkLabel = 'View all' }: { title: 
   );
 }
 
-const th = 'px-3 py-2 text-left text-[11px] font-semibold uppercase tracking-wide text-slate-500';
-const td = 'px-3 py-2 text-sm';
+const th = 'whitespace-nowrap border-b border-slate-200 px-3 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wider text-slate-500';
+const td = 'px-3 py-2.5 text-sm text-slate-700';
 
 export default function BillTrackingDashboard() {
   const lookups = useLookups();
@@ -116,25 +96,22 @@ export default function BillTrackingDashboard() {
     <div className="space-y-4">
       <PageHeader icon={LayoutDashboard} title="Billing & Collection Dashboard" description={data ? `As on ${dateText(data.asOf)} · FY ${data.financialYear}${lookups.allProjects ? '' : ` · your ${lookups.projects.length} assigned project(s)`}` : 'Billing, collections, outstanding and retention at a glance.'} />
 
-      <FilterBar activeCount={filters.activeCount} onClear={filters.clear}>
-        <div className="min-w-0 space-y-1">
-          <Label className="text-xs text-muted-foreground">Financial year</Label>
-          <FySelect value={fy} onChange={(value) => filters.set({ fy: value })} />
-        </div>
-        <MiniSelect label="Project" value={filters.get('project')} onChange={(value) => filters.set({ project: value })} options={lookups.projects.map((project) => ({ value: project.id, label: project.name }))} all="All projects" />
-        <MiniSelect label="Client" value={filters.get('client')} onChange={(value) => filters.set({ client: value })} options={lookups.clients.map((client) => ({ value: client.id, label: client.name }))} all="All clients" />
-        <MiniSelect label="DGM office" value={filters.get('dgm')} onChange={(value) => filters.set({ dgm: value })} options={lookups.dgmOffices.map((office) => ({ value: office, label: office }))} all="All offices" />
-        <MiniSelect label="Sub category" value={filters.get('billType')} onChange={(value) => filters.set({ billType: value })} options={lookups.config.billTypes.filter((type) => type.active).map((type) => ({ value: type.name, label: type.name }))} all="All sub categories" />
-        <MiniSelect label="Transaction" value={filters.get('txn')} onChange={(value) => filters.set({ txn: value })} options={Object.entries(TRANSACTION_TYPE_LABELS).map(([value, label]) => ({ value, label }))} all="All" />
-        <div className="min-w-0 space-y-1">
-          <Label className="text-xs text-muted-foreground">Bill date from</Label>
-          <Input type="date" className="h-9" value={filters.get('from')} onChange={(event) => filters.set({ from: event.target.value })} />
-        </div>
-        <div className="min-w-0 space-y-1">
-          <Label className="text-xs text-muted-foreground">to</Label>
-          <Input type="date" className="h-9" value={filters.get('to')} onChange={(event) => filters.set({ to: event.target.value })} />
-        </div>
-      </FilterBar>
+      <BtToolbar
+        activeCount={filters.activeCount}
+        onClear={filters.clear}
+        controls={
+          <>
+            <FySelect value={fy} onChange={(value) => filters.set({ fy: value })} />
+            <MiniSelect label="Project" value={filters.get('project')} onChange={(value) => filters.set({ project: value })} options={lookups.projects.map((project) => ({ value: project.id, label: project.name }))} all="All projects" />
+            <MiniSelect label="Client" value={filters.get('client')} onChange={(value) => filters.set({ client: value })} options={lookups.clients.map((client) => ({ value: client.id, label: client.name }))} all="All clients" />
+            <MiniSelect label="DGM" value={filters.get('dgm')} onChange={(value) => filters.set({ dgm: value })} options={lookups.dgmOffices.map((office) => ({ value: office, label: office }))} all="All offices" />
+            <MiniSelect label="Sub category" value={filters.get('billType')} onChange={(value) => filters.set({ billType: value })} options={[...new Set(lookups.config.billTypes.filter((type) => type.active).map((type) => type.name))].sort().map((name) => ({ value: name, label: name }))} all="All" />
+            <MiniSelect label="Type" value={filters.get('txn')} onChange={(value) => filters.set({ txn: value })} options={Object.entries(TRANSACTION_TYPE_LABELS).map(([value, label]) => ({ value, label }))} all="All" />
+            <ToolbarDate label="From" value={filters.get('from')} onChange={(value) => filters.set({ from: value || undefined })} />
+            <ToolbarDate label="To" value={filters.get('to')} onChange={(value) => filters.set({ to: value || undefined })} />
+          </>
+        }
+      />
 
       <BtError message={error} onRetry={reload} />
       {loading && !data ? <BtLoading label="Calculating…" /> : null}
@@ -239,7 +216,7 @@ export default function BillTrackingDashboard() {
                 </thead>
                 <tbody>
                   {data.projects.slice(0, 8).map((row) => (
-                    <tr key={row.key} className="border-t border-slate-100">
+                    <tr key={row.key} className="border-t border-slate-100 transition-colors even:bg-slate-50 hover:bg-emerald-50">
                       <td className={td}>
                         <DrillLink href={link('/bill-tracking/outstanding', { project: row.key })}>{row.label}</DrillLink>
                       </td>
@@ -267,7 +244,7 @@ export default function BillTrackingDashboard() {
                 </thead>
                 <tbody>
                   {data.oldest.map((bill) => (
-                    <tr key={bill.id} className="border-t border-slate-100">
+                    <tr key={bill.id} className="border-t border-slate-100 transition-colors even:bg-slate-50 hover:bg-emerald-50">
                       <td className={td}>
                         <DrillLink href={`/bill-tracking/bills/${bill.id}`}>{billReference(bill)}</DrillLink>
                       </td>
@@ -303,7 +280,7 @@ export default function BillTrackingDashboard() {
                     </tr>
                   ) : null}
                   {data.recentCollections.map((line) => (
-                    <tr key={`${line.collectionId}-${line.billId}`} className="border-t border-slate-100">
+                    <tr key={`${line.collectionId}-${line.billId}`} className="border-t border-slate-100 transition-colors even:bg-slate-50 hover:bg-emerald-50">
                       <td className={td}>{dateText(line.receiptDate)}</td>
                       <td className={td}>
                         <DrillLink href={`/bill-tracking/bills/${line.billId}`}>{line.gstInvoiceNumber || line.billSerialNumber}</DrillLink>
@@ -337,7 +314,7 @@ export default function BillTrackingDashboard() {
                     </tr>
                   ) : null}
                   {data.expectedThisWeek.map((item) => (
-                    <tr key={item.billId} className="border-t border-slate-100">
+                    <tr key={item.billId} className="border-t border-slate-100 transition-colors even:bg-slate-50 hover:bg-emerald-50">
                       <td className={td}>{dateText(item.date)}</td>
                       <td className={td}>
                         <DrillLink href={`/bill-tracking/bills/${item.billId}`}>{item.gstInvoiceNumber || item.billSerialNumber}</DrillLink>
@@ -372,7 +349,7 @@ export default function BillTrackingDashboard() {
                     </tr>
                   ) : null}
                   {data.missedCommitments.map((bill) => (
-                    <tr key={bill.id} className="border-t border-slate-100">
+                    <tr key={bill.id} className="border-t border-slate-100 transition-colors even:bg-slate-50 hover:bg-emerald-50">
                       <td className={td}>
                         <DrillLink href={`/bill-tracking/bills/${bill.id}?tab=followup`}>{billReference(bill)}</DrillLink>
                         <div className="text-xs text-muted-foreground">{bill.projectNameSnapshot}</div>
@@ -408,7 +385,7 @@ export default function BillTrackingDashboard() {
                     </tr>
                   ) : null}
                   {data.needsFollowUp.map((item) => (
-                    <tr key={item.billId} className="border-t border-slate-100">
+                    <tr key={item.billId} className="border-t border-slate-100 transition-colors even:bg-slate-50 hover:bg-emerald-50">
                       <td className={td}>
                         <DrillLink href={`/bill-tracking/bills/${item.billId}?tab=followup`}>{item.gstInvoiceNumber || item.billSerialNumber}</DrillLink>
                         <div className="text-xs text-muted-foreground">{item.projectName}</div>

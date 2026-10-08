@@ -159,21 +159,26 @@ export function ImportJobPage({ jobId }: { jobId: string }) {
           ['Skipped', job.rowsSkipped],
           ['Failed', job.rowsFailed],
         ].map(([label, value]) => (
-          <div key={label as string} className="rounded-xl border border-white/60 bg-white/85 p-3 shadow-sm">
+          <div key={label as string} className="rounded-xl border border-slate-200 bg-white p-3 shadow-sm">
             <p className="text-[11px] uppercase text-muted-foreground">{label}</p>
             <p className="text-lg font-semibold">{value as number}</p>
           </div>
         ))}
       </div>
 
-      <Card className="border-white/60 bg-white/85 shadow-sm">
-        <CardContent className="p-4">
-          <SectionHeader title="Rows" as="h3" description="The original cells of every row are kept with the job for traceability." />
-          <div className="mt-3">
-            <BtTable rows={rows.map((row) => ({ ...row, id: String(row.row) }))} columns={columns} storageKey="import-rows" dense rowClassName={(row) => (row.state === 'failed' ? 'bg-rose-50/60' : undefined)} empty={<BtEmpty title="No rows." />} />
-          </div>
-        </CardContent>
-      </Card>
+      <BtTable
+        caption={
+          <span>
+            Rows <span className="font-normal text-slate-500">· the original cells of every row are kept with the job for traceability</span>
+          </span>
+        }
+        rows={rows.map((row) => ({ ...row, id: String(row.row) }))}
+        columns={columns}
+        storageKey="import-rows"
+        dense
+        rowClassName={(row) => (row.state === 'failed' ? 'bg-rose-50' : undefined)}
+        empty={<BtEmpty title="No rows." />}
+      />
 
       <Dialog open={rollback} onOpenChange={setRollback}>
         <DialogContent className={PM_DIALOG.content}>
@@ -221,12 +226,12 @@ export function ReconciliationPage({ jobId }: { jobId: string }) {
   if (!data) return <BtError message={error ?? 'Not found.'} onRetry={reload} />;
 
   const lineTable = (title: string, lines: ReconciliationLine[], filterKey: 'project' | 'billType' | 'month') => (
-    <Card className="border-white/60 bg-white/85 shadow-sm">
+    <Card className="border-slate-200 bg-white shadow-sm">
       <CardContent className="space-y-2 p-4">
         <SectionHeader title={title} as="h3" />
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
-            <thead className="bg-slate-50 text-[11px] uppercase tracking-wide text-slate-500">
+            <thead className="bg-slate-50 text-[11px] font-semibold uppercase tracking-wider text-slate-500">
               <tr>
                 <th className="px-3 py-2 text-left">{filterKey === 'project' ? 'Project' : filterKey === 'billType' ? 'Bill type' : 'Month'}</th>
                 <th className="px-3 py-2 text-right">Bills</th>

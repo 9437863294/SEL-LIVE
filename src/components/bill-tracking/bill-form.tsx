@@ -26,17 +26,18 @@ import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Switch } from '@/components/ui/switch';
 import { Textarea } from '@/components/ui/textarea';
-import { PageHeader, SectionHeader } from '@/components/shared/page-header';
+import { cn } from '@/lib/utils';
+import { PageHeader } from '@/components/shared/page-header';
 import { useToast } from '@/hooks/use-toast';
 import { addDays, deriveBillTotals, financialYearOf, isPastApproval } from '@/lib/bill-tracking/calculations';
 import { categoryName, sortedCategories, subCategoriesFor } from '@/lib/bill-tracking/categories';
-import { computeDeductions, splitGst, suggestGst, totalFromComponents, type DeductionLineInput } from '@/lib/bill-tracking/gst';
+import { computeDeductions, splitGst, splitInclusiveTotal, suggestGst, totalFromComponents, type DeductionLineInput } from '@/lib/bill-tracking/gst';
 import { formatINR } from '@/lib/bill-tracking/money';
 import { GST_RATES } from '@/lib/statutory';
 import { GST_TYPE_LABELS, TRANSACTION_TYPE_LABELS, TRANSACTION_TYPES, type Bill, type BillTrackingConfig, type BillTransactionType, type GstType } from '@/lib/bill-tracking/types';
 
 import { btFetch, useBt, useBtQuery, useLookups } from './bt-client';
-import { Amount, BtError, BtLoading, Notice, Term, dateText } from './bt-ui';
+import { Amount, BtError, BtLoading, FormField, FormSection, Notice, Term, dateText } from './bt-ui';
 
 interface DeductionRow {
   id: string;
@@ -47,6 +48,10 @@ interface DeductionRow {
   baseAmount: string;
   /** GST % on the deduction (GST-applicable types only). */
   gstRate: string;
+  /** GST amounts typed to match the client's figures; '' = calculated from the rate. */
+  cgstAmount: string;
+  sgstAmount: string;
+  igstAmount: string;
   remarks: string;
 }
 
@@ -80,6 +85,8 @@ interface FormState {
   gstRegistrationId: string;
   /** Component amounts typed by hand (from the invoice) instead of computed. */
   gstManual: boolean;
+  /** The rate is typed ("Other") rather than picked from the standard rates. */
+  gstRateCustom: boolean;
   cgstAmount: string;
   sgstAmount: string;
   igstAmount: string;
@@ -146,6 +153,7 @@ function fromBill(bill: Bill, config: BillTrackingConfig): FormState {
     gstRate: str(bill.gstPercent ?? config.settings.defaultGstRate),
     gstRegistrationId: '',
     gstManual: Boolean(bill.gstType),
+    gstRateCustom: bill.gstPercent !== undefined && !(GST_RATES as readonly number[]).includes(bill.gstPercent),
     cgstAmount: str(bill.cgstAmount),
     sgstAmount: str(bill.sgstAmount),
     igstAmount: str(bill.igstAmount),
@@ -159,6 +167,9 @@ function fromBill(bill: Bill, config: BillTrackingConfig): FormState {
         baseAmount: String(line.baseAmount ?? line.amount),
         // A line saved without GST stays without it even if the type has since become GST-applicable.
         gstRate: line.gstRate !== undefined ? String(line.gstRate) : type?.gstApplicable ? '0' : '',
+        cgstAmount: line.gstManual ? str(line.cgstAmount) : '',
+        sgstAmount: line.gstManual ? str(line.sgstAmount) : '',
+        igstAmount: line.gstManual ? str(line.igstAmount) : '',
         remarks: line.remarks ?? '',
       };
     }),
@@ -215,6 +226,7 @@ function BillFormInner({ existing }: { existing?: Bill }) {
           gstRate: String(config.settings.defaultGstRate),
           gstRegistrationId: '',
           gstManual: false,
+          gstRateCustom: false,
           cgstAmount: '',
           sgstAmount: '',
           igstAmount: '',
@@ -288,9 +300,21 @@ function BillFormInner({ existing }: { existing?: Bill }) {
       percentage: line.percentage !== '' ? num(line.percentage) : undefined,
       baseAmount: line.percentage === '' ? num(line.baseAmount) : undefined,
       gstRate: line.gstRate !== '' ? num(line.gstRate) : undefined,
+      cgstAmount: line.cgstAmount !== '' ? num(line.cgstAmount) : undefined,
+      sgstAmount: line.sgstAmount !== '' ? num(line.sgstAmount) : undefined,
+      igstAmount: line.igstAmount !== '' ? num(line.igstAmount) : undefined,
       remarks: line.remarks,
     }));
-  const deductionLines = computeDeductions(deductionInputs, config.deductionTypes, { taxable, gross, roundToRupee: config.settings.roundDeductionsToRupee });
+  // GST on a deduction is split like the bill's own: IGST on an IGST bill, otherwise CGST + SGST.
+  const deductionGstType: GstType = gstChoice === 'igst' ? 'igst' : 'cgst-sgst';
+  const anyDeductionGst = form.deductions.some((line) => activeTypes.find((entry) => entry.id === line.deductionTypeId)?.gstApplicable);
+  // Every row uses the same columns, so a GST row and a plain row line up under one header.
+  const deductionGrid = !anyDeductionGst
+    ? 'lg:grid-cols-[minmax(0,1.6fr)_88px_minmax(0,1fr)_minmax(0,1.4fr)_40px]'
+    : deductionGstType === 'igst'
+      ? 'lg:grid-cols-[minmax(0,1.4fr)_72px_minmax(0,0.9fr)_minmax(0,1.3fr)_minmax(0,0.9fr)_minmax(0,1fr)_40px]'
+      : 'lg:grid-cols-[minmax(0,1.3fr)_64px_minmax(0,0.9fr)_minmax(0,1.25fr)_minmax(0,1.25fr)_minmax(0,0.9fr)_minmax(0,0.9fr)_40px]';
+  const deductionLines = computeDeductions(deductionInputs, config.deductionTypes, { taxable, gross, roundToRupee: config.settings.roundDeductionsToRupee, gstType: deductionGstType });
   const lineById = new Map(deductionLines.map((line) => [line.id, line]));
 
   const totals = useMemo(
@@ -299,7 +323,7 @@ function BillFormInner({ existing }: { existing?: Bill }) {
     [taxable, gstTotal, JSON.stringify(deductionLines), existing, config.settings.tolerance, config.settings.roundNetToRupee],
   );
 
-  const addDeduction = () => setForm((current) => ({ ...current, deductions: [...current.deductions, { id: newId(), deductionTypeId: '', percentage: '', baseAmount: '', gstRate: '', remarks: '' }] }));
+  const addDeduction = () => setForm((current) => ({ ...current, deductions: [...current.deductions, { id: newId(), deductionTypeId: '', percentage: '', baseAmount: '', gstRate: '', cgstAmount: '', sgstAmount: '', igstAmount: '', remarks: '' }] }));
   const updateDeduction = (id: string, patch: Partial<DeductionRow>) =>
     setForm((current) => ({
       ...current,
@@ -310,6 +334,14 @@ function BillFormInner({ existing }: { existing?: Bill }) {
           const type = activeTypes.find((entry) => entry.id === next.deductionTypeId);
           next.percentage = type?.calculation === 'percentage' && type.defaultPercent !== undefined ? String(type.defaultPercent) : '';
           next.gstRate = type?.gstApplicable ? String(type.gstRate ?? config.settings.defaultGstRate) : '';
+        }
+        // A new base, % or rate means GST should be recalculated — unless amounts come with the change
+        // (typing a total sets the base and the GST together).
+        const typedAmounts = 'cgstAmount' in patch || 'sgstAmount' in patch || 'igstAmount' in patch;
+        if (!typedAmounts && ('deductionTypeId' in patch || 'baseAmount' in patch || 'percentage' in patch || 'gstRate' in patch)) {
+          next.cgstAmount = '';
+          next.sgstAmount = '';
+          next.igstAmount = '';
         }
         return next;
       }),
@@ -407,13 +439,9 @@ function BillFormInner({ existing }: { existing?: Bill }) {
   };
 
   const field = (label: React.ReactNode, control: React.ReactNode, hint?: React.ReactNode, id?: string) => (
-    <div className="min-w-0 space-y-1">
-      <Label htmlFor={id} className="text-xs font-medium text-slate-600">
-        {label}
-      </Label>
+    <FormField label={label} hint={hint} htmlFor={id}>
       {control}
-      {hint ? <p className="text-[11px] text-muted-foreground">{hint}</p> : null}
-    </div>
+    </FormField>
   );
 
   const canSave = existing ? can('Bills', 'Edit') : can('Bills', 'Add');
@@ -438,10 +466,8 @@ function BillFormInner({ existing }: { existing?: Bill }) {
 
       <div className="grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,1fr)_320px]">
         <div className="min-w-0 space-y-4">
-          <Card className="border-white/60 bg-white/85 shadow-sm">
-            <CardContent className="space-y-4 p-4">
-              <SectionHeader title="Identification" as="h3" />
-              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+          <FormSection step={1} title="Identification" description="The bill and GST invoice numbers, the bill date and what kind of document it is.">
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
                 {field(
                   'Bill number',
                   existing || !config.settings.numbering.enabled || !form.autoNumber ? (
@@ -486,13 +512,10 @@ function BillFormInner({ existing }: { existing?: Bill }) {
                     )
                   : null}
               </div>
-            </CardContent>
-          </Card>
+          </FormSection>
 
-          <Card className="border-white/60 bg-white/85 shadow-sm">
-            <CardContent className="space-y-4 p-4">
-              <SectionHeader title="Project & bill" as="h3" />
-              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+          <FormSection step={2} title="Project & category" description="Choose the main category first — its sub categories are the ones enabled for the project.">
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
                 {field(
                   'Project *',
                   <Select value={form.projectId} onValueChange={changeProject}>
@@ -608,13 +631,10 @@ function BillFormInner({ existing }: { existing?: Bill }) {
                   ) : null}
                 </div>
               ) : null}
-            </CardContent>
-          </Card>
+          </FormSection>
 
-          <Card className="border-white/60 bg-white/85 shadow-sm">
-            <CardContent className="space-y-4 p-4">
-              <SectionHeader title="Amount & GST" as="h3" />
-              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
+          <FormSection step={3} title="Amount & GST" description="The registration and client GSTIN decide CGST + SGST or IGST; type over a component to match the invoice.">
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
                 {field(
                   <Term tip="Pre-GST value of the work or supply billed. Negative for a credit note.">Taxable amount (₹) *</Term>,
                   <Input inputMode="decimal" required value={form.taxableAmount} onChange={(event) => set('taxableAmount', event.target.value)} />,
@@ -661,7 +681,10 @@ function BillFormInner({ existing }: { existing?: Bill }) {
                 {gstChoice !== 'none' && gstChoice !== 'legacy'
                   ? field(
                       'GST rate %',
-                      <Select value={GST_RATES.map(String).includes(form.gstRate) ? form.gstRate : 'custom'} onValueChange={(value) => value !== 'custom' && setForm((current) => ({ ...current, gstRate: value, gstManual: false }))}>
+                      <Select
+                        value={form.gstRateCustom || !GST_RATES.map(String).includes(form.gstRate) ? 'custom' : form.gstRate}
+                        onValueChange={(value) => setForm((current) => (value === 'custom' ? { ...current, gstRateCustom: true } : { ...current, gstRate: value, gstRateCustom: false, gstManual: false }))}
+                      >
                         <SelectTrigger aria-label="GST rate">
                           <SelectValue />
                         </SelectTrigger>
@@ -671,21 +694,23 @@ function BillFormInner({ existing }: { existing?: Bill }) {
                               {option}%
                             </SelectItem>
                           ))}
-                          <SelectItem value="custom">Other — type below</SelectItem>
+                          <SelectItem value="custom">Other rate…</SelectItem>
                         </SelectContent>
                       </Select>,
-                      <Input className="mt-1 h-8" inputMode="decimal" aria-label="GST rate (custom)" value={form.gstRate} onChange={(event) => setForm((current) => ({ ...current, gstRate: event.target.value, gstManual: false }))} />,
+                      form.gstRateCustom || !GST_RATES.map(String).includes(form.gstRate) ? (
+                        <Input className="mt-1 h-8" inputMode="decimal" aria-label="GST rate (other)" placeholder="Type the rate %" autoFocus={form.gstRateCustom} value={form.gstRate} onChange={(event) => setForm((current) => ({ ...current, gstRate: event.target.value, gstManual: false }))} />
+                      ) : undefined,
                     )
                   : null}
               </div>
               <p className="rounded-md bg-slate-50 px-3 py-2 text-xs text-slate-600">{suggestion.reason}</p>
 
               {gstChoice === 'legacy' ? (
-                <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+                <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
                   {field('GST (total, not split)', <Input inputMode="decimal" value={form.legacyGstAmount} onChange={(event) => set('legacyGstAmount', event.target.value)} />, 'Choose a GST type above to split it into CGST / SGST or IGST.')}
                 </div>
               ) : gstChoice === 'none' ? null : (
-                <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+                <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
                   {gstChoice === 'cgst-sgst' ? (
                     <>
                       {field(`CGST @ ${computedGst.cgstRate}%`, <Input inputMode="decimal" aria-label="CGST amount" value={form.gstManual ? form.cgstAmount : String(components.cgstAmount)} onChange={(event) => editComponent('cgstAmount', event.target.value)} />)}
@@ -708,87 +733,154 @@ function BillFormInner({ existing }: { existing?: Bill }) {
                   )}
                 </div>
               )}
-            </CardContent>
-          </Card>
+          </FormSection>
 
-          <Card className="border-white/60 bg-white/85 shadow-sm">
-            <CardContent className="space-y-3 p-4">
-              <SectionHeader
-                title="Deductions"
-                as="h3"
-                description="A % line follows its configured base (e.g. Income TDS on taxable less mobilisation advance); typing an amount makes it fixed. Signed: a negative deduction adds to the net."
-                actions={
-                  <Button type="button" size="sm" variant="outline" className="gap-1.5" onClick={addDeduction}>
-                    <Plus className="h-4 w-4" /> Add deduction
-                  </Button>
-                }
-              />
-              {form.deductions.length === 0 ? <p className="text-sm text-muted-foreground">No deductions on this bill.</p> : null}
-              <div className="space-y-2">
-                {form.deductions.map((line) => {
-                  const type = activeTypes.find((entry) => entry.id === line.deductionTypeId);
-                  const computed = lineById.get(line.id);
-                  const percent = line.percentage !== '';
-                  const lessNames = (type?.baseLessTypeIds ?? []).map((id) => config.deductionTypes.find((entry) => entry.id === id)?.name).filter(Boolean);
-                  const gstApplicable = Boolean(type?.gstApplicable);
-                  const baseValue = computed ? (computed.baseAmount ?? computed.amount) : 0;
-                  return (
-                    <div key={line.id} className="space-y-1 rounded-lg border border-slate-200 bg-white p-2">
-                      <div className={`grid grid-cols-2 items-center gap-2 ${gstApplicable ? 'lg:grid-cols-[minmax(0,1.4fr)_80px_minmax(0,1fr)_70px_minmax(0,0.9fr)_minmax(0,1fr)_auto]' : 'lg:grid-cols-[minmax(0,1.4fr)_80px_minmax(0,1fr)_minmax(0,1fr)_auto]'}`}>
-                        <div className="col-span-2 lg:col-span-1">
-                          <Select value={line.deductionTypeId} onValueChange={(value) => updateDeduction(line.id, { deductionTypeId: value })}>
-                            <SelectTrigger aria-label="Deduction type">
-                              <SelectValue placeholder="Deduction type" />
-                            </SelectTrigger>
-                            <SelectContent className="max-h-80">
-                              {activeTypes.map((entry) => (
-                                <SelectItem key={entry.id} value={entry.id}>
-                                  {entry.name}
-                                </SelectItem>
-                              ))}
-                            </SelectContent>
-                          </Select>
-                        </div>
-                        <Input aria-label="Percent" inputMode="decimal" placeholder="%" value={line.percentage} onChange={(event) => updateDeduction(line.id, { percentage: event.target.value })} />
-                        <Input
-                          aria-label={gstApplicable ? 'Deduction before GST' : 'Deduction amount'}
-                          inputMode="decimal"
-                          placeholder={gstApplicable ? 'Base ₹' : 'Amount ₹'}
-                          value={percent ? String(baseValue) : line.baseAmount}
-                          className={percent ? 'bg-slate-50' : undefined}
-                          onChange={(event) => updateDeduction(line.id, { baseAmount: event.target.value, percentage: '' })}
-                        />
-                        {gstApplicable ? (
-                          <>
-                            <Input aria-label="GST % on deduction" inputMode="decimal" placeholder="GST %" value={line.gstRate} onChange={(event) => updateDeduction(line.id, { gstRate: event.target.value })} />
-                            <div className="flex h-10 items-center justify-end rounded-md border bg-slate-50 px-2 text-sm" title="GST on the deduction">
-                              <Amount value={computed?.gstAmount ?? 0} />
+          <FormSection
+            step={4}
+            title="Deductions"
+            description="A % line follows its configured base (e.g. Income TDS on taxable less mobilisation advance); typing an amount makes it fixed. A negative deduction adds to the net."
+            actions={
+              <Button type="button" size="sm" variant="outline" className="gap-1.5" onClick={addDeduction}>
+                <Plus className="h-4 w-4" /> Add deduction
+              </Button>
+            }
+            bodyClassName="space-y-3 p-3 sm:p-4"
+          >
+              {form.deductions.length === 0 ? (
+                <div className="rounded-lg border border-dashed border-slate-200 px-4 py-6 text-center text-sm text-slate-500">No deductions on this bill.</div>
+              ) : (
+                <div className="overflow-hidden rounded-lg border border-slate-200">
+                  <div className={cn('hidden items-center gap-2 border-b border-slate-200 bg-slate-50 px-2 py-2 text-[11px] font-semibold uppercase tracking-wider text-slate-500 lg:grid', deductionGrid)}>
+                    <span className="pl-1">Deduction</span>
+                    <span className="text-right">%</span>
+                    <span className="text-right">{anyDeductionGst ? 'Base ₹' : 'Amount ₹'}</span>
+                    {anyDeductionGst ? (
+                      deductionGstType === 'igst' ? (
+                        <span>IGST % · ₹</span>
+                      ) : (
+                        <>
+                          <span>CGST % · ₹</span>
+                          <span>SGST % · ₹</span>
+                        </>
+                      )
+                    ) : null}
+                    {anyDeductionGst ? <span className="text-right">Total ₹</span> : null}
+                    <span>Remarks</span>
+                    <span className="sr-only">Remove</span>
+                  </div>
+                  <div className="divide-y divide-slate-100">
+                    {form.deductions.map((line) => {
+                      const type = activeTypes.find((entry) => entry.id === line.deductionTypeId);
+                      const computed = lineById.get(line.id);
+                      const percent = line.percentage !== '';
+                      const lessNames = (type?.baseLessTypeIds ?? []).map((id) => config.deductionTypes.find((entry) => entry.id === id)?.name).filter(Boolean);
+                      const gstApplicable = Boolean(type?.gstApplicable);
+                      const baseValue = computed ? (computed.baseAmount ?? computed.amount) : 0;
+                      return (
+                        <div key={line.id} className="space-y-1.5 p-2">
+                          <div className={cn('grid grid-cols-2 items-center gap-2', deductionGrid)}>
+                            <div className="col-span-2 lg:col-span-1">
+                              <Select value={line.deductionTypeId} onValueChange={(value) => updateDeduction(line.id, { deductionTypeId: value })}>
+                                <SelectTrigger aria-label="Deduction type">
+                                  <SelectValue placeholder="Deduction type" />
+                                </SelectTrigger>
+                                <SelectContent className="max-h-80">
+                                  {activeTypes.map((entry) => (
+                                    <SelectItem key={entry.id} value={entry.id}>
+                                      {entry.name}
+                                    </SelectItem>
+                                  ))}
+                                </SelectContent>
+                              </Select>
                             </div>
-                          </>
-                        ) : null}
-                        <Input aria-label="Remarks" placeholder="Remarks" value={line.remarks} onChange={(event) => updateDeduction(line.id, { remarks: event.target.value })} />
-                        <Button type="button" variant="ghost" size="icon" aria-label="Remove deduction" onClick={() => setForm((current) => ({ ...current, deductions: current.deductions.filter((entry) => entry.id !== line.id) }))}>
-                          <Trash2 className="h-4 w-4 text-rose-600" />
-                        </Button>
-                      </div>
-                      {type && (percent || gstApplicable) ? (
-                        <p className="px-1 text-[11px] text-muted-foreground">
-                          {percent ? `${line.percentage}% of ${formatINR(computed?.calculationBase ?? 0)} (${type.percentBase === 'gross' ? 'Gross' : 'Taxable'}${lessNames.length ? ` − ${lessNames.join(' − ')}` : ''}) = ${formatINR(baseValue)}` : null}
-                          {percent && gstApplicable ? ' · ' : null}
-                          {gstApplicable ? `+ GST ${line.gstRate || 0}% = total ${formatINR(computed?.amount ?? 0)}` : null}
-                        </p>
-                      ) : null}
-                    </div>
-                  );
-                })}
-              </div>
-            </CardContent>
-          </Card>
+                            <Input aria-label="Percent" inputMode="decimal" placeholder="%" className="text-right tabular-nums" value={line.percentage} onChange={(event) => updateDeduction(line.id, { percentage: event.target.value })} />
+                            <Input
+                              aria-label={gstApplicable ? 'Deduction before GST' : 'Deduction amount'}
+                              inputMode="decimal"
+                              placeholder={gstApplicable ? 'Base ₹' : 'Amount ₹'}
+                              value={percent ? String(baseValue) : line.baseAmount}
+                              className={cn('text-right tabular-nums', percent && 'bg-slate-50')}
+                              onChange={(event) => updateDeduction(line.id, { baseAmount: event.target.value, percentage: '' })}
+                            />
+                            {gstApplicable ? (
+                              <>
+                                {deductionGstType === 'igst' ? (
+                                  <GstPart label="IGST" rate={num(line.gstRate)} amount={computed?.igstAmount ?? 0} typed={line.igstAmount !== ''} onRate={(value) => updateDeduction(line.id, { gstRate: value })} onAmount={(value) => updateDeduction(line.id, { igstAmount: value })} />
+                                ) : (
+                                  <>
+                                    {/* CGST and SGST rates are always equal: either rate box sets both. */}
+                                    <GstPart label="CGST" rate={num(line.gstRate) / 2} amount={computed?.cgstAmount ?? 0} typed={line.cgstAmount !== ''} onRate={(value) => updateDeduction(line.id, { gstRate: value === '' ? '' : String(num(value) * 2) })} onAmount={(value) => updateDeduction(line.id, { cgstAmount: value, sgstAmount: line.sgstAmount === '' ? String(computed?.sgstAmount ?? 0) : line.sgstAmount })} />
+                                    <GstPart label="SGST" rate={num(line.gstRate) / 2} amount={computed?.sgstAmount ?? 0} typed={line.sgstAmount !== ''} onRate={(value) => updateDeduction(line.id, { gstRate: value === '' ? '' : String(num(value) * 2) })} onAmount={(value) => updateDeduction(line.id, { sgstAmount: value, cgstAmount: line.cgstAmount === '' ? String(computed?.cgstAmount ?? 0) : line.cgstAmount })} />
+                                  </>
+                                )}
+                                <DraftInput
+                                  aria-label="Deduction total (incl. GST)"
+                                  title="Total incl. GST — type the amount the client recovered and the base and GST are worked out from it"
+                                  className="col-span-2 text-right font-semibold tabular-nums lg:col-span-1"
+                                  value={String(computed?.amount ?? 0)}
+                                  onValue={(value) => {
+                                    const parts = splitInclusiveTotal(num(value), num(line.gstRate), deductionGstType);
+                                    updateDeduction(line.id, {
+                                      percentage: '',
+                                      baseAmount: String(parts.baseAmount),
+                                      cgstAmount: parts.cgstAmount !== undefined ? String(parts.cgstAmount) : '',
+                                      sgstAmount: parts.sgstAmount !== undefined ? String(parts.sgstAmount) : '',
+                                      igstAmount: parts.igstAmount !== undefined ? String(parts.igstAmount) : '',
+                                    });
+                                  }}
+                                />
+                              </>
+                            ) : anyDeductionGst ? (
+                              <>
+                                {/* Keeps this row's columns under the same headings as the GST rows. */}
+                                <div className={cn('hidden h-10 items-center justify-center rounded-md border border-dashed border-slate-200 text-xs text-slate-400 lg:flex', deductionGstType !== 'igst' && 'lg:col-span-2')}>No GST on this deduction</div>
+                                <div className="hidden h-10 items-center justify-end rounded-md bg-slate-50 px-3 text-sm font-semibold tabular-nums lg:flex">
+                                  <Amount value={computed?.amount ?? 0} signed />
+                                </div>
+                              </>
+                            ) : null}
+                            <div className="col-span-2 flex items-center gap-2 lg:contents">
+                              <Input aria-label="Remarks" placeholder="Remarks" className="min-w-0 flex-1" value={line.remarks} onChange={(event) => updateDeduction(line.id, { remarks: event.target.value })} />
+                              <Button type="button" variant="ghost" size="icon" className="shrink-0" aria-label="Remove deduction" onClick={() => setForm((current) => ({ ...current, deductions: current.deductions.filter((entry) => entry.id !== line.id) }))}>
+                                <Trash2 className="h-4 w-4 text-rose-600" />
+                              </Button>
+                            </div>
+                          </div>
+                          {type && (percent || gstApplicable) ? (
+                            <p className="px-1 text-[11px] leading-snug text-slate-500">
+                              {percent ? `${line.percentage}% of ${formatINR(computed?.calculationBase ?? 0)} (${type.percentBase === 'gross' ? 'Gross' : 'Taxable'}${lessNames.length ? ` − ${lessNames.join(' − ')}` : ''}) = ${formatINR(baseValue)}` : null}
+                              {percent && gstApplicable ? ' · ' : null}
+                              {gstApplicable
+                                ? deductionGstType === 'igst'
+                                  ? `+ IGST ${num(line.gstRate)}% ${formatINR(computed?.igstAmount ?? 0)} = total ${formatINR(computed?.amount ?? 0)}`
+                                  : `+ CGST ${num(line.gstRate) / 2}% ${formatINR(computed?.cgstAmount ?? 0)} + SGST ${num(line.gstRate) / 2}% ${formatINR(computed?.sgstAmount ?? 0)} = total ${formatINR(computed?.amount ?? 0)}`
+                                : null}
+                              {gstApplicable && (line.cgstAmount !== '' || line.sgstAmount !== '' || line.igstAmount !== '') ? (
+                                <>
+                                  {' · GST typed to match the client. '}
+                                  <button type="button" className="font-medium text-emerald-700 hover:underline" onClick={() => updateDeduction(line.id, { cgstAmount: '', sgstAmount: '', igstAmount: '' })}>
+                                    Recalculate
+                                  </button>
+                                </>
+                              ) : null}
+                            </p>
+                          ) : null}
+                        </div>
+                      );
+                    })}
+                  </div>
+                  <div className="flex items-center justify-between gap-2 border-t border-slate-200 bg-slate-50 px-3 py-2 text-sm">
+                    <span className="font-medium text-slate-600">
+                      Total deduction · {form.deductions.length} line{form.deductions.length === 1 ? '' : 's'}
+                    </span>
+                    <Amount value={totals.totalDeduction} className="font-semibold text-slate-900" signed />
+                  </div>
+                </div>
+              )}
+          </FormSection>
 
-          <Card className="border-white/60 bg-white/85 shadow-sm">
-            <CardContent className="space-y-4 p-4">
-              <SectionHeader title="Dates & planning" as="h3" />
-              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+          <FormSection step={5} title="Dates & planning" description="Dates drive ageing and the due date; owner, stage and target week drive follow-up.">
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
                 {field('Submission date', <Input type="date" value={form.submissionDate} onChange={(event) => set('submissionDate', event.target.value)} />)}
                 {field('Bill passed date', <Input type="date" value={form.passedDate} onChange={(event) => set('passedDate', event.target.value)} />)}
                 {existing
@@ -836,8 +928,7 @@ function BillFormInner({ existing }: { existing?: Bill }) {
               </div>
               {field('Remarks', <Textarea rows={2} value={form.remarks} onChange={(event) => set('remarks', event.target.value)} />)}
               {!existing ? <p className="text-xs text-muted-foreground">Attach the invoice and supporting documents from the bill page after saving.</p> : null}
-            </CardContent>
-          </Card>
+          </FormSection>
 
           {protectedChanged ? (
             <Card className="border-amber-200 bg-amber-50">
@@ -852,9 +943,7 @@ function BillFormInner({ existing }: { existing?: Bill }) {
         </div>
 
         <div className="space-y-3 xl:sticky xl:top-[calc(var(--app-header-offset,4rem)+1rem)] xl:self-start">
-          <Card className="border-emerald-200 bg-white shadow-sm">
-            <CardContent className="space-y-2 p-4 text-sm">
-              <SectionHeader title="Calculation" icon={Calculator} as="h3" />
+          <FormSection icon={Calculator} title="Calculation" className="border-emerald-200" bodyClassName="space-y-2 p-4 text-sm">
               <Row label="Taxable" value={taxable} />
               {gstChoice === 'cgst-sgst' ? (
                 <>
@@ -879,8 +968,7 @@ function BillFormInner({ existing }: { existing?: Bill }) {
                 </>
               ) : null}
               <p className="pt-1 text-[11px] text-muted-foreground">Preview only — the server recalculates every figure on save.</p>
-            </CardContent>
-          </Card>
+          </FormSection>
           <BtError message={saveError} />
           <div className="flex gap-2">
             <Button asChild variant="outline" className="flex-1">
@@ -895,6 +983,64 @@ function BillFormInner({ existing }: { existing?: Bill }) {
         </div>
       </div>
     </form>
+  );
+}
+
+/**
+ * A number box that shows exactly what is being typed ("2." on the way to "2.5") while focused, and
+ * the derived value otherwise — so a box fed by a calculation can still be typed into.
+ */
+function DraftInput({ value, onValue, className, ...rest }: { value: string; onValue: (value: string) => void; className?: string } & Omit<React.InputHTMLAttributes<HTMLInputElement>, 'value' | 'onChange'>) {
+  const [draft, setDraft] = useState<string | null>(null);
+  return (
+    <Input
+      {...rest}
+      inputMode="decimal"
+      className={className}
+      value={draft ?? value}
+      onFocus={() => setDraft(value === '0' ? '' : value)}
+      onChange={(event) => {
+        setDraft(event.target.value);
+        onValue(event.target.value);
+      }}
+      onBlur={() => setDraft(null)}
+    />
+  );
+}
+
+/** One GST component of a deduction: its rate and amount, both editable — e.g. "CGST 9 % ₹9". */
+function GstPart({ label, rate, amount, typed, onRate, onAmount }: { label: string; rate: number; amount: number; typed: boolean; onRate: (value: string) => void; onAmount: (value: string) => void }) {
+  const [rateDraft, setRateDraft] = useState<string | null>(null);
+  const [amountDraft, setAmountDraft] = useState<string | null>(null);
+  return (
+    <div className={`flex h-10 items-center gap-1 rounded-md border px-1.5 text-sm ${typed ? 'border-amber-300 bg-amber-50' : 'border-input bg-slate-50'}`} title={typed ? `${label} typed to match the client` : `${label} on the deduction`}>
+      <span className="text-[11px] font-semibold text-slate-500">{label}</span>
+      <input
+        aria-label={`${label} % on deduction`}
+        inputMode="decimal"
+        value={rateDraft ?? (rate ? String(rate) : '')}
+        placeholder="0"
+        onChange={(event) => {
+          setRateDraft(event.target.value);
+          onRate(event.target.value);
+        }}
+        onBlur={() => setRateDraft(null)}
+        className="h-7 w-9 rounded border border-input bg-white px-1 text-right text-sm"
+      />
+      <span className="text-xs text-muted-foreground">%</span>
+      <input
+        aria-label={`${label} amount on deduction`}
+        inputMode="decimal"
+        value={amountDraft ?? String(amount)}
+        onFocus={() => setAmountDraft(String(amount))}
+        onChange={(event) => {
+          setAmountDraft(event.target.value);
+          onAmount(event.target.value);
+        }}
+        onBlur={() => setAmountDraft(null)}
+        className="ml-auto h-7 min-w-0 flex-1 rounded border border-input bg-white px-1 text-right text-sm"
+      />
+    </div>
   );
 }
 

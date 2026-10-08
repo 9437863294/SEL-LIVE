@@ -7,9 +7,10 @@
  */
 
 import Link from 'next/link';
-import { AlertTriangle, Download, FileSpreadsheet, FileText, Inbox, Loader2, Printer, ShieldAlert } from 'lucide-react';
+import { AlertTriangle, CalendarRange, Download, FileSpreadsheet, FileText, Inbox, Loader2, Printer, ShieldAlert } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
+import { Label } from '@/components/ui/label';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { KpiCard, type Tone } from '@/components/shared/kpi-card';
@@ -131,6 +132,129 @@ export function MoneyKpi({ label, value, hint, icon, tone = 'slate', href, compa
   return <KpiCard label={label} value={<Amount value={value} compact={compact} />} hint={hint} icon={icon} tone={tone} href={href} />;
 }
 
+export interface StatItem {
+  label: React.ReactNode;
+  value: React.ReactNode;
+  hint?: React.ReactNode;
+  /** Text colour of the value, e.g. `text-emerald-700`. */
+  tone?: string;
+}
+
+// Columns per item count, and a span for the last item where a row would otherwise end short and
+// show the grey hairline background as an empty cell. Static strings so Tailwind sees them all.
+const STAT_LAYOUT: Record<number, { grid: string; last?: string }> = {
+  2: { grid: 'grid-cols-2' },
+  3: { grid: 'grid-cols-2 sm:grid-cols-3', last: 'col-span-2 sm:col-span-1' },
+  4: { grid: 'grid-cols-2 sm:grid-cols-4' },
+  5: { grid: 'grid-cols-2 sm:grid-cols-5', last: 'col-span-2 sm:col-span-1' },
+  6: { grid: 'grid-cols-2 sm:grid-cols-3 lg:grid-cols-6' },
+  7: { grid: 'grid-cols-2 sm:grid-cols-4 xl:grid-cols-7', last: 'col-span-2 xl:col-span-1' },
+  8: { grid: 'grid-cols-2 sm:grid-cols-4' },
+};
+
+/**
+ * A row of headline figures in one frame, split by hairlines — lighter than a row of KPI cards, for
+ * the totals above a register or the amounts at the top of a bill.
+ */
+export function StatStrip({ items, className }: { items: StatItem[]; className?: string }) {
+  const layout = STAT_LAYOUT[items.length] ?? { grid: 'grid-cols-2 sm:grid-cols-4' };
+  return (
+    <dl className={cn('grid gap-px overflow-hidden rounded-xl border border-slate-200 bg-slate-200 shadow-sm', layout.grid, className)}>
+      {items.map((item, index) => (
+        <div key={index} className={cn('min-w-0 bg-white px-3.5 py-3', index === items.length - 1 && layout.last)}>
+          <dt className="truncate text-[11px] font-medium uppercase tracking-wide text-slate-500">{item.label}</dt>
+          <dd className={cn('mt-1 truncate text-base font-semibold tabular-nums', item.tone ?? 'text-slate-900')}>{item.value}</dd>
+          {item.hint ? <dd className="mt-0.5 truncate text-[11px] text-slate-400">{item.hint}</dd> : null}
+        </div>
+      ))}
+    </dl>
+  );
+}
+
+/* ── forms ───────────────────────────────────────────────────────────────── */
+
+/**
+ * One card of a form: a numbered (or icon) header strip with the title, a line of help and any
+ * actions, then the fields. Every Bill Tracking form is built from these so they read alike.
+ */
+export function FormSection({
+  step,
+  icon: Icon,
+  title,
+  description,
+  actions,
+  children,
+  className,
+  bodyClassName,
+}: {
+  step?: number;
+  icon?: React.ElementType;
+  title: React.ReactNode;
+  description?: React.ReactNode;
+  actions?: React.ReactNode;
+  children: React.ReactNode;
+  className?: string;
+  bodyClassName?: string;
+}) {
+  return (
+    <section className={cn('min-w-0 rounded-xl border border-slate-200 bg-white shadow-sm', className)}>
+      <header className="flex flex-wrap items-start justify-between gap-x-3 gap-y-2 border-b border-slate-100 px-4 py-3">
+        <div className="flex min-w-0 flex-1 basis-56 items-start gap-2.5">
+          {step !== undefined ? (
+            <span className="mt-px flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-emerald-600 text-xs font-semibold text-white" aria-hidden="true">
+              {step}
+            </span>
+          ) : Icon ? (
+            <span className="mt-px flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-emerald-50 text-emerald-700" aria-hidden="true">
+              <Icon className="h-3.5 w-3.5" />
+            </span>
+          ) : null}
+          <div className="min-w-0">
+            <h3 className="text-[15px] font-semibold leading-6 text-slate-900">{title}</h3>
+            {description ? <p className="mt-0.5 text-xs leading-relaxed text-slate-500">{description}</p> : null}
+          </div>
+        </div>
+        {actions ? <div className="flex flex-wrap items-center gap-2">{actions}</div> : null}
+      </header>
+      <div className={cn('space-y-4 p-4', bodyClassName)}>{children}</div>
+    </section>
+  );
+}
+
+/**
+ * A labelled field. A label written as "Project *" shows a red required marker instead of the
+ * asterisk text; the hint sits under the control.
+ */
+export function FormField({ label, hint, htmlFor, children, className }: { label: React.ReactNode; hint?: React.ReactNode; htmlFor?: string; children: React.ReactNode; className?: string }) {
+  const required = typeof label === 'string' && label.endsWith(' *');
+  return (
+    <div className={cn('min-w-0 space-y-1.5', className)}>
+      <Label htmlFor={htmlFor} className="flex min-h-4 items-center gap-0.5 text-xs font-medium leading-4 text-slate-700">
+        {required ? (label as string).slice(0, -2) : label}
+        {required ? (
+          <span className="text-rose-600" aria-hidden="true">
+            *
+          </span>
+        ) : null}
+      </Label>
+      {children}
+      {hint ? <div className="text-[11px] leading-snug text-slate-500">{hint}</div> : null}
+    </div>
+  );
+}
+
+/* ── tabs ────────────────────────────────────────────────────────────────── */
+
+/** A tab strip that scrolls sideways on a phone rather than wrapping into rows. */
+export const BT_TABS_LIST = 'flex h-auto w-full justify-start gap-1 overflow-x-auto rounded-xl border border-slate-200 bg-white p-1 shadow-sm';
+// The active tab is painted by the app's sliding indicator (ui/tabs.tsx); an active background here
+// would cover it and leave its light text on a light fill.
+export const BT_TAB = 'shrink-0 gap-1.5';
+
+export function TabCount({ value }: { value: number }) {
+  return <span className="rounded-full bg-slate-100 px-1.5 text-[10px] font-semibold leading-4 text-slate-600">{value.toLocaleString('en-IN')}</span>;
+}
+
 /* ── states ──────────────────────────────────────────────────────────────── */
 
 export function BtLoading({ label = 'Loading…', className }: { label?: string; className?: string }) {
@@ -170,7 +294,7 @@ export function BtEmpty({ title, description, icon: Icon = Inbox, action }: { ti
 
 export function BtAccessDenied({ what = 'this page' }: { what?: string }) {
   return (
-    <div className="rounded-xl border border-white/60 bg-white/80 py-16 text-center shadow-sm">
+    <div className="rounded-xl border border-slate-200 bg-white py-16 text-center shadow-sm">
       <ShieldAlert className="mx-auto h-12 w-12 text-destructive" />
       <p className="mt-3 font-semibold text-slate-800">Access denied</p>
       <p className="mt-1 text-sm text-muted-foreground">You do not have permission to view {what}. Ask your administrator for the Bill Tracking permission.</p>
@@ -199,8 +323,11 @@ export function FySelect({ value, onChange, allowAll = true, className }: { valu
   const options = financialYearOptions();
   return (
     <Select value={value} onValueChange={onChange}>
-      <SelectTrigger className={cn('h-9 w-full sm:w-[130px]', className)} aria-label="Financial year">
-        <SelectValue placeholder="FY" />
+      <SelectTrigger className={cn('h-9 w-full gap-1.5 bg-white text-sm font-medium shadow-sm sm:w-auto sm:min-w-[8.5rem]', className)} aria-label="Financial year">
+        <CalendarRange className="h-3.5 w-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />
+        <span className="min-w-0 flex-1 truncate text-left">
+          <SelectValue placeholder="FY" />
+        </span>
       </SelectTrigger>
       <SelectContent>
         {allowAll ? <SelectItem value="all">All years</SelectItem> : null}
@@ -291,7 +418,7 @@ export function ExportMenu<T>({ spec, extra, disabled, loadAll }: { spec: () => 
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
-        <Button variant="outline" size="sm" disabled={disabled} className="gap-1.5">
+        <Button variant="outline" size="sm" disabled={disabled} className="h-9 gap-1.5">
           <Download className="h-4 w-4" />
           Export
         </Button>

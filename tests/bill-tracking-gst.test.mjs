@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { computeDeductions, deductionBase, splitGst, suggestGst, totalFromComponents } from '../src/lib/bill-tracking/gst.ts';
+import { computeDeductions, deductionBase, splitGst, splitInclusiveTotal, suggestGst, totalFromComponents } from '../src/lib/bill-tracking/gst.ts';
 import { againstInvoiceFromDescription } from '../src/lib/bill-tracking/import.ts';
 import { DEFAULT_DEDUCTION_TYPES, withConfigDefaults } from '../src/lib/bill-tracking/defaults.ts';
 import { DEFAULT_ATTRIBUTION } from '../src/lib/gst-registrations.ts';
@@ -85,12 +85,41 @@ test('GST on a GST-applicable deduction is added to it', () => {
   const lcWithGst = types.map((type) => (type.code === 'LCCOMM' ? { ...type, gstApplicable: true, gstRate: 18 } : type));
   const [line] = computeDeductions([{ id: 'lc', deductionTypeId: id('LCCOMM'), baseAmount: 10000, gstRate: 18 }], lcWithGst, context);
   assert.deepEqual({ base: line.baseAmount, gst: line.gstAmount, total: line.amount }, { base: 10000, gst: 1800, total: 11800 });
+  // Split like the bill's GST: CGST + SGST at half the rate each…
+  assert.deepEqual({ cgst: [line.cgstRate, line.cgstAmount], sgst: [line.sgstRate, line.sgstAmount], igst: line.igstAmount }, { cgst: [9, 900], sgst: [9, 900], igst: undefined });
+  // …or IGST at the full rate on an IGST bill.
+  const [inter] = computeDeductions([{ id: 'lc', deductionTypeId: id('LCCOMM'), baseAmount: 10000, gstRate: 18 }], lcWithGst, { ...context, gstType: 'igst' });
+  assert.deepEqual({ igst: [inter.igstRate, inter.igstAmount], cgst: inter.cgstAmount, total: inter.amount }, { igst: [18, 1800], cgst: undefined, total: 11800 });
+  // The screenshot case: ₹10 at 18% → CGST 9% ₹0.90 + SGST 9% ₹0.90.
+  const [small] = computeDeductions([{ id: 'm', deductionTypeId: id('LCCOMM'), baseAmount: 10, gstRate: 18 }], lcWithGst, context);
+  assert.deepEqual([small.cgstAmount, small.sgstAmount, small.amount], [0.9, 0.9, 11.8]);
   // A line saved without GST keeps none even though the type now carries GST.
   const [legacy] = computeDeductions([{ id: 'lc', deductionTypeId: id('LCCOMM'), baseAmount: 10000, gstRate: 0 }], lcWithGst, context);
   assert.equal(legacy.amount, 10000);
   // A type without GST never adds it, whatever the line says.
   const [plain] = computeDeductions([{ id: 'o', deductionTypeId: id('OTHER'), baseAmount: 10000, gstRate: 18 }], types, context);
   assert.equal(plain.amount, 10000);
+});
+
+test('GST amounts typed to match the client win over the computed split', () => {
+  const lcWithGst = types.map((type) => (type.code === 'LCCOMM' ? { ...type, gstApplicable: true, gstRate: 18 } : type));
+  const [line] = computeDeductions([{ id: 'lc', deductionTypeId: id('LCCOMM'), baseAmount: 100, gstRate: 18, cgstAmount: 9.01, sgstAmount: 9 }], lcWithGst, context);
+  assert.deepEqual([line.cgstAmount, line.sgstAmount, line.gstAmount, line.amount, line.gstManual], [9.01, 9, 18.01, 118.01, true]);
+  // On an IGST bill only the IGST figure is read.
+  const [inter] = computeDeductions([{ id: 'lc', deductionTypeId: id('LCCOMM'), baseAmount: 100, gstRate: 18, igstAmount: 18.2, cgstAmount: 5 }], lcWithGst, { ...context, gstType: 'igst' });
+  assert.deepEqual([inter.igstAmount, inter.amount, inter.cgstAmount], [18.2, 118.2, undefined]);
+});
+
+test('typing a GST-inclusive total works out the base and an exact split', () => {
+  assert.deepEqual(splitInclusiveTotal(118, 18, 'cgst-sgst'), { baseAmount: 100, cgstAmount: 9, sgstAmount: 9 });
+  assert.deepEqual(splitInclusiveTotal(118, 18, 'igst'), { baseAmount: 100, igstAmount: 18 });
+  assert.deepEqual(splitInclusiveTotal(50, 0, 'cgst-sgst'), { baseAmount: 50 });
+  // Parts always add back to the total typed, odd paisa to SGST.
+  const parts = splitInclusiveTotal(1000, 18, 'cgst-sgst');
+  assert.equal(Math.round((parts.baseAmount + parts.cgstAmount + parts.sgstAmount) * 100) / 100, 1000);
+  const lcWithGst = types.map((type) => (type.code === 'LCCOMM' ? { ...type, gstApplicable: true, gstRate: 18 } : type));
+  const [line] = computeDeductions([{ id: 'lc', deductionTypeId: id('LCCOMM'), gstRate: 18, ...parts }], lcWithGst, context);
+  assert.equal(line.amount, 1000);
 });
 
 test('a percentage line may be based on another percentage line; a cycle settles', () => {

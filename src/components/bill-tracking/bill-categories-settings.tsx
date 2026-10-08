@@ -104,7 +104,7 @@ export function BillCategoriesEditor({
       {problem ? <Notice tone="rose">{problem}</Notice> : null}
 
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-[300px_minmax(0,1fr)] lg:items-start">
-        <Card className="border-white/60 bg-white/85 shadow-sm">
+        <Card className="border-slate-200 bg-white shadow-sm">
           <CardContent className="space-y-2 p-3">
             <SectionHeader title="Main categories" icon={FolderTree} as="h3" description="Shared by all projects." />
             <ul className="space-y-1" role="listbox" aria-label="Main categories">
@@ -159,7 +159,7 @@ export function BillCategoriesEditor({
           </CardContent>
         </Card>
 
-        <Card className="min-w-0 border-white/60 bg-white/85 shadow-sm">
+        <Card className="min-w-0 border-slate-200 bg-white shadow-sm">
           <CardContent className="space-y-4 p-4">
             {selected ? (
               <fieldset disabled={disabled} className="grid grid-cols-1 gap-3 rounded-lg border border-slate-200 bg-slate-50/60 p-3 sm:grid-cols-[minmax(0,1fr)_200px_auto_auto] sm:items-end">

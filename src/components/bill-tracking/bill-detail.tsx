@@ -71,7 +71,7 @@ import {
 
 import { btDownload, btFetch, useBt, useBtQuery, useLookups } from './bt-client';
 import { billReference, type BillRow } from './bill-register';
-import { AgeingBadge, Amount, BtError, BtLoading, Notice, PaymentStatusBadge, TransactionTypeBadge, WorkflowStatusBadge, dateText, dateTimeText } from './bt-ui';
+import { AgeingBadge, Amount, BtError, BtLoading, Notice, PaymentStatusBadge, TransactionTypeBadge, WorkflowStatusBadge, dateText, dateTimeText, BT_TAB, BT_TABS_LIST, StatStrip, TabCount } from './bt-ui';
 
 interface Detail {
   bill: BillRow;
@@ -273,35 +273,38 @@ function DetailBody({ detail, reload, tab, setTab }: { detail: Detail; reload: (
         </Notice>
       ) : null}
 
-      <div className="grid grid-cols-2 gap-2 sm:grid-cols-4 xl:grid-cols-7">
-        {[
-          ['Taxable', bill.taxableAmount],
-          ['GST', bill.gstAmount],
-          ['Gross', bill.grossAmount],
-          ['Deduction', bill.totalDeduction],
-          ['Net receivable', bill.netReceivable],
-          ['Received', bill.totalReceived],
-          ['Outstanding', bill.outstandingAmount],
-        ].map(([label, value]) => (
-          <div key={label as string} className="rounded-xl border border-white/60 bg-white/85 p-3 shadow-sm">
-            <p className="text-[11px] uppercase tracking-wide text-muted-foreground">{label}</p>
-            <p className={`mt-0.5 text-base font-semibold ${label === 'Outstanding' && (value as number) > 0 ? 'text-rose-700' : label === 'Received' ? 'text-emerald-700' : 'text-slate-800'}`}>
-              <Amount value={value as number} signed />
-            </p>
-          </div>
-        ))}
-      </div>
+      <StatStrip
+        items={[
+          { label: 'Taxable', value: <Amount value={bill.taxableAmount} signed /> },
+          { label: 'GST', value: <Amount value={bill.gstAmount} signed />, hint: bill.gstType === 'cgst-sgst' ? 'CGST + SGST' : bill.gstType === 'igst' ? 'IGST' : undefined },
+          { label: 'Gross', value: <Amount value={bill.grossAmount} signed /> },
+          { label: 'Deduction', value: <Amount value={bill.totalDeduction} signed />, tone: 'text-orange-700' },
+          { label: 'Net receivable', value: <Amount value={bill.netReceivable} signed /> },
+          { label: 'Received', value: <Amount value={bill.totalReceived} signed />, tone: 'text-emerald-700' },
+          { label: 'Outstanding', value: <Amount value={bill.outstandingAmount} signed />, tone: bill.outstandingAmount > 0 ? 'text-rose-700' : 'text-slate-900' },
+        ]}
+      />
 
       <Tabs value={tab} onValueChange={setTab}>
-        <TabsList className="flex h-auto w-full flex-wrap justify-start gap-1 bg-white/70 p-1">
-          <TabsTrigger value="overview">Overview</TabsTrigger>
-          <TabsTrigger value="deductions">Deductions ({bill.deductions.length})</TabsTrigger>
-          <TabsTrigger value="collections">Receipts ({detail.collections.length})</TabsTrigger>
-          <TabsTrigger value="retention">Retention</TabsTrigger>
-          <TabsTrigger value="documents">Documents ({detail.documents.length})</TabsTrigger>
-          <TabsTrigger value="followup">Follow-up ({detail.followUps.length})</TabsTrigger>
-          <TabsTrigger value="comments">Comments ({detail.comments.length})</TabsTrigger>
-          <TabsTrigger value="activity">Activity</TabsTrigger>
+        <TabsList className={BT_TABS_LIST}>
+          <TabsTrigger className={BT_TAB} value="overview">Overview</TabsTrigger>
+          <TabsTrigger className={BT_TAB} value="deductions">
+            Deductions <TabCount value={bill.deductions.length} />
+          </TabsTrigger>
+          <TabsTrigger className={BT_TAB} value="collections">
+            Receipts <TabCount value={detail.collections.length} />
+          </TabsTrigger>
+          <TabsTrigger className={BT_TAB} value="retention">Retention</TabsTrigger>
+          <TabsTrigger className={BT_TAB} value="documents">
+            Documents <TabCount value={detail.documents.length} />
+          </TabsTrigger>
+          <TabsTrigger className={BT_TAB} value="followup">
+            Follow-up <TabCount value={detail.followUps.length} />
+          </TabsTrigger>
+          <TabsTrigger className={BT_TAB} value="comments">
+            Comments <TabCount value={detail.comments.length} />
+          </TabsTrigger>
+          <TabsTrigger className={BT_TAB} value="activity">Activity</TabsTrigger>
         </TabsList>
 
         <TabsContent value="overview">
@@ -411,7 +414,7 @@ function Facts({ items }: { items: [string, React.ReactNode][] }) {
 function OverviewTab({ bill }: { bill: BillRow }) {
   const lookups = useLookups();
   return (
-    <Card className="border-white/60 bg-white/85 shadow-sm">
+    <Card className="border-slate-200 bg-white shadow-sm">
       <CardContent className="space-y-5 p-4">
         <Facts
           items={[
@@ -513,14 +516,14 @@ function NotesAgainst({ bill, notes }: { bill: BillRow; notes: Detail['notes'] }
 function DeductionsTab({ bill }: { bill: BillRow }) {
   const withGst = bill.deductions.some((line) => line.gstAmount);
   return (
-    <Card className="border-white/60 bg-white/85 shadow-sm">
+    <Card className="border-slate-200 bg-white shadow-sm">
       <CardContent className="p-0">
         {bill.deductions.length === 0 ? (
           <p className="p-6 text-sm text-muted-foreground">No deductions on this bill.</p>
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
-              <thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
+              <thead className="bg-slate-50 text-[11px] font-semibold uppercase tracking-wider text-slate-500">
                 <tr>
                   <th className="px-3 py-2 text-left">Deduction</th>
                   <th className="px-3 py-2 text-right">%</th>
@@ -545,7 +548,30 @@ function DeductionsTab({ bill }: { bill: BillRow }) {
                         <Amount value={line.baseAmount ?? line.amount} signed />
                       </td>
                     ) : null}
-                    {withGst ? <td className="px-3 py-2 text-right">{line.gstAmount ? <span title={`${line.gstRate}%`}><Amount value={line.gstAmount} /> <span className="text-xs text-muted-foreground">@{line.gstRate}%</span></span> : '—'}</td> : null}
+                    {withGst ? (
+                      <td className="px-3 py-2 text-right text-xs">
+                        {!line.gstAmount ? (
+                          '—'
+                        ) : line.igstAmount ? (
+                          <span>
+                            IGST {line.igstRate}% <Amount value={line.igstAmount} />
+                          </span>
+                        ) : line.cgstAmount !== undefined ? (
+                          <span className="space-y-0.5">
+                            <span className="block">
+                              CGST {line.cgstRate}% <Amount value={line.cgstAmount} />
+                            </span>
+                            <span className="block">
+                              SGST {line.sgstRate}% <Amount value={line.sgstAmount ?? 0} />
+                            </span>
+                          </span>
+                        ) : (
+                          <span>
+                            GST {line.gstRate}% <Amount value={line.gstAmount} />
+                          </span>
+                        )}
+                      </td>
+                    ) : null}
                     <td className="px-3 py-2 text-right">
                       <Amount value={line.amount} signed />
                     </td>
@@ -591,7 +617,7 @@ function CollectionsTab({ detail, reload }: { detail: Detail; reload: () => void
   };
   return (
     <div className="space-y-4">
-      <Card className="border-white/60 bg-white/85 shadow-sm">
+      <Card className="border-slate-200 bg-white shadow-sm">
         <CardContent className="space-y-3 p-4">
           <SectionHeader title="Receipts" as="h3" description="Only verified receipts reduce the outstanding." />
           {detail.collections.length === 0 ? <p className="text-sm text-muted-foreground">No collection records found for this bill.</p> : null}
@@ -631,7 +657,7 @@ function CollectionsTab({ detail, reload }: { detail: Detail; reload: () => void
         </CardContent>
       </Card>
 
-      <Card className="border-white/60 bg-white/85 shadow-sm">
+      <Card className="border-slate-200 bg-white shadow-sm">
         <CardContent className="space-y-3 p-4">
           <SectionHeader title="Payment ledger" as="h3" description="Bill raised, then every verified receipt — the running balance ends at the outstanding." />
           <LedgerTable lines={detail.ledger} />
@@ -663,7 +689,7 @@ export function LedgerTable({ lines }: { lines: LedgerLine[] }) {
   return (
     <div className="overflow-x-auto">
       <table className="w-full text-sm">
-        <thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
+        <thead className="bg-slate-50 text-[11px] font-semibold uppercase tracking-wider text-slate-500">
           <tr>
             <th className="px-3 py-2 text-left">Date</th>
             <th className="px-3 py-2 text-left">Transaction</th>
@@ -703,7 +729,7 @@ export function LedgerTable({ lines }: { lines: LedgerLine[] }) {
 function RetentionTab({ bill, releases }: { bill: BillRow; releases: RetentionRelease[] }) {
   const retentionLines = bill.deductions.filter((line) => line.kind.startsWith('retention'));
   return (
-    <Card className="border-white/60 bg-white/85 shadow-sm">
+    <Card className="border-slate-200 bg-white shadow-sm">
       <CardContent className="space-y-4 p-4">
         <SectionHeader title="Retention on this bill" icon={PiggyBank} as="h3" />
         {retentionLines.length === 0 && releases.length === 0 ? <p className="text-sm text-muted-foreground">No retention deducted on or released against this bill.</p> : null}
@@ -767,7 +793,7 @@ function DocumentsTab({ bill, documents, reload }: { bill: BillRow; documents: B
     }
   };
   return (
-    <Card className="border-white/60 bg-white/85 shadow-sm">
+    <Card className="border-slate-200 bg-white shadow-sm">
       <CardContent className="space-y-3 p-4">
         <SectionHeader title="Documents" icon={Paperclip} as="h3" description="Invoice, submission, measurement, payment advice, bank proof, TDS certificate, letters." />
         {can('Bills', 'Edit') && !bill.isDeleted ? (
@@ -889,7 +915,7 @@ function FollowUpTab({ bill, followUps, reload }: { bill: BillRow; followUps: Bi
 
   return (
     <div className="grid grid-cols-1 gap-4 lg:grid-cols-[minmax(0,1fr)_360px]">
-      <Card className="border-white/60 bg-white/85 shadow-sm">
+      <Card className="border-slate-200 bg-white shadow-sm">
         <CardContent className="space-y-3 p-4">
           <SectionHeader title="Follow-up history" icon={PhoneCall} as="h3" />
           {followUps.length === 0 ? <p className="text-sm text-muted-foreground">No follow-ups recorded yet.</p> : null}
@@ -939,7 +965,7 @@ function FollowUpTab({ bill, followUps, reload }: { bill: BillRow; followUps: Bi
       </Card>
 
       {can('Follow-ups', 'Add') && !bill.isDeleted ? (
-        <Card className="border-white/60 bg-white/85 shadow-sm">
+        <Card className="border-slate-200 bg-white shadow-sm">
           <CardContent className="space-y-3 p-4">
             <SectionHeader title="Record a follow-up" as="h3" />
             <div className="grid grid-cols-2 gap-2">
@@ -1029,7 +1055,7 @@ function CommentsTab({ bill, comments, reload }: { bill: BillRow; comments: Bill
     }
   };
   return (
-    <Card className="border-white/60 bg-white/85 shadow-sm">
+    <Card className="border-slate-200 bg-white shadow-sm">
       <CardContent className="space-y-3 p-4">
         <SectionHeader title="Internal comments" icon={MessageSquare} as="h3" description="Comments are kept in full — nothing overwrites an earlier remark. Type @Name to notify someone." />
         <div className="space-y-2">
@@ -1073,7 +1099,7 @@ function CommentsTab({ bill, comments, reload }: { bill: BillRow; comments: Bill
 
 export function ActivityTimeline({ entries }: { entries: BillActivity[] }) {
   return (
-    <Card className="border-white/60 bg-white/85 shadow-sm">
+    <Card className="border-slate-200 bg-white shadow-sm">
       <CardContent className="space-y-3 p-4">
         <SectionHeader title="Activity" icon={Activity} as="h3" description="Immutable audit trail — every financial action with who, when, before and after, and the reason." />
         {entries.length === 0 ? <p className="text-sm text-muted-foreground">No activity recorded.</p> : null}

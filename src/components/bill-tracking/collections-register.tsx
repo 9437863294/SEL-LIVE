@@ -12,7 +12,6 @@ import { Plus, Wallet } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Label } from '@/components/ui/label';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
 import { PageHeader } from '@/components/shared/page-header';
 import { StatusBadge } from '@/components/shared/status-badge';
@@ -22,8 +21,9 @@ import { PAYMENT_MODES, type BillCollection } from '@/lib/bill-tracking/types';
 
 import { btFetch, useBt, useBtQuery, useLookups } from './bt-client';
 import { BillFilterBar, useUrlFilters } from './bt-filters';
+import { ToolbarSelect } from './bt-toolbar';
 import { BtTable, Pager, type BtColumn } from './bt-table';
-import { Amount, BtEmpty, BtError, BtLoading, ExportMenu, dateText } from './bt-ui';
+import { Amount, BtEmpty, BtError, BtLoading, ExportMenu, dateText, StatStrip } from './bt-ui';
 
 interface Response {
   rows: BillCollection[];
@@ -135,36 +135,17 @@ export default function CollectionsRegister() {
         hide={['payment']}
         extra={
           <>
-            <div className="min-w-0 space-y-1">
-              <Label className="text-xs text-muted-foreground">Status</Label>
-              <Select value={filters.get('status') || 'any'} onValueChange={(value) => filters.set({ status: value })}>
-                <SelectTrigger className="h-9">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="any">All</SelectItem>
-                  <SelectItem value="draft">Awaiting verification</SelectItem>
-                  <SelectItem value="verified">Verified</SelectItem>
-                  <SelectItem value="cancelled">Cancelled</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="min-w-0 space-y-1">
-              <Label className="text-xs text-muted-foreground">Mode</Label>
-              <Select value={filters.get('mode') || 'any'} onValueChange={(value) => filters.set({ mode: value })}>
-                <SelectTrigger className="h-9">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="any">All</SelectItem>
-                  {PAYMENT_MODES.map((mode) => (
-                    <SelectItem key={mode} value={mode}>
-                      {mode}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
+            <ToolbarSelect
+              label="Receipt"
+              value={filters.get('status')}
+              onChange={(value) => filters.set({ status: value })}
+              options={[
+                { value: 'draft', label: 'Awaiting verification' },
+                { value: 'verified', label: 'Verified' },
+                { value: 'cancelled', label: 'Cancelled' },
+              ]}
+            />
+            <ToolbarSelect label="Mode" value={filters.get('mode')} onChange={(value) => filters.set({ mode: value })} options={PAYMENT_MODES.map((mode) => ({ value: mode, label: mode.replace('_', ' ') }))} />
           </>
         }
         actions={
@@ -196,38 +177,21 @@ export default function CollectionsRegister() {
         }
       />
       {data ? (
-        <div className="grid grid-cols-2 gap-3 rounded-xl border border-white/60 bg-white/80 p-3 text-sm shadow-sm sm:grid-cols-4">
-          <div>
-            <p className="text-[11px] uppercase text-muted-foreground">Receipts</p>
-            <p className="font-semibold">{data.totals.count}</p>
-          </div>
-          <div>
-            <p className="text-[11px] uppercase text-muted-foreground">Verified</p>
-            <p className="font-semibold text-emerald-700">
-              <Amount value={data.totals.verified} compact />
-            </p>
-          </div>
-          <div>
-            <p className="text-[11px] uppercase text-muted-foreground">Awaiting verification</p>
-            <p className="font-semibold text-amber-700">
-              <Amount value={data.totals.draft} compact />
-            </p>
-          </div>
-          <div>
-            <p className="text-[11px] uppercase text-muted-foreground">Unallocated</p>
-            <p className="font-semibold">
-              <Amount value={data.totals.unallocated} compact />
-            </p>
-          </div>
-        </div>
+        <StatStrip
+          items={[
+            { label: 'Receipts', value: data.totals.count.toLocaleString('en-IN') },
+            { label: 'Verified', value: <Amount value={data.totals.verified} compact />, tone: 'text-emerald-700' },
+            { label: 'Awaiting verification', value: <Amount value={data.totals.draft} compact />, tone: 'text-amber-700' },
+            { label: 'Unallocated', value: <Amount value={data.totals.unallocated} compact /> },
+          ]}
+        />
       ) : null}
       <BtError message={error} onRetry={reload} />
       {loading && !data ? (
         <BtLoading />
       ) : (
-        <BtTable rows={data?.rows ?? []} columns={columns} storageKey="collections" showTotals rowClassName={(row) => (row.status === 'cancelled' ? 'opacity-50' : filters.get('highlight') === row.id ? 'bg-emerald-50' : undefined)} empty={<BtEmpty title="No collection records found." description="Record a receipt from a bill, or here for a payment covering several bills." />} />
+        <BtTable rows={data?.rows ?? []} columns={columns} storageKey="collections" showTotals caption={data ? `${data.total.toLocaleString('en-IN')} receipt${data.total === 1 ? '' : 's'}` : undefined} footer={data && data.total > 0 ? <Pager page={data.page} pages={data.pages} total={data.total} pageSize={data.pageSize} onPage={(next) => filters.set({ page: String(next) }, false)} /> : undefined} rowClassName={(row) => (row.status === 'cancelled' ? 'opacity-50' : filters.get('highlight') === row.id ? 'bg-emerald-50' : undefined)} empty={<BtEmpty title="No collection records found." description="Record a receipt from a bill, or here for a payment covering several bills." />} />
       )}
-      {data ? <Pager page={data.page} pages={data.pages} total={data.total} pageSize={data.pageSize} onPage={(next) => filters.set({ page: String(next) }, false)} /> : null}
 
       <Dialog open={Boolean(cancel)} onOpenChange={(open) => !open && setCancel(null)}>
         <DialogContent className={PM_DIALOG.content}>

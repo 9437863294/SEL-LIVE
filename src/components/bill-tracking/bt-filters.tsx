@@ -19,7 +19,6 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Sheet, SheetContent, SheetDescription, SheetFooter, SheetHeader, SheetTitle } from '@/components/ui/sheet';
-import { FilterBar } from '@/components/shared/filter-bar';
 import { useToast } from '@/hooks/use-toast';
 import {
   AGEING_BASIS_LABELS,
@@ -29,6 +28,7 @@ import {
 } from '@/lib/bill-tracking/types';
 
 import { btFetch, useBtQuery, useLookups } from './bt-client';
+import { BtToolbar, ToolbarSearch, ToolbarSelect } from './bt-toolbar';
 import { FySelect } from './bt-ui';
 
 /** Keys that are filters (counted as "active"); page, sort and size are not. */
@@ -73,12 +73,13 @@ export function useUrlFilters() {
 
 export type UrlFilters = ReturnType<typeof useUrlFilters>;
 
-function FilterSelect({ label, value, onChange, options, placeholder = 'All' }: { label: string; value: string; onChange: (value: string) => void; options: { value: string; label: string }[]; placeholder?: string }) {
+/** A labelled dropdown for the "More filters" drawer (a vertical form, so labels sit above). */
+function DrawerSelect({ label, value, onChange, options, placeholder = 'All' }: { label: string; value: string; onChange: (value: string) => void; options: { value: string; label: string }[]; placeholder?: string }) {
   return (
-    <div className="min-w-0 space-y-1">
-      <Label className="text-xs text-muted-foreground">{label}</Label>
-      <Select value={value || 'any'} onValueChange={onChange}>
-        <SelectTrigger className="h-9">
+    <div className="min-w-0 space-y-1.5">
+      <Label className="text-xs font-medium text-slate-700">{label}</Label>
+      <Select value={value || 'any'} onValueChange={(next) => onChange(next === 'any' ? '' : next)}>
+        <SelectTrigger className={value ? 'h-9 border-emerald-400 bg-emerald-50' : 'h-9'}>
           <SelectValue placeholder={placeholder} />
         </SelectTrigger>
         <SelectContent className="max-h-72">
@@ -94,11 +95,21 @@ function FilterSelect({ label, value, onChange, options, placeholder = 'All' }: 
   );
 }
 
+function DrawerInput({ label, ...props }: { label: string } & React.InputHTMLAttributes<HTMLInputElement>) {
+  return (
+    <div className="min-w-0 space-y-1.5">
+      <Label className="text-xs font-medium text-slate-700">{label}</Label>
+      <Input {...props} className={props.value ? 'h-9 border-emerald-400 bg-emerald-50' : 'h-9'} />
+    </div>
+  );
+}
+
 const entries = <K extends string>(labels: Record<K, string>) => (Object.entries(labels) as [K, string][]).map(([value, label]) => ({ value, label }));
 
 /**
- * The standard filter bar: search, FY, project and payment status inline; everything else in the
- * advanced drawer. `extra` adds page-specific controls inline.
+ * The standard filter toolbar: search, FY, project and payment status inline; everything else in
+ * the "More filters" drawer, shown as removable chips once set. `extra` adds page-specific
+ * controls inline (use `ToolbarSelect` / `ToolbarDate` so they line up).
  */
 export function BillFilterBar({ filters, page, extra, summary, actions, hide = [] }: { filters: UrlFilters; page: string; extra?: React.ReactNode; summary?: React.ReactNode; actions?: React.ReactNode; hide?: string[] }) {
   const lookups = useLookups();
@@ -118,24 +129,63 @@ export function BillFilterBar({ filters, page, extra, summary, actions, hide = [
   };
 
   const projectOptions = lookups.projects.map((project) => ({ value: project.id, label: project.name }));
+  const clientOptions = lookups.clients.map((client) => ({ value: client.id, label: client.name }));
+  const categoryOptions = lookups.config.billCategories.map((category) => ({ value: category.id, label: category.name }));
   // Sub categories narrow to the chosen main category; names repeat across projects, so dedupe.
   const chosenCategory = filters.get('category');
   const billTypes = [...new Set(lookups.config.billTypes.filter((type) => !chosenCategory || type.categoryId === chosenCategory).map((type) => type.name))]
     .sort()
     .map((name) => ({ value: name, label: name }));
   const buckets = lookups.config.settings.ageingBuckets.map((bucket) => ({ value: bucket.label, label: `${bucket.label} days` }));
+  const ownerOptions = lookups.users.map((user) => ({ value: user.id, label: user.name }));
+
+  // Filters set in the drawer, as chips under the toolbar — so nothing filters the list unseen.
+  const nameOf = (options: { value: string; label: string }[], value: string) => options.find((option) => option.value === value)?.label ?? value;
+  const chipDefs: [string, string, (value: string) => string][] = [
+    ['client', 'Client', (value) => nameOf(clientOptions, value)],
+    ['dgm', 'DGM office', (value) => value],
+    ['category', 'Main category', (value) => nameOf(categoryOptions, value)],
+    ['billType', 'Sub category', (value) => value],
+    ['txn', 'Type', (value) => nameOf(entries(TRANSACTION_TYPE_LABELS), value)],
+    ['workflow', 'Workflow', (value) => nameOf(entries(WORKFLOW_STATUS_LABELS), value)],
+    ['ageing', 'Ageing', (value) => `${value} days`],
+    ['basis', 'Aged from', (value) => nameOf(entries(AGEING_BASIS_LABELS), value)],
+    ['owner', 'Owner', (value) => nameOf(ownerOptions, value)],
+    ['from', 'Bill date from', (value) => value],
+    ['to', 'Bill date to', (value) => value],
+    ['min', 'Outstanding ≥', (value) => `₹${Number(value).toLocaleString('en-IN')}`],
+    ['max', 'Outstanding ≤', (value) => `₹${Number(value).toLocaleString('en-IN')}`],
+    ['targetWeek', 'Target week', (value) => value],
+    ['asOf', 'As on', (value) => value],
+    ['ids', 'Selected bills', (value) => `${value.split(',').length}`],
+  ];
+  const chips = chipDefs
+    .filter(([key]) => filters.get(key))
+    .map(([key, label, show]) => ({ key, label, value: show(filters.get(key)), onRemove: () => filters.set({ [key]: undefined }) }));
 
   return (
     <>
-      <FilterBar
-        search={{
-          value: search,
-          onChange: (value) => {
-            setSearch(value);
-            pushSearch(value);
-          },
-          placeholder: 'Search invoice, bill no, project, client, amount, UTR…',
-        }}
+      <BtToolbar
+        search={
+          <ToolbarSearch
+            className="flex-1 sm:w-64 sm:flex-none"
+            value={search}
+            placeholder="Search invoice, bill no, project, client, amount, UTR…"
+            onChange={(value) => {
+              setSearch(value);
+              pushSearch(value);
+            }}
+          />
+        }
+        controls={
+          <>
+            <FySelect value={filters.fy} onChange={(value) => filters.set({ fy: value })} />
+            {!hide.includes('project') ? <ToolbarSelect label="Project" value={filters.get('project')} onChange={(value) => filters.set({ project: value })} options={projectOptions} allLabel="All projects" /> : null}
+            {!hide.includes('payment') ? <ToolbarSelect label="Status" value={filters.get('payment')} onChange={(value) => filters.set({ payment: value })} options={entries(PAYMENT_STATUS_LABELS)} /> : null}
+            {extra}
+          </>
+        }
+        chips={chips}
         activeCount={filters.activeCount}
         onClear={() => {
           setSearch('');
@@ -143,70 +193,62 @@ export function BillFilterBar({ filters, page, extra, summary, actions, hide = [
         }}
         summary={summary}
         actions={
-          <div className="flex flex-wrap items-center gap-2">
-            <Button variant="outline" size="sm" className="gap-1.5" onClick={() => setDrawer(true)}>
+          <>
+            <Button variant="outline" size="sm" className="h-9 gap-1.5" onClick={() => setDrawer(true)}>
               <SlidersHorizontal className="h-4 w-4" /> More filters
+              {chips.length ? <span className="rounded-full bg-emerald-600 px-1.5 text-[11px] font-semibold leading-4 text-white">{chips.length}</span> : null}
             </Button>
             <SavedViews page={page} filters={filters} />
             {actions}
-          </div>
+          </>
         }
-      >
-        <div className="min-w-0 space-y-1">
-          <Label className="text-xs text-muted-foreground">Financial year</Label>
-          <FySelect value={filters.fy} onChange={(value) => filters.set({ fy: value })} />
-        </div>
-        {!hide.includes('project') ? <FilterSelect label="Project" value={filters.get('project')} onChange={(value) => filters.set({ project: value })} options={projectOptions} placeholder="All projects" /> : null}
-        {!hide.includes('payment') ? <FilterSelect label="Payment status" value={filters.get('payment')} onChange={(value) => filters.set({ payment: value })} options={entries(PAYMENT_STATUS_LABELS)} /> : null}
-        {extra}
-      </FilterBar>
+      />
 
       <Sheet open={drawer} onOpenChange={setDrawer}>
-        <SheetContent side="right" className="w-full overflow-y-auto sm:max-w-md">
-          <SheetHeader>
-            <SheetTitle>Filters</SheetTitle>
+        <SheetContent side="right" className="flex w-full flex-col gap-0 p-0 sm:max-w-md">
+          <SheetHeader className="border-b border-slate-100 px-5 py-4">
+            <SheetTitle>More filters</SheetTitle>
             <SheetDescription>Applied to the list, its totals and any export.</SheetDescription>
           </SheetHeader>
-          <div className="mt-4 grid grid-cols-1 gap-3">
-            <FilterSelect label="Client" value={filters.get('client')} onChange={(value) => filters.set({ client: value })} options={lookups.clients.map((client) => ({ value: client.id, label: client.name }))} placeholder="All clients" />
-            <FilterSelect label="DGM office" value={filters.get('dgm')} onChange={(value) => filters.set({ dgm: value })} options={lookups.dgmOffices.map((office) => ({ value: office, label: office }))} placeholder="All offices" />
-            <FilterSelect label="Main category" value={filters.get('category')} onChange={(value) => filters.set({ category: value, billType: undefined })} options={lookups.config.billCategories.map((category) => ({ value: category.id, label: category.name }))} placeholder="All main categories" />
-            <FilterSelect label="Sub category" value={filters.get('billType')} onChange={(value) => filters.set({ billType: value })} options={billTypes} placeholder="All sub categories" />
-            <FilterSelect label="Transaction type" value={filters.get('txn')} onChange={(value) => filters.set({ txn: value })} options={entries(TRANSACTION_TYPE_LABELS)} />
-            <FilterSelect label="Workflow status" value={filters.get('workflow')} onChange={(value) => filters.set({ workflow: value })} options={entries(WORKFLOW_STATUS_LABELS)} />
-            <FilterSelect label="Ageing bucket" value={filters.get('ageing')} onChange={(value) => filters.set({ ageing: value })} options={buckets} placeholder="Any age" />
-            <FilterSelect label="Ageing measured from" value={filters.get('basis')} onChange={(value) => filters.set({ basis: value })} options={entries(AGEING_BASIS_LABELS)} placeholder={`Default (${AGEING_BASIS_LABELS[lookups.config.settings.defaultAgeingBasis]})`} />
-            <FilterSelect label="Collection owner" value={filters.get('owner')} onChange={(value) => filters.set({ owner: value })} options={lookups.users.map((user) => ({ value: user.id, label: user.name }))} placeholder="Anyone" />
-            <div className="grid grid-cols-2 gap-2">
-              <div className="space-y-1">
-                <Label className="text-xs text-muted-foreground">Bill date from</Label>
-                <Input type="date" value={filters.get('from')} onChange={(event) => filters.set({ from: event.target.value })} className="h-9" />
+          <div className="flex-1 space-y-5 overflow-y-auto px-5 py-4">
+            <fieldset className="space-y-3">
+              <legend className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-slate-400">Who and what</legend>
+              <DrawerSelect label="Client" value={filters.get('client')} onChange={(value) => filters.set({ client: value })} options={clientOptions} placeholder="All clients" />
+              <DrawerSelect label="DGM office" value={filters.get('dgm')} onChange={(value) => filters.set({ dgm: value })} options={lookups.dgmOffices.map((office) => ({ value: office, label: office }))} placeholder="All offices" />
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                <DrawerSelect label="Main category" value={filters.get('category')} onChange={(value) => filters.set({ category: value, billType: undefined })} options={categoryOptions} placeholder="All" />
+                <DrawerSelect label="Sub category" value={filters.get('billType')} onChange={(value) => filters.set({ billType: value })} options={billTypes} placeholder="All" />
+                <DrawerSelect label="Transaction type" value={filters.get('txn')} onChange={(value) => filters.set({ txn: value })} options={entries(TRANSACTION_TYPE_LABELS)} />
+                <DrawerSelect label="Workflow status" value={filters.get('workflow')} onChange={(value) => filters.set({ workflow: value })} options={entries(WORKFLOW_STATUS_LABELS)} />
               </div>
-              <div className="space-y-1">
-                <Label className="text-xs text-muted-foreground">to</Label>
-                <Input type="date" value={filters.get('to')} onChange={(event) => filters.set({ to: event.target.value })} className="h-9" />
+              <DrawerSelect label="Collection owner" value={filters.get('owner')} onChange={(value) => filters.set({ owner: value })} options={ownerOptions} placeholder="Anyone" />
+            </fieldset>
+            <fieldset className="space-y-3">
+              <legend className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-slate-400">Dates and ageing</legend>
+              <div className="grid grid-cols-2 gap-3">
+                <DrawerInput label="Bill date from" type="date" value={filters.get('from')} onChange={(event) => filters.set({ from: event.target.value })} />
+                <DrawerInput label="Bill date to" type="date" value={filters.get('to')} onChange={(event) => filters.set({ to: event.target.value })} />
               </div>
-              <div className="space-y-1">
-                <Label className="text-xs text-muted-foreground">Outstanding ≥ (₹)</Label>
-                <Input type="number" inputMode="decimal" value={filters.get('min')} onChange={(event) => filters.set({ min: event.target.value })} className="h-9" />
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                <DrawerSelect label="Ageing bucket" value={filters.get('ageing')} onChange={(value) => filters.set({ ageing: value })} options={buckets} placeholder="Any age" />
+                <DrawerSelect label="Aged from" value={filters.get('basis')} onChange={(value) => filters.set({ basis: value })} options={entries(AGEING_BASIS_LABELS)} placeholder={`Default (${AGEING_BASIS_LABELS[lookups.config.settings.defaultAgeingBasis]})`} />
               </div>
-              <div className="space-y-1">
-                <Label className="text-xs text-muted-foreground">Outstanding ≤ (₹)</Label>
-                <Input type="number" inputMode="decimal" value={filters.get('max')} onChange={(event) => filters.set({ max: event.target.value })} className="h-9" />
+              <div className="grid grid-cols-2 gap-3">
+                <DrawerInput label="As on date" type="date" value={filters.get('asOf')} onChange={(event) => filters.set({ asOf: event.target.value })} />
+                <DrawerInput label="Target week" placeholder="2026-W41" value={filters.get('targetWeek')} onChange={(event) => filters.set({ targetWeek: event.target.value })} />
               </div>
-              <div className="space-y-1">
-                <Label className="text-xs text-muted-foreground">Target week</Label>
-                <Input placeholder="2026-W41" value={filters.get('targetWeek')} onChange={(event) => filters.set({ targetWeek: event.target.value })} className="h-9" />
+            </fieldset>
+            <fieldset className="space-y-3">
+              <legend className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-slate-400">Amount outstanding</legend>
+              <div className="grid grid-cols-2 gap-3">
+                <DrawerInput label="At least (₹)" type="number" inputMode="decimal" value={filters.get('min')} onChange={(event) => filters.set({ min: event.target.value })} />
+                <DrawerInput label="At most (₹)" type="number" inputMode="decimal" value={filters.get('max')} onChange={(event) => filters.set({ max: event.target.value })} />
               </div>
-              <div className="space-y-1">
-                <Label className="text-xs text-muted-foreground">As on date</Label>
-                <Input type="date" value={filters.get('asOf')} onChange={(event) => filters.set({ asOf: event.target.value })} className="h-9" />
-              </div>
-            </div>
+            </fieldset>
           </div>
-          <SheetFooter className="mt-6 gap-2">
+          <SheetFooter className="flex-row justify-end gap-2 border-t border-slate-100 px-5 py-3">
             <Button variant="outline" onClick={() => filters.clear()}>
-              Reset
+              Reset all
             </Button>
             <Button onClick={() => setDrawer(false)}>Done</Button>
           </SheetFooter>
@@ -247,7 +289,7 @@ function SavedViews({ page, filters }: { page: string; filters: UrlFilters }) {
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
-        <Button variant="outline" size="sm" className="gap-1.5">
+        <Button variant="outline" size="sm" className="h-9 gap-1.5">
           <Bookmark className="h-4 w-4" /> Views
         </Button>
       </DropdownMenuTrigger>

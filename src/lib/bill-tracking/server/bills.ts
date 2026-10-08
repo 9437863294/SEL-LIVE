@@ -112,7 +112,7 @@ export function assertMonthOpen(context: BtContext, config: BillTrackingConfig, 
  * taxable or gross less other deductions; GST on GST-applicable deductions). The form's figures are a
  * preview only.
  */
-function resolveDeductions(lines: BillInput['deductions'], config: BillTrackingConfig, context: { taxable: number; gross: number }, existing: readonly BillDeduction[] = []): BillDeduction[] {
+function resolveDeductions(lines: BillInput['deductions'], config: BillTrackingConfig, context: { taxable: number; gross: number; gstType?: BillInput['gstType'] }, existing: readonly BillDeduction[] = []): BillDeduction[] {
   for (const line of lines) {
     const type = config.deductionTypes.find((entry) => entry.id === line.deductionTypeId);
     // A type retired after a bill used it stays valid on that bill; a new line needs an active type.
@@ -214,7 +214,7 @@ export function composeBill({ context, input, config, project, client, existing,
   }
 
   const note = composeNoteLink(input, against, existing, project.id);
-  const deductions = resolveDeductions(input.deductions, config, { taxable: input.taxableAmount, gross: roundMoney(input.taxableAmount + gst.gstAmount) }, existing?.deductions);
+  const deductions = resolveDeductions(input.deductions, config, { taxable: input.taxableAmount, gross: roundMoney(input.taxableAmount + gst.gstAmount), gstType: gst.gstType }, existing?.deductions);
   const collections = existing?.collections ?? [];
   const totals = deriveBillTotals(
     {

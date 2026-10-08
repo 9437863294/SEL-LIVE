@@ -57,6 +57,10 @@ export interface BtTableProps<T extends { id: string }> {
   maxHeightClassName?: string;
   toolbarSlot?: React.ReactNode;
   dense?: boolean;
+  /** Left side of the table's header bar — a count or a title. */
+  caption?: React.ReactNode;
+  /** Inside the frame, under the table — the pager. */
+  footer?: React.ReactNode;
 }
 
 function readHidden(key: string | undefined, columns: BtColumn<unknown>[]): Set<string> {
@@ -86,6 +90,8 @@ export function BtTable<T extends { id: string }>({
   maxHeightClassName = 'max-h-[70vh]',
   toolbarSlot,
   dense,
+  caption,
+  footer,
 }: BtTableProps<T>) {
   const [hidden, setHidden] = useState<Set<string>>(() => new Set(columns.filter((column) => column.defaultHidden).map((column) => column.key)));
   const [localSort, setLocalSort] = useState<{ key: string; dir: 'asc' | 'desc' } | null>(null);
@@ -153,38 +159,49 @@ export function BtTable<T extends { id: string }>({
   const asideColumn = columns.find((column) => column.mobile === 'aside');
   const detailColumns = visible.filter((column) => column !== titleColumn && column !== asideColumn && column.mobile !== 'omit');
 
+  // Wide registers keep their identity column in view while the figures scroll sideways.
+  const pinFirst = visible.length > 7;
+  const firstKey = visible[0]?.key;
+  const pinnedCell = (key: string) => pinFirst && key === firstKey;
+  const pinOffset = selectable ? 'left-10' : 'left-0';
+  const showBar = Boolean(caption || toolbarSlot || hideable.length > 3);
+  const cellY = dense ? 'py-1.5' : 'py-2.5';
+
   return (
-    <div className="min-w-0 space-y-2">
-      {(hideable.length > 0 || toolbarSlot) && (
-        <div className="flex flex-wrap items-center justify-end gap-2">
-          {toolbarSlot}
-          {hideable.length > 3 ? (
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button variant="outline" size="sm" className="hidden gap-1.5 sm:inline-flex">
-                  <Columns className="h-4 w-4" /> Columns
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" className="max-h-80 w-56 overflow-y-auto">
-                <DropdownMenuLabel>Show columns</DropdownMenuLabel>
-                <DropdownMenuSeparator />
-                {hideable.map((column) => (
-                  <DropdownMenuCheckboxItem key={column.key} checked={!hidden.has(column.key)} onCheckedChange={() => toggleColumn(column.key)} onSelect={(event) => event.preventDefault()}>
-                    {column.label ?? (typeof column.header === 'string' ? column.header : column.key)}
-                  </DropdownMenuCheckboxItem>
-                ))}
-              </DropdownMenuContent>
-            </DropdownMenu>
-          ) : null}
+    <div className="min-w-0 overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
+      {showBar ? (
+        <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 px-3 py-2">
+          <div className="min-w-0 text-sm font-medium text-slate-700">{caption}</div>
+          <div className="flex flex-wrap items-center gap-2">
+            {toolbarSlot}
+            {hideable.length > 3 ? (
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button variant="ghost" size="sm" className="hidden h-8 gap-1.5 text-slate-600 sm:inline-flex">
+                    <Columns className="h-4 w-4" /> Columns
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end" className="max-h-80 w-56 overflow-y-auto">
+                  <DropdownMenuLabel>Show columns</DropdownMenuLabel>
+                  <DropdownMenuSeparator />
+                  {hideable.map((column) => (
+                    <DropdownMenuCheckboxItem key={column.key} checked={!hidden.has(column.key)} onCheckedChange={() => toggleColumn(column.key)} onSelect={(event) => event.preventDefault()}>
+                      {column.label ?? (typeof column.header === 'string' ? column.header : column.key)}
+                    </DropdownMenuCheckboxItem>
+                  ))}
+                </DropdownMenuContent>
+              </DropdownMenu>
+            ) : null}
+          </div>
         </div>
-      )}
+      ) : null}
 
       {rows.length === 0 ? (
-        <div className="rounded-xl border border-white/60 bg-white/70">{empty}</div>
+        <div className="bg-slate-50/40">{empty}</div>
       ) : (
         <>
           {/* Phone: cards */}
-          <div className="space-y-2 sm:hidden">
+          <div className="space-y-2 bg-slate-50/60 p-2 sm:hidden">
             {sortedRows.map((row) => {
               const href = rowHref?.(row);
               // A card's own links and buttons (the bill number, "Receive", drill-downs) cannot sit
@@ -193,18 +210,18 @@ export function BtTable<T extends { id: string }>({
               // interactive elements are lifted above that layer so they stay clickable. The lifting
               // rules sit on the content wrapper, not the card, so they never match the layer itself.
               return (
-                <div key={row.id} className={cn('relative rounded-xl border border-slate-200 bg-white p-3 shadow-sm', href && 'transition hover:border-emerald-300', rowClassName?.(row))}>
-                  {href ? <Link href={href} className="absolute inset-0 rounded-xl focus-visible:outline focus-visible:outline-2 focus-visible:outline-emerald-500" aria-label="Open details" /> : null}
+                <div key={row.id} className={cn('relative rounded-lg border border-slate-200 bg-white p-3 shadow-sm', href && 'transition hover:border-emerald-300', rowClassName?.(row))}>
+                  {href ? <Link href={href} className="absolute inset-0 rounded-lg focus-visible:outline focus-visible:outline-2 focus-visible:outline-emerald-500" aria-label="Open details" /> : null}
                   <div className={cn(href && '[&_a]:relative [&_a]:z-10 [&_button]:relative [&_button]:z-10 [&_input]:relative [&_input]:z-10 [&_label]:relative [&_label]:z-10')}>
                     <div className="flex items-start justify-between gap-2">
                       <div className="min-w-0 flex-1 font-medium text-slate-800">{titleColumn.cell(row)}</div>
-                      {asideColumn ? <div className="shrink-0 text-right">{asideColumn.cell(row)}</div> : null}
+                      {asideColumn ? <div className="shrink-0 text-right font-semibold">{asideColumn.cell(row)}</div> : null}
                     </div>
-                    <dl className="mt-2 grid grid-cols-2 gap-x-3 gap-y-1.5 text-xs">
+                    <dl className="mt-2 grid grid-cols-2 gap-x-3 gap-y-2 border-t border-slate-100 pt-2 text-xs">
                       {detailColumns.map((column) => (
                         <div key={column.key} className="min-w-0">
-                          <dt className="text-muted-foreground">{column.label ?? (typeof column.header === 'string' ? column.header : column.key)}</dt>
-                          <dd className="truncate text-slate-700">{column.cell(row)}</dd>
+                          <dt className="text-[10px] font-medium uppercase tracking-wide text-slate-400">{column.label ?? (typeof column.header === 'string' ? column.header : column.key)}</dt>
+                          <dd className="mt-0.5 truncate text-slate-700">{column.cell(row)}</dd>
                         </div>
                       ))}
                     </dl>
@@ -215,12 +232,12 @@ export function BtTable<T extends { id: string }>({
           </div>
 
           {/* Desktop: table */}
-          <div className={cn('hidden min-w-0 overflow-auto rounded-xl border border-slate-200 bg-white sm:block', maxHeightClassName)}>
-            <table className={cn('w-full border-collapse text-sm', dense ? '[&_td]:py-1.5' : '[&_td]:py-2')}>
-              <thead className="sticky top-0 z-10 bg-slate-50 shadow-[0_1px_0_0_rgb(226,232,240)]">
+          <div className={cn('hidden min-w-0 overflow-auto sm:block', maxHeightClassName)}>
+            <table className="w-full border-separate border-spacing-0 text-sm">
+              <thead className="sticky top-0 z-20">
                 <tr>
                   {selectable ? (
-                    <th className="w-10 px-3 py-2">
+                    <th className={cn('w-10 border-b border-slate-200 bg-slate-50 px-3 py-2.5', pinFirst && 'sticky left-0 z-10')}>
                       <Checkbox checked={Boolean(allSelected)} onCheckedChange={toggleAll} aria-label="Select all rows on this page" />
                     </th>
                   ) : null}
@@ -229,11 +246,21 @@ export function BtTable<T extends { id: string }>({
                     const sortable = Boolean(column.sortKey || column.sortValue);
                     const active = activeSort?.key === key;
                     return (
-                      <th key={column.key} scope="col" className={cn('whitespace-nowrap px-3 py-2 text-xs font-semibold uppercase tracking-wide text-slate-500', alignClass(column.align), column.headerClassName)} aria-sort={active ? (activeSort?.dir === 'asc' ? 'ascending' : 'descending') : undefined}>
+                      <th
+                        key={column.key}
+                        scope="col"
+                        className={cn(
+                          'whitespace-nowrap border-b border-slate-200 bg-slate-50 px-3 py-2.5 text-[11px] font-semibold uppercase tracking-wider text-slate-500',
+                          alignClass(column.align),
+                          pinnedCell(column.key) && cn('sticky z-10 shadow-[1px_0_0_0_rgb(226,232,240)]', pinOffset),
+                          column.headerClassName,
+                        )}
+                        aria-sort={active ? (activeSort?.dir === 'asc' ? 'ascending' : 'descending') : undefined}
+                      >
                         {sortable ? (
-                          <button type="button" onClick={() => clickSort(column)} className={cn('inline-flex items-center gap-1 hover:text-slate-900', column.align === 'right' && 'flex-row-reverse')}>
+                          <button type="button" onClick={() => clickSort(column)} className={cn('inline-flex items-center gap-1 uppercase hover:text-slate-900', active && 'text-slate-900', column.align === 'right' && 'flex-row-reverse')}>
                             {column.header}
-                            {active ? activeSort?.dir === 'asc' ? <ArrowUp className="h-3 w-3" /> : <ArrowDown className="h-3 w-3" /> : <ArrowUpDown className="h-3 w-3 opacity-40" />}
+                            {active ? activeSort?.dir === 'asc' ? <ArrowUp className="h-3 w-3" /> : <ArrowDown className="h-3 w-3" /> : <ArrowUpDown className="h-3 w-3 opacity-30" />}
                           </button>
                         ) : (
                           column.header
@@ -244,27 +271,53 @@ export function BtTable<T extends { id: string }>({
                 </tr>
               </thead>
               <tbody>
-                {sortedRows.map((row) => (
-                  <tr key={row.id} className={cn('border-t border-slate-100 hover:bg-emerald-50/40', selected?.has(row.id) && 'bg-emerald-50/60', rowClassName?.(row))}>
-                    {selectable ? (
-                      <td className="px-3">
-                        <Checkbox checked={Boolean(selected?.has(row.id))} onCheckedChange={() => toggleRow(row.id)} aria-label="Select row" />
-                      </td>
-                    ) : null}
-                    {visible.map((column) => (
-                      <td key={column.key} className={cn('px-3 align-middle', alignClass(column.align), column.className)}>
-                        {column.cell(row)}
-                      </td>
-                    ))}
-                  </tr>
-                ))}
+                {sortedRows.map((row) => {
+                  const isSelected = Boolean(selected?.has(row.id));
+                  // Pinned cells need an opaque background that follows the row's stripe, hover and selection:
+                  // the row always has one, and the pinned cell inherits it (group-* variants would escape
+                  // the dark-mode compat layer, which remaps only plain, hover: and even: surfaces).
+                  const pinnedBg = 'bg-inherit';
+                  const extra = rowClassName?.(row);
+                  // A row tinted by the page (a failed import row, a highlighted receipt) drops the stripe.
+                  const tinted = Boolean(extra?.split(' ').some((name) => name.startsWith('bg-')));
+                  return (
+                    <tr key={row.id} className={cn('transition-colors hover:bg-emerald-50', isSelected ? 'bg-emerald-50' : tinted ? undefined : 'bg-white even:bg-slate-50', extra)}>
+                      {selectable ? (
+                        <td className={cn('border-b border-slate-100 px-3', cellY, pinFirst && cn('sticky left-0 z-[1]', pinnedBg))}>
+                          <Checkbox checked={isSelected} onCheckedChange={() => toggleRow(row.id)} aria-label="Select row" />
+                        </td>
+                      ) : null}
+                      {visible.map((column) => (
+                        <td
+                          key={column.key}
+                          className={cn(
+                            'border-b border-slate-100 px-3 align-middle text-slate-700',
+                            cellY,
+                            alignClass(column.align),
+                            pinnedCell(column.key) && cn('sticky z-[1] shadow-[1px_0_0_0_rgb(226,232,240)]', pinOffset, pinnedBg),
+                            column.className,
+                          )}
+                        >
+                          {column.cell(row)}
+                        </td>
+                      ))}
+                    </tr>
+                  );
+                })}
               </tbody>
               {showTotals ? (
-                <tfoot className="sticky bottom-0 bg-slate-100 font-semibold">
-                  <tr className="border-t-2 border-slate-300">
-                    {selectable ? <td /> : null}
+                <tfoot className="sticky bottom-0 z-20">
+                  <tr>
+                    {selectable ? <td className={cn('border-t-2 border-slate-300 bg-slate-100', pinFirst && 'sticky left-0 z-10')} /> : null}
                     {visible.map((column, index) => (
-                      <td key={column.key} className={cn('whitespace-nowrap px-3 py-2', alignClass(column.align))}>
+                      <td
+                        key={column.key}
+                        className={cn(
+                          'whitespace-nowrap border-t-2 border-slate-300 bg-slate-100 px-3 py-2.5 font-semibold text-slate-900',
+                          alignClass(column.align),
+                          pinnedCell(column.key) && cn('sticky z-10', pinOffset),
+                        )}
+                      >
                         {column.total ?? (index === 0 ? 'Total' : null)}
                       </td>
                     ))}
@@ -275,6 +328,7 @@ export function BtTable<T extends { id: string }>({
           </div>
         </>
       )}
+      {footer ? <div className="border-t border-slate-100 bg-slate-50/60 px-3 py-2">{footer}</div> : null}
     </div>
   );
 }
@@ -284,9 +338,9 @@ export function Pager({ page, pages, total, pageSize, onPage, onPageSize }: { pa
   const from = (page - 1) * pageSize + 1;
   const to = Math.min(page * pageSize, total);
   return (
-    <div className="flex flex-wrap items-center justify-between gap-2 text-sm text-muted-foreground">
+    <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-slate-500">
       <span>
-        {from}–{to} of {total.toLocaleString('en-IN')}
+        Showing <b className="font-semibold text-slate-700">{from}–{to}</b> of <b className="font-semibold text-slate-700">{total.toLocaleString('en-IN')}</b>
       </span>
       <div className="flex items-center gap-2">
         {onPageSize ? (

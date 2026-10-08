@@ -133,8 +133,7 @@ export function RetentionPage() {
       {data ? <RetentionTable data={data} onRelease={can('Retention', 'Manage') ? openRelease : undefined} /> : null}
       {data ? (
         <div className="space-y-2">
-          <SectionHeader title="Release ledger" as="h3" />
-          <BtTable rows={data.releases} columns={releaseColumns} storageKey="retention-releases" rowClassName={(row) => (row.status === 'cancelled' ? 'opacity-50' : undefined)} empty={<BtEmpty title="No retention releases recorded." />} />
+          <BtTable caption="Release ledger" rows={data.releases} columns={releaseColumns} storageKey="retention-releases" rowClassName={(row) => (row.status === 'cancelled' ? 'opacity-50' : undefined)} empty={<BtEmpty title="No retention releases recorded." />} />
         </div>
       ) : null}
 
@@ -305,7 +304,7 @@ export function TargetsPage() {
       {loading && !data ? <BtLoading /> : null}
       {forecast ? (
         <div className="grid grid-cols-2 gap-3 md:grid-cols-6">
-          <div className="rounded-xl border border-white/60 bg-white/85 p-3 shadow-sm">
+          <div className="rounded-xl border border-slate-200 bg-white p-3 shadow-sm">
             <p className="text-[11px] uppercase text-muted-foreground">This week · target</p>
             <p className="text-lg font-semibold">
               <Amount value={currentWeek?.target ?? 0} compact />
@@ -315,7 +314,7 @@ export function TargetsPage() {
             </p>
           </div>
           {forecast.windows.map((window) => (
-            <div key={window.key} className="rounded-xl border border-white/60 bg-white/85 p-3 shadow-sm">
+            <div key={window.key} className="rounded-xl border border-slate-200 bg-white p-3 shadow-sm">
               <p className="text-[11px] uppercase text-muted-foreground">Expected · {window.label}</p>
               <p className="text-lg font-semibold">
                 <Amount value={window.amount} compact />
@@ -327,15 +326,14 @@ export function TargetsPage() {
       ) : null}
       {data ? (
         <>
-          <section className="rounded-xl border border-white/60 bg-white/85 p-4 shadow-sm">
+          <section className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
             <SectionHeader title={`Target vs actual · FY ${data.financialYear}`} as="h3" />
             <div className="mt-2">
               <TargetActualChart data={data.weeks.slice(-16)} />
             </div>
           </section>
           <div className="space-y-2">
-            <SectionHeader title="Targets" as="h3" actions={<Link href={`/bill-tracking/reports/performance${filters.queryString ? `?${filters.queryString}` : ''}`} className="text-xs font-medium text-emerald-700 hover:underline">Performance by project / owner</Link>} />
-            <BtTable rows={data.targets} columns={targetColumns} storageKey="targets" empty={<BtEmpty title="No targets set for this year." description="Set a weekly collection target for a project or the whole company." />} />
+            <BtTable caption="Targets" toolbarSlot={<Link href={`/bill-tracking/reports/performance${filters.queryString ? `?${filters.queryString}` : ''}`} className="text-xs font-medium text-emerald-700 hover:underline">Performance by project / owner</Link>} rows={data.targets} columns={targetColumns} storageKey="targets" empty={<BtEmpty title="No targets set for this year." description="Set a weekly collection target for a project or the whole company." />} />
           </div>
         </>
       ) : null}

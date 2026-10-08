@@ -11,11 +11,8 @@
  */
 
 import Link from 'next/link';
-import { BarChart3, BookOpen, CalendarRange, Coins, FileWarning, Gauge, Hourglass, Landmark, Layers, ListChecks, MapPin, PiggyBank, Receipt, Scissors, ScrollText, TrendingUp, Users, Wallet } from 'lucide-react';
+import { BarChart3, BookOpen, CalendarRange, FileWarning, Gauge, Hourglass, Landmark, Layers, ListChecks, MapPin, PiggyBank, Receipt, Scissors, ScrollText, TrendingUp, Users, Wallet } from 'lucide-react';
 
-import { Label } from '@/components/ui/label';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Input } from '@/components/ui/input';
 import { PageHeader } from '@/components/shared/page-header';
 import { StatusBadge } from '@/components/shared/status-badge';
 import { monthLabel, type LedgerLine } from '@/lib/bill-tracking/calculations';
@@ -25,6 +22,7 @@ import type { AgeingReport, BillTotals, CollectionLine, ExceptionItem, ForecastI
 
 import { useBtQuery, useLookups } from './bt-client';
 import { BillFilterBar, useUrlFilters, type UrlFilters } from './bt-filters';
+import { ToolbarDate, ToolbarSelect } from './bt-toolbar';
 import { BtTable, type BtColumn } from './bt-table';
 import { billReference, TotalsStrip, type BillRow } from './bill-register';
 import { LedgerTable } from './bill-detail';
@@ -60,7 +58,7 @@ export function ReportsHub() {
         {REPORTS.map((report) => {
           const Icon = report.icon;
           return (
-            <Link key={report.kind} href={report.href ?? `/bill-tracking/reports/${report.kind}`} className="group rounded-xl border border-white/60 bg-white/85 p-4 shadow-sm transition hover:border-emerald-300 hover:shadow">
+            <Link key={report.kind} href={report.href ?? `/bill-tracking/reports/${report.kind}`} className="group rounded-xl border border-slate-200 bg-white p-4 shadow-sm transition hover:border-emerald-300 hover:shadow">
               <div className="flex items-center gap-2.5">
                 <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-emerald-50 text-emerald-700 group-hover:bg-emerald-100">
                   <Icon className="h-4 w-4" />
@@ -80,25 +78,9 @@ export function ReportsHub() {
 
 const titleOf = (kind: string) => REPORTS.find((report) => report.kind === kind)?.title ?? 'Report';
 
+/** A report's own choice (Group by, Rows…) — a toolbar dropdown that always has a value. */
 function Picker({ label, value, onChange, options, placeholder }: { label: string; value: string; onChange: (value: string) => void; options: { value: string; label: string }[]; placeholder?: string }) {
-  return (
-    <div className="min-w-0 space-y-1">
-      <Label className="text-xs text-muted-foreground">{label}</Label>
-      <Select value={value || 'none'} onValueChange={(next) => onChange(next === 'none' ? '' : next)}>
-        <SelectTrigger className="h-9">
-          <SelectValue placeholder={placeholder} />
-        </SelectTrigger>
-        <SelectContent className="max-h-72">
-          {placeholder ? <SelectItem value="none">{placeholder}</SelectItem> : null}
-          {options.map((option) => (
-            <SelectItem key={option.value} value={option.value}>
-              {option.label}
-            </SelectItem>
-          ))}
-        </SelectContent>
-      </Select>
-    </div>
-  );
+  return <ToolbarSelect label={label} value={value} onChange={onChange} options={options} showAll={Boolean(placeholder)} allLabel={placeholder} />;
 }
 
 function metaOf(filters: UrlFilters, lookups: ReturnType<typeof useLookups>, asOf?: string) {
@@ -137,10 +119,7 @@ export function ReportView({ kind }: { kind: string }) {
           <>
             <Picker label="Rows" value={filters.get('by') || 'project'} onChange={(value) => filters.set({ by: value })} options={[{ value: 'project', label: 'Project' }, { value: 'client', label: 'Client' }, { value: 'dgmOffice', label: 'DGM office' }, { value: 'billType', label: 'Bill type' }]} />
             <Picker label="Ageing from" value={filters.get('basis')} onChange={(value) => filters.set({ basis: value })} options={Object.entries(AGEING_BASIS_LABELS).map(([value, label]) => ({ value, label }))} placeholder={`Default (${AGEING_BASIS_LABELS[lookups.config.settings.defaultAgeingBasis]})`} />
-            <div className="min-w-0 space-y-1">
-              <Label className="text-xs text-muted-foreground">As on</Label>
-              <Input type="date" className="h-9" value={filters.get('asOf') || lookups.today} onChange={(event) => filters.set({ asOf: event.target.value })} />
-            </div>
+            <ToolbarDate label="As on" value={filters.get('asOf') || lookups.today} onChange={(value) => filters.set({ asOf: value || undefined })} />
           </>
         );
       case 'bill-type':
@@ -154,10 +133,7 @@ export function ReportView({ kind }: { kind: string }) {
       case 'not-received':
       case 'site-wise':
         return (
-          <div className="min-w-0 space-y-1">
-            <Label className="text-xs text-muted-foreground">As on</Label>
-            <Input type="date" className="h-9" value={filters.get('asOf') || lookups.today} onChange={(event) => filters.set({ asOf: event.target.value })} />
-          </div>
+          <ToolbarDate label="As on" value={filters.get('asOf') || lookups.today} onChange={(value) => filters.set({ asOf: value || undefined })} />
         );
       default:
         return null;
@@ -212,7 +188,7 @@ function ReportBody({ kind, data, filters }: { kind: string; data: Record<string
       return (
         <div className="space-y-3">
           {data.totals ? <TotalsStrip totals={data.totals as BillTotals} /> : null}
-          <div className="rounded-xl border border-white/60 bg-white/85 p-4 shadow-sm">
+          <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
             <LedgerTable lines={(data.lines as LedgerLine[]) ?? []} />
           </div>
           <p className="text-xs text-muted-foreground">A management ledger of bills and verified receipts — not a replacement for the accounting books.</p>
@@ -257,7 +233,7 @@ function MonthlyTable({ rows, totals, carry, note }: { rows: MonthlySummaryRow[]
       {note ? <p className="text-xs text-muted-foreground">{note}</p> : null}
       <div className="max-h-[70vh] min-w-0 overflow-auto rounded-xl border border-slate-200 bg-white">
         <table className="w-full text-xs">
-          <thead className="sticky top-0 z-10 bg-slate-50 text-[10px] uppercase tracking-wide text-slate-500">
+          <thead className="sticky top-0 z-10 bg-slate-50 text-[10px] font-semibold uppercase tracking-wider text-slate-500">
             <tr>
               <th className="sticky left-0 bg-slate-50 px-2 py-2 text-left">Month</th>
               {MONTHLY_COLUMNS.map(([key, label]) => (
@@ -349,7 +325,7 @@ function CollectionsReport({ data }: { data: { rows: CollectionLine[]; total: nu
     <div className="space-y-3">
       <div className="flex flex-wrap gap-2">
         {data.byMonth.map((entry) => (
-          <div key={entry.month} className="rounded-lg border border-white/60 bg-white/85 px-3 py-2 text-xs shadow-sm">
+          <div key={entry.month} className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs shadow-sm">
             <p className="text-muted-foreground">{monthLabel(entry.month)}</p>
             <p className="font-semibold">
               <Amount value={entry.amount} compact />
@@ -440,7 +416,7 @@ function AgeingMatrix({ report, carry, by }: { report: AgeingReport; carry: (ext
       </p>
       <div className="max-h-[70vh] min-w-0 overflow-auto rounded-xl border border-slate-200 bg-white">
         <table className="w-full text-sm">
-          <thead className="sticky top-0 z-10 bg-slate-50 text-[11px] uppercase tracking-wide text-slate-500">
+          <thead className="sticky top-0 z-10 bg-slate-50 text-[11px] font-semibold uppercase tracking-wider text-slate-500">
             <tr>
               <th className="px-3 py-2 text-left">{by === 'project' ? 'Project' : by === 'client' ? 'Client' : by === 'dgmOffice' ? 'DGM office' : 'Bill type'}</th>
               {report.buckets.map((bucket) => (
@@ -585,7 +561,7 @@ function ForecastReport({ data }: { data: { windows: ForecastWindow[]; rows: For
     <div className="space-y-3">
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-5">
         {data.windows.map((window) => (
-          <div key={window.key} className="rounded-xl border border-white/60 bg-white/85 p-3 shadow-sm">
+          <div key={window.key} className="rounded-xl border border-slate-200 bg-white p-3 shadow-sm">
             <p className="text-[11px] uppercase text-muted-foreground">{window.label}</p>
             <p className="text-lg font-semibold">
               <Amount value={window.amount} compact />
@@ -609,8 +585,8 @@ function PerformanceReport({ data }: { data: PerformanceData }) {
   return (
     <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
       <div className="space-y-2">
-        <p className="text-sm font-semibold text-slate-800">By week</p>
         <BtTable
+          caption="By week"
           rows={data.weeks.map((row) => ({ ...row, id: row.week }))}
           columns={[
             { key: 'week', header: 'Week', pinned: true, mobile: 'title', sortValue: (row) => row.week, cell: (row) => `${row.week} (${dateText(row.from)})` },
@@ -623,8 +599,8 @@ function PerformanceReport({ data }: { data: PerformanceData }) {
         />
       </div>
       <div className="space-y-2">
-        <p className="text-sm font-semibold text-slate-800">By dimension</p>
         <BtTable
+          caption="By dimension"
           rows={data.byDimension.map((row) => ({ ...row, id: row.key }))}
           columns={[
             { key: 'label', header: 'Name', pinned: true, mobile: 'title', sortValue: (row) => row.label, cell: (row) => row.label },

@@ -358,6 +358,15 @@ export interface BillDeduction {
   /** GST % and amount added on the deduction, for GST-applicable deduction types. */
   gstRate?: number;
   gstAmount?: number;
+  /** That GST split like the bill's: CGST + SGST (half the rate each) or IGST. */
+  cgstRate?: number;
+  sgstRate?: number;
+  igstRate?: number;
+  cgstAmount?: number;
+  sgstAmount?: number;
+  igstAmount?: number;
+  /** The GST amounts were typed to match the client's figures rather than computed. */
+  gstManual?: boolean;
   percentage?: number;
   /** What the percentage was taken of (taxable or gross, less any configured deductions). */
   calculationBase?: number;

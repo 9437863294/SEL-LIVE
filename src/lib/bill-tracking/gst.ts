@@ -115,14 +115,51 @@ export interface DeductionLineInput {
   /** A fixed line's total when it has no GST (legacy and imported lines carry only this). */
   amount?: number;
   gstRate?: number;
+  /**
+   * GST amounts typed to match what the client actually deducted. Given, they replace the computed
+   * split for that component (a line on an IGST bill reads only `igstAmount`).
+   */
+  cgstAmount?: number;
+  sgstAmount?: number;
+  igstAmount?: number;
   remarks?: string;
   deductionDate?: string;
+}
+
+/**
+ * Base and GST from a GST-inclusive total — "the client recovered ₹118" — so the parts add up to
+ * exactly the total typed: the base is total ÷ (1 + rate), the GST is the rest, and on a CGST + SGST
+ * bill any odd paisa goes to SGST.
+ */
+export function splitInclusiveTotal(total: number, rate: number, billGstType: GstType | undefined): { baseAmount: number; cgstAmount?: number; sgstAmount?: number; igstAmount?: number } {
+  const baseAmount = rate ? round2(total / (1 + rate / 100)) : round2(total);
+  const gst = round2(total - baseAmount);
+  if (!rate) return { baseAmount };
+  if (billGstType === 'igst') return { baseAmount, igstAmount: gst };
+  const cgstAmount = round2(gst / 2);
+  return { baseAmount, cgstAmount, sgstAmount: round2(gst - cgstAmount) };
 }
 
 export interface DeductionContext {
   taxable: number;
   gross: number;
   roundToRupee: boolean;
+  /**
+   * The bill's GST type: GST on a deduction is split the same way — IGST on an IGST bill, otherwise
+   * CGST + SGST at half the rate each.
+   */
+  gstType?: GstType;
+}
+
+/** GST on a deduction's base, split like the bill's: IGST on an IGST bill, else CGST + SGST halves. */
+export function deductionGst(base: number, rate: number, billGstType: GstType | undefined) {
+  if (!rate) return { gstAmount: 0, cgstRate: 0, sgstRate: 0, igstRate: 0, cgstAmount: 0, sgstAmount: 0, igstAmount: 0 };
+  if (billGstType === 'igst') {
+    const igstAmount = round2((base * rate) / 100);
+    return { gstAmount: igstAmount, cgstRate: 0, sgstRate: 0, igstRate: rate, cgstAmount: 0, sgstAmount: 0, igstAmount };
+  }
+  const half = round2((base * rate) / 2 / 100);
+  return { gstAmount: sumMoney([half, half]), cgstRate: rate / 2, sgstRate: rate / 2, igstRate: 0, cgstAmount: half, sgstAmount: half, igstAmount: 0 };
 }
 
 /** The base a percentage deduction is taken of: taxable or gross, less the configured deductions. */
@@ -143,7 +180,19 @@ export function computeDeductions(inputs: readonly DeductionLineInput[], types: 
   const finish = (input: DeductionLineInput, base: number, calculationBase?: number): BillDeduction => {
     const type = typeOf(input.deductionTypeId);
     const gstRate = type?.gstApplicable ? (input.gstRate ?? type.gstRate ?? 0) : 0;
-    const gstAmount = gstRate ? round2((base * gstRate) / 100) : 0;
+    const computed = deductionGst(base, gstRate, context.gstType);
+    const typed = context.gstType === 'igst' ? input.igstAmount !== undefined : input.cgstAmount !== undefined || input.sgstAmount !== undefined;
+    // Typed amounts (matching the client's figures) win over the computed split, component by component.
+    const split = !gstRate || !typed
+      ? computed
+      : context.gstType === 'igst'
+        ? { ...computed, igstAmount: round2(input.igstAmount as number), gstAmount: round2(input.igstAmount as number) }
+        : (() => {
+            const cgstAmount = round2(input.cgstAmount ?? computed.cgstAmount);
+            const sgstAmount = round2(input.sgstAmount ?? computed.sgstAmount);
+            return { ...computed, cgstAmount, sgstAmount, gstAmount: sumMoney([cgstAmount, sgstAmount]) };
+          })();
+    const gstAmount = split.gstAmount;
     const line: BillDeduction = {
       id: input.id,
       deductionTypeId: input.deductionTypeId,
@@ -153,7 +202,12 @@ export function computeDeductions(inputs: readonly DeductionLineInput[], types: 
       remarks: input.remarks,
       deductionDate: input.deductionDate,
     };
-    if (gstRate) Object.assign(line, { baseAmount: base, gstRate, gstAmount });
+    if (gstRate) {
+      Object.assign(line, { baseAmount: base, gstRate, gstAmount });
+      if (context.gstType === 'igst') Object.assign(line, { igstRate: split.igstRate, igstAmount: split.igstAmount });
+      else Object.assign(line, { cgstRate: split.cgstRate, sgstRate: split.sgstRate, cgstAmount: split.cgstAmount, sgstAmount: split.sgstAmount });
+      if (typed) Object.assign(line, { gstManual: true });
+    }
     if (input.percentage !== undefined) Object.assign(line, { percentage: input.percentage, calculationBase });
     return line;
   };
