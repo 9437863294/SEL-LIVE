@@ -37,7 +37,7 @@ import { GST_RATES } from '@/lib/statutory';
 import { GST_TYPE_LABELS, TRANSACTION_TYPE_LABELS, TRANSACTION_TYPES, WORKFLOW_STATUS_LABELS, type Bill, type BillTrackingConfig, type BillTransactionType, type GstType } from '@/lib/bill-tracking/types';
 
 import { btFetch, useBt, useBtQuery, useLookups } from './bt-client';
-import { Amount, BtError, BtLoading, FormField, FormSection, Notice, Term, dateText } from './bt-ui';
+import { Amount, BtError, BtLoading, FIELD_ROW, FormField, FormSection, Notice, Term, dateText, type FieldWidth } from './bt-ui';
 import { DeductionEditor, deductionInputs as toDeductionInputs, emptyDeductionRow, num, rowsFromDeductions, str, type DeductionRow } from './deduction-editor';
 
 /** `legacy` = a bill imported with a single GST figure, not yet split. */
@@ -434,8 +434,8 @@ function BillFormInner({ existing, prefill }: { existing?: Bill; prefill?: { not
     }
   };
 
-  const field = (label: React.ReactNode, control: React.ReactNode, hint?: React.ReactNode, id?: string) => (
-    <FormField label={label} hint={hint} htmlFor={id}>
+  const field = (label: React.ReactNode, control: React.ReactNode, hint?: React.ReactNode, id?: string, width?: FieldWidth) => (
+    <FormField label={label} hint={hint} htmlFor={id} width={width}>
       {control}
     </FormField>
   );
@@ -475,7 +475,7 @@ function BillFormInner({ existing, prefill }: { existing?: Bill; prefill?: { not
       <div className="grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,1fr)_320px]">
         <div className="min-w-0 space-y-4">
           <FormSection step={1} title="Identification" description="The bill and GST invoice numbers, the bill date and what kind of document it is.">
-              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+              <div className={FIELD_ROW}>
                 {field(
                   'Bill number',
                   existing || !config.settings.numbering.enabled || !form.autoNumber ? (
@@ -485,6 +485,7 @@ function BillFormInner({ existing, prefill }: { existing?: Bill; prefill?: { not
                   ),
                   !existing && config.settings.numbering.enabled ? undefined : existing?.source === 'excel_import' ? 'Legacy number — kept as imported.' : undefined,
                   'billSerialNumber',
+                  'wide',
                 )}
                 {!existing && config.settings.numbering.enabled
                   ? field(
@@ -493,10 +494,13 @@ function BillFormInner({ existing, prefill }: { existing?: Bill; prefill?: { not
                         <Switch checked={form.autoNumber} onCheckedChange={(value) => set('autoNumber', value)} aria-label="Generate the bill number" />
                         <span className="text-sm text-muted-foreground">{form.autoNumber ? 'Generate' : 'Type my own'}</span>
                       </div>,
+                      undefined,
+                      undefined,
+                      'date',
                     )
                   : null}
-                {field('GST invoice / note no.', <Input id="gst-invoice" value={form.gstInvoiceNumber} onChange={(event) => set('gstInvoiceNumber', event.target.value)} placeholder="Leave blank for non-GST (NA)" />, undefined, 'gst-invoice')}
-                {field('Bill date *', <Input id="bill-date" type="date" required value={form.billDate} onChange={(event) => set('billDate', event.target.value)} />, derivedFy ? `FY ${derivedFy}` : undefined, 'bill-date')}
+                {field('GST invoice / note no.', <Input id="gst-invoice" value={form.gstInvoiceNumber} onChange={(event) => set('gstInvoiceNumber', event.target.value)} placeholder="Leave blank for non-GST (NA)" />, undefined, 'gst-invoice', 'medium')}
+                {field('Bill date *', <Input id="bill-date" type="date" required value={form.billDate} onChange={(event) => set('billDate', event.target.value)} />, derivedFy ? `FY ${derivedFy}` : undefined, 'bill-date', 'date')}
                 {field(
                   'Transaction type',
                   <Select value={form.transactionType} onValueChange={(value) => setForm((current) => ({ ...current, transactionType: value as BillTransactionType, againstBillId: isNote(value as BillTransactionType) ? current.againstBillId : '' }))}>
@@ -511,19 +515,24 @@ function BillFormInner({ existing, prefill }: { existing?: Bill; prefill?: { not
                       ))}
                     </SelectContent>
                   </Select>,
+                  undefined,
+                  undefined,
+                  'medium',
                 )}
                 {can('Bills', 'Approve')
                   ? field(
                       'Financial year override',
                       <Input value={form.financialYear} onChange={(event) => set('financialYear', event.target.value)} placeholder={derivedFy || '2026-27'} />,
                       'Normally taken from the bill date.',
+                      undefined,
+                      'date',
                     )
                   : null}
               </div>
           </FormSection>
 
           <FormSection step={2} title="Project & category" description="Choose the main category first — its sub categories are the ones enabled for the project.">
-              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+              <div className={FIELD_ROW}>
                 {field(
                   'Project *',
                   <Select value={form.projectId} onValueChange={changeProject}>
@@ -541,6 +550,8 @@ function BillFormInner({ existing, prefill }: { existing?: Bill; prefill?: { not
                     </SelectContent>
                   </Select>,
                   lookups.projects.length === 0 ? 'No projects are assigned to you in Access Management.' : undefined,
+                  undefined,
+                  'wide',
                 )}
                 {field(
                   'Main category *',
@@ -558,6 +569,9 @@ function BillFormInner({ existing, prefill }: { existing?: Bill; prefill?: { not
                         ))}
                     </SelectContent>
                   </Select>,
+                  undefined,
+                  undefined,
+                  'medium',
                 )}
                 {field(
                   'Sub category *',
@@ -575,6 +589,8 @@ function BillFormInner({ existing, prefill }: { existing?: Bill; prefill?: { not
                     </SelectContent>
                   </Select>,
                   form.projectId && form.categoryId && subCategories.length === 0 ? `No sub categories under ${categoryName(form.categoryId, config.billCategories)} are enabled for this project — add one in Settings → Bill categories.` : undefined,
+                  undefined,
+                  'medium',
                 )}
                 {field(
                   'Client',
@@ -592,14 +608,16 @@ function BillFormInner({ existing, prefill }: { existing?: Bill; prefill?: { not
                     </SelectContent>
                   </Select>,
                   client ? (client.gstin ? `GSTIN ${client.gstin}` : 'No GSTIN on the client master') : undefined,
+                  undefined,
+                  'wide',
                 )}
-                {field('DGM office', <Input value={form.dgmOffice} onChange={(event) => set('dgmOffice', event.target.value)} placeholder={project?.dgmOffice ?? 'e.g. Rayagada'} list="bt-dgm-offices" />)}
+                {field('DGM office', <Input value={form.dgmOffice} onChange={(event) => set('dgmOffice', event.target.value)} placeholder={project?.dgmOffice ?? 'e.g. Rayagada'} list="bt-dgm-offices" />, undefined, undefined, 'medium')}
                 <datalist id="bt-dgm-offices">
                   {lookups.dgmOffices.map((office) => (
                     <option key={office} value={office} />
                   ))}
                 </datalist>
-                <div className="sm:col-span-2 lg:col-span-1">{field('Description', <Input value={form.description} onChange={(event) => set('description', event.target.value)} placeholder="e.g. RA Bill 4 — civil works" />)}</div>
+                {field('Description', <Input value={form.description} onChange={(event) => set('description', event.target.value)} placeholder="e.g. RA Bill 4 — civil works" />, undefined, undefined, 'grow')}
               </div>
 
               {note ? (
@@ -651,7 +669,7 @@ function BillFormInner({ existing, prefill }: { existing?: Bill; prefill?: { not
           </FormSection>
 
           <FormSection step={3} title="Amount & GST" description="The registration and client GSTIN decide CGST + SGST or IGST; type over a component to match the invoice.">
-              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+              <div className={FIELD_ROW}>
                 {field(
                   <Term tip="Pre-GST value of the work or supply billed. Negative for a credit note.">Taxable amount (₹) *</Term>,
                   <Input inputMode="decimal" required value={form.taxableAmount} onChange={(event) => set('taxableAmount', event.target.value)} />,
@@ -660,6 +678,8 @@ function BillFormInner({ existing, prefill }: { existing?: Bill; prefill?: { not
                       Credit notes are negative — make it −{formatINR(taxable)}
                     </button>
                   ) : undefined,
+                  undefined,
+                  'amount',
                 )}
                 {field(
                   'SEL GST registration',
@@ -677,6 +697,8 @@ function BillFormInner({ existing, prefill }: { existing?: Bill; prefill?: { not
                     </SelectContent>
                   </Select>,
                   registrations.length ? undefined : 'No registrations set up in Expenses → GST registrations.',
+                  undefined,
+                  'wide',
                 )}
                 {field(
                   'GST type',
@@ -694,6 +716,9 @@ function BillFormInner({ existing, prefill }: { existing?: Bill; prefill?: { not
                       {gstChoice === 'legacy' || (existing && !existing.gstType && existing.gstAmount) ? <SelectItem value="legacy">Not split (as imported)</SelectItem> : null}
                     </SelectContent>
                   </Select>,
+                  undefined,
+                  undefined,
+                  'medium',
                 )}
                 {gstChoice !== 'none' && gstChoice !== 'legacy'
                   ? field(
@@ -717,24 +742,26 @@ function BillFormInner({ existing, prefill }: { existing?: Bill; prefill?: { not
                       form.gstRateCustom || !GST_RATES.map(String).includes(form.gstRate) ? (
                         <Input className="mt-1 h-8" inputMode="decimal" aria-label="GST rate (other)" placeholder="Type the rate %" autoFocus={form.gstRateCustom} value={form.gstRate} onChange={(event) => setForm((current) => ({ ...current, gstRate: event.target.value, gstManual: false }))} />
                       ) : undefined,
+                      undefined,
+                      'short',
                     )
                   : null}
               </div>
               <p className="rounded-md bg-slate-50 px-3 py-2 text-xs text-slate-600">{suggestion.reason}</p>
 
               {gstChoice === 'legacy' ? (
-                <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-                  {field('GST (total, not split)', <Input inputMode="decimal" value={form.legacyGstAmount} onChange={(event) => set('legacyGstAmount', event.target.value)} />, 'Choose a GST type above to split it into CGST / SGST or IGST.')}
+                <div className={FIELD_ROW}>
+                  {field('GST (total, not split)', <Input inputMode="decimal" value={form.legacyGstAmount} onChange={(event) => set('legacyGstAmount', event.target.value)} />, 'Choose a GST type above to split it into CGST / SGST or IGST.', undefined, 'amount')}
                 </div>
               ) : gstChoice === 'none' ? null : (
-                <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+                <div className={FIELD_ROW}>
                   {gstChoice === 'cgst-sgst' ? (
                     <>
-                      {field(`CGST @ ${computedGst.cgstRate}%`, <Input inputMode="decimal" aria-label="CGST amount" value={form.gstManual ? form.cgstAmount : String(components.cgstAmount)} onChange={(event) => editComponent('cgstAmount', event.target.value)} />)}
-                      {field(`SGST @ ${computedGst.sgstRate}%`, <Input inputMode="decimal" aria-label="SGST amount" value={form.gstManual ? form.sgstAmount : String(components.sgstAmount)} onChange={(event) => editComponent('sgstAmount', event.target.value)} />)}
+                      {field(`CGST @ ${computedGst.cgstRate}%`, <Input inputMode="decimal" aria-label="CGST amount" value={form.gstManual ? form.cgstAmount : String(components.cgstAmount)} onChange={(event) => editComponent('cgstAmount', event.target.value)} />, undefined, undefined, 'amount')}
+                      {field(`SGST @ ${computedGst.sgstRate}%`, <Input inputMode="decimal" aria-label="SGST amount" value={form.gstManual ? form.sgstAmount : String(components.sgstAmount)} onChange={(event) => editComponent('sgstAmount', event.target.value)} />, undefined, undefined, 'amount')}
                     </>
                   ) : (
-                    field(`IGST @ ${computedGst.igstRate}%`, <Input inputMode="decimal" aria-label="IGST amount" value={form.gstManual ? form.igstAmount : String(components.igstAmount)} onChange={(event) => editComponent('igstAmount', event.target.value)} />)
+                    field(`IGST @ ${computedGst.igstRate}%`, <Input inputMode="decimal" aria-label="IGST amount" value={form.gstManual ? form.igstAmount : String(components.igstAmount)} onChange={(event) => editComponent('igstAmount', event.target.value)} />, undefined, undefined, 'amount')
                   )}
                   {field(
                     'Total GST',
@@ -746,7 +773,9 @@ function BillFormInner({ existing, prefill }: { existing?: Bill; prefill?: { not
                         </button>
                       ) : null}
                     </div>,
-                    form.gstManual ? 'Typed from the invoice.' : 'Calculated from the taxable value — type over a component to match the invoice.',
+                    form.gstManual ? 'Typed from the invoice.' : 'Calculated — type over a component to match the invoice.',
+                    undefined,
+                    'amount',
                   )}
                 </div>
               )}
@@ -776,14 +805,14 @@ function BillFormInner({ existing, prefill }: { existing?: Bill; prefill?: { not
           </FormSection>
 
           <FormSection step={5} title="Dates & planning" description="Dates drive ageing and the due date; owner, stage and target week drive follow-up.">
-              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-                {field('Submission date', <Input type="date" value={form.submissionDate} onChange={(event) => set('submissionDate', event.target.value)} />)}
-                {field('Bill passed date', <Input type="date" value={form.passedDate} onChange={(event) => set('passedDate', event.target.value)} />)}
+              <div className={FIELD_ROW}>
+                {field('Submission date', <Input type="date" value={form.submissionDate} onChange={(event) => set('submissionDate', event.target.value)} />, undefined, undefined, 'date')}
+                {field('Bill passed date', <Input type="date" value={form.passedDate} onChange={(event) => set('passedDate', event.target.value)} />, undefined, undefined, 'date')}
                 {existing
-                  ? field('Due date', <div className="flex h-10 items-center rounded-md border bg-slate-50 px-3 text-sm">{dateText(existing.dueDate)}</div>, 'Revise it from the bill page (with a reason).')
-                  : field('Due date', <Input type="date" value={form.dueDate} onChange={(event) => set('dueDate', event.target.value)} />, computedDue ? `Blank = ${dateText(computedDue)} (${creditDays} credit days)` : undefined)}
-                {field('Expected payment date', <Input type="date" value={form.expectedPaymentDate} onChange={(event) => set('expectedPaymentDate', event.target.value)} />)}
-                {field('Target week', <Input value={form.targetWeek} onChange={(event) => set('targetWeek', event.target.value)} placeholder="2026-W41" />)}
+                  ? field('Due date', <div className="flex h-10 items-center rounded-md border bg-slate-50 px-3 text-sm">{dateText(existing.dueDate)}</div>, 'Revise it from the bill page (with a reason).', undefined, 'date')
+                  : field('Due date', <Input type="date" value={form.dueDate} onChange={(event) => set('dueDate', event.target.value)} />, computedDue ? `Blank = ${dateText(computedDue)} (${creditDays} credit days)` : undefined, undefined, 'date')}
+                {field('Expected payment date', <Input type="date" value={form.expectedPaymentDate} onChange={(event) => set('expectedPaymentDate', event.target.value)} />, undefined, undefined, 'date')}
+                {field('Target week', <Input value={form.targetWeek} onChange={(event) => set('targetWeek', event.target.value)} placeholder="2026-W41" />, undefined, undefined, 'short')}
                 {field(
                   'Collection owner',
                   <Select value={form.collectionOwnerId || 'none'} onValueChange={(value) => set('collectionOwnerId', value === 'none' ? '' : value)}>
@@ -799,6 +828,9 @@ function BillFormInner({ existing, prefill }: { existing?: Bill; prefill?: { not
                       ))}
                     </SelectContent>
                   </Select>,
+                  undefined,
+                  undefined,
+                  'medium',
                 )}
                 {field(
                   'Stage',
@@ -818,9 +850,12 @@ function BillFormInner({ existing, prefill }: { existing?: Bill; prefill?: { not
                         ))}
                     </SelectContent>
                   </Select>,
+                  undefined,
+                  undefined,
+                  'medium',
                 )}
-                {totals.retentionDeducted !== 0 ? field('Retention release expected', <Input type="date" value={form.retentionExpectedReleaseDate} onChange={(event) => set('retentionExpectedReleaseDate', event.target.value)} />) : null}
-                {field('Bill / PI', <Input value={form.taxableOrAdvance} onChange={(event) => set('taxableOrAdvance', event.target.value.toUpperCase())} placeholder={`BILL or ${config.settings.piMarker}`} />, 'Legacy “TAXABLE / ADVANCE” — PI rows feed the PI report.')}
+                {totals.retentionDeducted !== 0 ? field('Retention release expected', <Input type="date" value={form.retentionExpectedReleaseDate} onChange={(event) => set('retentionExpectedReleaseDate', event.target.value)} />, undefined, undefined, 'date') : null}
+                {field('Bill / PI', <Input value={form.taxableOrAdvance} onChange={(event) => set('taxableOrAdvance', event.target.value.toUpperCase())} placeholder={`BILL or ${config.settings.piMarker}`} />, 'PI rows feed the PI report.', undefined, 'date')}
               </div>
               {field('Remarks', <Textarea rows={2} value={form.remarks} onChange={(event) => set('remarks', event.target.value)} />)}
               {!existing ? <p className="text-xs text-muted-foreground">Attach the invoice and supporting documents from the bill page after saving.</p> : null}

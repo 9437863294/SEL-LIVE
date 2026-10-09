@@ -258,13 +258,37 @@ export function FormSection({
 }
 
 /**
- * A labelled field. A label written as "Project *" shows a red required marker instead of the
- * asterisk text; the hint sits under the control.
+ * Field widths sized to what goes in them, for fields laid out in a `FIELD_ROW` (a wrapping row).
+ * Full width on a phone; from `sm` each takes its own width, so a date is a date's width and a
+ * project name gets room, instead of every field stretching to a third of the form.
  */
-export function FormField({ label, hint, htmlFor, children, className }: { label: React.ReactNode; hint?: React.ReactNode; htmlFor?: string; children: React.ReactNode; className?: string }) {
+export const FIELD_WIDTHS = {
+  /** Week, rate %, a short code. */
+  short: 'w-full sm:w-32',
+  /** A date, a switch with a word beside it. */
+  date: 'w-full sm:w-44',
+  /** An amount. */
+  amount: 'w-full sm:w-52',
+  /** A dropdown, an invoice or reference number. */
+  medium: 'w-full sm:w-60',
+  /** A project, client or registration name. */
+  wide: 'w-full sm:w-80',
+  /** Free text that takes the rest of the row. */
+  grow: 'w-full sm:min-w-[16rem] sm:flex-1',
+} as const;
+export type FieldWidth = keyof typeof FIELD_WIDTHS;
+
+/** The row fields with a `width` sit in: left to right, wrapping, tops aligned. */
+export const FIELD_ROW = 'flex flex-wrap items-start gap-x-4 gap-y-4';
+
+/**
+ * A labelled field. A label written as "Project *" shows a red required marker instead of the
+ * asterisk text; the hint sits under the control. `width` sizes it inside a `FIELD_ROW`.
+ */
+export function FormField({ label, hint, htmlFor, children, className, width }: { label: React.ReactNode; hint?: React.ReactNode; htmlFor?: string; children: React.ReactNode; className?: string; width?: FieldWidth }) {
   const required = typeof label === 'string' && label.endsWith(' *');
   return (
-    <div className={cn('min-w-0 space-y-1.5', className)}>
+    <div className={cn('min-w-0 space-y-1.5', width && FIELD_WIDTHS[width], className)}>
       <Label htmlFor={htmlFor} className="flex min-h-4 items-center gap-0.5 text-xs font-medium leading-4 text-slate-700">
         {required ? (label as string).slice(0, -2) : label}
         {required ? (

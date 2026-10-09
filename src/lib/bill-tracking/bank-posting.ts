@@ -77,9 +77,10 @@ export function bankCreditDescription(collection: BankPostable): string {
  * The bank credit for a receipt, or `null` when none should be written.
  *
  * `null` means: no bank account was chosen (receipts recorded before this link existed, and
- * anyone who leaves the account blank), or one was already posted. That second check is the whole
- * of the idempotency guarantee — verify → cancel → verify clears `bankExpenseId` on the way
- * through cancel, so the re-verify posts once more, and never twice.
+ * anyone who leaves the account blank), or one was already posted. That second check is the
+ * idempotency guarantee — whatever verifies a receipt twice, the second pass writes nothing,
+ * because the id of the first credit is stored on the receipt in the same transaction that
+ * wrote it.
  */
 export function bankCreditForCollection(collection: BankPostable): BankCreditDraft | null {
   const accountId = (collection.bankAccountId ?? '').trim();

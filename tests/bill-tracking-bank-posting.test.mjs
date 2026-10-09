@@ -15,7 +15,7 @@ function receipt(extra = {}) {
   };
 }
 
-test('the receipt date becomes local noon, so no timezone can shift the day', () => {
+test('the receipt date becomes local noon, so a timezone difference cannot move the day', () => {
   const at = receiptInstant('2026-06-10');
   assert.equal(at.getFullYear(), 2026);
   assert.equal(at.getMonth(), 5);
@@ -77,7 +77,7 @@ test('no bank account means nothing is posted', () => {
 
 test('an already posted receipt never posts a second credit', () => {
   assert.equal(bankCreditForCollection(receipt({ bankAccountId: 'acc-1', bankExpenseId: 'be-1' })), null);
-  // Cancelling clears `bankExpenseId`, so a re-verify posts exactly once more.
+  // Cancelling clears `bankExpenseId`, so the receipt never names a row that was deleted.
   assert.notEqual(bankCreditForCollection(receipt({ bankAccountId: 'acc-1', bankExpenseId: undefined })), null);
 });
 

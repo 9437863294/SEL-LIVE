@@ -31,7 +31,7 @@ import type { BankAccount } from '@/lib/types';
 
 import { btFetch, useBt, useBtQuery, useDebounced, useLookups } from './bt-client';
 import { ToolbarSearch, ToolbarSelect } from './bt-toolbar';
-import { Amount, BtError, FormField, FormSection, Notice, dateText } from './bt-ui';
+import { Amount, BtError, FormField, FormSection, Notice, dateText, FIELD_ROW } from './bt-ui';
 
 interface OpenBill {
   id: string;
@@ -208,14 +208,14 @@ export default function CollectionForm() {
           ) : null}
 
           <FormSection step={1} title="Receipt" description="As it appears on the bank statement.">
-            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-              <FormField label="Receipt date *" htmlFor="receipt-date">
+            <div className={FIELD_ROW}>
+              <FormField label="Receipt date *" htmlFor="receipt-date" width="date">
                 <Input id="receipt-date" type="date" value={receiptDate} max={lookups.today} onChange={(event) => setReceiptDate(event.target.value)} />
               </FormField>
-              <FormField label="Amount received (₹) *" htmlFor="receipt-amount">
+              <FormField label="Amount received (₹) *" htmlFor="receipt-amount" width="amount">
                 <Input id="receipt-amount" inputMode="decimal" className="tabular-nums" value={amount} onChange={(event) => setAmount(event.target.value)} placeholder="e.g. 2500000" />
               </FormField>
-              <FormField label="Payment mode">
+              <FormField label="Payment mode" width="date">
                 <Select value={mode} onValueChange={setMode}>
                   <SelectTrigger aria-label="Payment mode">
                     <SelectValue />
@@ -229,14 +229,15 @@ export default function CollectionForm() {
                   </SelectContent>
                 </Select>
               </FormField>
-              <FormField label="UTR number" htmlFor="utr">
+              <FormField label="UTR number" htmlFor="utr" width="medium">
                 <Input id="utr" value={utr} onChange={(event) => setUtr(event.target.value)} />
               </FormField>
-              <FormField label="Bank reference" htmlFor="bank-ref">
+              <FormField label="Bank reference" htmlFor="bank-ref" width="medium">
                 <Input id="bank-ref" value={bankReference} onChange={(event) => setBankReference(event.target.value)} />
               </FormField>
               <FormField
                 label="Received in account"
+                width="wide"
                 hint={accountsFailed ? 'Bank accounts could not be loaded — the receipt can still be saved without one.' : chosenAccount && verifyNow ? `Posts a credit of this receipt to ${accountLabel(chosenAccount)} in Bank Balance.` : chosenAccount ? 'A credit is posted to Bank Balance when the receipt is verified.' : 'Optional — pick the account to move its Bank Balance too.'}
               >
                 <Select value={bankAccountId} onValueChange={setBankAccountId}>

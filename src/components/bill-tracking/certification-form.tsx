@@ -31,7 +31,7 @@ import { GST_TYPE_LABELS, type Bill, type BillTrackingConfig, type GstType } fro
 import { cn } from '@/lib/utils';
 
 import { btFetch, useBt, useBtQuery, useLookups } from './bt-client';
-import { Amount, BtError, BtLoading, FormField, FormSection, Notice, Term, dateText } from './bt-ui';
+import { Amount, BtError, BtLoading, FormField, FormSection, Notice, Term, dateText, FIELD_ROW } from './bt-ui';
 import { DeductionEditor, deductionInputs, emptyDeductionRow, num, rowsFromDeductions, str, type DeductionRow } from './deduction-editor';
 
 interface Detail {
@@ -263,14 +263,14 @@ function CertificationFormInner({ detail }: { detail: Detail }) {
       <div className="grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,1fr)_340px]">
         <div className="min-w-0 space-y-4">
           <FormSection step={1} title="Client’s certificate" description="The certificate, measurement-book or RA reference and who certified it.">
-            <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-              <FormField label="Certified date *" htmlFor="certified-date">
+            <div className={FIELD_ROW}>
+              <FormField label="Certified date *" htmlFor="certified-date" width="date">
                 <Input id="certified-date" type="date" required value={form.certifiedDate} onChange={(event) => set('certifiedDate', event.target.value)} />
               </FormField>
-              <FormField label="Certificate / MB reference" htmlFor="certificate-ref">
+              <FormField label="Certificate / MB reference" htmlFor="certificate-ref" width="medium">
                 <Input id="certificate-ref" value={form.reference} onChange={(event) => set('reference', event.target.value)} placeholder="e.g. MB-14 / RA-4" />
               </FormField>
-              <FormField label="Certified by" htmlFor="certified-by">
+              <FormField label="Certified by" htmlFor="certified-by" width="wide">
                 <Input id="certified-by" value={form.certifiedBy} onChange={(event) => set('certifiedBy', event.target.value)} placeholder="Client’s engineer / officer" />
               </FormField>
             </div>
@@ -280,16 +280,16 @@ function CertificationFormInner({ detail }: { detail: Detail }) {
           </FormSection>
 
           <FormSection step={2} title="Certified amount & GST" description="The registration and client GSTIN decide CGST + SGST or IGST; type over a component to match the certificate.">
-            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-              <FormField label={<Term tip="Pre-GST value the client certified.">Certified taxable (₹) *</Term>} htmlFor="certified-taxable" hint={<RaisedHint raised={bill.taxableAmount} value={taxable} />}>
+            <div className={FIELD_ROW}>
+              <FormField label={<Term tip="Pre-GST value the client certified.">Certified taxable (₹) *</Term>} htmlFor="certified-taxable" width="amount" hint={<RaisedHint raised={bill.taxableAmount} value={taxable} />}>
                 <Input id="certified-taxable" inputMode="decimal" required className="tabular-nums" value={form.taxableAmount} onChange={(event) => setForm((current) => ({ ...current, taxableAmount: event.target.value, gstManual: false }))} />
               </FormField>
-              <FormField label="SEL GST registration" hint="As on the raised bill.">
+              <FormField label="SEL GST registration" hint="As on the raised bill." width="wide">
                 <div className="flex h-10 items-center truncate rounded-md border bg-slate-50 px-3 text-sm text-slate-600" title={registrationLabel}>
                   {registrationLabel}
                 </div>
               </FormField>
-              <FormField label="GST type">
+              <FormField label="GST type" width="medium">
                 <Select value={gstChoice} onValueChange={(value) => setForm((current) => ({ ...current, gstType: value as GstChoice, gstManual: false }))}>
                   <SelectTrigger aria-label="GST type">
                     <SelectValue />
@@ -308,6 +308,7 @@ function CertificationFormInner({ detail }: { detail: Detail }) {
               {gstChoice !== 'none' && gstChoice !== 'legacy' ? (
                 <FormField
                   label="GST rate %"
+                  width="short"
                   hint={
                     gstRateIsCustom ? (
                       <Input className="mt-1 h-8" inputMode="decimal" aria-label="GST rate (other)" placeholder="Type the rate %" value={form.gstRate} onChange={(event) => setForm((current) => ({ ...current, gstRate: event.target.value, gstManual: false }))} />
@@ -333,29 +334,30 @@ function CertificationFormInner({ detail }: { detail: Detail }) {
             <p className="rounded-md bg-slate-50 px-3 py-2 text-xs text-slate-600">{gstReason}</p>
 
             {gstChoice === 'legacy' ? (
-              <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-                <FormField label="GST (total, not split)" hint={<RaisedHint raised={bill.gstAmount} value={gstTotal} />}>
+              <div className={FIELD_ROW}>
+                <FormField label="GST (total, not split)" width="amount" hint={<RaisedHint raised={bill.gstAmount} value={gstTotal} />}>
                   <Input inputMode="decimal" className="tabular-nums" value={form.legacyGstAmount} onChange={(event) => set('legacyGstAmount', event.target.value)} />
                 </FormField>
               </div>
             ) : gstChoice === 'none' ? null : (
-              <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+              <div className={FIELD_ROW}>
                 {gstChoice === 'cgst-sgst' ? (
                   <>
-                    <FormField label={`CGST @ ${computedGst.cgstRate}%`} hint={bill.gstType === 'cgst-sgst' ? <RaisedHint raised={bill.cgstAmount ?? 0} value={components.cgstAmount} /> : undefined}>
+                    <FormField label={`CGST @ ${computedGst.cgstRate}%`} width="amount" hint={bill.gstType === 'cgst-sgst' ? <RaisedHint raised={bill.cgstAmount ?? 0} value={components.cgstAmount} /> : undefined}>
                       <Input inputMode="decimal" aria-label="Certified CGST" className="tabular-nums" value={form.gstManual ? form.cgstAmount : String(components.cgstAmount)} onChange={(event) => editComponent('cgstAmount', event.target.value)} />
                     </FormField>
-                    <FormField label={`SGST @ ${computedGst.sgstRate}%`} hint={bill.gstType === 'cgst-sgst' ? <RaisedHint raised={bill.sgstAmount ?? 0} value={components.sgstAmount} /> : undefined}>
+                    <FormField label={`SGST @ ${computedGst.sgstRate}%`} width="amount" hint={bill.gstType === 'cgst-sgst' ? <RaisedHint raised={bill.sgstAmount ?? 0} value={components.sgstAmount} /> : undefined}>
                       <Input inputMode="decimal" aria-label="Certified SGST" className="tabular-nums" value={form.gstManual ? form.sgstAmount : String(components.sgstAmount)} onChange={(event) => editComponent('sgstAmount', event.target.value)} />
                     </FormField>
                   </>
                 ) : (
-                  <FormField label={`IGST @ ${computedGst.igstRate}%`} hint={bill.gstType === 'igst' ? <RaisedHint raised={bill.igstAmount ?? 0} value={components.igstAmount} /> : undefined}>
+                  <FormField label={`IGST @ ${computedGst.igstRate}%`} width="amount" hint={bill.gstType === 'igst' ? <RaisedHint raised={bill.igstAmount ?? 0} value={components.igstAmount} /> : undefined}>
                     <Input inputMode="decimal" aria-label="Certified IGST" className="tabular-nums" value={form.gstManual ? form.igstAmount : String(components.igstAmount)} onChange={(event) => editComponent('igstAmount', event.target.value)} />
                   </FormField>
                 )}
                 <FormField
                   label="Total GST"
+                  width="amount"
                   hint={
                     <>
                       <RaisedHint raised={bill.gstAmount} value={gstTotal} /> · {form.gstManual ? 'typed from the certificate' : 'calculated from the certified taxable'}

@@ -265,8 +265,8 @@ export async function changeCollectionStatus(context: BtContext, collectionId: s
 
     const status: CollectionStatus = action === 'verify' ? 'verified' : 'cancelled';
     // Bank Balance: verifying posts the Credit (once — a `bankExpenseId` already on the receipt
-    // means it is posted), cancelling deletes it and clears the pointer so a re-verify posts a
-    // fresh one. Kept outside `clean` because the cancel patch carries a FieldValue sentinel.
+    // means it is posted), cancelling deletes it and clears the pointer, so the receipt never
+    // names a row that is gone. Kept outside `clean`: the cancel patch carries a FieldValue.
     let bankPatch: Record<string, unknown> = {};
     if (action === 'verify') {
       const bankExpenseId = postBankCredit(transaction, collection);
