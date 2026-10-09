@@ -937,11 +937,11 @@ export const permissionModules = {
     "Budget Alerts": ["View", "Edit"],
     "Field Control": ["View", "Edit"],
     // Who may configure how far back a transaction can be dated.
+    // Configures the window; does not exempt anyone from it. There used to be a "Backdated Entry"
+    // resource that lifted the window for its holders. It was removed on purpose — the window now
+    // applies to every user — so it is not listed here, and a role document that still carries it
+    // is granted nothing by it.
     "Date Control": ["View", "Edit"],
-    // Lifts that window for the holder. Deliberately separate from Expenses/Payments "Add": a site
-    // clerk should be able to record today's spend without also being able to reopen a month that
-    // has already been reported on.
-    "Backdated Entry": ["Add", "Edit"],
     // Recording an allocation and verifying one are separate on purpose: the point of the
     // ledger is that a second person signs off the amount, so one role holding both defeats it.
     "Budget Allocation": ["View", "Add", "Verify", "Delete"],

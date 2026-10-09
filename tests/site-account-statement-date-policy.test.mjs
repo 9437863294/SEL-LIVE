@@ -2,7 +2,13 @@ import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
 import {
+  MAX_BACKDATE_DAYS,
+  MAX_FUTURE_DAYS,
+  RULES_LOADING,
+  RULES_UNAVAILABLE,
+  clampDays,
   describeDateWindow,
+  isIsoDate,
   resolveDateControl,
   resolveDateWindow,
   shiftDays,
@@ -21,8 +27,8 @@ const settings = (over = {}) => resolveDateControl({
   ...over,
 });
 
-const check = (date, over = {}, canBypass = false, kind = 'expense') =>
-  validateEntryDate({ date, settings: settings(over), kind, canBypass, today: TODAY });
+const check = (date, over = {}, kind = 'expense') =>
+  validateEntryDate({ date, settings: settings(over), kind, today: TODAY });
 
 describe('shiftDays', () => {
   it('moves within a month', () => {
@@ -97,30 +103,33 @@ describe('resolveDateControl', () => {
 
 describe('resolveDateWindow', () => {
   it('is unrestricted while the feature is off', () => {
-    const window = resolveDateWindow({ settings: settings({ enabled: false }), kind: 'expense', canBypass: false, today: TODAY });
+    const window = resolveDateWindow({ settings: settings({ enabled: false }), kind: 'expense', today: TODAY });
     assert.equal(window.enforced, false);
     assert.equal(window.min, null);
   });
 
-  it('is unrestricted for a Backdated Entry holder', () => {
+  it('is the same for everyone — the function takes no permission at all', () => {
+    // An earlier version took a canBypass flag that lifted the window. Passing one now does
+    // nothing, because there is no parameter for it to reach.
     const window = resolveDateWindow({ settings: settings(), kind: 'expense', canBypass: true, today: TODAY });
-    assert.equal(window.enforced, false);
+    assert.equal(window.enforced, true);
+    assert.equal(window.min, '2026-09-08');
   });
 
   it('spans backdateDays before today to futureDays after', () => {
-    const window = resolveDateWindow({ settings: settings({ backdateDays: 7, futureDays: 2 }), kind: 'expense', canBypass: false, today: TODAY });
+    const window = resolveDateWindow({ settings: settings({ backdateDays: 7, futureDays: 2 }), kind: 'expense', today: TODAY });
     assert.deepEqual([window.min, window.max], ['2026-09-08', '2026-09-17']);
   });
 
   it('collapses to today when both limits are zero', () => {
-    const window = resolveDateWindow({ settings: settings({ backdateDays: 0, futureDays: 0 }), kind: 'expense', canBypass: false, today: TODAY });
+    const window = resolveDateWindow({ settings: settings({ backdateDays: 0, futureDays: 0 }), kind: 'expense', today: TODAY });
     assert.deepEqual([window.min, window.max], [TODAY, TODAY]);
   });
 
   it('respects the per-record-type scope switches', () => {
     const only = settings({ applyToExpenses: true, applyToPayments: false });
-    assert.equal(resolveDateWindow({ settings: only, kind: 'expense', canBypass: false, today: TODAY }).enforced, true);
-    assert.equal(resolveDateWindow({ settings: only, kind: 'payment', canBypass: false, today: TODAY }).enforced, false);
+    assert.equal(resolveDateWindow({ settings: only, kind: 'expense', today: TODAY }).enforced, true);
+    assert.equal(resolveDateWindow({ settings: only, kind: 'payment', today: TODAY }).enforced, false);
   });
 });
 
@@ -138,7 +147,9 @@ describe('validateEntryDate', () => {
     assert.equal(result.ok, false);
     assert.match(result.reason, /cannot be earlier than 2026-09-08/);
     // The message has to say how to proceed, or people work around it with a wrong date.
-    assert.match(result.reason, /Backdated Entry/);
+    assert.match(result.reason, /Settings → Date Control/);
+    // And it must not point at a permission that no longer exists.
+    assert.doesNotMatch(result.reason, /Backdated Entry/);
   });
 
   it('rejects a future date when futureDays is zero', () => {
@@ -157,9 +168,14 @@ describe('validateEntryDate', () => {
     assert.equal(check('2026-09-14', { backdateDays: 0 }).ok, false);
   });
 
-  it('accepts anything for a Backdated Entry holder', () => {
-    assert.equal(check('2019-01-01', {}, true).ok, true);
-    assert.equal(check('2030-01-01', {}, true).ok, true);
+  it('refuses an out-of-window date whatever is passed alongside it', () => {
+    const attempt = (date) => validateEntryDate({
+      date, settings: settings(), kind: 'expense', today: TODAY,
+      // Extra arguments an old caller might still send — none of them is read.
+      canBypass: true, isAdmin: true, override: true,
+    });
+    assert.equal(attempt('2019-01-01').ok, false);
+    assert.equal(attempt('2030-01-01').ok, false);
   });
 
   it('accepts anything while the feature is off', () => {
@@ -168,41 +184,131 @@ describe('validateEntryDate', () => {
 
   it('rejects an empty date with a field-specific message', () => {
     assert.match(check('', {}).reason, /Expense date is required/);
-    assert.match(check('', {}, false, 'payment').reason, /Receipt date is required/);
+    assert.match(check('', {}, 'payment').reason, /Receipt date is required/);
   });
 
   it('uses the record type in its rejection message', () => {
-    assert.match(check('2020-01-01', {}, false, 'payment').reason, /^Receipt date/);
+    assert.match(check('2020-01-01', {}, 'payment').reason, /^Receipt date/);
   });
 
   it('does not restrict a record type the window is switched off for', () => {
-    assert.equal(check('2019-01-01', { applyToPayments: false }, false, 'payment').ok, true);
-    assert.equal(check('2019-01-01', { applyToPayments: false }, false, 'expense').ok, false);
+    assert.equal(check('2019-01-01', { applyToPayments: false }, 'payment').ok, true);
+    assert.equal(check('2019-01-01', { applyToPayments: false }, 'expense').ok, false);
   });
 });
 
 describe('describeDateWindow', () => {
   it('says nothing when unrestricted', () => {
     const config = settings({ enabled: false });
-    const window = resolveDateWindow({ settings: config, kind: 'expense', canBypass: false, today: TODAY });
+    const window = resolveDateWindow({ settings: config, kind: 'expense', today: TODAY });
     assert.equal(describeDateWindow(window, config), null);
   });
 
   it('describes a today-only window without a range', () => {
     const config = settings({ backdateDays: 0 });
-    const window = resolveDateWindow({ settings: config, kind: 'expense', canBypass: false, today: TODAY });
+    const window = resolveDateWindow({ settings: config, kind: 'expense', today: TODAY });
     assert.equal(describeDateWindow(window, config), 'Today only');
   });
 
   it('describes a normal window as a range ending at today', () => {
     const config = settings({ backdateDays: 7 });
-    const window = resolveDateWindow({ settings: config, kind: 'expense', canBypass: false, today: TODAY });
+    const window = resolveDateWindow({ settings: config, kind: 'expense', today: TODAY });
     assert.equal(describeDateWindow(window, config), 'From 2026-09-08 to today');
   });
 
   it('names the far date when future dating is allowed', () => {
     const config = settings({ backdateDays: 7, futureDays: 2 });
-    const window = resolveDateWindow({ settings: config, kind: 'expense', canBypass: false, today: TODAY });
+    const window = resolveDateWindow({ settings: config, kind: 'expense', today: TODAY });
     assert.equal(describeDateWindow(window, config), 'From 2026-09-08 to 2026-09-17');
+  });
+});
+
+describe('isIsoDate', () => {
+  it('accepts real calendar dates', () => {
+    assert.equal(isIsoDate('2026-09-15'), true);
+    assert.equal(isIsoDate('2024-02-29'), true); // leap year
+    assert.equal(isIsoDate('2026-12-31'), true);
+  });
+
+  it('rejects days that do not exist', () => {
+    assert.equal(isIsoDate('2026-02-29'), false); // not a leap year
+    assert.equal(isIsoDate('2026-02-30'), false);
+    assert.equal(isIsoDate('2026-04-31'), false);
+    assert.equal(isIsoDate('2026-13-01'), false);
+    assert.equal(isIsoDate('2026-00-10'), false);
+    assert.equal(isIsoDate('2026-09-00'), false);
+  });
+
+  it('rejects anything not exactly YYYY-MM-DD', () => {
+    for (const bad of ['2026-9-15', '2026-09-15x', ' 2026-09-15', '15-09-2026', '2026/09/15', '', null, 20260915]) {
+      assert.equal(isIsoDate(bad), false, String(bad));
+    }
+  });
+});
+
+describe('validateEntryDate — malformed input', () => {
+  it('refuses a malformed date that would sort inside the window', () => {
+    // String comparison alone put this between the 14th and the 15th and waved it through.
+    const result = check('2026-09-14x');
+    assert.equal(result.ok, false);
+    assert.match(result.reason, /real date in YYYY-MM-DD/);
+  });
+
+  it('refuses a day that does not exist even inside the window', () => {
+    assert.equal(check('2026-09-31', { backdateDays: 30, futureDays: 30 }).ok, false);
+  });
+
+  it('refuses a malformed date even while the window is off', () => {
+    // The window being off is "any date", not "anything at all".
+    assert.equal(check('2026-02-30', { enabled: false }).ok, false);
+    assert.equal(check('2026-09-15', { enabled: false }).ok, true);
+  });
+});
+
+describe('resolveDateControl — stored values', () => {
+  it('reads only real numbers as day counts', () => {
+    // Number(null) and Number('') are both 0, which used to turn a half-written document into
+    // "today only" for every site.
+    const fromNull = resolveDateControl({ enabled: true, backdateDays: null, futureDays: '' });
+    assert.equal(fromNull.backdateDays, 7);
+    assert.equal(fromNull.futureDays, 0);
+    assert.equal(resolveDateControl({ enabled: true, backdateDays: '30' }).backdateDays, 7);
+  });
+
+  it('caps stored windows at the published maximum', () => {
+    const huge = resolveDateControl({ enabled: true, backdateDays: 99999, futureDays: 99999 });
+    assert.equal(huge.backdateDays, MAX_BACKDATE_DAYS);
+    assert.equal(huge.futureDays, MAX_FUTURE_DAYS);
+  });
+
+  it('floors fractional days rather than rejecting them', () => {
+    assert.equal(resolveDateControl({ enabled: true, backdateDays: 7.9 }).backdateDays, 7);
+  });
+
+  it('keeps zero as a real answer', () => {
+    assert.equal(resolveDateControl({ enabled: true, backdateDays: 0 }).backdateDays, 0);
+  });
+});
+
+describe('clampDays', () => {
+  it('makes typed input whole, non-negative and bounded', () => {
+    assert.equal(clampDays('15', 3650), 15);
+    assert.equal(clampDays('1.9', 3650), 1);
+    assert.equal(clampDays('-3', 3650), 0);
+    assert.equal(clampDays('99999', 3650), 3650);
+    assert.equal(clampDays('', 3650), 0);
+    assert.equal(clampDays('abc', 3650), 0);
+    assert.equal(clampDays(NaN, 3650), 0);
+  });
+});
+
+describe('unresolved rules', () => {
+  it('refuse rather than fall back to the "off" defaults', () => {
+    // The hook starts from defaults that say unrestricted; these are what it answers instead
+    // until the real settings have arrived.
+    assert.equal(RULES_LOADING.ok, false);
+    assert.equal(RULES_UNAVAILABLE.ok, false);
+    assert.match(RULES_LOADING.reason, /still loading/);
+    assert.match(RULES_UNAVAILABLE.reason, /could not be loaded/);
   });
 });

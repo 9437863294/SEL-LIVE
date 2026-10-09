@@ -12,12 +12,14 @@ import { useToast } from '@/hooks/use-toast';
 import { SAS_COLLECTIONS, SAS_DATE_CONTROL_DOC_ID } from '@/lib/site-account-statement';
 import {
   DEFAULT_DATE_CONTROL,
+  MAX_BACKDATE_DAYS,
+  MAX_FUTURE_DAYS,
+  clampDays,
   resolveDateControl,
   resolveDateWindow,
   todayLocal,
   type SASDateControlSettings,
 } from '@/lib/site-account-statement-date-policy';
-import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -83,8 +85,10 @@ export default function SiteAccountDateControlSettings() {
         doc(db, SAS_COLLECTIONS.settings, SAS_DATE_CONTROL_DOC_ID),
         {
           enabled: draft.enabled,
-          backdateDays: Math.max(0, Math.floor(draft.backdateDays)),
-          futureDays: Math.max(0, Math.floor(draft.futureDays)),
+          // Bounded again here: the draft is also set by Reset and the presets, not only by the
+          // inputs that already clamp, and the saved value is what every form reads.
+          backdateDays: clampDays(draft.backdateDays, MAX_BACKDATE_DAYS),
+          futureDays: clampDays(draft.futureDays, MAX_FUTURE_DAYS),
           applyToExpenses: draft.applyToExpenses,
           applyToPayments: draft.applyToPayments,
           updatedAt: serverTimestamp(),
@@ -129,7 +133,7 @@ export default function SiteAccountDateControlSettings() {
   // Preview the window exactly as a restricted user would see it, so an administrator can read the
   // consequence of the number they just typed instead of working it out.
   const today = todayLocal();
-  const preview = resolveDateWindow({ settings: draft, kind: 'expense', canBypass: false, today });
+  const preview = resolveDateWindow({ settings: draft, kind: 'expense', today });
 
   return (
     <div className="space-y-4">
@@ -198,9 +202,12 @@ export default function SiteAccountDateControlSettings() {
                 <Input
                   type="number"
                   min={0}
-                  max={3650}
+                  max={MAX_BACKDATE_DAYS}
+                  step={1}
                   value={draft.backdateDays}
-                  onChange={e => set('backdateDays', Math.max(0, Number(e.target.value) || 0))}
+                  // `min`/`max` are hints the browser applies loosely — 1.5, -3 and 99999 all reach
+                  // here — so the value is made whole and bounded before it can be saved.
+                  onChange={e => set('backdateDays', clampDays(e.target.value, MAX_BACKDATE_DAYS))}
                   disabled={!canEdit}
                   className="h-9 w-28"
                 />
@@ -215,9 +222,10 @@ export default function SiteAccountDateControlSettings() {
                 <Input
                   type="number"
                   min={0}
-                  max={365}
+                  max={MAX_FUTURE_DAYS}
+                  step={1}
                   value={draft.futureDays}
-                  onChange={e => set('futureDays', Math.max(0, Number(e.target.value) || 0))}
+                  onChange={e => set('futureDays', clampDays(e.target.value, MAX_FUTURE_DAYS))}
                   disabled={!canEdit}
                   className="h-9 w-28"
                 />
@@ -258,7 +266,7 @@ export default function SiteAccountDateControlSettings() {
             {/* Live preview */}
             <div className="rounded-lg border border-emerald-100 bg-emerald-50 px-4 py-3">
               <p className="text-xs font-semibold uppercase tracking-wide text-emerald-700">
-                What a restricted user sees today
+                What every user sees today
               </p>
               <p className="mt-1 text-sm text-emerald-900">
                 {preview.enforced
@@ -267,19 +275,17 @@ export default function SiteAccountDateControlSettings() {
               </p>
             </div>
 
-            {/* Who is exempt */}
+            {/* Nobody is exempt — said plainly, since an earlier version did exempt some roles. */}
             <div className="flex items-start gap-2.5 rounded-lg border bg-muted/30 px-4 py-3">
               <ShieldCheck className="mt-0.5 h-4 w-4 shrink-0 text-slate-500" />
               <div className="space-y-1 text-xs text-muted-foreground">
-                <p className="font-medium text-slate-700">Who can still enter older dates</p>
-                {/* div, not p — Badge renders a div, and a div inside a paragraph is invalid HTML
-                    that the browser silently reparents, which shows up as a hydration mismatch. */}
-                <div>
-                  Roles holding <Badge variant="outline" className="mx-0.5 text-[10px]">Site Account Statement › Backdated Entry</Badge>
-                  are not restricted, and neither are holders of <Badge variant="outline" className="mx-0.5 text-[10px]">All Projects</Badge>,
-                  who administer the module. Grant it in Settings › Role Management to the people
-                  accountable for reopening a period that has already been reported on.
-                </div>
+                <p className="font-medium text-slate-700">No permission overrides this</p>
+                <p>
+                  The window applies to every user, administrators included, on every form that
+                  records an expense or receipt — the full form, the dashboard quick-add and Excel
+                  import. To allow an older entry, widen the window here; to correct a month that
+                  has already been reported, reopen it in Month Closure.
+                </p>
               </div>
             </div>
           </CardContent>

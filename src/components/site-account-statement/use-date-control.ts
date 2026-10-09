@@ -17,6 +17,8 @@ import {
   type SASMonthClosureSettings,
 } from '@/lib/site-account-statement-month-closure';
 import {
+  RULES_LOADING,
+  RULES_UNAVAILABLE,
   describeDateWindow,
   resolveDateControl,
   resolveDateWindow,
@@ -27,16 +29,14 @@ import {
   type SASDateControlSettings,
   type SASDatedRecord,
 } from '@/lib/site-account-statement-date-policy';
-import { useAuthorization } from '@/hooks/useAuthorization';
 
-const MODULE = 'Site Account Statement';
+/** Where one of the two rule documents is: still arriving, here, or failed to arrive. */
+type RuleState = 'loading' | 'ready' | 'error';
 
 export interface DateControl {
   settings: SASDateControlSettings;
-  /** The range this user may pick for this record type. */
+  /** The range anyone may pick for this record type. The same for every user. */
   window: DateWindow;
-  /** True when the user holds `Backdated Entry` and the window does not apply to them. */
-  canBypass: boolean;
   /**
    * A short hint for under the date field, or null when unrestricted.
    *
@@ -71,39 +71,57 @@ export interface DateControl {
   }) => DateCheck;
   /** Frozen accounting periods, `YYYY-MM`, oldest first, for one project or the organisation. */
   closedPeriodsFor: (projectId?: string) => string[];
+  /** True until both rule documents have arrived. Submit checks refuse while this holds. */
   loading: boolean;
+  /** True when either rule document failed to load. Submit checks refuse while this holds. */
+  unavailable: boolean;
 }
 
 /**
- * Live back-dating rule for one kind of record.
+ * The date rules for one kind of record: the back-dating window and the closed months.
  *
- * Subscribes to the org-wide Date Control document and combines it with the caller's
- * `Backdated Entry` permission. Holders of that permission — and of All Projects, who administer
- * the module — are never restricted.
+ * The same for every user. Neither rule consults a role — no permission widens the window and
+ * none opens a closed month. An administrator who needs an older entry recorded changes the
+ * window in Settings → Date Control or reopens the month in Settings → Month Closure, both of which
+ * everyone can see and both of which leave a record.
  *
- * `today` is captured once per mount rather than read on every render, so a form left open across
- * midnight cannot start rejecting the date already typed into it. A page reload picks up the new
- * day, which is the right granularity for a rule measured in days.
+ * Fails closed. The state starts from defaults that say "unrestricted", so answering a submit
+ * before the real settings have arrived — or after they failed to — would wave through exactly the
+ * entries these rules exist to stop. `check` and `checkChange` refuse until both documents are in.
  */
 export function useDateControl(kind: SASDatedRecord): DateControl {
-  const { can } = useAuthorization();
   const [settings, setSettings] = useState<SASDateControlSettings>(() => resolveDateControl(null));
   const [closure, setClosure] = useState<SASMonthClosureSettings>(() => resolveMonthClosure(null));
-  const [loading, setLoading] = useState(true);
-  const [today] = useState(todayLocal);
+  const [windowState, setWindowState] = useState<RuleState>('loading');
+  const [closureState, setClosureState] = useState<RuleState>('loading');
+
+  /*
+   * `today` for the date input's `min`/`max`. Re-read every minute so a form left open past
+   * midnight moves its bounds with the calendar.
+   *
+   * The submit-time check does not use this — it reads the clock at the moment of the check. An
+   * earlier version captured the date once at mount, which let a form opened at 23:50 accept a
+   * date that had fallen out of the window ten minutes later.
+   */
+  const [today, setToday] = useState(todayLocal);
+  useEffect(() => {
+    const id = setInterval(() => {
+      const now = todayLocal();
+      setToday(prev => (prev === now ? prev : now));
+    }, 60_000);
+    return () => clearInterval(id);
+  }, []);
 
   useEffect(() => {
-    // No `setLoading(true)` here — the state already starts true and this effect runs once, so
-    // setting it synchronously inside the effect would only add a cascading render.
     return onSnapshot(
       doc(db, SAS_COLLECTIONS.settings, SAS_DATE_CONTROL_DOC_ID),
       (snapshot) => {
+        // A document that does not exist is a real answer — nobody has configured the window —
+        // and resolves to "off". Only a failed read is unknown.
         setSettings(resolveDateControl(snapshot.data() as Partial<SASDateControlSettings> | undefined));
-        setLoading(false);
+        setWindowState('ready');
       },
-      // A read failure must not lock people out of recording work. Falling back to the resolved
-      // defaults leaves `enabled` false, i.e. unrestricted.
-      () => setLoading(false),
+      () => setWindowState('error'),
     );
   }, []);
 
@@ -114,37 +132,33 @@ export function useDateControl(kind: SASDatedRecord): DateControl {
    * page and the dashboard's quick-add — so folding the frozen periods in here means the lock
    * cannot be forgotten on a form, which is exactly how a half-enforced period control ends up
    * worse than none.
-   *
-   * A read failure leaves nothing closed, matching the Date Control fallback: an outage must not
-   * stop a site recording its work.
    */
   useEffect(() => {
     return onSnapshot(
       doc(db, SAS_COLLECTIONS.settings, SAS_MONTH_CLOSURE_DOC_ID),
-      (snapshot) => setClosure(resolveMonthClosure(snapshot.data() as Partial<SASMonthClosureSettings> | undefined)),
-      () => { /* leave nothing closed */ },
+      (snapshot) => {
+        setClosure(resolveMonthClosure(snapshot.data() as Partial<SASMonthClosureSettings> | undefined));
+        setClosureState('ready');
+      },
+      () => setClosureState('error'),
     );
   }, []);
 
-  const canBypass =
-    can('Add', `${MODULE}.Backdated Entry`) ||
-    can('Edit', `${MODULE}.Backdated Entry`) ||
-    can('View', `${MODULE}.All Projects`);
+  const loading = windowState === 'loading' || closureState === 'loading';
+  const unavailable = windowState === 'error' || closureState === 'error';
+
+  /** The refusal to give while the rules are not known, or null once they are. */
+  function unresolved(): DateCheck | null {
+    if (unavailable) return RULES_UNAVAILABLE;
+    if (loading) return RULES_LOADING;
+    return null;
+  }
 
   const window = useMemo(
-    () => resolveDateWindow({ settings, kind, canBypass, today }),
-    [settings, kind, canBypass, today],
+    () => resolveDateWindow({ settings, kind, today }),
+    [settings, kind, today],
   );
 
-  /*
-   * No role is consulted here, and that is the point.
-   *
-   * `Backdated Entry` lifts the rolling window because filing late is a question of trust. A
-   * closed month is not: the figures have been reported, and letting any permission move them
-   * would turn the lock into something that depends on who is looking at the form. Everybody —
-   * administrators included — goes through Settings → Month Closure and reopens the month, which
-   * takes a written reason and stays on the record.
-   */
   const hint = useMemo(() => {
     const windowHint = describeDateWindow(window, settings);
     const frozen = listClosedPeriods(closure);
@@ -156,9 +170,11 @@ export function useDateControl(kind: SASDatedRecord): DateControl {
   }, [window, settings, closure]);
 
   function check(date: string, projectId?: string): DateCheck {
+    const pending = unresolved();
+    if (pending) return pending;
     // The rolling window first: when both would reject, its message is the more actionable one,
     // since it names a date the person can actually use.
-    const windowCheck = validateEntryDate({ date, settings, kind, canBypass, today });
+    const windowCheck = validateEntryDate({ date, settings, kind, today: todayLocal() });
     if (!windowCheck.ok) return windowCheck;
     return validateAgainstClosure({ date, settings: closure, kind, projectId });
   }
@@ -166,15 +182,18 @@ export function useDateControl(kind: SASDatedRecord): DateControl {
   return {
     settings,
     window,
-    canBypass,
     hint,
     check,
     isLocked: (date, projectId) => isRecordLocked({ date, settings: closure, projectId }),
-    checkChange: ({ originalDate, nextDate, action, originalProjectId, nextProjectId }) =>
-      validateRecordChange({
+    checkChange: ({ originalDate, nextDate, action, originalProjectId, nextProjectId }) => {
+      const pending = unresolved();
+      if (pending) return pending;
+      return validateRecordChange({
         originalDate, nextDate, settings: closure, kind, action, originalProjectId, nextProjectId,
-      }),
+      });
+    },
     closedPeriodsFor: (projectId) => listClosedPeriods(closure, projectId),
     loading,
+    unavailable,
   };
 }

@@ -324,21 +324,28 @@ service cloud.firestore {
      * That last pair matter most: a date-only test would wave through an edit that carries a
      * reported figure into an open month, and a delete that removes it altogether.
      *
-     * One `get()` per write, against a single document the rules evaluator caches for the rest of
-     * the request — well inside the 20-access budget, and only paid by installations that have
-     * actually closed a month.
+     * One document read per write, cached by the rules evaluator for the rest of the request —
+     * well inside the ten-access limit alongside the user, role and project reads.
      */
-    function sasClosureDoc() {
-      return get(/databases/$(database)/documents/siteAccountSettings/monthClosure).data;
+    function sasClosurePath() {
+      return /databases/$(database)/documents/siteAccountSettings/monthClosure;
     }
 
     /*
      * A project's own entry beats the organisation's, in both directions — a site frozen ahead of
      * the others, and a site let back in while everyone else stays shut. Present-and-false is a
      * real answer, so this tests for the key's presence before reading `closed`.
+     *
+     * `exists()` first, and that guard is load-bearing: `get()` on a missing document is an error,
+     * and an error denies the write. Without it, an installation that had never closed a month —
+     * and so had no closure document — would have every expense and receipt refused.
      */
     function sasMonthIsClosedFor(period, projectId) {
-      let closure = sasClosureDoc();
+      return exists(sasClosurePath())
+        && sasMonthIsClosedIn(get(sasClosurePath()).data, period, projectId);
+    }
+
+    function sasMonthIsClosedIn(closure, period, projectId) {
       let own = closure.get('projects', {}).get(projectId, {});
       return own.get(period, {}).keys().hasAny(['closed'])
         ? own[period].get('closed', false) == true
@@ -357,16 +364,58 @@ service cloud.firestore {
         || !sasMonthIsClosedFor(date[0:7], projectId);
     }
 
+    /**
+     * Date Control — the back-dating window — enforced here as well as on the forms.
+     *
+     * Like month closure, it consults no permission: the window is the same for every writer.
+     *
+     * The forms enforce the exact day in the user's own timezone. Rules only know `request.time`,
+     * in UTC, and have no notion of the user's calendar, so this check carries one day of slack on
+     * each side. That is enough to never refuse an entry the form accepted, for India (UTC+5:30)
+     * and any timezone ahead of UTC, while still stopping a direct write that reaches weeks back.
+     * It is a backstop against bypassing the form, not a second copy of it.
+     */
+    function sasDateControlPath() {
+      return /databases/$(database)/documents/siteAccountSettings/dateControl;
+    }
+
+    function sasIsIsoDate(date) {
+      return date is string && date.matches('^[0-9]{4}-[0-9]{2}-[0-9]{2}$');
+    }
+
+    function sasDayStart(date) {
+      return timestamp.date(int(date[0:4]), int(date[5:7]), int(date[8:10]));
+    }
+
+    /** `kind` is 'expense' or 'payment', matching the two scope switches on the settings page. */
+    function sasDateInWindow(date, kind) {
+      // No document means nobody has configured the window, which is "off" — not an error.
+      return !exists(sasDateControlPath())
+        || sasDateInWindowOf(get(sasDateControlPath()).data, date, kind);
+    }
+
+    function sasDateInWindowOf(control, date, kind) {
+      let applies = control.get('enabled', false) == true
+        && control.get(kind == 'expense' ? 'applyToExpenses' : 'applyToPayments', true) != false;
+      return !applies
+        || (sasIsIsoDate(date)
+            && sasDayStart(date) >= request.time - duration.value(int(control.get('backdateDays', 7)) + 1, 'd')
+            && sasDayStart(date) <= request.time + duration.value(int(control.get('futureDays', 0)) + 1, 'd'));
+    }
+
     match /siteAccountPayments/{paymentId} {
       allow get, list: if sasViewsAllProjects()
         || sasPerm('Payments', 'View')
         || (resource != null && sasCanReadProject(resource.data.projectId));
       allow create: if (sasPerm('Payments', 'Add') || sasCanWriteProject(request.resource.data.projectId))
-        && sasDateIsPostable(request.resource.data.receiptDate, request.resource.data.projectId);
+        && sasDateIsPostable(request.resource.data.receiptDate, request.resource.data.projectId)
+        && sasDateInWindow(request.resource.data.receiptDate, 'payment');
       // Both ends checked: where the receipt sits now, and where the edit would put it.
       allow update: if (sasPerm('Payments', 'Edit') || sasCanWriteProject(resource.data.projectId))
         && sasDateIsPostable(resource.data.receiptDate, resource.data.projectId)
-        && sasDateIsPostable(request.resource.data.receiptDate, request.resource.data.projectId);
+        && sasDateIsPostable(request.resource.data.receiptDate, request.resource.data.projectId)
+        && (request.resource.data.receiptDate == resource.data.receiptDate
+            || sasDateInWindow(request.resource.data.receiptDate, 'payment'));
       allow delete: if sasPerm('Payments', 'Delete')
         && sasDateIsPostable(resource.data.receiptDate, resource.data.projectId);
     }
@@ -376,10 +425,19 @@ service cloud.firestore {
         || sasPerm('Expenses', 'View')
         || (resource != null && sasCanReadProject(resource.data.projectId));
       allow create: if (sasPerm('Expenses', 'Add') || sasCanWriteProject(request.resource.data.projectId))
-        && sasDateIsPostable(request.resource.data.expenseDate, request.resource.data.projectId);
+        && sasDateIsPostable(request.resource.data.expenseDate, request.resource.data.projectId)
+        && sasDateInWindow(request.resource.data.expenseDate, 'expense');
+      /*
+       * On update the window binds only when the date moves. The forms are stricter and refuse any
+       * edit of a record dated outside the window; the rule is not, because Expense Categories
+       * renames a category by rewriting it across historical expenses, and that batch must not
+       * fail on records that are simply old. Moving a record's date is what back-dating is.
+       */
       allow update: if (sasPerm('Expenses', 'Edit') || sasCanWriteProject(resource.data.projectId))
         && sasDateIsPostable(resource.data.expenseDate, resource.data.projectId)
-        && sasDateIsPostable(request.resource.data.expenseDate, request.resource.data.projectId);
+        && sasDateIsPostable(request.resource.data.expenseDate, request.resource.data.projectId)
+        && (request.resource.data.expenseDate == resource.data.expenseDate
+            || sasDateInWindow(request.resource.data.expenseDate, 'expense'));
       allow delete: if sasPerm('Expenses', 'Delete')
         && sasDateIsPostable(resource.data.expenseDate, resource.data.projectId);
     }

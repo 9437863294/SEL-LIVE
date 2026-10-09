@@ -5,9 +5,11 @@
  * ones that decide whether a site clerk can file yesterday's bill — are exercised directly by
  * `tests/site-account-statement-date-policy.test.mjs` rather than only by clicking through a form.
  *
- * Two things gate an entry date:
- *   1. The configured window (Settings → Date Control), which an administrator tunes.
- *   2. The `Backdated Entry` permission, which lifts the window entirely for the roles that hold it.
+ * One thing gates an entry date: the configured window (Settings → Date Control). No permission
+ * lifts it. An earlier version let a `Backdated Entry` role — and module administrators — skip the
+ * window entirely, which made the rule a matter of who was filling in the form rather than of the
+ * date being entered. Now the window is the same for everyone, and the way to allow older entries
+ * is to widen it, which is visible to everyone and recorded against the settings document.
  *
  * Both the input's `min`/`max` attributes and the submit-time check come from here, so the form
  * cannot offer a date it will then refuse — and the submit check exists because `min`/`max` on a
@@ -67,6 +69,26 @@ export function todayLocal(now: Date = new Date()): string {
   return `${year}-${month}-${day}`;
 }
 
+const ISO_DATE_RE = /^(\d{4})-(\d{2})-(\d{2})$/;
+
+/**
+ * True only for a real calendar date written as `YYYY-MM-DD`.
+ *
+ * The window is checked by comparing strings, which is correct for well-formed dates and silently
+ * wrong for anything else: `2026-10-05x` sorts between the 5th and the 6th and would pass, and
+ * `2026-02-30` passes too while meaning a day that does not exist. A date input never produces
+ * either, but an Excel import, a pasted value or a hand-built request can.
+ */
+export function isIsoDate(value: unknown): value is string {
+  if (typeof value !== 'string') return false;
+  const match = ISO_DATE_RE.exec(value);
+  if (!match) return false;
+  const [, y, m, d] = match.map(Number);
+  if (m < 1 || m > 12 || d < 1) return false;
+  // Day 0 of the next month is the last day of this one, leap years included.
+  return d <= new Date(Date.UTC(y, m, 0)).getUTCDate();
+}
+
 /** Shifts a `YYYY-MM-DD` string by whole days, staying on calendar days across DST and year ends. */
 export function shiftDays(date: string, delta: number): string {
   const [year, month, day] = date.split('-').map(Number);
@@ -78,27 +100,62 @@ export function shiftDays(date: string, delta: number): string {
 }
 
 /** Normalises whatever is stored — a partial or hand-edited document — into usable settings. */
+/** Ten years back and one year forward — beyond either, the window is no longer limiting anything. */
+export const MAX_BACKDATE_DAYS = 3650;
+export const MAX_FUTURE_DAYS = 365;
+
+/**
+ * A day count as typed into the settings form, made safe to store.
+ *
+ * Whole days only, never negative, never above the cap. The inputs carry `min`/`max` attributes,
+ * but those are hints the browser applies loosely — `1.5`, `-3` and `99999` all reach `onChange`.
+ */
+export function clampDays(value: unknown, max: number): number {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) return 0;
+  return Math.min(max, Math.max(0, Math.floor(parsed)));
+}
+
 export function resolveDateControl(stored: Partial<SASDateControlSettings> | undefined | null): SASDateControlSettings {
-  const clamp = (value: unknown, fallback: number) => {
-    const parsed = Number(value);
-    // A negative window is meaningless and would invert the range, locking out every date.
-    return Number.isFinite(parsed) && parsed >= 0 ? Math.floor(parsed) : fallback;
+  const clamp = (value: unknown, fallback: number, max: number) => {
+    // Only a real number is read as a setting. `Number(null)` and `Number('')` are both 0, which
+    // would quietly turn a half-written document into "today only" for every site.
+    if (typeof value !== 'number' || !Number.isFinite(value) || value < 0) return fallback;
+    return Math.min(max, Math.floor(value));
   };
   return {
     enabled: stored?.enabled === true,
-    backdateDays: clamp(stored?.backdateDays, DEFAULT_DATE_CONTROL.backdateDays),
-    futureDays: clamp(stored?.futureDays, DEFAULT_DATE_CONTROL.futureDays),
+    backdateDays: clamp(stored?.backdateDays, DEFAULT_DATE_CONTROL.backdateDays, MAX_BACKDATE_DAYS),
+    futureDays: clamp(stored?.futureDays, DEFAULT_DATE_CONTROL.futureDays, MAX_FUTURE_DAYS),
     applyToExpenses: stored?.applyToExpenses !== false,
     applyToPayments: stored?.applyToPayments !== false,
   };
 }
+
+/**
+ * What the submit check answers before the rules are known.
+ *
+ * The hook starts from defaults, and the defaults say "off". Answering from them while the real
+ * settings are still on their way — or after they failed to arrive — would wave through exactly
+ * the entries the window exists to stop, so the check refuses until it actually knows.
+ */
+export const RULES_LOADING: DateCheck = {
+  ok: false,
+  reason: 'The date rules are still loading. Try again in a moment.',
+};
+
+export const RULES_UNAVAILABLE: DateCheck = {
+  ok: false,
+  reason: 'The date rules could not be loaded, so nothing can be recorded right now. '
+    + 'Refresh the page and try again.',
+};
 
 export interface DateWindow {
   /** Earliest allowed date, or null when unrestricted. */
   min: string | null;
   /** Latest allowed date, or null when unrestricted. */
   max: string | null;
-  /** False when no restriction applies — settings off, record type excluded, or holder bypasses. */
+  /** False only when the setting is off or excludes this record type. Never because of a role. */
   enforced: boolean;
 }
 
@@ -110,24 +167,21 @@ function appliesTo(settings: SASDateControlSettings, kind: SASDatedRecord): bool
 }
 
 /**
- * The date range a given user may pick for a given record type.
+ * The date range anyone may pick for a given record type.
  *
- * `canBypass` is the `Backdated Entry` permission. It lifts the window completely rather than
- * widening it: the point of the permission is that somebody accountable can file a genuinely old
- * entry, and a second, larger limit on top of the first would just move the argument.
+ * Takes no permission, deliberately. There is no argument a caller could pass to get a wider
+ * window, so the rule cannot be argued with from a form — only changed in Settings → Date Control.
  */
 export function resolveDateWindow({
   settings,
   kind,
-  canBypass,
   today = todayLocal(),
 }: {
   settings: SASDateControlSettings;
   kind: SASDatedRecord;
-  canBypass: boolean;
   today?: string;
 }): DateWindow {
-  if (!settings.enabled || canBypass || !appliesTo(settings, kind)) return UNRESTRICTED;
+  if (!settings.enabled || !appliesTo(settings, kind)) return UNRESTRICTED;
   return {
     min: shiftDays(today, -settings.backdateDays),
     max: shiftDays(today, settings.futureDays),
@@ -155,34 +209,40 @@ function humanDays(days: number): string {
 /**
  * Checks one date against the window.
  *
- * The rejection message names the window and says who to ask, because "invalid date" on a form that
- * accepted the same value last week is the kind of error people work around by entering a wrong
- * date rather than by asking.
+ * The rejection message names the window and says what would change it, because "invalid date" on
+ * a form that accepted the same value last week is the kind of error people work around by
+ * entering a wrong date rather than by asking.
+ *
+ * The date's own validity is checked before the window, and regardless of whether the window is
+ * on: a malformed date is never a legitimate entry, and the window comparison below is only sound
+ * for well-formed ones.
  */
 export function validateEntryDate({
   date,
   settings,
   kind,
-  canBypass,
   today = todayLocal(),
 }: {
   date: string;
   settings: SASDateControlSettings;
   kind: SASDatedRecord;
-  canBypass: boolean;
   today?: string;
 }): DateCheck {
   if (!date) return { ok: false, reason: `${KIND_LABEL[kind]} is required.` };
+  if (!isIsoDate(date)) {
+    return { ok: false, reason: `${KIND_LABEL[kind]} must be a real date in YYYY-MM-DD format.` };
+  }
 
-  const window = resolveDateWindow({ settings, kind, canBypass, today });
+  const window = resolveDateWindow({ settings, kind, today });
   if (!window.enforced) return { ok: true };
 
   if (window.min && date < window.min) {
     return {
       ok: false,
       reason: `${KIND_LABEL[kind]} cannot be earlier than ${window.min}. `
-        + `Back-dating is limited to ${humanDays(settings.backdateDays)}. `
-        + 'Ask an administrator for the Backdated Entry permission to record older transactions.',
+        + `Back-dating is limited to ${humanDays(settings.backdateDays)} for everyone. `
+        + 'To record an older transaction, an administrator has to widen the window in '
+        + 'Settings → Date Control.',
     };
   }
 
