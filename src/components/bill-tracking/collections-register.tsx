@@ -82,6 +82,17 @@ export default function CollectionsRegister() {
     },
     { key: 'mode', header: 'Mode', cell: (row) => row.paymentMode ?? '—' },
     { key: 'utr', header: 'UTR / reference', cell: (row) => row.utrNumber || row.bankReference || '—' },
+    {
+      key: 'account',
+      header: 'Bank account',
+      // A verified receipt with an account posts a credit to that account's Bank Balance ledger.
+      cell: (row) => (
+        <span className="whitespace-nowrap">
+          {row.bankAccountName || '—'}
+          {row.bankExpenseId ? <span className="ml-1 text-[11px] text-emerald-700">· in Bank Balance</span> : null}
+        </span>
+      ),
+    },
     { key: 'client', header: 'Client', defaultHidden: true, cell: (row) => row.clientNameSnapshot ?? '—' },
     { key: 'source', header: 'Source', defaultHidden: true, cell: (row) => (row.source === 'excel_import' ? 'Workbook import' : 'Manual') },
     { key: 'by', header: 'Recorded by', defaultHidden: true, cell: (row) => row.createdByName ?? row.createdBy },
@@ -168,6 +179,7 @@ export default function CollectionsRegister() {
                   { key: 'mode', label: 'Mode', value: (row) => row.paymentMode },
                   { key: 'utr', label: 'UTR', value: (row) => row.utrNumber },
                   { key: 'ref', label: 'Bank Reference', value: (row) => row.bankReference },
+                  { key: 'account', label: 'Bank Account', value: (row) => row.bankAccountName },
                   { key: 'status', label: 'Status', value: (row) => row.status },
                 ],
                 totals: { amount: all.totals.amount },

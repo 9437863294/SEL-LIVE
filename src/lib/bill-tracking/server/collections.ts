@@ -15,23 +15,63 @@ import 'server-only';
  *
  * Receipts against a retention bill are retention coming back, so verifying one also writes a
  * release to the retention ledger (and cancelling the receipt cancels that release).
+ *
+ * A receipt that names a Bank Balance account is also real money in that account, so verifying one
+ * posts a single Credit to `bankExpenses` and cancelling it removes that Credit again. See
+ * `../bank-posting.ts` for the document and `postBankCredit` below for the transaction side.
  */
 
-import { FieldValue, type DocumentReference, type Transaction } from 'firebase-admin/firestore';
+import { FieldValue, Timestamp, type DocumentReference, type Transaction } from 'firebase-admin/firestore';
 
 import { ACTIVITY_MODULES } from '@/lib/activity-modules';
 import { dispatchNotificationServer } from '@/lib/notifications-server';
 
+import { bankCreditForCollection } from '../bank-posting.ts';
 import { deriveBillTotals, financialYearOf, isoWeekOf } from '../calculations.ts';
 import { subtractMoney, sumMoney, toPaise } from '../money.ts';
 import type { CollectionInput } from '../schemas';
 import type { Bill, BillCollection, BillCollectionRef, BillTrackingConfig, CollectionStatus, RetentionRelease } from '../types';
+import { receiptBlockReason } from '../certification.ts';
 import { assertMonthOpen, calculationOptions } from './bills';
 import { BtError, db, type BtContext } from './context';
 import { BT_COLLECTIONS, clean, loadConfig, logActivityTx, nowIso } from './store';
 
 type StoredBill = Bill & { organizationId: string };
 type StoredCollection = BillCollection & { organizationId: string };
+
+/** Bank Balance's ledger of bank entries — a Credit here is money in the account. */
+const BANK_EXPENSES = 'bankExpenses';
+
+/**
+ * Writes the Bank Balance Credit for a verified receipt and returns its id, or `undefined` when
+ * the receipt does not post one (no account chosen, or one is already posted — see
+ * `bankCreditForCollection`). The caller stores the id as `bankExpenseId` on the receipt **in the
+ * same transaction**, which is what makes a second verify a no-op instead of a second credit.
+ *
+ * Write-only: nothing is read here, so it may be called after the transaction's reads.
+ */
+function postBankCredit(transaction: Transaction, collection: StoredCollection): string | undefined {
+  const draft = bankCreditForCollection(collection);
+  if (!draft) return undefined;
+  const ref = db().collection(BANK_EXPENSES).doc();
+  // `clean` is applied to the draft only: a Timestamp is an object clean() would flatten.
+  transaction.set(ref, { ...clean(draft), date: Timestamp.fromDate(draft.date), createdAt: Timestamp.now() });
+  return ref.id;
+}
+
+/**
+ * Removes the Credit a cancelled receipt had posted, if any, and returns the update that clears
+ * the pointer.
+ *
+ * The bank row is **deleted**, not flagged — unlike a retention release, which is marked
+ * cancelled. The Bank Balance ledger sums every `bankExpenses` row and has no status column, so a
+ * flagged row would still be counted and the balance would stay overstated.
+ */
+function reverseBankCredit(transaction: Transaction, collection: StoredCollection): Record<string, unknown> {
+  if (!collection.bankExpenseId) return {};
+  transaction.delete(db().collection(BANK_EXPENSES).doc(collection.bankExpenseId));
+  return { bankExpenseId: FieldValue.delete() };
+}
 
 /** Recomputes a bill after its receipt list changed, and returns the update to write. */
 function billUpdateFor(bill: StoredBill, collections: BillCollectionRef[], config: BillTrackingConfig): Record<string, unknown> {
@@ -109,6 +149,8 @@ export async function createCollection(context: BtContext, input: CollectionInpu
     for (const { bill } of bills.values()) {
       context.require('Collections', 'Add', bill.projectId);
       if (verify) context.require('Collections', 'Verify', bill.projectId);
+      const blocked = receiptBlockReason(bill, config.settings.certificationBeforeReceipt);
+      if (blocked) throw new BtError(blocked, 409, { billId: bill.id, needs: 'certification' });
     }
     const first = bills.get(billIds[0])?.bill as StoredBill;
     const collection: StoredCollection = clean({
@@ -130,6 +172,7 @@ export async function createCollection(context: BtContext, input: CollectionInpu
       paymentMode: input.paymentMode,
       bankReference: input.bankReference,
       utrNumber: input.utrNumber,
+      bankAccountId: input.bankAccountId,
       bankAccountName: input.bankAccountName,
       remarks: input.remarks,
       status,
@@ -142,7 +185,10 @@ export async function createCollection(context: BtContext, input: CollectionInpu
       verifiedAt: verify ? nowIso() : undefined,
       updatedAt: nowIso(),
     });
-    transaction.set(ref, collection);
+    // Bank Balance: one Credit for the whole receipt, and only once it is verified — a draft is
+    // not yet money in the bank. Nothing is written when no account was chosen.
+    const bankExpenseId = verify ? postBankCredit(transaction, collection) : undefined;
+    transaction.set(ref, bankExpenseId ? { ...collection, bankExpenseId } : collection);
 
     for (const entry of input.allocations) {
       const { ref: billRef, bill } = bills.get(entry.billId) as { ref: DocumentReference; bill: StoredBill };
@@ -209,15 +255,35 @@ export async function changeCollectionStatus(context: BtContext, collectionId: s
     const releases = action === 'cancel' ? await transaction.get(firestore.collection(BT_COLLECTIONS.retention).where('collectionId', '==', collectionId)) : null;
     const bills = await readBills(transaction, context, collection.billIds);
     for (const { bill } of bills.values()) context.require('Collections', action === 'verify' ? 'Verify' : 'Cancel', bill.projectId);
+    // A receipt drafted before the client certified still waits for the certification to count.
+    if (action === 'verify') {
+      for (const { bill } of bills.values()) {
+        const blocked = receiptBlockReason(bill, config.settings.certificationBeforeReceipt);
+        if (blocked) throw new BtError(blocked, 409, { billId: bill.id, needs: 'certification' });
+      }
+    }
 
     const status: CollectionStatus = action === 'verify' ? 'verified' : 'cancelled';
-    transaction.update(ref, clean({
-      status,
-      updatedAt: nowIso(),
-      ...(action === 'verify'
-        ? { verifiedBy: context.userId, verifiedByName: context.userName, verifiedAt: nowIso() }
-        : { cancelledBy: context.userId, cancelledAt: nowIso(), cancelReason: reason }),
-    }));
+    // Bank Balance: verifying posts the Credit (once — a `bankExpenseId` already on the receipt
+    // means it is posted), cancelling deletes it and clears the pointer so a re-verify posts a
+    // fresh one. Kept outside `clean` because the cancel patch carries a FieldValue sentinel.
+    let bankPatch: Record<string, unknown> = {};
+    if (action === 'verify') {
+      const bankExpenseId = postBankCredit(transaction, collection);
+      if (bankExpenseId) bankPatch = { bankExpenseId };
+    } else {
+      bankPatch = reverseBankCredit(transaction, collection);
+    }
+    transaction.update(ref, {
+      ...clean({
+        status,
+        updatedAt: nowIso(),
+        ...(action === 'verify'
+          ? { verifiedBy: context.userId, verifiedByName: context.userName, verifiedAt: nowIso() }
+          : { cancelledBy: context.userId, cancelledAt: nowIso(), cancelReason: reason }),
+      }),
+      ...bankPatch,
+    });
 
     for (const allocation of collection.allocations) {
       const entry = bills.get(allocation.billId);

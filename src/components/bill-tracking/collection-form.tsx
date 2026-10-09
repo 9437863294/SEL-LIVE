@@ -11,7 +11,9 @@
  */
 
 import { useEffect, useMemo, useState } from 'react';
+import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
+import { collection as fsCollection, getDocs } from 'firebase/firestore';
 import { Calculator, Plus, Trash2, Wallet } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
@@ -20,9 +22,12 @@ import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
 import { PageHeader } from '@/components/shared/page-header';
+import { accountLabel } from '@/components/bank-balance/page-kit';
 import { useToast } from '@/hooks/use-toast';
+import { db } from '@/lib/firebase';
 import { roundMoney, subtractMoney, sumMoney } from '@/lib/bill-tracking/money';
 import { PAYMENT_MODES } from '@/lib/bill-tracking/types';
+import type { BankAccount } from '@/lib/types';
 
 import { btFetch, useBt, useBtQuery, useDebounced, useLookups } from './bt-client';
 import { ToolbarSearch, ToolbarSelect } from './bt-toolbar';
@@ -40,6 +45,8 @@ interface OpenBill {
   totalReceived: number;
   outstandingAmount: number;
   isRetentionBill: boolean;
+  /** Why a receipt cannot be allocated to it yet (awaiting the client's certification), if so. */
+  receiptBlock?: string | null;
 }
 
 interface Line {
@@ -51,6 +58,9 @@ const num = (value: string) => {
   const parsed = Number(String(value).replace(/[,₹\s]/g, ''));
   return Number.isFinite(parsed) ? parsed : 0;
 };
+
+/** Radix Select cannot hold an empty value, so "no account" needs a sentinel. */
+const NO_ACCOUNT = '__none__';
 
 export default function CollectionForm() {
   const lookups = useLookups();
@@ -65,7 +75,9 @@ export default function CollectionForm() {
   const [mode, setMode] = useState<string>('RTGS');
   const [utr, setUtr] = useState('');
   const [bankReference, setBankReference] = useState('');
-  const [bankAccountName, setBankAccountName] = useState('');
+  const [bankAccountId, setBankAccountId] = useState(NO_ACCOUNT);
+  const [bankAccounts, setBankAccounts] = useState<BankAccount[]>([]);
+  const [accountsFailed, setAccountsFailed] = useState(false);
   const [remarks, setRemarks] = useState('');
   const [verifyNow, setVerifyNow] = useState(can('Collections', 'Verify'));
   const [allowUnallocated, setAllowUnallocated] = useState(false);
@@ -79,13 +91,41 @@ export default function CollectionForm() {
   const { data: preset } = useBtQuery<{ bills: OpenBill[] }>(preselected ? `bills/open?ids=${preselected}` : null);
   useEffect(() => {
     const bill = preset?.bills.find((entry) => entry.id === preselected);
-    if (bill && lines.length === 0) {
+    if (bill && !bill.receiptBlock && lines.length === 0) {
       setLines([{ bill, amount: String(bill.outstandingAmount) }]);
       setAmount(String(bill.outstandingAmount));
     }
     // Only on first load of the preselected bill.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [preset]);
+
+  /**
+   * The Bank Balance accounts, read straight from Firestore — Bill Tracking itself is API-only,
+   * but `bankAccounts` is ordinary Bank Balance master data the browser already reads elsewhere.
+   * Choosing one makes a verified receipt post a Credit to that account's ledger.
+   */
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      try {
+        const snapshot = await getDocs(fsCollection(db, 'bankAccounts'));
+        if (cancelled) return;
+        setBankAccounts(
+          snapshot.docs
+            .map((entry) => ({ id: entry.id, ...entry.data() }) as BankAccount)
+            .filter((account) => account.status === 'Active')
+            .sort((a, b) => accountLabel(a).localeCompare(accountLabel(b))),
+        );
+      } catch {
+        if (!cancelled) setAccountsFailed(true);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const chosenAccount = bankAccounts.find((account) => account.id === bankAccountId);
 
   const searchQuery = `bills/open?q=${encodeURIComponent(debounced)}${projectFilter ? `&project=${projectFilter}` : ''}`;
   const { data: candidates, loading: searching } = useBtQuery<{ bills: OpenBill[] }>(searchQuery);
@@ -131,7 +171,9 @@ export default function CollectionForm() {
           paymentMode: mode,
           utrNumber: utr,
           bankReference,
-          bankAccountName,
+          // The id drives the bank posting; the label is kept for the registers and the audit trail.
+          bankAccountId: chosenAccount ? chosenAccount.id : '',
+          bankAccountName: chosenAccount ? accountLabel(chosenAccount) : '',
           remarks,
           verifyNow,
           allowUnallocated: allowUnallocated && !balanced,
@@ -145,6 +187,7 @@ export default function CollectionForm() {
     }
   };
 
+  const presetBlocked = preset?.bills.find((entry) => entry.id === preselected && entry.receiptBlock);
   const shownCandidates = useMemo(() => (candidates?.bills ?? []).filter((bill) => !lines.some((line) => line.bill.id === bill.id)), [candidates, lines]);
 
   return (
@@ -153,6 +196,17 @@ export default function CollectionForm() {
 
       <div className="grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,1fr)_340px]">
         <div className="min-w-0 space-y-4">
+          {presetBlocked ? (
+            <Notice tone="amber" title="Awaiting the client’s certification">
+              {presetBlocked.receiptBlock}{' '}
+              {can('Bills', 'Certify') ? (
+                <Link className="font-medium text-emerald-700 hover:underline" href={`/bill-tracking/bills/${presetBlocked.id}/certify`}>
+                  Record the certification
+                </Link>
+              ) : null}
+            </Notice>
+          ) : null}
+
           <FormSection step={1} title="Receipt" description="As it appears on the bank statement.">
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
               <FormField label="Receipt date *" htmlFor="receipt-date">
@@ -181,8 +235,23 @@ export default function CollectionForm() {
               <FormField label="Bank reference" htmlFor="bank-ref">
                 <Input id="bank-ref" value={bankReference} onChange={(event) => setBankReference(event.target.value)} />
               </FormField>
-              <FormField label="Received in account" htmlFor="bank-account">
-                <Input id="bank-account" value={bankAccountName} onChange={(event) => setBankAccountName(event.target.value)} placeholder="e.g. SBI CC A/c" />
+              <FormField
+                label="Received in account"
+                hint={accountsFailed ? 'Bank accounts could not be loaded — the receipt can still be saved without one.' : chosenAccount && verifyNow ? `Posts a credit of this receipt to ${accountLabel(chosenAccount)} in Bank Balance.` : chosenAccount ? 'A credit is posted to Bank Balance when the receipt is verified.' : 'Optional — pick the account to move its Bank Balance too.'}
+              >
+                <Select value={bankAccountId} onValueChange={setBankAccountId}>
+                  <SelectTrigger aria-label="Received in account">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value={NO_ACCOUNT}>— not specified —</SelectItem>
+                    {bankAccounts.map((account) => (
+                      <SelectItem key={account.id} value={account.id}>
+                        {accountLabel(account)}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
               </FormField>
             </div>
             <FormField label="Remarks" htmlFor="receipt-remarks">
@@ -247,9 +316,15 @@ export default function CollectionForm() {
                       </span>
                       <span className="flex shrink-0 items-center gap-2">
                         <Amount value={bill.outstandingAmount} className="text-rose-700" />
-                        <Button size="sm" variant="outline" className="h-7 gap-1 px-2" onClick={() => addBill(bill)}>
-                          <Plus className="h-3.5 w-3.5" /> Add
-                        </Button>
+                        {bill.receiptBlock ? (
+                          <span className="rounded border border-amber-200 bg-amber-50 px-2 py-0.5 text-[11px] font-medium text-amber-800" title={bill.receiptBlock}>
+                            Not certified
+                          </span>
+                        ) : (
+                          <Button size="sm" variant="outline" className="h-7 gap-1 px-2" onClick={() => addBill(bill)}>
+                            <Plus className="h-3.5 w-3.5" /> Add
+                          </Button>
+                        )}
                       </span>
                     </li>
                   ))}

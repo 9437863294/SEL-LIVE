@@ -184,6 +184,22 @@ export async function loadScopedBills(context: Pick<BtContext, 'scope' | 'organi
   return snapshots.flatMap((snapshot) => snapshot.docs.map((doc) => ({ ...(doc.data() as Bill), id: doc.id })));
 }
 
+/**
+ * Every live credit / debit note in the caller's scope, any financial year — a note raised next
+ * year still adjusts this year's invoice, so certification comparisons cannot use the FY slice.
+ */
+export async function loadScopedNotes(context: Pick<BtContext, 'scope' | 'organizationId'>): Promise<Bill[]> {
+  if (context.scope && context.scope.length === 0) return [];
+  const snapshot = await db()
+    .collection(BT_COLLECTIONS.bills)
+    .where('organizationId', '==', context.organizationId)
+    .where('isDeleted', '==', false)
+    .where('transactionType', 'in', ['credit_note', 'debit_note'])
+    .get();
+  const scope = context.scope;
+  return snapshot.docs.map((doc) => ({ ...(doc.data() as Bill), id: doc.id })).filter((note) => scope === null || scope.includes(note.projectId));
+}
+
 export async function loadScopedDocs<T>(collection: string, context: Pick<BtContext, 'scope' | 'organizationId'>, projectField = 'projectId'): Promise<T[]> {
   if (context.scope && context.scope.length === 0) return [];
   const base = db().collection(collection).where('organizationId', '==', context.organizationId);

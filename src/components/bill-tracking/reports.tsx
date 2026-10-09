@@ -11,13 +11,15 @@
  */
 
 import Link from 'next/link';
-import { BarChart3, BookOpen, CalendarRange, FileWarning, Gauge, Hourglass, Landmark, Layers, ListChecks, MapPin, PiggyBank, Receipt, Scissors, ScrollText, TrendingUp, Users, Wallet } from 'lucide-react';
+import { BarChart3, BookOpen, CalendarRange, FileWarning, Gauge, Hourglass, Landmark, Layers, ListChecks, MapPin, PiggyBank, Receipt, Scale, Scissors, ScrollText, TrendingUp, Users, Wallet } from 'lucide-react';
 
 import { PageHeader } from '@/components/shared/page-header';
 import { StatusBadge } from '@/components/shared/status-badge';
 import { monthLabel, type LedgerLine } from '@/lib/bill-tracking/calculations';
 import { AGEING_BASIS_LABELS, PAYMENT_STATUS_LABELS, RETENTION_STATUS_LABELS, type DeductionTypeMaster, type RetentionRelease } from '@/lib/bill-tracking/types';
 import { categoryName } from '@/lib/bill-tracking/categories';
+import type { CertificationTotals } from '@/lib/bill-tracking/certification';
+import { formatINR } from '@/lib/bill-tracking/money';
 import type { AgeingReport, BillTotals, CollectionLine, ExceptionItem, ForecastItem, ForecastWindow, GroupRow, MonthlySummaryRow, RetentionRow, TargetPerformanceRow } from '@/lib/bill-tracking/reports';
 
 import { useBtQuery, useLookups } from './bt-client';
@@ -26,7 +28,7 @@ import { ToolbarDate, ToolbarSelect } from './bt-toolbar';
 import { BtTable, type BtColumn } from './bt-table';
 import { billReference, TotalsStrip, type BillRow } from './bill-register';
 import { LedgerTable } from './bill-detail';
-import { AgeingBadge, Amount, BtEmpty, BtError, BtLoading, DrillLink, ExportMenu, Notice, PaymentStatusBadge, dateText, percentText, toQuery, type ExportColumn, type ExportSpec } from './bt-ui';
+import { AgeingBadge, Amount, BtEmpty, BtError, BtLoading, DrillLink, ExportMenu, Notice, PaymentStatusBadge, StatStrip, dateText, percentText, toQuery, type ExportColumn, type ExportSpec, TruncatedText } from './bt-ui';
 
 /* ── hub ─────────────────────────────────────────────────────────────────── */
 
@@ -43,6 +45,7 @@ const REPORTS: { kind: string; title: string; description: string; icon: React.E
   { kind: 'deductions', title: 'Deductions', description: 'Every deduction head by project, client, month, FY or bill type.', icon: Scissors, href: '/bill-tracking/deductions' },
   { kind: 'retention', title: 'Retention', description: 'Retention held, released and balance by project.', icon: PiggyBank, href: '/bill-tracking/retention' },
   { kind: 'ageing', title: 'Ageing', description: 'Outstanding by ageing bucket, as on any date, by project, client or DGM office.', icon: Hourglass, href: '/bill-tracking/ageing' },
+  { kind: 'certification', title: 'Raised vs certified', description: 'Per project: bills certified and awaiting, raised vs certified net, what the client changed, notes raised and what is still to adjust.', icon: Scale },
   { kind: 'exceptions', title: 'Exceptions', description: 'Mismatches, over-receipts, old outstanding, missed commitments, missing follow-ups.', icon: FileWarning },
   { kind: 'forecast', title: 'Collection forecast', description: 'Expected collections from commitments, expected and due dates.', icon: TrendingUp },
   { kind: 'performance', title: 'Collection performance', description: 'Target vs actual by week, project, DGM office or collection owner.', icon: Gauge },
@@ -183,6 +186,8 @@ function ReportBody({ kind, data, filters }: { kind: string; data: Record<string
     case 'targets':
     case 'performance':
       return <PerformanceReport data={data as unknown as PerformanceData} />;
+    case 'certification':
+      return <CertificationReport rows={data.rows as CertificationGroupRow[]} totals={data.totals as CertificationTotals} carry={carry} />;
     case 'project-ledger':
     case 'client-ledger':
       return (
@@ -312,11 +317,59 @@ function GroupTable({ kind, rows, totals, carry, byCategory = false }: { kind: s
 
 /* ── collections ─────────────────────────────────────────────────────────── */
 
+type CertificationGroupRow = CertificationTotals & { key: string; label: string };
+
+/** Raised vs certified per project; each figure opens the register's comparison view for that project. */
+function CertificationReport({ rows, totals, carry }: { rows: CertificationGroupRow[]; totals: CertificationTotals; carry: (extra: Record<string, string | undefined>) => string }) {
+  const compareHref = (project: string, cert?: string) => `/bill-tracking/bills?${carry({ project, view: 'compare', cert })}`;
+  const columns: BtColumn<CertificationGroupRow & { id: string }>[] = [
+    { key: 'label', header: 'Project', pinned: true, mobile: 'title', sortValue: (row) => row.label, cell: (row) => <DrillLink href={compareHref(row.key)}>{row.label}</DrillLink>, total: 'Total' },
+    { key: 'count', header: 'Bills', align: 'right', sortValue: (row) => row.count, cell: (row) => row.count, total: totals.count },
+    { key: 'certified', header: 'Certified', align: 'right', sortValue: (row) => row.certified, cell: (row) => row.certified, total: totals.certified },
+    {
+      key: 'awaiting',
+      header: 'Awaiting',
+      align: 'right',
+      sortValue: (row) => row.awaiting,
+      cell: (row) => (row.awaiting ? <DrillLink href={`/bill-tracking/bills?${carry({ project: row.key, view: 'certified', cert: 'awaiting' })}`}>{row.awaiting}</DrillLink> : 0),
+      total: totals.awaiting,
+    },
+    { key: 'raisedNet', header: 'Raised net (certified)', align: 'right', sortValue: (row) => row.raisedNetCertified, cell: (row) => <Amount value={row.raisedNetCertified} signed />, total: <Amount value={totals.raisedNetCertified} signed /> },
+    { key: 'certifiedNet', header: 'Certified net', align: 'right', sortValue: (row) => row.certifiedNet, cell: (row) => <Amount value={row.certifiedNet} signed />, total: <Amount value={totals.certifiedNet} signed /> },
+    { key: 'variance', header: 'Client change', align: 'right', sortValue: (row) => row.variance, cell: (row) => <Amount value={row.variance} signed className={row.variance < 0 ? 'text-rose-700' : undefined} />, total: <Amount value={totals.variance} signed /> },
+    { key: 'notesNet', header: 'Notes raised', align: 'right', sortValue: (row) => row.notesNet, cell: (row) => <Amount value={row.notesNet} signed muted />, total: <Amount value={totals.notesNet} signed /> },
+    {
+      key: 'pendingNet',
+      header: 'Still to adjust',
+      align: 'right',
+      mobile: 'aside',
+      sortValue: (row) => Math.abs(row.pendingNet),
+      cell: (row) => (row.pending ? <DrillLink href={compareHref(row.key, 'pending')} className="font-semibold text-violet-700">{formatINR(row.pendingNet)}</DrillLink> : <span className="text-xs font-medium text-emerald-700">{row.certified ? 'Matched' : '—'}</span>),
+      total: <Amount value={totals.pendingNet} signed />,
+    },
+    { key: 'pending', header: 'Notes to raise', align: 'right', sortValue: (row) => row.pending, cell: (row) => row.pending || '—', total: totals.pending },
+  ];
+  return (
+    <div className="space-y-3">
+      <StatStrip
+        items={[
+          { label: 'Certified bills', value: `${totals.certified.toLocaleString('en-IN')} of ${totals.count.toLocaleString('en-IN')}` },
+          { label: 'Awaiting certification', value: totals.awaiting.toLocaleString('en-IN'), tone: totals.awaiting ? 'text-amber-700' : 'text-slate-900' },
+          { label: 'Client changed', value: <Amount value={totals.variance} compact signed />, tone: totals.variance < 0 ? 'text-rose-700' : 'text-slate-900' },
+          { label: 'Notes raised', value: <Amount value={totals.notesNet} compact signed /> },
+          { label: 'Still to adjust', value: <Amount value={totals.pendingNet} compact signed />, tone: totals.pending ? 'text-violet-700' : 'text-emerald-700', hint: totals.pending ? `${totals.pending} note${totals.pending === 1 ? '' : 's'} to raise` : 'All matched' },
+        ]}
+      />
+      <BtTable rows={rows.map((row) => ({ ...row, id: row.key }))} columns={columns} storageKey="report-certification" showTotals empty={<BtEmpty title="No certifiable bills for the selected filters." />} />
+    </div>
+  );
+}
+
 function CollectionsReport({ data }: { data: { rows: CollectionLine[]; total: number; byMonth: { month: string; amount: number }[]; from?: string; to?: string } }) {
   const columns: BtColumn<CollectionLine & { id: string }>[] = [
     { key: 'date', header: 'Receipt date', pinned: true, mobile: 'title', sortValue: (row) => row.receiptDate, cell: (row) => dateText(row.receiptDate), total: 'Total' },
     { key: 'bill', header: 'Bill', cell: (row) => <DrillLink href={`/bill-tracking/bills/${row.billId}`}>{row.gstInvoiceNumber || row.billSerialNumber}</DrillLink> },
-    { key: 'project', header: 'Project', sortValue: (row) => row.projectName, cell: (row) => row.projectName },
+    { key: 'project', header: 'Project', sortValue: (row) => row.projectName, cell: (row) => <TruncatedText text={row.projectName} className="max-w-[180px]" /> },
     { key: 'mode', header: 'Mode', cell: (row) => row.paymentMode ?? '—' },
     { key: 'utr', header: 'UTR', cell: (row) => row.utrNumber ?? '—' },
     { key: 'amount', header: 'Amount', align: 'right', mobile: 'aside', sortValue: (row) => row.amount, cell: (row) => <Amount value={row.amount} />, total: <Amount value={data.total} /> },
@@ -482,11 +535,23 @@ function BillsReport({ kind, rows, totals, deductionTypes }: { kind: string; row
   const lookups = useLookups();
   const siteWise = kind === 'site-wise';
   const columns: BtColumn<BillRow>[] = [
+    {
+      key: 'invoice',
+      header: 'GST invoice',
+      pinned: true,
+      mobile: 'title',
+      sortValue: (bill) => bill.gstInvoiceNumber ?? '',
+      cell: (bill) => (
+        <DrillLink href={`/bill-tracking/bills/${bill.id}`} className={bill.gstInvoiceNumber ? 'whitespace-nowrap' : 'text-slate-500'}>
+          {bill.gstInvoiceNumber || 'NA'}
+        </DrillLink>
+      ),
+      total: 'Total',
+    },
     { key: 'sl', header: 'Sl. No.', defaultHidden: !siteWise, cell: (bill) => bill.serialNumber ?? '—' },
-    { key: 'bill', header: 'Bill Sl No.', pinned: true, mobile: 'title', sortValue: (bill) => bill.billSerialNumber ?? '', cell: (bill) => <DrillLink href={`/bill-tracking/bills/${bill.id}`}>{bill.billSerialNumber || '—'}</DrillLink>, total: 'Total' },
-    { key: 'invoice', header: 'GST invoice', cell: (bill) => bill.gstInvoiceNumber ?? 'NA' },
+    { key: 'bill', header: 'Bill Sl No.', label: 'Bill Sl No.', sortValue: (bill) => bill.billSerialNumber ?? '', cell: (bill) => <TruncatedText text={bill.billSerialNumber} className="max-w-[150px] text-xs text-slate-600" /> },
     { key: 'date', header: 'Date', sortValue: (bill) => bill.billDate, cell: (bill) => <span className="whitespace-nowrap">{dateText(bill.billDate)}</span> },
-    { key: 'project', header: 'Project', defaultHidden: siteWise, cell: (bill) => bill.projectNameSnapshot },
+    { key: 'project', header: 'Project', defaultHidden: siteWise, cell: (bill) => <TruncatedText text={bill.projectNameSnapshot} className="max-w-[180px]" /> },
     { key: 'desc', header: 'Description', defaultHidden: !siteWise, cell: (bill) => bill.description ?? '' },
     { key: 'type', header: 'Type', cell: (bill) => bill.billTypeName },
     { key: 'taxable', header: 'Taxable', align: 'right', cell: (bill) => <Amount value={bill.taxableAmount} signed />, total: <Amount value={totals.taxable} /> },
@@ -527,7 +592,7 @@ function ExceptionsReport({ data, filters }: { data: { summary: { kind: string; 
   const columns: BtColumn<ExceptionItem & { id: string }>[] = [
     { key: 'kind', header: 'Exception', pinned: true, mobile: 'title', sortValue: (row) => row.kind, cell: (row) => data.summary.find((entry) => entry.kind === row.kind)?.label ?? row.kind },
     { key: 'bill', header: 'Bill', cell: (row) => <DrillLink href={`/bill-tracking/bills/${row.billId}`}>{row.gstInvoiceNumber || row.billSerialNumber || 'Open'}</DrillLink> },
-    { key: 'project', header: 'Project', sortValue: (row) => row.projectName, cell: (row) => row.projectName },
+    { key: 'project', header: 'Project', sortValue: (row) => row.projectName, cell: (row) => <TruncatedText text={row.projectName} className="max-w-[180px]" /> },
     { key: 'detail', header: 'Detail', cell: (row) => <span className="text-xs">{row.detail}</span> },
     { key: 'amount', header: 'Amount', align: 'right', mobile: 'aside', sortValue: (row) => row.amount, cell: (row) => <Amount value={row.amount} signed /> },
   ];
@@ -552,7 +617,7 @@ function ForecastReport({ data }: { data: { windows: ForecastWindow[]; rows: For
   const columns: BtColumn<ForecastItem & { id: string }>[] = [
     { key: 'date', header: 'Expected', pinned: true, mobile: 'title', sortValue: (row) => row.date, cell: (row) => dateText(row.date) },
     { key: 'bill', header: 'Bill', cell: (row) => <DrillLink href={`/bill-tracking/bills/${row.billId}`}>{row.gstInvoiceNumber || row.billSerialNumber}</DrillLink> },
-    { key: 'project', header: 'Project', cell: (row) => row.projectName },
+    { key: 'project', header: 'Project', cell: (row) => <TruncatedText text={row.projectName} className="max-w-[180px]" /> },
     { key: 'source', header: 'Basis', cell: (row) => (row.source === 'commitment' ? 'Client commitment' : row.source === 'expected_date' ? 'Expected payment date' : 'Due date') },
     { key: 'owner', header: 'Owner', cell: (row) => row.ownerName ?? '—' },
     { key: 'amount', header: 'Amount', align: 'right', mobile: 'aside', sortValue: (row) => row.amount, cell: (row) => <Amount value={row.amount} /> },
@@ -667,6 +732,8 @@ function exportSpecFor(kind: string, data: Record<string, unknown>, base: { meta
         totals: { taxableAmount: (data.totals as BillTotals).taxable, gstAmount: (data.totals as BillTotals).gst, totalDeduction: (data.totals as BillTotals).deduction, netReceivable: (data.totals as BillTotals).net, totalReceived: (data.totals as BillTotals).received, outstandingAmount: (data.totals as BillTotals).outstanding },
       };
     }
+    case 'certification':
+      return { ...base, title, fileName, rows: (data.rows as Row[]) ?? [], columns: [text('label', 'Project'), text('count', 'Bills'), text('certified', 'Certified'), text('awaiting', 'Awaiting'), money('raisedNetCertified', 'Raised Net (certified)'), money('certifiedNet', 'Certified Net'), money('variance', 'Client Change'), money('notesNet', 'Notes Raised'), money('pendingNet', 'Still To Adjust'), text('pending', 'Notes To Raise')], totals: data.totals as unknown as Record<string, number> };
     case 'exceptions':
       return { ...base, title, fileName, rows: (data.rows as Row[]) ?? [], columns: [text('kind', 'Exception'), text('gstInvoiceNumber', 'Invoice'), text('billSerialNumber', 'Bill No'), text('projectName', 'Project'), text('detail', 'Detail'), money('amount', 'Amount')] };
     case 'forecast':

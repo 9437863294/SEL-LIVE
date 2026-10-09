@@ -11,6 +11,7 @@ import 'server-only';
 
 import { billLedger, combinedLedger, financialYearOf, financialYearRange, isoWeekOf } from '../calculations.ts';
 import { isEnabledForProject } from '../categories.ts';
+import { canBeCertified, certificationSummary, certificationTotals, compareCertification, notesByInvoice, receiptBlockReason, type CertificationSummary } from '../certification.ts';
 import { sumBy } from '../money.ts';
 import {
   ageingReport,
@@ -61,7 +62,7 @@ import {
   type RetentionRelease,
 } from '../types.ts';
 import { BtError, db, type BtContext } from './context';
-import { BT_COLLECTIONS, loadBill, loadClients, loadConfig, loadGstSetup, loadProjects, loadScopedBills, loadScopedDocs, loadUsers } from './store';
+import { BT_COLLECTIONS, loadBill, loadClients, loadConfig, loadGstSetup, loadProjects, loadScopedBills, loadScopedDocs, loadScopedNotes, loadUsers } from './store';
 
 /* ── filters from the URL ────────────────────────────────────────────────── */
 
@@ -138,7 +139,7 @@ export async function lookups(context: BtContext) {
   const config = await loadConfig(context.organizationId);
   const [projects, clients, users, gstSetup] = await Promise.all([loadProjects(context, config.projectProfiles), loadClients(), loadUsers(), loadGstSetup()]);
   const resources = ['Dashboard', 'Bills', 'Collections', 'Retention', 'Follow-ups', 'Targets', 'Import', 'Reports', 'Settings'] as const;
-  const actions = ['View', 'Add', 'Edit', 'Delete', 'Verify', 'Approve', 'Override Status', 'Edit After Approval', 'Cancel', 'Hold Unallocated', 'Manage', 'Import', 'Rollback', 'Export', 'Close Month'];
+  const actions = ['View', 'Add', 'Edit', 'Delete', 'Verify', 'Approve', 'Override Status', 'Edit After Approval', 'Certify', 'Cancel', 'Hold Unallocated', 'Manage', 'Import', 'Rollback', 'Export', 'Close Month'];
   const permissions: Record<string, string[]> = {};
   for (const resource of resources) permissions[resource] = actions.filter((action) => context.can(resource, action));
   return {
@@ -176,9 +177,63 @@ const withAgeing = (bill: Bill, context: ReportContext, basis?: AgeingBasis): Bi
 /** Bulky arrays the register does not show are dropped from list responses. */
 const slim = (row: BillRow): BillRow => ({ ...row, searchTokens: [], dueDateRevisions: undefined });
 
+export interface CertificationRow extends BillRow {
+  cert: CertificationSummary;
+}
+
+export const CERTIFICATION_FILTERS = ['awaiting', 'certified', 'matched', 'pending'] as const;
+const CERTIFICATION_SORT_KEYS = ['certifiedDate', 'certifiedNet', 'variance', 'pendingNet'] as const;
+
+const certificationFilter = (summary: CertificationSummary, filter: string | null): boolean => {
+  if (filter === 'awaiting') return summary.state === 'not_certified';
+  if (filter === 'certified') return summary.state !== 'not_certified';
+  if (filter === 'matched') return summary.state === 'matched';
+  if (filter === 'pending') return summary.state === 'adjustment_pending';
+  return true;
+};
+
+/** Each certifiable bill with its certification state (notes come from every year). */
+async function withCertification(context: BtContext, bills: readonly Bill[], tolerance: number) {
+  const notes = notesByInvoice(await loadScopedNotes(context));
+  return bills.filter(canBeCertified).map((bill) => ({ bill, summary: certificationSummary(bill, notes.get(bill.id) ?? [], tolerance) }));
+}
+
+async function listCertification(context: BtContext, params: URLSearchParams, loaded: Loaded) {
+  const { bills, context: rc, filters, config } = loaded;
+  const rows = (await withCertification(context, bills, config.settings.tolerance)).filter(({ summary }) => certificationFilter(summary, params.get('cert')));
+  const direction = params.get('dir') === 'asc' ? 1 : -1;
+  const requested = params.get('sort') ?? '';
+  let sorted: typeof rows;
+  if ((CERTIFICATION_SORT_KEYS as readonly string[]).includes(requested)) {
+    const value = ({ bill, summary }: (typeof rows)[number]): string | number =>
+      requested === 'certifiedDate' ? (bill.certification?.certifiedDate ?? '') : requested === 'certifiedNet' ? (summary.certifiedNet ?? Number.NEGATIVE_INFINITY) : requested === 'variance' ? (summary.variance ?? 0) : Math.abs(summary.pendingNet ?? 0);
+    sorted = [...rows].sort((a, b) => {
+      const x = value(a);
+      const y = value(b);
+      const order = typeof x === 'number' && typeof y === 'number' ? x - y : String(x).localeCompare(String(y));
+      return order * direction || b.bill.billDate.localeCompare(a.bill.billDate);
+    });
+  } else {
+    const key = (BILL_SORT_KEYS as readonly string[]).includes(requested) ? (requested as BillSortKey) : 'billDate';
+    const order = new Map(sortBills(rows.map((row) => row.bill), key, direction === 1 ? 'asc' : 'desc', rc).map((bill, index) => [bill.id, index]));
+    sorted = [...rows].sort((a, b) => (order.get(a.bill.id) ?? 0) - (order.get(b.bill.id) ?? 0));
+  }
+  const page = paginate(sorted, Number(params.get('page')) || 1, params.get('all') === '1' ? 5000 : Number(params.get('pageSize')) || 25);
+  return {
+    ...page,
+    rows: page.rows.map(({ bill, summary }): CertificationRow => ({ ...slim(withAgeing(bill, rc, filters.ageingBasis)), cert: summary })),
+    totals: billTotals(rows.map((row) => row.bill)),
+    certificationTotals: certificationTotals(rows.map((row) => row.summary)),
+    asOf: rc.asOf,
+  };
+}
+
 export async function listBills(context: BtContext, params: URLSearchParams) {
   context.require('Bills', 'View');
-  const { bills, context: rc, filters } = await load(context, params);
+  const loaded = await load(context, params);
+  const view = params.get('view');
+  if (view === 'certified' || view === 'compare') return listCertification(context, params, loaded);
+  const { bills, context: rc, filters } = loaded;
   const sortKey = (BILL_SORT_KEYS as readonly string[]).includes(params.get('sort') ?? '') ? (params.get('sort') as BillSortKey) : 'billDate';
   const direction = params.get('dir') === 'asc' ? 'asc' : 'desc';
   const sorted = sortBills(bills, sortKey, direction, rc);
@@ -202,7 +257,7 @@ export async function openBillsForAllocation(context: BtContext, params: URLSear
   const bills = filterBills(all, filters, rc).filter((bill) => isOpen(bill) || filters.billIds?.includes(bill.id));
   return sortBills(bills, 'billDate', 'asc', rc)
     .slice(0, 200)
-    .map((bill) => ({ id: bill.id, billSerialNumber: bill.billSerialNumber, gstInvoiceNumber: bill.gstInvoiceNumber, billDate: bill.billDate, projectId: bill.projectId, projectNameSnapshot: bill.projectNameSnapshot, clientNameSnapshot: bill.clientNameSnapshot, netReceivable: bill.netReceivable, totalReceived: bill.totalReceived, outstandingAmount: bill.outstandingAmount, paymentStatus: bill.paymentStatus, isRetentionBill: bill.isRetentionBill }));
+    .map((bill) => ({ id: bill.id, billSerialNumber: bill.billSerialNumber, gstInvoiceNumber: bill.gstInvoiceNumber, billDate: bill.billDate, projectId: bill.projectId, projectNameSnapshot: bill.projectNameSnapshot, clientNameSnapshot: bill.clientNameSnapshot, netReceivable: bill.netReceivable, totalReceived: bill.totalReceived, outstandingAmount: bill.outstandingAmount, paymentStatus: bill.paymentStatus, isRetentionBill: bill.isRetentionBill, receiptBlock: receiptBlockReason(bill, config.settings.certificationBeforeReceipt) }));
 }
 
 /**
@@ -222,7 +277,7 @@ export async function invoicesForNote(context: BtContext, params: URLSearchParam
     .filter((bill) => !search || [bill.gstInvoiceNumber, bill.billSerialNumber, bill.description, bill.billTypeName].some((value) => value?.toLowerCase().includes(search)))
     .sort((a, b) => b.billDate.localeCompare(a.billDate))
     .slice(0, 200)
-    .map((bill) => ({ id: bill.id, billSerialNumber: bill.billSerialNumber, gstInvoiceNumber: bill.gstInvoiceNumber, billDate: bill.billDate, description: bill.description, billTypeId: bill.billTypeId, billTypeName: bill.billTypeName, billCategory: bill.billCategory, taxableAmount: bill.taxableAmount, gstAmount: bill.gstAmount, gstType: bill.gstType, gstPercent: bill.gstPercent, cgstAmount: bill.cgstAmount, sgstAmount: bill.sgstAmount, igstAmount: bill.igstAmount, grossAmount: bill.grossAmount, netReceivable: bill.netReceivable }));
+    .map((bill) => ({ id: bill.id, billSerialNumber: bill.billSerialNumber, gstInvoiceNumber: bill.gstInvoiceNumber, billDate: bill.billDate, description: bill.description, billTypeId: bill.billTypeId, billTypeName: bill.billTypeName, billCategory: bill.billCategory, taxableAmount: bill.taxableAmount, gstAmount: bill.gstAmount, gstType: bill.gstType, gstPercent: bill.gstPercent, cgstAmount: bill.cgstAmount, sgstAmount: bill.sgstAmount, igstAmount: bill.igstAmount, grossAmount: bill.grossAmount, netReceivable: bill.netReceivable, certified: Boolean(bill.certification) }));
 }
 
 /* ── bill detail ─────────────────────────────────────────────────────────── */
@@ -246,6 +301,7 @@ export async function billDetail(context: BtContext, billId: string) {
   ]);
   const docs = <T>(snapshot: FirebaseFirestore.QuerySnapshot) => snapshot.docs.map((doc) => ({ ...(doc.data() as T), id: doc.id }));
   const releases = [...docs<RetentionRelease>(retentionByBill), ...docs<RetentionRelease>(retentionReleases)].filter((release, index, all) => all.findIndex((other) => other.id === release.id) === index);
+  const liveNotes = docs<Bill>(notes).filter((note) => !note.isDeleted && (note as Bill & { organizationId?: string }).organizationId === context.organizationId);
   return {
     bill: withAgeing(bill, rc),
     ledger: billLedger(bill),
@@ -255,9 +311,11 @@ export async function billDetail(context: BtContext, billId: string) {
     documents: docs<BillDocument>(documents).filter((document) => !document.isDeleted).sort((a, b) => b.uploadedAt.localeCompare(a.uploadedAt)),
     activity: docs<BillActivity>(activity).sort((a, b) => b.at.localeCompare(a.at)),
     retention: releases.sort((a, b) => b.releaseDate.localeCompare(a.releaseDate)),
+    // Raised vs notes vs the client's certification — null for a note (notes are not certified).
+    certification: canBeCertified(bill) || bill.certification ? compareCertification(bill, liveNotes, config.settings.tolerance) : null,
     // Credit / debit notes raised against this invoice (live ones only).
-    notes: docs<Bill>(notes)
-      .filter((note) => !note.isDeleted && (note as Bill & { organizationId?: string }).organizationId === context.organizationId)
+    notes: liveNotes
+      .slice()
       .sort((a, b) => a.billDate.localeCompare(b.billDate))
       .map((note) => ({ id: note.id, transactionType: note.transactionType, billSerialNumber: note.billSerialNumber, gstInvoiceNumber: note.gstInvoiceNumber, billDate: note.billDate, taxableAmount: note.taxableAmount, gstAmount: note.gstAmount, grossAmount: note.grossAmount, netReceivable: note.netReceivable })),
   };
@@ -319,7 +377,9 @@ export async function dashboard(context: BtContext, params: URLSearchParams) {
   const weeks = financialYearWeeks(fy).filter((week) => week <= isoWeekOf(rc.asOf)).slice(-12);
   const open = bills.filter(isOpen);
   const items = forecastItems(open);
-  const exceptions = exceptionItems(bills, rc);
+  const notes = notesByInvoice(await loadScopedNotes(context));
+  const exceptions = exceptionItems(bills, rc, notes);
+  const certifiable = bills.filter(canBeCertified);
   return {
     asOf: rc.asOf,
     financialYear: fy,
@@ -338,6 +398,7 @@ export async function dashboard(context: BtContext, params: URLSearchParams) {
     needsFollowUp: exceptions.filter((item) => item.kind === 'no_follow_up').slice(0, 10),
     exceptions: exceptionSummary(exceptions),
     retention: retentionReport(bills, releases, rc).totals,
+    certification: certificationTotals(certifiable.map((bill) => certificationSummary(bill, notes.get(bill.id) ?? [], config.settings.tolerance))),
     settings: { ageingBuckets: config.settings.ageingBuckets },
   };
 }
@@ -369,6 +430,7 @@ export const REPORT_KINDS = [
   'project-ledger',
   'client-ledger',
   'data-quality',
+  'certification',
 ] as const;
 export type ReportKind = (typeof REPORT_KINDS)[number];
 
@@ -421,7 +483,7 @@ export async function report(context: BtContext, kind: ReportKind, params: URLSe
       return { ...base, rows, totals: billTotals(rows), deductionTypes: config.deductionTypes };
     }
     case 'exceptions': {
-      const items = exceptionItems(bills, rc);
+      const items = exceptionItems(bills, rc, notesByInvoice(await loadScopedNotes(context)));
       return { ...base, summary: exceptionSummary(items), rows: params.get('type') ? items.filter((item) => item.kind === params.get('type')) : items };
     }
     case 'forecast': {
@@ -445,6 +507,21 @@ export async function report(context: BtContext, kind: ReportKind, params: URLSe
     }
     case 'data-quality':
       return { ...base, ...dataQuality(all, config) };
+    case 'certification': {
+      // Raised vs certified, per project: what the client changed and what is still to adjust.
+      const rows = await withCertification(context, bills, config.settings.tolerance);
+      const groups = new Map<string, { label: string; summaries: CertificationSummary[] }>();
+      for (const { bill, summary } of rows) {
+        const group = groups.get(bill.projectId) ?? { label: bill.projectNameSnapshot, summaries: [] };
+        group.summaries.push(summary);
+        groups.set(bill.projectId, group);
+      }
+      return {
+        ...base,
+        rows: [...groups.entries()].map(([key, group]) => ({ key, label: group.label, ...certificationTotals(group.summaries) })).sort((a, b) => Math.abs(b.pendingNet) - Math.abs(a.pendingNet) || b.awaiting - a.awaiting || a.label.localeCompare(b.label)),
+        totals: certificationTotals(rows.map((row) => row.summary)),
+      };
+    }
   }
 }
 

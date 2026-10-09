@@ -32,7 +32,7 @@ import { BtToolbar, ToolbarSearch, ToolbarSelect } from './bt-toolbar';
 import { FySelect } from './bt-ui';
 
 /** Keys that are filters (counted as "active"); page, sort and size are not. */
-const FILTER_KEYS = ['project', 'client', 'dgm', 'billType', 'category', 'txn', 'payment', 'workflow', 'ageing', 'basis', 'min', 'max', 'targetWeek', 'owner', 'from', 'to', 'asOf', 'chip', 'marker', 'ids', 'open'] as const;
+const FILTER_KEYS = ['project', 'client', 'dgm', 'billType', 'category', 'txn', 'payment', 'workflow', 'ageing', 'basis', 'min', 'max', 'targetWeek', 'owner', 'from', 'to', 'asOf', 'chip', 'marker', 'ids', 'open', 'cert'] as const;
 
 export function useUrlFilters() {
   const params = useSearchParams();
@@ -55,7 +55,9 @@ export function useUrlFilters() {
 
   const clear = () => {
     const next = new URLSearchParams();
+    // The FY and the register view are where you are, not filters.
     if (params.get('fy')) next.set('fy', params.get('fy') as string);
+    if (params.get('view')) next.set('view', params.get('view') as string);
     router.replace(`${pathname}${next.toString() ? `?${next}` : ''}`, { scroll: false });
   };
 

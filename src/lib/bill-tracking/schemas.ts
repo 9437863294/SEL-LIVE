@@ -98,6 +98,30 @@ export const billInputSchema = z.object({
 });
 export type BillInput = z.infer<typeof billInputSchema>;
 
+/**
+ * The client's certification of a bill. The GST type defaults to the raised bill's; a bill imported
+ * with one unsplit GST figure is split here (CGST + SGST or IGST) the way the certificate shows it.
+ */
+export const certificationInputSchema = z.object({
+  certifiedDate: dateKey,
+  reference: optionalText(120),
+  certifiedBy: optionalText(120),
+  taxableAmount: money,
+  /** Total GST — used only when no GST type is given (a raised bill imported unsplit, kept unsplit). */
+  gstAmount: money.default(0),
+  /** Omitted = the raised bill's type. */
+  gstType: z.enum(['cgst-sgst', 'igst', 'none']).optional(),
+  gstPercent: z.coerce.number().min(0).max(100).optional(),
+  cgstAmount: money.optional(),
+  sgstAmount: money.optional(),
+  igstAmount: money.optional(),
+  deductions: z.array(deductionLineSchema).max(60).default([]),
+  remarks: optionalText(2000),
+  /** Optimistic concurrency: the certification revision the form loaded (0 = none yet). */
+  expectedRevision: z.coerce.number().int().min(0).optional(),
+});
+export type CertificationInput = z.infer<typeof certificationInputSchema>;
+
 export const workflowActionSchema = z.object({
   action: z.enum(['submit', 'start_verification', 'verify', 'approve', 'raise', 'start_followup', 'reconcile', 'close', 'return', 'resubmit', 'reopen']),
   remarks: optionalText(1000),
@@ -131,6 +155,8 @@ export const collectionInputSchema = z.object({
   bankReference: optionalText(120),
   utrNumber: optionalText(60),
   bankAccountName: optionalText(120),
+  /** Bank Balance account (`bankAccounts`) the money landed in; set, a verified receipt posts a Credit there. */
+  bankAccountId: optionalText(128),
   remarks: optionalText(1000),
   /** Verify in the same step (needs Collections · Verify). */
   verifyNow: z.boolean().optional(),
@@ -252,6 +278,14 @@ export const configInputSchema = z.object({
     oldOutstandingDays: z.coerce.number().int().min(1).max(3650),
     highValueThreshold: z.coerce.number().min(0),
     numbering: z.object({ enabled: z.boolean(), pattern: z.string().trim().min(1).max(80), padding: z.coerce.number().int().min(1).max(10) }),
+    certificationBeforeReceipt: z
+      .object({
+        enabled: z.boolean(),
+        transactionTypes: z.array(z.enum(TRANSACTION_TYPES)).max(TRANSACTION_TYPES.length),
+        exemptImported: z.boolean(),
+        fromDate: optionalDate,
+      })
+      .optional(),
     piMarker: z.string().trim().max(20),
   }),
   billCategories: z.array(billCategorySchema).min(1, 'Keep at least one main category.').max(100),

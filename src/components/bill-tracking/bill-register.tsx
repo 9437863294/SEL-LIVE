@@ -23,6 +23,7 @@ import { PageHeader } from '@/components/shared/page-header';
 import { PM_DIALOG } from '@/components/project-management/pm-shell';
 import { useToast } from '@/hooks/use-toast';
 import { categoryName } from '@/lib/bill-tracking/categories';
+import { receiptBlockReason } from '@/lib/bill-tracking/certification';
 import { LEGACY_EXPORT_HEADERS, legacyExportRows } from '@/lib/bill-tracking/legacy-export';
 import { formatINRCompact } from '@/lib/bill-tracking/money';
 import { exportWorkbook } from '@/lib/report-excel';
@@ -32,7 +33,8 @@ import type { BillTotals } from '@/lib/bill-tracking/reports';
 import { btFetch, useBtQuery, useLookups, useBt } from './bt-client';
 import { BillFilterBar, FilterChips, useUrlFilters } from './bt-filters';
 import { BtTable, Pager, type BtColumn } from './bt-table';
-import { AgeingBadge, Amount, BtEmpty, BtError, BtLoading, ExportMenu, PaymentStatusBadge, TransactionTypeBadge, WorkflowStatusBadge, dateText, percentText, type ExportColumn, StatStrip } from './bt-ui';
+import CertificationRegister, { RegisterViewTabs, type RegisterView } from './certification-register';
+import { AgeingBadge, Amount, BtEmpty, BtError, BtLoading, ExportMenu, PaymentStatusBadge, TransactionTypeBadge, WorkflowStatusBadge, dateText, percentText, type ExportColumn, StatStrip, TruncatedText } from './bt-ui';
 
 export interface BillRow extends Bill {
   ageingDays: number;
@@ -88,27 +90,30 @@ export default function BillRegister({ mode = 'all' }: { mode?: 'all' | 'outstan
   const { toast } = useToast();
   const filters = useUrlFilters();
   const outstanding = mode === 'outstanding';
+  // The register's certification views (Outstanding has none).
+  const requestedView = filters.get('view');
+  const view: RegisterView = !outstanding && (requestedView === 'certified' || requestedView === 'compare') ? requestedView : 'raised';
   const sort = filters.get('sort') || (outstanding ? 'ageing' : 'billDate');
   const dir = (filters.get('dir') || 'desc') as 'asc' | 'desc';
   const page = Number(filters.get('page')) || 1;
   const pageSize = Number(filters.get('pageSize')) || 25;
   const query = filters.apiQuery({ sort, dir, page, pageSize, open: outstanding ? '1' : undefined });
-  const { data, loading, error, reload } = useBtQuery<ListResponse>(`bills?${query}`);
+  const { data, loading, error, reload } = useBtQuery<ListResponse>(view === 'raised' ? `bills?${query}` : null);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [bulk, setBulk] = useState<null | 'assign_owner' | 'set_target_week' | 'set_next_follow_up' | 'set_expected_date'>(null);
   const buckets = lookups.config.settings.ageingBuckets;
 
   const columns: BtColumn<BillRow>[] = [
     {
-      key: 'bill',
-      header: 'Bill',
+      key: 'invoice',
+      header: 'GST invoice',
       pinned: true,
       mobile: 'title',
-      sortKey: 'billSerialNumber',
+      sortKey: 'gstInvoiceNumber',
       cell: (bill) => (
         <div className="min-w-0">
-          <Link href={`/bill-tracking/bills/${bill.id}`} className="font-medium text-emerald-700 hover:underline">
-            {bill.billSerialNumber || '—'}
+          <Link href={`/bill-tracking/bills/${bill.id}`} className={bill.gstInvoiceNumber ? 'whitespace-nowrap font-medium text-emerald-700 hover:underline' : 'font-medium text-slate-500 hover:underline'}>
+            {bill.gstInvoiceNumber || 'NA'}
           </Link>
           <div className="flex flex-wrap items-center gap-1">
             <TransactionTypeBadge type={bill.transactionType} />
@@ -118,9 +123,9 @@ export default function BillRegister({ mode = 'all' }: { mode?: 'all' | 'outstan
       ),
       total: 'Total',
     },
-    { key: 'invoice', header: 'GST invoice', cell: (bill) => bill.gstInvoiceNumber || <span className="text-muted-foreground">NA</span> },
+    { key: 'bill', header: 'Bill no.', label: 'Bill no.', sortKey: 'billSerialNumber', cell: (bill) => <TruncatedText text={bill.billSerialNumber} className="max-w-[150px] text-xs text-slate-600" /> },
     { key: 'date', header: 'Date', sortKey: 'billDate', cell: (bill) => <span className="whitespace-nowrap">{dateText(bill.billDate)}</span> },
-    { key: 'project', header: 'Project', sortKey: 'projectNameSnapshot', className: 'max-w-[220px]', cell: (bill) => <span className="line-clamp-2">{bill.projectNameSnapshot}</span> },
+    { key: 'project', header: 'Project', sortKey: 'projectNameSnapshot', cell: (bill) => <TruncatedText text={bill.projectNameSnapshot} className="max-w-[180px]" /> },
     { key: 'client', header: 'Client', defaultHidden: !outstanding, cell: (bill) => bill.clientNameSnapshot || '—' },
     {
       key: 'type',
@@ -171,9 +176,14 @@ export default function BillRegister({ mode = 'all' }: { mode?: 'all' | 'outstan
       align: 'right',
       cell: (bill) => (
         <div className="flex justify-end gap-1">
-          {can('Collections', 'Add') && bill.outstandingAmount > 0 ? (
+          {can('Collections', 'Add') && bill.outstandingAmount > 0 && !receiptBlockReason(bill, lookups.config.settings.certificationBeforeReceipt) ? (
             <Button asChild size="sm" variant="outline" className="h-7 px-2 text-xs">
               <Link href={`/bill-tracking/collections/new?bill=${bill.id}`}>Receive</Link>
+            </Button>
+          ) : null}
+          {bill.outstandingAmount > 0 && can('Bills', 'Certify') && receiptBlockReason(bill, lookups.config.settings.certificationBeforeReceipt) ? (
+            <Button asChild size="sm" variant="ghost" className="h-7 px-2 text-xs text-amber-800" title="Payment waits for the client's certification">
+              <Link href={`/bill-tracking/bills/${bill.id}/certify`}>Certify</Link>
             </Button>
           ) : null}
           {outstanding && can('Follow-ups', 'Add') ? (
@@ -188,8 +198,8 @@ export default function BillRegister({ mode = 'all' }: { mode?: 'all' | 'outstan
 
   const loadAll = async () => (await btFetch<ListResponse>(`bills?${filters.apiQuery({ sort, dir, all: '1', open: outstanding ? '1' : undefined })}`)).rows;
   const exportColumns: ExportColumn<BillRow>[] = [
-    { key: 'billSerialNumber', label: 'Bill No', value: (bill) => bill.billSerialNumber },
     { key: 'gstInvoiceNumber', label: 'GST Invoice', value: (bill) => bill.gstInvoiceNumber ?? 'NA' },
+    { key: 'billSerialNumber', label: 'Bill No', value: (bill) => bill.billSerialNumber },
     { key: 'billDate', label: 'Bill Date', value: (bill) => bill.billDate },
     { key: 'project', label: 'Project', value: (bill) => bill.projectNameSnapshot },
     { key: 'client', label: 'Client', value: (bill) => bill.clientNameSnapshot },
@@ -235,6 +245,8 @@ export default function BillRegister({ mode = 'all' }: { mode?: 'all' | 'outstan
     ...(filters.get('q') ? [{ label: 'Search', value: filters.get('q') }] : []),
   ];
 
+  if (view !== 'raised') return <CertificationRegister view={view} />;
+
   return (
     <div className="space-y-4">
       <PageHeader
@@ -251,6 +263,8 @@ export default function BillRegister({ mode = 'all' }: { mode?: 'all' | 'outstan
           ) : null
         }
       />
+
+      {outstanding ? null : <RegisterViewTabs view="raised" />}
 
       <BillFilterBar
         filters={filters}

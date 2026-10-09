@@ -472,6 +472,7 @@ export const WORKFLOW_PATH: readonly BillWorkflowStatus[] = [
   'verified',
   'approved',
   'raised',
+  'certified',
   'payment_followup',
   'reconciliation',
   'closed',

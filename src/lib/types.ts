@@ -723,7 +723,7 @@ export const permissionModules = {
     "View Module": [],
     "All Projects": ["View"],
     Dashboard: ["View"],
-    Bills: ["View", "Add", "Edit", "Delete", "Verify", "Approve", "Override Status", "Edit After Approval"],
+    Bills: ["View", "Add", "Edit", "Delete", "Verify", "Approve", "Override Status", "Edit After Approval", "Certify"],
     Collections: ["View", "Add", "Edit", "Verify", "Cancel", "Hold Unallocated"],
     Retention: ["View", "Manage"],
     "Follow-ups": ["View", "Add", "Edit"],
@@ -1416,6 +1416,8 @@ export interface BankExpense {
   bankPaymentId?: string;
   /** The Daily Requisition this Debit settles, if any. */
   requisitionId?: string;
+  /** The Bill Tracking receipt (`billTrackingCollections`) this Credit was posted from. */
+  billCollectionId?: string;
   /** The voucher number (BP/yyyy-yy/nnnn) of the voucher above, copied for lists and statements. */
   voucherNo?: string;
   /** yyyy-MM-dd the bank paid it (stamped when its voucher is marked cleared) — for reconciliation. */

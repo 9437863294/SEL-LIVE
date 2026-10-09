@@ -9,7 +9,7 @@
  * reloads the record rather than patching numbers locally.
  */
 
-import { useState } from 'react';
+import { Fragment, useState } from 'react';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import {
@@ -17,6 +17,7 @@ import {
   AlertTriangle,
   CalendarClock,
   CheckCircle2,
+  ClipboardCheck,
   Copy,
   FileText,
   HandCoins,
@@ -49,8 +50,10 @@ import { PageHeader, SectionHeader } from '@/components/shared/page-header';
 import { StatusBadge } from '@/components/shared/status-badge';
 import { PM_DIALOG } from '@/components/project-management/pm-shell';
 import { useToast } from '@/hooks/use-toast';
+import { cn } from '@/lib/utils';
 import { daysBetween, type LedgerLine } from '@/lib/bill-tracking/calculations';
 import { categoryName } from '@/lib/bill-tracking/categories';
+import { receiptBlockReason, type CertificationComparison } from '@/lib/bill-tracking/certification';
 import { formatINR } from '@/lib/bill-tracking/money';
 import {
   AGEING_BASIS_LABELS,
@@ -71,7 +74,7 @@ import {
 
 import { btDownload, btFetch, useBt, useBtQuery, useLookups } from './bt-client';
 import { billReference, type BillRow } from './bill-register';
-import { AgeingBadge, Amount, BtError, BtLoading, Notice, PaymentStatusBadge, TransactionTypeBadge, WorkflowStatusBadge, dateText, dateTimeText, BT_TAB, BT_TABS_LIST, StatStrip, TabCount } from './bt-ui';
+import { AgeingBadge, Amount, BtEmpty, BtError, BtLoading, CertificationBadge, Notice, PaymentStatusBadge, TransactionTypeBadge, WorkflowStatusBadge, dateText, dateTimeText, BT_TAB, BT_TABS_LIST, StatStrip, TabCount } from './bt-ui';
 
 interface Detail {
   bill: BillRow;
@@ -82,6 +85,8 @@ interface Detail {
   documents: BillDocument[];
   activity: BillActivity[];
   retention: RetentionRelease[];
+  /** Raised vs notes vs the client's certification; null for a credit / debit note. */
+  certification: CertificationComparison | null;
   /** Credit / debit notes raised against this invoice. */
   notes: { id: string; transactionType: Bill['transactionType']; billSerialNumber?: string; gstInvoiceNumber?: string; billDate: string; taxableAmount: number; gstAmount: number; grossAmount: number; netReceivable: number }[];
 }
@@ -93,11 +98,11 @@ const WORKFLOW_ACTIONS: { action: WorkflowAction; label: string; from: BillWorkf
   { action: 'submit', label: 'Submit', from: ['draft'], resource: 'Bills', permission: 'Edit' },
   { action: 'start_verification', label: 'Start verification', from: ['submitted'], resource: 'Bills', permission: 'Verify' },
   { action: 'verify', label: 'Verify', from: ['submitted', 'under_verification'], resource: 'Bills', permission: 'Verify' },
-  { action: 'approve', label: 'Approve', from: ['verified'], resource: 'Bills', permission: 'Approve' },
-  { action: 'raise', label: 'Mark bill raised', from: ['approved'], resource: 'Bills', permission: 'Edit' },
-  { action: 'start_followup', label: 'Start payment follow-up', from: ['raised'], resource: 'Bills', permission: 'Edit' },
-  { action: 'reconcile', label: 'Send to reconciliation', from: ['raised', 'payment_followup'], resource: 'Bills', permission: 'Verify' },
-  { action: 'close', label: 'Close bill', from: ['raised', 'payment_followup', 'reconciliation'], resource: 'Bills', permission: 'Approve' },
+  { action: 'approve', label: 'Approve', from: ['submitted', 'under_verification', 'verified'], resource: 'Bills', permission: 'Approve' },
+  { action: 'raise', label: 'Mark bill raised', from: ['draft', 'submitted', 'under_verification', 'verified', 'approved'], resource: 'Bills', permission: 'Edit' },
+  { action: 'start_followup', label: 'Start payment follow-up', from: ['raised', 'certified'], resource: 'Bills', permission: 'Edit' },
+  { action: 'reconcile', label: 'Send to reconciliation', from: ['raised', 'certified', 'payment_followup'], resource: 'Bills', permission: 'Verify' },
+  { action: 'close', label: 'Close bill', from: ['raised', 'certified', 'payment_followup', 'reconciliation'], resource: 'Bills', permission: 'Approve' },
   { action: 'resubmit', label: 'Resubmit after correction', from: ['returned'], resource: 'Bills', permission: 'Edit' },
   { action: 'reopen', label: 'Reopen', from: ['closed'], resource: 'Bills', permission: 'Approve' },
   { action: 'return', label: 'Return for correction', from: ['submitted', 'under_verification', 'verified', 'approved'], resource: 'Bills', permission: 'Verify', tone: 'danger' },
@@ -121,6 +126,8 @@ function DetailBody({ detail, reload, tab, setTab }: { detail: Detail; reload: (
   const [dialog, setDialog] = useState<null | 'workflow' | 'override' | 'due' | 'mismatch' | 'delete' | 'email'>(null);
   const [pendingAction, setPendingAction] = useState<WorkflowAction | null>(null);
   const reference = billReference(bill);
+  // Payment waits for the client's certification when Settings → Workflow says so.
+  const receiptBlock = receiptBlockReason(bill, lookups.config.settings.certificationBeforeReceipt);
 
   const actions = WORKFLOW_ACTIONS.filter((entry) => entry.from.includes(bill.workflowStatus) && can(entry.resource, entry.permission) && !bill.isDeleted);
   const runWorkflow = async (action: WorkflowAction, remarks?: string) => {
@@ -146,6 +153,7 @@ function DetailBody({ detail, reload, tab, setTab }: { detail: Detail; reload: (
             <PaymentStatusBadge status={bill.paymentStatus} overridden={Boolean(bill.paymentStatusOverride)} />
             <WorkflowStatusBadge status={bill.workflowStatus} />
             <TransactionTypeBadge type={bill.transactionType} />
+            {detail.certification && !bill.isDeleted ? <CertificationBadge state={detail.certification.summary.state} /> : null}
             {bill.isDeleted ? <StatusBadge tone="danger">Deleted</StatusBadge> : null}
           </div>
         }
@@ -159,10 +167,17 @@ function DetailBody({ detail, reload, tab, setTab }: { detail: Detail; reload: (
         actions={
           bill.isDeleted ? null : (
             <div className="flex flex-wrap gap-2">
-              {can('Collections', 'Add') && bill.outstandingAmount !== 0 ? (
+              {can('Collections', 'Add') && bill.outstandingAmount !== 0 && !receiptBlock ? (
                 <Button asChild size="sm" className="gap-1.5">
                   <Link href={`/bill-tracking/collections/new?bill=${bill.id}`}>
                     <Wallet className="h-4 w-4" /> Receive
+                  </Link>
+                </Button>
+              ) : null}
+              {receiptBlock && can('Bills', 'Certify') ? (
+                <Button asChild size="sm" className="gap-1.5">
+                  <Link href={`/bill-tracking/bills/${bill.id}/certify`}>
+                    <ClipboardCheck className="h-4 w-4" /> Record certification
                   </Link>
                 </Button>
               ) : null}
@@ -199,6 +214,16 @@ function DetailBody({ detail, reload, tab, setTab }: { detail: Detail; reload: (
                   {can('Follow-ups', 'Add') ? (
                     <DropdownMenuItem onSelect={() => setTab('followup')}>
                       <PhoneCall className="mr-2 h-4 w-4" /> Add follow-up
+                    </DropdownMenuItem>
+                  ) : null}
+                  {detail.certification && can('Bills', 'Certify') ? (
+                    <DropdownMenuItem onSelect={() => router.push(`/bill-tracking/bills/${bill.id}/certify`)}>
+                      <ClipboardCheck className="mr-2 h-4 w-4" /> {bill.certification ? 'Edit client certification' : 'Record client certification'}
+                    </DropdownMenuItem>
+                  ) : null}
+                  {detail.certification?.suggestedNote && can('Bills', 'Add') ? (
+                    <DropdownMenuItem onSelect={() => router.push(matchNoteHref(bill))}>
+                      <Undo2 className="mr-2 h-4 w-4" /> Raise note to match certification
                     </DropdownMenuItem>
                   ) : null}
                   {can('Bills', 'Add') && bill.transactionType !== 'credit_note' && bill.transactionType !== 'debit_note' ? (
@@ -244,6 +269,14 @@ function DetailBody({ detail, reload, tab, setTab }: { detail: Detail; reload: (
         }
       />
 
+      {receiptBlock && !bill.isDeleted && bill.outstandingAmount !== 0 ? (
+        <Notice tone="amber" title="Awaiting the client’s certification">
+          Payment can be received once the client certifies this bill.{' '}
+          <button type="button" className="font-medium text-emerald-700 hover:underline" onClick={() => setTab('certification')}>
+            Open certification
+          </button>
+        </Notice>
+      ) : null}
       {bill.isDeleted ? <Notice tone="rose" title="This bill has been deleted">{bill.deleteReason ?? 'No reason recorded.'} It is excluded from every total.</Notice> : null}
       {bill.againstBillId ? (
         <Notice tone="blue" title={`${bill.transactionType === 'credit_note' ? 'Credit' : 'Debit'} note against invoice ${bill.againstBillRef ?? ''}`}>
@@ -254,6 +287,14 @@ function DetailBody({ detail, reload, tab, setTab }: { detail: Detail; reload: (
         </Notice>
       ) : bill.transactionType === 'credit_note' ? (
         <Notice tone="amber" title="Credit note not linked to an invoice">Edit it to choose the invoice it is against.</Notice>
+      ) : null}
+      {detail.certification?.summary.state === 'adjustment_pending' && !bill.isDeleted ? (
+        <Notice tone="blue" title={`Client certified net ${formatINR(detail.certification.summary.certifiedNet ?? 0)} against raised ${formatINR(bill.netReceivable)}`}>
+          A {detail.certification.suggestedNote?.transactionType === 'debit_note' ? 'debit' : 'credit'} note of <b>{formatINR(Math.abs(detail.certification.summary.pendingNet ?? 0))}</b> is still to be raised against this bill to match it.{' '}
+          <button type="button" className="font-medium text-emerald-700 hover:underline" onClick={() => setTab('certification')}>
+            See the comparison
+          </button>
+        </Notice>
       ) : null}
       {detail.notes.length ? <NotesAgainst bill={bill} notes={detail.notes} /> : null}
       {bill.workflowStatus === 'returned' ? <Notice tone="rose" title="Returned for correction">See the activity tab for what needs correcting, then edit and resubmit.</Notice> : null}
@@ -288,6 +329,12 @@ function DetailBody({ detail, reload, tab, setTab }: { detail: Detail; reload: (
       <Tabs value={tab} onValueChange={setTab}>
         <TabsList className={BT_TABS_LIST}>
           <TabsTrigger className={BT_TAB} value="overview">Overview</TabsTrigger>
+          {detail.certification ? (
+            <TabsTrigger className={BT_TAB} value="certification">
+              Certification
+              {detail.certification.summary.state === 'adjustment_pending' ? <span className="h-1.5 w-1.5 rounded-full bg-violet-500" aria-label="note still to raise" /> : null}
+            </TabsTrigger>
+          ) : null}
           <TabsTrigger className={BT_TAB} value="deductions">
             Deductions <TabCount value={bill.deductions.length} />
           </TabsTrigger>
@@ -309,6 +356,9 @@ function DetailBody({ detail, reload, tab, setTab }: { detail: Detail; reload: (
 
         <TabsContent value="overview">
           <OverviewTab bill={bill} />
+        </TabsContent>
+        <TabsContent value="certification">
+          <CertificationTab detail={detail} reload={reload} />
         </TabsContent>
         <TabsContent value="deductions">
           <DeductionsTab bill={bill} />
@@ -475,6 +525,190 @@ function OverviewTab({ bill }: { bill: BillRow }) {
   );
 }
 
+/** The new-note form, pre-filled to make this bill plus its notes equal the client's certification. */
+const matchNoteHref = (bill: Pick<Bill, 'id' | 'projectId'>) => `/bill-tracking/bills/new?match=1&against=${bill.id}&project=${bill.projectId}`;
+
+function CertificationTab({ detail, reload }: { detail: Detail; reload: () => void }) {
+  const { bill, certification: comparison } = detail;
+  const { can } = useBt();
+  const { toast } = useToast();
+  const [removing, setRemoving] = useState(false);
+  if (!comparison) return null;
+  const certification = bill.certification;
+  const canCertify = can('Bills', 'Certify') && !bill.isDeleted;
+  const certifyHref = `/bill-tracking/bills/${bill.id}/certify`;
+
+  if (!certification) {
+    return (
+      <Card className="border-slate-200 bg-white shadow-sm">
+        <CardContent className="p-0">
+          <BtEmpty
+            icon={ClipboardCheck}
+            title="The client has not certified this bill yet"
+            description="When the client certifies it, record what they approved and what they deduct. It starts from the raised figures — change only what the client changed. The raised bill itself is never altered; a credit note against it settles any difference."
+            action={
+              canCertify ? (
+                <Button asChild size="sm" className="gap-1.5">
+                  <Link href={certifyHref}>
+                    <ClipboardCheck className="h-4 w-4" /> Record certification
+                  </Link>
+                </Button>
+              ) : undefined
+            }
+          />
+        </CardContent>
+      </Card>
+    );
+  }
+
+  const { summary, lines, suggestedNote } = comparison;
+  const noteWord = suggestedNote?.transactionType === 'debit_note' ? 'debit' : 'credit';
+  return (
+    <div className="space-y-4">
+      <StatStrip
+        items={[
+          { label: 'Raised net', value: <Amount value={summary.raisedNet} signed /> },
+          { label: 'Certified net', value: <Amount value={summary.certifiedNet} signed />, tone: 'text-emerald-700' },
+          { label: 'Client changed', value: <Amount value={summary.variance} signed />, tone: (summary.variance ?? 0) < 0 ? 'text-rose-700' : 'text-slate-900' },
+          { label: `Notes raised · ${summary.notesCount}`, value: <Amount value={summary.notesNet} signed /> },
+          { label: 'Still to adjust', value: <Amount value={summary.pendingNet} signed />, tone: summary.state === 'matched' ? 'text-emerald-700' : 'text-violet-700', hint: summary.state === 'matched' ? 'Matched' : `${noteWord} note pending` },
+        ]}
+      />
+
+      {summary.state === 'matched' ? (
+        <Notice tone="emerald" title="Matched">
+          The raised bill{summary.notesCount ? ` and its ${summary.notesCount} note${summary.notesCount === 1 ? '' : 's'}` : ''} equal the client’s certification — taxable, GST and net.
+        </Notice>
+      ) : suggestedNote ? (
+        <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-violet-200 bg-violet-50 p-4">
+          <div className="min-w-0 text-sm text-violet-900">
+            <div className="font-semibold">
+              {noteWord === 'credit' ? 'Credit' : 'Debit'} note of {formatINR(Math.abs(suggestedNote.netAmount))} still to raise
+            </div>
+            <div className="mt-0.5 text-xs">
+              Taxable {formatINR(suggestedNote.taxableAmount)} · GST {formatINR(suggestedNote.gstAmount)}
+              {suggestedNote.deductions.length ? ` · ${suggestedNote.deductions.length} deduction change${suggestedNote.deductions.length === 1 ? '' : 's'}` : ''} — raised against this bill, it makes the bill plus its notes equal the certification.
+            </div>
+          </div>
+          {can('Bills', 'Add') && !bill.isDeleted ? (
+            <Button asChild size="sm" className="gap-1.5 bg-violet-700 hover:bg-violet-800">
+              <Link href={matchNoteHref(bill)}>
+                <Undo2 className="h-4 w-4" /> Raise {noteWord} note
+              </Link>
+            </Button>
+          ) : null}
+        </div>
+      ) : null}
+
+      <Card className="border-slate-200 bg-white shadow-sm">
+        <CardContent className="space-y-3 p-4">
+          <SectionHeader
+            title="Client’s certificate"
+            as="h3"
+            actions={
+              canCertify ? (
+                <>
+                  <Button asChild size="sm" variant="outline" className="gap-1.5">
+                    <Link href={certifyHref}>
+                      <Pencil className="h-4 w-4" /> Edit
+                    </Link>
+                  </Button>
+                  <Button size="sm" variant="ghost" className="gap-1.5 text-rose-700" onClick={() => setRemoving(true)}>
+                    <Trash2 className="h-4 w-4" /> Remove
+                  </Button>
+                </>
+              ) : null
+            }
+          />
+          <Facts
+            items={[
+              ['Certified date', dateText(certification.certifiedDate)],
+              ['Certificate / MB reference', certification.reference ?? '—'],
+              ['Certified by', certification.certifiedBy ?? '—'],
+              // The certification carries the same GST fields as a bill, so the bill's summary reads it.
+              ['Certified GST', gstSummary({ ...bill, gstType: certification.gstType, gstAmount: certification.gstAmount, cgstRate: certification.cgstRate, sgstRate: certification.sgstRate, igstRate: certification.igstRate, cgstAmount: certification.cgstAmount, sgstAmount: certification.sgstAmount, igstAmount: certification.igstAmount })],
+              ['Recorded', `${certification.recordedByName ?? certification.recordedBy} · ${dateTimeText(certification.recordedAt)}`],
+              ['Last changed', certification.updatedAt ? `${certification.updatedByName ?? certification.updatedBy ?? ''} · ${dateTimeText(certification.updatedAt)} (revision ${certification.revision})` : '—'],
+              ['Remarks', certification.remarks ?? '—'],
+            ]}
+          />
+        </CardContent>
+      </Card>
+
+      <section className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
+        <header className="border-b border-slate-100 px-4 py-3">
+          <h3 className="text-sm font-semibold text-slate-800">Raised vs certified, line by line</h3>
+          <p className="mt-0.5 text-xs text-slate-500">Still to adjust = certified − (raised + notes raised against this bill).</p>
+        </header>
+        <div className="overflow-x-auto">
+          <table className="w-full min-w-[640px] text-sm">
+            <thead className="bg-slate-50 text-[11px] font-semibold uppercase tracking-wider text-slate-500">
+              <tr>
+                <th className="px-3 py-2.5 text-left">Line</th>
+                <th className="px-3 py-2.5 text-right">Raised</th>
+                <th className="px-3 py-2.5 text-right">Certified</th>
+                <th className="px-3 py-2.5 text-right">Client change</th>
+                <th className="px-3 py-2.5 text-right">Notes raised</th>
+                <th className="px-3 py-2.5 text-right">Still to adjust</th>
+              </tr>
+            </thead>
+            <tbody>
+              {lines.map((line, index) => (
+                <Fragment key={line.key}>
+                  {line.group === 'deduction' && lines[index - 1]?.group !== 'deduction' ? (
+                    <tr className="border-t border-slate-100 bg-slate-50/60">
+                      <td colSpan={6} className="px-3 py-1.5 text-[11px] font-semibold uppercase tracking-wider text-slate-400">
+                        Deductions
+                      </td>
+                    </tr>
+                  ) : null}
+                  <tr className={cn('border-t border-slate-100', line.group === 'total' && 'bg-slate-50 font-semibold text-slate-900')}>
+                    <td className={cn('px-3 py-2', line.group === 'deduction' && 'pl-6')}>{line.label}</td>
+                    <td className="px-3 py-2 text-right">
+                      <Amount value={line.raised} signed />
+                    </td>
+                    <td className="px-3 py-2 text-right">
+                      <Amount value={line.certified} signed />
+                    </td>
+                    <td className={cn('px-3 py-2 text-right', (line.difference ?? 0) < 0 ? 'text-rose-700' : (line.difference ?? 0) > 0 ? 'text-emerald-700' : 'text-slate-400')}>{line.difference ? <Amount value={line.difference} signed /> : '—'}</td>
+                    <td className="px-3 py-2 text-right text-slate-600">{line.notes ? <Amount value={line.notes} signed /> : '—'}</td>
+                    <td className="px-3 py-2 text-right">
+                      {line.matched ? (
+                        <span className="inline-flex items-center gap-1 text-xs font-medium text-emerald-700">
+                          <CheckCircle2 className="h-3.5 w-3.5" /> Matched
+                        </span>
+                      ) : (
+                        <Amount value={line.pending} signed className="font-semibold text-violet-700" />
+                      )}
+                    </td>
+                  </tr>
+                </Fragment>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <ReasonDialog
+        open={removing}
+        title="Remove client certification"
+        description="The bill goes back to awaiting certification. Notes already raised against it stay as they are. Kept in the audit trail."
+        label="Reason *"
+        required
+        confirm="Remove"
+        destructive
+        onClose={() => setRemoving(false)}
+        onConfirm={async (reason) => {
+          await btFetch(`bills/${bill.id}/certification`, { method: 'DELETE', body: { reason } });
+          setRemoving(false);
+          toast({ title: 'Certification removed' });
+          reload();
+        }}
+      />
+    </div>
+  );
+}
+
 /** "CGST 9% ₹1,000 + SGST 9% ₹1,000", "IGST 18% ₹2,000", or the single imported figure. */
 function gstSummary(bill: Bill): string {
   if (bill.gstType === 'cgst-sgst') return `CGST ${bill.cgstRate ?? 0}% ${formatINR(bill.cgstAmount ?? 0)} + SGST ${bill.sgstRate ?? 0}% ${formatINR(bill.sgstAmount ?? 0)} = ${formatINR(bill.gstAmount)}`;
@@ -633,6 +867,7 @@ function CollectionsTab({ detail, reload }: { detail: Detail; reload: () => void
                     <p className="text-xs text-muted-foreground">
                       {collection.paymentMode ?? 'Mode not recorded'}
                       {collection.utrNumber ? ` · UTR ${collection.utrNumber}` : ''}
+                      {collection.bankAccountName ? ` · into ${collection.bankAccountName}` : ''}
                       {collection.allocations.length > 1 ? ` · part of a ${formatINR(collection.amount)} receipt across ${collection.allocations.length} bills` : ''}
                       {collection.remarks ? ` · ${collection.remarks}` : ''}
                     </p>

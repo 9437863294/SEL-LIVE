@@ -125,6 +125,9 @@ export const DEFAULT_SETTINGS: BillTrackingSettings = {
   oldOutstandingDays: 180,
   highValueThreshold: 5000000,
   numbering: { enabled: true, pattern: 'SEL/BILL/{FY}/{SEQ}', padding: 6 },
+  // Payment follows the client's certification of an invoice or retention bill; migrated bills were
+  // certified on paper before SEL LIVE, so they are left out.
+  certificationBeforeReceipt: { enabled: true, transactionTypes: ['invoice', 'retention_bill'], exemptImported: true },
   closedMonths: [],
   piMarker: 'PI',
 };
@@ -148,6 +151,7 @@ export const DEFAULT_CONFIG: BillTrackingConfig = {
 export function withConfigDefaults(stored: Partial<BillTrackingConfig> | null | undefined): BillTrackingConfig {
   const settings = { ...DEFAULT_SETTINGS, ...(stored?.settings ?? {}) };
   settings.numbering = { ...DEFAULT_SETTINGS.numbering, ...(stored?.settings?.numbering ?? {}) };
+  settings.certificationBeforeReceipt = { ...DEFAULT_SETTINGS.certificationBeforeReceipt, ...(stored?.settings?.certificationBeforeReceipt ?? {}) };
   if (!settings.ageingBuckets?.length) settings.ageingBuckets = DEFAULT_AGEING_BUCKETS;
   const deductionTypes = stored?.deductionTypes?.length ? [...stored.deductionTypes] : [...DEFAULT_DEDUCTION_TYPES];
   for (const type of DEFAULT_DEDUCTION_TYPES) {

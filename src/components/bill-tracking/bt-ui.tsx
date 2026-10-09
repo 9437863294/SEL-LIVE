@@ -19,12 +19,14 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip
 import { formatINR, formatINRCompact } from '@/lib/bill-tracking/money';
 import { financialYearOptions } from '@/lib/bill-tracking/calculations';
 import {
+  CERTIFICATION_STATE_LABELS,
   PAYMENT_STATUS_LABELS,
   TRANSACTION_TYPE_LABELS,
   WORKFLOW_STATUS_LABELS,
   type BillPaymentStatus,
   type BillTransactionType,
   type BillWorkflowStatus,
+  type CertificationState,
 } from '@/lib/bill-tracking/types';
 import { exportWorkbook } from '@/lib/report-excel';
 import { openPrintWindow } from '@/lib/open-print-window';
@@ -86,11 +88,27 @@ const WORKFLOW_TONES: Record<BillWorkflowStatus, StatusTone> = {
   verified: 'progress',
   approved: 'success',
   raised: 'progress',
+  certified: 'success',
   payment_followup: 'warning',
   reconciliation: 'info',
   closed: 'success',
   returned: 'danger',
 };
+
+const CERTIFICATION_TONES: Record<CertificationState, StatusTone> = {
+  not_certified: 'neutral',
+  matched: 'success',
+  adjustment_pending: 'progress',
+};
+
+/** Awaiting certification / certified and matched / certified with a note still to raise. */
+export function CertificationBadge({ state }: { state: CertificationState }) {
+  return (
+    <StatusBadge tone={CERTIFICATION_TONES[state]} dot>
+      {CERTIFICATION_STATE_LABELS[state]}
+    </StatusBadge>
+  );
+}
 
 export function WorkflowStatusBadge({ status }: { status: BillWorkflowStatus }) {
   return <StatusBadge tone={WORKFLOW_TONES[status]}>{WORKFLOW_STATUS_LABELS[status]}</StatusBadge>;
@@ -122,6 +140,24 @@ export function Term({ children, tip }: { children: React.ReactNode; tip: string
         <span className="cursor-help underline decoration-dotted decoration-muted-foreground/50 underline-offset-4">{children}</span>
       </TooltipTrigger>
       <TooltipContent className="max-w-xs text-xs">{tip}</TooltipContent>
+    </Tooltip>
+  );
+}
+
+/**
+ * Long text kept to one line in a table cell — cut with "…" at `className`'s max width — with the
+ * whole text in a popup on hover (or keyboard focus).
+ */
+export function TruncatedText({ text, className }: { text: string | null | undefined; className?: string }) {
+  if (!text) return <span className="text-muted-foreground">—</span>;
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <span tabIndex={0} className={cn('block cursor-default truncate whitespace-nowrap outline-none focus-visible:rounded focus-visible:ring-2 focus-visible:ring-emerald-500/40', className)}>
+          {text}
+        </span>
+      </TooltipTrigger>
+      <TooltipContent className="max-w-sm break-words text-xs">{text}</TooltipContent>
     </Tooltip>
   );
 }

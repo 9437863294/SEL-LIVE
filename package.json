@@ -73,7 +73,7 @@
     "theme:dark-compat": "node scripts/generate-dark-compat.mjs",
     "test:theme": "node --experimental-strip-types --test tests/appearance-model.test.mjs tests/appearance-admin.test.mjs",
     "typecheck:appearance": "tsc -p tsconfig.appearance.json",
-    "test:bill-tracking": "node --experimental-strip-types --test tests/bill-tracking-domain.test.mjs tests/bill-tracking-import.test.mjs tests/bill-tracking-reports.test.mjs tests/bill-tracking-categories.test.mjs tests/bill-tracking-gst.test.mjs",
+    "test:bill-tracking": "node --experimental-strip-types --test tests/bill-tracking-domain.test.mjs tests/bill-tracking-import.test.mjs tests/bill-tracking-reports.test.mjs tests/bill-tracking-categories.test.mjs tests/bill-tracking-gst.test.mjs tests/bill-tracking-certification.test.mjs",
     "typecheck:bill-tracking": "tsc -p tsconfig.bill-tracking.json",
     "bill-tracking:dry-run": "node --experimental-strip-types scripts/bill-tracking-dry-run.mjs"
   },

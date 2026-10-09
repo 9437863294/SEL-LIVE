@@ -33,6 +33,7 @@ import {
   toDateKey,
 } from './calculations.ts';
 import { roundMoney, subtractMoney, sumBy, sumMoney, toPaise } from './money.ts';
+import { certificationSummary } from './certification.ts';
 import type {
   AgeingBasis,
   AgeingBucketConfig,
@@ -190,7 +191,7 @@ export function buildSearchTokens(bill: Pick<Bill, 'billSerialNumber' | 'gstInvo
 
 /* ── sorting & paging ────────────────────────────────────────────────────── */
 
-export const BILL_SORT_KEYS = ['billDate', 'serialNumber', 'billSerialNumber', 'projectNameSnapshot', 'netReceivable', 'outstandingAmount', 'totalReceived', 'taxableAmount', 'ageing', 'updatedAt'] as const;
+export const BILL_SORT_KEYS = ['billDate', 'serialNumber', 'billSerialNumber', 'gstInvoiceNumber', 'projectNameSnapshot', 'netReceivable', 'outstandingAmount', 'totalReceived', 'taxableAmount', 'ageing', 'updatedAt'] as const;
 export type BillSortKey = (typeof BILL_SORT_KEYS)[number];
 
 export function sortBills(bills: readonly Bill[], key: BillSortKey, direction: 'asc' | 'desc', context: ReportContext): Bill[] {
@@ -844,6 +845,7 @@ export const EXCEPTION_KINDS = [
   'retention_overdue',
   'missing_due_date',
   'high_value_unpaid',
+  'certification_note_pending',
 ] as const;
 export type ExceptionKind = (typeof EXCEPTION_KINDS)[number];
 
@@ -859,6 +861,7 @@ export const EXCEPTION_LABELS: Record<ExceptionKind, string> = {
   retention_overdue: 'Retention overdue',
   missing_due_date: 'Missing due date',
   high_value_unpaid: 'High-value bill unpaid',
+  certification_note_pending: 'Certified — credit note pending',
 };
 
 export interface ExceptionItem {
@@ -876,7 +879,7 @@ export interface ExceptionItem {
  * record, never an estimate: a mismatch the import recorded, a receipt still in draft, a commitment
  * date that has passed, and so on.
  */
-export function exceptionItems(bills: readonly Bill[], context: ReportContext): ExceptionItem[] {
+export function exceptionItems(bills: readonly Bill[], context: ReportContext, notesByBill?: ReadonlyMap<string, readonly Bill[]>): ExceptionItem[] {
   const items: ExceptionItem[] = [];
   const { asOf, settings } = context;
   const base = (bill: Bill) => ({ billId: bill.id, projectName: bill.projectNameSnapshot, billSerialNumber: bill.billSerialNumber, gstInvoiceNumber: bill.gstInvoiceNumber });
@@ -910,6 +913,13 @@ export function exceptionItems(bills: readonly Bill[], context: ReportContext): 
       const legacy = bill.legacyStatus.trim().toUpperCase();
       const mismatch = (legacy === 'RECEIVED' && bill.paymentStatus !== 'received') || (legacy === 'NOT RECEIVED' && bill.paymentStatus !== 'not_received');
       if (mismatch) items.push({ kind: 'legacy_status_mismatch', ...base(bill), amount: bill.shortfallSurplus, detail: `Workbook said ${bill.legacyStatus}; now ${bill.paymentStatus.replace(/_/g, ' ')}` });
+    }
+    // Needs the notes against each bill, which live outside the FY slice — given only when loaded.
+    if (notesByBill && bill.certification) {
+      const summary = certificationSummary(bill, notesByBill.get(bill.id) ?? [], settings.tolerance);
+      if (summary.state === 'adjustment_pending') {
+        items.push({ kind: 'certification_note_pending', ...base(bill), amount: summary.pendingNet ?? 0, detail: `Certified net ${summary.certifiedNet} vs raised ${summary.raisedNet}${summary.notesCount ? ` and ${summary.notesCount} note(s)` : ''}` });
+      }
     }
     if (bill.retentionExpectedReleaseDate && bill.retentionExpectedReleaseDate < asOf && toPaise(bill.retentionDeducted) > 0) {
       items.push({ kind: 'retention_overdue', ...base(bill), amount: bill.retentionDeducted, detail: `Release expected ${bill.retentionExpectedReleaseDate}` });

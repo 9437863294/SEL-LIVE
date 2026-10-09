@@ -77,6 +77,7 @@ export const WORKFLOW_STATUSES = [
   'verified',
   'approved',
   'raised',
+  'certified',
   'payment_followup',
   'reconciliation',
   'closed',
@@ -91,6 +92,7 @@ export const WORKFLOW_STATUS_LABELS: Record<BillWorkflowStatus, string> = {
   verified: 'Verified',
   approved: 'Approved',
   raised: 'Bill Raised',
+  certified: 'Certified by Client',
   payment_followup: 'Payment Follow-up',
   reconciliation: 'Reconciliation',
   closed: 'Closed',
@@ -275,6 +277,19 @@ export interface BillNumberingConfig {
   padding: number;
 }
 
+/**
+ * "No payment before the client certifies": a receipt cannot be allocated to a bill of these types
+ * until its certification is recorded. Bills migrated from the legacy workbook (certified on paper
+ * long ago) and bills dated before `fromDate` can be left out.
+ */
+export interface CertificationReceiptRule {
+  enabled: boolean;
+  transactionTypes: BillTransactionType[];
+  exemptImported: boolean;
+  /** `yyyy-MM-dd`; bills dated earlier are exempt. Absent = every bill. */
+  fromDate?: string;
+}
+
 export interface BillTrackingSettings {
   /** Amounts within this many rupees of each other are treated as equal. */
   tolerance: number;
@@ -294,6 +309,8 @@ export interface BillTrackingSettings {
   /** Bills at or above this net receivable count as high value. */
   highValueThreshold: number;
   numbering: BillNumberingConfig;
+  /** Receipts only against bills the client has certified (Settings → Workflow). */
+  certificationBeforeReceipt: CertificationReceiptRule;
   /** Month keys (`yyyy-MM`) closed for normal editing. */
   closedMonths: string[];
   /** Legacy `TAXABLE / ADVANCE` value that marks a proforma invoice row (the PI report filter). */
@@ -393,6 +410,54 @@ export interface DueDateRevision {
   changedAt: string;
 }
 
+/**
+ * The client's certification of a bill: what they approved and what they deduct, which can differ
+ * from what SEL raised (a lower measured quantity, an extra penalty, a different TDS base). It is
+ * recorded beside the raised figures, never over them — the invoice as issued stays the receivable,
+ * and the difference is settled the way the books settle it: a credit (or debit) note against the
+ * raised bill. `certification.ts` compares the three.
+ */
+export interface BillCertification {
+  certifiedDate: string;
+  /** The client's certificate / measurement-book / RA reference. */
+  reference?: string;
+  /** Who certified it on the client's side. */
+  certifiedBy?: string;
+  taxableAmount: number;
+  gstType?: GstType;
+  gstPercent?: number;
+  cgstRate?: number;
+  sgstRate?: number;
+  igstRate?: number;
+  cgstAmount?: number;
+  sgstAmount?: number;
+  igstAmount?: number;
+  gstAmount: number;
+  grossAmount: number;
+  deductions: BillDeduction[];
+  totalDeduction: number;
+  /** Gross less deductions, rounded like a bill's net. */
+  netAmount: number;
+  remarks?: string;
+  /** 1 on first record, +1 on every change. */
+  revision: number;
+  recordedBy: string;
+  recordedByName?: string;
+  recordedAt: string;
+  updatedBy?: string;
+  updatedByName?: string;
+  updatedAt?: string;
+}
+
+export const CERTIFICATION_STATES = ['not_certified', 'matched', 'adjustment_pending'] as const;
+export type CertificationState = (typeof CERTIFICATION_STATES)[number];
+
+export const CERTIFICATION_STATE_LABELS: Record<CertificationState, string> = {
+  not_certified: 'Awaiting certification',
+  matched: 'Certified · matched',
+  adjustment_pending: 'Certified · note pending',
+};
+
 export interface Bill {
   id: string;
   financialYear: string;
@@ -451,6 +516,8 @@ export interface Bill {
   /** The client's GSTIN at the time of the bill. */
   clientGstin?: string;
   deductions: BillDeduction[];
+  /** The client's certified figures, once recorded (invoices and retention bills — never notes). */
+  certification?: BillCertification;
 
   /* derived — written only by the server from the source values above */
   grossAmount: number;
@@ -551,6 +618,8 @@ export interface BillCollection {
   utrNumber?: string;
   bankAccountId?: string;
   bankAccountName?: string;
+  /** The Bank Balance `bankExpenses` Credit this verified receipt posted; cleared when cancelled. */
+  bankExpenseId?: string;
   paymentAdviceDocumentId?: string;
   remarks?: string;
   status: CollectionStatus;

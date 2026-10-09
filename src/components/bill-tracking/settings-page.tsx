@@ -38,6 +38,7 @@ import {
 import { validateCategoryConfig } from '@/lib/bill-tracking/categories';
 
 import { BillCategoriesEditor } from './bill-categories-settings';
+import { WorkflowSettings } from './workflow-settings';
 import { btFetch, useBt, useBtQuery, useLookups } from './bt-client';
 import { BtError, BtLoading, FySelect, Notice, BT_TAB, BT_TABS_LIST, FormField } from './bt-ui';
 
@@ -78,7 +79,7 @@ export default function SettingsPage() {
       await btFetch('config', {
         method: 'PUT',
         body: {
-          settings: { tolerance: settings.tolerance, roundNetToRupee: settings.roundNetToRupee, defaultGstRate: settings.defaultGstRate, roundDeductionsToRupee: settings.roundDeductionsToRupee, defaultCreditDays: settings.defaultCreditDays, defaultAgeingBasis: settings.defaultAgeingBasis, ageingBuckets: settings.ageingBuckets, noFollowUpDays: settings.noFollowUpDays, oldOutstandingDays: settings.oldOutstandingDays, highValueThreshold: settings.highValueThreshold, numbering: settings.numbering, piMarker: settings.piMarker },
+          settings: { tolerance: settings.tolerance, roundNetToRupee: settings.roundNetToRupee, defaultGstRate: settings.defaultGstRate, roundDeductionsToRupee: settings.roundDeductionsToRupee, defaultCreditDays: settings.defaultCreditDays, defaultAgeingBasis: settings.defaultAgeingBasis, ageingBuckets: settings.ageingBuckets, noFollowUpDays: settings.noFollowUpDays, oldOutstandingDays: settings.oldOutstandingDays, highValueThreshold: settings.highValueThreshold, numbering: settings.numbering, certificationBeforeReceipt: settings.certificationBeforeReceipt, piMarker: settings.piMarker },
           billCategories: config.billCategories,
           billTypes: config.billTypes,
           deductionTypes: config.deductionTypes,
@@ -118,6 +119,7 @@ export default function SettingsPage() {
       <Tabs defaultValue="general">
         <TabsList className={BT_TABS_LIST}>
           <TabsTrigger className={BT_TAB} value="general">General</TabsTrigger>
+          <TabsTrigger className={BT_TAB} value="workflow">Workflow</TabsTrigger>
           <TabsTrigger className={BT_TAB} value="ageing">Ageing</TabsTrigger>
           <TabsTrigger className={BT_TAB} value="billTypes">Bill categories</TabsTrigger>
           <TabsTrigger className={BT_TAB} value="deductions">Deduction types</TabsTrigger>
@@ -185,6 +187,10 @@ export default function SettingsPage() {
               </Field>
             </CardContent>
           </Card>
+        </TabsContent>
+
+        <TabsContent value="workflow">
+          <WorkflowSettings rule={settings.certificationBeforeReceipt} onChange={(rule) => setSettings({ certificationBeforeReceipt: rule })} disabled={!manage} />
         </TabsContent>
 
         <TabsContent value="ageing">
@@ -564,6 +570,7 @@ const PERMISSION_MAP: [string, string][] = [
   ['billTracking.verify / approve', 'Bills · Verify / Approve'],
   ['billTracking.statusOverride', 'Bills · Override Status'],
   ['(change after approval)', 'Bills · Edit After Approval'],
+  ['(client certification)', 'Bills · Certify — record, change or remove the client’s certified figures'],
   ['billTracking.import / rollbackImport', 'Import · Import / Rollback'],
   ['billTracking.collection.view / create / edit / verify', 'Collections · View / Add / Edit / Verify (+ Cancel, Hold Unallocated)'],
   ['billTracking.retention.view / manage', 'Retention · View / Manage'],

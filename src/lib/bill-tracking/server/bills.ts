@@ -26,6 +26,7 @@ import {
   resubmitTarget,
 } from '../calculations.ts';
 import { isEnabledForProject } from '../categories.ts';
+import { isNoteType } from '../certification.ts';
 import { computeDeductions, splitGst, suggestGst, totalFromComponents, type RegistrationSetup } from '../gst.ts';
 import { formatBillNumber } from '../defaults.ts';
 import { roundMoney } from '../money.ts';
@@ -112,7 +113,7 @@ export function assertMonthOpen(context: BtContext, config: BillTrackingConfig, 
  * taxable or gross less other deductions; GST on GST-applicable deductions). The form's figures are a
  * preview only.
  */
-function resolveDeductions(lines: BillInput['deductions'], config: BillTrackingConfig, context: { taxable: number; gross: number; gstType?: BillInput['gstType'] }, existing: readonly BillDeduction[] = []): BillDeduction[] {
+export function resolveDeductions(lines: BillInput['deductions'], config: BillTrackingConfig, context: { taxable: number; gross: number; gstType?: BillInput['gstType'] }, existing: readonly BillDeduction[] = []): BillDeduction[] {
   for (const line of lines) {
     const type = config.deductionTypes.find((entry) => entry.id === line.deductionTypeId);
     // A type retired after a bill used it stays valid on that bill; a new line needs an active type.
@@ -129,7 +130,7 @@ export function computeDueDate(baseDate: string, project: ProjectRecord, client:
 }
 
 /** GST fields of a bill from the input: CGST + SGST or IGST components, or the legacy single total. */
-export function composeGst(input: BillInput) {
+export function composeGst(input: Pick<BillInput, 'gstType' | 'gstPercent' | 'taxableAmount' | 'gstAmount' | 'cgstAmount' | 'sgstAmount' | 'igstAmount'>) {
   if (!input.gstType) {
     return { gstAmount: roundMoney(input.gstAmount), gstPercent: input.gstPercent, gstType: undefined, cgstRate: undefined, sgstRate: undefined, igstRate: undefined, cgstAmount: undefined, sgstAmount: undefined, igstAmount: undefined };
   }
@@ -214,6 +215,10 @@ export function composeBill({ context, input, config, project, client, existing,
   }
 
   const note = composeNoteLink(input, against, existing, project.id);
+  // The client's certification belongs to an invoice; a bill turned into a note cannot keep one.
+  if (existing?.certification && isNoteType(input.transactionType)) {
+    throw new BtError('This bill has a client certification. Remove the certification before turning it into a credit or debit note.', 409);
+  }
   const deductions = resolveDeductions(input.deductions, config, { taxable: input.taxableAmount, gross: roundMoney(input.taxableAmount + gst.gstAmount), gstType: gst.gstType }, existing?.deductions);
   const collections = existing?.collections ?? [];
   const totals = deriveBillTotals(
@@ -270,6 +275,8 @@ export function composeBill({ context, input, config, project, client, existing,
     gstRegistrationGstin: suggestion.registration?.gstin,
     clientGstin: client?.gstin,
     deductions,
+    // Recorded separately (`certification.ts` on the server); an edit of the raised bill keeps it.
+    certification: existing?.certification,
     grossAmount: totals.grossAmount,
     totalDeduction: totals.totalDeduction,
     statutoryDeduction: totals.statutoryDeduction,
@@ -468,11 +475,14 @@ const ACTION_RULES: Record<WorkflowAction, { from: BillWorkflowStatus[] | 'any_o
   submit: { from: ['draft'], to: 'submitted', permission: ['Bills', 'Edit'] },
   start_verification: { from: ['submitted'], to: 'under_verification', permission: ['Bills', 'Verify'] },
   verify: { from: ['under_verification', 'submitted'], to: 'verified', permission: ['Bills', 'Verify'] },
-  approve: { from: ['verified'], to: 'approved', permission: ['Bills', 'Approve'] },
-  raise: { from: ['approved'], to: 'raised', permission: ['Bills', 'Edit'] },
-  start_followup: { from: ['raised'], to: 'payment_followup', permission: ['Bills', 'Edit'] },
-  reconcile: { from: ['payment_followup', 'raised'], to: 'reconciliation', permission: ['Bills', 'Verify'] },
-  close: { from: ['reconciliation', 'payment_followup', 'raised'], to: 'closed', permission: ['Bills', 'Approve'] },
+  // Under verification, Verified and Approved are optional: approval needs no verification first,
+  // and a bill can be marked raised from any step before it.
+  approve: { from: ['submitted', 'under_verification', 'verified'], to: 'approved', permission: ['Bills', 'Approve'] },
+  raise: { from: ['draft', 'submitted', 'under_verification', 'verified', 'approved'], to: 'raised', permission: ['Bills', 'Edit'] },
+  // Certified is reached by recording the client's certification (server/certification.ts), not by a button.
+  start_followup: { from: ['raised', 'certified'], to: 'payment_followup', permission: ['Bills', 'Edit'] },
+  reconcile: { from: ['payment_followup', 'raised', 'certified'], to: 'reconciliation', permission: ['Bills', 'Verify'] },
+  close: { from: ['reconciliation', 'payment_followup', 'raised', 'certified'], to: 'closed', permission: ['Bills', 'Approve'] },
   return: { from: ['submitted', 'under_verification', 'verified', 'approved'], to: 'returned', permission: ['Bills', 'Verify'] },
   resubmit: { from: ['returned'], to: 'resubmit', permission: ['Bills', 'Edit'] },
   reopen: { from: ['closed'], to: 'payment_followup', permission: ['Bills', 'Approve'] },

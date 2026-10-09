@@ -80,6 +80,61 @@ Categories are configured in Settings → Bill categories.
   also deletes its sub categories. Bills keep the names they were saved with.
 - **Logic:** `src/lib/bill-tracking/categories.ts`.
 
+### Raised vs certified
+
+SEL raises a bill; the client then certifies it, often for less or with more deducted. Finance
+settles the difference with a credit note against the raised bill. The module follows that process.
+
+1. **Raised.** The bill as issued. It stays the receivable, and the certification never edits it.
+2. **Certified.** On the bill: *Actions → Record client certification*, or the *Certification*
+   tab. The form starts from every raised figure (taxable, GST components, each deduction).
+   Finance changes what the client changed and adds any extra deduction. The GST section works like
+   the bill form's (registration, type, rate, CGST / SGST or IGST). The type defaults to the raised
+   bill's; a bill imported with one unsplit GST figure starts split by the suggested type, with the
+   same total. Stored as `bill.certification` with a revision number; every change is audited.
+3. **Compared.** Line by line: raised, certified, the client's change, notes raised against the
+   bill, and *still to adjust* = certified − (raised + notes). A bill is **matched** when the
+   taxable, GST and net still to adjust are all within the amount tolerance.
+4. **Settled.** *Raise credit note* opens the note form already filled with the difference:
+   - taxable and each GST component;
+   - every deduction the client changed, as fixed lines (an extra penalty, a lower TDS);
+   - a debit note instead if the client certified more.
+
+   Saving that note makes the bill matched. A credit note's form also has *Match the client
+   certification* for any certified invoice.
+
+Where it shows:
+
+| Place | What it shows |
+|---|---|
+| Bill Register | Tabs: *Raised bills*, *Client certified* (including bills awaiting certification) and *Raised vs certified* (certified bills only, with *Raise note* per row) |
+| Reports | *Raised vs certified*, per project |
+| Dashboard | *Awaiting certification* and *Credit notes to raise* cards |
+| Exceptions | *Certified — credit note pending* |
+
+- **Workflow.** Draft → Submitted → Under verification → Verified → Approved → Bill raised →
+  **Certified by client** → Payment follow-up → Reconciliation → Closed.
+  - Under verification, Verified and Approved are optional. *Mark bill raised* is offered from
+    Draft onwards, and *Approve* needs no verification first.
+  - Recording the certification moves a bill at any earlier step to Certified by itself.
+  - The amount lock (*Edit After Approval* plus a reason) starts once a bill is approved or raised. Removing it moves a bill
+  still at Certified back to Bill raised. Settings → **Workflow** shows every stage, what moves it
+  on and the permission that needs.
+- **No payment before certification.** Settings → Workflow → *Payment needs client
+  certification*. It is on by default for invoices and retention bills. Recording or verifying a
+  receipt against an uncertified bill of those types is refused, and the server enforces it.
+  - Bills imported from the workbook are left out by default.
+  - A *from date* can exempt older manual bills.
+  - The bill page swaps *Receive* for *Record certification*, and the receipt form marks such bills
+    *Not certified*.
+  - Receipts imported from the workbook are not affected.
+- **Notes across years.** Notes are loaded from every year, because a note raised next FY still
+  adjusts this FY's invoice.
+- **Permission.** Recording needs **Bills · Certify**, a new action; no role holds it until it is
+  granted.
+- **Code.** Logic in `src/lib/bill-tracking/certification.ts`; tests in
+  `tests/bill-tracking-certification.test.mjs`.
+
 ## Deployment checklist
 
 1. **Firestore rules (console).** Copy the "Bill Tracking & Collection Management" block from
@@ -94,6 +149,7 @@ Categories are configured in Settings → Bill categories.
    - `All Projects · View` is for HO finance.
    - Site teams get project-scoped grants instead.
    - Keep `Collections · Add` and `Collections · Verify` on different people.
+   - Grant `Bills · Certify` to whoever records the client's certification.
 5. **Reminders.** Run `scripts/setup-cloud-scheduler.sh` to add the `bill-tracking-reminders` job
    (08:00 IST). The route refuses every call while `CRON_SECRET` is unset.
 6. **Migration.**
@@ -139,6 +195,6 @@ The net and outstanding differences are exactly the 7 flagged rows.
 ## Tests
 
 ```
-npm run test:bill-tracking       # 51 tests: calculations, ageing, import, reports, permissions, reminders
+npm run test:bill-tracking       # 84 tests: calculations, ageing, import, reports, GST, categories, certification, permissions, reminders
 npm run typecheck:bill-tracking
 ```
