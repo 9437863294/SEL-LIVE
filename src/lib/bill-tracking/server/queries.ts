@@ -12,6 +12,7 @@ import 'server-only';
 import { billLedger, combinedLedger, financialYearOf, financialYearRange, isoWeekOf } from '../calculations.ts';
 import { isEnabledForProject } from '../categories.ts';
 import { canBeCertified, certificationSummary, certificationTotals, compareCertification, notesByInvoice, receiptBlockReason, type CertificationSummary } from '../certification.ts';
+import { isInvolved, isMyTask, isNamedInWorkflow } from '../workflow.ts';
 import { sumBy } from '../money.ts';
 import {
   ageingReport,
@@ -154,6 +155,9 @@ export async function lookups(context: BtContext) {
     today: context.today,
     currentFy: financialYearOf(context.today),
     user: { id: context.userId, name: context.userName },
+    // Named on a workflow stage: the register offers "Waiting for me"; `workflowOnly` = that is all they see.
+    workflowAssigned: isNamedInWorkflow(config.settings, context.userId),
+    workflowOnly: context.workflowOnly,
   };
 }
 
@@ -228,9 +232,24 @@ async function listCertification(context: BtContext, params: URLSearchParams, lo
   };
 }
 
+/**
+ * Bills waiting for the caller at their next stage — named on it, or (with nobody named) holding its
+ * permission on the bill's project. Named bills come from every project: being named is the access.
+ */
+async function loadMine(btContext: BtContext, params: URLSearchParams): Promise<Loaded> {
+  const config = await loadConfig(btContext.organizationId);
+  const filters = parseFilters(params, btContext.today);
+  const everything = await loadScopedBills({ organizationId: btContext.organizationId, scope: null }, filters.financialYear);
+  const actor = { userId: btContext.userId, can: (resource: string, action: string, projectId?: string) => btContext.can(resource as Parameters<BtContext['can']>[0], action, projectId) };
+  const all = everything.filter((bill) => isMyTask(bill, config.settings, actor));
+  const context = reportContext(config, filters.asOf);
+  return { config, filters, context, all, bills: filterBills(all, filters, context) };
+}
+
 export async function listBills(context: BtContext, params: URLSearchParams) {
-  context.require('Bills', 'View');
-  const loaded = await load(context, params);
+  const mine = params.get('mine') === '1' || context.workflowOnly;
+  if (!mine) context.require('Bills', 'View');
+  const loaded = mine ? await loadMine(context, params) : await load(context, params);
   const view = params.get('view');
   if (view === 'certified' || view === 'compare') return listCertification(context, params, loaded);
   const { bills, context: rc, filters } = loaded;
@@ -283,9 +302,11 @@ export async function invoicesForNote(context: BtContext, params: URLSearchParam
 /* ── bill detail ─────────────────────────────────────────────────────────── */
 
 export async function billDetail(context: BtContext, billId: string) {
-  context.require('Bills', 'View');
-  const bill = await loadBill(context, billId, { includeDeleted: true });
   const config = await loadConfig(context.organizationId);
+  // Anyone named on this bill's workflow may open it, whatever their project grants or Bills · View.
+  const involved = (candidate: Bill) => isInvolved(candidate, config.settings, context.userId);
+  const bill = await loadBill(context, billId, { includeDeleted: true, allow: involved });
+  if (!involved(bill)) context.require('Bills', 'View');
   const rc = reportContext(config, context.today);
   const firestore = db();
   const byBill = (collection: string) => firestore.collection(collection).where('billId', '==', billId).get();

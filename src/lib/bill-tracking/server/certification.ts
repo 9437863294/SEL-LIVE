@@ -17,7 +17,8 @@ import { canBeCertified } from '../certification.ts';
 import { roundMoney } from '../money.ts';
 import type { CertificationInput } from '../schemas';
 import type { Bill, BillCertification, BillWorkflowStatus } from '../types';
-import { composeGst, resolveDeductions } from './bills';
+import { certificationBlocked } from '../workflow.ts';
+import { composeGst, notifyWaiting, resolveDeductions, workflowActor } from './bills';
 import { BtError, db, type BtContext } from './context';
 import { BT_COLLECTIONS, clean, loadConfig, logActivityTx, nowIso } from './store';
 
@@ -36,13 +37,15 @@ export async function recordCertification(context: BtContext, billId: string, in
   const config = await loadConfig(context.organizationId);
   const ref = db().collection(BT_COLLECTIONS.bills).doc(billId);
   let revision = 0;
+  let advanced: StoredBill | undefined;
   await db().runTransaction(async (transaction) => {
     const snapshot = await transaction.get(ref);
     if (!snapshot.exists) throw new BtError('Bill not found.', 404);
     const bill = { ...(snapshot.data() as StoredBill), id: snapshot.id };
     if (bill.organizationId !== context.organizationId) throw new BtError('Bill not found.', 404);
-    context.require('Bills', 'Certify', bill.projectId);
     if (bill.isDeleted) throw new BtError('A deleted bill cannot be certified.', 410);
+    const blocked = certificationBlocked(bill, config.settings, workflowActor(context));
+    if (blocked) throw new BtError(blocked, 403);
     if (!canBeCertified(bill)) throw new BtError('Credit and debit notes are not certified by the client — certify the invoice they adjust.');
     const previous = bill.certification;
     if (input.expectedRevision !== undefined && input.expectedRevision !== (previous?.revision ?? 0)) {
@@ -88,6 +91,7 @@ export async function recordCertification(context: BtContext, billId: string, in
     // A bill at any step before Certified moves there (the client has evidently received it); one
     // further along (follow-up, reconciliation, closed) or returned for correction keeps its stage.
     const advance = !previous && PRE_CERTIFIED.includes(bill.workflowStatus);
+    if (advance) advanced = { ...bill, workflowStatus: 'certified' };
     transaction.update(ref, { certification, ...(advance ? { workflowStatus: 'certified' } : {}), version: (bill.version ?? 1) + 1, updatedAt: now, updatedBy: context.userId, updatedByName: context.userName });
     const reference = certification.reference ? ` ${certification.reference}` : '';
     if (advance) {
@@ -115,17 +119,21 @@ export async function recordCertification(context: BtContext, billId: string, in
       next: headline(certification),
     });
   });
+  // The bill now waits for its next stage (payment follow-up): tell those people.
+  if (advanced) await notifyWaiting(context, advanced, config.settings, 'certified');
   return { revision };
 }
 
 export async function removeCertification(context: BtContext, billId: string, reason: string): Promise<void> {
+  const { settings } = await loadConfig(context.organizationId);
   const ref = db().collection(BT_COLLECTIONS.bills).doc(billId);
   await db().runTransaction(async (transaction) => {
     const snapshot = await transaction.get(ref);
     if (!snapshot.exists) throw new BtError('Bill not found.', 404);
     const bill = { ...(snapshot.data() as StoredBill), id: snapshot.id };
     if (bill.organizationId !== context.organizationId) throw new BtError('Bill not found.', 404);
-    context.require('Bills', 'Certify', bill.projectId);
+    const blocked = certificationBlocked(bill, settings, workflowActor(context));
+    if (blocked) throw new BtError(blocked, 403);
     const previous = bill.certification;
     if (!previous) throw new BtError('This bill has no client certification to remove.', 409);
     const now = nowIso();

@@ -17,6 +17,7 @@ import 'server-only';
 import { NextResponse } from 'next/server';
 
 import { BT_MODULE, resolveBtAccess, type BtResource } from '../access.ts';
+import { isNamedInWorkflow } from '../workflow.ts';
 import {
   AccessDeniedError,
   accessErrorResponse,
@@ -36,6 +37,11 @@ export interface BtContext extends AccessRequestContext {
   require: (resource: BtResource, action: string, projectId?: string) => void;
   /** Throws 403 unless the project is inside the caller's scope. */
   requireProject: (projectId: string) => void;
+  /**
+   * In only because they are named on a workflow stage (no module permission): they see and act on
+   * the bills they are named for, nothing else.
+   */
+  workflowOnly: boolean;
   inScope: (projectId: string) => boolean;
   today: string;
   userAgent?: string;
@@ -49,7 +55,14 @@ export function indiaToday(now: Date = new Date()): string {
 export async function btContext(request: Request): Promise<BtContext> {
   const base = await authenticateAccess(request);
   const resolved = resolveBtAccess(base.access, base.projectIds);
-  if (!resolved.hasModule) throw new AccessDeniedError('Access to Bill Tracking is required.');
+  let workflowOnly = false;
+  if (!resolved.hasModule) {
+    // Being named on a workflow stage is itself the access to do that stage (Settings → Workflow).
+    const { loadConfig } = await import('./store');
+    const config = await loadConfig(base.organizationId);
+    if (!isNamedInWorkflow(config.settings, base.userId)) throw new AccessDeniedError('Access to Bill Tracking is required.');
+    workflowOnly = true;
+  }
   const { scope, inScope, can } = resolved;
   return {
     ...base,
@@ -63,6 +76,7 @@ export async function btContext(request: Request): Promise<BtContext> {
     requireProject: (projectId) => {
       if (!inScope(projectId)) throw new AccessDeniedError('This project is outside your Bill Tracking access.');
     },
+    workflowOnly,
     today: indiaToday(),
     userAgent: request.headers.get('user-agent')?.slice(0, 200) ?? undefined,
   };

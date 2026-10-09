@@ -30,7 +30,8 @@ import { GST_RATES } from '@/lib/statutory';
 import { GST_TYPE_LABELS, type Bill, type BillTrackingConfig, type GstType } from '@/lib/bill-tracking/types';
 import { cn } from '@/lib/utils';
 
-import { btFetch, useBt, useBtQuery, useLookups } from './bt-client';
+import { btFetch, useBtQuery, useLookups, useWorkflowActor } from './bt-client';
+import { certificationBlocked } from '@/lib/bill-tracking/workflow';
 import { Amount, BtError, BtLoading, FormField, FormSection, Notice, Term, dateText, FIELD_ROW } from './bt-ui';
 import { DeductionEditor, deductionInputs, emptyDeductionRow, num, rowsFromDeductions, str, type DeductionRow } from './deduction-editor';
 
@@ -141,7 +142,7 @@ function CertificationFormInner({ detail }: { detail: Detail }) {
   const { bill } = detail;
   const lookups = useLookups();
   const { config } = lookups;
-  const { can } = useBt();
+  const actor = useWorkflowActor();
   const router = useRouter();
   const { toast } = useToast();
   const existing = bill.certification;
@@ -208,7 +209,7 @@ function CertificationFormInner({ detail }: { detail: Detail }) {
   const pendingNet = subtractMoney(net, sumMoney([bill.netReceivable, notesNet]));
   const needsNote = Math.abs(pendingNet) > config.settings.tolerance;
 
-  const canCertify = can('Bills', 'Certify');
+  const canCertify = certificationBlocked(bill, config.settings, actor) === null;
   const submit = async (event: React.FormEvent) => {
     event.preventDefault();
     setSaving(true);
@@ -253,7 +254,7 @@ function CertificationFormInner({ detail }: { detail: Detail }) {
         description={`${bill.projectNameSnapshot} · raised ${dateText(bill.billDate)} · net ${formatINR(bill.netReceivable)}. Enter what the client approved and deducts — the raised bill is not changed.`}
       />
 
-      {!canCertify ? <Notice tone="blue">You can look at the certification; recording it needs Bill Tracking · Bills · Certify.</Notice> : null}
+      {!canCertify ? <Notice tone="blue">{certificationBlocked(bill, config.settings, actor)}</Notice> : null}
       {!existing ? (
         <Notice tone="emerald" title="Starting from the raised bill">
           Every amount and deduction below is copied from the bill as raised. Change only what the client changed, and add any extra deduction they made.

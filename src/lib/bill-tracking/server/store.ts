@@ -208,12 +208,13 @@ export async function loadScopedDocs<T>(collection: string, context: Pick<BtCont
 }
 
 /** Loads one bill and enforces scope; deleted bills are returned only when asked for. */
-export async function loadBill(context: BtContext, billId: string, options: { includeDeleted?: boolean } = {}): Promise<Bill> {
+export async function loadBill(context: BtContext, billId: string, options: { includeDeleted?: boolean; allow?: (bill: Bill) => boolean } = {}): Promise<Bill> {
   const snapshot = await db().collection(BT_COLLECTIONS.bills).doc(billId).get();
   if (!snapshot.exists) throw new BtError('Bill not found.', 404);
   const bill = { ...(snapshot.data() as Bill), id: snapshot.id };
   if ((bill as Bill & { organizationId?: string }).organizationId !== context.organizationId) throw new BtError('Bill not found.', 404);
-  context.requireProject(bill.projectId);
+  // `allow`: named on the bill's workflow — that is access to this bill whatever the project grants.
+  if (!options.allow?.(bill)) context.requireProject(bill.projectId);
   if (bill.isDeleted && !options.includeDeleted) throw new BtError('This bill has been deleted.', 410);
   return bill;
 }

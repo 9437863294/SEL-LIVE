@@ -27,6 +27,7 @@ import {
   ShieldAlert,
   Target,
   Upload,
+  UserCheck,
   Wallet,
   type LucideIcon,
 } from 'lucide-react';
@@ -91,8 +92,10 @@ function Shell({ children }: { children: React.ReactNode }) {
     );
   }
 
-  const navItems = NAV.filter((item) => can(item.resource, item.action ?? 'View'));
-  const pageAllowed = navItems.some((item) => matchesPath(pathname, item.href));
+  // Named on a Settings → Workflow stage: their queue, whatever their role permissions.
+  const waitingItem: NavItem = { href: '/bill-tracking/bills?mine=1', label: 'Waiting for me', resource: 'Bills', icon: UserCheck, color: 'text-emerald-700', bg: 'bg-emerald-50', group: 'overview' };
+  const navItems = [...(lookups.workflowAssigned ? [waitingItem] : []), ...NAV.filter((item) => can(item.resource, item.action ?? 'View'))];
+  const pageAllowed = navItems.some((item) => matchesPath(pathname, item.href.split('?')[0]));
   const isVisible = (href: string) => navItems.some((item) => item.href === href);
   const bottomTabs: ModuleNavTab[] = [
     ...(isVisible('/bill-tracking/dashboard') ? [{ href: '/bill-tracking/dashboard', label: 'Home', icon: LayoutDashboard, match: (path: string) => matchesPath(path, '/bill-tracking/dashboard') }] : []),

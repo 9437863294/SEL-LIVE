@@ -286,6 +286,19 @@ export const configInputSchema = z.object({
         fromDate: optionalDate,
       })
       .optional(),
+    workflowSteps: z
+      .array(
+        z.object({
+          status: z.enum(WORKFLOW_STATUSES),
+          enabled: z.boolean(),
+          assignment: z.enum(['permission', 'users', 'collection_owner']),
+          userIds: z.array(z.string().min(1).max(128)).max(50),
+          onlyAssigned: z.boolean(),
+          notify: z.boolean(),
+        }),
+      )
+      .max(20)
+      .optional(),
     piMarker: z.string().trim().max(20),
   }),
   billCategories: z.array(billCategorySchema).min(1, 'Keep at least one main category.').max(100),

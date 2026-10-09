@@ -54,6 +54,7 @@ import { cn } from '@/lib/utils';
 import { daysBetween, type LedgerLine } from '@/lib/bill-tracking/calculations';
 import { categoryName } from '@/lib/bill-tracking/categories';
 import { receiptBlockReason, type CertificationComparison } from '@/lib/bill-tracking/certification';
+import { STEP_PERMISSION, availableActions, certificationBlocked, waitingFor, type WorkflowActionName } from '@/lib/bill-tracking/workflow';
 import { formatINR } from '@/lib/bill-tracking/money';
 import {
   AGEING_BASIS_LABELS,
@@ -61,6 +62,7 @@ import {
   DOCUMENT_CATEGORIES,
   FOLLOW_UP_METHODS,
   PAYMENT_STATUS_LABELS,
+  WORKFLOW_STATUS_LABELS,
   type Bill,
   type BillActivity,
   type BillCollection,
@@ -68,11 +70,10 @@ import {
   type BillDocument,
   type BillFollowUp,
   type BillPaymentStatus,
-  type BillWorkflowStatus,
   type RetentionRelease,
 } from '@/lib/bill-tracking/types';
 
-import { btDownload, btFetch, useBt, useBtQuery, useLookups } from './bt-client';
+import { btDownload, btFetch, useBt, useBtQuery, useLookups, useWorkflowActor } from './bt-client';
 import { billReference, type BillRow } from './bill-register';
 import { AgeingBadge, Amount, BtEmpty, BtError, BtLoading, CertificationBadge, Notice, PaymentStatusBadge, TransactionTypeBadge, WorkflowStatusBadge, dateText, dateTimeText, BT_TAB, BT_TABS_LIST, StatStrip, TabCount } from './bt-ui';
 
@@ -91,22 +92,7 @@ interface Detail {
   notes: { id: string; transactionType: Bill['transactionType']; billSerialNumber?: string; gstInvoiceNumber?: string; billDate: string; taxableAmount: number; gstAmount: number; grossAmount: number; netReceivable: number }[];
 }
 
-type WorkflowAction = 'submit' | 'start_verification' | 'verify' | 'approve' | 'raise' | 'start_followup' | 'reconcile' | 'close' | 'return' | 'resubmit' | 'reopen';
-
-/** Mirrors the server's rules, so only actions the API will accept are offered. */
-const WORKFLOW_ACTIONS: { action: WorkflowAction; label: string; from: BillWorkflowStatus[]; resource: string; permission: string; tone?: 'danger' }[] = [
-  { action: 'submit', label: 'Submit', from: ['draft'], resource: 'Bills', permission: 'Edit' },
-  { action: 'start_verification', label: 'Start verification', from: ['submitted'], resource: 'Bills', permission: 'Verify' },
-  { action: 'verify', label: 'Verify', from: ['submitted', 'under_verification'], resource: 'Bills', permission: 'Verify' },
-  { action: 'approve', label: 'Approve', from: ['submitted', 'under_verification', 'verified'], resource: 'Bills', permission: 'Approve' },
-  { action: 'raise', label: 'Mark bill raised', from: ['draft', 'submitted', 'under_verification', 'verified', 'approved'], resource: 'Bills', permission: 'Edit' },
-  { action: 'start_followup', label: 'Start payment follow-up', from: ['raised', 'certified'], resource: 'Bills', permission: 'Edit' },
-  { action: 'reconcile', label: 'Send to reconciliation', from: ['raised', 'certified', 'payment_followup'], resource: 'Bills', permission: 'Verify' },
-  { action: 'close', label: 'Close bill', from: ['raised', 'certified', 'payment_followup', 'reconciliation'], resource: 'Bills', permission: 'Approve' },
-  { action: 'resubmit', label: 'Resubmit after correction', from: ['returned'], resource: 'Bills', permission: 'Edit' },
-  { action: 'reopen', label: 'Reopen', from: ['closed'], resource: 'Bills', permission: 'Approve' },
-  { action: 'return', label: 'Return for correction', from: ['submitted', 'under_verification', 'verified', 'approved'], resource: 'Bills', permission: 'Verify', tone: 'danger' },
-];
+type WorkflowAction = WorkflowActionName;
 
 export default function BillDetail({ billId }: { billId: string }) {
   const { data, loading, error, reload } = useBtQuery<Detail>(`bills/${billId}`);
@@ -129,7 +115,20 @@ function DetailBody({ detail, reload, tab, setTab }: { detail: Detail; reload: (
   // Payment waits for the client's certification when Settings → Workflow says so.
   const receiptBlock = receiptBlockReason(bill, lookups.config.settings.certificationBeforeReceipt);
 
-  const actions = WORKFLOW_ACTIONS.filter((entry) => entry.from.includes(bill.workflowStatus) && can(entry.resource, entry.permission) && !bill.isDeleted);
+  // Settings → Workflow: the stages in use and who may move this bill on (named people or permission holders).
+  const actor = useWorkflowActor();
+  const settings = lookups.config.settings;
+  const actions = availableActions(bill, settings, actor);
+  const canCertify = certificationBlocked(bill, settings, actor) === null;
+  const waiting = waitingFor(bill, settings);
+  const nameOf = (id: string) => lookups.users.find((user) => user.id === id)?.name ?? 'Unknown user';
+  const waitingText = !waiting
+    ? null
+    : waiting.status === null
+      ? `${waiting.userIds.map(nameOf).join(', ') || 'The preparer'} · correction`
+      : waiting.userIds.length
+        ? `${waiting.userIds.map(nameOf).join(', ')} · ${WORKFLOW_STATUS_LABELS[waiting.status]}`
+        : `${WORKFLOW_STATUS_LABELS[waiting.status]} · anyone with ${STEP_PERMISSION[waiting.status]}`;
   const runWorkflow = async (action: WorkflowAction, remarks?: string) => {
     try {
       await btFetch(`bills/${bill.id}/workflow`, { body: { action, remarks } });
@@ -163,6 +162,7 @@ function DetailBody({ detail, reload, tab, setTab }: { detail: Detail; reload: (
           { label: 'Client', value: bill.clientNameSnapshot ?? '—' },
           { label: 'FY', value: bill.financialYear },
           { label: 'Due', value: dateText(bill.dueDate) },
+          ...(waitingText ? [{ label: 'Waiting for', value: waitingText }] : []),
         ]}
         actions={
           bill.isDeleted ? null : (
@@ -174,7 +174,7 @@ function DetailBody({ detail, reload, tab, setTab }: { detail: Detail; reload: (
                   </Link>
                 </Button>
               ) : null}
-              {receiptBlock && can('Bills', 'Certify') ? (
+              {receiptBlock && canCertify ? (
                 <Button asChild size="sm" className="gap-1.5">
                   <Link href={`/bill-tracking/bills/${bill.id}/certify`}>
                     <ClipboardCheck className="h-4 w-4" /> Record certification
@@ -216,7 +216,7 @@ function DetailBody({ detail, reload, tab, setTab }: { detail: Detail; reload: (
                       <PhoneCall className="mr-2 h-4 w-4" /> Add follow-up
                     </DropdownMenuItem>
                   ) : null}
-                  {detail.certification && can('Bills', 'Certify') ? (
+                  {detail.certification && canCertify ? (
                     <DropdownMenuItem onSelect={() => router.push(`/bill-tracking/bills/${bill.id}/certify`)}>
                       <ClipboardCheck className="mr-2 h-4 w-4" /> {bill.certification ? 'Edit client certification' : 'Record client certification'}
                     </DropdownMenuItem>
@@ -531,11 +531,13 @@ const matchNoteHref = (bill: Pick<Bill, 'id' | 'projectId'>) => `/bill-tracking/
 function CertificationTab({ detail, reload }: { detail: Detail; reload: () => void }) {
   const { bill, certification: comparison } = detail;
   const { can } = useBt();
+  const lookups = useLookups();
+  const actor = useWorkflowActor();
   const { toast } = useToast();
   const [removing, setRemoving] = useState(false);
   if (!comparison) return null;
   const certification = bill.certification;
-  const canCertify = can('Bills', 'Certify') && !bill.isDeleted;
+  const canCertify = certificationBlocked(bill, lookups.config.settings, actor) === null;
   const certifyHref = `/bill-tracking/bills/${bill.id}/certify`;
 
   if (!certification) {

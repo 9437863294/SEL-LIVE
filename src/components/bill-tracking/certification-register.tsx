@@ -23,7 +23,8 @@ import { CERTIFICATION_STATE_LABELS, type Bill } from '@/lib/bill-tracking/types
 import type { BillTotals } from '@/lib/bill-tracking/reports';
 import { cn } from '@/lib/utils';
 
-import { btFetch, useBt, useBtQuery, useLookups } from './bt-client';
+import { btFetch, useBt, useBtQuery, useLookups, useWorkflowActor } from './bt-client';
+import { certificationBlocked } from '@/lib/bill-tracking/workflow';
 import { BillFilterBar, useUrlFilters } from './bt-filters';
 import { BtTable, Pager, type BtColumn } from './bt-table';
 import { ToolbarSelect } from './bt-toolbar';
@@ -84,6 +85,7 @@ const COMPARE_FILTERS = [
 export default function CertificationRegister({ view }: { view: 'certified' | 'compare' }) {
   const lookups = useLookups();
   const { can } = useBt();
+  const actor = useWorkflowActor();
   const filters = useUrlFilters();
   const compare = view === 'compare';
   // The comparison only makes sense for certified bills, so it never shows the ones still awaiting.
@@ -135,7 +137,7 @@ export default function CertificationRegister({ view }: { view: 'certified' | 'c
             <Link href={matchNoteHref(row)}>Raise note</Link>
           </Button>
         ) : null}
-        {can('Bills', 'Certify') ? (
+        {certificationBlocked(row, lookups.config.settings, actor) === null ? (
           <Button asChild size="sm" variant={row.certification ? 'ghost' : 'outline'} className="h-7 px-2 text-xs">
             <Link href={`/bill-tracking/bills/${row.id}/certify`}>{row.certification ? 'Edit' : 'Certify'}</Link>
           </Button>

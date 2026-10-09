@@ -290,6 +290,24 @@ export interface CertificationReceiptRule {
   fromDate?: string;
 }
 
+/** Who does a workflow stage: anyone with the role permission, named people, or the bill's collection owner. */
+export const WORKFLOW_ASSIGNMENTS = ['permission', 'users', 'collection_owner'] as const;
+export type WorkflowAssignment = (typeof WORKFLOW_ASSIGNMENTS)[number];
+
+/** One stage's settings (Settings → Workflow); see `workflow.ts`. */
+export interface WorkflowStepSetting {
+  status: BillWorkflowStatus;
+  /** False skips the stage (optional stages only). */
+  enabled: boolean;
+  assignment: WorkflowAssignment;
+  /** Named people (with `users`), or backups to the collection owner. */
+  userIds: string[];
+  /** Only the named people — permission holders cannot do the stage. */
+  onlyAssigned: boolean;
+  /** Tell the named people when a bill is waiting for them. */
+  notify: boolean;
+}
+
 export interface BillTrackingSettings {
   /** Amounts within this many rupees of each other are treated as equal. */
   tolerance: number;
@@ -311,6 +329,8 @@ export interface BillTrackingSettings {
   numbering: BillNumberingConfig;
   /** Receipts only against bills the client has certified (Settings → Workflow). */
   certificationBeforeReceipt: CertificationReceiptRule;
+  /** Per-stage workflow settings, one per stage after Draft. */
+  workflowSteps: WorkflowStepSetting[];
   /** Month keys (`yyyy-MM`) closed for normal editing. */
   closedMonths: string[];
   /** Legacy `TAXABLE / ADVANCE` value that marks a proforma invoice row (the PI report filter). */

@@ -32,7 +32,7 @@ import { BtToolbar, ToolbarSearch, ToolbarSelect } from './bt-toolbar';
 import { FySelect } from './bt-ui';
 
 /** Keys that are filters (counted as "active"); page, sort and size are not. */
-const FILTER_KEYS = ['project', 'client', 'dgm', 'billType', 'category', 'txn', 'payment', 'workflow', 'ageing', 'basis', 'min', 'max', 'targetWeek', 'owner', 'from', 'to', 'asOf', 'chip', 'marker', 'ids', 'open', 'cert'] as const;
+const FILTER_KEYS = ['project', 'client', 'dgm', 'billType', 'category', 'txn', 'payment', 'workflow', 'ageing', 'basis', 'min', 'max', 'targetWeek', 'owner', 'from', 'to', 'asOf', 'chip', 'marker', 'ids', 'open', 'cert', 'mine'] as const;
 
 export function useUrlFilters() {
   const params = useSearchParams();

@@ -24,13 +24,14 @@ import { PM_DIALOG } from '@/components/project-management/pm-shell';
 import { useToast } from '@/hooks/use-toast';
 import { categoryName } from '@/lib/bill-tracking/categories';
 import { receiptBlockReason } from '@/lib/bill-tracking/certification';
+import { STEP_PERMISSION, certificationBlocked, waitingFor } from '@/lib/bill-tracking/workflow';
 import { LEGACY_EXPORT_HEADERS, legacyExportRows } from '@/lib/bill-tracking/legacy-export';
 import { formatINRCompact } from '@/lib/bill-tracking/money';
 import { exportWorkbook } from '@/lib/report-excel';
 import { GST_TYPE_LABELS, PAYMENT_STATUS_LABELS, WORKFLOW_STATUS_LABELS, type Bill } from '@/lib/bill-tracking/types';
 import type { BillTotals } from '@/lib/bill-tracking/reports';
 
-import { btFetch, useBtQuery, useLookups, useBt } from './bt-client';
+import { btFetch, useBtQuery, useLookups, useBt, useWorkflowActor } from './bt-client';
 import { BillFilterBar, FilterChips, useUrlFilters } from './bt-filters';
 import { BtTable, Pager, type BtColumn } from './bt-table';
 import CertificationRegister, { RegisterViewTabs, type RegisterView } from './certification-register';
@@ -90,6 +91,10 @@ export default function BillRegister({ mode = 'all' }: { mode?: 'all' | 'outstan
   const { toast } = useToast();
   const filters = useUrlFilters();
   const outstanding = mode === 'outstanding';
+  const actor = useWorkflowActor();
+  // "Waiting for me": bills whose next stage is this person's. Someone in only through Settings →
+  // Workflow sees nothing else.
+  const mine = lookups.workflowOnly || filters.get('mine') === '1';
   // The register's certification views (Outstanding has none).
   const requestedView = filters.get('view');
   const view: RegisterView = !outstanding && (requestedView === 'certified' || requestedView === 'compare') ? requestedView : 'raised';
@@ -97,7 +102,7 @@ export default function BillRegister({ mode = 'all' }: { mode?: 'all' | 'outstan
   const dir = (filters.get('dir') || 'desc') as 'asc' | 'desc';
   const page = Number(filters.get('page')) || 1;
   const pageSize = Number(filters.get('pageSize')) || 25;
-  const query = filters.apiQuery({ sort, dir, page, pageSize, open: outstanding ? '1' : undefined });
+  const query = filters.apiQuery({ sort, dir, page, pageSize, open: outstanding ? '1' : undefined, mine: mine ? '1' : undefined });
   const { data, loading, error, reload } = useBtQuery<ListResponse>(view === 'raised' ? `bills?${query}` : null);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [bulk, setBulk] = useState<null | 'assign_owner' | 'set_target_week' | 'set_next_follow_up' | 'set_expected_date'>(null);
@@ -169,6 +174,18 @@ export default function BillRegister({ mode = 'all' }: { mode?: 'all' | 'outstan
     { key: 'payment', header: 'Payment', mobile: 'detail', cell: (bill) => <PaymentStatusBadge status={bill.paymentStatus} overridden={Boolean(bill.paymentStatusOverride)} /> },
     { key: 'workflow', header: 'Workflow', defaultHidden: outstanding, cell: (bill) => <WorkflowStatusBadge status={bill.workflowStatus} /> },
     {
+      key: 'waiting',
+      header: 'Waiting for',
+      label: 'Waiting for',
+      defaultHidden: !mine,
+      cell: (bill) => {
+        const waiting = waitingFor(bill, lookups.config.settings);
+        if (!waiting) return <span className="text-muted-foreground">—</span>;
+        const names = waiting.userIds.map((id) => lookups.users.find((user) => user.id === id)?.name ?? 'Unknown').join(', ');
+        return <TruncatedText text={waiting.status === null ? `${names || 'Preparer'} · correction` : names ? `${names} · ${WORKFLOW_STATUS_LABELS[waiting.status]}` : `${WORKFLOW_STATUS_LABELS[waiting.status]} · ${STEP_PERMISSION[waiting.status]}`} className="max-w-[200px] text-xs" />;
+      },
+    },
+    {
       key: 'actions',
       header: '',
       label: 'Actions',
@@ -181,7 +198,7 @@ export default function BillRegister({ mode = 'all' }: { mode?: 'all' | 'outstan
               <Link href={`/bill-tracking/collections/new?bill=${bill.id}`}>Receive</Link>
             </Button>
           ) : null}
-          {bill.outstandingAmount > 0 && can('Bills', 'Certify') && receiptBlockReason(bill, lookups.config.settings.certificationBeforeReceipt) ? (
+          {bill.outstandingAmount > 0 && certificationBlocked(bill, lookups.config.settings, actor) === null && receiptBlockReason(bill, lookups.config.settings.certificationBeforeReceipt) ? (
             <Button asChild size="sm" variant="ghost" className="h-7 px-2 text-xs text-amber-800" title="Payment waits for the client's certification">
               <Link href={`/bill-tracking/bills/${bill.id}/certify`}>Certify</Link>
             </Button>
@@ -269,6 +286,13 @@ export default function BillRegister({ mode = 'all' }: { mode?: 'all' | 'outstan
       <BillFilterBar
         filters={filters}
         page={outstanding ? 'outstanding' : 'bills'}
+        extra={
+          lookups.workflowOnly ? null : (
+            <Button type="button" size="sm" variant={mine ? 'default' : 'outline'} className="h-9 gap-1.5" aria-pressed={mine} onClick={() => filters.set({ mine: mine ? undefined : '1' })}>
+              <UserCheck className="h-4 w-4" /> Waiting for me
+            </Button>
+          )
+        }
         actions={
           <ExportMenu<BillRow>
             loadAll

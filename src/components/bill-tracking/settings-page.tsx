@@ -79,7 +79,7 @@ export default function SettingsPage() {
       await btFetch('config', {
         method: 'PUT',
         body: {
-          settings: { tolerance: settings.tolerance, roundNetToRupee: settings.roundNetToRupee, defaultGstRate: settings.defaultGstRate, roundDeductionsToRupee: settings.roundDeductionsToRupee, defaultCreditDays: settings.defaultCreditDays, defaultAgeingBasis: settings.defaultAgeingBasis, ageingBuckets: settings.ageingBuckets, noFollowUpDays: settings.noFollowUpDays, oldOutstandingDays: settings.oldOutstandingDays, highValueThreshold: settings.highValueThreshold, numbering: settings.numbering, certificationBeforeReceipt: settings.certificationBeforeReceipt, piMarker: settings.piMarker },
+          settings: { tolerance: settings.tolerance, roundNetToRupee: settings.roundNetToRupee, defaultGstRate: settings.defaultGstRate, roundDeductionsToRupee: settings.roundDeductionsToRupee, defaultCreditDays: settings.defaultCreditDays, defaultAgeingBasis: settings.defaultAgeingBasis, ageingBuckets: settings.ageingBuckets, noFollowUpDays: settings.noFollowUpDays, oldOutstandingDays: settings.oldOutstandingDays, highValueThreshold: settings.highValueThreshold, numbering: settings.numbering, certificationBeforeReceipt: settings.certificationBeforeReceipt, workflowSteps: settings.workflowSteps, piMarker: settings.piMarker },
           billCategories: config.billCategories,
           billTypes: config.billTypes,
           deductionTypes: config.deductionTypes,
@@ -190,7 +190,7 @@ export default function SettingsPage() {
         </TabsContent>
 
         <TabsContent value="workflow">
-          <WorkflowSettings rule={settings.certificationBeforeReceipt} onChange={(rule) => setSettings({ certificationBeforeReceipt: rule })} disabled={!manage} />
+          <WorkflowSettings rule={settings.certificationBeforeReceipt} onRuleChange={(rule) => setSettings({ certificationBeforeReceipt: rule })} steps={settings.workflowSteps} onStepsChange={(workflowSteps) => setSettings({ workflowSteps })} users={lookups.users} disabled={!manage} />
         </TabsContent>
 
         <TabsContent value="ageing">

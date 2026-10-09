@@ -113,13 +113,27 @@ Where it shows:
 | Exceptions | *Certified — credit note pending* |
 
 - **Workflow.** Draft → Submitted → Under verification → Verified → Approved → Bill raised →
-  **Certified by client** → Payment follow-up → Reconciliation → Closed.
-  - Under verification, Verified and Approved are optional. *Mark bill raised* is offered from
-    Draft onwards, and *Approve* needs no verification first.
-  - Recording the certification moves a bill at any earlier step to Certified by itself.
-  - The amount lock (*Edit After Approval* plus a reason) starts once a bill is approved or raised. Removing it moves a bill
-  still at Certified back to Bill raised. Settings → **Workflow** shows every stage, what moves it
-  on and the permission that needs.
+  **Certified by client** → Payment follow-up → Reconciliation → Closed. The stages and their
+  order are fixed. Everything else is set per stage in Settings → **Workflow**
+  (`settings.workflowSteps`, rules in `src/lib/bill-tracking/workflow.ts`):
+  - **Used or skipped.** Submitted, Under verification, Verified and Approved can be switched off.
+    A skipped stage gets no button, and a returned bill steps back past it. *Mark bill raised* is
+    offered from Draft onwards, and *Approve* needs no verification first.
+  - **Moved here by.** Who moves a bill into the stage:
+    - anyone with the role permission (the default);
+    - named people;
+    - the bill's collection owner, plus optional backups.
+
+    Being named is the authority. A named person needs no role permission and no project grant to
+    do that stage, can open the bills it involves, and gets into the module even without a module
+    permission. *Only them* stops permission holders doing it.
+  - **Notify.** The named people are told when a bill is waiting for them. With nobody named, the
+    Verify or Approve role holders are told, as before.
+  - **Waiting for.** Shown on each bill. The register's *Waiting for me* filter (also in the
+    sidebar for named people) lists the bills whose next stage is yours.
+  - Recording the certification is the *Certified by client* stage. It moves a bill at any earlier
+    stage to Certified; removing it moves a bill still at Certified back to Bill raised.
+  - The amount lock (*Edit After Approval* plus a reason) starts once a bill is approved or raised.
 - **No payment before certification.** Settings → Workflow → *Payment needs client
   certification*. It is on by default for invoices and retention bills. Recording or verifying a
   receipt against an uncertified bill of those types is refused, and the server enforces it.

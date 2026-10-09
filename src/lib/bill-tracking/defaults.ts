@@ -10,6 +10,7 @@
  */
 
 import { DEFAULT_AGEING_BUCKETS } from './calculations.ts';
+import { normaliseWorkflowSteps } from './workflow.ts';
 import { inferBillCategory, normaliseBillType } from './categories.ts';
 import { LEGACY_RETENTION_BILL_TYPES } from './import.ts';
 import type {
@@ -128,6 +129,8 @@ export const DEFAULT_SETTINGS: BillTrackingSettings = {
   // Payment follows the client's certification of an invoice or retention bill; migrated bills were
   // certified on paper before SEL LIVE, so they are left out.
   certificationBeforeReceipt: { enabled: true, transactionTypes: ['invoice', 'retention_bill'], exemptImported: true },
+  // Every stage in use and left to permission holders until people are named in Settings → Workflow.
+  workflowSteps: normaliseWorkflowSteps(undefined),
   closedMonths: [],
   piMarker: 'PI',
 };
@@ -152,6 +155,7 @@ export function withConfigDefaults(stored: Partial<BillTrackingConfig> | null | 
   const settings = { ...DEFAULT_SETTINGS, ...(stored?.settings ?? {}) };
   settings.numbering = { ...DEFAULT_SETTINGS.numbering, ...(stored?.settings?.numbering ?? {}) };
   settings.certificationBeforeReceipt = { ...DEFAULT_SETTINGS.certificationBeforeReceipt, ...(stored?.settings?.certificationBeforeReceipt ?? {}) };
+  settings.workflowSteps = normaliseWorkflowSteps(stored?.settings?.workflowSteps);
   if (!settings.ageingBuckets?.length) settings.ageingBuckets = DEFAULT_AGEING_BUCKETS;
   const deductionTypes = stored?.deductionTypes?.length ? [...stored.deductionTypes] : [...DEFAULT_DEDUCTION_TYPES];
   for (const type of DEFAULT_DEDUCTION_TYPES) {

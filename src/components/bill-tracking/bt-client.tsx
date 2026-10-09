@@ -14,6 +14,7 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useRef, use
 
 import { auth } from '@/lib/firebase';
 import type { BillTrackingConfig } from '@/lib/bill-tracking/types';
+import type { WorkflowActor } from '@/lib/bill-tracking/workflow';
 import type { RegistrationSetup } from '@/lib/bill-tracking/gst';
 
 export class BtApiError extends Error {
@@ -102,6 +103,10 @@ export interface Lookups {
   today: string;
   currentFy: string;
   user: { id: string; name: string };
+  /** Named on a Settings → Workflow stage: the register offers "Waiting for me". */
+  workflowAssigned?: boolean;
+  /** In only because of that naming (no module permission) — they see their workflow bills only. */
+  workflowOnly?: boolean;
 }
 
 interface LookupState {
@@ -156,6 +161,12 @@ export function useBt(): LookupState {
   const value = useContext(LookupContext);
   if (!value) throw new Error('useBt must be used inside BillTrackingProvider');
   return value;
+}
+
+/** The signed-in user for the shared workflow rules (`workflow.ts`): who they are and what their roles allow. */
+export function useWorkflowActor(): WorkflowActor {
+  const { lookups, can } = useBt();
+  return { userId: lookups?.user.id ?? '', can: (resource, action) => can(resource, action) };
 }
 
 /** Lookups once loaded; screens render inside the shell, which waits for them. */
