@@ -41,9 +41,10 @@ const NAMED_BILLS = 3;
 
 /**
  * `receiptDate` is a `yyyy-MM-dd` day, but Bank Balance stores an instant and reads the day back
- * out of it with `dayKey` (local time). Midnight would land on the day before or after as soon as
- * the writer and the reader sit in different zones, so the instant is **local noon**: no offset
- * on earth (−12 … +14) can push noon across a day boundary.
+ * out of it with `dayKey` (local time). Midnight slips to the day before for any negative shift at
+ * all, so the instant is **local noon** instead: it stays on its own day across every shift inside
+ * ±11 hours, which covers the pairing that actually happens here (a UTC server writing it, an IST
+ * browser reading it, and the reverse).
  */
 export function receiptInstant(receiptDate: string): Date {
   return new Date(`${receiptDate}T12:00:00`);
