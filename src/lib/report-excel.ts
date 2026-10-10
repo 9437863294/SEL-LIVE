@@ -10,6 +10,13 @@ export interface ExcelColumn {
   header: string;
   key: string;
   width?: number;
+  /**
+   * An Excel number format for the column's cells — `'dd-mmm-yyyy hh:mm'` for a timestamp,
+   * `'#,##0.00'` for money. Optional, and absent from every existing caller, so their workbooks are
+   * unchanged; a register that exports real dates and amounts needs it, or Excel shows a date as a
+   * serial number and an amount without its decimals.
+   */
+  numFmt?: string;
 }
 
 export interface ExcelSheet {
@@ -67,19 +74,27 @@ export async function exportRowsToExcel(
 
 /** Builds a workbook from one or more sheets and triggers a browser download of the .xlsx file. */
 export async function exportWorkbook(filename: string, sheets: ExcelSheet[]) {
+  const buffer = await buildWorkbookBuffer(sheets);
+  const blob = new Blob([buffer], {
+    type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  });
+  downloadBlob(blob, filename);
+}
+
+/**
+ * The .xlsx bytes for one or more sheets, without downloading them — split out of `exportWorkbook`
+ * so the file itself can be opened and checked under `node --test`, where there is no `document`.
+ */
+export async function buildWorkbookBuffer(sheets: ExcelSheet[]) {
   const ExcelJS = (await import('exceljs')).default;
   const workbook = new ExcelJS.Workbook();
   workbook.creator = 'SEL Live';
   workbook.created = new Date();
   sheets.forEach(({ name, columns, rows }) => {
     const sheet = workbook.addWorksheet(name);
-    sheet.columns = columns;
+    sheet.columns = columns.map(({ numFmt, ...column }) => (numFmt ? { ...column, style: { numFmt } } : column));
     rows.forEach((row) => sheet.addRow(row));
     if (rows.length) styleSheet(sheet as Parameters<typeof styleSheet>[0]);
   });
-  const buffer = await workbook.xlsx.writeBuffer();
-  const blob = new Blob([buffer], {
-    type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-  });
-  downloadBlob(blob, filename);
+  return workbook.xlsx.writeBuffer();
 }

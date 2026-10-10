@@ -10,14 +10,22 @@ import {
   E_APPROVAL_BASE_PATH,
   E_APPROVAL_STATUSES,
   OPEN_E_APPROVAL_STATUSES,
+  canViewEApproval,
   isTerminalEApprovalStatus,
   type EApprovalRequest,
   type EApprovalStatus,
 } from '@/lib/e-approval';
-import { listEApprovals, subscribeEApprovals, type EApprovalListFilter } from '@/lib/e-approval-service';
+import {
+  listEApprovals,
+  loadEApprovalExportDetails,
+  subscribeEApprovals,
+  type EApprovalListFilter,
+} from '@/lib/e-approval-service';
+import { buildEApprovalExportSheets, eApprovalExportFilename } from '@/lib/e-approval-export';
+import { exportWorkbook } from '@/lib/report-excel';
 import { DeleteApprovalDialog, DeleteApprovalRowButton } from './delete-request-dialog';
 import { EApprovalRequestTable } from './request-table';
-import { useEApprovalActor, useEApprovalPermissions, useEApprovalRefreshOnReturn } from './hooks';
+import { useEApprovalActor, useEApprovalDirectory, useEApprovalPermissions, useEApprovalRefreshOnReturn } from './hooks';
 import { PageHeader } from '@/components/shared/page-header';
 
 export type RegisterScope =
@@ -128,6 +136,7 @@ export function RegisterView({ scope }: { scope: RegisterScope }) {
   const { toast } = useToast();
   const { serviceActor, engineActor } = useEApprovalActor();
   const permissions = useEApprovalPermissions();
+  const { directory } = useEApprovalDirectory();
   const [rows, setRows] = useState<EApprovalRequest[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   /** The row whose delete confirmation is open. One dialog for the table, not one per row. */
@@ -311,6 +320,87 @@ export function RegisterView({ scope }: { scope: RegisterScope }) {
     return rows;
   }, [rows, scope]);
 
+  /*
+   * The list as an Excel workbook: every field of every request on screen, and the workflow,
+   * activity, comments and attachments behind them, one sheet each.
+   *
+   * What a confidential request may reveal is decided per row with `canViewEApproval`, the same
+   * call the detail screen makes — a row the viewer could not open is exported with the summary the
+   * register already shows them and nothing more. Gated on the module's Export grant, the one the
+   * reports already use, so there is one permission to manage for "may take data out of E-Approval".
+   */
+  const exportToExcel = useCallback(
+    async (exportRows: EApprovalRequest[], filterSummary: string) => {
+      if (!exportRows.length) return;
+      try {
+        const details = await loadEApprovalExportDetails(exportRows.map((row) => row.id));
+        const stepsByRequest = new Map<string, typeof details.steps>();
+        for (const step of details.steps) {
+          const list = stepsByRequest.get(step.approvalId) ?? [];
+          list.push(step);
+          stepsByRequest.set(step.approvalId, list);
+        }
+        const openable = new Set(
+          exportRows
+            .filter((row) =>
+              engineActor
+                ? canViewEApproval(row, stepsByRequest.get(row.id) ?? [], engineActor, {
+                    viewAll: permissions.canViewAll,
+                    viewDepartment: permissions.canViewDepartment,
+                    viewConfidential: permissions.canViewConfidential,
+                  })
+                : false,
+            )
+            .map((row) => row.id),
+        );
+        const iso = (value: { toMillis: () => number } | null | undefined) =>
+          value ? new Date(value.toMillis()).toISOString() : null;
+        const sheets = buildEApprovalExportSheets(
+          {
+            requests: exportRows.map((row) => ({ ...row, createdAt: iso(row.createdAt), updatedAt: iso(row.updatedAt) })),
+            steps: details.steps,
+            events: details.history,
+            comments: details.comments.map((comment) => ({ ...comment, createdAt: iso(comment.createdAt) })),
+            attachments: details.attachments,
+          },
+          {
+            openable,
+            nameOf: (userId) => directory.userById.get(userId)?.name,
+            linkFor: (id) => `${window.location.origin}${E_APPROVAL_BASE_PATH}/${id}`,
+            listName: config.title,
+            exportedBy: serviceActor?.userName,
+            exportedAt: new Date(),
+            filterSummary,
+          },
+        );
+        await exportWorkbook(eApprovalExportFilename(config.title), sheets);
+        const hidden = exportRows.length - openable.size;
+        toast({
+          title: 'Exported to Excel',
+          description: `${exportRows.length} ${exportRows.length === 1 ? 'request' : 'requests'}, with ${details.steps.length} workflow steps, ${details.history.length} activity entries and ${details.comments.length} comments.${
+            hidden ? ` ${hidden} confidential ${hidden === 1 ? 'request is' : 'requests are'} summarised only.` : ''
+          }`,
+        });
+      } catch (error) {
+        toast({
+          variant: 'destructive',
+          title: 'Could not export',
+          description: error instanceof Error ? error.message : 'Something went wrong.',
+        });
+      }
+    },
+    [
+      config.title,
+      directory.userById,
+      engineActor,
+      permissions.canViewAll,
+      permissions.canViewConfidential,
+      permissions.canViewDepartment,
+      serviceActor,
+      toast,
+    ],
+  );
+
   return (
     <div className="space-y-3">
       <PageHeader
@@ -342,6 +432,7 @@ export function RegisterView({ scope }: { scope: RegisterScope }) {
         showPendingWith={config.showPendingWith}
         showAgeing={scope !== 'drafts'}
         showStatusFilter={scope !== 'drafts'}
+        onExport={permissions.canExport ? exportToExcel : undefined}
         // Offered on every register rather than only the full one: the row button renders nothing
         // where the viewer may not delete that row, so a requester sees it on their own drafts
         // and nowhere else, and an administrator sees it wherever they genuinely hold the grant.

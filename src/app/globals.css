@@ -142,6 +142,12 @@
 .no-scrollbar{ -ms-overflow-style:none; scrollbar-width:none; }
 .no-scrollbar::-webkit-scrollbar{ display:none; }
 :root { scrollbar-gutter: stable both-edges; }
+/* Paper has no scrollbar, so nothing may be reserved for one when printing. Current Chrome already
+   drops the gutter in print, but Chrome 109 — the last version Windows 7 can run — keeps it and
+   shifts the whole document left by its width: every printout started ~1.3mm outside the left
+   page margin, past the printable area, and lost the first letters of each line on those PCs.
+   Measured on Chromium 109.0.5412 (2026-10-10): leftmost text 11.4mm against a 12.7mm margin. */
+@media print { :root { scrollbar-gutter: auto; } }
 
 /* ─── Top progress bar (nprogress) — gradient + glow ─────────────── */
 #nprogress {

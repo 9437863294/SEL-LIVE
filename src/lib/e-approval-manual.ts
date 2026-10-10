@@ -138,6 +138,9 @@ export const E_APPROVAL_MANUAL: ManualPart[] = [
               ['Settings', 'Configuration, for administrators.'],
             ],
           ),
+          p(
+            'Every list has an Export to Excel button for anyone holding the E-Approval Export permission. It saves what the list is showing — after any search or status filter — as a workbook with six sheets: Requests (every field, with dates and amounts you can sort, filter and total), Workflow, Activity, Comments, Attachments (by name; the files stay in the app) and a note of who exported what. A confidential request you cannot open is listed with its summary only.',
+          ),
         ],
       },
       {

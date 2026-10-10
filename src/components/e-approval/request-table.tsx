@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
-import { ArrowUpDown, CheckCircle2, FileSearch, Inbox, Loader2 } from 'lucide-react';
+import { ArrowUpDown, CheckCircle2, FileSearch, FileSpreadsheet, Inbox, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -45,6 +45,7 @@ export function EApprovalRequestTable({
   showAgeing = true,
   showStatusFilter = true,
   renderActions,
+  onExport,
 }: {
   rows: EApprovalRequest[];
   isLoading?: boolean;
@@ -62,8 +63,15 @@ export function EApprovalRequestTable({
    * cancelled file, export one row) would otherwise be a second flag and a second button.
    */
   renderActions?: (row: EApprovalRequest) => ReactNode;
+  /**
+   * Export what the table is showing — the rows after search, status filter and sort, plus a line
+   * describing those filters for the workbook's About sheet. Offered only when given, so the caller
+   * decides who may export; the table only knows which rows are on screen.
+   */
+  onExport?: (rows: EApprovalRequest[], filterSummary: string) => Promise<void>;
 }) {
   const [search, setSearch] = useState('');
+  const [exporting, setExporting] = useState(false);
   /**
    * The term the list is actually filtered by, a beat behind what is being typed.
    *
@@ -130,6 +138,32 @@ export function EApprovalRequestTable({
       count={isLoading ? undefined : filtered.length}
       total={isLoading ? undefined : rows.length}
       noun="approval"
+      actions={
+        onExport ? (
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            className="h-8 gap-1.5"
+            disabled={isLoading || exporting || filtered.length === 0}
+            onClick={async () => {
+              const parts = [
+                appliedSearch.trim() ? `Search: ${appliedSearch.trim()}` : '',
+                status !== 'All' ? `Status: ${status}` : '',
+              ].filter(Boolean);
+              setExporting(true);
+              try {
+                await onExport(filtered, parts.join(' · '));
+              } finally {
+                setExporting(false);
+              }
+            }}
+          >
+            {exporting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <FileSpreadsheet className="h-3.5 w-3.5" />}
+            {exporting ? 'Exporting…' : 'Export to Excel'}
+          </Button>
+        ) : undefined
+      }
       toolbar={
         <FilterBar
           search={{ value: search, onChange: setSearch, placeholder: 'Search reference, subject, person…' }}

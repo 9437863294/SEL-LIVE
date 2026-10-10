@@ -1,54 +1,17 @@
-
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
-import Link from 'next/link';
-import {
-  AlertTriangle,
-  Building2,
-  CalendarClock,
-  CheckCircle2,
-  ChevronRight,
-  Files,
-  HardHat,
-  History,
-  MapPin,
-  Plus,
-  RefreshCw,
-  Shield,
-  ShieldAlert,
-} from 'lucide-react';
+import { useEffect, useState } from 'react';
 import { collection, getDocs } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import { useAuthorization } from '@/hooks/useAuthorization';
 import { useToast } from '@/hooks/use-toast';
-import { useRouter } from 'next/navigation';
 import type { InsuredAsset, Project, ProjectInsurancePolicy } from '@/lib/types';
-import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
-import { PageHeader } from '@/components/shared/page-header';
-import { SearchInput } from '@/components/shared/filter-bar';
-import { cn } from '@/lib/utils';
-import { projectPolicyState } from '@/lib/insurance';
-
-// ─── types ────────────────────────────────────────────────────────────────────
-
-interface EnrichedAsset extends InsuredAsset {
-  displayName: string;
-  displayLocation: string;
-  policyCount: number;
-  activePolicies: number;
-  expiredPolicies: number;
-  expiringPolicies: number;
-}
-
-// ─── page ─────────────────────────────────────────────────────────────────────
+import { AccessDenied } from '@/components/insurance/insurance-ui';
+import { ProjectRegister } from '@/components/insurance/project-register';
 
 export default function ProjectInsurancePage() {
   const { toast } = useToast();
-  const router = useRouter();
   const { can, isLoading: authLoading } = useAuthorization();
 
   const canViewPage = can('View', 'Insurance.Project Insurance');
@@ -58,301 +21,43 @@ export default function ProjectInsurancePage() {
   const [projects, setProjects] = useState<Project[]>([]);
   const [policies, setPolicies] = useState<ProjectInsurancePolicy[]>([]);
   const [isLoading, setIsLoading] = useState(true);
-  const [search, setSearch]     = useState('');
 
-  const fetchData = async () => {
-    setIsLoading(true);
-    try {
-      const [assetsSnap, projectsSnap, policiesSnap] = await Promise.all([
-        getDocs(collection(db, 'insuredAssets')),
-        getDocs(collection(db, 'projects')),
-        getDocs(collection(db, 'project_insurance_policies')),
-      ]);
-      setAssets(assetsSnap.docs.map((d) => ({ id: d.id, ...d.data() } as InsuredAsset)));
-      setProjects(projectsSnap.docs.map((d) => ({ id: d.id, ...d.data() } as Project)));
-      setPolicies(policiesSnap.docs.map((d) => ({ id: d.id, ...d.data() } as ProjectInsurancePolicy)));
-    } catch (err) {
-      console.error('Error fetching project insurance:', err);
-      toast({ title: 'Error', description: 'Failed to fetch project insurance data.', variant: 'destructive' });
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
+  // Loading starts true and is cleared only once the read settles; a read overtaken by unmount is dropped.
   useEffect(() => {
-    if (authLoading) return;
-    if (canViewPage) fetchData();
-    else setIsLoading(false);
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [authLoading, canViewPage]);
-
-  // ─── computed ─────────────────────────────────────────────────────────────
-
-  const enrichedAssets = useMemo((): EnrichedAsset[] => {
-    const today = new Date();
-    // Standing comes from the end date: a stored "Active" past its end date is expired cover.
-    const stateOf = new Map(policies.map((p) => [p.id, projectPolicyState(p, today)]));
-    return assets.map((asset) => {
-      const proj = asset.type === 'Project' && asset.projectId
-        ? projects.find((p) => p.id === asset.projectId)
-        : null;
-
-      const assetPolicies = policies.filter((p) => p.assetId === asset.id);
-      const expiring = assetPolicies.filter((p) => stateOf.get(p.id) === 'expiring');
-      const expired  = assetPolicies.filter((p) => stateOf.get(p.id) === 'expired');
-      const active   = assetPolicies.filter((p) => stateOf.get(p.id) === 'active' || stateOf.get(p.id) === 'expiring');
-
-      return {
-        ...asset,
-        displayName:     proj?.projectName || asset.name,
-        displayLocation: proj?.location || asset.location || '',
-        policyCount:     assetPolicies.length,
-        activePolicies:  active.length,
-        expiredPolicies: expired.length,
-        expiringPolicies: expiring.length,
-      };
-    });
-  }, [assets, projects, policies]);
-
-  const filteredAssets = useMemo(() => {
-    if (!search.trim()) return enrichedAssets;
-    const q = search.toLowerCase();
-    return enrichedAssets.filter(
-      (a) =>
-        a.displayName.toLowerCase().includes(q) ||
-        a.type.toLowerCase().includes(q) ||
-        (a.displayLocation ?? '').toLowerCase().includes(q)
-    );
-  }, [enrichedAssets, search]);
-
-  const totals = useMemo(() => ({
-    assets:   enrichedAssets.length,
-    active:   enrichedAssets.reduce((s, a) => s + a.activePolicies, 0),
-    expiring: enrichedAssets.reduce((s, a) => s + a.expiringPolicies, 0),
-    expired:  enrichedAssets.reduce((s, a) => s + a.expiredPolicies, 0),
-  }), [enrichedAssets]);
-
-  // ─── loading ──────────────────────────────────────────────────────────────
+    if (authLoading || !canViewPage) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const [assetsSnap, projectsSnap, policiesSnap] = await Promise.all([
+          getDocs(collection(db, 'insuredAssets')),
+          getDocs(collection(db, 'projects')),
+          getDocs(collection(db, 'project_insurance_policies')),
+        ]);
+        if (cancelled) return;
+        setAssets(assetsSnap.docs.map((d) => ({ id: d.id, ...d.data() } as InsuredAsset)));
+        setProjects(projectsSnap.docs.map((d) => ({ id: d.id, ...d.data() } as Project)));
+        setPolicies(policiesSnap.docs.map((d) => ({ id: d.id, ...d.data() } as ProjectInsurancePolicy)));
+      } catch (err) {
+        console.error('Error fetching project insurance:', err);
+        if (!cancelled) toast({ title: 'Error', description: 'Failed to fetch project insurance data.', variant: 'destructive' });
+      } finally {
+        if (!cancelled) setIsLoading(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [authLoading, canViewPage, toast]);
 
   if (authLoading || (isLoading && canViewPage)) {
     return (
       <div className="space-y-4">
-        <Skeleton className="h-28 w-full rounded-xl" />
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          {[1, 2, 3].map((i) => <Skeleton key={i} className="h-44 rounded-xl" />)}
-        </div>
+        <Skeleton className="h-24 w-full rounded-xl" />
+        <Skeleton className="h-16 w-full rounded-xl" />
+        <Skeleton className="h-64 w-full rounded-xl" />
       </div>
     );
   }
 
-  if (!canViewPage) {
-    return (
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2"><ShieldAlert className="h-5 w-5 text-destructive" /> Access Denied</CardTitle>
-          <CardDescription>You do not have permission to view project insurance.</CardDescription>
-        </CardHeader>
-      </Card>
-    );
-  }
+  if (!canViewPage) return <AccessDenied what="view project insurance" />;
 
-  // ─── render ───────────────────────────────────────────────────────────────
-
-  return (
-    <div className="space-y-4">
-
-      {/* ── Header ────────────────────────────────────────────────────────── */}
-      <PageHeader
-        icon={HardHat}
-        title="Project Insurance"
-        description="Insurance coverage across projects and properties"
-        actions={
-          <>
-            <Link href="/insurance/project/history">
-              <Button variant="outline" size="sm" className="w-full gap-1.5">
-                <History className="h-3.5 w-3.5" /> History
-              </Button>
-            </Link>
-            <Link href="/insurance/project/all-policies">
-              <Button variant="outline" size="sm" className="w-full gap-1.5">
-                <Files className="h-3.5 w-3.5" /> All Policies
-              </Button>
-            </Link>
-            <Button variant="outline" size="sm" onClick={fetchData} className="gap-1.5" aria-label="Refresh">
-              <RefreshCw className="h-3.5 w-3.5" />
-            </Button>
-            {canAdd && (
-              <Link href="/insurance/project/new">
-                <Button size="sm" className="w-full gap-1.5 bg-emerald-600 hover:bg-emerald-700 text-white">
-                  <Plus className="h-3.5 w-3.5" /> Add Policy
-                </Button>
-              </Link>
-            )}
-          </>
-        }
-      />
-
-      {/* ── Stats strip ────────────────────────────────────────────────────── */}
-      <Card className="overflow-hidden border-border/60">
-        <CardContent className="grid grid-cols-2 gap-2 p-4 sm:grid-cols-4">
-          {[
-            { label: 'Total Assets',      value: totals.assets,   color: 'text-slate-700' },
-            { label: 'Active Policies',   value: totals.active,   color: 'text-emerald-600' },
-            { label: 'Expiring (30d)',    value: totals.expiring, color: 'text-amber-600' },
-            { label: 'Expired',           value: totals.expired,  color: 'text-red-600' },
-          ].map((s) => (
-            <div key={s.label} className="flex flex-col items-center rounded-lg py-2">
-              <span className={cn('text-2xl font-bold', s.color)}>{s.value}</span>
-              <span className="text-[11px] text-muted-foreground">{s.label}</span>
-            </div>
-          ))}
-        </CardContent>
-      </Card>
-
-      {/* ── Search ────────────────────────────────────────────────────────── */}
-      <div className="flex items-center gap-2">
-        <SearchInput value={search} onChange={setSearch} placeholder="Search asset, type, location…" className="flex-1 sm:max-w-sm" />
-        <span className="text-xs text-muted-foreground">{filteredAssets.length} assets</span>
-      </div>
-
-      {/* ── Asset Cards Grid ──────────────────────────────────────────────── */}
-      {filteredAssets.length === 0 ? (
-        <Card>
-          <CardContent className="flex flex-col items-center justify-center gap-3 py-16 text-center">
-            <HardHat className="h-12 w-12 text-muted-foreground/30" />
-            <p className="text-sm font-medium text-slate-600">
-              {search ? 'No assets match your search.' : 'No insured assets yet.'}
-            </p>
-            {!search && canAdd && (
-              <Link href="/insurance/project/new">
-                <Button size="sm" className="gap-1.5">
-                  <Plus className="h-3.5 w-3.5" /> Add First Policy
-                </Button>
-              </Link>
-            )}
-          </CardContent>
-        </Card>
-      ) : (
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          {filteredAssets.map((asset) => {
-            const hasAlert = asset.expiringPolicies > 0 || asset.expiredPolicies > 0;
-            return (
-              <Card
-                key={asset.id}
-                className={cn(
-                  'group cursor-pointer overflow-hidden transition-all duration-200 hover:-translate-y-1 hover:shadow-md border-border/60',
-                  hasAlert && 'ring-1 ring-amber-300'
-                )}
-                onClick={() => router.push(`/insurance/project/${asset.id}`)}
-              >
-                {/* Accent bar */}
-                <div className={cn(
-                  'h-1 w-full bg-gradient-to-r',
-                  asset.expiredPolicies > 0   ? 'from-red-400 to-rose-500' :
-                  asset.expiringPolicies > 0  ? 'from-amber-400 to-orange-400' :
-                  asset.activePolicies > 0    ? 'from-emerald-400 to-teal-500' :
-                  'from-slate-300 to-slate-400'
-                )} />
-
-                <CardContent className="p-4 space-y-3">
-                  {/* Header row */}
-                  <div className="flex items-start justify-between gap-2">
-                    <div className="flex items-center gap-2.5 min-w-0">
-                      <div className={cn(
-                        'flex h-9 w-9 shrink-0 items-center justify-center rounded-xl',
-                        asset.type === 'Project' ? 'bg-emerald-50 text-emerald-600' : 'bg-blue-50 text-blue-600'
-                      )}>
-                        {asset.type === 'Project' ? <HardHat className="h-4 w-4" /> : <Building2 className="h-4 w-4" />}
-                      </div>
-                      <div className="min-w-0">
-                        <p className="font-semibold text-sm leading-tight truncate">{asset.displayName}</p>
-                        <Badge variant="outline" className="text-[10px] mt-0.5">{asset.type}</Badge>
-                      </div>
-                    </div>
-                    <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground/40 group-hover:text-muted-foreground transition-colors mt-1" />
-                  </div>
-
-                  {/* Location */}
-                  {asset.displayLocation && (
-                    <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
-                      <MapPin className="h-3 w-3 shrink-0" />
-                      <span className="truncate">{asset.displayLocation}</span>
-                    </div>
-                  )}
-
-                  {/* Policy stats */}
-                  <div className="grid grid-cols-3 gap-2 pt-1 border-t border-border/40">
-                    <div className="text-center">
-                      <p className="text-lg font-bold text-slate-700">{asset.policyCount}</p>
-                      <p className="text-[10px] text-muted-foreground">Total</p>
-                    </div>
-                    <div className="text-center">
-                      <p className={cn('text-lg font-bold', asset.activePolicies > 0 ? 'text-emerald-600' : 'text-slate-400')}>
-                        {asset.activePolicies}
-                      </p>
-                      <p className="text-[10px] text-muted-foreground">Active</p>
-                    </div>
-                    <div className="text-center">
-                      <p className={cn('text-lg font-bold', asset.expiredPolicies > 0 ? 'text-red-500' : 'text-slate-400')}>
-                        {asset.expiredPolicies}
-                      </p>
-                      <p className="text-[10px] text-muted-foreground">Expired</p>
-                    </div>
-                  </div>
-
-                  {/* Alert badges */}
-                  {(asset.expiringPolicies > 0 || asset.expiredPolicies > 0) && (
-                    <div className="flex flex-wrap gap-1.5 pt-0.5">
-                      {asset.expiringPolicies > 0 && (
-                        <Badge variant="warning" className="gap-1 text-[10px]">
-                          <CalendarClock className="h-2.5 w-2.5" />
-                          {asset.expiringPolicies} expiring soon
-                        </Badge>
-                      )}
-                      {asset.expiredPolicies > 0 && (
-                        <Badge variant="danger" className="gap-1 text-[10px]">
-                          <AlertTriangle className="h-2.5 w-2.5" />
-                          {asset.expiredPolicies} expired
-                        </Badge>
-                      )}
-                    </div>
-                  )}
-                  {asset.policyCount === 0 && (
-                    <p className="text-xs text-muted-foreground text-center py-1">No policies yet</p>
-                  )}
-                  {asset.activePolicies > 0 && asset.expiringPolicies === 0 && asset.expiredPolicies === 0 && (
-                    <div className="flex items-center gap-1.5 text-xs text-emerald-600">
-                      <CheckCircle2 className="h-3.5 w-3.5" />
-                      <span>All policies current</span>
-                    </div>
-                  )}
-                </CardContent>
-              </Card>
-            );
-          })}
-        </div>
-      )}
-
-      {/* Premium due quick link */}
-      {totals.expiring + totals.expired > 0 && (
-        <Link href="/insurance/project/premium-due">
-          <div className="flex items-center justify-between rounded-xl border border-amber-200 bg-amber-50/60 px-4 py-3 cursor-pointer hover:bg-amber-50 transition-colors">
-            <div className="flex items-center gap-2.5">
-              <AlertTriangle className="h-4 w-4 text-amber-600 shrink-0" />
-              <span className="text-sm font-medium text-amber-800">
-                {[
-                  totals.expired > 0 && `${totals.expired} expired`,
-                  totals.expiring > 0 && `${totals.expiring} expiring within 30 days`,
-                ].filter(Boolean).join(' · ')} — renew to keep sites covered
-              </span>
-            </div>
-            <div className="flex items-center gap-1 text-xs text-amber-600 font-medium">
-              View Renewals Due <ChevronRight className="h-3.5 w-3.5" />
-            </div>
-          </div>
-        </Link>
-      )}
-
-    </div>
-  );
+  return <ProjectRegister assets={assets} projects={projects} policies={policies} canAdd={canAdd} />;
 }

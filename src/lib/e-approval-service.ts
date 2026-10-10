@@ -938,6 +938,61 @@ export async function getEApprovalRequest(approvalId: string): Promise<EApproval
   return snapshot.exists() ? ({ id: snapshot.id, ...snapshot.data() } as EApprovalRequest) : null;
 }
 
+/** Everything behind a list of requests that the Excel export writes out. */
+export interface EApprovalExportDetails {
+  steps: EApprovalStep[];
+  history: EApprovalHistoryEntry[];
+  comments: EApprovalComment[];
+  attachments: EApprovalAttachment[];
+}
+
+/**
+ * Steps, activity, comments and attachments for many requests at once — for the Excel export.
+ *
+ * Batched thirty request ids to a query (Firestore's limit for `in`), so four hundred requests cost
+ * about sixty queries rather than sixteen hundred. If a batch is refused — the production rules live
+ * outside the repo, and `in` is not the exact query shape the detail screen is known to be allowed —
+ * that batch falls back to one `approvalId ==` query per request, which is precisely what
+ * `loadEApprovalDetail` runs for a single request and so is known to be permitted. A slow export
+ * beats an export that fails on a rule nobody can see from here.
+ */
+export async function loadEApprovalExportDetails(approvalIds: string[]): Promise<EApprovalExportDetails> {
+  const ids = Array.from(new Set(approvalIds.filter(Boolean)));
+  const chunks: string[][] = [];
+  for (let index = 0; index < ids.length; index += 30) chunks.push(ids.slice(index, index + 30));
+
+  const readCollection = async <T>(name: string): Promise<T[]> => {
+    const rows: T[] = [];
+    // A few batches at a time, not all at once: a register of four hundred requests is fifty-odd
+    // queries per collection, and firing them together competes with the screen's own listeners.
+    for (let start = 0; start < chunks.length; start += 4) {
+      const settled = await Promise.all(
+        chunks.slice(start, start + 4).map(async (chunk) => {
+          try {
+            const snapshot = await getDocs(query(collection(db, name), where('approvalId', 'in', chunk)));
+            return mapDocs<T>(snapshot.docs);
+          } catch {
+            const each = await Promise.all(
+              chunk.map((id) => getDocs(query(collection(db, name), where('approvalId', '==', id)))),
+            );
+            return each.flatMap((snapshot) => mapDocs<T>(snapshot.docs));
+          }
+        }),
+      );
+      settled.forEach((part) => rows.push(...part));
+    }
+    return rows;
+  };
+
+  const [steps, history, comments, attachments] = await Promise.all([
+    readCollection<EApprovalStep>(E_APPROVAL_COLLECTIONS.steps),
+    readCollection<EApprovalHistoryEntry>(E_APPROVAL_COLLECTIONS.history),
+    readCollection<EApprovalComment>(E_APPROVAL_COLLECTIONS.comments),
+    readCollection<EApprovalAttachment>(E_APPROVAL_COLLECTIONS.attachments),
+  ]);
+  return { steps, history, comments, attachments };
+}
+
 export async function listEApprovalSteps(approvalId: string): Promise<EApprovalStep[]> {
   const snapshot = await getDocs(
     query(collection(db, E_APPROVAL_COLLECTIONS.steps), where('approvalId', '==', approvalId)),
