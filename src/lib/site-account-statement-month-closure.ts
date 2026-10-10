@@ -12,6 +12,18 @@
  * requires a reason and leaves a record, because the whole value of the lock is that crossing it is
  * visible.
  *
+ * Months can also close themselves. An automatic rule — "close each month on day D of the next
+ * month" — is not a job that runs on a timer and writes a closure; it is part of how a month's
+ * state is worked out. A month is closed from the moment its trigger day arrives, on every form and
+ * in the database rules alike, with nothing to schedule and no run that can be missed.
+ *
+ * The order of authority, highest first:
+ *   1. A project's own manual entry (close, or reopen).
+ *   2. The organisation's manual entry for that month.
+ *   3. The automatic rule — the project's own if it has one, otherwise the organisation's.
+ * Anything decided by a person outranks anything decided by a rule, and within each, the more
+ * specific scope wins.
+ *
  * Importless on purpose, like the module's other domain files: `node --test` loads this directly,
  * so the rules that decide whether a site can still record work are exercised without Firestore or
  * a browser. It deliberately does not know how to enumerate a financial year — callers pass the
@@ -42,6 +54,40 @@ export interface SASMonthClosure {
   reopenedByName?: string;
   /** Required when reopening. The reason the period had to be unlocked. */
   reopenReason?: string;
+  /**
+   * When a reopened month locks again by itself, `YYYY-MM-DD`. From that day it reads as closed.
+   *
+   * A reopen is nearly always for one correction, and a month left open "until someone remembers"
+   * is how a closed period quietly stops being one. Absent means open until closed by hand.
+   */
+  relockOn?: string;
+}
+
+/**
+ * When months close themselves.
+ *
+ * One trigger, deliberately: the day of the following month on which a month closes. "Close
+ * September on 5 October" is how books are actually closed, and "N days after month end" is the
+ * same rule spelt differently. Capped at the 28th so the day exists in every month.
+ */
+export interface SASAutoCloseRule {
+  /**
+   * Off is meaningful at project level: a project carrying a rule with `enabled: false` never
+   * closes automatically, even while the organisation's rule is on.
+   */
+  enabled: boolean;
+  /** 1–28: the day of the following month on which a month closes. */
+  dayOfNextMonth: number;
+  /**
+   * The first month the rule applies to. Without it, switching the rule on would close the whole
+   * of a site's history in one go — including months still being reconciled.
+   */
+  startPeriod: SASPeriodKey;
+  updatedAt?: unknown;
+  updatedBy?: string;
+  updatedByName?: string;
+  /** Recorded when a change reopened months the previous rule had closed. */
+  changeReason?: string;
 }
 
 /**
@@ -61,12 +107,73 @@ export interface SASMonthClosureSettings {
   months: Record<SASPeriodKey, SASMonthClosure>;
   /** Per-project overrides, keyed by project id and then period. */
   projects: Record<string, Record<SASPeriodKey, SASMonthClosure>>;
+  /** The organisation's automatic rule, or null when there is none. */
+  autoClose: SASAutoCloseRule | null;
+  /** Per-project rules. Present means the project does not follow the organisation's rule. */
+  projectAutoClose: Record<string, SASAutoCloseRule>;
+  /**
+   * The day this snapshot was resolved for, `YYYY-MM-DD`.
+   *
+   * Automatic closing and timed reopens both depend on what day it is. Carrying the date on the
+   * resolved settings — rather than threading a `today` argument through every function here —
+   * means one snapshot answers every question consistently, and a test can pin the date in one
+   * place.
+   */
+  asOf: string;
   updatedAt?: unknown;
   updatedBy?: string;
   updatedByName?: string;
 }
 
-export const EMPTY_MONTH_CLOSURE: SASMonthClosureSettings = { months: {}, projects: {} };
+export const EMPTY_MONTH_CLOSURE: SASMonthClosureSettings = {
+  months: {}, projects: {}, autoClose: null, projectAutoClose: {}, asOf: '',
+};
+
+// ── Calendar helpers ───────────────────────────────────────────────────────────
+// Kept local so this file stays importless. They are small, and the date-policy module that has
+// its own copies cannot be imported by `node --test` without resolving the rest of the app.
+
+const ISO_DAY_RE = /^(\d{4})-(\d{2})-(\d{2})$/;
+
+/** A real calendar date, `YYYY-MM-DD`. */
+export function isIsoDay(value: unknown): value is string {
+  if (typeof value !== 'string') return false;
+  const match = ISO_DAY_RE.exec(value);
+  if (!match) return false;
+  const [, y, m, d] = match.map(Number);
+  return m >= 1 && m <= 12 && d >= 1 && d <= new Date(Date.UTC(y, m, 0)).getUTCDate();
+}
+
+/** Today in the viewer's own timezone — the calendar a site actually works to. */
+export function localToday(now: Date = new Date()): string {
+  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+}
+
+/** Whole calendar days added to a `YYYY-MM-DD` date, in UTC so no offset nudges the day. */
+export function addDays(date: string, days: number): string {
+  const [y, m, d] = date.split('-').map(Number);
+  const shifted = new Date(Date.UTC(y, m - 1, d));
+  shifted.setUTCDate(shifted.getUTCDate() + days);
+  return shifted.toISOString().slice(0, 10);
+}
+
+/** The month after `period`, rolling the year over. */
+export function nextPeriod(period: SASPeriodKey): SASPeriodKey {
+  const [y, m] = period.split('-').map(Number);
+  return m === 12 ? `${y + 1}-01` : `${y}-${String(m + 1).padStart(2, '0')}`;
+}
+
+/** Every period from `from` to `to` inclusive, capped so a bad range cannot run away. */
+function periodSpan(from: SASPeriodKey, to: SASPeriodKey, cap = 600): SASPeriodKey[] {
+  const out: SASPeriodKey[] = [];
+  for (let p = from; p <= to && out.length < cap; p = nextPeriod(p)) out.push(p);
+  return out;
+}
+
+/** The snapshot's day, falling back to the clock when it was resolved without one. */
+function asOfOf(settings: SASMonthClosureSettings): string {
+  return isIsoDay(settings.asOf) ? settings.asOf : localToday();
+}
 
 /** Which calendar an action applies to: the whole organisation, or one project. */
 export const ALL_PROJECTS = 'all' as const;
@@ -106,13 +213,50 @@ function resolvePeriodMap(raw: unknown): Record<SASPeriodKey, SASMonthClosure> {
       reopenedBy: typeof entry.reopenedBy === 'string' ? entry.reopenedBy : undefined,
       reopenedByName: typeof entry.reopenedByName === 'string' ? entry.reopenedByName : undefined,
       reopenReason: typeof entry.reopenReason === 'string' ? entry.reopenReason : undefined,
+      // An empty or malformed date means "no timed relock", never "relock now".
+      relockOn: isIsoDay(entry.relockOn) ? entry.relockOn : undefined,
     };
   }
   return months;
 }
 
+export const AUTO_CLOSE_DAY_MIN = 1;
+export const AUTO_CLOSE_DAY_MAX = 28;
+
+/**
+ * Reads one stored rule, or null when it cannot be trusted.
+ *
+ * An enabled rule needs both a valid day and a valid start month; missing either, it is dropped
+ * rather than repaired, because a guessed start month would close history nobody chose to close.
+ * A disabled rule is kept even when the rest is incomplete — at project level its whole meaning
+ * is "do not close this site automatically", and that survives a missing day.
+ */
+function resolveAutoRule(raw: unknown): SASAutoCloseRule | null {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
+  const rule = raw as Partial<SASAutoCloseRule>;
+  const day = rule.dayOfNextMonth;
+  const dayOk = typeof day === 'number' && Number.isInteger(day)
+    && day >= AUTO_CLOSE_DAY_MIN && day <= AUTO_CLOSE_DAY_MAX;
+  const startOk = isPeriodKey(rule.startPeriod);
+  if (rule.enabled === true && (!dayOk || !startOk)) return null;
+  return {
+    enabled: rule.enabled === true,
+    dayOfNextMonth: dayOk ? day : 5,
+    startPeriod: startOk ? rule.startPeriod! : '',
+    updatedAt: rule.updatedAt,
+    updatedBy: typeof rule.updatedBy === 'string' ? rule.updatedBy : undefined,
+    updatedByName: typeof rule.updatedByName === 'string' ? rule.updatedByName : undefined,
+    changeReason: typeof rule.changeReason === 'string' ? rule.changeReason : undefined,
+  };
+}
+
+/**
+ * @param asOf The day to read the snapshot for. Defaults to today in the viewer's timezone; tests
+ *   and the database-rule mirror pin it.
+ */
 export function resolveMonthClosure(
   stored: Partial<SASMonthClosureSettings> | undefined | null,
+  asOf: string = localToday(),
 ): SASMonthClosureSettings {
   const projects: Record<string, Record<SASPeriodKey, SASMonthClosure>> = {};
   const rawProjects = stored?.projects;
@@ -125,7 +269,57 @@ export function resolveMonthClosure(
       if (Object.keys(periods).length > 0) projects[projectId] = periods;
     }
   }
-  return { months: resolvePeriodMap(stored?.months), projects };
+
+  const projectAutoClose: Record<string, SASAutoCloseRule> = {};
+  const rawRules = stored?.projectAutoClose;
+  if (rawRules && typeof rawRules === 'object' && !Array.isArray(rawRules)) {
+    for (const [projectId, value] of Object.entries(rawRules)) {
+      const rule = projectId ? resolveAutoRule(value) : null;
+      if (rule) projectAutoClose[projectId] = rule;
+    }
+  }
+
+  return {
+    months: resolvePeriodMap(stored?.months),
+    projects,
+    autoClose: resolveAutoRule(stored?.autoClose),
+    projectAutoClose,
+    asOf: isIsoDay(asOf) ? asOf : localToday(),
+  };
+}
+
+// ── Automatic closing ──────────────────────────────────────────────────────────
+
+/** The day a month closes under a rule: day D of the following month. */
+export function autoCloseDateFor(period: SASPeriodKey, rule: Pick<SASAutoCloseRule, 'dayOfNextMonth'>): string {
+  return `${nextPeriod(period)}-${String(rule.dayOfNextMonth).padStart(2, '0')}`;
+}
+
+/**
+ * The rule that governs a project: its own if it has one, otherwise the organisation's.
+ *
+ * A project's own rule is used even when disabled — that is how a single site opts out.
+ */
+export function autoRuleFor(
+  settings: SASMonthClosureSettings,
+  projectId?: string,
+): { rule: SASAutoCloseRule; scope: 'project' | 'all' } | null {
+  const own = projectId ? settings.projectAutoClose[projectId] : undefined;
+  if (own) return { rule: own, scope: 'project' };
+  if (settings.autoClose) return { rule: settings.autoClose, scope: 'all' };
+  return null;
+}
+
+/** Whether the rule reaches this month at all — on, and not before its start month. */
+function ruleCovers(rule: SASAutoCloseRule, period: SASPeriodKey): boolean {
+  return rule.enabled && isPeriodKey(rule.startPeriod) && period >= rule.startPeriod;
+}
+
+/** One manual entry, read for the snapshot's day: closed, or reopened with a lock date passed. */
+function manualState(entry: SASMonthClosure, asOf: string): { closed: boolean; relocked: boolean } {
+  if (entry.closed) return { closed: true, relocked: false };
+  if (entry.relockOn && asOf >= entry.relockOn) return { closed: true, relocked: true };
+  return { closed: false, relocked: false };
 }
 
 /**
@@ -137,8 +331,19 @@ export function resolveMonthClosure(
  */
 export interface EffectiveClosure {
   closed: boolean;
-  source: 'all' | 'project' | 'none';
+  /**
+   * What decided it: a manual entry for this project, a manual entry for every project, the
+   * automatic rule, or nothing at all.
+   */
+  source: 'all' | 'project' | 'auto' | 'none';
+  /** The manual entry behind the answer, when there is one. */
   record: SASMonthClosure | null;
+  /** For `auto`, and for an open month a rule will close later: whose rule it is. */
+  autoScope?: 'project' | 'all';
+  /** For `auto`: the day it closed. For an open month under a rule: the day it will. */
+  closesOn?: string;
+  /** True when a reopened month has passed its lock-again date and is closed once more. */
+  relocked?: boolean;
 }
 
 export function effectiveClosure(
@@ -146,13 +351,35 @@ export function effectiveClosure(
   period: SASPeriodKey,
   projectId?: string,
 ): EffectiveClosure {
-  const own = projectId ? settings.projects[projectId]?.[period] : undefined;
-  // Present and explicitly false is a real answer — it is how a single site is let back in while
-  // the organisation's month stays shut — so this tests for presence, not for truthiness.
-  if (own) return { closed: own.closed === true, source: 'project', record: own };
+  const asOf = asOfOf(settings);
 
+  // 1–2. Manual entries, the project's before the organisation's. Present-and-reopened is a real
+  // answer — it is how one site is let back in while the rest stay shut — so presence is tested,
+  // not truthiness.
+  const own = projectId ? settings.projects[projectId]?.[period] : undefined;
+  if (own) {
+    const state = manualState(own, asOf);
+    return { closed: state.closed, source: 'project', record: own, relocked: state.relocked };
+  }
   const all = settings.months[period];
-  if (all) return { closed: all.closed === true, source: 'all', record: all };
+  if (all) {
+    const state = manualState(all, asOf);
+    return { closed: state.closed, source: 'all', record: all, relocked: state.relocked };
+  }
+
+  // 3. The automatic rule.
+  const governing = autoRuleFor(settings, projectId);
+  if (governing && ruleCovers(governing.rule, period)) {
+    const closesOn = autoCloseDateFor(period, governing.rule);
+    const closed = asOf >= closesOn;
+    return {
+      closed,
+      source: closed ? 'auto' : 'none',
+      record: null,
+      autoScope: governing.scope,
+      closesOn,
+    };
+  }
 
   return { closed: false, source: 'none', record: null };
 }
@@ -184,23 +411,35 @@ export function closedPeriods(
     ...Object.keys(settings.months),
     ...(projectId ? Object.keys(settings.projects[projectId] ?? {}) : []),
   ]);
+  // Automatically closed months have no stored entry, so they are found by walking the rule's
+  // span up to the snapshot's month rather than by reading keys.
+  const governing = autoRuleFor(settings, projectId);
+  if (governing && ruleCovers(governing.rule, governing.rule.startPeriod)) {
+    for (const period of periodSpan(governing.rule.startPeriod, asOfOf(settings).slice(0, 7))) {
+      keys.add(period);
+    }
+  }
   return [...keys].filter(period => isMonthClosed(settings, period, projectId)).sort();
 }
 
 /**
- * Projects that depart from the organisation's calendar for this period.
+ * Projects whose state for this period differs from the organisation's.
  *
  * Shown on the all-projects view so closing or reopening everywhere never silently hides the fact
- * that two sites are somewhere else.
+ * that two sites are somewhere else. A project counts whether it differs by a manual entry or by
+ * carrying its own automatic rule — what matters is that its answer is not the organisation's.
  */
 export function projectsWithOverride(
   settings: SASMonthClosureSettings,
   period: SASPeriodKey,
 ): { projectId: string; closed: boolean }[] {
-  const all = settings.months[period]?.closed === true;
-  return Object.entries(settings.projects)
-    .filter(([, periods]) => periods[period])
-    .map(([projectId, periods]) => ({ projectId, closed: periods[period].closed === true }))
+  const all = isMonthClosed(settings, period);
+  const candidates = new Set<string>([
+    ...Object.entries(settings.projects).filter(([, periods]) => periods[period]).map(([id]) => id),
+    ...Object.keys(settings.projectAutoClose),
+  ]);
+  return [...candidates]
+    .map(projectId => ({ projectId, closed: isMonthClosed(settings, period, projectId) }))
     .filter(entry => entry.closed !== all)
     .sort((a, b) => a.projectId.localeCompare(b.projectId));
 }
@@ -318,6 +557,19 @@ const RECORD_LABEL: Record<SASClosureRecord, string> = {
 };
 
 /**
+ * "which has been closed", said precisely.
+ *
+ * A clerk told only that a month is closed goes looking for who closed it. "Closed automatically
+ * on 5 October" tells them nobody did, and that the answer is a reopen rather than a phone call.
+ */
+function closedClause(settings: SASMonthClosureSettings, period: SASPeriodKey, projectId?: string): string {
+  const effect = effectiveClosure(settings, period, projectId);
+  if (effect.source === 'auto') return `which closed automatically on ${effect.closesOn}`;
+  if (effect.relocked) return 'which was reopened for a while and has locked again';
+  return 'which has been closed';
+}
+
+/**
  * Checks one entry date against the closed periods.
  *
  * Runs after the rolling Date Control window, not instead of it: the two answer different
@@ -346,7 +598,7 @@ export function validateAgainstClosure({
   if (!isPeriodKey(period) || !isMonthClosed(settings, period, projectId)) return { ok: true };
   return {
     ok: false,
-    reason: `${RECORD_LABEL[kind]} falls in ${period}, which has been closed. `
+    reason: `${RECORD_LABEL[kind]} falls in ${period}, ${closedClause(settings, period, projectId)}. `
       + 'The month must be reopened before anything can be recorded against it.',
   };
 }
@@ -426,9 +678,10 @@ export function validateRecordChange({
   const destinationProject = nextProjectId ?? originalProjectId;
 
   if (isRecordLocked({ date: originalDate, settings, projectId: originalProjectId })) {
+    const period = originalDate!.slice(0, 7);
     return {
       ok: false,
-      reason: `This ${noun} is dated in ${originalDate!.slice(0, 7)}, which has been closed. `
+      reason: `This ${noun} is dated in ${period}, ${closedClause(settings, period, originalProjectId)}. `
         + `A ${noun} in a closed month cannot be ${ACTION_LABEL[action]} by anyone. `
         + 'The month has to be reopened first.',
     };
@@ -487,4 +740,137 @@ export function periodsToBulkClose(
   return periods
     .filter(period => period <= through && canClosePeriod(period, settings, currentPeriodKey, projectId).ok)
     .sort();
+}
+
+// ── Editing automatic rules ────────────────────────────────────────────────────
+
+/** Common trigger days, so the usual choice is one click. */
+export const AUTO_CLOSE_DAY_PRESETS = [1, 3, 5, 7, 10, 15] as const;
+
+/** Whether a project carries its own rule, which "follow all projects" would remove. */
+export function hasOwnAutoRule(settings: SASMonthClosureSettings, projectId: string): boolean {
+  return Boolean(settings.projectAutoClose[projectId]);
+}
+
+/** A trigger day as typed, made whole and kept inside the 1–28 every month has. */
+export function clampAutoCloseDay(value: unknown): number {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) return AUTO_CLOSE_DAY_MIN;
+  return Math.min(AUTO_CLOSE_DAY_MAX, Math.max(AUTO_CLOSE_DAY_MIN, Math.floor(parsed)));
+}
+
+export function validateAutoCloseRule(rule: Pick<SASAutoCloseRule, 'enabled' | 'dayOfNextMonth' | 'startPeriod'>): ClosureCheck {
+  if (!rule.enabled) return { ok: true };
+  if (!Number.isInteger(rule.dayOfNextMonth)
+    || rule.dayOfNextMonth < AUTO_CLOSE_DAY_MIN || rule.dayOfNextMonth > AUTO_CLOSE_DAY_MAX) {
+    return { ok: false, reason: `Pick a day between ${AUTO_CLOSE_DAY_MIN} and ${AUTO_CLOSE_DAY_MAX}.` };
+  }
+  if (!isPeriodKey(rule.startPeriod)) {
+    return { ok: false, reason: 'Pick the first month the rule should apply to.' };
+  }
+  return { ok: true };
+}
+
+/** One line describing a rule, for cards and confirmations. */
+export function describeAutoRule(rule: SASAutoCloseRule | null | undefined): string {
+  if (!rule) return 'No automatic closing';
+  if (!rule.enabled) return 'Never closes automatically';
+  return `Closes on day ${rule.dayOfNextMonth} of the following month, from ${rule.startPeriod}`;
+}
+
+/**
+ * The settings as they would be with a different rule in one scope.
+ *
+ * `next` of null removes the rule: for a project, it goes back to following the organisation's;
+ * for the organisation, there is simply no rule.
+ */
+export function withAutoRule(
+  settings: SASMonthClosureSettings,
+  projectId: string | undefined,
+  next: SASAutoCloseRule | null,
+): SASMonthClosureSettings {
+  if (!projectId) return { ...settings, autoClose: next };
+  const projectAutoClose = { ...settings.projectAutoClose };
+  if (next) projectAutoClose[projectId] = next;
+  else delete projectAutoClose[projectId];
+  return { ...settings, projectAutoClose };
+}
+
+export interface AutoRuleChangePreview {
+  /** Months that are open now and would close the moment the change is saved. */
+  closesNow: SASPeriodKey[];
+  /**
+   * Months the current rule has closed that the new one would open again.
+   *
+   * Not empty means the change is a reopen in disguise — turning a rule off, moving its day later
+   * or its start month later all do it — and is held to the same standard as a reopen: the
+   * permission, and a written reason.
+   */
+  reopens: SASPeriodKey[];
+}
+
+/**
+ * What saving a rule change would do, read on the calendar of the scope being edited.
+ *
+ * On the all-projects scope this is also exactly what happens to every project that follows the
+ * organisation: those with their own rule or a manual entry for a month are not affected by it.
+ */
+export function previewAutoRuleChange(
+  settings: SASMonthClosureSettings,
+  projectId: string | undefined,
+  next: SASAutoCloseRule | null,
+): AutoRuleChangePreview {
+  const after = withAutoRule(settings, projectId, next);
+  const starts = [autoRuleFor(settings, projectId), autoRuleFor(after, projectId)]
+    .map(governing => governing?.rule.startPeriod)
+    .filter((period): period is string => isPeriodKey(period))
+    .sort();
+  if (starts.length === 0) return { closesNow: [], reopens: [] };
+
+  const closesNow: SASPeriodKey[] = [];
+  const reopens: SASPeriodKey[] = [];
+  for (const period of periodSpan(starts[0], asOfOf(settings).slice(0, 7))) {
+    const before = isMonthClosed(settings, period, projectId);
+    const later = isMonthClosed(after, period, projectId);
+    if (!before && later) closesNow.push(period);
+    if (before && !later) reopens.push(period);
+  }
+  return { closesNow, reopens };
+}
+
+/**
+ * Open months in a list that a rule will close later, with the day each one closes.
+ *
+ * Drives the "closes automatically on 5 Nov" line on a month card, so nobody is surprised.
+ */
+export function upcomingAutoCloses(
+  periods: SASPeriodKey[],
+  settings: SASMonthClosureSettings,
+  projectId?: string,
+): Record<SASPeriodKey, string> {
+  const out: Record<SASPeriodKey, string> = {};
+  for (const period of periods) {
+    const effect = effectiveClosure(settings, period, projectId);
+    if (!effect.closed && effect.source === 'none' && effect.closesOn) out[period] = effect.closesOn;
+  }
+  return out;
+}
+
+// ── Reopening for a limited time ───────────────────────────────────────────────
+
+/**
+ * How long a reopen lasts before the month locks again by itself. `null` keeps it open until
+ * someone closes it by hand.
+ */
+export const RELOCK_PRESETS = [
+  { days: 1, label: 'Until tomorrow' },
+  { days: 3, label: '3 days' },
+  { days: 7, label: '1 week' },
+  { days: null, label: 'Until closed by hand' },
+] as const;
+
+/** The lock-again date for a reopen made on `asOf` lasting `days`; undefined for no limit. */
+export function relockDateFor(asOf: string, days: number | null): string | undefined {
+  if (days === null || !Number.isFinite(days) || days < 1) return undefined;
+  return addDays(asOf, Math.floor(days));
 }

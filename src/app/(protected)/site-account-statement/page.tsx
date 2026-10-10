@@ -2,14 +2,14 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
-  addDoc, collection, doc, getDocs, orderBy, query, serverTimestamp, updateDoc,
+  addDoc, collection, doc, getDocs, orderBy, query, serverTimestamp, updateDoc, where,
 } from 'firebase/firestore';
 import { ref as storageRef, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { storage } from '@/lib/firebase-storage';
 import { db } from '@/lib/firebase';
 import {
   formatINR, PAYMENT_MODES, SAS_COLLECTIONS,
-  type SASAttachment, type SASBudget, type SASCategory, type SASExpense, type SASPayment, type SASProject,
+  type SASAttachment, type SASBudget, type SASBudgetAllocation, type SASCategory, type SASExpense, type SASPayment, type SASProject,
 } from '@/lib/site-account-statement';
 import { runBudgetAlertChecks } from '@/lib/sas-budget-alerts';
 import { slugify } from '@/lib/print-table-report';
@@ -35,12 +35,15 @@ import { Label } from '@/components/ui/label';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { GraphicalReports } from '@/components/site-account-statement/graphical-reports';
+import { ProjectComparisonReport } from '@/components/site-account-statement/project-comparison-report';
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { cn } from '@/lib/utils';
 import Link from 'next/link';
 import {
   AlertTriangle, ArrowDownRight, ArrowUpRight, BarChart3,
-  BookOpen, Building2, Download, File, FileText, Loader2, Paperclip, Plus, Printer, Receipt,
+  BookOpen, Building2, Download, File, FileText, GitCompare, LayoutDashboard, LineChart, Loader2, Paperclip, Plus, Printer, Receipt,
   Target, TrendingDown, TrendingUp, Wallet, X,
 } from 'lucide-react';
 import ExcelJS from 'exceljs';
@@ -677,6 +680,7 @@ export default function SiteAccountDashboardPage() {
   const [expenses, setExpenses] = useState<SASExpense[]>([]);
   const [categories, setCategories] = useState<SASCategory[]>([]);
   const [budgets, setBudgets] = useState<SASBudget[]>([]);
+  const [allocations, setAllocations] = useState<SASBudgetAllocation[]>([]);
   const [loading, setLoading] = useState(true);
   /** True when the ledger scan hit its cap, so the figures below are incomplete and say so. */
   const [ledgerTruncated, setLedgerTruncated] = useState(false);
@@ -721,6 +725,22 @@ export default function SiteAccountDashboardPage() {
     } finally {
       setLoading(false);
     }
+
+    /*
+     * Verified budget allocations, which the Site Fund Budget page counts as monthly budget.
+     *
+     * Without them this dashboard's budget figures disagreed with that page for any project
+     * funded through the allocation ledger — the same project, two different "budget" numbers.
+     * Loaded separately and allowed to fail: the collection does not exist until the first
+     * allocation is recorded, and its absence must not blank the dashboard.
+     */
+    try {
+      const allocSnap = await getDocs(query(
+        collection(db, SAS_COLLECTIONS.budgetAllocations),
+        where('status', '==', 'approved'),
+      ));
+      setAllocations(allocSnap.docs.map(d => ({ id: d.id, ...d.data() } as SASBudgetAllocation)));
+    } catch { /* no allocations yet */ }
   }
 
   /*
@@ -767,17 +787,28 @@ export default function SiteAccountDashboardPage() {
       .reduce((sum, b) => sum + (b.budgetAmount || 0), 0);
     if (fySum > 0) return { amount: fySum, source: 'fy-sum' as const };
 
+    // Verified allocations are monthly budget too, exactly as the Site Fund Budget page counts them.
     const monthSum = budgets
       .filter(b => b.projectId === projectId && b.budgetType === 'monthly')
-      .reduce((sum, b) => sum + (b.budgetAmount || 0), 0);
+      .reduce((sum, b) => sum + (b.budgetAmount || 0), 0)
+      + allocations
+        .filter(a => a.projectId === projectId && a.status === 'approved')
+        .reduce((sum, a) => sum + (Number(a.amount) || 0), 0);
     return { amount: monthSum, source: 'month-sum' as const };
-  }, [budgets]);
+  }, [budgets, allocations]);
 
   // All enabled projects for admin overview
   const enabledProjects = useMemo(
     () => projects.filter(p => p.enabledForSiteAccount && p.status === 'Active'),
     [projects]
   );
+
+  /*
+   * The projects the charts may show: everything for an administrator, otherwise the user's own.
+   * The ledger already loaded is scoped the same way, so the charts can never draw a project the
+   * user could not open.
+   */
+  const chartProjects = canViewAll ? enabledProjects : myProjects;
 
   // Filters for admin overview
   const [filterSearch, setFilterSearch] = useState('');
@@ -1061,6 +1092,26 @@ export default function SiteAccountDashboardPage() {
     <div className="space-y-6">
       <PageHeader eyebrow="Site Account Statement" title="Dashboard" />
 
+      {/*
+        * Two views of the same data. The tab strip only appears when there is something to chart —
+        * a user with no projects sees the empty state below, not a tab that leads to nothing.
+        */}
+      <Tabs defaultValue="overview" className="space-y-6">
+      {chartProjects.length > 0 && (
+        <TabsList>
+          <TabsTrigger value="overview" className="gap-1.5">
+            <LayoutDashboard className="h-4 w-4" /> Overview
+          </TabsTrigger>
+          <TabsTrigger value="charts" className="gap-1.5">
+            <LineChart className="h-4 w-4" /> Graphical reports
+          </TabsTrigger>
+          <TabsTrigger value="compare" className="gap-1.5">
+            <GitCompare className="h-4 w-4" /> Project comparison
+          </TabsTrigger>
+        </TabsList>
+      )}
+
+      <TabsContent value="overview" className="mt-0 space-y-6">
       {/* The dashboard totals every record it holds, so it has to say when it could not hold
           them all rather than present a partial sum as the whole picture. */}
       {ledgerTruncated && (
@@ -1258,6 +1309,27 @@ export default function SiteAccountDashboardPage() {
           </CardContent>
         </Card>
       )}
+      </TabsContent>
+
+      {chartProjects.length > 0 && (
+        <TabsContent value="charts" className="mt-0">
+          <GraphicalReports
+            projects={chartProjects}
+            expenses={expenses}
+            payments={payments}
+            budgets={budgets}
+            allocations={allocations}
+            truncated={ledgerTruncated}
+          />
+        </TabsContent>
+      )}
+
+      {chartProjects.length > 0 && (
+        <TabsContent value="compare" className="mt-0">
+          <ProjectComparisonReport projects={chartProjects} expenses={expenses} truncated={ledgerTruncated} />
+        </TabsContent>
+      )}
+      </Tabs>
     </div>
   );
 }

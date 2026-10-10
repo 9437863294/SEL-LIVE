@@ -91,7 +91,15 @@ export interface DateControl {
  */
 export function useDateControl(kind: SASDatedRecord): DateControl {
   const [settings, setSettings] = useState<SASDateControlSettings>(() => resolveDateControl(null));
-  const [closure, setClosure] = useState<SASMonthClosureSettings>(() => resolveMonthClosure(null));
+  /*
+   * The closure document as stored, not as resolved.
+   *
+   * Months now close themselves on their trigger day, so the same document means different things
+   * on different days. Keeping the raw data and resolving it for the current day — below, and
+   * again at the moment of each check — is what lets a page left open overnight lock September at
+   * midnight on the 5th without anything having to be written.
+   */
+  const [closureRaw, setClosureRaw] = useState<Partial<SASMonthClosureSettings> | null>(null);
   const [windowState, setWindowState] = useState<RuleState>('loading');
   const [closureState, setClosureState] = useState<RuleState>('loading');
 
@@ -137,7 +145,7 @@ export function useDateControl(kind: SASDatedRecord): DateControl {
     return onSnapshot(
       doc(db, SAS_COLLECTIONS.settings, SAS_MONTH_CLOSURE_DOC_ID),
       (snapshot) => {
-        setClosure(resolveMonthClosure(snapshot.data() as Partial<SASMonthClosureSettings> | undefined));
+        setClosureRaw((snapshot.data() as Partial<SASMonthClosureSettings> | undefined) ?? null);
         setClosureState('ready');
       },
       () => setClosureState('error'),
@@ -146,6 +154,9 @@ export function useDateControl(kind: SASDatedRecord): DateControl {
 
   const loading = windowState === 'loading' || closureState === 'loading';
   const unavailable = windowState === 'error' || closureState === 'error';
+
+  /** The closure as it stands today, refreshed with the minute tick so padlocks appear on time. */
+  const closure = useMemo(() => resolveMonthClosure(closureRaw, today), [closureRaw, today]);
 
   /** The refusal to give while the rules are not known, or null once they are. */
   function unresolved(): DateCheck | null {
@@ -172,11 +183,14 @@ export function useDateControl(kind: SASDatedRecord): DateControl {
   function check(date: string, projectId?: string): DateCheck {
     const pending = unresolved();
     if (pending) return pending;
+    const now = todayLocal();
     // The rolling window first: when both would reject, its message is the more actionable one,
     // since it names a date the person can actually use.
-    const windowCheck = validateEntryDate({ date, settings, kind, today: todayLocal() });
+    const windowCheck = validateEntryDate({ date, settings, kind, today: now });
     if (!windowCheck.ok) return windowCheck;
-    return validateAgainstClosure({ date, settings: closure, kind, projectId });
+    // Resolved for this exact moment rather than taken from the memo, so a submit made a few
+    // seconds after midnight on a trigger day is judged against the month as it now is.
+    return validateAgainstClosure({ date, settings: resolveMonthClosure(closureRaw, now), kind, projectId });
   }
 
   return {
@@ -189,7 +203,8 @@ export function useDateControl(kind: SASDatedRecord): DateControl {
       const pending = unresolved();
       if (pending) return pending;
       return validateRecordChange({
-        originalDate, nextDate, settings: closure, kind, action, originalProjectId, nextProjectId,
+        originalDate, nextDate, settings: resolveMonthClosure(closureRaw, todayLocal()),
+        kind, action, originalProjectId, nextProjectId,
       });
     },
     closedPeriodsFor: (projectId) => listClosedPeriods(closure, projectId),

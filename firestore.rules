@@ -345,11 +345,52 @@ service cloud.firestore {
         && sasMonthIsClosedIn(get(sasClosurePath()).data, period, projectId);
     }
 
+    /*
+     * The same order of authority the forms use (site-account-statement-month-closure.ts):
+     *   1. the project's manual entry, 2. the organisation's manual entry,
+     *   3. the automatic rule — the project's own if it has one, otherwise the organisation's.
+     * A manual entry is tested for presence, not truthiness: present-and-reopened is a real answer.
+     */
     function sasMonthIsClosedIn(closure, period, projectId) {
-      let own = closure.get('projects', {}).get(projectId, {});
-      return own.get(period, {}).keys().hasAny(['closed'])
-        ? own[period].get('closed', false) == true
-        : closure.get('months', {}).get(period, {}).get('closed', false) == true;
+      let own = closure.get('projects', {}).get(projectId, {}).get(period, {});
+      let all = closure.get('months', {}).get(period, {});
+      return own.keys().hasAny(['closed'])
+        ? sasManualClosed(own)
+        : all.keys().hasAny(['closed'])
+          ? sasManualClosed(all)
+          : sasAutoClosed(sasAutoRuleFor(closure, projectId), period);
+    }
+
+    /** A manual entry: closed, or reopened and past its lock-again date. */
+    function sasManualClosed(entry) {
+      return entry.get('closed', false) == true
+        || (sasIsIsoDate(entry.get('relockOn', ''))
+            && request.time >= sasDayStart(entry.get('relockOn', '')) + duration.value(1, 'd'));
+    }
+
+    /** The project's own rule when it has one — a disabled one included, which is how it opts out. */
+    function sasAutoRuleFor(closure, projectId) {
+      let own = closure.get('projectAutoClose', {}).get(projectId, {});
+      return own.keys().hasAny(['enabled']) ? own : closure.get('autoClose', {});
+    }
+
+    /*
+     * Closed from day D of the month after `period`. Rules see only UTC, so — as with the date
+     * window — this carries a day of slack and never closes before the form does; the form is
+     * exact to the user's own midnight. A rule missing its day or start month closes nothing,
+     * matching how the app drops a rule it cannot trust.
+     */
+    function sasAutoClosed(rule, period) {
+      let y = int(period[0:4]);
+      let m = int(period[5:7]);
+      let day = rule.get('dayOfNextMonth', 0);
+      let start = rule.get('startPeriod', '');
+      return rule.get('enabled', false) == true
+        && day is number && day >= 1 && day <= 28
+        && start is string && start.size() == 7
+        && period >= start
+        && request.time >= timestamp.date(m == 12 ? y + 1 : y, m == 12 ? 1 : m + 1, int(day))
+                           + duration.value(1, 'd');
     }
 
     /*

@@ -49,9 +49,14 @@ test('a period key is a year and a real month', () => {
 // ── Reading what is stored ────────────────────────────────────────────────────
 
 test('nothing stored resolves to nothing closed', () => {
-  assert.deepEqual(resolveMonthClosure(null), EMPTY_MONTH_CLOSURE);
+  // Same as the empty constant apart from the day it was read for.
+  assert.deepEqual(
+    resolveMonthClosure(null, '2026-10-10'),
+    { ...EMPTY_MONTH_CLOSURE, asOf: '2026-10-10' },
+  );
   assert.deepEqual(resolveMonthClosure(undefined).months, {});
   assert.deepEqual(resolveMonthClosure({}).months, {});
+  assert.equal(resolveMonthClosure({}).autoClose, null);
 });
 
 test('a stored closure is read back with its audit fields', () => {

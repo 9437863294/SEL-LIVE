@@ -6,7 +6,7 @@ import {
 } from 'firebase/firestore';
 import {
   AlertTriangle, Building2, CalendarRange, CheckCircle2, ChevronLeft, ChevronRight, Clock,
-  Loader2, Lock, LockOpen, ShieldAlert, ShieldCheck, Undo2,
+  Loader2, Lock, LockOpen, ShieldAlert, ShieldCheck, Timer, Undo2,
 } from 'lucide-react';
 import { db } from '@/lib/firebase';
 import { PageHeader } from '@/components/shared/page-header';
@@ -27,15 +27,22 @@ import {
   effectiveClosure,
   isAllProjectsScope,
   monthState,
+  addDays,
+  localToday,
   periodsToBulkClose,
   projectsWithOverride,
+  relockDateFor,
+  RELOCK_PRESETS,
   resolveMonthClosure,
   summariseClosure,
+  upcomingAutoCloses,
   validateReopenReason,
   type ClosureScope,
   type MonthState,
+  type SASAutoCloseRule,
   type SASMonthClosureSettings,
 } from '@/lib/site-account-statement-month-closure';
+import { AutoCloseRuleCard } from '@/components/site-account-statement/auto-close-rule-card';
 import {
   currentPeriod, fyLabelOf, fyPeriods, fyStartOf, periodLabel,
 } from '@/lib/site-account-statement-period-range';
@@ -103,7 +110,21 @@ export default function SiteAccountMonthClosureSettings() {
   /** `ALL_PROJECTS`, or one project id. Everything on this screen is read through it. */
   const [scope, setScope] = useState<ClosureScope>(ALL_PROJECTS);
   const [projects, setProjects] = useState<SASProject[]>([]);
-  const [closure, setClosure] = useState<SASMonthClosureSettings>(() => resolveMonthClosure(null));
+  /*
+   * The stored document, resolved for today on every render. Months close themselves on their
+   * trigger day, so the same document reads differently tomorrow; the minute tick below makes a
+   * screen left open roll over at midnight like the forms do.
+   */
+  const [closureRaw, setClosureRaw] = useState<Partial<SASMonthClosureSettings> | null>(null);
+  const [today, setToday] = useState(localToday);
+  useEffect(() => {
+    const id = setInterval(() => {
+      const next = localToday();
+      setToday(prev => (prev === next ? prev : next));
+    }, 60_000);
+    return () => clearInterval(id);
+  }, []);
+  const closure = useMemo(() => resolveMonthClosure(closureRaw, today), [closureRaw, today]);
   const [loading, setLoading] = useState(true);
   const [contents, setContents] = useState<Record<string, MonthContents>>({});
   const [contentsLoading, setContentsLoading] = useState(false);
@@ -114,6 +135,8 @@ export default function SiteAccountMonthClosureSettings() {
   const [closeNote, setCloseNote] = useState('');
   const [reopenTarget, setReopenTarget] = useState<string | null>(null);
   const [reopenReason, setReopenReason] = useState('');
+  /** Days until a reopened month locks again; null keeps it open until closed by hand. */
+  const [reopenDays, setReopenDays] = useState<number | null>(3);
   const [bulkThrough, setBulkThrough] = useState<string | null>(null);
 
   /*
@@ -152,7 +175,7 @@ export default function SiteAccountMonthClosureSettings() {
       onSnapshot(
         doc(db, SAS_COLLECTIONS.settings, SAS_MONTH_CLOSURE_DOC_ID),
         snapshot => {
-          setClosure(resolveMonthClosure(snapshot.data() as Partial<SASMonthClosureSettings> | undefined));
+          setClosureRaw((snapshot.data() as Partial<SASMonthClosureSettings> | undefined) ?? null);
           setLoading(false);
         },
         () => setLoading(false),
@@ -275,8 +298,9 @@ export default function SiteAccountMonthClosureSettings() {
             closedByName: user?.name ?? '',
             note: closeNote.trim(),
             // Cleared, so a month closed again after a reopen does not still show the old reason
-            // as if it were current.
+            // — or carry a lock-again date that no longer means anything — as if it were current.
             reopenReason: '',
+            relockOn: '',
           },
         },
         'Close SAS Month',
@@ -307,6 +331,7 @@ export default function SiteAccountMonthClosureSettings() {
       return;
     }
     setBusy(period);
+    const relockOn = relockDateFor(today, reopenDays);
     try {
       await writeClosure(
         {
@@ -318,14 +343,18 @@ export default function SiteAccountMonthClosureSettings() {
             reopenedBy: user?.id ?? '',
             reopenedByName: user?.name ?? '',
             reopenReason: reopenReason.trim(),
+            // Written explicitly either way, so a reopen with no limit clears any earlier one.
+            relockOn: relockOn ?? '',
           },
         },
         'Reopen SAS Month',
-        { period, reason: reopenReason.trim() },
+        { period, reason: reopenReason.trim(), relockOn: relockOn ?? 'none' },
       );
       toast({
         title: `${periodLabel(period)} reopened`,
-        description: 'Entries dated in this month can be recorded again. The reason has been logged.',
+        description: relockOn
+          ? `Entries can be recorded until it locks again on ${relockOn}. The reason has been logged.`
+          : 'Entries dated in this month can be recorded again. The reason has been logged.',
       });
       setReopenTarget(null);
       setReopenReason('');
@@ -369,6 +398,52 @@ export default function SiteAccountMonthClosureSettings() {
     }
   }
 
+  /**
+   * Saves the automatic rule for the scope in view.
+   *
+   * The card has already confirmed with the user what the change does, and collected a reason if
+   * it reopens anything. This writes it, under the organisation's rule or the project's, and
+   * removes a project's rule entirely when it goes back to following the organisation.
+   */
+  async function handleSaveRule(next: SASAutoCloseRule | null, changeReason: string) {
+    const stamp = {
+      updatedAt: serverTimestamp(),
+      updatedBy: user?.id ?? '',
+      updatedByName: user?.name ?? '',
+    };
+    const value = next
+      ? {
+          enabled: next.enabled,
+          dayOfNextMonth: next.dayOfNextMonth,
+          startPeriod: next.startPeriod,
+          // Explicit, so an earlier reason does not linger on a later, unrelated change.
+          changeReason,
+          ...stamp,
+        }
+      : deleteField();
+    try {
+      await setDoc(
+        doc(db, SAS_COLLECTIONS.settings, SAS_MONTH_CLOSURE_DOC_ID),
+        {
+          ...(scopeProject
+            ? { projectAutoClose: { [scopeProject]: value } }
+            : { autoClose: value }),
+          ...stamp,
+        },
+        { merge: true },
+      );
+      void log('Change SAS Auto-Close Rule', {
+        scope: scopeProject ? scopeName : 'All projects',
+        rule: next ? `${next.enabled ? 'on' : 'off'} · day ${next.dayOfNextMonth} · from ${next.startPeriod}` : 'follows all projects',
+        ...(changeReason ? { reason: changeReason } : {}),
+      });
+      toast({ title: 'Automatic closing saved', description: `For ${scopeProject ? scopeName : 'all projects'}.` });
+    } catch (e: any) {
+      toast({ title: 'Error', description: e.message, variant: 'destructive' });
+      throw e;
+    }
+  }
+
   async function handleBulkClose(through: string) {
     const targets = periodsToBulkClose(periods, through, closure, now, scopeProject);
     if (targets.length === 0) {
@@ -384,6 +459,7 @@ export default function SiteAccountMonthClosureSettings() {
           closedBy: user?.id ?? '', closedByName: user?.name ?? '',
           note: `Closed with ${targets.length} months through ${periodLabel(through)}.`,
           reopenReason: '',
+          relockOn: '',
         }])),
         'Close SAS Months (bulk)',
         { through, count: targets.length, periods: targets.join(', ') },
@@ -426,6 +502,9 @@ export default function SiteAccountMonthClosureSettings() {
     ? periodsToBulkClose(periods, bulkThrough, closure, now, scopeProject)
     : [];
   const closeContents = closeTarget ? contents[closeTarget] ?? EMPTY_CONTENTS : EMPTY_CONTENTS;
+  // Open months a rule will close later, so each card can say when.
+  const upcoming = upcomingAutoCloses(periods, closure, scopeProject);
+  const relockPreview = relockDateFor(today, reopenDays);
 
   return (
     <div className="space-y-4">
@@ -435,38 +514,46 @@ export default function SiteAccountMonthClosureSettings() {
         description="Freeze an accounting period once it has been reported on."
       />
 
-      {/* ── What the lock actually does ── */}
-      <Card>
-        <CardHeader className="pb-3">
-          <CardTitle className="flex items-center gap-2 text-base">
-            <CalendarRange className="h-4 w-4 text-indigo-600" />
-            How closure works
-          </CardTitle>
-          <CardDescription>
-            A closed month refuses any expense or receipt dated inside it — new entries, edits,
-            deletions, and entries moved into or out of it — no matter how recent today is and no
-            matter who is signed in. This is separate from Date Control, which limits how late an
-            entry may be filed while a month is still open; both apply, and either can refuse.
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="grid grid-cols-1 gap-2 text-xs text-muted-foreground sm:grid-cols-3">
-          <p className="rounded-lg border bg-muted/30 px-3 py-2">
-            <strong className="text-slate-700">No permission overrides it.</strong> Once a month is
-            closed nobody can add, edit or delete anything dated in it — administrators included.
-            The only way in is to reopen the month.
-          </p>
-          <p className="rounded-lg border bg-muted/30 px-3 py-2">
-            <strong className="text-slate-700">Reopening</strong> needs Month Closure · Reopen and a
-            written reason, which is kept with the month and in the activity log.
-          </p>
-          <p className="rounded-lg border bg-muted/30 px-3 py-2">
-            <strong className="text-slate-700">All projects, or one.</strong> Use the picker to
-            close a month everywhere, or to freeze — or let back in — a single site. A project&apos;s
-            own setting always wins over the all-projects one; &ldquo;Follow all&rdquo; removes it
-            again. The current month and months that have not started cannot be closed either way.
-          </p>
-        </CardContent>
-      </Card>
+      {/*
+        * ── Scope ──
+        * Its own bar, above everything it governs: the automatic rule, which months read as
+        * closed, what the close and reopen buttons write, and whose figures are counted.
+        */}
+      <div className="flex flex-wrap items-center gap-3 rounded-xl border bg-white/80 px-4 py-3">
+        <Building2 className="h-4 w-4 shrink-0 text-slate-500" />
+        <span className="text-sm font-medium text-slate-700">Showing</span>
+        <Select value={scope} onValueChange={v => setScope(v as ClosureScope)}>
+          <SelectTrigger className="w-full sm:w-[280px]" aria-label="Closure scope">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value={ALL_PROJECTS}>All projects</SelectItem>
+            {projects.map(p => (
+              <SelectItem key={p.id} value={p.id}>
+                {p.projectName}{p.projectCode ? ` (${p.projectCode})` : ''}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        <span className="text-xs text-muted-foreground">
+          {scopeProject
+            ? 'Changes here apply to this project only and override the all-projects settings.'
+            : 'Changes here apply to every project that has no setting of its own.'}
+        </span>
+      </div>
+
+      {/* ── The automatic rule ── */}
+      <AutoCloseRuleCard
+        // Keyed by scope, so a draft for one project never carries over to another.
+        key={scope}
+        closure={closure}
+        scopeProject={scopeProject}
+        scopeName={scopeName}
+        currentPeriodKey={now}
+        canClose={canClose}
+        canReopen={canReopen}
+        onSave={handleSaveRule}
+      />
 
       {/* ── Year picker and totals ── */}
       <Card>
@@ -482,23 +569,6 @@ export default function SiteAccountMonthClosureSettings() {
               </CardDescription>
             </div>
             <div className="flex flex-wrap items-center gap-2">
-              {/*
-                * The scope picker drives the whole screen: which months read as closed, what the
-                * close and reopen buttons write, and which project's figures are counted.
-                */}
-              <Select value={scope} onValueChange={v => setScope(v as ClosureScope)}>
-                <SelectTrigger className="w-[220px]" aria-label="Closure scope">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value={ALL_PROJECTS}>All projects</SelectItem>
-                  {projects.map(p => (
-                    <SelectItem key={p.id} value={p.id}>
-                      {p.projectName}{p.projectCode ? ` (${p.projectCode})` : ''}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
               <Button
                 variant="outline" size="icon" className="h-9 w-9"
                 aria-label="Previous financial year"
@@ -551,6 +621,9 @@ export default function SiteAccountMonthClosureSettings() {
               // On the all-projects view, the sites that are somewhere else this month.
               const differing = scopeProject ? [] : projectsWithOverride(closure, period);
               const hasOwnEntry = Boolean(scopeProject && effect.source === 'project');
+              // A project rule makes the month this site's own even with no manual entry.
+              const ownRule = Boolean(scopeProject && effect.autoScope === 'project');
+              const autoCloseOn = upcoming[period];
 
               return (
                 <div key={period} className={cn('rounded-xl border p-3', style.ring)}>
@@ -572,9 +645,14 @@ export default function SiteAccountMonthClosureSettings() {
                       {scopeProject && (
                         <span className={cn(
                           'ml-1 inline-flex items-center rounded px-1.5 py-0.5 text-[10px] font-medium',
-                          hasOwnEntry ? 'bg-violet-100 text-violet-800' : 'bg-slate-100 text-slate-600',
+                          hasOwnEntry || ownRule ? 'bg-violet-100 text-violet-800' : 'bg-slate-100 text-slate-600',
                         )}>
-                          {hasOwnEntry ? 'This project only' : 'Follows all projects'}
+                          {hasOwnEntry ? 'This project only' : ownRule ? "This project's rule" : 'Follows all projects'}
+                        </span>
+                      )}
+                      {effect.source === 'auto' && (
+                        <span className="ml-1 inline-flex items-center gap-0.5 rounded bg-indigo-100 px-1.5 py-0.5 text-[10px] font-medium text-indigo-800">
+                          <Timer className="h-2.5 w-2.5" /> Automatic
                         </span>
                       )}
                       {differing.length > 0 && (
@@ -594,7 +672,9 @@ export default function SiteAccountMonthClosureSettings() {
                           <Button
                             variant="outline" size="sm" className="h-7 gap-1 px-2 text-xs"
                             disabled={isBusy}
-                            onClick={() => { setReopenTarget(period); setReopenReason(''); }}
+                            // Each reopen starts from the default lock-again period, not whatever
+                            // the previous reopen in this session happened to choose.
+                            onClick={() => { setReopenTarget(period); setReopenReason(''); setReopenDays(3); }}
                           >
                             {isBusy ? <Loader2 className="h-3 w-3 animate-spin" /> : <LockOpen className="h-3 w-3" />}
                             Reopen{scopeProject ? ' here' : ''}
@@ -653,13 +733,36 @@ export default function SiteAccountMonthClosureSettings() {
                   </div>
 
                   {/* The audit trail, on the card rather than buried in a log. */}
+                  {effect.source === 'auto' && (
+                    <p className="mt-2 text-[10px] text-indigo-700">
+                      Closed automatically on {effect.closesOn}
+                      {effect.autoScope === 'project' ? " by this project's rule" : ''}
+                    </p>
+                  )}
+                  {!effect.closed && autoCloseOn && (
+                    <p className="mt-2 flex items-center gap-1 text-[10px] text-indigo-700">
+                      <Timer className="h-2.5 w-2.5 shrink-0" />
+                      Closes automatically on {autoCloseOn}
+                    </p>
+                  )}
                   {record?.closed && (
                     <p className="mt-2 text-[10px] text-muted-foreground">
                       Closed{record.closedByName ? ` by ${record.closedByName}` : ''}
                       {record.note ? ` — ${record.note}` : ''}
                     </p>
                   )}
-                  {!record?.closed && record?.reopenReason && (
+                  {effect.relocked && record?.relockOn && (
+                    <p className="mt-2 text-[10px] text-muted-foreground">
+                      Was reopened{record.reopenedByName ? ` by ${record.reopenedByName}` : ''}; locked again on {record.relockOn}
+                    </p>
+                  )}
+                  {!effect.closed && record?.relockOn && (
+                    <p className="mt-2 flex items-center gap-1 text-[10px] text-amber-700">
+                      <Timer className="h-2.5 w-2.5 shrink-0" />
+                      Locks again on {record.relockOn}
+                    </p>
+                  )}
+                  {!record?.closed && !effect.relocked && record?.reopenReason && (
                     <p className="mt-2 text-[10px] text-amber-700">
                       Reopened{record.reopenedByName ? ` by ${record.reopenedByName}` : ''} — {record.reopenReason}
                     </p>
@@ -763,6 +866,32 @@ export default function SiteAccountMonthClosureSettings() {
             />
             <p className="text-xs text-muted-foreground">
               Written for whoever reads this in a year — say what arrived and who authorised it.
+            </p>
+          </div>
+
+          {/*
+            * How long the reopen lasts. A reopen is nearly always for one correction, and a month
+            * left open "until someone remembers" is how a closed period stops being one — so it
+            * defaults to locking again by itself.
+            */}
+          <div className="space-y-1.5">
+            <Label>Lock again automatically</Label>
+            <div className="flex flex-wrap gap-2">
+              {RELOCK_PRESETS.map(preset => (
+                <Button
+                  key={preset.label}
+                  type="button" size="sm"
+                  variant={reopenDays === preset.days ? 'default' : 'outline'}
+                  onClick={() => setReopenDays(preset.days)}
+                >
+                  {preset.label}
+                </Button>
+              ))}
+            </div>
+            <p className="text-xs text-muted-foreground">
+              {relockPreview
+                ? `Open through ${addDays(relockPreview, -1)}; locks again on ${relockPreview}.`
+                : 'Stays open until someone closes it by hand.'}
             </p>
           </div>
 

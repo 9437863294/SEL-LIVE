@@ -127,11 +127,12 @@
   .dark :where(.bg-slate-200\/70:not(.keep-light, .keep-light *)) {
     background-color: hsl(var(--dc-200) / 0.7);
   }
-  .dark :where(.bg-slate-300\/15:not(.keep-light, .keep-light *)) {
-    background-color: hsl(var(--dc-300) / 0.15);
-  }
+  .dark :where(.hover\:bg-slate-200\/70:not(.keep-light, .keep-light *)):hover,
   .dark :where(.bg-slate-300\/70:not(.keep-light, .keep-light *)) {
     background-color: hsl(var(--dc-300) / 0.7);
+  }
+  .dark :where(.bg-slate-300\/15:not(.keep-light, .keep-light *)) {
+    background-color: hsl(var(--dc-300) / 0.15);
   }
   .dark :where(.text-black:not(.keep-light, .keep-light *)),
   .dark :where(.text-slate-900:not(.keep-light, .keep-light *)),
