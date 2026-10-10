@@ -134,7 +134,7 @@
     "mailparser": "^3.9.28",
     "next": "^16.2.10",
     "next-nprogress-bar": "^2.4.7",
-    "nodemailer": "^9.0.3",
+    "nodemailer": "^10.0.16",
     "openai": "^6.9.1",
     "patch-package": "^8.0.0",
     "pdf-lib": "^1.17.1",
