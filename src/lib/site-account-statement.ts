@@ -118,6 +118,9 @@ export interface SASExpense {
   isGstBill?: boolean;
   remarks: string;
   attachments?: SASAttachment[];
+  /** Vehicle-fuel expenses: the Vehicle Master vehicle fuelled, whose fuel log this expense writes. */
+  vehicleId?: string;
+  vehicleNumber?: string;
   createdAt: any;
   createdBy?: string;
   createdByName?: string;
@@ -189,6 +192,18 @@ export interface SASCategory {
   isActive: boolean;
   parentId?: string;
   parentName?: string;
+  /**
+   * On a main category: every expense under it must name one of its sub-categories. Set on
+   * Settings → Expense Categories; the rule itself lives in site-account-statement-subcategory-rule.ts.
+   */
+  requireSubCategory?: boolean;
+  /**
+   * On a main category: its expenses are fuel for a company vehicle, so the expense names the
+   * vehicle and writes its Vehicle Management fuel log. See site-account-statement-vehicle-fuel.ts.
+   */
+  linkVehicleFuel?: boolean;
+  /** On a sub-category of a vehicle-fuel category: the Vehicle Master type it stands for. */
+  vehicleType?: string;
   createdAt: any;
   updatedAt: any;
 }

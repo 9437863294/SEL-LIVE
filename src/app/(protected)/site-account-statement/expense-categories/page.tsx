@@ -32,7 +32,10 @@ import {
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
   AlertDialogTrigger,
 } from '@/components/ui/alert-dialog';
-import { CornerDownRight, Loader2, Pencil, Plus, Sprout, Tags, Trash2 } from 'lucide-react';
+import { AlertTriangle, CornerDownRight, Fuel, ListTree, Loader2, Pencil, Plus, Sprout, Tags, Trash2 } from 'lucide-react';
+import { linksVehicleFuel, normaliseTypeName, vehicleTypeFor } from '@/lib/site-account-statement-vehicle-fuel';
+import { loadVehicleTypes } from '@/components/site-account-statement/use-vehicle-fuel';
+import { activeSubCategories, subCategoryRuleSummary } from '@/lib/site-account-statement-subcategory-rule';
 
 const MODULE = 'Site Account Statement';
 const RESOURCE = 'Expense Categories';
@@ -42,9 +45,21 @@ interface FormState {
   description: string;
   isActive: boolean;
   parentId: string;
+  /** Main categories only: expenses under it must name a sub-category. */
+  requireSubCategory: boolean;
+  /** Main categories only: expenses under it are fuel for a company vehicle. */
+  linkVehicleFuel: boolean;
+  /** Sub-categories of a vehicle-fuel category: the vehicle type, or '' to match by name. */
+  vehicleType: string;
 }
 
-const blank = (): FormState => ({ name: '', description: '', isActive: true, parentId: '' });
+const blank = (): FormState => ({
+  name: '', description: '', isActive: true, parentId: '', requireSubCategory: false,
+  linkVehicleFuel: false, vehicleType: '',
+});
+
+/** The Select's stand-in for "match by name" — Radix reserves the empty string. */
+const MATCH_BY_NAME = '_by_name_';
 
 export default function ExpenseCategoriesPage() {
   const { can, isLoading: isAuthLoading } = useAuthorization();
@@ -109,6 +124,116 @@ export default function ExpenseCategoriesPage() {
     return result;
   }, [mainCategories, subCategories, search]);
 
+  // Which main categories carry the rule, and which of those have nothing to choose from.
+  const ruleSummary = useMemo(() => subCategoryRuleSummary(rows), [rows]);
+
+  /*
+   * Vehicle Management's type list — read only once something here links to vehicles (or the
+   * dialog is about to), since most installs never will.
+   */
+  const needsVehicleTypes = form.linkVehicleFuel || rows.some(r => !r.parentId && linksVehicleFuel(r));
+  const [vehicleTypes, setVehicleTypes] = useState<string[] | null>(null);
+  useEffect(() => {
+    if (!needsVehicleTypes) return;
+    let cancelled = false;
+    void loadVehicleTypes().then(t => { if (!cancelled) setVehicleTypes(t); });
+    return () => { cancelled = true; };
+  }, [needsVehicleTypes]);
+
+  /** Whether a sub-category sits under a vehicle-fuel category. */
+  function parentIsFuel(sub: SASCategory): boolean {
+    const parent = rows.find(r => r.id === sub.parentId);
+    return parent ? linksVehicleFuel(parent) : false;
+  }
+
+  /** The vehicle type a sub-category stands for — null when its parent is not vehicle fuel, or nothing matches. */
+  function vehicleTypeOf(sub: SASCategory): string | null {
+    const parent = rows.find(r => r.id === sub.parentId);
+    if (!parent || !vehicleTypes) return null;
+    return vehicleTypeFor({ category: parent.name, subCategory: sub.name, categories: rows, vehicleTypes });
+  }
+
+  /** Each vehicle-fuel category with its sub-categories and the type each resolves to, for the banner. */
+  const fuelSummary = useMemo(() => {
+    if (!vehicleTypes) return [];
+    return rows
+      .filter(r => !r.parentId && linksVehicleFuel(r))
+      .sort((a, b) => a.name.localeCompare(b.name))
+      .map(main => ({
+        main,
+        subs: rows
+          .filter(r => r.parentId === main.id && r.isActive !== false)
+          .sort((a, b) => a.name.localeCompare(b.name))
+          .map(sub => ({
+            sub,
+            type: vehicleTypeFor({ category: main.name, subCategory: sub.name, categories: rows, vehicleTypes }),
+          })),
+      }));
+  }, [rows, vehicleTypes]);
+
+  /** In the dialog: the parent being edited under, and whether it is vehicle fuel. */
+  const formParent = form.parentId ? mainCategories.find(c => c.id === form.parentId) : undefined;
+  const formParentIsFuel = formParent ? linksVehicleFuel(formParent) : false;
+  /** What "match by name" would give for the name being typed. */
+  const formNameMatch = formParentIsFuel && vehicleTypes
+    ? vehicleTypes.find(t => normaliseTypeName(t) !== '' && normaliseTypeName(t) === normaliseTypeName(form.name)) ?? null
+    : null;
+  const [togglingId, setTogglingId] = useState<string | null>(null);
+
+  /**
+   * Switches the rule for one main category straight from the table — the setting is a yes/no
+   * per category, so opening the full edit dialog to flip it would be ceremony.
+   */
+  async function toggleRequireSubCategory(row: SASCategory, next: boolean) {
+    if (!canEdit || row.parentId) return;
+    setTogglingId(row.id);
+    try {
+      await updateDoc(doc(db, SAS_COLLECTIONS.categories, row.id), {
+        requireSubCategory: next,
+        updatedAt: serverTimestamp(),
+      });
+      setRows(prev => prev.map(r => (r.id === row.id ? { ...r, requireSubCategory: next } : r)));
+      void log(next ? 'Require SAS Sub-Category' : 'Make SAS Sub-Category Optional', { category: row.name });
+      const subs = activeSubCategories(rows, row).length;
+      toast({
+        title: next ? `${row.name}: sub-category required` : `${row.name}: sub-category optional`,
+        description: next
+          ? subs > 0
+            ? 'Every new or edited expense in this category must name one of its sub-categories.'
+            : 'It has no active sub-categories yet, so the rule takes effect once you add one.'
+          : 'Expenses in this category may be saved without a sub-category.',
+      });
+    } catch (e: any) {
+      toast({ title: 'Error', description: e.message, variant: 'destructive' });
+    } finally {
+      setTogglingId(null);
+    }
+  }
+
+  /** Switches the vehicle-fuel link for one main category straight from the table. */
+  async function toggleVehicleFuel(row: SASCategory, next: boolean) {
+    if (!canEdit || row.parentId) return;
+    setTogglingId(row.id);
+    try {
+      await updateDoc(doc(db, SAS_COLLECTIONS.categories, row.id), {
+        linkVehicleFuel: next,
+        updatedAt: serverTimestamp(),
+      });
+      setRows(prev => prev.map(r => (r.id === row.id ? { ...r, linkVehicleFuel: next } : r)));
+      void log(next ? 'Link SAS Category to Vehicle Fuel' : 'Unlink SAS Category from Vehicle Fuel', { category: row.name });
+      toast({
+        title: next ? `${row.name}: vehicle fuel` : `${row.name}: not vehicle fuel`,
+        description: next
+          ? 'Its expenses now ask which vehicle was fuelled, and log the fuel under Vehicle Management.'
+          : 'Its expenses no longer ask for a vehicle or write fuel logs.',
+      });
+    } catch (e: any) {
+      toast({ title: 'Error', description: e.message, variant: 'destructive' });
+    } finally {
+      setTogglingId(null);
+    }
+  }
+
   function openAdd() {
     setEditingRow(null);
     setForm(blank());
@@ -122,6 +247,10 @@ export default function ExpenseCategoriesPage() {
       description: row.description || '',
       isActive: row.isActive !== false,
       parentId: row.parentId || '',
+      requireSubCategory: row.requireSubCategory === true,
+      // The effective state, so a fuel category that was never switched opens as it behaves.
+      linkVehicleFuel: !row.parentId && linksVehicleFuel(row),
+      vehicleType: row.vehicleType || '',
     });
     setDialogOpen(true);
   }
@@ -142,6 +271,12 @@ export default function ExpenseCategoriesPage() {
         isActive: form.isActive,
         parentId: form.parentId || null,
         parentName: parentCat?.name || null,
+        // A sub-category cannot require a sub-category of its own, so the flag is cleared on one —
+        // including a main category being turned into a sub-category by this edit.
+        requireSubCategory: !form.parentId && form.requireSubCategory,
+        // Each flag belongs to one level; moving a category between levels sheds the other's.
+        linkVehicleFuel: !form.parentId && form.linkVehicleFuel,
+        vehicleType: form.parentId ? form.vehicleType : '',
         updatedAt: serverTimestamp(),
       };
       if (editingRow) {
@@ -347,6 +482,55 @@ export default function ExpenseCategoriesPage() {
         ) : undefined}
       />
 
+      {/* What the rule currently demands, and where it cannot be met — said before anyone hits it. */}
+      {ruleSummary.required.length > 0 && (
+        <div className="flex items-start gap-2.5 rounded-lg border border-indigo-200 bg-indigo-50 px-4 py-2.5 text-xs text-indigo-900">
+          <ListTree className="mt-0.5 h-4 w-4 shrink-0 text-indigo-600" />
+          <div className="space-y-0.5">
+            <p>
+              <span className="font-semibold">Sub-category required for:</span> {ruleSummary.required.join(', ')}.
+              {' '}Expenses in these categories cannot be saved without choosing one of their sub-categories.
+            </p>
+            {ruleSummary.unsatisfiable.length > 0 && (
+              <p className="flex items-center gap-1 text-amber-800">
+                <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
+                {ruleSummary.unsatisfiable.join(', ')} {ruleSummary.unsatisfiable.length === 1 ? 'has' : 'have'} no active
+                sub-categories, so the rule cannot apply yet — add at least one.
+              </p>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Which sub-category asks for which kind of vehicle — and which ask for none. */}
+      {fuelSummary.length > 0 && (
+        <div className="flex items-start gap-2.5 rounded-lg border border-sky-200 bg-sky-50 px-4 py-2.5 text-xs text-sky-950">
+          <Fuel className="mt-0.5 h-4 w-4 shrink-0 text-sky-700" />
+          <div className="min-w-0 space-y-1">
+            {fuelSummary.map(({ main, subs }) => (
+              <div key={main.id}>
+                <span className="font-semibold">{main.name}</span> is vehicle fuel —{' '}
+                {subs.length === 0 ? (
+                  <span>it has no active sub-categories, so no vehicle is asked for yet.</span>
+                ) : (
+                  subs.map(({ sub, type }, i) => (
+                    <span key={sub.id}>
+                      {i > 0 && ', '}
+                      {sub.name} → {type ? <span className="font-medium">{type}</span> : <span className="text-amber-800">no vehicle type</span>}
+                    </span>
+                  ))
+                )}
+                .
+              </div>
+            ))}
+            <p className="text-sky-900/80">
+              An expense under these asks which vehicle of that type, assigned to its project, was fuelled —
+              and logs it under Vehicle Management → Fuel with the date and amount.
+            </p>
+          </div>
+        </div>
+      )}
+
       <TableCard
         title="Categories"
         icon={Tags}
@@ -373,6 +557,15 @@ export default function ExpenseCategoriesPage() {
                     <TableHead>Category Name</TableHead>
                     <TableHead>Type</TableHead>
                     <TableHead>Description</TableHead>
+                    <TableHead className="text-center" title="Expenses under this category must name one of its sub-categories">
+                      Sub-category required
+                    </TableHead>
+                    <TableHead
+                      className="text-center"
+                      title="Expenses ask which vehicle was fuelled and log it under Vehicle Management → Fuel"
+                    >
+                      Vehicle fuel
+                    </TableHead>
                     <TableHead className="text-center">Status</TableHead>
                     {(canEdit || canDelete) && <TableHead className="text-right">Actions</TableHead>}
                   </TableRow>
@@ -396,9 +589,22 @@ export default function ExpenseCategoriesPage() {
                       </TableCell>
                       <TableCell>
                         {row.isSubDisplay ? (
-                          <Badge variant="outline">
-                            Sub-category of {row.parentName || '—'}
-                          </Badge>
+                          <div className="flex flex-wrap items-center gap-1">
+                            <Badge variant="outline">
+                              Sub-category of {row.parentName || '—'}
+                            </Badge>
+                            {parentIsFuel(row) && vehicleTypes && (
+                              vehicleTypeOf(row) ? (
+                                <Badge variant="outline" className="gap-1 border-sky-200 bg-sky-50 text-sky-800">
+                                  <Fuel className="h-3 w-3" /> {vehicleTypeOf(row)}
+                                </Badge>
+                              ) : (
+                                <Badge variant="outline" className="border-amber-200 bg-amber-50 text-amber-800">
+                                  No vehicle type
+                                </Badge>
+                              )
+                            )}
+                          </div>
                         ) : (
                           <Badge variant="neutral">
                             Main Category
@@ -406,6 +612,37 @@ export default function ExpenseCategoriesPage() {
                         )}
                       </TableCell>
                       <TableCell className="max-w-xs truncate">{row.description || '—'}</TableCell>
+                      <TableCell className="text-center">
+                        {row.isSubDisplay ? (
+                          <span className="text-muted-foreground">—</span>
+                        ) : (
+                          <span className="inline-flex items-center justify-center gap-1.5">
+                            <Switch
+                              checked={row.requireSubCategory === true}
+                              onCheckedChange={v => void toggleRequireSubCategory(row, v)}
+                              disabled={!canEdit || togglingId === row.id}
+                              aria-label={`Require a sub-category for ${row.name}`}
+                            />
+                            {row.requireSubCategory === true && activeSubCategories(rows, row).length === 0 && (
+                              <span title="No active sub-categories — the rule cannot apply until one is added">
+                                <AlertTriangle className="h-3.5 w-3.5 text-amber-600" />
+                              </span>
+                            )}
+                          </span>
+                        )}
+                      </TableCell>
+                      <TableCell className="text-center">
+                        {row.isSubDisplay ? (
+                          <span className="text-muted-foreground">—</span>
+                        ) : (
+                          <Switch
+                            checked={linksVehicleFuel(row)}
+                            onCheckedChange={v => void toggleVehicleFuel(row, v)}
+                            disabled={!canEdit || togglingId === row.id}
+                            aria-label={`Treat ${row.name} as vehicle fuel`}
+                          />
+                        )}
+                      </TableCell>
                       <TableCell className="text-center">
                         <StatusBadge status={row.isActive !== false ? 'Active' : 'Inactive'} />
                       </TableCell>
@@ -496,6 +733,83 @@ export default function ExpenseCategoriesPage() {
                 placeholder="Optional description"
               />
             </ControlledField>
+            {!form.parentId && (
+              <div className="space-y-1.5 rounded-lg border bg-muted/20 px-3 py-2.5">
+                <div className="flex items-center gap-3">
+                  <Switch
+                    checked={form.requireSubCategory}
+                    onCheckedChange={v => setForm(f => ({ ...f, requireSubCategory: v }))}
+                    id="cat-require-sub"
+                  />
+                  <Label htmlFor="cat-require-sub">Sub-category required</Label>
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  Anyone recording an expense under this category must choose one of its
+                  sub-categories — on the expense form, the dashboard quick-add and Excel import.
+                </p>
+                {form.requireSubCategory && (!editingRow || activeSubCategories(rows, editingRow).length === 0) && (
+                  <p className="flex items-start gap-1 text-xs text-amber-700">
+                    <AlertTriangle className="mt-px h-3.5 w-3.5 shrink-0" />
+                    It has no active sub-categories yet, so the rule takes effect once you add one.
+                  </p>
+                )}
+              </div>
+            )}
+            {!form.parentId && (
+              <div className="space-y-1.5 rounded-lg border bg-muted/20 px-3 py-2.5">
+                <div className="flex items-center gap-3">
+                  <Switch
+                    checked={form.linkVehicleFuel}
+                    onCheckedChange={v => setForm(f => ({ ...f, linkVehicleFuel: v }))}
+                    id="cat-vehicle-fuel"
+                  />
+                  <Label htmlFor="cat-vehicle-fuel" className="flex items-center gap-1.5">
+                    <Fuel className="h-3.5 w-3.5 text-muted-foreground" /> Vehicle fuel
+                  </Label>
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  Its sub-categories stand for Vehicle Master types (&ldquo;Two-Wheeler&rdquo;, &ldquo;Car&rdquo;). An expense
+                  then asks which vehicle of that type, assigned to its project, was fuelled, and logs the
+                  date and amount under Vehicle Management → Fuel.
+                </p>
+                {form.linkVehicleFuel && !form.requireSubCategory && (
+                  <p className="flex items-start gap-1 text-xs text-amber-700">
+                    <AlertTriangle className="mt-px h-3.5 w-3.5 shrink-0" />
+                    Turn on &ldquo;Sub-category required&rdquo; too — an expense without a sub-category names no vehicle and logs no fuel.
+                  </p>
+                )}
+              </div>
+            )}
+            {formParentIsFuel && (
+              <div className="space-y-1.5">
+                <Label className="flex items-center gap-1.5">
+                  <Fuel className="h-3.5 w-3.5 text-muted-foreground" /> Vehicle type
+                </Label>
+                <Select
+                  value={form.vehicleType || MATCH_BY_NAME}
+                  onValueChange={v => setForm(f => ({ ...f, vehicleType: v === MATCH_BY_NAME ? '' : v }))}
+                >
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value={MATCH_BY_NAME}>
+                      Match by name{formNameMatch ? ` (${formNameMatch})` : ''}
+                    </SelectItem>
+                    {(vehicleTypes ?? []).map(t => <SelectItem key={t} value={t}>{t}</SelectItem>)}
+                    {/* A mapping to a type Vehicle Management has since removed still shows, so it can be changed. */}
+                    {form.vehicleType && vehicleTypes && !vehicleTypes.includes(form.vehicleType) && (
+                      <SelectItem value={form.vehicleType}>{form.vehicleType} (no longer a type)</SelectItem>
+                    )}
+                  </SelectContent>
+                </Select>
+                <p className="text-xs text-muted-foreground">
+                  {form.vehicleType
+                    ? `Expenses under it ask for a ${form.vehicleType} on the project.`
+                    : formNameMatch
+                      ? `Its name matches the ${formNameMatch} type in Vehicle Master.`
+                      : 'Its name matches no Vehicle Master type, so no vehicle is asked for — pick one if it should be.'}
+                </p>
+              </div>
+            )}
             {field('isActive').visible && (
             <div className="flex items-center gap-3">
               <Switch

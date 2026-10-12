@@ -17,6 +17,10 @@ import { openPrintWindow } from '@/lib/open-print-window';
 import { allExpenses as fetchAllExpenses, allPayments as fetchAllPayments } from '@/lib/site-account-statement-queries';
 import { useFieldControl, validateFieldControlRequirements } from '@/components/site-account-statement/use-field-control';
 import { useDateControl } from '@/components/site-account-statement/use-date-control';
+import { subCategoryRequirement, validateSubCategoryChoice } from '@/lib/site-account-statement-subcategory-rule';
+import { validateVehicleChoice, vehicleLabel } from '@/lib/site-account-statement-vehicle-fuel';
+import { syncFuelLog, useVehicleFuelLink } from '@/components/site-account-statement/use-vehicle-fuel';
+import { VehicleFuelField } from '@/components/site-account-statement/vehicle-fuel-field';
 import { fieldMark } from '@/components/site-account-statement/controlled-field';
 import { useAuthorization } from '@/hooks/useAuthorization';
 import { useActivityLogger } from '@/hooks/useActivityLogger';
@@ -140,6 +144,7 @@ function QuickExpenseDialog({
     billNo: '',
     isGstBill: false,
     remarks: '',
+    vehicleId: '',   // vehicle-fuel categories only
   });
 
   const mainCategories = useMemo(() => categories.filter(c => !c.parentId), [categories]);
@@ -150,15 +155,35 @@ function QuickExpenseDialog({
     [categories, form.expenseCategoryId]
   );
 
+  // The same per-category rule as the Site Expenses form — the quick-add is a shortcut, not an exemption.
+  const subRequirement = subCategoryRequirement({
+    category: form.expenseCategory, categories, requiredEverywhere: field('expenseSubCategory').required,
+  });
+  const subCategoryField = {
+    ...field('expenseSubCategory'),
+    visible: field('expenseSubCategory').visible || subRequirement.source === 'category',
+    required: subRequirement.required,
+  };
+  const fieldExceptSubCategory = (key: string) =>
+    key === 'expenseSubCategory' ? { ...field(key), required: false } : field(key);
+
+  // Vehicle fuel, as on the Site Expenses form: which vehicle, and a fuel log for it.
+  const fuelLink = useVehicleFuelLink({
+    category: form.expenseCategory,
+    subCategory: form.expenseSubCategory,
+    categories,
+    centralProjectId: project.centralProjectId,
+  });
+
   function setF(key: string, value: string) { setForm(f => ({ ...f, [key]: value })); }
 
   /** Live complaint about the date in the form — see the Site Expenses form for the reasoning. */
   const dateIssue = form.expenseDate ? dateControl.check(form.expenseDate, project.id).reason ?? null : null;
 
   function handleMainCategoryChange(catId: string) {
-    if (catId === '_none_') { setForm(f => ({ ...f, expenseCategoryId: '', expenseCategory: '', expenseSubCategory: '' })); return; }
+    if (catId === '_none_') { setForm(f => ({ ...f, expenseCategoryId: '', expenseCategory: '', expenseSubCategory: '', vehicleId: '' })); return; }
     const cat = mainCategories.find(c => c.id === catId);
-    setForm(f => ({ ...f, expenseCategoryId: catId, expenseCategory: cat?.name ?? '', expenseSubCategory: '' }));
+    setForm(f => ({ ...f, expenseCategoryId: catId, expenseCategory: cat?.name ?? '', expenseSubCategory: '', vehicleId: '' }));
   }
 
   function addFiles(files: FileList | null) {
@@ -181,7 +206,7 @@ function QuickExpenseDialog({
     setForm(f => ({
       ...f,
       expenseCategoryId: '', expenseCategory: '', expenseSubCategory: '',
-      narration: '', expenseAmount: '', vendorPartyName: '', billNo: '', isGstBill: false, remarks: '',
+      narration: '', expenseAmount: '', vendorPartyName: '', billNo: '', isGstBill: false, remarks: '', vehicleId: '',
     }));
     setPendingFiles([]);
   }
@@ -204,8 +229,24 @@ function QuickExpenseDialog({
       narration: form.narration,
       remarks: form.remarks,
       attachment: pendingFiles.length > 0 ? 'attached' : '',
-    }, field);
+    }, fieldExceptSubCategory);
     if (missingLabel) { toast({ title: 'Validation', description: `${missingLabel} is required.`, variant: 'destructive' }); return; }
+    const subCheck = validateSubCategoryChoice({
+      category: form.expenseCategory, subCategory: form.expenseSubCategory, categories,
+      requiredEverywhere: field('expenseSubCategory').required,
+    });
+    if (!subCheck.ok) { toast({ title: 'Sub-category needed', description: subCheck.reason, variant: 'destructive' }); return; }
+    if (fuelLink.loading) {
+      toast({ title: 'Loading vehicles', description: 'The vehicle list is still loading — try again in a moment.', variant: 'destructive' });
+      return;
+    }
+    const vehicleCheck = validateVehicleChoice({
+      vehicleType: fuelLink.vehicleType, vehicleId: form.vehicleId, options: fuelLink.options,
+    });
+    if (!vehicleCheck.ok) { toast({ title: 'Vehicle needed', description: vehicleCheck.reason, variant: 'destructive' }); return; }
+    const linkedVehicle = fuelLink.vehicleType
+      ? fuelLink.options.find(v => v.id === form.vehicleId) ?? null
+      : null;
 
     setSaving(true);
     try {
@@ -223,6 +264,8 @@ function QuickExpenseDialog({
         billNo: form.billNo.trim(),
         isGstBill: form.isGstBill,
         remarks: form.remarks.trim(),
+        vehicleId: linkedVehicle?.id || '',
+        vehicleNumber: linkedVehicle ? vehicleLabel(linkedVehicle) : '',
         attachments: [],
         createdAt: serverTimestamp(),
         createdBy: user?.id || '',
@@ -238,8 +281,34 @@ function QuickExpenseDialog({
         await updateDoc(doc(db, SAS_COLLECTIONS.expenses, docRef.id), { attachments });
       }
 
+      // After the expense, never instead of it: a refused fuel log must not cost the site its record.
+      let fuelError = '';
+      if (linkedVehicle) {
+        try {
+          await syncFuelLog({
+            expenseId: docRef.id, vehicle: linkedVehicle,
+            expense: {
+              expenseDate: form.expenseDate, amount, projectId: project.id, projectName: project.projectName,
+              category: form.expenseCategory, subCategory: form.expenseSubCategory,
+            },
+            user,
+          });
+        } catch (e: any) {
+          fuelError = e?.message || 'permission denied';
+        }
+      }
+
       void log('Add SAS Expense (quick)', { project: project.projectName, amount });
-      toast({ title: 'Expense recorded', description: `₹${amount.toLocaleString('en-IN')} saved for ${project.projectName}.` });
+      toast(fuelError
+        ? {
+            title: 'Expense recorded — fuel log not',
+            description: `Vehicle Management refused the fuel log: ${fuelError}. Open the expense in Site Expenses and save it to retry.`,
+            variant: 'destructive',
+          }
+        : {
+            title: 'Expense recorded',
+            description: `₹${amount.toLocaleString('en-IN')} saved for ${project.projectName}${linkedVehicle ? ` · fuel logged for ${vehicleLabel(linkedVehicle)}` : ''}.`,
+          });
       resetForm();
       onOpenChange(false);
       onSuccess();
@@ -309,14 +378,14 @@ function QuickExpenseDialog({
           )}
 
           {/* Sub-Category */}
-          {field('expenseSubCategory').visible && (
+          {subCategoryField.visible && (
           <div className="col-span-2 space-y-1.5">
             <Label className="flex items-center gap-1.5">
-              {field('expenseSubCategory').label} {fieldMark(field('expenseSubCategory'))}
+              {subCategoryField.label} {fieldMark(subCategoryField)}
             </Label>
             <Select
               value={form.expenseSubCategory || '_none_'}
-              onValueChange={v => setF('expenseSubCategory', v === '_none_' ? '' : v)}
+              onValueChange={v => setForm(f => ({ ...f, expenseSubCategory: v === '_none_' ? '' : v, vehicleId: '' }))}
               disabled={subCategoryOptions.length === 0}
             >
               <SelectTrigger>
@@ -329,6 +398,15 @@ function QuickExpenseDialog({
             </Select>
           </div>
           )}
+
+          {/* Vehicle — only for a vehicle-fuel category whose sub-category is a vehicle type */}
+          <VehicleFuelField
+            className="col-span-2"
+            link={fuelLink}
+            value={form.vehicleId}
+            onChange={v => setF('vehicleId', v)}
+            project={{ chosen: true, linked: Boolean(project.centralProjectId) }}
+          />
 
           {/* Narration */}
           {field('narration').visible && (

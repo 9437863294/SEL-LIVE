@@ -21,6 +21,12 @@ import {
 import { resetBudgetAlertState, runBudgetAlertChecks } from '@/lib/sas-budget-alerts';
 import { useFieldControl, validateFieldControlRequirements } from '@/components/site-account-statement/use-field-control';
 import { useDateControl } from '@/components/site-account-statement/use-date-control';
+import { subCategoryRequirement, validateSubCategoryChoice } from '@/lib/site-account-statement-subcategory-rule';
+import {
+  normaliseTypeName, validateVehicleChoice, vehicleLabel, vehiclesFor, vehicleTypeFor, type FuelVehicle,
+} from '@/lib/site-account-statement-vehicle-fuel';
+import { loadProjectVehicles, resolveVehicle, syncFuelLog, useVehicleFuelLink } from '@/components/site-account-statement/use-vehicle-fuel';
+import { VehicleFuelField } from '@/components/site-account-statement/vehicle-fuel-field';
 import { useSortControl } from '@/components/site-account-statement/use-sort-control';
 import { SortControl } from '@/components/site-account-statement/sort-control';
 import { fieldMark } from '@/components/site-account-statement/controlled-field';
@@ -53,7 +59,7 @@ import {
 } from '@/components/ui/alert-dialog';
 import {
   AlertTriangle, Calendar, CalendarClock, Camera, CheckCircle2, ChevronDown, ChevronLeft, ChevronRight,
-  Download, ExternalLink, File, FileText, Image, Loader2, Lock,
+  Download, ExternalLink, File, FileText, Image as ImageIcon, Loader2, Lock,
   Paperclip, Pencil, Plus, Receipt, RotateCw, Trash2, TrendingDown, TrendingUp, Upload, Wallet, X,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
@@ -94,13 +100,15 @@ interface FormState {
   billNo: string;
   isGstBill: boolean;
   remarks: string;
+  /** Vehicle-fuel categories only: the Vehicle Master vehicle fuelled. */
+  vehicleId: string;
 }
 
 const blank = (): FormState => ({
   projectId: '', projectName: '',
   expenseCategoryId: '', expenseCategory: '', expenseSubCategory: '',
   narration: '', expensedBy: '', expenseDate: '', expenseAmount: '',
-  paymentMode: 'Cash', vendorPartyName: '', billNo: '', isGstBill: false, remarks: '',
+  paymentMode: 'Cash', vendorPartyName: '', billNo: '', isGstBill: false, remarks: '', vehicleId: '',
 });
 
 function getMonthRange(fromDate?: string, offset = 0) {
@@ -143,7 +151,7 @@ function formatSize(bytes: number): string {
 }
 
 function AttachmentIcon({ type }: { type: string }) {
-  if (type.startsWith('image/')) return <Image className="h-4 w-4 text-sky-500 shrink-0" />;
+  if (type.startsWith('image/')) return <ImageIcon className="h-4 w-4 text-sky-500 shrink-0" />;
   if (type === 'application/pdf')  return <FileText className="h-4 w-4 text-rose-500 shrink-0" />;
   return <File className="h-4 w-4 text-slate-400 shrink-0" />;
 }
@@ -186,7 +194,10 @@ export default function SiteExpensesPage() {
   const [openingBalance,       setOpeningBalance]       = useState<number | null>(null);
   const [periodReceipts,       setPeriodReceipts]       = useState(0);
   /** Cumulative project figures through the period end, for the summary strip and the dialog. */
-  const [projectToDate,        setProjectToDate]        = useState<{ received: number; spent: number } | null>(null);
+  const [projectToDateResult,  setProjectToDateResult]  = useState<{
+    key: string;
+    value: { received: number; spent: number } | null;
+  } | null>(null);
   const [saving,           setSaving]           = useState(false);
   const [exporting,        setExporting]        = useState(false);
   const [dialogOpen,       setDialogOpen]       = useState(false);
@@ -211,32 +222,36 @@ export default function SiteExpensesPage() {
   const [filterTo,          setFilterTo]          = useState(() => getMonthRange().end);
   const [search,            setSearch]            = useState('');
 
-  // Load projects + categories once on mount
+  /*
+   * Load projects + categories once auth has settled. `loading` already starts true, so nothing
+   * is set before the reads; a reply that lands after unmount is dropped.
+   */
   useEffect(() => {
-    if (!isAuthLoading) void loadStatic();
-  }, [isAuthLoading]);
-
-  async function loadStatic() {
-    setLoading(true);
-    try {
-      const [pSnap, catSnap] = await Promise.all([
-        getDocs(query(collection(db, SAS_COLLECTIONS.projects), orderBy('projectName'))),
-        getDocs(query(collection(db, SAS_COLLECTIONS.categories), orderBy('name'))),
-      ]);
-      setProjects(pSnap.docs.map(d => ({ id: d.id, ...d.data() } as SASProject)).filter(p => p.enabledForSiteAccount && p.status === 'Active'));
-      setCategories(catSnap.docs.map(d => ({ id: d.id, ...d.data() } as SASCategory)).filter(c => c.isActive !== false));
-      setStaticLoaded(true);
-    } catch (e: any) {
-      // Failing silently here rendered an empty, apparently-working page: no projects, no
-      // categories, and no hint that anything had gone wrong.
-      setLoading(false);
-      toast({
-        title: 'Could not load projects',
-        description: e?.message || 'Check your connection and reload the page.',
-        variant: 'destructive',
+    if (isAuthLoading) return;
+    let cancelled = false;
+    Promise.all([
+      getDocs(query(collection(db, SAS_COLLECTIONS.projects), orderBy('projectName'))),
+      getDocs(query(collection(db, SAS_COLLECTIONS.categories), orderBy('name'))),
+    ])
+      .then(([pSnap, catSnap]) => {
+        if (cancelled) return;
+        setProjects(pSnap.docs.map(d => ({ id: d.id, ...d.data() } as SASProject)).filter(p => p.enabledForSiteAccount && p.status === 'Active'));
+        setCategories(catSnap.docs.map(d => ({ id: d.id, ...d.data() } as SASCategory)).filter(c => c.isActive !== false));
+        setStaticLoaded(true);
+      })
+      .catch((e: any) => {
+        if (cancelled) return;
+        // Failing silently here rendered an empty, apparently-working page: no projects, no
+        // categories, and no hint that anything had gone wrong.
+        setLoading(false);
+        toast({
+          title: 'Could not load projects',
+          description: e?.message || 'Check your connection and reload the page.',
+          variant: 'destructive',
+        });
       });
-    }
-  }
+    return () => { cancelled = true; };
+  }, [isAuthLoading, toast]);
 
   const mainCategories    = useMemo(() => categories.filter(c => !c.parentId), [categories]);
   const subCategories     = useMemo(() => categories.filter(c => !!c.parentId), [categories]);
@@ -244,6 +259,64 @@ export default function SiteExpensesPage() {
     () => subCategories.filter(c => c.parentId === form.expenseCategoryId),
     [subCategories, form.expenseCategoryId]
   );
+
+  /*
+   * Whether the chosen category demands a sub-category: its own rule (Settings → Expense
+   * Categories) or Field Control's, suspended when there is nothing to choose. The label, the
+   * field's visibility and the submit check all read this one answer.
+   */
+  const subRequirement = subCategoryRequirement({
+    category: form.expenseCategory, categories, requiredEverywhere: field('expenseSubCategory').required,
+  });
+  const subCategoryField = {
+    ...field('expenseSubCategory'),
+    // A category that demands one shows the field even where Field Control hides it — otherwise
+    // the requirement could never be met.
+    visible: field('expenseSubCategory').visible || subRequirement.source === 'category',
+    required: subRequirement.required,
+  };
+  /**
+   * Field Control minus the sub-category, which `validateSubCategoryChoice` judges per category.
+   * Left to the generic check, a globally mandatory sub-category blocked every expense in a
+   * category that has none — a form demanding a choice it does not offer.
+   */
+  const fieldExceptSubCategory = (key: string) =>
+    key === 'expenseSubCategory' ? { ...field(key), required: false } : field(key);
+
+  /*
+   * A vehicle-fuel category whose sub-category is a Vehicle Master type ("Two-Wheeler") asks
+   * which vehicle was fuelled, from those of that type assigned to the project, and the save
+   * writes that vehicle a fuel log. See site-account-statement-vehicle-fuel.ts.
+   */
+  const formProject = projects.find(p => p.id === form.projectId);
+  const fuelLink = useVehicleFuelLink({
+    category: form.expenseCategory,
+    subCategory: form.expenseSubCategory,
+    categories,
+    centralProjectId: formProject?.centralProjectId,
+  });
+  /** An edit that leaves project, category and vehicle alone keeps its vehicle, assigned or not. */
+  const keptVehicle: FuelVehicle | null = editingRow?.vehicleId
+    && form.projectId === editingRow.projectId
+    && form.expenseCategory === editingRow.expenseCategory
+    && form.expenseSubCategory === (editingRow.expenseSubCategory || '')
+    ? { id: editingRow.vehicleId, vehicleNumber: editingRow.vehicleNumber || '' }
+    : null;
+
+  /** Writes, moves or removes an expense's fuel log — and says so if Vehicle Management refuses. */
+  async function syncExpenseFuel(args: Parameters<typeof syncFuelLog>[0]) {
+    try {
+      await syncFuelLog(args);
+    } catch (e: any) {
+      toast({
+        title: args.deleted ? 'Fuel log not removed' : 'Fuel log not recorded',
+        description: args.deleted
+          ? `The expense is deleted, but its fuel log in Vehicle Management could not be: ${e?.message || 'permission denied'}.`
+          : `The expense is saved, but Vehicle Management refused its fuel log: ${e?.message || 'permission denied'}. Save the expense again to retry.`,
+        variant: 'destructive',
+      });
+    }
+  }
   const filterSubCategoryOptions = useMemo(
     () => filterCategory
       ? subCategories.filter(c => {
@@ -417,19 +490,29 @@ export default function SiteExpensesPage() {
    */
   const balanceTarget = (dialogOpen && form.projectId) ? form.projectId : filterProject;
 
+  /*
+   * The figures are tagged with the project and date they were fetched for, and shown only while
+   * those still match — so switching project never shows the last one's balance while the new
+   * one loads, with no reset inside the effect. A reload after a write keeps the old figures on
+   * screen until the new ones arrive, since the tag does not change.
+   */
+  const balanceKey = staticLoaded && balanceTarget ? `${balanceTarget}|${filterTo}` : '';
   useEffect(() => {
-    if (!staticLoaded || !balanceTarget) { setProjectToDate(null); return; }
+    if (!balanceKey) return;
     let cancelled = false;
 
     Promise.all([
       cumulativeThrough('payments', [balanceTarget], filterTo || '9999-12-31'),
       cumulativeThrough('expenses', [balanceTarget], filterTo || '9999-12-31'),
     ])
-      .then(([received, spent]) => { if (!cancelled) setProjectToDate({ received, spent }); })
-      .catch(() => { if (!cancelled) setProjectToDate(null); });
+      .then(([received, spent]) => { if (!cancelled) setProjectToDateResult({ key: balanceKey, value: { received, spent } }); })
+      .catch(() => { if (!cancelled) setProjectToDateResult({ key: balanceKey, value: null }); });
 
     return () => { cancelled = true; };
-  }, [staticLoaded, balanceTarget, filterTo, reloadToken]);
+  }, [balanceKey, balanceTarget, filterTo, reloadToken]);
+  const projectToDate = projectToDateResult && projectToDateResult.key === balanceKey
+    ? projectToDateResult.value
+    : null;
 
   const projectBalance = useMemo(
     () => projectToDate
@@ -510,7 +593,7 @@ export default function SiteExpensesPage() {
     },
     {
       key: 'expenseSubCategory', label: 'Sub-Category',
-      hint: 'Optional — must match a sub-category under the main category',
+      hint: 'Must match a sub-category under the main category — required where Expense Categories says so',
       validate: (v) => {
         if (!v.trim()) return null;
         const match = subCategories.find(c => c.name.toLowerCase() === v.trim().toLowerCase());
@@ -518,6 +601,10 @@ export default function SiteExpensesPage() {
       },
     },
     { key: 'narration', label: 'Narration', hint: 'Brief description of payment purpose' },
+    {
+      key: 'vehicleNumber', label: 'Vehicle Number',
+      hint: 'Vehicle-fuel categories only — the vehicle number as in Vehicle Master; required where the project has vehicles of that type',
+    },
     { key: 'expensedBy', label: 'Expensed By', required: true, hint: 'Name of person who spent the amount' },
     {
       key: 'expenseDate', label: 'Expense Date', required: true,
@@ -556,6 +643,19 @@ export default function SiteExpensesPage() {
 
   /** Projects and periods touched by the running import, so alerts can be evaluated once at the end. */
   const importTouchedRef = useRef<Map<string, { periods: Set<string>; categories: Set<string>; amount: number }>>(new Map());
+  /** Each project's vehicles, read once per import however many fuel rows it has. */
+  const importFleetRef = useRef<Map<string, Promise<FuelVehicle[]>>>(new Map());
+  const importFuelFailuresRef = useRef(0);
+  function importFleet(centralProjectId: string): Promise<FuelVehicle[]> {
+    let fleet = importFleetRef.current.get(centralProjectId);
+    if (!fleet) {
+      fleet = loadProjectVehicles(centralProjectId);
+      // A failed read is not cached, so the next row tries again.
+      fleet.catch(() => importFleetRef.current.delete(centralProjectId));
+      importFleetRef.current.set(centralProjectId, fleet);
+    }
+    return fleet;
+  }
 
   async function saveExpenseRow(row: Record<string, any>) {
     const projName = String(row.projectName || '').trim();
@@ -614,11 +714,49 @@ export default function SiteExpensesPage() {
     const missingLabel = validateFieldControlRequirements('expense', {
       ...record,
       attachment: '',
-    }, field);
+    }, fieldExceptSubCategory);
     if (missingLabel) throw new Error(`${missingLabel} is required`);
 
-    await addDoc(collection(db, SAS_COLLECTIONS.expenses), {
+    // The same per-category rule the form applies, so a spreadsheet is not the way around it.
+    const importSubCheck = validateSubCategoryChoice({
+      category: mainCat.name, subCategory: subCatName, categories,
+      requiredEverywhere: field('expenseSubCategory').required,
+    });
+    if (!importSubCheck.ok) throw new Error(importSubCheck.reason);
+
+    // A vehicle-fuel row names its vehicle by number, held to the same list the form offers.
+    let importVehicle: FuelVehicle | null = null;
+    const importType = vehicleTypeFor({
+      category: mainCat.name, subCategory: subCatName, categories, vehicleTypes: fuelLink.vehicleTypes,
+    });
+    const plate = String(row.vehicleNumber || '').trim();
+    if (importType && proj.centralProjectId) {
+      let fleet: FuelVehicle[] | null = null;
+      try {
+        fleet = await importFleet(proj.centralProjectId);
+      } catch {
+        // Unreadable: like the form, the expense saves without a log — unless the row names a
+        // vehicle, which can then not be checked.
+        if (plate) throw new Error(`Vehicle Master could not be read to check vehicle "${plate}"`);
+      }
+      if (fleet) {
+        const options = vehiclesFor({ vehicles: fleet, vehicleType: importType, centralProjectId: proj.centralProjectId });
+        const wanted = normaliseTypeName(plate);
+        importVehicle = wanted
+          ? options.find(v => normaliseTypeName(v.vehicleNumber) === wanted || normaliseTypeName(v.registrationNo) === wanted) ?? null
+          : null;
+        if (plate && !importVehicle) {
+          throw new Error(`Vehicle "${plate}" is not a ${importType} assigned to ${proj.projectName}`);
+        }
+        const importVehicleCheck = validateVehicleChoice({ vehicleType: importType, vehicleId: importVehicle?.id, options });
+        if (!importVehicleCheck.ok) throw new Error(`${importVehicleCheck.reason} Add its Vehicle Number.`);
+      }
+    }
+
+    const created = await addDoc(collection(db, SAS_COLLECTIONS.expenses), {
       ...record,
+      vehicleId:          importVehicle?.id || '',
+      vehicleNumber:      importVehicle ? vehicleLabel(importVehicle) : '',
       attachments:        [],
       createdAt:          serverTimestamp(),
       createdBy:          user?.id   || '',
@@ -627,6 +765,22 @@ export default function SiteExpensesPage() {
       updatedBy:          user?.id   || '',
       updatedByName:      user?.name || '',
     });
+
+    if (importVehicle) {
+      try {
+        await syncFuelLog({
+          expenseId: created.id, vehicle: importVehicle,
+          expense: {
+            expenseDate, amount, projectId: proj.id, projectName: proj.projectName,
+            category: mainCat.name, subCategory: subCatName,
+          },
+          user,
+        });
+      } catch {
+        // The expense row is in; failing it now would invite a re-import and a duplicate.
+        importFuelFailuresRef.current += 1;
+      }
+    }
 
     // Remember what changed so alerts run once for the whole import rather than per row.
     const touched = importTouchedRef.current.get(proj.id)
@@ -646,6 +800,16 @@ export default function SiteExpensesPage() {
   async function runImportAlerts() {
     const touched = importTouchedRef.current;
     importTouchedRef.current = new Map();
+    importFleetRef.current = new Map();
+    const fuelFailures = importFuelFailuresRef.current;
+    importFuelFailuresRef.current = 0;
+    if (fuelFailures > 0) {
+      toast({
+        title: 'Fuel logs not recorded',
+        description: `${fuelFailures} imported vehicle-fuel expense${fuelFailures === 1 ? ' is' : 's are'} saved, but Vehicle Management refused the fuel log. Open and save ${fuelFailures === 1 ? 'it' : 'each'} to retry.`,
+        variant: 'destructive',
+      });
+    }
     for (const [projectId, entry] of touched) {
       const project = projects.find(p => p.id === projectId);
       if (!project) continue;
@@ -668,7 +832,9 @@ export default function SiteExpensesPage() {
 
   function startUpload(item: PendingUpload) {
     const safeName = item.file.name.replace(/[^a-zA-Z0-9._-]/g, '_');
-    const path = `siteAccountExpenses/${targetExpenseIdRef.current}/${Date.now()}-${safeName}`;
+    // The upload's own id (stamped when the file was picked) keeps names unique — and lets a retry
+    // overwrite its failed attempt instead of leaving a second object behind.
+    const path = `siteAccountExpenses/${targetExpenseIdRef.current}/${item.id}-${safeName}`;
     const contentType = item.file.type || 'application/octet-stream';
     const task = uploadBytesResumable(storageRef(storage, path), item.file, { contentType });
     uploadTasksRef.current.set(item.id, task);
@@ -803,6 +969,7 @@ export default function SiteExpensesPage() {
       expenseDate: row.expenseDate, expenseAmount: String(row.expenseAmount),
       paymentMode: row.paymentMode, vendorPartyName: row.vendorPartyName || '',
       billNo: row.billNo || '', isGstBill: row.isGstBill === true, remarks: row.remarks || '',
+      vehicleId: row.vehicleId || '',
     });
     setUploads([]);
     setExistingAttachments(row.attachments ? [...row.attachments] : []);
@@ -815,12 +982,13 @@ export default function SiteExpensesPage() {
 
   function selectProject(id: string) {
     const proj = writableProjects.find(p => p.id === id);
-    setForm(f => ({ ...f, projectId: id, projectName: proj?.projectName || '' }));
+    // Vehicles belong to a project, so a change of project un-picks the vehicle.
+    setForm(f => ({ ...f, projectId: id, projectName: proj?.projectName || '', vehicleId: '' }));
   }
 
   function selectMainCategory(id: string) {
     const cat = mainCategories.find(c => c.id === id);
-    setForm(f => ({ ...f, expenseCategoryId: id, expenseCategory: cat?.name || '', expenseSubCategory: '' }));
+    setForm(f => ({ ...f, expenseCategoryId: id, expenseCategory: cat?.name || '', expenseSubCategory: '', vehicleId: '' }));
   }
 
   // ── Submit ────────────────────────────────────────────────────────────────────
@@ -901,11 +1069,47 @@ export default function SiteExpensesPage() {
       narration: form.narration,
       remarks: form.remarks,
       attachment: uploadedAttachments.length + existingAttachments.length > 0 ? 'attached' : '',
-    }, field);
+    }, fieldExceptSubCategory);
     if (missingLabel) { toast({ title: 'Validation', description: `${missingLabel} is required.`, variant: 'destructive' }); return; }
+
+    const subCheck = validateSubCategoryChoice({
+      category: form.expenseCategory, subCategory: form.expenseSubCategory, categories,
+      requiredEverywhere: field('expenseSubCategory').required,
+    });
+    /*
+     * An edit that leaves an old record's sub-category as it was is not refused for it: the value
+     * may have been renamed or retired since, and that must not block correcting an unrelated
+     * field. A missing one is still refused — forcing the choice on edit is the point of the rule.
+     */
+    const keptExistingSub = Boolean(
+      editingRow && form.expenseSubCategory
+      && form.expenseSubCategory === editingRow.expenseSubCategory
+      && form.expenseCategory === editingRow.expenseCategory,
+    );
+    if (!subCheck.ok && !keptExistingSub) {
+      toast({ title: 'Sub-category needed', description: subCheck.reason, variant: 'destructive' });
+      return;
+    }
+
+    if (fuelLink.loading) {
+      toast({ title: 'Loading vehicles', description: 'The vehicle list is still loading — try again in a moment.', variant: 'destructive' });
+      return;
+    }
+    const vehicleCheck = validateVehicleChoice({
+      vehicleType: fuelLink.vehicleType, vehicleId: form.vehicleId, options: fuelLink.options,
+    });
+    if (!vehicleCheck.ok && !(keptVehicle && form.vehicleId === keptVehicle.id)) {
+      toast({ title: 'Vehicle needed', description: vehicleCheck.reason, variant: 'destructive' });
+      return;
+    }
+    // Only a vehicle-fuel expense keeps a vehicle; a change of category lets it go (and its log).
+    const linkedVehicleId = fuelLink.vehicleType ? form.vehicleId : '';
 
     setSaving(true);
     try {
+      const linkedVehicle = linkedVehicleId
+        ? await resolveVehicle(linkedVehicleId, fuelLink.options, keptVehicle ?? undefined)
+        : null;
       const baseData = {
         projectId: form.projectId, projectName: form.projectName,
         expenseCategory:    form.expenseCategory,
@@ -919,6 +1123,8 @@ export default function SiteExpensesPage() {
         billNo:             form.billNo.trim(),
         isGstBill:          form.isGstBill,
         remarks:            form.remarks.trim(),
+        vehicleId:          linkedVehicle?.id || '',
+        vehicleNumber:      linkedVehicle ? vehicleLabel(linkedVehicle) : '',
         updatedAt:          serverTimestamp(),
         updatedBy:          user?.id   || '',
         updatedByName:      user?.name || '',
@@ -938,6 +1144,14 @@ export default function SiteExpensesPage() {
           amount, previousAmount: editingRow.expenseAmount,
         });
         toast({ title: 'Updated', description: 'Expense updated.' });
+        await syncExpenseFuel({
+          expenseId: editingRow.id, previousVehicleId: editingRow.vehicleId, vehicle: linkedVehicle,
+          expense: {
+            expenseDate: form.expenseDate, amount, projectId: form.projectId, projectName: form.projectName,
+            category: form.expenseCategory, subCategory: form.expenseSubCategory.trim(),
+          },
+          user,
+        });
 
         /*
          * An edit moves the spend total just as surely as a new expense does, but alerts only ever
@@ -1004,7 +1218,15 @@ export default function SiteExpensesPage() {
         });
         const count = uploadedAttachments.length;
         void log('Add SAS Expense', { project: form.projectName, category: form.expenseCategory, amount });
-        toast({ title: 'Added', description: `Expense recorded${count > 0 ? ` with ${count} attachment${count > 1 ? 's' : ''}` : ''}.` });
+        toast({ title: 'Added', description: `Expense recorded${count > 0 ? ` with ${count} attachment${count > 1 ? 's' : ''}` : ''}${linkedVehicle ? ` and fuel logged for ${vehicleLabel(linkedVehicle)}` : ''}.` });
+        await syncExpenseFuel({
+          expenseId: targetExpenseIdRef.current, vehicle: linkedVehicle,
+          expense: {
+            expenseDate: form.expenseDate, amount, projectId: form.projectId, projectName: form.projectName,
+            category: form.expenseCategory, subCategory: form.expenseSubCategory.trim(),
+          },
+          user,
+        });
         // Fire budget alerts (fire-and-forget, does not block UI). One call now loads the alert
         // configuration once and runs all four budget scopes against it.
         const project = projects.find(p => p.id === form.projectId);
@@ -1053,7 +1275,17 @@ export default function SiteExpensesPage() {
       }
       await deleteDoc(doc(db, SAS_COLLECTIONS.expenses, row.id));
       void log('Delete SAS Expense', { project: row.projectName, amount: row.expenseAmount });
-      toast({ title: 'Deleted', description: 'Expense and attachments deleted.' });
+      toast({ title: 'Deleted', description: `Expense and attachments deleted${row.vehicleId ? ', with its fuel log' : ''}.` });
+      if (row.vehicleId) {
+        await syncExpenseFuel({
+          expenseId: row.id, previousVehicleId: row.vehicleId, vehicle: null, deleted: true,
+          expense: {
+            expenseDate: row.expenseDate, amount: row.expenseAmount, projectId: row.projectId, projectName: row.projectName,
+            category: row.expenseCategory, subCategory: row.expenseSubCategory || '',
+          },
+          user,
+        });
+      }
       void loadAll();
 
       /*
@@ -1099,22 +1331,26 @@ export default function SiteExpensesPage() {
    * scope+reload, so toggling between filters inside one period does not refetch.
    */
   const [scopeCache, setScopeCache] = useState<{ key: string; rows: SASExpense[]; truncated: boolean } | null>(null);
-  const [scopeLoading, setScopeLoading] = useState(false);
+  /** The scope whose full read last failed, so "searching…" stops rather than spinning forever. */
+  const [scopeFailedKey, setScopeFailedKey] = useState<string | null>(null);
+  /** Searching: the whole scope is needed and has neither arrived nor failed. */
+  const scopeLoading = staticLoaded && needsFullScope
+    && scopeCache?.key !== scopeCacheKey && scopeFailedKey !== scopeCacheKey;
 
   useEffect(() => {
     if (!staticLoaded || !needsFullScope) return;
     if (scopeCache?.key === scopeCacheKey) return;   // already held for this scope
     let cancelled = false;
 
-    setScopeLoading(true);
     fetchAllExpenses(ledgerScope)
       .then(({ rows, truncated }) => {
         if (!cancelled) setScopeCache({ key: scopeCacheKey, rows, truncated });
       })
       .catch((e: any) => {
-        if (!cancelled) toast({ title: 'Could not search this period', description: e?.message, variant: 'destructive' });
-      })
-      .finally(() => { if (!cancelled) setScopeLoading(false); });
+        if (cancelled) return;
+        setScopeFailedKey(scopeCacheKey);
+        toast({ title: 'Could not search this period', description: e?.message, variant: 'destructive' });
+      });
 
     return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -1137,6 +1373,7 @@ export default function SiteExpensesPage() {
         !(e.expensedBy         || '').toLowerCase().includes(needle) &&
         !(e.expenseCategory    || '').toLowerCase().includes(needle) &&
         !(e.expenseSubCategory || '').toLowerCase().includes(needle) &&
+        !(e.vehicleNumber      || '').toLowerCase().includes(needle) &&
         !(e.narration          || '').toLowerCase().includes(needle) &&
         !(e.vendorPartyName    || '').toLowerCase().includes(needle) &&
         !(e.billNo             || '').toLowerCase().includes(needle)) return false;
@@ -1178,8 +1415,10 @@ export default function SiteExpensesPage() {
    * date cannot be submitted no matter how it got into the field.
    */
   const dateIssue = useMemo(
+    // The project is a dependency too: a month can be closed for one site and open for another,
+    // so switching project after picking a date has to re-judge the date.
     () => (form.expenseDate ? dateControl.check(form.expenseDate, form.projectId).reason ?? null : null),
-    [form.expenseDate, dateControl],
+    [form.expenseDate, form.projectId, dateControl],
   );
 
   // ── Upload gating for the expense dialog ──────────────────────────────────────
@@ -1211,6 +1450,7 @@ export default function SiteExpensesPage() {
               !(e.expensedBy         || '').toLowerCase().includes(needle) &&
               !(e.expenseCategory    || '').toLowerCase().includes(needle) &&
               !(e.expenseSubCategory || '').toLowerCase().includes(needle) &&
+              !(e.vehicleNumber      || '').toLowerCase().includes(needle) &&
               !(e.narration          || '').toLowerCase().includes(needle) &&
               !(e.vendorPartyName    || '').toLowerCase().includes(needle) &&
               !(e.billNo             || '').toLowerCase().includes(needle)) return false;
@@ -1235,6 +1475,7 @@ export default function SiteExpensesPage() {
         { header: 'Project',        key: 'projectName',        width: 28 },
         { header: 'Main Category',  key: 'expenseCategory',    width: 22 },
         { header: 'Sub-Category',   key: 'expenseSubCategory', width: 22 },
+        { header: 'Vehicle',        key: 'vehicleNumber',      width: 16 },
         { header: 'Narration',      key: 'narration',          width: 30 },
         { header: 'Expensed By',    key: 'expensedBy',         width: 20 },
         { header: 'Expense Date',   key: 'expenseDate',        width: 14 },
@@ -1272,6 +1513,7 @@ export default function SiteExpensesPage() {
       rows.forEach(e => ws.addRow(columns.map(({ key }) => {
         switch (key) {
           case 'expenseSubCategory': return e.expenseSubCategory || '';
+          case 'vehicleNumber':      return e.vehicleNumber || '';
           case 'narration':          return e.narration || '';
           case 'gstBillStr':         return e.isGstBill ? 'Yes' : 'No';
           case 'attachCount':        return e.attachments?.length || 0;
@@ -1554,7 +1796,9 @@ export default function SiteExpensesPage() {
                         <div className="flex flex-col gap-0.5">
                           <Badge variant="outline" className="w-fit">{row.expenseCategory}</Badge>
                           {row.expenseSubCategory && (
-                            <span className="text-xs text-muted-foreground">↳ {row.expenseSubCategory}</span>
+                            <span className="text-xs text-muted-foreground">
+                              ↳ {row.expenseSubCategory}{row.vehicleNumber ? ` · ${row.vehicleNumber}` : ''}
+                            </span>
                           )}
                         </div>
                       </TableCell>
@@ -1712,6 +1956,12 @@ export default function SiteExpensesPage() {
                   <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Sub-Category</p>
                   <p className="mt-0.5">{viewExpense.expenseSubCategory || <span className="text-muted-foreground">—</span>}</p>
                 </div>
+                {viewExpense.vehicleId && (
+                  <div>
+                    <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Vehicle</p>
+                    <p className="mt-0.5">{viewExpense.vehicleNumber || '—'}</p>
+                  </div>
+                )}
                 <div>
                   <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Vendor / Party</p>
                   <p className="mt-0.5">{viewExpense.vendorPartyName || <span className="text-muted-foreground">—</span>}</p>
@@ -1859,14 +2109,24 @@ export default function SiteExpensesPage() {
 
       {/* Add / Edit Dialog */}
       <Dialog open={dialogOpen} onOpenChange={open => { if (!open && !saving) closeDialog(); }}>
-        <DialogContent className="max-w-[95vw] sm:max-w-xl max-h-[90vh] overflow-y-auto">
+        {/*
+          * Wide enough for three fields abreast on a desktop, so the form is shorter as well as
+          * roomier. The shell does not scroll: the body below does, and the footer stays in view —
+          * when the whole dialog scrolled, Save slid off the bottom with the form.
+          */}
+        <DialogContent className="max-w-[95vw] gap-0 sm:max-w-2xl lg:max-w-4xl">
           <DialogHeader>
             <DialogTitle>{editingRow ? 'Edit Expense' : 'Record Site Expense'}</DialogTitle>
           </DialogHeader>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 py-2">
+          <div className="-mx-1 mt-4 min-h-0 flex-1 overflow-y-auto px-1">
+          {/*
+            * Full-width blocks span with a breakpoint (`sm:col-span-2`). A bare `col-span-2` on a
+            * one-column phone grid silently adds a second column and pushes the form off-screen.
+            */}
+          <div className="grid grid-cols-1 gap-4 py-2 sm:grid-cols-2 lg:grid-cols-3">
 
             {/* Project */}
-            <div className="col-span-2 space-y-1.5">
+            <div className="space-y-1.5 sm:col-span-2 lg:col-span-3">
               <Label>Project <span className="text-destructive">*</span></Label>
               {/* Only projects the user may actually write to — a viewer-only project has no
                   business being selectable in a form that records spend against it. */}
@@ -1883,7 +2143,7 @@ export default function SiteExpensesPage() {
 
             {/* Available balance for selected project */}
             {formProjectBalance !== undefined && (
-              <div className="col-span-2 grid grid-cols-3 gap-2 rounded-lg border bg-slate-50 px-3 py-2 text-center text-xs">
+              <div className="grid grid-cols-3 gap-2 rounded-lg border bg-slate-50 px-3 py-2 text-center text-xs sm:col-span-2 lg:col-span-3">
                 <div>
                   <p className="text-muted-foreground">Received</p>
                   <p className="font-semibold text-blue-600">{formatINR(formProjectBalance.received)}</p>
@@ -1915,12 +2175,12 @@ export default function SiteExpensesPage() {
             )}
 
             {/* Sub-Category */}
-            {field('expenseSubCategory').visible && (
+            {subCategoryField.visible && (
             <div className="space-y-1.5">
-              <Label>{field('expenseSubCategory').label} {fieldMark(field('expenseSubCategory'))}</Label>
+              <Label>{subCategoryField.label} {fieldMark(subCategoryField)}</Label>
               <Select
                 value={form.expenseSubCategory || '_none_'}
-                onValueChange={v => setField('expenseSubCategory', v === '_none_' ? '' : v)}
+                onValueChange={v => setForm(f => ({ ...f, expenseSubCategory: v === '_none_' ? '' : v, vehicleId: '' }))}
                 disabled={!form.expenseCategoryId || formSubCategories.length === 0}
               >
                 <SelectTrigger>
@@ -1937,6 +2197,15 @@ export default function SiteExpensesPage() {
               </Select>
             </div>
             )}
+
+            {/* Vehicle — only for a vehicle-fuel category whose sub-category is a vehicle type */}
+            <VehicleFuelField
+              link={fuelLink}
+              value={form.vehicleId}
+              onChange={v => setField('vehicleId', v)}
+              kept={keptVehicle}
+              project={{ chosen: Boolean(form.projectId), linked: Boolean(formProject?.centralProjectId) }}
+            />
 
             {/* Expensed By */}
             {field('expensedBy').visible && (
@@ -2011,7 +2280,7 @@ export default function SiteExpensesPage() {
 
             {/* GST bill flag */}
             {field('isGstBill').visible && (
-            <div className="col-span-2">
+            <div className="sm:col-span-2 lg:col-span-1 lg:self-end">
               <label className="flex cursor-pointer items-center gap-2.5 rounded-lg border bg-muted/20 px-3 py-2.5 hover:bg-muted/40 transition-colors">
                 <Checkbox
                   checked={form.isGstBill}
@@ -2025,7 +2294,7 @@ export default function SiteExpensesPage() {
 
             {/* Narration */}
             {field('narration').visible && (
-            <div className="col-span-2 space-y-1.5">
+            <div className="sm:col-span-2 lg:col-span-3 space-y-1.5">
               <Label>{field('narration').label} {fieldMark(field('narration'))}</Label>
               <Input value={form.narration} onChange={e => setField('narration', e.target.value)} placeholder="Brief description of payment purpose" />
             </div>
@@ -2033,7 +2302,7 @@ export default function SiteExpensesPage() {
 
             {/* Remarks */}
             {field('remarks').visible && (
-            <div className="col-span-2 space-y-1.5">
+            <div className="sm:col-span-2 lg:col-span-3 space-y-1.5">
               <Label>{field('remarks').label} {fieldMark(field('remarks'))}</Label>
               <Textarea rows={2} value={form.remarks} onChange={e => setField('remarks', e.target.value)} placeholder="Additional notes" />
             </div>
@@ -2041,7 +2310,7 @@ export default function SiteExpensesPage() {
 
             {/* ── Attachments ─────────────────────────────────────────────────── */}
             {field('attachment').visible && (
-            <div className="col-span-2 space-y-2">
+            <div className="sm:col-span-2 lg:col-span-3 space-y-2">
               <Label className="flex items-center gap-1.5">
                 <Paperclip className="h-3.5 w-3.5" />
                 {field('attachment').label} {fieldMark(field('attachment'))}
@@ -2183,8 +2452,9 @@ export default function SiteExpensesPage() {
             </div>
             )}
           </div>
+          </div>
 
-          <DialogFooter>
+          <DialogFooter className="mt-2 shrink-0 border-t pt-4">
             <Button variant="outline" onClick={closeDialog} disabled={saving}>Cancel</Button>
             <Button
               onClick={handleSubmit}

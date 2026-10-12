@@ -6,6 +6,15 @@ import { useVehicleOptions } from '@/components/vehicle-management/hooks';
 import { useAuthorization } from '@/hooks/useAuthorization';
 import { VEHICLE_COLLECTIONS } from '@/lib/vehicle-management';
 import { useAuth } from '@/components/auth/AuthProvider';
+import { SAS_FUEL_SOURCE } from '@/lib/site-account-statement-vehicle-fuel';
+
+/**
+ * Fuel logs written by a Site Account Statement expense carry only its vehicle, date and amount,
+ * and that expense keeps them in step — edited or deleted there, they follow. Edited here, the
+ * two would disagree (and this form's litres × rate would overwrite the amount), so they are
+ * read-only on this screen.
+ */
+const fromSiteAccount = (row: Record<string, any>) => row.source === SAS_FUEL_SOURCE;
 
 const columns: CrudColumnConfig[] = [
   { key: 'vehicleNumber', label: 'Vehicle Number' },
@@ -15,6 +24,13 @@ const columns: CrudColumnConfig[] = [
   { key: 'quantityLiters', label: 'Quantity (L)' },
   { key: 'ratePerUnit', label: 'Rate/L (₹)' },
   { key: 'totalAmount', label: 'Total (₹)' },
+  {
+    key: 'source',
+    label: 'Source',
+    formatter: (_value, row) => (fromSiteAccount(row)
+      ? `Site Account${row.sasProjectName ? ` · ${row.sasProjectName}` : ''}`
+      : 'Fuel Management'),
+  },
   { key: 'mileageKmPerLiter', label: 'Mileage (KM/L)' },
   { key: 'costPerKm', label: 'Cost/KM' },
   { key: 'fuelStationName', label: 'Fuel Station' },
@@ -106,6 +122,9 @@ export default function FuelManagementPage() {
       canExport={canExport}
       exportFileName="fuel-management"
       defaultSort={{ key: 'fuelDate', direction: 'desc' }}
+      rowLockedReason={(row) => (fromSiteAccount(row)
+        ? 'From Site Account Statement — change or delete the site expense instead.'
+        : null)}
       onBeforeSave={(payload) => {
         const vehicle = vehicleMap[String(payload.vehicleId)];
         const quantity = Number(payload.quantityLiters || 0);

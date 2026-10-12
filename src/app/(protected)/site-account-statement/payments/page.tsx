@@ -49,7 +49,7 @@ import {
 } from '@/components/ui/alert-dialog';
 import {
   Camera, Calendar, ChevronDown, ChevronLeft, ChevronRight,
-  Download, ExternalLink, File, FileText, Image, Loader2, Lock,
+  Download, ExternalLink, File, FileText, Image as ImageIcon, Loader2, Lock,
   Paperclip, Pencil, Plus, Receipt, TrendingDown, TrendingUp, Trash2, Upload, Wallet, X,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
@@ -102,7 +102,7 @@ function formatSize(bytes: number): string {
 }
 
 function AttachmentIcon({ type }: { type: string }) {
-  if (type.startsWith('image/')) return <Image className="h-4 w-4 text-sky-500 shrink-0" />;
+  if (type.startsWith('image/')) return <ImageIcon className="h-4 w-4 text-sky-500 shrink-0" />;
   if (type === 'application/pdf')  return <FileText className="h-4 w-4 text-rose-500 shrink-0" />;
   return <File className="h-4 w-4 text-slate-400 shrink-0" />;
 }
@@ -173,25 +173,30 @@ export default function PaymentsPage() {
   const [filterTo,      setFilterTo]      = useState(() => getMonthRange().end);
   const [search,        setSearch]        = useState('');
 
+  /*
+   * Load projects once auth has settled. `loading` already starts true, so nothing is set before
+   * the read; a reply that lands after unmount is dropped.
+   */
   useEffect(() => {
-    if (!isAuthLoading) void loadProjects();
-  }, [isAuthLoading]);
-
-  async function loadProjects() {
-    setLoading(true);
-    try {
-      const pSnap = await getDocs(query(collection(db, SAS_COLLECTIONS.projects), orderBy('projectName')));
-      setProjects(pSnap.docs.map(d => ({ id: d.id, ...d.data() } as SASProject)).filter(p => p.enabledForSiteAccount && p.status === 'Active'));
-      setStaticLoaded(true);
-    } catch (e: any) {
-      setLoading(false);
-      toast({
-        title: 'Could not load projects',
-        description: e?.message || 'Check your connection and reload the page.',
-        variant: 'destructive',
+    if (isAuthLoading) return;
+    let cancelled = false;
+    getDocs(query(collection(db, SAS_COLLECTIONS.projects), orderBy('projectName')))
+      .then(pSnap => {
+        if (cancelled) return;
+        setProjects(pSnap.docs.map(d => ({ id: d.id, ...d.data() } as SASProject)).filter(p => p.enabledForSiteAccount && p.status === 'Active'));
+        setStaticLoaded(true);
+      })
+      .catch((e: any) => {
+        if (cancelled) return;
+        setLoading(false);
+        toast({
+          title: 'Could not load projects',
+          description: e?.message || 'Check your connection and reload the page.',
+          variant: 'destructive',
+        });
       });
-    }
-  }
+    return () => { cancelled = true; };
+  }, [isAuthLoading, toast]);
 
   /** Re-runs the scope loader below — used after every write. */
   function loadAll() { setReloadToken(token => token + 1); }
@@ -225,11 +230,6 @@ export default function PaymentsPage() {
 
   function setField(key: keyof FormState, value: string) {
     setForm(f => ({ ...f, [key]: value }));
-  }
-
-  function selectProject(id: string) {
-    const proj = writableProjects.find(p => p.id === id);
-    setForm(f => ({ ...f, projectId: id, projectName: proj?.projectName || '' }));
   }
 
   // ── Projects visible to this user ──────────────────────────────────────────
@@ -272,6 +272,13 @@ export default function PaymentsPage() {
   const effectiveCanAdd    = canAdd    || writableProjects.length > 0;
   const effectiveCanEdit   = canEdit   || writableProjects.length > 0;
   const effectiveCanImport = canImport || writableProjects.length > 0;
+
+  // Below `writableProjects`, not above it: a function that reads a value declared later stops the
+  // React Compiler from keeping that value's memo (react-hooks/preserve-manual-memoization).
+  function selectProject(id: string) {
+    const proj = writableProjects.find(p => p.id === id);
+    setForm(f => ({ ...f, projectId: id, projectName: proj?.projectName || '' }));
+  }
 
   // ── Month navigation ─────────────────────────────────────────────────────────
   function shiftMonth(offset: number) {
@@ -664,7 +671,8 @@ export default function PaymentsPage() {
   const needsFullScope = refining || !sortControl.atRegistryDefault;
 
   const [scopeCache, setScopeCache] = useState<{ key: string; rows: SASPayment[]; truncated: boolean } | null>(null);
-  const [scopeLoading, setScopeLoading] = useState(false);
+  /** The scope whose full read last failed, so "searching…" stops rather than spinning forever. */
+  const [scopeFailedKey, setScopeFailedKey] = useState<string | null>(null);
   const scopeCacheKey = `${scopeKey}#${reloadToken}`;
 
   /*
@@ -676,20 +684,24 @@ export default function PaymentsPage() {
   const scopeCacheKeyRef = useRef(scopeCacheKey);
   useEffect(() => { scopeCacheKeyRef.current = scopeCacheKey; }, [scopeCacheKey]);
 
+  /** Searching: the whole scope is needed and has neither arrived nor failed. */
+  const scopeLoading = staticLoaded && needsFullScope
+    && scopeCache?.key !== scopeCacheKey && scopeFailedKey !== scopeCacheKey;
+
   useEffect(() => {
     if (!staticLoaded || !needsFullScope) return;
     if (scopeCache?.key === scopeCacheKey) return;
     let cancelled = false;
 
-    setScopeLoading(true);
     fetchAllPayments(ledgerScope)
       .then(({ rows, truncated }) => {
         if (!cancelled) setScopeCache({ key: scopeCacheKey, rows, truncated });
       })
       .catch((e: any) => {
-        if (!cancelled) toast({ title: 'Could not search this period', description: e?.message, variant: 'destructive' });
-      })
-      .finally(() => { if (!cancelled) setScopeLoading(false); });
+        if (cancelled) return;
+        setScopeFailedKey(scopeCacheKey);
+        toast({ title: 'Could not search this period', description: e?.message, variant: 'destructive' });
+      });
 
     return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -729,8 +741,9 @@ export default function PaymentsPage() {
    * cannot be submitted however it got into the field — `min`/`max` only constrain the picker.
    */
   const dateIssue = useMemo(
+    // The project is a dependency too: a month can be closed for one site and open for another.
     () => (form.receiptDate ? dateControl.check(form.receiptDate, form.projectId).reason ?? null : null),
-    [form.receiptDate, dateControl],
+    [form.receiptDate, form.projectId, dateControl],
   );
 
   async function exportExcel() {

@@ -1,5 +1,7 @@
 {
-  "extends": ["development"],
+  "extends": [
+    "development"
+  ],
   "hints": {
     "compat-api/css": [
       "default",
@@ -11,7 +13,8 @@
           "scrollbar-width: thin",
           "scrollbar-width: none",
           "scrollbar-gutter: stable both-edges",
-          "text-size-adjust: 100%"
+          "text-size-adjust: 100%",
+          "scrollbar-gutter: auto"
         ]
       }
     ]

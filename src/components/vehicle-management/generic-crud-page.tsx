@@ -176,6 +176,12 @@ interface GenericCrudPageProps {
   onBeforeDelete?: (args: {
     row: Record<string, any>;
   }) => Promise<void> | void;
+  /**
+   * Opt-in: a row this screen does not own — written by another module, which keeps it in step —
+   * returns a short reason, shown in place of its Edit and Delete buttons. Edit and delete are
+   * also refused for it, so a stale button or a quick double-click cannot get round the lock.
+   */
+  rowLockedReason?: (row: Record<string, any>) => string | null;
 }
 
 const DEFAULT_PAGE_SIZE = 25;
@@ -338,6 +344,7 @@ export default function GenericCrudPage({
   onAfterSave,
   onAfterDelete,
   onBeforeDelete,
+  rowLockedReason,
 }: GenericCrudPageProps) {
   const searchParams = useSearchParams();
   const initialTab = searchParams?.get('tab') === 'history' ? 'history' : 'active';
@@ -803,7 +810,7 @@ export default function GenericCrudPage({
   };
 
   const openEditDialog = (row: Record<string, any>) => {
-    if (!canEdit) return;
+    if (!canEdit || rowLockedReason?.(row)) return;
     setEditingRow(row);
     setFormState(buildInitialForm(fields, row));
     setFileState({});
@@ -901,6 +908,12 @@ export default function GenericCrudPage({
       } else {
         payload[field.key] = raw;
       }
+    }
+
+    const lockedReason = editingRow ? rowLockedReason?.(editingRow) : null;
+    if (lockedReason) {
+      toast({ title: 'Read-only record', description: lockedReason, variant: 'destructive' });
+      return;
     }
 
     try {
@@ -1007,6 +1020,12 @@ export default function GenericCrudPage({
 
   const confirmDelete = async () => {
     if (!deleteRow) return;
+    const lockedReason = rowLockedReason?.(deleteRow);
+    if (lockedReason) {
+      toast({ title: 'Read-only record', description: lockedReason, variant: 'destructive' });
+      setDeleteRow(null);
+      return;
+    }
     try {
       if (onBeforeDelete) await onBeforeDelete({ row: deleteRow });
       await deleteDoc(doc(db, collectionName, deleteRow.id as string));
@@ -1200,6 +1219,8 @@ export default function GenericCrudPage({
                     <div className="mt-3 flex gap-2 border-t border-slate-100 pt-3">
                       {row.isMissingRecord ? (
                         <Button size="sm" onClick={() => openAddForVehicle(row)} disabled={!canAdd} className={cn('h-10 flex-1', VM_PRIMARY_BUTTON)}>Add {itemName}</Button>
+                      ) : rowLockedReason?.(row) ? (
+                        <p className="flex-1 text-xs text-muted-foreground">{rowLockedReason(row)}</p>
                       ) : (
                         <>
                           {canEdit && <Button variant="outline" size="sm" onClick={() => openEditDialog(row)} className="h-10 flex-1">Edit</Button>}
@@ -1249,6 +1270,8 @@ export default function GenericCrudPage({
                                 <Button size="sm" onClick={() => openAddForVehicle(row)} disabled={!canAdd} className={cn('h-8 px-3', VM_PRIMARY_BUTTON)}>
                                   Add {itemName}
                                 </Button>
+                              ) : rowLockedReason?.(row) ? (
+                                <span className="whitespace-normal text-left text-xs text-muted-foreground">{rowLockedReason(row)}</span>
                               ) : (
                                 <>
                                   {canEdit && <Button variant="outline" size="sm" onClick={() => openEditDialog(row)} className="h-8 px-3">
