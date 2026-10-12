@@ -23,9 +23,11 @@ import { useFieldControl, validateFieldControlRequirements } from '@/components/
 import { useDateControl } from '@/components/site-account-statement/use-date-control';
 import { subCategoryRequirement, validateSubCategoryChoice } from '@/lib/site-account-statement-subcategory-rule';
 import {
-  normaliseTypeName, validateVehicleChoice, vehicleLabel, vehiclesFor, vehicleTypeFor, type FuelVehicle,
+  MANUAL_VEHICLE, tidyVehicleNumber, validateVehicleChoice, vehicleLabel, vehicleTypeFor, type FuelVehicle,
 } from '@/lib/site-account-statement-vehicle-fuel';
-import { loadProjectVehicles, resolveVehicle, syncFuelLog, useVehicleFuelLink } from '@/components/site-account-statement/use-vehicle-fuel';
+import {
+  chosenVehicle, loadAllVehicles, syncFuelLog, useVehicleFuelLink,
+} from '@/components/site-account-statement/use-vehicle-fuel';
 import { VehicleFuelField } from '@/components/site-account-statement/vehicle-fuel-field';
 import { useSortControl } from '@/components/site-account-statement/use-sort-control';
 import { SortControl } from '@/components/site-account-statement/sort-control';
@@ -100,15 +102,17 @@ interface FormState {
   billNo: string;
   isGstBill: boolean;
   remarks: string;
-  /** Vehicle-fuel categories only: the Vehicle Master vehicle fuelled. */
+  /** Vehicle-fuel categories only: the Vehicle Master vehicle fuelled, or MANUAL_VEHICLE. */
   vehicleId: string;
+  /** The typed number, when the vehicle is not in the list. */
+  vehicleNumber: string;
 }
 
 const blank = (): FormState => ({
   projectId: '', projectName: '',
   expenseCategoryId: '', expenseCategory: '', expenseSubCategory: '',
   narration: '', expensedBy: '', expenseDate: '', expenseAmount: '',
-  paymentMode: 'Cash', vendorPartyName: '', billNo: '', isGstBill: false, remarks: '', vehicleId: '',
+  paymentMode: 'Cash', vendorPartyName: '', billNo: '', isGstBill: false, remarks: '', vehicleId: '', vehicleNumber: '',
 });
 
 function getMonthRange(fromDate?: string, offset = 0) {
@@ -603,7 +607,7 @@ export default function SiteExpensesPage() {
     { key: 'narration', label: 'Narration', hint: 'Brief description of payment purpose' },
     {
       key: 'vehicleNumber', label: 'Vehicle Number',
-      hint: 'Vehicle-fuel categories only — the vehicle number as in Vehicle Master; required where the project has vehicles of that type',
+      hint: 'Required for vehicle-fuel categories — linked to Vehicle Master when the number is there, kept as typed when not',
     },
     { key: 'expensedBy', label: 'Expensed By', required: true, hint: 'Name of person who spent the amount' },
     {
@@ -643,18 +647,17 @@ export default function SiteExpensesPage() {
 
   /** Projects and periods touched by the running import, so alerts can be evaluated once at the end. */
   const importTouchedRef = useRef<Map<string, { periods: Set<string>; categories: Set<string>; amount: number }>>(new Map());
-  /** Each project's vehicles, read once per import however many fuel rows it has. */
-  const importFleetRef = useRef<Map<string, Promise<FuelVehicle[]>>>(new Map());
+  /** Vehicle Master, read once per import however many fuel rows it has. */
+  const importFleetRef = useRef<Promise<FuelVehicle[]> | null>(null);
   const importFuelFailuresRef = useRef(0);
-  function importFleet(centralProjectId: string): Promise<FuelVehicle[]> {
-    let fleet = importFleetRef.current.get(centralProjectId);
-    if (!fleet) {
-      fleet = loadProjectVehicles(centralProjectId);
+  function importFleet(): Promise<FuelVehicle[]> {
+    if (!importFleetRef.current) {
+      const fleet = loadAllVehicles();
       // A failed read is not cached, so the next row tries again.
-      fleet.catch(() => importFleetRef.current.delete(centralProjectId));
-      importFleetRef.current.set(centralProjectId, fleet);
+      fleet.catch(() => { importFleetRef.current = null; });
+      importFleetRef.current = fleet;
     }
-    return fleet;
+    return importFleetRef.current;
   }
 
   async function saveExpenseRow(row: Record<string, any>) {
@@ -724,39 +727,30 @@ export default function SiteExpensesPage() {
     });
     if (!importSubCheck.ok) throw new Error(importSubCheck.reason);
 
-    // A vehicle-fuel row names its vehicle by number, held to the same list the form offers.
+    // A vehicle-fuel row names its vehicle by number, as the form's "Not in the list" does: linked
+    // to Vehicle Master when the number is there, kept as typed when it is not.
     let importVehicle: FuelVehicle | null = null;
+    let importNumber = '';
     const importType = vehicleTypeFor({
       category: mainCat.name, subCategory: subCatName, categories, vehicleTypes: fuelLink.vehicleTypes,
     });
-    const plate = String(row.vehicleNumber || '').trim();
-    if (importType && proj.centralProjectId) {
-      let fleet: FuelVehicle[] | null = null;
-      try {
-        fleet = await importFleet(proj.centralProjectId);
-      } catch {
-        // Unreadable: like the form, the expense saves without a log — unless the row names a
-        // vehicle, which can then not be checked.
-        if (plate) throw new Error(`Vehicle Master could not be read to check vehicle "${plate}"`);
-      }
-      if (fleet) {
-        const options = vehiclesFor({ vehicles: fleet, vehicleType: importType, centralProjectId: proj.centralProjectId });
-        const wanted = normaliseTypeName(plate);
-        importVehicle = wanted
-          ? options.find(v => normaliseTypeName(v.vehicleNumber) === wanted || normaliseTypeName(v.registrationNo) === wanted) ?? null
-          : null;
-        if (plate && !importVehicle) {
-          throw new Error(`Vehicle "${plate}" is not a ${importType} assigned to ${proj.projectName}`);
-        }
-        const importVehicleCheck = validateVehicleChoice({ vehicleType: importType, vehicleId: importVehicle?.id, options });
-        if (!importVehicleCheck.ok) throw new Error(`${importVehicleCheck.reason} Add its Vehicle Number.`);
-      }
+    if (importType) {
+      const plate = tidyVehicleNumber(row.vehicleNumber);
+      const importVehicleCheck = validateVehicleChoice({
+        vehicleType: importType, vehicleId: MANUAL_VEHICLE, manualNumber: plate, options: [],
+      });
+      if (!importVehicleCheck.ok) throw new Error(`${importVehicleCheck.reason} Add it in the Vehicle Number column.`);
+      const chosen = await chosenVehicle({
+        vehicleType: importType, vehicleId: MANUAL_VEHICLE, manualNumber: plate, options: [], fleet: importFleet,
+      });
+      importVehicle = chosen.vehicle;
+      importNumber = chosen.vehicleNumber;
     }
 
     const created = await addDoc(collection(db, SAS_COLLECTIONS.expenses), {
       ...record,
       vehicleId:          importVehicle?.id || '',
-      vehicleNumber:      importVehicle ? vehicleLabel(importVehicle) : '',
+      vehicleNumber:      importNumber,
       attachments:        [],
       createdAt:          serverTimestamp(),
       createdBy:          user?.id   || '',
@@ -800,7 +794,7 @@ export default function SiteExpensesPage() {
   async function runImportAlerts() {
     const touched = importTouchedRef.current;
     importTouchedRef.current = new Map();
-    importFleetRef.current = new Map();
+    importFleetRef.current = null;
     const fuelFailures = importFuelFailuresRef.current;
     importFuelFailuresRef.current = 0;
     if (fuelFailures > 0) {
@@ -969,7 +963,9 @@ export default function SiteExpensesPage() {
       expenseDate: row.expenseDate, expenseAmount: String(row.expenseAmount),
       paymentMode: row.paymentMode, vendorPartyName: row.vendorPartyName || '',
       billNo: row.billNo || '', isGstBill: row.isGstBill === true, remarks: row.remarks || '',
-      vehicleId: row.vehicleId || '',
+      // A number with no Vehicle Master id was typed, so it reopens as typed.
+      vehicleId: row.vehicleId || (row.vehicleNumber ? MANUAL_VEHICLE : ''),
+      vehicleNumber: row.vehicleId ? '' : (row.vehicleNumber || ''),
     });
     setUploads([]);
     setExistingAttachments(row.attachments ? [...row.attachments] : []);
@@ -988,7 +984,7 @@ export default function SiteExpensesPage() {
 
   function selectMainCategory(id: string) {
     const cat = mainCategories.find(c => c.id === id);
-    setForm(f => ({ ...f, expenseCategoryId: id, expenseCategory: cat?.name || '', expenseSubCategory: '', vehicleId: '' }));
+    setForm(f => ({ ...f, expenseCategoryId: id, expenseCategory: cat?.name || '', expenseSubCategory: '', vehicleId: '', vehicleNumber: '' }));
   }
 
   // ── Submit ────────────────────────────────────────────────────────────────────
@@ -1096,20 +1092,22 @@ export default function SiteExpensesPage() {
       return;
     }
     const vehicleCheck = validateVehicleChoice({
-      vehicleType: fuelLink.vehicleType, vehicleId: form.vehicleId, options: fuelLink.options,
+      vehicleType: fuelLink.vehicleType, vehicleId: form.vehicleId,
+      manualNumber: form.vehicleNumber, options: fuelLink.options,
     });
     if (!vehicleCheck.ok && !(keptVehicle && form.vehicleId === keptVehicle.id)) {
       toast({ title: 'Vehicle needed', description: vehicleCheck.reason, variant: 'destructive' });
       return;
     }
-    // Only a vehicle-fuel expense keeps a vehicle; a change of category lets it go (and its log).
-    const linkedVehicleId = fuelLink.vehicleType ? form.vehicleId : '';
 
     setSaving(true);
     try {
-      const linkedVehicle = linkedVehicleId
-        ? await resolveVehicle(linkedVehicleId, fuelLink.options, keptVehicle ?? undefined)
-        : null;
+      // Only a vehicle-fuel expense keeps a vehicle; a change of category lets it go (and its log).
+      // A typed number links to Vehicle Master when it is there, and is kept as typed when not.
+      const { vehicle: linkedVehicle, vehicleNumber: linkedNumber } = await chosenVehicle({
+        vehicleType: fuelLink.vehicleType, vehicleId: form.vehicleId, manualNumber: form.vehicleNumber,
+        options: fuelLink.options, kept: keptVehicle,
+      });
       const baseData = {
         projectId: form.projectId, projectName: form.projectName,
         expenseCategory:    form.expenseCategory,
@@ -1124,7 +1122,7 @@ export default function SiteExpensesPage() {
         isGstBill:          form.isGstBill,
         remarks:            form.remarks.trim(),
         vehicleId:          linkedVehicle?.id || '',
-        vehicleNumber:      linkedVehicle ? vehicleLabel(linkedVehicle) : '',
+        vehicleNumber:      linkedNumber,
         updatedAt:          serverTimestamp(),
         updatedBy:          user?.id   || '',
         updatedByName:      user?.name || '',
@@ -1956,10 +1954,13 @@ export default function SiteExpensesPage() {
                   <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Sub-Category</p>
                   <p className="mt-0.5">{viewExpense.expenseSubCategory || <span className="text-muted-foreground">—</span>}</p>
                 </div>
-                {viewExpense.vehicleId && (
+                {viewExpense.vehicleNumber && (
                   <div>
                     <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Vehicle</p>
-                    <p className="mt-0.5">{viewExpense.vehicleNumber || '—'}</p>
+                    <p className="mt-0.5">
+                      {viewExpense.vehicleNumber}
+                      {!viewExpense.vehicleId && <span className="text-xs text-muted-foreground"> (not in Vehicle Master)</span>}
+                    </p>
                   </div>
                 )}
                 <div>
@@ -2180,7 +2181,7 @@ export default function SiteExpensesPage() {
               <Label>{subCategoryField.label} {fieldMark(subCategoryField)}</Label>
               <Select
                 value={form.expenseSubCategory || '_none_'}
-                onValueChange={v => setForm(f => ({ ...f, expenseSubCategory: v === '_none_' ? '' : v, vehicleId: '' }))}
+                onValueChange={v => setForm(f => ({ ...f, expenseSubCategory: v === '_none_' ? '' : v, vehicleId: '', vehicleNumber: '' }))}
                 disabled={!form.expenseCategoryId || formSubCategories.length === 0}
               >
                 <SelectTrigger>
@@ -2203,6 +2204,8 @@ export default function SiteExpensesPage() {
               link={fuelLink}
               value={form.vehicleId}
               onChange={v => setField('vehicleId', v)}
+              manualNumber={form.vehicleNumber}
+              onManualNumberChange={v => setField('vehicleNumber', v)}
               kept={keptVehicle}
               project={{ chosen: Boolean(form.projectId), linked: Boolean(formProject?.centralProjectId) }}
             />

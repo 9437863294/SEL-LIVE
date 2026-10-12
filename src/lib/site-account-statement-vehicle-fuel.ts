@@ -128,24 +128,56 @@ export interface VehicleChoiceCheck {
   reason?: string;
 }
 
+/** The vehicle picker's "not in the list — type the number" choice. */
+export const MANUAL_VEHICLE = '_manual_';
+
+/** A vehicle number as typed, tidied for storage: trimmed, upper-case, single-spaced. */
+export function tidyVehicleNumber(value: string | null | undefined): string {
+  return String(value ?? '').trim().toUpperCase().replace(/\s+/g, ' ');
+}
+
+/** The Vehicle Master record a typed number belongs to — case, spaces and dashes aside. */
+export function findVehicleByNumber(vehicles: FuelVehicle[], number: string | null | undefined): FuelVehicle | null {
+  const wanted = normaliseTypeName(number);
+  if (!wanted) return null;
+  return vehicles.find(v => normaliseTypeName(v.vehicleNumber) === wanted
+    || normaliseTypeName(v.registrationNo) === wanted) ?? null;
+}
+
+/** Fewer characters than any registration plate — a typo or a placeholder, not a vehicle. */
+const MIN_NUMBER_LENGTH = 4;
+
 /**
- * Whether the vehicle chosen on an expense is acceptable.
+ * Whether the vehicle named on an expense is acceptable.
  *
- * Required whenever there are vehicles to choose from. When the project has none of the type in
- * Vehicle Master, the expense still saves — that is an administrator's gap, and blocking the site
- * from recording real spending would not close it — it simply logs no fuel.
+ * A vehicle-fuel expense always names one: picked from the project's vehicles of the type, or —
+ * when it is not among them, or the project has none — typed as a number. A typed number does not
+ * have to be in Vehicle Master: hired and borrowed vehicles are fuelled on sites too, and refusing
+ * the expense would not make them appear there. It simply logs no fuel unless Vehicle Master knows it.
  */
 export function validateVehicleChoice({
   vehicleType,
   vehicleId,
+  manualNumber,
   options,
 }: {
   vehicleType: string | null;
   vehicleId: string | null | undefined;
+  manualNumber?: string | null;
   options: FuelVehicle[];
 }): VehicleChoiceCheck {
-  if (!vehicleType || options.length === 0) return { ok: true };
-  if (!vehicleId) return { ok: false, reason: `Choose which ${vehicleType} this fuel was for.` };
+  if (!vehicleType) return { ok: true };
+  if (vehicleId === MANUAL_VEHICLE || options.length === 0) {
+    const typed = normaliseTypeName(manualNumber);
+    if (!typed) return { ok: false, reason: `Enter the ${vehicleType}'s vehicle number.` };
+    if (typed.length < MIN_NUMBER_LENGTH) {
+      return { ok: false, reason: `"${tidyVehicleNumber(manualNumber)}" is too short for a vehicle number.` };
+    }
+    return { ok: true };
+  }
+  if (!vehicleId) {
+    return { ok: false, reason: `Choose which ${vehicleType} this fuel was for — or "Not in the list" to type its number.` };
+  }
   if (!options.some(v => v.id === vehicleId)) {
     return { ok: false, reason: `That vehicle is not a ${vehicleType} assigned to this project.` };
   }

@@ -11,7 +11,8 @@ import { collection, deleteDoc, doc, getDoc, getDocs, query, serverTimestamp, se
 import { db } from '@/lib/firebase';
 import { DEFAULT_VEHICLE_TYPES, VEHICLE_COLLECTIONS, VEHICLE_TYPES_DOC_ID } from '@/lib/vehicle-management';
 import {
-  buildFuelLog, fuelLogAction, fuelLogIdFor, linksVehicleFuel, vehiclesFor, vehicleTypeFor,
+  buildFuelLog, findVehicleByNumber, fuelLogAction, fuelLogIdFor, linksVehicleFuel, MANUAL_VEHICLE,
+  tidyVehicleNumber, vehicleLabel, vehiclesFor, vehicleTypeFor,
   type FuelRuleCategory, type FuelVehicle,
 } from '@/lib/site-account-statement-vehicle-fuel';
 
@@ -55,6 +56,54 @@ export async function resolveVehicle(
     // Unreadable — the number stored on the expense is the best that is left.
   }
   return { ...fallback, id: vehicleId };
+}
+
+/** Every vehicle in Vehicle Master — read only to place a number someone typed. */
+export async function loadAllVehicles(): Promise<FuelVehicle[]> {
+  const snap = await getDocs(collection(db, VEHICLE_COLLECTIONS.vehicleMaster));
+  return snap.docs.map(d => ({ id: d.id, ...d.data() } as FuelVehicle));
+}
+
+/**
+ * What an expense records for its vehicle: the Vehicle Master vehicle, if there is one — which gets
+ * the fuel log — and the number shown on the expense.
+ *
+ * A typed number is looked for in the project's own list, then the whole fleet: a vehicle lent
+ * from another site is still that vehicle, and its fuel belongs in its log. A number Vehicle Master
+ * does not know (a hired vehicle), or a fleet that cannot be read, keeps just the number.
+ */
+export async function chosenVehicle({
+  vehicleType,
+  vehicleId,
+  manualNumber,
+  options,
+  kept,
+  fleet = loadAllVehicles,
+}: {
+  vehicleType: string | null;
+  vehicleId: string;
+  manualNumber: string;
+  options: FuelVehicle[];
+  kept?: FuelVehicle | null;
+  /** Supplies the whole fleet — an import passes a cached one so 200 rows read it once. */
+  fleet?: () => Promise<FuelVehicle[]>;
+}): Promise<{ vehicle: FuelVehicle | null; vehicleNumber: string }> {
+  if (!vehicleType) return { vehicle: null, vehicleNumber: '' };
+  if (vehicleId && vehicleId !== MANUAL_VEHICLE) {
+    const vehicle = await resolveVehicle(vehicleId, options, kept ?? undefined);
+    return { vehicle, vehicleNumber: vehicleLabel(vehicle) };
+  }
+  const typed = tidyVehicleNumber(manualNumber);
+  if (!typed) return { vehicle: null, vehicleNumber: '' };
+  let vehicle = findVehicleByNumber(options, typed);
+  if (!vehicle) {
+    try {
+      vehicle = findVehicleByNumber(await fleet(), typed);
+    } catch {
+      vehicle = null;
+    }
+  }
+  return { vehicle, vehicleNumber: vehicle ? vehicleLabel(vehicle) : typed };
 }
 
 export interface VehicleFuelLink {

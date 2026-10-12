@@ -1,30 +1,51 @@
 'use client';
 
-import { AlertTriangle, Fuel, Loader2 } from 'lucide-react';
+import { AlertTriangle } from 'lucide-react';
+import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import {
+  Select, SelectContent, SelectItem, SelectSeparator, SelectTrigger, SelectValue,
+} from '@/components/ui/select';
 import { cn } from '@/lib/utils';
-import { vehicleLabel, type FuelVehicle } from '@/lib/site-account-statement-vehicle-fuel';
+import { MANUAL_VEHICLE, vehicleLabel, type FuelVehicle } from '@/lib/site-account-statement-vehicle-fuel';
 import type { VehicleFuelLink } from './use-vehicle-fuel';
 
+/** A Select that only says why it cannot be used yet — the same look as the form's other disabled ones. */
+function WaitingSelect({ text }: { text: string }) {
+  return (
+    <Select disabled>
+      <SelectTrigger><SelectValue placeholder={text} /></SelectTrigger>
+      <SelectContent />
+    </Select>
+  );
+}
+
 /**
- * The Vehicle picker a vehicle-fuel expense shows, beneath its sub-category.
+ * The Vehicle field a vehicle-fuel expense shows, beside its sub-category.
  *
- * Renders nothing unless the category and sub-category stand for a vehicle type. When the
- * project has none of that type in Vehicle Master, it says so instead of offering an empty list —
- * the expense still saves, it just cannot log the fuel against a vehicle.
+ * Renders nothing unless the category and sub-category stand for a vehicle type. The project's
+ * vehicles of that type are offered first; "Not in the list" — or a project with none to offer —
+ * takes a typed vehicle number instead, for a hired or borrowed vehicle.
+ *
+ * The label is plain text like its neighbours': an icon in a flex label sat it at a different
+ * height from the labels beside it.
  */
 export function VehicleFuelField({
   link,
   value,
   onChange,
+  manualNumber,
+  onManualNumberChange,
   kept,
   project,
   className,
 }: {
   link: VehicleFuelLink;
+  /** The chosen vehicle's id, `MANUAL_VEHICLE`, or '' for none yet. */
   value: string;
   onChange: (vehicleId: string) => void;
+  manualNumber: string;
+  onManualNumberChange: (number: string) => void;
   /** An edit's existing vehicle, offered even when it is no longer assigned to the project. */
   kept?: FuelVehicle | null;
   /** Whether a project is chosen, and whether it is linked to the master project list Vehicle Master uses. */
@@ -32,77 +53,67 @@ export function VehicleFuelField({
   className?: string;
 }) {
   if (!link.vehicleType) return null;
-  if (!project.chosen || !project.linked) {
-    return (
-      <div className={cn('space-y-1.5', className)}>
-        <Label className="flex items-center gap-1.5">
-          <Fuel className="h-3.5 w-3.5 text-muted-foreground" />
-          Vehicle ({link.vehicleType})
-        </Label>
-        <div className="flex h-10 items-center rounded-md border border-dashed px-3 text-sm text-muted-foreground">
-          {project.chosen ? 'Project not linked to Vehicle Master' : 'Select a project first'}
-        </div>
-        {project.chosen && (
-          <p className="text-[11px] text-muted-foreground">
-            This site project has no master project, so its vehicles cannot be found — the expense saves without a fuel log.
-          </p>
-        )}
-      </div>
-    );
-  }
   const type = link.vehicleType;
+
+  const label = (
+    <Label>Vehicle ({type}) <span className="text-destructive">*</span></Label>
+  );
+  const numberInput = (
+    <Input
+      value={manualNumber}
+      onChange={e => onManualNumberChange(e.target.value)}
+      placeholder="Vehicle number, e.g. OD02CN7704"
+      autoComplete="off"
+      className="uppercase placeholder:normal-case"
+    />
+  );
+  const note = (text: string, warn = false) => (
+    <p className={cn('flex items-start gap-1 text-[11px]', warn ? 'text-amber-700' : 'text-muted-foreground')}>
+      {warn && <AlertTriangle className="mt-px h-3 w-3 shrink-0" />}
+      {text}
+    </p>
+  );
+
+  if (!project.chosen) {
+    return <div className={cn('space-y-1.5', className)}>{label}<WaitingSelect text="Select a project first" /></div>;
+  }
+  if (link.loading) {
+    return <div className={cn('space-y-1.5', className)}>{label}<WaitingSelect text="Loading vehicles…" /></div>;
+  }
+
   // A kept vehicle that has left the project is still listed, so the edit can keep it.
   const keptMoved = kept && !link.options.some(v => v.id === kept.id) ? kept : null;
   const choices = keptMoved ? [...link.options, keptMoved] : link.options;
-  const required = link.options.length > 0;
 
-  let note: React.ReactNode = null;
-  if (link.loading) {
-    note = null;
-  } else if (link.error) {
-    note = (
-      <p className="flex items-start gap-1 text-[11px] text-amber-700">
-        <AlertTriangle className="mt-px h-3 w-3 shrink-0" />
-        Vehicle Master could not be read — the expense still saves, but may log no fuel.
-      </p>
-    );
-  } else if (keptMoved && value === keptMoved.id) {
-    note = (
-      <p className="text-[11px] text-muted-foreground">
-        {vehicleLabel(keptMoved)} is no longer assigned to this project — kept from when this expense was recorded.
-      </p>
-    );
-  } else if (link.options.length === 0) {
-    note = (
-      <p className="text-[11px] text-muted-foreground">
-        Vehicle Master has no {type} assigned to this project — the expense saves without a fuel log.
-      </p>
+  // Nothing to pick from: the number is typed, and the note says why.
+  if (!project.linked || choices.length === 0) {
+    return (
+      <div className={cn('space-y-1.5', className)}>
+        {label}
+        {numberInput}
+        {!project.linked
+          ? note('This project is not linked to Vehicle Master — type the vehicle number.')
+          : link.error
+            ? note('Vehicle Master could not be read — type the vehicle number.', true)
+            : note(`No ${type} is assigned to this project — type the vehicle number.`)}
+      </div>
     );
   }
 
   return (
     <div className={cn('space-y-1.5', className)}>
-      <Label className="flex items-center gap-1.5">
-        <Fuel className="h-3.5 w-3.5 text-muted-foreground" />
-        Vehicle ({type}) {required && <span className="text-destructive">*</span>}
-      </Label>
-      {link.loading ? (
-        <div className="flex h-10 items-center gap-2 rounded-md border px-3 text-sm text-muted-foreground">
-          <Loader2 className="h-3.5 w-3.5 animate-spin" /> Loading vehicles…
-        </div>
-      ) : choices.length > 0 ? (
-        <Select value={value || undefined} onValueChange={onChange}>
-          <SelectTrigger><SelectValue placeholder={`Select ${type}`} /></SelectTrigger>
-          <SelectContent>
-            {choices.map(v => <SelectItem key={v.id} value={v.id}>{vehicleLabel(v)}</SelectItem>)}
-          </SelectContent>
-        </Select>
-      ) : (
-        <div className="flex h-10 items-center rounded-md border border-dashed px-3 text-sm text-muted-foreground">
-          {link.error ? 'Vehicles unavailable' : `No ${type} on this project`}
-        </div>
-      )}
-      {note}
+      {label}
+      <Select value={value || undefined} onValueChange={onChange}>
+        <SelectTrigger><SelectValue placeholder={`Select ${type}`} /></SelectTrigger>
+        <SelectContent>
+          {choices.map(v => <SelectItem key={v.id} value={v.id}>{vehicleLabel(v)}</SelectItem>)}
+          <SelectSeparator />
+          <SelectItem value={MANUAL_VEHICLE}>Not in the list — type the number</SelectItem>
+        </SelectContent>
+      </Select>
+      {value === MANUAL_VEHICLE && numberInput}
+      {keptMoved && value === keptMoved.id
+        && note(`${vehicleLabel(keptMoved)} is no longer assigned to this project — kept from the original entry.`)}
     </div>
   );
 }

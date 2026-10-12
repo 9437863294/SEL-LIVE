@@ -19,7 +19,7 @@ import { useFieldControl, validateFieldControlRequirements } from '@/components/
 import { useDateControl } from '@/components/site-account-statement/use-date-control';
 import { subCategoryRequirement, validateSubCategoryChoice } from '@/lib/site-account-statement-subcategory-rule';
 import { validateVehicleChoice, vehicleLabel } from '@/lib/site-account-statement-vehicle-fuel';
-import { syncFuelLog, useVehicleFuelLink } from '@/components/site-account-statement/use-vehicle-fuel';
+import { chosenVehicle, syncFuelLog, useVehicleFuelLink } from '@/components/site-account-statement/use-vehicle-fuel';
 import { VehicleFuelField } from '@/components/site-account-statement/vehicle-fuel-field';
 import { fieldMark } from '@/components/site-account-statement/controlled-field';
 import { useAuthorization } from '@/hooks/useAuthorization';
@@ -144,7 +144,8 @@ function QuickExpenseDialog({
     billNo: '',
     isGstBill: false,
     remarks: '',
-    vehicleId: '',   // vehicle-fuel categories only
+    vehicleId: '',   // vehicle-fuel categories only: a Vehicle Master id, or MANUAL_VEHICLE
+    vehicleNumber: '',   // the typed number, when the vehicle is not in the list
   });
 
   const mainCategories = useMemo(() => categories.filter(c => !c.parentId), [categories]);
@@ -181,9 +182,9 @@ function QuickExpenseDialog({
   const dateIssue = form.expenseDate ? dateControl.check(form.expenseDate, project.id).reason ?? null : null;
 
   function handleMainCategoryChange(catId: string) {
-    if (catId === '_none_') { setForm(f => ({ ...f, expenseCategoryId: '', expenseCategory: '', expenseSubCategory: '', vehicleId: '' })); return; }
+    if (catId === '_none_') { setForm(f => ({ ...f, expenseCategoryId: '', expenseCategory: '', expenseSubCategory: '', vehicleId: '', vehicleNumber: '' })); return; }
     const cat = mainCategories.find(c => c.id === catId);
-    setForm(f => ({ ...f, expenseCategoryId: catId, expenseCategory: cat?.name ?? '', expenseSubCategory: '', vehicleId: '' }));
+    setForm(f => ({ ...f, expenseCategoryId: catId, expenseCategory: cat?.name ?? '', expenseSubCategory: '', vehicleId: '', vehicleNumber: '' }));
   }
 
   function addFiles(files: FileList | null) {
@@ -206,7 +207,7 @@ function QuickExpenseDialog({
     setForm(f => ({
       ...f,
       expenseCategoryId: '', expenseCategory: '', expenseSubCategory: '',
-      narration: '', expenseAmount: '', vendorPartyName: '', billNo: '', isGstBill: false, remarks: '', vehicleId: '',
+      narration: '', expenseAmount: '', vendorPartyName: '', billNo: '', isGstBill: false, remarks: '', vehicleId: '', vehicleNumber: '',
     }));
     setPendingFiles([]);
   }
@@ -241,15 +242,18 @@ function QuickExpenseDialog({
       return;
     }
     const vehicleCheck = validateVehicleChoice({
-      vehicleType: fuelLink.vehicleType, vehicleId: form.vehicleId, options: fuelLink.options,
+      vehicleType: fuelLink.vehicleType, vehicleId: form.vehicleId,
+      manualNumber: form.vehicleNumber, options: fuelLink.options,
     });
     if (!vehicleCheck.ok) { toast({ title: 'Vehicle needed', description: vehicleCheck.reason, variant: 'destructive' }); return; }
-    const linkedVehicle = fuelLink.vehicleType
-      ? fuelLink.options.find(v => v.id === form.vehicleId) ?? null
-      : null;
 
     setSaving(true);
     try {
+      // A typed number links to Vehicle Master when it is there, and is kept as typed when not.
+      const { vehicle: linkedVehicle, vehicleNumber: linkedNumber } = await chosenVehicle({
+        vehicleType: fuelLink.vehicleType, vehicleId: form.vehicleId, manualNumber: form.vehicleNumber,
+        options: fuelLink.options,
+      });
       const docRef = await addDoc(collection(db, SAS_COLLECTIONS.expenses), {
         projectId: project.id,
         projectName: project.projectName,
@@ -265,7 +269,7 @@ function QuickExpenseDialog({
         isGstBill: form.isGstBill,
         remarks: form.remarks.trim(),
         vehicleId: linkedVehicle?.id || '',
-        vehicleNumber: linkedVehicle ? vehicleLabel(linkedVehicle) : '',
+        vehicleNumber: linkedNumber,
         attachments: [],
         createdAt: serverTimestamp(),
         createdBy: user?.id || '',
@@ -385,7 +389,7 @@ function QuickExpenseDialog({
             </Label>
             <Select
               value={form.expenseSubCategory || '_none_'}
-              onValueChange={v => setForm(f => ({ ...f, expenseSubCategory: v === '_none_' ? '' : v, vehicleId: '' }))}
+              onValueChange={v => setForm(f => ({ ...f, expenseSubCategory: v === '_none_' ? '' : v, vehicleId: '', vehicleNumber: '' }))}
               disabled={subCategoryOptions.length === 0}
             >
               <SelectTrigger>
@@ -405,6 +409,8 @@ function QuickExpenseDialog({
             link={fuelLink}
             value={form.vehicleId}
             onChange={v => setF('vehicleId', v)}
+            manualNumber={form.vehicleNumber}
+            onManualNumberChange={v => setF('vehicleNumber', v)}
             project={{ chosen: true, linked: Boolean(project.centralProjectId) }}
           />
 

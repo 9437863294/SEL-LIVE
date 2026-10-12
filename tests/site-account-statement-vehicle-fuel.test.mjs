@@ -8,6 +8,9 @@ const {
   vehiclesFor,
   vehicleLabel,
   validateVehicleChoice,
+  MANUAL_VEHICLE,
+  tidyVehicleNumber,
+  findVehicleByNumber,
   fuelLogIdFor,
   buildFuelLog,
   fuelLogAction,
@@ -139,8 +142,44 @@ test('an offered vehicle passes', () => {
   assert.equal(validateVehicleChoice({ vehicleType: 'Two Wheeler', vehicleId: 'v1', options: OPTIONS }).ok, true);
 });
 
-test('with no vehicles of the type on the project, the expense still saves', () => {
-  assert.equal(validateVehicleChoice({ vehicleType: 'Two Wheeler', vehicleId: '', options: [] }).ok, true);
+test('with no vehicles of the type on the project, the number is typed instead', () => {
+  const missing = validateVehicleChoice({ vehicleType: 'Two Wheeler', vehicleId: '', options: [] });
+  assert.equal(missing.ok, false);
+  assert.match(missing.reason, /Enter the Two Wheeler's vehicle number/);
+  assert.equal(validateVehicleChoice({ vehicleType: 'Two Wheeler', vehicleId: '', manualNumber: 'od 02 cn 9999', options: [] }).ok, true);
+});
+
+test('"Not in the list" asks for a number even when there are vehicles to pick', () => {
+  const missing = validateVehicleChoice({ vehicleType: 'Two Wheeler', vehicleId: MANUAL_VEHICLE, manualNumber: '  ', options: OPTIONS });
+  assert.equal(missing.ok, false);
+  assert.equal(validateVehicleChoice({ vehicleType: 'Two Wheeler', vehicleId: MANUAL_VEHICLE, manualNumber: 'WB01X1', options: OPTIONS }).ok, true);
+});
+
+test('a typed number too short to be a plate is refused', () => {
+  const r = validateVehicleChoice({ vehicleType: 'Car', vehicleId: MANUAL_VEHICLE, manualNumber: 'ab', options: [] });
+  assert.match(r.reason, /too short/);
+});
+
+test('an unpicked list points at the typed-number way out', () => {
+  const r = validateVehicleChoice({ vehicleType: 'Two Wheeler', vehicleId: '', options: OPTIONS });
+  assert.match(r.reason, /Not in the list/);
+});
+
+// ── Typed numbers ──────────────────────────────────────────────────────────────
+
+test('a typed number is tidied for storage', () => {
+  assert.equal(tidyVehicleNumber('  od02  cn 7704 '), 'OD02 CN 7704');
+  assert.equal(tidyVehicleNumber(undefined), '');
+});
+
+test('a typed number finds its Vehicle Master record, spacing and case aside', () => {
+  assert.equal(findVehicleByNumber(FLEET, 'as01-b-1234')?.id, 'v1');
+  // By registration when the vehicle has no number of its own.
+  assert.equal(findVehicleByNumber(FLEET, 'AS01 F 2222')?.id, 'v6');
+  // Another project's vehicle is still that vehicle — its fuel is logged against it.
+  assert.equal(findVehicleByNumber(FLEET, 'AS01C5555')?.id, 'v3');
+  assert.equal(findVehicleByNumber(FLEET, 'KA01ZZ0000'), null);
+  assert.equal(findVehicleByNumber(FLEET, ''), null);
 });
 
 test('an expense that is not vehicle fuel needs no vehicle', () => {
