@@ -7,6 +7,8 @@ import { collection, getDocs, orderBy, query } from 'firebase/firestore';
 import { format } from 'date-fns';
 import { db } from '@/lib/firebase';
 import { useToast } from '@/hooks/use-toast';
+import { useAuthorization } from '@/hooks/useAuthorization';
+import { AccessDenied } from '@/components/insurance/insurance-ui';
 import type { ProjectInsurancePolicy, ProjectPolicyRenewal, User } from '@/lib/types';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
@@ -37,6 +39,9 @@ const fmtCur = (n: number) =>
 
 export default function ProjectInsuranceHistoryPage() {
   const { toast } = useToast();
+  // The same check as personal history; the security rules refuse these reads to anyone else.
+  const { can, isLoading: authLoading } = useAuthorization();
+  const canView = can('View History', 'Insurance.Project Insurance') || can('View', 'Insurance.Project Insurance');
   const [events, setEvents] = useState<HistoryEvent[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [search, setSearch] = useState('');
@@ -87,7 +92,11 @@ export default function ProjectInsuranceHistoryPage() {
     }
   };
 
-  useEffect(() => { fetchHistory(); }, []); // eslint-disable-line
+  useEffect(() => {
+    if (authLoading) return;
+    if (canView) fetchHistory(); // eslint-disable-line react-hooks/set-state-in-effect -- loads on open, as before
+    else setIsLoading(false);
+  }, [authLoading, canView]); // eslint-disable-line
 
   const filtered = useMemo(() => {
     if (!search.trim()) return events;
@@ -103,7 +112,9 @@ export default function ProjectInsuranceHistoryPage() {
     renewed: events.filter((e) => e.eventType === 'Policy Renewed').length,
   }), [events]);
 
-  if (isLoading) {
+  if (!authLoading && !canView) return <AccessDenied what="view project insurance history" />;
+
+  if (authLoading || isLoading) {
     return (
       <div className="space-y-4">
         <Skeleton className="h-28 w-full rounded-xl" />

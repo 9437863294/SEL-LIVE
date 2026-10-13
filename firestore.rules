@@ -97,7 +97,17 @@ service cloud.firestore {
         'siteAccountBudgetAlertConfigs', 'siteAccountBudgetAlertState', 'siteAccountBudgetAllocations', 'siteAccountBudgetApprovals',
         'siteAccountBudgets', 'siteAccountCategories', 'siteAccountCategoryBudgets', 'siteAccountExpenses',
         'siteAccountPayments', 'siteAccountProjects', 'siteAccountSettings', 'siteAccountTenderBudgets',
-        'siteFundRequestProjects', 'siteFundRequests'
+        'siteFundRequestProjects', 'siteFundRequests',
+        'candidateApplications', 'candidates', 'compensationApprovals', 'hrActivities',
+        'hrCounters', 'hrEscalations', 'hrManpowerPlans', 'hrRecruitmentCosts',
+        'hrReferrals', 'hrRequirementApprovals', 'hrRequirementTemplates', 'hrRequirements',
+        'hrSettings', 'interviewFeedback', 'interviews', 'jobDescriptions',
+        'joiningRecords', 'offers', 'preJoining', 'recruitmentAgencies',
+        'recruitmentSources', 'selectionProposals', 'talentPools', 'bankAccounts',
+        'bankBalanceCounters', 'bankBalanceSettings', 'bankExpenses', 'bankInstrumentNos',
+        'bankPayments', 'loans', 'monthlyInterest', 'paymentMethods',
+        'insuranceCompanies', 'insuranceTasks', 'insurance_policies', 'insuredAssets',
+        'policyCategories', 'policyHolders', 'project_insurance_policies'
       ];
     }
 
@@ -1007,6 +1017,800 @@ service cloud.firestore {
         || (resource.data.get('stage', '') == 'Request Receiving'
           && request.resource.data.diff(resource.data).affectedKeys()
             .hasOnly(['projectId', 'departmentId', 'amount', 'partyName', 'description', 'date', 'attachments'])));
+    }
+
+    /* ── HR & Recruitment (src/lib/permissions.ts, "HR & Recruitment"; src/lib/hr-requirement-service.ts) ─
+     *
+     * Every screen in the module sits behind `View Module` on 'HR & Recruitment' (module-layout-shell
+     * canViewModule) and reads its collections whole for the organisation (useHrCollection:
+     * `where organizationId == org`), then filters in the browser. My Interviews and Referrals are open
+     * to anyone in the module, and they subscribe to every interview, feedback entry, candidate and
+     * referral. So every record here — candidates, CTCs, offers, joining records — is readable by
+     * the module's users and by nobody else. The dashboard on / and /my-work (work-dashboard-sources.ts)
+     * asks with `pendingApproverIds | interviewerIds array-contains me`, which a named person may
+     * always do.
+     *
+     * Writes follow the action the screen checks, and three kinds of assignment stand on their own,
+     * because the service treats them as the authority (hr-requirement-service.ts):
+     *   - a requirement's, compensation approval's or offer's `pendingApproverIds`;
+     *   - an interview's `interviewerIds` (feedback, and the panel summary it recomputes);
+     *   - the cascades every step runs on records it does not own (requirement counters, the
+     *     candidate's application count and talent-pool flags, a joining record's document state,
+     *     an agency's performance counters) — narrowed to those fields.
+     *
+     * Names are `users` document ids (`userPermissions.userDocId`), never the auth uid. Organisation is
+     * not checked: `userPermissions` does not carry it. Budget: the permissions document (1), plus at
+     * most one of the requirement (an approval entry), the interview (feedback) or the compensation
+     * approval (a proposal's decision) — 2 of 10.
+     */
+    function hrUser() {
+      return hasPermissions() && get(permissionsPath()).data.p.get('HR & Recruitment', []).hasAny(['View Module']);
+    }
+
+    function hrHolds(page, actions) {
+      return hasPermissions() && get(permissionsPath()).data.p.get('HR & Recruitment.' + page, []).hasAny(actions);
+    }
+
+    /** The caller's `users` id; '' when unknown, which then matches no one. */
+    function hrMe() {
+      return hasPermissions() ? get(permissionsPath()).data.get('userDocId', '') : '';
+    }
+
+    function hrIsMe(userId) {
+      return hrMe() != '' && userId == hrMe();
+    }
+
+    function hrNamed(userIds) {
+      return hrMe() != '' && userIds.hasAny([hrMe()]);
+    }
+
+    function hrChanged() {
+      return request.resource.data.diff(resource.data).affectedKeys();
+    }
+
+    function hrOnly(fields) {
+      return hrChanged().hasOnly(fields.concat(['updatedAt', 'updatedBy', 'updatedByName']));
+    }
+
+    function hrUnchanged(fields) {
+      return !hrChanged().hasAny(fields);
+    }
+
+    /** A new record stamped as its writer (withCreateAudit). */
+    function hrCreatedByMe() {
+      return hrIsMe(request.resource.data.get('createdBy', ''));
+    }
+
+    /** An edit leaves `updatedBy` alone or stamps the writer (withUpdateAudit). */
+    function hrStamped() {
+      return request.resource.data.get('updatedBy', null) == resource.data.get('updatedBy', null)
+        || hrIsMe(request.resource.data.get('updatedBy', ''));
+    }
+
+    function hrStatus() {
+      return request.resource.data.get('status', '');
+    }
+
+    function hrStatusField(field) {
+      return request.resource.data.get(field, '');
+    }
+
+    function hrWas() {
+      return resource.data.get('status', '');
+    }
+
+    /** Fields no edit moves: who made the record and what it belongs to. */
+    function hrKeeps(fields) {
+      return hrUnchanged(fields.concat(['organizationId', 'createdAt', 'createdBy']));
+    }
+
+    /*
+     * Every step that moves an application: the pipeline itself, scheduling an interview, selection,
+     * the offer stages, joining, and cancelling the requirement (which releases its pipeline).
+     */
+    function hrPipelineWriter() {
+      return hrHolds('Pipeline', ['Add Candidate', 'Move Stage', 'Screen', 'Reject', 'Hold', 'Move To Talent Pool'])
+        || hrHolds('Interviews', ['Schedule'])
+        || hrHolds('Selection', ['Add', 'Edit', 'Withdraw'])
+        || hrHolds('Offers', ['Add', 'Send', 'Record Response', 'Withdraw'])
+        || hrHolds('Joining', ['Confirm Joining', 'Postpone', 'Mark Not Joined'])
+        || hrHolds('Requirements', ['Cancel']);
+    }
+
+    /* ── Configuration and numbering ── */
+
+    match /hrSettings/{organizationId} {
+      allow get: if hrUser();
+      allow create, update: if hrHolds('Settings', ['Edit']) && hrUser()
+        && request.resource.data.get('organizationId', '') == organizationId
+        && (resource == null || hrStamped());
+    }
+
+    /*
+     * Document numbers, allocated in a transaction by whoever creates the record — a referral from
+     * anyone in the module included. The sequence only moves forward.
+     */
+    match /hrCounters/{counterId} {
+      allow get: if hrUser();
+      allow create: if hrUser() && request.resource.data.get('nextSequence', 0) is int
+        && request.resource.data.get('nextSequence', 0) > 1;
+      allow update: if hrUser() && request.resource.data.get('nextSequence', 0) is int
+        && request.resource.data.get('nextSequence', 0) > resource.data.get('nextSequence', 1);
+    }
+
+    /** Append-only: every step writes one as its actor, comments and JD notes included. */
+    match /hrActivities/{entryId} {
+      allow read: if hrUser();
+      allow create: if hrUser() && hrIsMe(request.resource.data.get('userId', ''));
+    }
+
+    /* Written by the server only (api/hr/sla), or not at all yet; readable in the module. */
+    match /hrEscalations/{entryId} {
+      allow read: if hrUser();
+    }
+    match /hrRequirementTemplates/{templateId} {
+      allow read: if hrUser();
+    }
+    match /jobDescriptions/{descriptionId} {
+      allow read: if hrUser();
+    }
+    match /recruitmentSources/{sourceId} {
+      allow read: if hrUser();
+    }
+
+    /* ── Requirements and their approval (spec sections 5–15) ── */
+
+    function hrPendingApproval() {
+      return ['SUBMITTED', 'PENDING_HOD_APPROVAL', 'PENDING_HR_APPROVAL', 'PENDING_BUDGET_APPROVAL',
+        'PENDING_MANAGEMENT_APPROVAL'];
+    }
+
+    /** RECRUITING_REQUIREMENT_STATUSES, src/lib/hr-policy.ts. */
+    function hrRecruiting() {
+      return ['OPEN', 'SOURCING', 'SCREENING', 'INTERVIEWING', 'SELECTION_IN_PROGRESS', 'OFFER_IN_PROGRESS',
+        'PARTIALLY_FILLED', 'REOPENED'];
+    }
+
+    function hrRequirementWriter() {
+      return hrHolds('Requirements', [
+        'Add', 'Edit', 'Submit', 'Assign Recruiter', 'Hold', 'Resume', 'Cancel', 'Close', 'Reopen', 'Manage Sourcing'
+      ]);
+    }
+
+    /*
+     * A requisition awaiting a decision is the approvers' (actOnRequirement): a register permission
+     * may cancel it or edit around it, but not move its stage or change who decides.
+     */
+    function hrRequirementEdit() {
+      return hrRequirementWriter() && (
+        !(hrWas() in hrPendingApproval())
+        || hrStatus() == 'CANCELLED'
+        || hrUnchanged(['status', 'pendingApproverIds', 'approvalStages', 'approvalStageIndex',
+          'currentApprovalStage', 'currentApprovalStageLabel']));
+    }
+
+    /** The decision of someone the chain names: approve, reject, send back, forward or delegate. */
+    function hrRequirementDecision() {
+      return hrNamed(resource.data.get('pendingApproverIds', [])) && hrWas() in hrPendingApproval()
+        && hrStatus() in hrPendingApproval().concat(['RECRUITER_ASSIGNMENT_PENDING', 'REJECTED', 'DRAFT'])
+        && hrOnly(['status', 'approvalStageIndex', 'currentApprovalStage', 'currentApprovalStageLabel',
+          'pendingApproverIds', 'rejectedAt', 'rejectionReason', 'approvedAt', 'slaStartedAt', 'slaTargetDays',
+          'slaState', 'slaConsumedPercent', 'targetClosureDate']);
+    }
+
+    /*
+     * refreshRequirementCounters, run after every pipeline, interview, selection, offer and joining
+     * step, and confirmJoining's `joinedCount`. The status it re-derives stays among the recruiting
+     * ones (or FILLED), and only when the requirement was recruiting.
+     */
+    function hrRequirementCounters() {
+      return hrOnly(['applicationCount', 'screeningCount', 'interviewingCount', 'selectedCount',
+          'offeredCount', 'offerAcceptedCount', 'joinedCount', 'status'])
+        && (hrUnchanged(['status'])
+          || (hrWas() in hrRecruiting() && hrStatus() in hrRecruiting().concat(['FILLED'])));
+    }
+
+    function hrRequirementPath(requirementId) {
+      return /databases/$(database)/documents/hrRequirements/$(requirementId);
+    }
+
+    function hrApproverOf(requirementId) {
+      return requirementId is string && requirementId != '' && hasPermissions()
+        && exists(hrRequirementPath(requirementId))
+        && hrNamed(get(hrRequirementPath(requirementId)).data.get('pendingApproverIds', []));
+    }
+
+    match /hrRequirements/{requirementId} {
+      allow read: if hrUser() || hrNamed(resource.data.get('pendingApproverIds', []));
+      allow create: if hrUser() && hrHolds('Requirements', ['Add']) && hrCreatedByMe()
+        && hrStatus() == 'DRAFT';
+      allow update: if hrUser() && hrStamped() && hrKeeps(['requirementNumber'])
+        && (hrRequirementEdit() || hrRequirementDecision() || hrRequirementCounters());
+    }
+
+    /** Append-only trail, written by the approver the requirement names, before it moves. */
+    match /hrRequirementApprovals/{entryId} {
+      allow read: if hrUser();
+      allow create: if hrUser() && hrIsMe(request.resource.data.get('approverId', ''))
+        && hrApproverOf(request.resource.data.get('requirementId', ''));
+    }
+
+    match /hrManpowerPlans/{planId} {
+      allow read: if hrUser();
+      allow create: if hrUser() && hrHolds('Manpower Planning', ['Add']) && hrCreatedByMe();
+      allow update: if hrUser() && hrHolds('Manpower Planning', ['Edit']) && hrStamped() && hrKeeps([]);
+    }
+
+    /* ── Candidates and the pipeline (spec sections 19–23) ── */
+
+    match /candidates/{candidateId} {
+      allow read: if hrUser();
+      allow create: if hrUser() && hrHolds('Candidates', ['Add']) && hrCreatedByMe();
+      allow update: if hrUser() && hrStamped() && hrKeeps(['candidateNumber']) && (
+        hrHolds('Candidates', ['Edit'])
+        || (hrHolds('Candidates', ['Set Do Not Hire'])
+          && hrOnly(['doNotHire', 'doNotHireReason', 'doNotHireBy', 'doNotHireAt']))
+        // createApplication, addToTalentPool and confirmJoining keep the candidate in step.
+        || ((hrPipelineWriter() || hrHolds('Talent Pool', ['Add']))
+          && hrOnly(['applicationCount', 'lastApplicationAt', 'inTalentPool', 'talentPoolCategories', 'employeeId'])));
+    }
+
+    match /candidateApplications/{applicationId} {
+      allow read: if hrUser();
+      allow create: if hrUser() && hrHolds('Pipeline', ['Add Candidate']) && hrCreatedByMe()
+        && hrStatusField('stage') == 'NEW';
+      allow update: if hrUser() && hrStamped()
+        && hrKeeps(['applicationNumber', 'requirementId', 'candidateId'])
+        // The interviewer's feedback carries the panel's score across (recomputeInterviewSummary).
+        && (hrPipelineWriter() || hrOnly(['latestInterviewScore', 'panelRecommendation']));
+    }
+
+    match /talentPools/{entryId} {
+      allow read: if hrUser();
+      allow create: if hrUser() && hrCreatedByMe()
+        && (hrHolds('Talent Pool', ['Add']) || hrHolds('Pipeline', ['Move Stage', 'Move To Talent Pool']));
+    }
+
+    /* ── Interviews (spec sections 24–26) ── */
+
+    function hrInterviewPath(interviewId) {
+      return /databases/$(database)/documents/interviews/$(interviewId);
+    }
+
+    function hrInterviewerOf(interviewId) {
+      return interviewId is string && interviewId != '' && hasPermissions()
+        && exists(hrInterviewPath(interviewId))
+        && hrNamed(get(hrInterviewPath(interviewId)).data.get('interviewerIds', []));
+    }
+
+    match /interviews/{interviewId} {
+      allow read: if hrUser() || hrNamed(resource.data.get('interviewerIds', []));
+      allow create: if hrUser() && hrHolds('Interviews', ['Schedule']) && hrCreatedByMe()
+        && request.resource.data.get('interviewerIds', null) is list && hrStatus() == 'SCHEDULED';
+      allow update: if hrUser() && hrStamped()
+        && hrKeeps(['interviewNumber', 'applicationId', 'requirementId', 'candidateId']) && (
+          hrHolds('Interviews', ['Schedule', 'Reschedule', 'Cancel'])
+          // The panel's summary, recomputed by whoever just submitted feedback.
+          || ((hrNamed(resource.data.get('interviewerIds', [])) || hrHolds('My Interviews', ['Revise Feedback']))
+            && hrOnly(['averageScore', 'panelRecommendation', 'hasDissent', 'status', 'completedAt'])
+            && hrStatus() in ['COMPLETED', 'FEEDBACK_PENDING']));
+    }
+
+    /*
+     * Append-only (control rule 63.6): a revision is a new entry. A panel member's own, or a revision
+     * authorised by Revise Feedback.
+     */
+    match /interviewFeedback/{feedbackId} {
+      allow read: if hrUser();
+      allow create: if hrUser() && hrIsMe(request.resource.data.get('interviewerId', ''))
+        && request.resource.data.get('submitted', false) == true
+        && (hrHolds('My Interviews', ['Revise Feedback'])
+          || hrInterviewerOf(request.resource.data.get('interviewId', '')));
+    }
+
+    /* ── Selection and compensation approval (spec sections 27, 28) ── */
+
+    function hrCompensationPath(approvalId) {
+      return /databases/$(database)/documents/compensationApprovals/$(approvalId);
+    }
+
+    /*
+     * actOnCompensationApproval decides the approval first, then carries the decision to the proposal.
+     * So the proposal follows a decided approval this caller stamped, with its outcome and figure.
+     */
+    function hrCompensationOutcome() {
+      let approvalId = resource.data.get('compensationApprovalId', '');
+      return approvalId is string && approvalId != '' && hasPermissions()
+        && exists(hrCompensationPath(approvalId))
+        && hrCompensationMatches(get(hrCompensationPath(approvalId)).data);
+    }
+
+    function hrCompensationMatches(approval) {
+      return hrIsMe(approval.get('updatedBy', ''))
+        && approval.get('status', '') in ['APPROVED', 'REJECTED']
+        && hrStatus() == approval.get('status', '')
+        && hrStatusField('compensationApprovalStatus') == approval.get('status', '')
+        && (approval.get('status', '') == 'REJECTED'
+          || request.resource.data.get('approvedCtc', 0) == approval.get('approvedCtc', 0))
+        && hrOnly(['compensationApprovalStatus', 'status', 'rejectionReason', 'approvedCtc', 'approvedAt']);
+    }
+
+    match /selectionProposals/{proposalId} {
+      allow read: if hrUser();
+      allow create: if hrUser() && hrHolds('Selection', ['Add']) && hrCreatedByMe();
+      allow update: if hrUser() && hrStamped()
+        && hrKeeps(['proposalNumber', 'applicationId', 'candidateId', 'requirementId']) && (
+          hrHolds('Selection', ['Add', 'Edit', 'Withdraw'])
+          // createOffer marks the proposal offered.
+          || (hrHolds('Offers', ['Add']) && hrOnly(['status']) && hrStatus() == 'OFFERED')
+          || hrCompensationOutcome());
+    }
+
+    /*
+     * Raised with the proposal; decided only by the approvers its current stage names, who may
+     * approve a lower figure than proposed but never a higher one.
+     */
+    match /compensationApprovals/{approvalId} {
+      allow read: if hrUser() || hrNamed(resource.data.get('pendingApproverIds', []));
+      allow create: if hrUser() && hrHolds('Selection', ['Add']) && hrCreatedByMe() && hrStatus() == 'PENDING';
+      allow update: if hrUser() && hrStamped() && hrWas() == 'PENDING'
+        && hrNamed(resource.data.get('pendingApproverIds', []))
+        && hrKeeps(['selectionProposalId', 'requirementId', 'candidateId', 'proposedCtc', 'stages'])
+        && hrStatus() in ['PENDING', 'APPROVED', 'REJECTED']
+        && request.resource.data.get('approvedCtc', 0) <= resource.data.get('proposedCtc', 0);
+    }
+
+    /* ── Offers, pre-joining and joining (spec sections 29–36) ── */
+
+    /*
+     * An offer awaiting approval goes on only by approval or withdrawal, and approval belongs to the
+     * approvers it names — or, when it names none, to Offers Approve (approveOffer).
+     */
+    function hrOfferStepOk() {
+      return hrWas() != 'PENDING_APPROVAL'
+        || hrStatus() in ['PENDING_APPROVAL', 'WITHDRAWN']
+        || (hrStatus() == 'APPROVED' && (hrNamed(resource.data.get('pendingApproverIds', []))
+          || (resource.data.get('pendingApproverIds', []).size() == 0 && hrHolds('Offers', ['Approve']))));
+    }
+
+    match /offers/{offerId} {
+      allow read: if hrUser() || hrNamed(resource.data.get('pendingApproverIds', []));
+      allow create: if hrUser() && hrHolds('Offers', ['Add']) && hrCreatedByMe()
+        && hrStatus() in ['PENDING_APPROVAL', 'APPROVED']
+        && request.resource.data.get('portalToken', '') == '';
+      allow update: if hrUser() && hrStamped() && hrOfferStepOk()
+        && hrKeeps(['offerNumber', 'applicationId', 'candidateId', 'requirementId', 'selectionProposalId']) && (
+          hrHolds('Offers', ['Add', 'Edit', 'Approve', 'Send', 'Withdraw', 'Record Response'])
+          || (hrNamed(resource.data.get('pendingApproverIds', []))
+            && hrOnly(['status', 'approvedBy', 'approvedByName', 'approvedAt', 'pendingApproverIds']))
+          // markNotJoined, from the joining screen's Postpone menu.
+          || (hrHolds('Joining', ['Postpone', 'Mark Not Joined']) && hrOnly(['status', 'withdrawalReason'])
+            && hrStatus() == 'WITHDRAWN'));
+    }
+
+    /** The checklist is raised by recording the acceptance; each status has its own action. */
+    match /preJoining/{documentId} {
+      allow read: if hrUser();
+      allow create: if hrUser() && hrHolds('Offers', ['Record Response']) && hrCreatedByMe()
+        && hrStatus() == 'PENDING';
+      allow update: if hrUser() && hrStamped()
+        && hrKeeps(['joiningRecordId', 'offerId', 'candidateId', 'documentType']) && (
+          (hrHolds('Pre-Joining', ['Upload']) && hrStatus() == 'UPLOADED')
+          || (hrHolds('Pre-Joining', ['Verify'])
+            && hrStatus() in ['VERIFIED', 'UNDER_VERIFICATION', 'REUPLOAD_REQUIRED', 'REJECTED'])
+          || (hrHolds('Pre-Joining', ['Waive']) && hrStatus() == 'WAIVED'));
+    }
+
+    /* Marking a candidate joined is Confirm Joining's alone: it is what creates the employee. */
+    match /joiningRecords/{joiningRecordId} {
+      allow read: if hrUser();
+      allow create: if hrUser() && hrHolds('Offers', ['Record Response']) && hrCreatedByMe()
+        && hrStatus() == 'DOCUMENTS_PENDING';
+      allow update: if hrUser() && hrStamped()
+        && hrKeeps(['joiningNumber', 'offerId', 'candidateId', 'applicationId', 'requirementId'])
+        && (hrStatus() != 'JOINED' || hrWas() == 'JOINED' || hrHolds('Joining', ['Confirm Joining'])) && (
+          hrHolds('Joining', ['Confirm Joining', 'Postpone', 'Mark Not Joined', 'Manage Onboarding', 'Create Employee'])
+          // refreshJoiningDocumentState, after a document is uploaded or verified.
+          || (hrHolds('Pre-Joining', ['Upload', 'Verify', 'Waive'])
+            && hrOnly(['documentsReady', 'documentCompletionPercent', 'status'])
+            && hrStatus() in ['DOCUMENTS_PENDING', 'CONFIRMATION_PENDING', 'CONFIRMED']));
+    }
+
+    /* ── Referrals, agencies and costs (spec sections 46, 47, 52) ── */
+
+    /** Open to anyone in the module (/hr/referrals), as themselves. */
+    match /hrReferrals/{referralId} {
+      allow read: if hrUser();
+      allow create: if hrUser() && hrIsMe(request.resource.data.get('referredByUserId', ''))
+        && hrCreatedByMe() && hrStatus() == 'SUBMITTED';
+    }
+
+    match /recruitmentAgencies/{agencyId} {
+      allow read: if hrUser();
+      allow create: if hrUser() && hrHolds('Agencies', ['Add']) && hrCreatedByMe();
+      allow update: if hrUser() && hrStamped() && hrKeeps([]) && (
+        hrHolds('Agencies', ['Edit', 'Deactivate'])
+        || (hrHolds('Agencies', ['View Performance'])
+          && hrOnly(['submittedCount', 'shortlistedCount', 'interviewedCount', 'offeredCount', 'joinedCount'])));
+    }
+
+    match /hrRecruitmentCosts/{costId} {
+      allow read: if hrUser();
+      allow create: if hrUser() && hrHolds('Recruitment Cost', ['Add']) && hrCreatedByMe();
+    }
+
+    /* ── Bank Balance (src/lib/permissions.ts, "Bank Balance") ──────────────────────────────────
+     *
+     * Every screen checks a page permission, `Bank Balance.<Page>` (the legacy "Expenses Log",
+     * "Receipts Log" and "Internal Transaction Log" grants are filed under the current names in
+     * `p`), and no record names a person who may work it, so the rules follow the page permissions
+     * alone. The ledger (`bankExpenses`) is read whole by every screen that works out a balance:
+     * the dashboard (View Module), Daily Log, Interest Rate, Monthly Interest, the reports,
+     * Transfers and New Payment. The Payments and Receipts registers read only their own side
+     * (`where type == … && isContra == false`), so a register alone opens only that side.
+     *
+     * Payments, receipts and transfer legs are all `bankExpenses` rows; which page's permission
+     * writes one is told by the row itself (`bbEntryPage`). Bill Tracking's verified receipts post
+     * their Credits from the server; the Daily Requisitions a voucher pays are updated in the same
+     * transaction under that module's own rules.
+     *
+     * Budget: the permissions document (1), cached for the request and for every document of a
+     * voucher's transaction.
+     */
+    function bbHolds(page, actions) {
+      return hasPermissions() && get(permissionsPath()).data.p.get('Bank Balance.' + page, []).hasAny(actions);
+    }
+
+    /** Every screen that reads the whole ledger to work out a balance (see above). */
+    function bbLedgerReader() {
+      return hasPermissions() && (
+        get(permissionsPath()).data.p.get('Bank Balance', []).hasAny(['View Module'])
+        || bbHolds('Daily Log', ['View']) || bbHolds('Interest Rate', ['View'])
+        || bbHolds('Monthly Interest', ['View']) || bbHolds('Reports', ['View'])
+        || bbHolds('Internal Transaction', ['View', 'Add']) || bbHolds('Expenses', ['Add']));
+    }
+
+    /** The caller's `users` id; '' when unknown, which then matches no one. */
+    function bbMe() {
+      return hasPermissions() ? get(permissionsPath()).data.get('userDocId', '') : '';
+    }
+
+    function bbIsMe(userId) {
+      return bbMe() != '' && userId == bbMe();
+    }
+
+    /** The page a ledger row belongs to: a transfer leg, a payment, a receipt, or none. */
+    function bbEntryPage(data) {
+      return data.get('isContra', false) == true ? 'Internal Transaction'
+        : (data.get('type', '') == 'Debit' ? 'Expenses'
+          : (data.get('type', '') == 'Credit' ? 'Receipts' : ''));
+    }
+
+    function bbChanged() {
+      return request.resource.data.diff(resource.data).affectedKeys();
+    }
+
+    /*
+     * The account master. It is also the account picker in Loan, Bill Tracking's receipt form and
+     * the Fixed Deposit, Bank Guarantee and Letter of Credit forms, each reading the whole
+     * collection under its own module's checks, so any signed-in user may read it. It holds the
+     * opening figure, limits and rates; balances come from the ledger. DP Management and Interest
+     * Rate each edit their own log and nothing else; the Accounts page edits everything but those.
+     */
+    match /bankAccounts/{accountId} {
+      allow read: if signedIn();
+      allow create: if bbHolds('Accounts', ['Add']);
+      allow update: if (bbHolds('Accounts', ['Edit']) && !bbChanged().hasAny(['drawingPower', 'interestRateLog']))
+        || (bbHolds('DP Management', ['Add', 'Delete']) && bbChanged().hasOnly(['drawingPower']))
+        || (bbHolds('Interest Rate', ['Add', 'Delete']) && bbChanged().hasOnly(['interestRateLog']));
+      allow delete: if bbHolds('Accounts', ['Delete']);
+    }
+
+    /*
+     * The ledger. A payment is written only with its voucher (New Payment: Expenses Add), a receipt
+     * by Receipts Add, a transfer's two legs by Internal Transaction Add — or Edit, which rewrites
+     * them. Clearing a cheque stamps its date on the voucher's rows (Expenses Add); cancelling or
+     * bouncing removes them (Expenses Delete). Only the server posts Bill Tracking's Credits.
+     */
+    match /bankExpenses/{entryId} {
+      allow read: if bbLedgerReader()
+        || (bbHolds('Expenses', ['View']) && resource.data.type == 'Debit' && resource.data.isContra == false)
+        || (bbHolds('Receipts', ['View']) && resource.data.type == 'Credit' && resource.data.isContra == false);
+      allow create: if !request.resource.data.keys().hasAny(['billCollectionId'])
+        && request.resource.data.get('type', '') in ['Debit', 'Credit']
+        && (bbEntryPage(request.resource.data) == 'Internal Transaction'
+          ? bbHolds('Internal Transaction', ['Add', 'Edit'])
+            && request.resource.data.get('contraId', '') is string && request.resource.data.get('contraId', '') != ''
+          : bbEntryPage(request.resource.data) != '' && bbHolds(bbEntryPage(request.resource.data), ['Add']));
+      allow update: if bbEntryPage(resource.data) == 'Expenses' && bbHolds('Expenses', ['Add'])
+        && bbChanged().hasOnly(['clearedDate']);
+      allow delete: if bbEntryPage(resource.data) == 'Internal Transaction'
+        ? bbHolds('Internal Transaction', ['Add', 'Edit', 'Delete'])
+        : bbEntryPage(resource.data) != '' && bbHolds(bbEntryPage(resource.data), ['Delete']);
+    }
+
+    /*
+     * Payment vouchers: issued by New Payment, as yourself; then cleared (Expenses Add) or cancelled
+     * or bounced (Expenses Delete), once, from Issued, by whoever is recorded as doing it. The
+     * Cheque Register, the voucher print and the dashboard's cheque tiles read them on Expenses View.
+     */
+    match /bankPayments/{voucherId} {
+      allow read: if bbHolds('Expenses', ['View', 'Add']);
+      allow create: if bbHolds('Expenses', ['Add']) && request.resource.data.get('status', '') == 'Issued'
+        && bbIsMe(request.resource.data.get('createdById', ''));
+      allow update: if resource.data.get('status', '') == 'Issued' && (
+        (request.resource.data.get('status', '') == 'Cleared' && bbHolds('Expenses', ['Add'])
+          && bbChanged().hasOnly(['status', 'clearedDate', 'clearedById', 'clearedByName'])
+          && bbIsMe(request.resource.data.get('clearedById', '')))
+        || (request.resource.data.get('status', '') in ['Cancelled', 'Bounced'] && bbHolds('Expenses', ['Delete'])
+          && bbChanged().hasOnly(['status', 'closedReason', 'closedAt', 'closedAtTs', 'closedById', 'closedByName'])
+          && bbIsMe(request.resource.data.get('closedById', ''))));
+    }
+
+    /*
+     * The voucher number series (`paymentVoucher`: { fy, next }), moved in the voucher's own
+     * transaction. It restarts each financial year and never runs backwards (nextVoucherNo).
+     */
+    match /bankBalanceCounters/{counterId} {
+      allow get: if bbHolds('Expenses', ['Add']);
+      allow create: if bbHolds('Expenses', ['Add'])
+        && request.resource.data.get('fy', '') is string && request.resource.data.get('next', 0) is int
+        && request.resource.data.get('next', 0) > 1;
+      allow update: if bbHolds('Expenses', ['Add'])
+        && request.resource.data.get('fy', '') is string && request.resource.data.get('next', 0) is int
+        && request.resource.data.get('next', 0) > 1
+        && (request.resource.data.get('fy', '') > resource.data.get('fy', '')
+          || (request.resource.data.get('fy', '') == resource.data.get('fy', '')
+            && request.resource.data.get('next', 0) > resource.data.get('next', 0)));
+    }
+
+    /*
+     * One document per cheque / DD number used on an account, so a number is never issued twice.
+     * Taken with the voucher; freed only when that voucher is cancelled.
+     */
+    match /bankInstrumentNos/{instrumentKey} {
+      allow get: if bbHolds('Expenses', ['Add', 'Delete']);
+      allow create: if bbHolds('Expenses', ['Add']) && request.resource.data.get('voucherId', '') is string
+        && request.resource.data.get('voucherId', '') != '';
+      allow delete: if bbHolds('Expenses', ['Delete']);
+    }
+
+    /* Payment Entry settings and the payment-mode list; New Payment reads and adds to both. */
+    function bbPaymentEntryReader() {
+      return bbHolds('Payment Entry Settings', ['View', 'Edit']) || bbHolds('Expenses', ['Add']);
+    }
+
+    function bbPaymentEntryEditor() {
+      return bbHolds('Payment Entry Settings', ['Edit']) || bbHolds('Expenses', ['Add']);
+    }
+
+    match /bankBalanceSettings/{settingId} {
+      allow get: if bbPaymentEntryReader();
+      allow create, update: if bbPaymentEntryEditor();
+    }
+
+    match /paymentMethods/{methodId} {
+      allow read: if bbPaymentEntryReader();
+      allow create, delete: if bbPaymentEntryEditor();
+    }
+
+    /* Actual interest per Cash Credit account, a document per month: entered on Monthly Interest. */
+    match /monthlyInterest/{monthId} {
+      allow read: if bbHolds('Monthly Interest', ['View', 'Edit']) || bbHolds('Reports', ['View']);
+      allow create, update: if bbHolds('Monthly Interest', ['Edit']);
+    }
+
+    /* ── Loan (src/lib/permissions.ts, "Loan") ──────────────────────────────────────────────────
+     *
+     * The module's pages check nothing themselves beyond the reports' `Loan.Reports` View; the
+     * sidebar shows Dashboard, Manage Loans and the EMI Tracker on `Loan.Dashboard` View, and the
+     * module hub opens it on `Loan` View Module. So the rules take any Loan grant as the module's
+     * reader, and any grant other than reports alone as its writer: creating a loan, closing one,
+     * recording an EMI and rewriting a schedule are done from those pages by whoever reaches them.
+     * Loans are never deleted; a schedule rewrite deletes and re-creates the EMIs.
+     *
+     * Budget: the permissions document (1).
+     */
+    function loanUser() {
+      return holdsAnyOf(['Loan', 'Loan.Dashboard', 'Loan.Add Loan', 'Loan.Loan Details', 'Loan.Reports']);
+    }
+
+    function loanWriter() {
+      return holdsAnyOf(['Loan', 'Loan.Dashboard', 'Loan.Add Loan', 'Loan.Loan Details']);
+    }
+
+    match /loans/{loanId} {
+      allow read: if loanUser();
+      allow create, update: if loanWriter();
+    }
+
+    match /loans/{loanId}/emis/{emiId} {
+      allow read: if loanUser();
+      allow write: if loanWriter();
+    }
+
+    /* ── Insurance (src/lib/permissions.ts, "Insurance"; src/lib/insurance-service.ts) ──────────────
+     *
+     * One book for the whole company, with no organisation or project scope: every screen reads a
+     * collection whole and filters in the browser, so each collection is readable by whoever holds
+     * a page that reads it, and written by the action that page checks. Personal policies (and their
+     * holders, with dates of birth) stay closed to people who only work project insurance.
+     *
+     * My Tasks raises the workflow's tasks from the browser of whoever opens it (`syncInsuranceTasks`
+     * reads every policy, asset and task), so My Tasks View reads both books. A task is worked by its
+     * current `assignees` (users document ids from the workflow configuration, resolved by the
+     * server's `getAssigneeForStep`); being assigned is the authority, so they read and move their own
+     * task holding nothing else — My Work's `where assignees array-contains me` relies on that. Paying
+     * a premium or settling a policy closes its open task (`completeTasksForDue`, a query on
+     * `uniqueCheckId`), so the people who may do that read and close tasks too.
+     *
+     * Store & Stock lists the asset register's properties (`where type == 'Property'`) as stock
+     * locations. The `workflows/insurance-workflow` document is not covered here.
+     *
+     * Budget: the permissions document only — 1 of 10.
+     */
+    function insHolds(page, actions) {
+      return hasPermissions() && get(permissionsPath()).data.p.get('Insurance.' + page, []).hasAny(actions);
+    }
+
+    /** The caller's `users` id; '' when unknown, which then matches no one. */
+    function insMe() {
+      return hasPermissions() ? get(permissionsPath()).data.get('userDocId', '') : '';
+    }
+
+    function insModuleUser() {
+      return holdsAnyOf([
+        'Insurance', 'Insurance.Personal Insurance', 'Insurance.Project Insurance', 'Insurance.Premium Due',
+        'Insurance.Maturity Due', 'Insurance.My Tasks', 'Insurance.Reports', 'Insurance.Settings',
+        'Insurance.Settings.Holders', 'Insurance.Settings.Companies', 'Insurance.Settings.Categories',
+        'Insurance.Settings.Assets'
+      ]);
+    }
+
+    /*
+     * Every page and form that reads personal policies, the task sync, the holder rename that
+     * follows a holder's name onto its policies, and the in-use counts before a master is deleted.
+     */
+    function insPersonalReader() {
+      return holdsAnyOf([
+          'Insurance.Personal Insurance', 'Insurance.Premium Due', 'Insurance.Maturity Due', 'Insurance.My Tasks'
+        ])
+        || insHolds('Settings.Holders', ['Edit', 'Delete'])
+        || insHolds('Settings.Companies', ['Delete'])
+        || insHolds('Settings.Categories', ['Delete']);
+    }
+
+    function insProjectReader() {
+      return holdsAnyOf(['Insurance.Project Insurance', 'Insurance.My Tasks'])
+        || insHolds('Settings.Assets', ['Delete'])
+        || insHolds('Settings.Companies', ['Delete'])
+        || insHolds('Settings.Categories', ['Delete']);
+    }
+
+    /** Recording or editing a premium payment (`canManagePayments`), or settling the policy. */
+    function insPersonalPayer() {
+      return insHolds('Personal Insurance', ['Renew', 'Edit']);
+    }
+
+    function insChanged() {
+      return request.resource.data.diff(resource.data).affectedKeys();
+    }
+
+    match /insurance_policies/{policyId} {
+      allow read: if insPersonalReader();
+      allow create: if insHolds('Personal Insurance', ['Add']);
+      allow update: if insHolds('Personal Insurance', ['Edit'])
+        // Recording the premium due moves the policy to its next due date (RenewalDialog).
+        || (insHolds('Personal Insurance', ['Renew']) && insChanged().hasOnly([
+          'due_date', 'last_renewed_at', 'last_payment_type', 'updatedAt', 'updatedBy', 'updatedByName'
+        ]))
+        // Renaming a holder renames them on their policies (policy-holders/page.tsx).
+        || (insHolds('Settings.Holders', ['Edit']) && insChanged().hasOnly(['insured_person']));
+      allow delete: if insHolds('Personal Insurance', ['Delete']);
+    }
+
+    /* Premiums paid. Deleted with the policy. */
+    match /insurance_policies/{policyId}/renewals/{renewalId} {
+      allow read: if insPersonalReader();
+      allow create, update: if insPersonalPayer();
+      allow delete: if insHolds('Personal Insurance', ['Delete']);
+    }
+
+    match /project_insurance_policies/{policyId} {
+      allow read: if insProjectReader();
+      allow create: if insHolds('Project Insurance', ['Add']);
+      allow update: if insHolds('Project Insurance', ['Edit'])
+        // A renewal replaces the cover's terms (ProjectRenewalDialog).
+        || (insHolds('Project Insurance', ['Renew']) && insChanged().hasOnly([
+          'policy_no', 'insurance_company', 'premium', 'sum_insured', 'insurance_start_date', 'insured_until',
+          'tenure_years', 'tenure_months', 'status', 'attachments', 'updatedAt', 'updatedBy', 'updatedByName'
+        ]))
+        || (insHolds('Project Insurance', ['Mark as Not Required']) && insChanged().hasOnly(['status'])
+          && request.resource.data.status == 'Not Required');
+      allow delete: if insHolds('Project Insurance', ['Delete']);
+    }
+
+    /* The cover each renewal replaced. Append-only; deleted with the policy. */
+    match /project_insurance_policies/{policyId}/history/{entryId} {
+      allow read: if insProjectReader();
+      allow create: if insHolds('Project Insurance', ['Renew']);
+      allow delete: if insHolds('Project Insurance', ['Delete']);
+    }
+
+    /* ── The workflow's tasks ── */
+
+    function insAssignee(data) {
+      let me = insMe();
+      return me != '' && data.get('assignees', []).hasAny([me]);
+    }
+
+    /** What a step action and a closing write touch; each adds one entry to the history. */
+    function insTaskMove() {
+      return insChanged().hasOnly(['status', 'currentStage', 'currentStepId', 'assignees', 'deadline', 'history'])
+        && request.resource.data.get('history', []).size() == resource.data.get('history', []).size() + 1;
+    }
+
+    match /insuranceTasks/{taskId} {
+      allow read: if insHolds('My Tasks', ['View'])
+        || insPersonalPayer() || insHolds('Project Insurance', ['Renew'])
+        || insAssignee(resource.data);
+      // Raised by the sync on My Tasks, at the workflow's first step, for somebody.
+      allow create: if insHolds('My Tasks', ['View'])
+        && request.resource.data.get('status', '') == 'Pending'
+        && request.resource.data.get('uniqueCheckId', '') is string
+        && request.resource.data.get('uniqueCheckId', '') != ''
+        && request.resource.data.get('assignees', []) is list
+        && request.resource.data.get('assignees', []).size() > 0
+        && request.resource.data.get('history', []).size() == 0;
+      allow update: if insTaskMove() && (
+        // The current step's assignee acting on it (my-tasks/page.tsx handleAction).
+        insAssignee(resource.data)
+        // Paying, renewing or settling closes the open task for that due date.
+        || ((insPersonalPayer() || insHolds('Project Insurance', ['Renew']))
+          && request.resource.data.status == 'Completed'
+          && request.resource.data.assignees.size() == 0));
+      // The escalation run (api/workflow/check-escalations) reassigns on the Admin SDK.
+    }
+
+    /* ── Masters ── */
+
+    /* Insurer names and policy categories: nothing private, offered on every policy form. */
+    match /insuranceCompanies/{companyId} {
+      allow read: if insModuleUser();
+      allow create: if insHolds('Settings.Companies', ['Add']);
+      allow update: if insHolds('Settings.Companies', ['Edit']);
+      allow delete: if insHolds('Settings.Companies', ['Delete']);
+    }
+
+    match /policyCategories/{categoryId} {
+      allow read: if insModuleUser();
+      allow create: if insHolds('Settings.Categories', ['Add']);
+      allow update: if insHolds('Settings.Categories', ['Edit']);
+      allow delete: if insHolds('Settings.Categories', ['Delete']);
+    }
+
+    /* The people personal policies cover, with their dates of birth. */
+    match /policyHolders/{holderId} {
+      allow read: if holdsAnyOf(['Insurance.Settings.Holders', 'Insurance.Personal Insurance']);
+      allow create: if insHolds('Settings.Holders', ['Add']);
+      allow update: if insHolds('Settings.Holders', ['Edit']);
+      allow delete: if insHolds('Settings.Holders', ['Delete']);
+    }
+
+    /*
+     * Projects and properties that project policies cover. Store & Stock treats the properties as
+     * stock locations (store-stock-management/page.tsx, settings/stock-status) and switches their
+     * stock on through api/inventory, on the Admin SDK.
+     */
+    match /insuredAssets/{assetId} {
+      allow read: if holdsAnyOf(['Insurance.Settings.Assets', 'Insurance.Project Insurance', 'Insurance.My Tasks'])
+        || (resource.data.get('type', '') == 'Property' && holdsAnyOf([
+          'Store & Stock Management', 'Store & Stock Management.Inventory', 'Store & Stock Management.Projects',
+          'Store & Stock Management.Settings'
+        ]));
+      allow create: if insHolds('Settings.Assets', ['Add']);
+      allow update: if insHolds('Settings.Assets', ['Edit']);
+      allow delete: if insHolds('Settings.Assets', ['Delete']);
     }
 
     /* ── TRANSITIONAL CATCH-ALL ─────────────────────────────────────────────────────────────────
