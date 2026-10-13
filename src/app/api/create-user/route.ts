@@ -14,6 +14,7 @@ import {
 } from '@/lib/access-control';
 import { getFirebaseAdminAuth, getFirebaseAdminFirestore } from '@/lib/firebase-admin';
 import { logServerActivity, requestProvenance } from '@/lib/activity-logger-server';
+import { syncUserPermissions } from '@/lib/access-permissions-server';
 import {
   deriveEmploymentState,
   employmentSignals,
@@ -326,6 +327,12 @@ export async function POST(request: Request) {
       throw error;
     }
     profileCommitted = true;
+
+    // The new person's resolved permissions, for the Firestore rules, so their first sign-in does
+    // not race the refresh AuthProvider makes. Best-effort: that refresh repairs a miss here.
+    await syncUserPermissions([createdUid]).catch((error) => {
+      console.error('[create-user] Writing rules permissions failed', error);
+    });
 
     const provenance = requestProvenance(request);
     void logServerActivity({

@@ -22,8 +22,7 @@
 
 import { ai } from '@/ai/genkit';
 import { z } from 'zod';
-import { db } from '@/lib/firebase';
-import { collection, writeBatch, doc, setDoc, getDocs } from 'firebase/firestore';
+import { getFirebaseAdminFirestore } from '@/lib/firebase-admin';
 
 const EmployeeDataSchema = z.object({
     employeeId: z.string(),
@@ -136,18 +135,20 @@ const syncAllGreytHRFlow = ai.defineFlow(
         gender: empData.gender || '',
     }));
 
-    const batch = writeBatch(db);
-    const employeesRef = collection(db, 'employees');
+    // Admin SDK: this is a server action, so a browser-SDK request here would arrive signed out.
+    const db = getFirebaseAdminFirestore();
+    const batch = db.batch();
+    const employeesRef = db.collection('employees');
 
     // Fetch existing employee IDs to avoid duplicates
-    const existingEmployeesSnap = await getDocs(employeesRef);
+    const existingEmployeesSnap = await employeesRef.get();
     const existingEmployeeIds = new Set(existingEmployeesSnap.docs.map(doc => doc.id));
 
     let newEmployeesCount = 0;
     employeesToSave.forEach(emp => {
       // Only add employee if their ID doesn't already exist
       if (!existingEmployeeIds.has(emp.employeeId)) {
-        const docRef = doc(employeesRef, emp.employeeId);
+        const docRef = employeesRef.doc(emp.employeeId);
         batch.set(docRef, emp);
         newEmployeesCount++;
       }
@@ -157,7 +158,7 @@ const syncAllGreytHRFlow = ai.defineFlow(
       await batch.commit();
     }
 
-    await setDoc(doc(db, 'settings', 'employeeSync'), { lastSynced: new Date().toISOString() });
+    await db.collection('settings').doc('employeeSync').set({ lastSynced: new Date().toISOString() });
     
     return {
         success: true,

@@ -1,8 +1,7 @@
 
 'use server';
 
-import { db } from './firebase';
-import { doc, getDoc, collection, getDocs } from 'firebase/firestore';
+import { getFirebaseAdminFirestore } from './firebase-admin';
 import type {
     WorkflowStep,
     Requisition,
@@ -19,10 +18,10 @@ let holidaysCache: Holiday[] | null = null;
 
 async function getWorkingHours(): Promise<WorkingHours> {
     if (workingHoursCache) return workingHoursCache;
-    const docRef = doc(db, 'settings', 'workingHours');
-    const docSnap = await getDoc(docRef);
-    if (docSnap.exists()) {
-        const data = docSnap.data();
+    const docRef = getFirebaseAdminFirestore().collection('settings').doc('workingHours');
+    const docSnap = await docRef.get();
+    if (docSnap.exists) {
+        const data = docSnap.data()!;
         // Handle both the new structure { schedule: {...} } and the old flat structure
         const schedule = data.schedule || data;
         if (schedule && typeof schedule === 'object' && 'Monday' in schedule) {
@@ -36,7 +35,7 @@ async function getWorkingHours(): Promise<WorkingHours> {
 
 async function getHolidays(): Promise<Holiday[]> {
     if (holidaysCache) return holidaysCache;
-    const querySnapshot = await getDocs(collection(db, 'holidays'));
+    const querySnapshot = await getFirebaseAdminFirestore().collection('holidays').get();
     holidaysCache = querySnapshot.docs.map(doc => doc.data() as Holiday);
     return holidaysCache;
 }

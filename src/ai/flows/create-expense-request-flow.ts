@@ -5,8 +5,7 @@
  */
 
 import { ai } from '@/ai/genkit';
-import { db } from '@/lib/firebase';
-import { collection, doc, runTransaction, getDoc, serverTimestamp, query, where, getDocs } from 'firebase/firestore';
+import { getFirebaseAdminFirestore } from '@/lib/firebase-admin';
 import type { SerialNumberConfig, Department, CreateExpenseRequestInput, CreateExpenseRequestOutput } from '@/lib/types';
 import { CreateExpenseRequestInputSchema, CreateExpenseRequestOutputSchema } from '@/lib/types';
 
@@ -20,20 +19,21 @@ const createExpenseRequestFlow = ai.defineFlow(
   async (data) => {
 
     try {
-      const deptRef = doc(db, 'departments', data.departmentId);
-      const deptSnap = await getDoc(deptRef);
-      if (!deptSnap.exists()) {
+      const db = getFirebaseAdminFirestore();
+      const deptRef = db.collection('departments').doc(data.departmentId);
+      const deptSnap = await deptRef.get();
+      if (!deptSnap.exists) {
         throw new Error('Selected department not found.');
       }
       const selectedDept = deptSnap.data() as Department;
 
-      const configRef = doc(db, 'departmentSerialConfigs', data.departmentId);
+      const configRef = db.collection('departmentSerialConfigs').doc(data.departmentId);
       // The request is written in the same transaction that takes its number, so a failed write can
       // never burn a number (or leave one handed out with no request behind it).
-      const requestRef = doc(collection(db, 'expenseRequests'));
-      const newRequestNo = await runTransaction(db, async (transaction) => {
+      const requestRef = db.collection('expenseRequests').doc();
+      const newRequestNo = await db.runTransaction(async (transaction) => {
         const configDoc = await transaction.get(configRef);
-        if (!configDoc.exists()) {
+        if (!configDoc.exists) {
           throw new Error(`Serial number configuration for ${selectedDept.name} not found!`);
         }
         const configData = configDoc.data() as SerialNumberConfig;

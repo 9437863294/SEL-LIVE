@@ -17,14 +17,6 @@ export async function inventoryCommand<T = Record<string, unknown>>(payload: Rec
     'postStockCount',
   ].includes(String(payload.action || ''));
 
-  // Local development intentionally has no Firebase Admin service-account key.
-  // These setup writes follow the application's existing authenticated client
-  // write model, avoiding a slow applicationDefault() lookup on every save.
-  if (process.env.NODE_ENV === 'development' && isLocalInventoryCommand) {
-    const { runLocalInventorySetupCommand } = await import('@/lib/inventory-client-fallback');
-    return await runLocalInventorySetupCommand(payload) as T;
-  }
-
   const user = auth.currentUser;
   if (!user) throw new Error('Your session has expired. Please sign in again.');
   const token = await user.getIdToken();
@@ -41,6 +33,7 @@ export async function inventoryCommand<T = Record<string, unknown>>(payload: Rec
     if (
       data.code === 'FIREBASE_ADMIN_CREDENTIALS_UNAVAILABLE'
       && process.env.NODE_ENV === 'development'
+      && isLocalInventoryCommand
     ) {
       const { runLocalInventorySetupCommand } = await import('@/lib/inventory-client-fallback');
       return await runLocalInventorySetupCommand(payload) as T;

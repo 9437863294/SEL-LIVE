@@ -40,6 +40,7 @@ import {
 } from '@/lib/access-control-service';
 import { attachDesignations, resolveDesignation, type EmployeeFactsIndex } from '@/lib/people-directory';
 import { loadEmployeeFactsIndex } from '@/lib/people-directory-client';
+import { refreshRulesPermissions } from '@/lib/access-permissions-client';
 import { useToast } from '@/hooks/use-toast';
 import { PinSetupDialog } from './PinSetupDialog';
 import {
@@ -408,6 +409,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         }
 
         setUser(userData);
+
+        // The Firestore rules read this person's resolved permissions from a document only the
+        // server writes (src/lib/access-rules-permissions.ts). Refresh it on every load, so a role or
+        // grant change reaches the rules by the next visit. Fire-and-forget: a refresh that fails
+        // leaves the previous document in force, and must not hold up the app.
+        void refreshRulesPermissions().catch((err) => console.warn('Permission refresh failed', err));
 
         /*
          * The full directory is needed by admin/chat screens, never by first paint.

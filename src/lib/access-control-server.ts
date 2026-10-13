@@ -66,6 +66,8 @@ export interface AccessRequestContext {
   roleNames: string[];
   projectIds: string[];
   departmentIds: string[];
+  /** The verified Firebase auth uid, when the context came from a bearer token. */
+  authUid?: string;
 }
 
 /**
@@ -138,7 +140,8 @@ export async function authenticateAccess(request: Request): Promise<AccessReques
   }
   if (!userSnapshot.exists) throw new AccessDeniedError('The signed-in user is not registered.');
 
-  return accessContextForUserSnapshot(userSnapshot, accessConfig, userSnapshot.id === decoded.uid ? grantByUid : undefined);
+  const context = await accessContextForUserSnapshot(userSnapshot, accessConfig, userSnapshot.id === decoded.uid ? grantByUid : undefined);
+  return { ...context, authUid: decoded.uid };
 }
 
 /**

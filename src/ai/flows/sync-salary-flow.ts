@@ -7,8 +7,7 @@
 
 import { ai } from '@/ai/genkit';
 import { z } from 'zod';
-import { db } from '@/lib/firebase';
-import { collection, writeBatch, getDocs, query, where, doc, getDoc, setDoc, addDoc } from 'firebase/firestore';
+import { getFirebaseAdminFirestore } from '@/lib/firebase-admin';
 import type { SalaryDetail, Employee, SalarySyncLog } from '@/lib/types';
 import { format, subDays } from 'date-fns';
 
@@ -119,14 +118,15 @@ const syncSalaryFlow = ai.defineFlow(
     const domain = "siddhartha.greythr.com";
     const monthStr = format(new Date(month), 'yyyy-MM');
 
-    const syncLogRef = doc(db, 'salarySyncLogs', monthStr);
-    const syncLogSnap = await getDoc(syncLogRef);
-    const lastSynced = syncLogSnap.exists() ? (syncLogSnap.data() as SalarySyncLog).lastSynced.toDate() : null;
+    const db = getFirebaseAdminFirestore();
+    const syncLogRef = db.collection('salarySyncLogs').doc(monthStr);
+    const syncLogSnap = await syncLogRef.get();
+    const lastSynced = syncLogSnap.exists ? (syncLogSnap.data() as SalarySyncLog).lastSynced.toDate() : null;
     const oneDayAgo = subDays(new Date(), 1);
 
     if (lastSynced && lastSynced > oneDayAgo) {
-      const q = query(collection(db, 'employees'), where('salaryMonth', '==', monthStr));
-      const querySnapshot = await getDocs(q);
+      const q = db.collection('employees').where('salaryMonth', '==', monthStr);
+      const querySnapshot = await q.get();
       const employeesFromDb = querySnapshot.docs.map(doc => doc.data() as Employee);
       return {
         success: true,
@@ -163,9 +163,9 @@ const syncSalaryFlow = ai.defineFlow(
         });
     });
     
-    const employeesRef = collection(db, 'employees');
+    const employeesRef = db.collection('employees');
     let addedCount = 0;
-    const batch = writeBatch(db);
+    const batch = db.batch();
 
     const employeesToReturn: z.infer<typeof EmployeeSalaryDataSchema>[] = [];
 
@@ -187,11 +187,11 @@ const syncSalaryFlow = ai.defineFlow(
             salaryMonth: monthStr,
         };
         
-        const q = query(employeesRef, where('employeeId', '==', empNo), where('salaryMonth', '==', monthStr));
-        const querySnapshot = await getDocs(q);
+        const q = employeesRef.where('employeeId', '==', empNo).where('salaryMonth', '==', monthStr);
+        const querySnapshot = await q.get();
 
         if (querySnapshot.empty) {
-            const newDocRef = doc(employeesRef);
+            const newDocRef = employeesRef.doc();
             batch.set(newDocRef, {
                 department: '',
                 designation: '',
@@ -209,7 +209,7 @@ const syncSalaryFlow = ai.defineFlow(
         await batch.commit();
     }
 
-    await setDoc(syncLogRef, { lastSynced: new Date() });
+    await syncLogRef.set({ lastSynced: new Date() });
 
     return { 
         success: true, 

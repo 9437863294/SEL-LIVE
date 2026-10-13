@@ -7,8 +7,8 @@
 
 import { ai } from '@/ai/genkit';
 import { z } from 'zod';
-import { db } from '@/lib/firebase';
-import { collection, writeBatch, getDocs, query, doc, type DocumentData, type DocumentReference } from 'firebase/firestore';
+import { getFirebaseAdminFirestore } from '@/lib/firebase-admin';
+import type { DocumentData, DocumentReference } from 'firebase-admin/firestore';
 import { categoryDocId } from '@/lib/greythr';
 
 const allCategoryTypes = [
@@ -91,7 +91,8 @@ const syncGreytHRCategoriesFlow = ai.defineFlow(
     
     const categoryData = await fetchGreytHRCategoriesData(token, domain);
 
-    const categoriesRef = collection(db, 'categories');
+    const db = getFirebaseAdminFirestore();
+    const categoriesRef = db.collection('categories');
 
     /**
      * Upserted under `categoryDocId`, not re-created under auto-generated ids.
@@ -115,7 +116,7 @@ const syncGreytHRCategoriesFlow = ai.defineFlow(
             data.forEach((item: [number, string, any]) => {
                 const id = categoryDocId(categoryName, item[0]);
                 written.add(id);
-                writes.push({ ref: doc(categoriesRef, id), data: { id: item[0], name: item[1], type: categoryName } });
+                writes.push({ ref: categoriesRef.doc(id), data: { id: item[0], name: item[1], type: categoryName } });
             });
         }
     }
@@ -129,7 +130,7 @@ const syncGreytHRCategoriesFlow = ai.defineFlow(
      * employee records and deleting it would turn those rows into blanks. Either way the collection
      * ends up with exactly one document per value, so this runs once in practice.
      */
-    const existingSnap = await getDocs(query(categoriesRef));
+    const existingSnap = await categoriesRef.get();
     const deletions: DocumentReference[] = [];
     existingSnap.forEach(existing => {
         const data = existing.data();
@@ -138,7 +139,7 @@ const syncGreytHRCategoriesFlow = ai.defineFlow(
         if (canonical === existing.id) return;
         if (!written.has(canonical)) {
             written.add(canonical);
-            writes.push({ ref: doc(categoriesRef, canonical), data });
+            writes.push({ ref: categoriesRef.doc(canonical), data });
         }
         deletions.push(existing.ref);
     });
@@ -156,7 +157,7 @@ const syncGreytHRCategoriesFlow = ai.defineFlow(
         ...deletions.map(ref => ({ ref })),
     ];
     for (let index = 0; index < operations.length; index += 450) {
-        const batch = writeBatch(db);
+        const batch = db.batch();
         for (const operation of operations.slice(index, index + 450)) {
             if (operation.data) batch.set(operation.ref, operation.data, { merge: true });
             else batch.delete(operation.ref);

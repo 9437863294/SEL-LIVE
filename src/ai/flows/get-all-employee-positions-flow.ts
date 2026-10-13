@@ -7,8 +7,7 @@
 
 import { ai } from '@/ai/genkit';
 import { z } from 'zod';
-import { db } from '@/lib/firebase';
-import { collection, writeBatch, query, where, getDocs, doc, setDoc } from 'firebase/firestore';
+import { getFirebaseAdminFirestore } from '@/lib/firebase-admin';
 
 
 const PositionDetailSchema = z.object({
@@ -144,18 +143,19 @@ const getAllEmployeePositionsFlow = ai.defineFlow(
         });
 
         // Save to Firestore
-        const batch = writeBatch(db);
-        const positionsRef = collection(db, 'employeePositions');
+        const db = getFirebaseAdminFirestore();
+        const batch = db.batch();
+        const positionsRef = db.collection('employeePositions');
 
         transformedData.forEach(pos => {
-            const docRef = doc(positionsRef, String(pos.employeeId));
+            const docRef = positionsRef.doc(String(pos.employeeId));
             batch.set(docRef, pos);
         });
 
         await batch.commit();
 
         // Update last sync time
-        await setDoc(doc(db, 'settings', 'employeePositionSync'), { lastSynced: new Date().toISOString() });
+        await db.collection('settings').doc('employeePositionSync').set({ lastSynced: new Date().toISOString() });
 
         return { 
             success: true, 

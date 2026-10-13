@@ -1,0 +1,14 @@
+{
+  "name": "firestore-rules-tests",
+  "private": true,
+  "description": "Firestore security rules tests, run against the local emulator. Kept out of the app's package.json so installing firebase-tools never touches the app's dependency tree.",
+  "type": "module",
+  "scripts": {
+    "test": "firebase emulators:exec --only firestore --project demo-sel-rules \"node --test ./*.test.mjs\""
+  },
+  "devDependencies": {
+    "@firebase/rules-unit-testing": "^5.0.0",
+    "firebase": "^12.5.0",
+    "firebase-tools": "^14.0.0"
+  }
+}
