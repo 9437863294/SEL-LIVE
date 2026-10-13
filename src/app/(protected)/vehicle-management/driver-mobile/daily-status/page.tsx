@@ -229,6 +229,8 @@ export default function DriverDailyStatusPage() {
         await updateDoc(doc(db, VEHICLE_COLLECTIONS.vehicleMaster, vehicleId), {
           currentOdometerKm: closingOdo || openingOdo || '',
           vehicleStatus: form.runningStatus === 'Breakdown' ? 'Under Maintenance' : 'Active',
+          // Which driver record wrote this: the rules check it is the caller's, assigned this vehicle.
+          updatedByDriverId: String(driver.id),
           updatedAt: serverTimestamp(),
         });
       }

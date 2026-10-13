@@ -620,7 +620,7 @@ export default function SiteExpensesPage() {
       validate: (v) => {
         if (!/^\d{4}-\d{2}-\d{2}$/.test(v.trim())) return 'Date must be in YYYY-MM-DD format';
         // Flagged during preview so the operator fixes the sheet before committing 200 rows.
-        const check = dateControl.check(v.trim());
+        const check = dateControl.checkAnyProject(v.trim());
         return check.ok ? null : check.reason ?? 'Date not allowed';
       },
     },
@@ -2225,8 +2225,8 @@ export default function SiteExpensesPage() {
                 type="date"
                 value={form.expenseDate}
                 onChange={e => setField('expenseDate', e.target.value)}
-                min={dateControl.window.min ?? undefined}
-                max={dateControl.window.max ?? undefined}
+                min={dateControl.windowFor(form.projectId).min ?? undefined}
+                max={dateControl.windowFor(form.projectId).max ?? undefined}
                 aria-invalid={Boolean(dateIssue)}
                 className={cn(dateIssue && 'border-destructive focus-visible:ring-destructive')}
               />
@@ -2238,10 +2238,10 @@ export default function SiteExpensesPage() {
                   <AlertTriangle className="mt-px h-3 w-3 shrink-0" />
                   {dateIssue}
                 </p>
-              ) : dateControl.hint && (
+              ) : dateControl.hintFor(form.projectId) && (
                 <p className="flex items-center gap-1 text-[11px] text-muted-foreground">
                   <CalendarClock className="h-3 w-3 shrink-0" />
-                  {dateControl.hint}
+                  {dateControl.hintFor(form.projectId)}
                 </p>
               )}
             </div>

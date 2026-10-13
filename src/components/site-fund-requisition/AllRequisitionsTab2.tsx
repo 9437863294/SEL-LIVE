@@ -179,7 +179,7 @@ export default function AllRequisitionsTab() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const { toast } = useToast();
   const { user } = useAuth();
-  const { can } = useAuthorization();
+  const { can, isLoading: isAuthLoading } = useAuthorization();
   const [selectedRequisition, setSelectedRequisition] = useState<Requisition | null>(null);
   const [isViewDialogOpen, setIsViewDialogOpen] = useState(false);
   const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
@@ -241,6 +241,14 @@ export default function AllRequisitionsTab() {
 
   const canCreate = can('Create Requisition', 'Site Fund Requisition');
   const canViewAll = can('View All', 'Site Fund Requisition');
+  // Who may read every requisition (firestore.rules, drSfrAllReader): View All, and the module's users,
+  // whose stage queues read whole stages. Anyone else is shown only what they raised, so that is all
+  // they are asked for — the rules refuse them the whole collection.
+  const readsWholeRegister =
+    canViewAll ||
+    can('View Module', 'Site Fund Requisition 2') ||
+    can('View', 'Site Fund Requisition 2.Requests') ||
+    can('View All', 'Site Fund Requisition 2.Requests');
 
   useEffect(() => {
     if (!user) return;
@@ -354,9 +362,14 @@ export default function AllRequisitionsTab() {
   });
 
   const fetchRequisitions = async () => {
+    if (!user) return;
     setIsLoading(true);
     try {
-      const reqQuery = query(collection(db, 'requisitions'), orderBy('createdAt', 'desc'));
+      // The narrowed query has no orderBy, so it needs no composite index; it is put in the same
+      // order below, and like the ordered query it leaves out a requisition with no createdAt.
+      const reqQuery = readsWholeRegister
+        ? query(collection(db, 'requisitions'), orderBy('createdAt', 'desc'))
+        : query(collection(db, 'requisitions'), where('raisedById', '==', user.id));
       const expReqQuery = query(collection(db, 'expenseRequests'));
 
       const [reqSnapshot, expReqSnapshot] = await Promise.all([
@@ -364,13 +377,19 @@ export default function AllRequisitionsTab() {
         getDocs(expReqQuery)
       ]);
 
-      const requisitionsData = reqSnapshot.docs.map(doc => {
+      let requisitionsData = reqSnapshot.docs.map(doc => {
         const data = doc.data();
         return {
           id: doc.id,
           ...data,
         } as Requisition;
       });
+      if (!readsWholeRegister) {
+        const createdMs = (req: Requisition) => toDateSafe(req.createdAt)?.getTime() ?? null;
+        requisitionsData = requisitionsData
+          .filter((req) => createdMs(req) !== null)
+          .sort((a, b) => (createdMs(b) ?? 0) - (createdMs(a) ?? 0));
+      }
       setRequisitions(requisitionsData);
 
       const expenseRequestsData = expReqSnapshot.docs.map(doc => doc.data() as ExpenseRequest);
@@ -555,8 +574,14 @@ export default function AllRequisitionsTab() {
       }
     };
     fetchProjectsAndDepartments();
-    fetchRequisitions();
   }, [toast]);
+
+  // The register waits for the permissions: they decide whether it may read every requisition.
+  useEffect(() => {
+    if (isAuthLoading || !user?.id) return;
+    fetchRequisitions();
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- fetchRequisitions is recreated every render; these are what it reads.
+  }, [isAuthLoading, user?.id, readsWholeRegister]);
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files) {

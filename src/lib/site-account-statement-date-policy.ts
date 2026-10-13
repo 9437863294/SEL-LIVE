@@ -32,13 +32,25 @@
  * `futureDays` counts days after today; 0 — the default — means money cannot be recorded as spent
  * before it has been.
  */
-export interface SASDateControlSettings {
+export interface SASDateRule {
   /** Master switch. Off means no date restriction at all, which is the shipped default. */
   enabled: boolean;
   backdateDays: number;
   futureDays: number;
   applyToExpenses: boolean;
   applyToPayments: boolean;
+}
+
+/**
+ * The all-projects rule, plus any project that has a rule of its own.
+ *
+ * A project's rule is complete, not a patch on the all-projects one: a site given 30 days keeps 30
+ * days when the all-projects window later changes, and one switched off stays off. A project with
+ * no entry follows the all-projects rule.
+ */
+export interface SASDateControlSettings extends SASDateRule {
+  /** Keyed by SAS project id. */
+  projects?: Record<string, SASDateRule>;
   updatedAt?: unknown;
   updatedBy?: string;
   updatedByName?: string;
@@ -51,7 +63,7 @@ export interface SASDateControlSettings {
  * entries that were perfectly acceptable yesterday, on an installation whose administrator never
  * asked for the feature. It does nothing until somebody opts in.
  */
-export const DEFAULT_DATE_CONTROL: SASDateControlSettings = {
+export const DEFAULT_DATE_CONTROL: SASDateRule = {
   enabled: false,
   backdateDays: 7,
   futureDays: 0,
@@ -116,7 +128,8 @@ export function clampDays(value: unknown, max: number): number {
   return Math.min(max, Math.max(0, Math.floor(parsed)));
 }
 
-export function resolveDateControl(stored: Partial<SASDateControlSettings> | undefined | null): SASDateControlSettings {
+/** One stored rule — the all-projects one or a project's — made usable. */
+export function resolveDateRule(stored: Partial<SASDateRule> | undefined | null): SASDateRule {
   const clamp = (value: unknown, fallback: number, max: number) => {
     // Only a real number is read as a setting. `Number(null)` and `Number('')` are both 0, which
     // would quietly turn a half-written document into "today only" for every site.
@@ -130,6 +143,36 @@ export function resolveDateControl(stored: Partial<SASDateControlSettings> | und
     applyToExpenses: stored?.applyToExpenses !== false,
     applyToPayments: stored?.applyToPayments !== false,
   };
+}
+
+export function resolveDateControl(stored: Partial<SASDateControlSettings> | undefined | null): SASDateControlSettings {
+  const projects: Record<string, SASDateRule> = {};
+  const raw = stored?.projects;
+  if (raw && typeof raw === 'object') {
+    for (const [projectId, rule] of Object.entries(raw)) {
+      if (rule && typeof rule === 'object') projects[projectId] = resolveDateRule(rule);
+    }
+  }
+  return { ...resolveDateRule(stored), projects };
+}
+
+/**
+ * The rule a project's entries are held to: its own when it has one, otherwise the all-projects
+ * rule. Without a project — a form where none is chosen yet — the all-projects rule.
+ */
+export function dateRuleFor(
+  settings: SASDateControlSettings,
+  projectId?: string | null,
+): SASDateRule & { source: 'project' | 'all' } {
+  const own = projectId ? settings.projects?.[projectId] : undefined;
+  if (own) return { ...own, source: 'project' };
+  const { enabled, backdateDays, futureDays, applyToExpenses, applyToPayments } = settings;
+  return { enabled, backdateDays, futureDays, applyToExpenses, applyToPayments, source: 'all' };
+}
+
+/** Projects with a rule of their own, for the settings summary. */
+export function projectsWithOwnRule(settings: SASDateControlSettings): string[] {
+  return Object.keys(settings.projects ?? {});
 }
 
 /**
@@ -162,7 +205,7 @@ export interface DateWindow {
 const UNRESTRICTED: DateWindow = { min: null, max: null, enforced: false };
 
 /** Whether the window applies to this record type at all. */
-function appliesTo(settings: SASDateControlSettings, kind: SASDatedRecord): boolean {
+function appliesTo(settings: SASDateRule, kind: SASDatedRecord): boolean {
   return kind === 'expense' ? settings.applyToExpenses : settings.applyToPayments;
 }
 
@@ -175,16 +218,20 @@ function appliesTo(settings: SASDateControlSettings, kind: SASDatedRecord): bool
 export function resolveDateWindow({
   settings,
   kind,
+  projectId,
   today = todayLocal(),
 }: {
-  settings: SASDateControlSettings;
+  settings: SASDateControlSettings | SASDateRule;
   kind: SASDatedRecord;
+  /** The project the entry is for; its own rule applies when it has one. */
+  projectId?: string | null;
   today?: string;
 }): DateWindow {
-  if (!settings.enabled || !appliesTo(settings, kind)) return UNRESTRICTED;
+  const rule = 'projects' in settings ? dateRuleFor(settings, projectId) : settings;
+  if (!rule.enabled || !appliesTo(rule, kind)) return UNRESTRICTED;
   return {
-    min: shiftDays(today, -settings.backdateDays),
-    max: shiftDays(today, settings.futureDays),
+    min: shiftDays(today, -rule.backdateDays),
+    max: shiftDays(today, rule.futureDays),
     enforced: true,
   };
 }
@@ -219,15 +266,22 @@ function humanDays(days: number): string {
  */
 export function validateEntryDate({
   date,
-  settings,
+  settings: allSettings,
   kind,
+  projectId,
   today = todayLocal(),
 }: {
   date: string;
-  settings: SASDateControlSettings;
+  settings: SASDateControlSettings | SASDateRule;
   kind: SASDatedRecord;
+  /** The project the entry is for; its own rule applies when it has one. */
+  projectId?: string | null;
   today?: string;
 }): DateCheck {
+  const settings = 'projects' in allSettings
+    ? dateRuleFor(allSettings, projectId)
+    : { ...allSettings, source: 'all' as const };
+  const whose = settings.source === 'project' ? 'on this project' : 'for everyone';
   if (!date) return { ok: false, reason: `${KIND_LABEL[kind]} is required.` };
   if (!isIsoDate(date)) {
     return { ok: false, reason: `${KIND_LABEL[kind]} must be a real date in YYYY-MM-DD format.` };
@@ -240,7 +294,7 @@ export function validateEntryDate({
     return {
       ok: false,
       reason: `${KIND_LABEL[kind]} cannot be earlier than ${window.min}. `
-        + `Back-dating is limited to ${humanDays(settings.backdateDays)} for everyone. `
+        + `Back-dating is limited to ${humanDays(settings.backdateDays)} ${whose}. `
         + 'To record an older transaction, an administrator has to widen the window in '
         + 'Settings → Date Control.',
     };
@@ -259,7 +313,7 @@ export function validateEntryDate({
 }
 
 /** One-line summary of the active rule, for the hint under a date field. */
-export function describeDateWindow(window: DateWindow, settings: SASDateControlSettings): string | null {
+export function describeDateWindow(window: DateWindow, settings: SASDateRule): string | null {
   if (!window.enforced) return null;
   if (settings.backdateDays === 0) return 'Today only';
   const future = settings.futureDays === 0 ? 'today' : window.max;

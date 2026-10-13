@@ -73,6 +73,7 @@ import {
 import type { Role, User, UserDeactivation } from './types';
 import { deactivationHasLapsed, formatGrantDate } from './access-control';
 import { createPlatformUser } from './user-management-client';
+import { refreshRulesPermissions, type RulesPermissionRefresh } from './access-permissions-client';
 
 export { canAssignAccess, canManageRoles, canOpenAccessManagement, canRevokeAccess };
 
@@ -119,6 +120,34 @@ const stripUndefined = <T>(value: T): T => {
   }
   return value;
 };
+
+/* ------------------------------------------------------------------------------------------------
+ * Rules permissions
+ * ---------------------------------------------------------------------------------------------- */
+
+/** `POST /api/access/sync-permissions` names at most this many users; past it, refresh everybody. */
+const MAX_NAMED_REFRESH = 500;
+
+/**
+ * Rewrite the Firestore rules' copy of the affected people's permissions (`userPermissions/{authUid}`)
+ * once a change here has been committed, so it reaches the rules now rather than at each person's
+ * next app load.
+ *
+ * Called after the write succeeds and never awaited: the save is the fact, and a refresh that fails
+ * is repaired by the one AuthProvider makes at every app load. One call per save, whatever the
+ * number of users.
+ */
+function refreshRulesAfterWrite(payload: RulesPermissionRefresh): void {
+  let request = payload;
+  if (payload.scope === 'users') {
+    const userIds = [...new Set(payload.userIds.filter(Boolean))];
+    if (!userIds.length) return;
+    request = userIds.length > MAX_NAMED_REFRESH ? { scope: 'all' } : { scope: 'users', userIds };
+  }
+  void refreshRulesPermissions(request).catch((error) => {
+    console.warn('[access-control] Refreshing rules permissions failed', error);
+  });
+}
 
 /* ------------------------------------------------------------------------------------------------
  * Actor
@@ -438,6 +467,7 @@ export async function grantAccess(input: GrantAccessInput): Promise<GrantAccessR
   }
 
   await commitGrants(writes);
+  refreshRulesAfterWrite({ scope: 'users', userIds: writes.map((entry) => entry.userId) });
   await writeAuditEntries(auditEntries);
 
   const result: GrantAccessResult = {
@@ -672,6 +702,7 @@ export async function revokeAccess(input: RevokeAccessInput): Promise<RevokeAcce
   }
 
   await commitGrants(writes);
+  refreshRulesAfterWrite({ scope: 'users', userIds: writes.map((entry) => entry.userId) });
   await writeAuditEntries(auditEntries);
   await writeBatchRecord({
     id: batchId,
@@ -756,6 +787,8 @@ export async function updateUserIdentity(
   if (Object.keys(payload).length === 0) return { ok: true };
 
   await updateDoc(doc(db, ACCESS_COLLECTIONS.users, user.id), payload);
+  // Name and mobile mean nothing to the rules; only the base role does.
+  if (roleChanged) refreshRulesAfterWrite({ scope: 'users', userIds: [user.id] });
 
   void logUserActivity({
     userId: actor.userId,
@@ -793,6 +826,7 @@ export async function setAccessLayerStatus(
     }),
     { merge: true },
   );
+  refreshRulesAfterWrite({ scope: 'users', userIds: [user.id] });
 
   await writeAuditEntries([
     {
@@ -872,6 +906,7 @@ export async function deactivateUserAccount({ user, until = null, reason, actor 
     deactivatedAt: now,
   };
   await updateDoc(doc(db, ACCESS_COLLECTIONS.users, user.id), { status: 'Inactive', deactivation });
+  refreshRulesAfterWrite({ scope: 'users', userIds: [user.id] });
 
   await writeAuditEntries([
     accountAuditEntry(
@@ -897,6 +932,7 @@ export async function deactivateUserAccount({ user, until = null, reason, actor 
 export async function reactivateUserAccount(user: User, actor: AccessActor, reason: string): Promise<void> {
   const now = new Date().toISOString();
   await updateDoc(doc(db, ACCESS_COLLECTIONS.users, user.id), { status: 'Active', deactivation: deleteField() });
+  refreshRulesAfterWrite({ scope: 'users', userIds: [user.id] });
   await writeAuditEntries([accountAuditEntry(user, 'Reactivate Account', actor, reason, now)]);
   void logUserActivity({
     userId: actor.userId,
@@ -997,6 +1033,8 @@ export async function saveRole(input: SaveRoleInput, actor: AccessActor): Promis
     });
     roleId = created.id;
   }
+  // A role's permissions (or its name, which `users.role` points at) change everybody holding it.
+  refreshRulesAfterWrite({ scope: 'all' });
 
   await writeAuditEntries([
     {
@@ -1051,6 +1089,7 @@ export async function setRoleStatus(
     updatedBy: actor.userId,
     updatedByName: actor.userName,
   });
+  refreshRulesAfterWrite({ scope: 'all' });
   await writeAuditEntries([
     {
       targetUserId: role.id,
@@ -1150,6 +1189,7 @@ export async function saveScopeGrant(
   // documents for "Finance" that disagree, and no way to tell which is meant.
   const id = config.id || `${config.scopeType}_${config.scopeId}`;
   await setDoc(doc(db, ACCESS_COLLECTIONS.scopeGrants, id), payload, { merge: true });
+  refreshRulesAfterWrite({ scope: 'all' });
   return id;
 }
 

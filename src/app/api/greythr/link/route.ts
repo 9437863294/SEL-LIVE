@@ -5,6 +5,7 @@ import {
   requireAccess,
   requireAnyAccess,
 } from '@/lib/access-control-server';
+import { syncUserPermissions } from '@/lib/access-permissions-server';
 import { bulkLink, buildReport, linkUser, unlinkUser } from '@/lib/greythr-link-service';
 
 /**
@@ -29,6 +30,18 @@ import { bulkLink, buildReport, linkUser, unlinkUser } from '@/lib/greythr-link-
 export const runtime = 'nodejs';
 
 const RESOURCE = 'Settings.User Management';
+
+/**
+ * The link is part of the user document the Firestore rules' permission copy is resolved from, so
+ * rewrite that copy for the people whose link changed. Best-effort: the link is already committed,
+ * and each person's next app load repairs a miss.
+ */
+async function rewriteRulesPermissions(userIds: string[]): Promise<void> {
+  if (!userIds.length) return;
+  await syncUserPermissions(userIds).catch((error) => {
+    console.error('[greythr-link] Writing rules permissions failed', error);
+  });
+}
 
 export async function GET(request: Request) {
   try {
@@ -75,17 +88,23 @@ export async function POST(request: Request) {
           { userId: body.userId, employeeId: body.employeeId, method: 'manual' },
           actor,
         );
+        await rewriteRulesPermissions([body.userId]);
         return NextResponse.json({ ok: true, audit: result.audit });
       }
 
       case 'unlink': {
         if (!body.userId) return NextResponse.json({ error: 'A user is required.' }, { status: 400 });
         const result = await unlinkUser({ userId: body.userId, reason: body.reason }, actor);
+        await rewriteRulesPermissions([body.userId]);
         return NextResponse.json({ ok: true, audit: result.audit });
       }
 
       case 'bulk-link': {
         const result = await bulkLink(actor);
+        const failedIds = new Set(result.failed.map((row) => row.userId));
+        await rewriteRulesPermissions(
+          result.plan.apply.map((entry) => entry.userId).filter((id) => !failedIds.has(id)),
+        );
         return NextResponse.json({ ok: true, ...result });
       }
 

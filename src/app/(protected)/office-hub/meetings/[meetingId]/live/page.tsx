@@ -50,10 +50,13 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { cn } from '@/lib/utils';
 import {
   OFFICE_HUB_BASE_PATH,
+  canManageParticipants,
+  canRecordAttendance,
   canRunMeeting,
   canViewMeeting,
   formatClockTime,
   formatDuration,
+  isMeetingParticipant,
   meetingDurationMinutes,
   postMeetingSummary,
   summarizeAttendance,
@@ -189,7 +192,14 @@ export default function LiveMeetingPage() {
   if (!canViewMeeting(meeting, viewer, capabilities)) return <OfficeHubAccessDenied what="this meeting" />;
 
   const runVerdict = canRunMeeting(meeting, viewer, capabilities);
-  const canRun = runVerdict.allowed || meeting.status === 'In Progress';
+  const canRun = runVerdict.allowed;
+  // While the meeting is running, the people in the room add agenda items and take notes alongside
+  // whoever runs it — its participants, not every viewer, which is what the Firestore rules allow.
+  // Starting and ending it, attendance, the invitation list, and other people's decisions, action
+  // items and files stay with the people who may run it or hold the grant for them.
+  const canContribute = canRun || (meeting.status === 'In Progress' && isMeetingParticipant(meeting, viewer));
+  const canMarkAttendance = canRun || canRecordAttendance(meeting, viewer, capabilities).allowed;
+  const canChangeInvitations = canRun || canManageParticipants(meeting, viewer, capabilities).allowed;
 
   const doStart = async () => {
     if (!actor) return;
@@ -262,7 +272,7 @@ export default function LiveMeetingPage() {
         }
       />
 
-      {!canRun && (
+      {!canContribute && (
         <Card className="border-amber-200 bg-amber-50/70">
           <CardContent className="px-4 py-3">
             <p className="text-sm text-amber-900">
@@ -312,7 +322,7 @@ export default function LiveMeetingPage() {
           <AgendaEditor
             meeting={meeting}
             items={agenda}
-            canEdit={canRun}
+            canEdit={canContribute}
             onChanged={agendaQuery.reload}
             liveMode
           />
@@ -323,7 +333,7 @@ export default function LiveMeetingPage() {
             meetingId={meeting.id}
             meetingTitle={meeting.title}
             notes={notes}
-            canEdit={canRun}
+            canEdit={canContribute}
           />
         </TabsContent>
 
@@ -331,8 +341,8 @@ export default function LiveMeetingPage() {
           <ParticipantPanel
             meeting={meeting}
             participants={participants}
-            canRecordAttendance={canRun}
-            canManageParticipants={canRun}
+            canRecordAttendance={canMarkAttendance}
+            canManageParticipants={canChangeInvitations}
             onChanged={reloadAll}
             attendanceMode
           />

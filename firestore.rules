@@ -51,6 +51,8 @@ service cloud.firestore {
         'billTrackingConfig', 'billTrackingCounters', 'billTrackingDocuments', 'billTrackingFollowUps',
         'billTrackingImportJobs', 'billTrackingRetention', 'billTrackingSavedViews', 'billTrackingTargets',
         'chatConversations',
+        // Only ever used to mint ids: doc(collection(db, 'contraIds')).id — nothing is read or written.
+        'contraIds',
         'employeeAttendance', 'employeeLeaveBalance', 'employeeSensitive', 'employeeSwipes',
         'greythrLinkAudit', 'greythrSyncRuns',
         'inventoryApprovalHistory', 'inventoryIdempotency', 'inventoryNumberSequences',
@@ -107,7 +109,18 @@ service cloud.firestore {
         'bankBalanceCounters', 'bankBalanceSettings', 'bankExpenses', 'bankInstrumentNos',
         'bankPayments', 'loans', 'monthlyInterest', 'paymentMethods',
         'insuranceCompanies', 'insuranceTasks', 'insurance_policies', 'insuredAssets',
-        'policyCategories', 'policyHolders', 'project_insurance_policies'
+        'policyCategories', 'policyHolders', 'project_insurance_policies',
+        'officeHubActionItems', 'officeHubAgenda', 'officeHubAgendaTemplates', 'officeHubCounters',
+        'officeHubDecisions', 'officeHubDocuments', 'officeHubMeetingTemplates', 'officeHubMeetings',
+        'officeHubMom', 'officeHubNotes', 'officeHubParticipants', 'officeHubReminders',
+        'officeHubSettings', 'officeHubTaskActivity', 'officeHubTaskComments', 'officeHubTasks',
+        'officeHubTeams', 'officeHubUserSettings', 'accountHeads', 'departmentSerialConfigs',
+        'expenseRequests', 'expensesSettings', 'subAccountHeads', 'dailyRequisitionSettings',
+        'dailyRequisitions', 'requisitions', 'vehicleManagementDocuments', 'vehicleManagementDriver',
+        'vehicleManagementDriverAssignments', 'vehicleManagementDriverDailyStatus', 'vehicleManagementEmployeeTrips', 'vehicleManagementFitness',
+        'vehicleManagementFuelLogs', 'vehicleManagementInsurance', 'vehicleManagementInsuranceWorkflowActivities', 'vehicleManagementInsuranceWorkflowCases',
+        'vehicleManagementMaintenanceLogs', 'vehicleManagementPermit', 'vehicleManagementPuc', 'vehicleManagementRoadTax',
+        'vehicleManagementSettings', 'vehicleManagementTripLocations', 'vehicleManagementTrips', 'vehicleManagementVehicles'
       ];
     }
 
@@ -140,18 +153,6 @@ service cloud.firestore {
     /** The sign-in page shows the company's branding before anyone has signed in. */
     match /settings/appearance {
       allow get: if true;
-    }
-
-    /*
-     * Office hours and holidays, for deadline calculation. `src/lib/workflow-utils.ts` is a server
-     * action that reads them through the browser SDK, so its requests arrive signed out. Neither
-     * holds anything sensitive. Remove once that file reads through the Admin SDK and is deployed.
-     */
-    match /settings/workingHours {
-      allow get: if true;
-    }
-    match /holidays/{holidayId} {
-      allow read: if true;
     }
 
     /* ── Server-written documents a person may read their own copy of ───────────────────────── */
@@ -1811,6 +1812,1424 @@ service cloud.firestore {
       allow create: if insHolds('Settings.Assets', ['Add']);
       allow update: if insHolds('Settings.Assets', ['Edit']);
       allow delete: if insHolds('Settings.Assets', ['Delete']);
+    }
+
+    /* ── Office Hub (src/lib/permissions.ts, "Office Hub"; src/lib/office-hub-permissions.ts) ─────
+     *
+     * Who may *see* a meeting or a task is decided in the browser from facts the rules cannot reach:
+     * team membership is the `memberUserIds` of every team, department membership comes from the
+     * employee directory (not `userPermissions.departmentIds`), and "leads a team" or "heads a
+     * department" widens the view without any grant. The registers, the reports, a team's page, the
+     * prepare page and search all read the module's collections whole. So everything is readable by
+     * whoever may open the module (`canViewModule`), and closed to everyone else — except their own
+     * rows, which the home dashboard and My Work read for anyone signed in: meetings they are invited
+     * to, their invitations, and the tasks, decisions, action items and reminders that name them.
+     *
+     * Writes are where the rules say more. Organising or scheduling a meeting is the authority over it
+     * (no grant needed); a task's assignee and creator, its team's leader and its department's head
+     * work it; a decision's owner and an action item's responsible person work theirs; a participant
+     * answers their own invitation, and while a meeting is In Progress its participants add agenda
+     * items and notes; a team's leader manages the team. Beyond that each write needs the action its
+     * screen checks. Identities that are stamped (`createdBy`, `updatedBy`, signatures) name the
+     * caller. Nothing is hard-deleted except a participant row and an agenda item.
+     *
+     * Names are `users` document ids (`userPermissions.userDocId`), never the auth uid. Budget: the
+     * permissions document (1), the parent meeting (1), the linked task (1), a team (1) and a
+     * department (1) — at most 5 of 10. A series batch of ten new instances reads the permissions,
+     * the series' first meeting and the ten instances: 12 of 20.
+     */
+    function ohHolds(page, actions) {
+      return hasPermissions() && get(permissionsPath()).data.p.get('Office Hub.' + page, []).hasAny(actions);
+    }
+
+    /** May open the module at all: `canViewModule`, the layout's gate on every Office Hub screen. */
+    function ohViewer() {
+      return hasPermissions() && (
+        get(permissionsPath()).data.p.get('Office Hub', []).hasAny(['View Module'])
+        || ohHolds('Meetings', ['View', 'View All'])
+        || ohHolds('Tasks', ['View', 'View All'])
+        || ohHolds('Dashboard', ['View'])
+        || ohHolds('Calendar', ['View']));
+    }
+
+    /**
+     * Any Office Hub grant. What a write's side effects need — reference numbers, reminders, the task
+     * trail, the recipients' preferences — including Mail Hub's "also create a task" on Tasks Create.
+     */
+    function ohAny() {
+      return holdsAnyOf([
+        'Office Hub', 'Office Hub.Dashboard', 'Office Hub.Calendar', 'Office Hub.Meetings', 'Office Hub.Agenda',
+        'Office Hub.Attendance', 'Office Hub.Minutes', 'Office Hub.Decisions', 'Office Hub.Action Items',
+        'Office Hub.Tasks', 'Office Hub.Teams', 'Office Hub.Employees', 'Office Hub.Documents',
+        'Office Hub.Reports', 'Office Hub.Workload', 'Office Hub.Management Overview', 'Office Hub.Templates',
+        'Office Hub.Settings'
+      ]);
+    }
+
+    /** The caller's `users` id; '' when unknown, which then matches no one. */
+    function ohMe() {
+      return hasPermissions() ? get(permissionsPath()).data.get('userDocId', '') : '';
+    }
+
+    function ohIsMe(userId) {
+      return ohMe() != '' && userId == ohMe();
+    }
+
+    function ohChanged() {
+      return request.resource.data.diff(resource.data).affectedKeys();
+    }
+
+    function ohUnchanged(fields) {
+      return !ohChanged().hasAny(fields);
+    }
+
+    /** Every audited write restamps `updatedAt` (a server timestamp) with `updatedBy` = the actor. */
+    function ohStamped() {
+      return !ohChanged().hasAny(['updatedAt', 'updatedBy']) || ohIsMe(request.resource.data.get('updatedBy', null));
+    }
+
+    function ohCreatedByMe() {
+      return ohIsMe(request.resource.data.get('createdBy', null));
+    }
+
+    /* ── Meetings ── */
+
+    function ohMeetingPath(meetingId) {
+      return /databases/$(database)/documents/officeHubMeetings/$(meetingId);
+    }
+
+    /** `isMeetingOrganizer`: the organiser, or whoever scheduled it in their name. */
+    function ohOrganises(meeting) {
+      return ohIsMe(meeting.get('organizerId', null)) || ohIsMe(meeting.get('scheduledById', null));
+    }
+
+    /** Runs the meeting: its organiser, or Meetings Edit over anyone's (`canEditMeeting`, `canRunMeeting`). */
+    function ohRunsMeeting(meeting) {
+      return ohOrganises(meeting) || ohHolds('Meetings', ['Edit']);
+    }
+
+    function ohInvited(meeting) {
+      return ohMe() != '' && meeting.get('participantUserIds', []).hasAny([ohMe()]);
+    }
+
+    /**
+     * The meeting a row belongs to, as it will stand after this write: a meeting, its participants
+     * and its agenda are created in one batch. Guarded, so a stray id refuses rather than errors.
+     */
+    function ohMeetingAfter(meetingId) {
+      return meetingId is string && meetingId != '' && hasPermissions() && existsAfter(ohMeetingPath(meetingId));
+    }
+
+    function ohMeetingExists(meetingId) {
+      return meetingId is string && meetingId != '' && hasPermissions() && exists(ohMeetingPath(meetingId));
+    }
+
+    function ohRunsMeetingId(meetingId) {
+      return ohMeetingExists(meetingId) && ohRunsMeeting(get(ohMeetingPath(meetingId)).data);
+    }
+
+    /** Agenda and notes: whoever runs the meeting, and its participants while it is In Progress (§18). */
+    function ohShapesMeeting(meeting) {
+      return ohRunsMeeting(meeting) || (meeting.get('status', '') == 'In Progress' && ohInvited(meeting));
+    }
+
+    /** A later occurrence of a series, raised by whoever may run its first meeting (`materializeSeriesInstances`). */
+    function ohSeriesInstance(data) {
+      return data.get('isSeriesParent', false) == false && ohMeetingExists(data.get('seriesId', null))
+        && get(ohMeetingPath(data.seriesId)).data.get('organizerId', null) == data.get('organizerId', null)
+        && (ohRunsMeeting(get(ohMeetingPath(data.seriesId)).data) || ohHolds('Meetings', ['Create']));
+    }
+
+    function ohMeetingUpdate(meetingId, changed) {
+      return ohRunsMeeting(resource.data)
+        // Cancelling, the occurrence or the series (`canCancelMeeting`).
+        || (ohHolds('Meetings', ['Cancel']) && request.resource.data.get('status', '') == 'Cancelled'
+          && changed.hasOnly(['status', 'cancellationReason', 'updatedAt', 'updatedBy', 'updatedByName']))
+        // A cancelled occurrence becomes an exception on its series' first meeting.
+        || (ohHolds('Meetings', ['Cancel']) && changed.hasOnly(['recurrence'])
+          && resource.data.get('recurrence', null) is map && request.resource.data.get('recurrence', null) is map
+          && request.resource.data.recurrence.diff(resource.data.recurrence).affectedKeys().hasOnly(['exceptions']))
+        // Dragging it to another day on the calendar (`canRescheduleFromCalendar`).
+        || ((ohHolds('Calendar', ['Reschedule']) || ohHolds('Meetings', ['Reschedule']))
+          && changed.hasOnly(['date', 'startTime', 'endTime', 'timeZone', 'startAt', 'endAt',
+            'updatedAt', 'updatedBy', 'updatedByName']))
+        // A participant's answer recounts the meeting's tally (`respondToInvitation`).
+        || (changed.hasOnly(['responseSummary']) && ohInvited(resource.data))
+        // The minutes' stage, mirrored from the minutes written in the same batch (`advanceMom`).
+        || (changed.hasOnly(['momStage'])
+          && existsAfter(/databases/$(database)/documents/officeHubMom/$(meetingId))
+          && getAfter(/databases/$(database)/documents/officeHubMom/$(meetingId)).data.get('stage', null)
+            == request.resource.data.get('momStage', null));
+    }
+
+    match /officeHubMeetings/{meetingId} {
+      // The registers, calendar, reports and search read every meeting; the dashboards ask
+      // `participantUserIds array-contains me`, with no grant at all on the calendar tab.
+      allow read: if ohViewer() || ohOrganises(resource.data) || ohInvited(resource.data);
+
+      // From the form, by its scheduler, organised by themselves unless they may name somebody else.
+      allow create: if ohCreatedByMe() && (
+        (ohHolds('Meetings', ['Create']) && ohIsMe(request.resource.data.get('scheduledById', null))
+          && (ohIsMe(request.resource.data.get('organizerId', null)) || ohHolds('Meetings', ['Change Organizer'])))
+        || ohSeriesInstance(request.resource.data));
+
+      allow update: if ohUnchanged(['createdBy', 'createdAt', 'scheduledById', 'organizationId'])
+        && (ohUnchanged(['organizerId']) || ohHolds('Meetings', ['Change Organizer']))
+        && ohStamped()
+        && ohMeetingUpdate(meetingId, ohChanged());
+      // Soft-deleted (`isDeleted`), never removed.
+    }
+
+    /* Invitations: `{meetingId}_{userId}`. Written with the meeting by whoever manages its list. */
+    function ohManagesInvitations(meetingId) {
+      return ohMeetingAfter(meetingId) && (
+        ohRunsMeeting(getAfter(ohMeetingPath(meetingId)).data) || ohHolds('Meetings', ['Manage Participants']));
+    }
+
+    match /officeHubParticipants/{participantId} {
+      allow read: if ohViewer() || ohIsMe(resource.data.get('userId', null));
+      allow create: if ohCreatedByMe()
+        && participantId == request.resource.data.get('meetingId', '') + '_' + request.resource.data.get('userId', '')
+        && ohManagesInvitations(request.resource.data.get('meetingId', null));
+      allow update: if ohUnchanged(['meetingId', 'userId', 'createdBy', 'createdAt']) && ohStamped() && (
+        ohManagesInvitations(resource.data.get('meetingId', null))
+        // Answering your own invitation, and only yours (`canRespondToInvitation`).
+        || (ohIsMe(resource.data.get('userId', null)) && ohChanged().hasOnly([
+          'response', 'responseMessage', 'respondedAt', 'updatedAt', 'updatedBy', 'updatedByName']))
+        // Attendance Record over anyone's meeting (`canRecordAttendance`).
+        || (ohHolds('Attendance', ['Record']) && ohIsMe(request.resource.data.get('attendanceMarkedById', null))
+          && ohChanged().hasOnly(['attendance', 'attendanceNote', 'checkInAt', 'attendanceMarkedById',
+            'attendanceMarkedByName', 'updatedAt', 'updatedBy', 'updatedByName'])));
+      // Taking somebody off the list removes their invitation.
+      allow delete: if ohManagesInvitations(resource.data.get('meetingId', null));
+    }
+
+    function ohAgendaWriter(meetingId) {
+      return ohHolds('Agenda', ['Add', 'Edit', 'Delete'])
+        || (ohMeetingAfter(meetingId) && ohShapesMeeting(getAfter(ohMeetingPath(meetingId)).data));
+    }
+
+    match /officeHubAgenda/{itemId} {
+      allow read: if ohViewer();
+      allow create: if ohCreatedByMe() && ohAgendaWriter(request.resource.data.get('meetingId', null));
+      // Renumbering after a delete or a drag writes `order` alone.
+      allow update: if ohUnchanged(['meetingId', 'createdBy', 'createdAt']) && ohStamped()
+        && ohAgendaWriter(resource.data.get('meetingId', null));
+      allow delete: if ohAgendaWriter(resource.data.get('meetingId', null));
+    }
+
+    /** One notes document per meeting, keyed by its id, auto-saved as it is typed. */
+    match /officeHubNotes/{meetingId} {
+      allow read: if ohViewer();
+      allow create, update: if request.resource.data.get('meetingId', null) == meetingId
+        && ohIsMe(request.resource.data.get('updatedBy', null))
+        && (ohHolds('Minutes', ['Prepare'])
+          || (ohMeetingAfter(meetingId) && ohShapesMeeting(getAfter(ohMeetingPath(meetingId)).data)));
+    }
+
+    /*
+     * The minutes, keyed by the meeting id (§46, `canAdvanceMinutes`). The organiser or Minutes
+     * Prepare writes them; each stage is signed by the caller, with its own grant: Review, Approve
+     * (never by the preparer when approval is required), Publish or the organiser. The stage history
+     * only grows, one entry per step.
+     */
+    function ohOrganisesId(meetingId) {
+      return ohMeetingExists(meetingId) && ohOrganises(get(ohMeetingPath(meetingId)).data);
+    }
+
+    function ohMinuteTaker(meetingId) {
+      return ohHolds('Minutes', ['Prepare']) || ohOrganisesId(meetingId);
+    }
+
+    function ohMomStageSigned(meetingId, after) {
+      return (after.get('stage', '') == 'Prepared' && ohMinuteTaker(meetingId)
+          && ohIsMe(after.get('preparedById', null)))
+        || (after.get('stage', '') == 'Reviewed' && ohHolds('Minutes', ['Review'])
+          && ohIsMe(after.get('reviewedById', null)))
+        || (after.get('stage', '') == 'Approved' && ohHolds('Minutes', ['Approve'])
+          && ohIsMe(after.get('approvedById', null))
+          && (after.get('approvalRequired', false) != true || !ohIsMe(after.get('preparedById', null))))
+        || (after.get('stage', '') == 'Published'
+          && (ohHolds('Minutes', ['Publish']) || ohOrganisesId(meetingId)));
+    }
+
+    function ohMomAdvanceFields() {
+      return [
+        'stage', 'preparedById', 'preparedByName', 'preparedAt', 'reviewedById', 'reviewedByName', 'reviewedAt',
+        'approvedById', 'approvedByName', 'approvedAt', 'publishedAt', 'history',
+        'updatedAt', 'updatedBy', 'updatedByName'
+      ];
+    }
+
+    match /officeHubMom/{meetingId} {
+      allow read: if ohViewer();
+      allow create: if request.resource.data.get('meetingId', meetingId) == meetingId && (
+        // `saveMom` on a meeting with no minutes yet.
+        (request.resource.data.get('stage', '') == 'Draft' && ohCreatedByMe() && ohMinuteTaker(meetingId))
+        // `advanceMom` before anything was saved.
+        || (request.resource.data.keys().hasOnly(ohMomAdvanceFields())
+          && request.resource.data.get('history', []).size() == 1
+          && ohIsMe(request.resource.data.get('updatedBy', null))
+          && ohMomStageSigned(meetingId, request.resource.data)));
+      allow update: if ohUnchanged(['meetingId', 'reference', 'createdBy', 'createdAt']) && ohStamped() && (
+        (ohUnchanged(ohMomAdvanceFields().removeAll(['updatedAt', 'updatedBy', 'updatedByName']))
+          && ohMinuteTaker(meetingId))
+        || (ohChanged().hasOnly(ohMomAdvanceFields())
+          && request.resource.data.get('history', []).size() == resource.data.get('history', []).size() + 1
+          && ohMomStageSigned(meetingId, request.resource.data))
+        // Publishing records who the minutes went to.
+        || (ohChanged().hasOnly(['circulatedToUserIds', 'circulatedAt'])
+          && resource.data.get('stage', '') == 'Published'
+          && (ohHolds('Minutes', ['Publish']) || ohOrganisesId(meetingId))));
+    }
+
+    /* ── Decisions and action items ── */
+
+    function ohTeamPath(teamId) {
+      return /databases/$(database)/documents/officeHubTeams/$(teamId);
+    }
+
+    function ohLeadsTeam(teamId) {
+      return teamId is string && teamId != '' && hasPermissions() && exists(ohTeamPath(teamId))
+        && ohIsMe(get(ohTeamPath(teamId)).data.get('leaderId', null));
+    }
+
+    /** `departments.head` holds a `users` id when it names anybody (the settings page offers only N/A). */
+    function ohHeadsDepartment(departmentId) {
+      return departmentId is string && departmentId != '' && hasPermissions()
+        && exists(/databases/$(database)/documents/departments/$(departmentId))
+        && ohIsMe(get(/databases/$(database)/documents/departments/$(departmentId)).data.get('head', null));
+    }
+
+    function ohDecisionEditor(decision) {
+      return ohIsMe(decision.get('ownerId', null)) || ohIsMe(decision.get('createdBy', null))
+        || ohHolds('Decisions', ['Edit']);
+    }
+
+    match /officeHubDecisions/{decisionId} {
+      allow read: if ohViewer() || ohIsMe(resource.data.get('ownerId', null));
+      allow create: if ohHolds('Decisions', ['Create']) && ohCreatedByMe();
+      allow update: if ohUnchanged(['createdBy', 'createdAt', 'reference', 'organizationId']) && ohStamped() && (
+        ohDecisionEditor(resource.data)
+        // The meeting's organiser edits the decisions recorded in it (the meeting and live pages).
+        || ohRunsMeetingId(resource.data.get('meetingId', null))
+        || (ohHolds('Decisions', ['Close']) && request.resource.data.get('status', '') == 'Completed'
+          && ohChanged().hasOnly(['status', 'closedAt', 'updatedAt', 'updatedBy', 'updatedByName'])));
+      // Soft-deleted (`isDeleted`), never removed.
+    }
+
+    function ohTaskPath(taskId) {
+      return /databases/$(database)/documents/officeHubTasks/$(taskId);
+    }
+
+    function ohTaskExists(taskId) {
+      return taskId is string && taskId != '' && hasPermissions() && exists(ohTaskPath(taskId));
+    }
+
+    function ohStamps() {
+      return ['updatedAt', 'updatedBy', 'updatedByName'];
+    }
+
+    function ohActionItemUpdate(itemId, changed) {
+      return ohIsMe(resource.data.get('responsibleUserId', null)) || ohIsMe(resource.data.get('createdBy', null))
+        || ohHolds('Action Items', ['Edit', 'Complete'])
+        || ohLeadsTeam(resource.data.get('responsibleTeamId', null))
+        || ohRunsMeetingId(resource.data.get('meetingId', null))
+        // Carried into a later meeting by whoever prepares it (prepare page, or a follow-up's creation).
+        || (changed.hasOnly(['carriedToMeetingId'].concat(ohStamps()))
+          && (ohHolds('Agenda', ['Add', 'Edit'])
+            || ohRunsMeetingId(request.resource.data.get('carriedToMeetingId', null))))
+        // Linked to the task raised from it (`canConvertActionItem`).
+        || (changed.hasOnly(['taskId'].concat(ohStamps()))
+          && (ohHolds('Action Items', ['Convert to Task']) || ohHolds('Tasks', ['Create']))
+          && ohTaskExists(request.resource.data.get('taskId', null))
+          && get(ohTaskPath(request.resource.data.taskId)).data.get('actionItemId', null) == itemId)
+        // Closed by whoever completes the task raised from it.
+        || (changed.hasOnly(['status', 'completedAt'].concat(ohStamps()))
+          && request.resource.data.get('status', '') == 'Completed'
+          && ohTaskExists(resource.data.get('taskId', null))
+          && get(ohTaskPath(resource.data.taskId)).data.get('actionItemId', null) == itemId
+          && get(ohTaskPath(resource.data.taskId)).data.get('status', '') == 'Completed');
+    }
+
+    match /officeHubActionItems/{itemId} {
+      allow read: if ohViewer() || ohIsMe(resource.data.get('responsibleUserId', null));
+      allow create: if ohHolds('Action Items', ['Create']) && ohCreatedByMe();
+      allow update: if ohUnchanged(['createdBy', 'createdAt', 'reference', 'organizationId']) && ohStamped()
+        && ohActionItemUpdate(itemId, ohChanged());
+    }
+
+    /* ── Tasks ── */
+
+    /** `canEditTask`: the assignee, the creator, the team's leader, the department's head, or Tasks Edit. */
+    function ohTaskEditor(task) {
+      return ohIsMe(task.get('assigneeId', null)) || ohIsMe(task.get('createdBy', null))
+        || ohHolds('Tasks', ['Edit'])
+        || ohLeadsTeam(task.get('teamId', null))
+        || ohHeadsDepartment(task.get('departmentId', null));
+    }
+
+    function ohTaskUpdate(changed) {
+      return ohTaskEditor(resource.data)
+        // Reassigning (`canAssignTask`) and completing (`canCompleteTaskAs`) on their own grants.
+        || (ohHolds('Tasks', ['Assign']) && changed.hasOnly([
+          'assigneeId', 'assigneeName', 'teamId', 'teamName', 'watcherUserIds', 'progress'].concat(ohStamps())))
+        || (ohHolds('Tasks', ['Complete']) && changed.hasOnly([
+          'status', 'progress', 'completedAt', 'completedById', 'completedByName', 'reopenedAt'].concat(ohStamps())))
+        // A comment counts itself and makes its author (and whoever it mentions) a watcher.
+        || (ohHolds('Tasks', ['Comment', 'View', 'View All'])
+          && changed.hasOnly(['commentCount', 'watcherUserIds'].concat(ohStamps()))
+          && request.resource.data.get('commentCount', 0) == resource.data.get('commentCount', 0) + 1
+          && request.resource.data.get('watcherUserIds', []).hasAll(resource.data.get('watcherUserIds', [])))
+        // The far end of a dependency mirrors the link (`addTaskDependency`, `removeTaskDependency`).
+        || (ohViewer() && changed.hasOnly(['dependencies']))
+        // An attachment uploaded on the task (`uploadOfficeHubDocument`).
+        || (ohHolds('Documents', ['Upload']) && changed.hasOnly(['documentIds'])
+          && request.resource.data.get('documentIds', []).hasAll(resource.data.get('documentIds', [])));
+    }
+
+    match /officeHubTasks/{taskId} {
+      // My Work asks `assigneeId == me` and `watcherUserIds array-contains me`.
+      allow read: if ohViewer() || ohIsMe(resource.data.get('assigneeId', null))
+        || ohIsMe(resource.data.get('createdBy', null))
+        || (ohMe() != '' && resource.data.get('watcherUserIds', []).hasAny([ohMe()]));
+      // Raised from the form, from an action item (`canConvertActionItem`), or from Mail Hub.
+      allow create: if (ohHolds('Tasks', ['Create']) || ohHolds('Action Items', ['Convert to Task']))
+        && ohCreatedByMe();
+      allow update: if ohUnchanged(['createdBy', 'createdAt', 'reference', 'organizationId']) && ohStamped() && (
+        // A soft delete (`archiveTask`) has its own grant.
+        ohChanged().hasAny(['isDeleted', 'deletedAt', 'deletedBy', 'deletedByName'])
+          ? ohHolds('Tasks', ['Delete'])
+          : ohTaskUpdate(ohChanged()));
+    }
+
+    /** Posted as yourself; never edited. */
+    match /officeHubTaskComments/{commentId} {
+      allow read: if ohViewer();
+      allow create: if ohHolds('Tasks', ['Comment', 'View', 'View All']) && ohCreatedByMe()
+        && request.resource.data.get('taskId', null) is string;
+    }
+
+    /** Append-only: written beside every change to a task, by whoever made it. */
+    match /officeHubTaskActivity/{entryId} {
+      allow read: if ohViewer();
+      allow create: if ohAny() && ohIsMe(request.resource.data.get('actorId', null)) && ohCreatedByMe();
+    }
+
+    /* ── Teams ── */
+
+    /*
+     * The directory's active teams are read on every Office Hub screen. A team's leader manages it;
+     * changing the leader is the leader's or Change Leader's, archiving is Archive's.
+     */
+    match /officeHubTeams/{teamId} {
+      allow read: if ohAny();
+      allow create: if ohHolds('Teams', ['Create']) && ohCreatedByMe();
+      allow update: if ohUnchanged(['createdBy', 'createdAt', 'organizationId']) && ohStamped() && (
+        ohChanged().hasAny(['status', 'archivedAt', 'archivedReason'])
+          ? ohHolds('Teams', ['Archive'])
+          : ((ohIsMe(resource.data.get('leaderId', null)) || ohIsMe(resource.data.get('createdBy', null))
+              || ohHolds('Teams', ['Edit', 'Manage Members', 'Change Leader']))
+            && (ohUnchanged(['leaderId']) || ohIsMe(resource.data.get('leaderId', null))
+              || ohHolds('Teams', ['Change Leader']))
+            && (ohUnchanged(['memberUserIds']) || ohIsMe(resource.data.get('leaderId', null))
+              || ohHolds('Teams', ['Edit', 'Manage Members', 'Change Leader']))));
+    }
+
+    /* ── Files, reminders, templates and settings ── */
+
+    function ohMayRemoveDocument(document) {
+      return ohHolds('Documents', ['Delete']) || ohIsMe(document.get('uploadedById', null))
+        || ohRunsMeetingId(document.get('meetingId', null))
+        || (document.get('entityType', '') == 'task' && ohTaskExists(document.get('entityId', null))
+          && ohTaskEditor(get(ohTaskPath(document.entityId)).data))
+        || (document.get('entityType', '') == 'decision' && document.get('entityId', '') is string
+          && document.get('entityId', '') != ''
+          && exists(/databases/$(database)/documents/officeHubDecisions/$(document.entityId))
+          && ohDecisionEditor(get(/databases/$(database)/documents/officeHubDecisions/$(document.entityId)).data));
+    }
+
+    /** Uploaded as yourself; removed by a soft delete, so published minutes keep their files. */
+    match /officeHubDocuments/{documentId} {
+      allow read: if ohViewer();
+      allow create: if ohHolds('Documents', ['Upload']) && ohCreatedByMe()
+        && ohIsMe(request.resource.data.get('uploadedById', null));
+      allow update: if ohChanged().hasOnly(['isDeleted', 'deletedAt', 'deletedBy', 'deletedByName'].concat(ohStamps()))
+        && request.resource.data.get('isDeleted', false) == true
+        && ohIsMe(request.resource.data.get('deletedBy', null))
+        && ohMayRemoveDocument(resource.data);
+    }
+
+    /*
+     * Reminder rows for every participant or assignee, written and cancelled by whoever saves the
+     * meeting or task (deterministic ids, so a reschedule overwrites them). The cancel query has no
+     * user filter. The server's sweep marks them sent.
+     */
+    match /officeHubReminders/{reminderId} {
+      allow read: if ohAny() || ohIsMe(resource.data.get('userId', null));
+      allow create: if ohAny() && request.resource.data.get('status', '') == 'Scheduled'
+        && request.resource.data.get('userId', null) is string;
+      allow update: if ohAny() && request.resource.data.get('status', '') in ['Scheduled', 'Cancelled']
+        && request.resource.data.get('userId', null) == resource.data.get('userId', null);
+    }
+
+    match /officeHubMeetingTemplates/{templateId} {
+      allow read: if ohAny();
+      allow create, update: if ohHolds('Templates', ['Add', 'Edit']);
+      // Using a template counts it (`createMeeting`).
+      allow update: if ohHolds('Meetings', ['Create']) && ohChanged().hasOnly(['usageCount'])
+        && request.resource.data.get('usageCount', 0) == resource.data.get('usageCount', 0) + 1;
+    }
+
+    match /officeHubAgendaTemplates/{templateId} {
+      allow read: if ohAny();
+      allow create, update: if ohHolds('Templates', ['Add', 'Edit']);
+    }
+
+    match /officeHubSettings/{settingsId} {
+      allow get: if ohAny();
+      allow create, update: if ohHolds('Settings', ['Edit']);
+    }
+
+    /* A person's own preferences; every notification reads its recipients'. */
+    match /officeHubUserSettings/{userId} {
+      allow get: if ohIsMe(userId) || ohAny();
+      allow create, update: if ohIsMe(userId);
+    }
+
+    /*
+     * Reference numbers (TSK, DEC, ACT, MOM per financial year), allocated in a transaction by
+     * whoever raises the record. Nothing secret; a counter only ever moves on by one.
+     */
+    match /officeHubCounters/{counterId} {
+      allow get: if ohAny();
+      allow create: if ohAny() && request.resource.data.get('value', 0) == 1;
+      allow update: if ohAny() && request.resource.data.get('value', 0) is int
+        && request.resource.data.get('value', 0) == resource.data.get('value', 0) + 1;
+    }
+
+    /* ── Expenses (src/lib/permissions.ts, "Expenses"; src/lib/expenses-roles.ts) ───────────────
+     *
+     * Two answers decide who acts, as on every screen (useExpensesActor):
+     *   - the permission map: `Expenses.<Page>` and, per department, `Expenses.Departments.<id>`
+     *     (Create raises, Edit edits) and `Expenses.Settings.<id>` (Edit Serial Nos) — the scoped
+     *     key or the unscoped page, as `can(action, page, departmentId)` reads them;
+     *   - Settings › User Roles (`expensesSettings/user-roles`): an action set to `assigned-too` or
+     *     `assigned-only` lets the people it names act holding nothing. Named means a users id in
+     *     the pair for the action (its department's, for a by-department assignment; any of the
+     *     first four amount bands that covers the amount), or holding one of its roles — by name,
+     *     or for a write by role document id (the first two). `assigned-only` also narrows who may
+     *     act; that half stays with the screens, so a role permission still passes here.
+     *
+     * Expense requests are read whole by the module's own pages — the create form and the import
+     * check every request number and party in the module, whatever the department — and by Daily
+     * Requisition (linking and receiving, the entry sheet's print), Site Fund Request / Requisition
+     * (their registers show each request's expense request) and Loan (the EMI's request), so
+     * department scope is not a read boundary. `expRequestReader` is everyone those screens admit
+     * by a grant or a User Roles assignment — except Site Fund Request's project-access members, who
+     * hold no grant at all and whose register reads every request in the same Promise.all as its
+     * own. Until that register stops failing without them, any signed-in user reads requests.
+     * Daily Requisition writes only the reception link, from any of its screens.
+     * Account heads, serial configurations and the settings documents are masters every one of
+     * those screens (and Recurring Payments' step form) reads: open to any signed-in user.
+     *
+     * Names are `users` document ids (`userPermissions.userDocId`), never the auth uid. Budget: the
+     * permissions document (1), the User Roles document (1), and for a write up to two role
+     * documents per action consulted (raise and import: 4) — 6 of 10; a request raised with its
+     * serial number touches the same paths for both documents.
+     */
+    function expP() {
+      return get(permissionsPath()).data.p;
+    }
+
+    /** Any grant at all in one of these modules (`canAccessModule`: the module key or a page under it). */
+    function expInModules(modules) {
+      return hasPermissions()
+        && expP().keys().join('|').matches('(.*[|])?(' + modules + ')([.][^|]*)?([|].*)?');
+    }
+
+    function expHolds(page, action) {
+      return hasPermissions() && expP().get('Expenses.' + page, []).hasAny([action]);
+    }
+
+    /** `can(action, 'Expenses.<page>', scope)`: the scoped grant, or the page's own. */
+    function expHoldsFor(page, scope, action) {
+      return hasPermissions() && scope is string
+        && (expP().get('Expenses.' + page + '.' + scope, []).hasAny([action])
+          || expP().get('Expenses.' + page, []).hasAny([action]));
+    }
+
+    /** The caller's `users` id; '' when unknown, which then matches no one. */
+    function expMe() {
+      return hasPermissions() ? get(permissionsPath()).data.get('userDocId', '') : '';
+    }
+
+    function expIsMe(userId) {
+      return expMe() != '' && userId == expMe();
+    }
+
+    function expRolesPath() {
+      return /databases/$(database)/documents/expensesSettings/user-roles;
+    }
+
+    /** The stored assignment for one action; {} (nobody, roles decide) when there is none. */
+    function expAssignment(key) {
+      return exists(expRolesPath()) ? get(expRolesPath()).data.get('actions', {}).get(key, {}) : {};
+    }
+
+    function expInPair(pair, me) {
+      return pair is map && (pair.get('primary', []).hasAny([me]) || pair.get('alternates', []).hasAny([me]));
+    }
+
+    /** Band `i` names the caller and, when an amount is known, covers it. */
+    function expInBand(bands, i, amount, me) {
+      return bands.size() > i && expInPair(bands[i], me)
+        && (amount == null
+          || ((bands[i].get('from', null) == null || amount >= bands[i].get('from', null))
+            && (bands[i].get('to', null) == null || amount <= bands[i].get('to', null))));
+    }
+
+    function expRoleIdHeld(ids, i) {
+      return ids.size() > i && ids[i] is string && ids[i] != ''
+        && exists(/databases/$(database)/documents/roles/$(ids[i]))
+        && get(/databases/$(database)/documents/roles/$(ids[i])).data.get('name', '')
+          in get(permissionsPath()).data.get('roleNames', []);
+    }
+
+    function expInRoles(pair, me, lookupRoles) {
+      return pair is map && (pair.get('alternates', []).hasAny([me])
+        || pair.get('primary', []).hasAny(get(permissionsPath()).data.get('roleNames', []))
+        || (lookupRoles && (expRoleIdHeld(pair.get('primary', []), 0) || expRoleIdHeld(pair.get('primary', []), 1))));
+    }
+
+    /*
+     * Named on this action in User Roles, with the assignment carrying authority (resolveExpensesRolesDoc
+     * and mayAct). `departmentId` null asks about no department (a by-department assignment then
+     * names no one); `amount` null asks about any band.
+     */
+    function expNamed(key, scoped, banded, departmentId, amount, lookupRoles) {
+      let a = expAssignment(key);
+      let me = expMe();
+      let stored = a.get('type', 'users');
+      let type = (stored == 'department' && !scoped) || (stored == 'amount' && !banded) ? 'users' : stored;
+      return me != '' && a.get('mode', 'roles-only') in ['assigned-too', 'assigned-only'] && (
+        type == 'roles' ? expInRoles(a.get('roles', {}), me, lookupRoles)
+        : type == 'department' ? (departmentId is string && expInPair(a.get('byDepartment', {}).get(departmentId, {}), me))
+        : type == 'amount' ? (expInBand(a.get('bands', []), 0, amount, me) || expInBand(a.get('bands', []), 1, amount, me)
+          || expInBand(a.get('bands', []), 2, amount, me) || expInBand(a.get('bands', []), 3, amount, me))
+        : expInPair(a.get('users', {}), me));
+    }
+
+    /** Everyone who reads the request register whole (see above). */
+    function expRequestReader() {
+      return expInModules('Expenses|Daily Requisition|Site Fund Request|Site Fund Requisition|Site Fund Requisition 2|Loan')
+        || expNamed('raise-request', true, true, null, null, false)
+        || expNamed('edit-request', true, true, null, null, false)
+        || expNamed('import-requests', true, false, null, null, false)
+        || expNamed('view-reports', false, false, null, null, false);
+    }
+
+    /** May raise (the create form, `raise-request`) or import (`import-requests`) into this department. */
+    function expRaiser(departmentId, amount) {
+      return expHoldsFor('Departments', departmentId, 'Create')
+        || expNamed('raise-request', true, true, departmentId, amount, true)
+        || expNamed('import-requests', true, false, departmentId, null, true);
+    }
+
+    function expChanged() {
+      return request.resource.data.diff(resource.data).affectedKeys();
+    }
+
+    match /expenseRequests/{requestId} {
+      // Becomes `expRequestReader()` once Site Fund Request's registers survive a refusal (see above).
+      allow read: if signedIn();
+
+      // Raised or imported as yourself, into a department you may raise in. The Admin SDK raises
+      // the requests Loan, Recurring Payments and Site Fund Request create (createExpenseRequest).
+      allow create: if request.resource.data.get('departmentId', '') is string
+        && request.resource.data.get('departmentId', '') != ''
+        && expIsMe(request.resource.data.get('generatedByUserId', ''))
+        && expRaiser(request.resource.data.departmentId, request.resource.data.get('amount', 0));
+
+      // The department register's edit (Edit on the department, or `edit-request` at the amount
+      // saved), which never moves a request, renumbers it or touches its reception; and Daily
+      // Requisition receiving, releasing or relinking it, which touches nothing else.
+      allow update: if (expChanged().hasOnly([
+            'projectId', 'amount', 'partyName', 'headOfAccount', 'subHeadOfAccount', 'description', 'remarks', 'statutory'
+          ])
+          && (expHoldsFor('Departments', resource.data.get('departmentId', ''), 'Edit')
+            || expNamed('edit-request', true, true, resource.data.get('departmentId', ''),
+              request.resource.data.get('amount', 0), true)))
+        || (expChanged().hasOnly(['receptionNo', 'receptionDate']) && expInModules('Daily Requisition'));
+      // Requests are never deleted from the browser.
+    }
+
+    /*
+     * Each department's request-number series, keyed by department id. Set on Settings (Edit Serial
+     * Nos for the department, or `manage-serials`); moved on, and only forward, by the transaction
+     * that raises or imports a request in that department.
+     */
+    match /departmentSerialConfigs/{departmentId} {
+      allow get: if signedIn();
+      allow create: if (expHoldsFor('Settings', departmentId, 'Edit Serial Nos')
+          || expNamed('manage-serials', true, false, departmentId, null, true))
+        && request.resource.data.get('startingIndex', 0) is int && request.resource.data.get('startingIndex', 0) >= 1;
+      allow update: if ((expHoldsFor('Settings', departmentId, 'Edit Serial Nos')
+          || expNamed('manage-serials', true, false, departmentId, null, true))
+          && request.resource.data.get('startingIndex', 0) is int && request.resource.data.get('startingIndex', 0) >= 1)
+        || (expChanged().hasOnly(['startingIndex']) && expRaiser(departmentId, null)
+          && request.resource.data.get('startingIndex', 0) is int
+          && (!(resource.data.get('startingIndex', 0) is int)
+            || request.resource.data.get('startingIndex', 0) > resource.data.get('startingIndex', 0)));
+    }
+
+    /* Head and Sub-Head of A/c: every request is booked under them; Manage Accounts keeps the list. */
+    function expAccountsManager() {
+      return expHolds('Settings', 'Manage Accounts') || expNamed('manage-accounts', false, false, null, null, true);
+    }
+
+    match /accountHeads/{headId} {
+      allow read: if signedIn();
+      allow write: if expAccountsManager();
+    }
+
+    match /subAccountHeads/{subHeadId} {
+      allow read: if signedIn();
+      allow write: if expAccountsManager();
+    }
+
+    /*
+     * `module-config` (Field and Data Control), `gst-registrations` (the company's GSTINs and how a
+     * bill is attributed to one; Daily Requisition and Bill Tracking read it too) and `user-roles`.
+     * Each is written whole by its own page, stamped with the writer. Field and Data Control share
+     * one document, so either page's editors write it (useExpensesControlAccess). Who acts is not
+     * itself assignable: User Roles is written on its permission alone.
+     */
+    function expControlEditor() {
+      return expHolds('Field Control', 'Edit') || expHolds('Data Control', 'Edit')
+        || expHolds('Settings', 'Manage Accounts') || expHolds('Settings', 'Edit Serial Nos')
+        || expNamed('field-control', false, false, null, null, true)
+        || expNamed('data-control', false, false, null, null, true);
+    }
+
+    match /expensesSettings/{settingId} {
+      allow get: if signedIn();
+      allow create, update: if (settingId == 'module-config' && expControlEditor()
+          && expIsMe(request.resource.data.get('updatedBy', '')))
+        || (settingId == 'gst-registrations'
+          && (expHolds('GST Registrations', 'Edit') || expHolds('Settings', 'Manage Accounts')
+            || expNamed('gst-registrations', false, false, null, null, true))
+          && expIsMe(request.resource.data.get('updatedById', '')))
+        || (settingId == 'user-roles'
+          && (expHolds('User Roles', 'Edit') || expHolds('Settings', 'Manage Accounts'))
+          && expIsMe(request.resource.data.get('updatedById', '')));
+    }
+
+    /* ── Daily Requisition (src/lib/permissions.ts, "Daily Requisition") ────────────────────────
+     *
+     * A requisition names nobody who may work it (no owner, no assignee, no project): every screen
+     * checks a page permission, so the rules follow those alone. Each page reads the register
+     * whole — the dashboard, Entry Sheet, Manage Documents, the reports, the checklist print and
+     * each workflow stage (`where status in […]`) — so anyone holding a grant on one of those pages
+     * reads every requisition. The stages are Workflow Configuration's, gated as
+     * `Daily Requisition.<stage name>`; the three names here are the shipped ones the permission
+     * tree and the work dashboard use. A renamed stage's grant is not recognised.
+     *
+     * Readers outside the module: the Expenses pages (the register's progress column, the raise
+     * form's party list, the import's duplicate check, the reports' payments), which anyone with an
+     * Expenses grant or named in Expenses › User Roles opens — the same test Expenses' own rules
+     * use (`expRequestReader`); and Bank Balance, which lists what is awaiting payment for New
+     * Payment (Expenses Add) and re-reads by id the requisitions a voucher pays or a cancel or
+     * bounce reverses (Expenses Add / Delete).
+     *
+     * Writes follow the screen: Entry Sheet adds, edits the form's own fields and deletes; a stage
+     * moves a requisition to the status its action sets; Manage Documents keeps the attachments
+     * and their status; a Bank Balance voucher records a payment, and its cancel takes it back.
+     * Once money is recorded against a requisition (`isPaymentLocked`) only its description, its
+     * documents and Bank Balance may touch it, and it is never deleted.
+     *
+     * Stamps (`receivedById`, `paidById`, `documentStatusUpdatedById`) are not checked: Switch User
+     * writes the impersonated user's id under the administrator's sign-in.
+     *
+     * Budget: the permissions document (1) and, for a read, Expenses' User Roles document (1) —
+     * 2 of 10. A voucher's or a stage's transaction touches the same paths for every requisition.
+     */
+    function drHolds(resource, actions) {
+      return hasPermissions() && get(permissionsPath()).data.p.get(resource, []).hasAny(actions);
+    }
+
+    function drPage(page, actions) {
+      return drHolds('Daily Requisition.' + page, actions);
+    }
+
+    /** The shipped workflow stages (workflow-configuration/page.tsx DEFAULT steps). */
+    function drReceiving(actions) {
+      return drPage('Receiving at Finance', actions);
+    }
+
+    function drVerification(actions) {
+      return drPage('GST & TDS Verification', actions);
+    }
+
+    function drPayment(actions) {
+      return drPage('Processed for Payment', actions);
+    }
+
+    /** Any grant on a page that shows the register (dailyRequisitionAccess, the dashboard's canView). */
+    function drModuleReader() {
+      return holdsAnyOf([
+        'Daily Requisition.Entry Sheet', 'Daily Requisition.Receiving at Finance',
+        'Daily Requisition.GST & TDS Verification', 'Daily Requisition.Processed for Payment',
+        'Daily Requisition.Manage Documents', 'Daily Requisition.Reports'
+      ])
+        // GST & TDS by Registration also opens for the Expenses registrations page's viewers.
+        || drHolds('Expenses.GST Registrations', ['View']);
+    }
+
+    /* ── Expenses' readers: the same answer as expRequestReader, for the requests' register ── */
+
+    function drMe() {
+      return hasPermissions() ? get(permissionsPath()).data.get('userDocId', '') : '';
+    }
+
+    function drExpRolesPath() {
+      return /databases/$(database)/documents/expensesSettings/user-roles;
+    }
+
+    function drExpInPair(pair, me) {
+      return pair is map && (pair.get('primary', []).hasAny([me]) || pair.get('alternates', []).hasAny([me]));
+    }
+
+    function drExpInBand(bands, i, me) {
+      return bands.size() > i && drExpInPair(bands[i], me);
+    }
+
+    /*
+     * Named on an Expenses action (src/lib/expenses-roles.ts mayAct) with the assignment carrying
+     * authority, in any department and any amount band.
+     */
+    function drExpNamed(key, scoped, banded) {
+      let a = exists(drExpRolesPath()) ? get(drExpRolesPath()).data.get('actions', {}).get(key, {}) : {};
+      let me = drMe();
+      let stored = a.get('type', 'users');
+      let type = (stored == 'department' && !scoped) || (stored == 'amount' && !banded) ? 'users' : stored;
+      return me != '' && a.get('mode', 'roles-only') in ['assigned-too', 'assigned-only'] && (
+        type == 'roles' ? (a.get('roles', {}) is map && (a.get('roles', {}).get('alternates', []).hasAny([me])
+            || a.get('roles', {}).get('primary', []).hasAny(get(permissionsPath()).data.get('roleNames', []))))
+        : type == 'department' ? false
+        : type == 'amount' ? (drExpInBand(a.get('bands', []), 0, me) || drExpInBand(a.get('bands', []), 1, me)
+          || drExpInBand(a.get('bands', []), 2, me) || drExpInBand(a.get('bands', []), 3, me))
+        : drExpInPair(a.get('users', {}), me));
+    }
+
+    function drExpensesReader() {
+      return hasPermissions() && (
+        get(permissionsPath()).data.p.keys().join('|').matches('(.*[|])?Expenses([.][^|]*)?([|].*)?')
+        || drExpNamed('raise-request', true, true) || drExpNamed('edit-request', true, true)
+        || drExpNamed('import-requests', true, false) || drExpNamed('view-reports', false, false));
+    }
+
+    /* ── The requisition's state ── */
+
+    /** Money recorded against it (src/lib/requisition-progress.ts isPaymentLocked). */
+    function drLocked(data) {
+      return data.get('payments', []).size() > 0
+        || (data.get('paidAmount', 0) is number && data.get('paidAmount', 0) > 0)
+        || data.get('status', '') in ['Partially Paid', 'Paid'];
+    }
+
+    function drChanged() {
+      return request.resource.data.diff(resource.data).affectedKeys();
+    }
+
+    function drNewStatus() {
+      return request.resource.data.get('status', '');
+    }
+
+    /** What a Bank Balance voucher writes (expenses/new foldPayments, cheques reversePayment). */
+    function drPaymentFieldsOnly() {
+      return drChanged().hasOnly(['paidAmount', 'payments', 'status', 'paidAt', 'lastPaidAt']);
+    }
+
+    /*
+     * The action each status is reached by ([step]/page.tsx, ViewDailyRequisitionDialog,
+     * GstTdsVerificationDialog): received or returned at Finance (or sent back from verification,
+     * which clears it), cancelled, verified or flagged, sent for payment, paid by hand. Where it
+     * comes from is not checked beyond that: the stage page re-reads it and moves only what is
+     * still in the status it showed.
+     */
+    function drMayMoveTo(from, status) {
+      return status == 'Pending' ? (drReceiving(['Return to Pending']) || drVerification(['Return to Pending'])
+          || drPayment(['Return to Pending']))
+        : status == 'Received' ? (drReceiving(['Mark as Received'])
+          || (from in ['Verified', 'Needs Review'] && drVerification(['Return to Pending'])))
+        : status == 'Cancelled' ? (drReceiving(['Reject', 'Cancel']) || drVerification(['Reject', 'Cancel'])
+          || drPayment(['Reject', 'Cancel']))
+        : status in ['Verified', 'Needs Review'] ? drVerification(['Verify', 'Re-verify'])
+        : status == 'Received for Payment' ? (drPayment(['Mark as Received for Payment', 'Approve'])
+          || drVerification(['Send for Payment']))
+        : status == 'Paid' ? drPayment(['Mark as Received for Payment', 'Approve'])
+        : false;
+    }
+
+    /** A stage's move: the status, its stamps, and verification's figures (or their clearing). */
+    function drStageMove() {
+      return !drLocked(resource.data) && drMayMoveTo(resource.data.get('status', ''), drNewStatus())
+        && drChanged().hasOnly([
+          'status', 'receivedAt', 'receivedById', 'verifiedAt', 'igstAmount', 'tdsAmount', 'cgstAmount',
+          'sgstAmount', 'retentionAmount', 'otherDeduction', 'verificationNotes', 'gstNo', 'gstType', 'gstRate',
+          'gstRegistrationId', 'netAmount', 'paidAt', 'paidAmount', 'manualPaid', 'paidById', 'paidByName'
+        ])
+        // Paid by hand only from Processed for Payment, and only then with the paid figures.
+        && (drNewStatus() == 'Paid'
+          || !drChanged().hasAny(['paidAt', 'paidAmount', 'manualPaid', 'paidById', 'paidByName']));
+    }
+
+    /** The Entry Sheet's edit form; a paid requisition keeps everything but its description. */
+    function drEntryEdit() {
+      return drPage('Entry Sheet', ['Edit'])
+        && drChanged().hasOnly(drLocked(resource.data)
+          ? ['description']
+          : ['date', 'projectId', 'departmentId', 'partyName', 'description', 'grossAmount', 'netAmount']);
+    }
+
+    /** Manage Documents (and the view dialog's document buttons); files only with Upload. */
+    function drDocuments() {
+      return drChanged().hasOnly(['documentStatus', 'documentStatusUpdatedById', 'documentStatusUpdatedAt', 'attachments'])
+        && (drChanged().hasAny(['attachments'])
+          ? drPage('Manage Documents', ['Upload'])
+          : drPage('Manage Documents', ['Upload', 'Mark as Missing', 'Not Required', 'Mark as Not Required', 'Move to Pending']));
+    }
+
+    /** New Payment: a voucher pays what is awaiting payment, and records the line. */
+    function drVoucherPays() {
+      return drHolds('Bank Balance.Expenses', ['Add']) && drPaymentFieldsOnly()
+        && resource.data.get('status', '') in ['Received for Payment', 'Partially Paid']
+        && drNewStatus() in ['Partially Paid', 'Paid']
+        && request.resource.data.get('payments', []).size() > resource.data.get('payments', []).size();
+    }
+
+    /*
+     * The Cheque Register cancelling or bouncing a voucher: its lines come off, and the status is
+     * recomputed only while the requisition is in the payment stage.
+     */
+    function drVoucherReversed() {
+      return drHolds('Bank Balance.Expenses', ['Delete']) && drPaymentFieldsOnly()
+        && request.resource.data.get('payments', []).size() <= resource.data.get('payments', []).size()
+        && (drNewStatus() == resource.data.get('status', '')
+          || (resource.data.get('status', '') in ['Received for Payment', 'Partially Paid', 'Paid']
+            && drNewStatus() in ['Received for Payment', 'Partially Paid', 'Paid']));
+    }
+
+    match /dailyRequisitions/{requisitionId} {
+      allow read: if drModuleReader() || drExpensesReader();
+      // A voucher re-reads by id what it pays or reverses, whatever has happened to it since.
+      allow get: if drHolds('Bank Balance.Expenses', ['Add', 'Delete']);
+      // New Payment's list: `where status in ['Received for Payment', 'Partially Paid']`.
+      allow list: if drHolds('Bank Balance.Expenses', ['Add'])
+        && resource.data.status in ['Received for Payment', 'Partially Paid'];
+
+      // The entry form, Receive Multiple and the import (which may bring paid history with it).
+      allow create: if drPage('Entry Sheet', ['Add']);
+      allow update: if drEntryEdit() || drStageMove() || drDocuments() || drVoucherPays() || drVoucherReversed();
+      allow delete: if drPage('Entry Sheet', ['Delete']) && !drLocked(resource.data);
+    }
+
+    /*
+     * Field Control and Data Control: one document (`module-config`), written whole by either
+     * page. Read by the Entry Sheet and the import for everyone who records requisitions; a read
+     * failure falls back to the shipped defaults. Nothing in it is sensitive.
+     */
+    match /dailyRequisitionSettings/{settingId} {
+      allow read: if signedIn();
+      allow create, update: if settingId == 'module-config'
+        && (drPage('Field Control', ['Edit']) || drPage('Data Control', ['Edit']));
+    }
+
+    /* ── Site Fund Requisition (`requisitions`; src/components/site-fund-requisition) ─────────────
+     *
+     * The register (AllRequisitionsTab2) shows a person the requisitions they raised, and all of
+     * them with `Site Fund Requisition` View All. The stage queues read every requisition at their
+     * stage, the Site Fund Summary report and Billing Recon's dashboard tile read them all. So a
+     * module user — View Module, or the Requests page (which links every stage queue), View All, the
+     * report — and Billing Recon's users read the register whole; anyone else reads what they
+     * raised (the register asks `where raisedById == me`) and what is waiting on them (the header's
+     * task list and the work dashboard ask `where assignees array-contains me`, and the view
+     * dialog re-reads it by id).
+     *
+     * Being on the current step's `assignees` is the authority to act (workflow-utils
+     * getAssigneeForStep; no permission is checked), so the assignees move a requisition through
+     * the workflow; before anyone has received it its details may be corrected by whoever sees it
+     * in the register. The escalation cron writes on the Admin SDK.
+     *
+     * Names are `users` document ids (`userPermissions.userDocId`), never the auth uid. Budget: the
+     * permissions document (1).
+     */
+    function drSfrAllReader() {
+      return drHolds('Site Fund Requisition', ['View All'])
+        || drHolds('Site Fund Requisition 2', ['View Module'])
+        || drHolds('Site Fund Requisition 2.Requests', ['View', 'View All'])
+        || drHolds('Site Fund Requisition 2.Reports.Site Fund Summary', ['View'])
+        || drHolds('Billing Recon', ['View Module']);
+    }
+
+    function drSfrRaisedByMe(data) {
+      return drMe() != '' && data.get('raisedById', '') == drMe();
+    }
+
+    function drSfrAssignee(data) {
+      return drMe() != '' && data.get('assignees', []).hasAny([drMe()]);
+    }
+
+    match /requisitions/{requisitionId} {
+      allow read: if drSfrAllReader() || drSfrRaisedByMe(resource.data) || drSfrAssignee(resource.data);
+
+      // Raised as yourself, at the start of the workflow ("New Request", the Excel and bulk entry).
+      allow create: if request.resource.data.get('status', '') == 'Pending'
+        && drSfrRaisedByMe(request.resource.data)
+        && (drHolds('Site Fund Requisition', ['Create Requisition']) || drHolds('Site Fund Requisition 2.Requests', ['Add']));
+
+      allow update: if
+        // A workflow action by the current step's assignee (ViewRequisitionDialog(2), the stage page).
+        (drSfrAssignee(resource.data)
+          && drChanged().hasOnly(['status', 'stage', 'currentStepId', 'assignees', 'deadline', 'history', 'expenseRequestNo']))
+        // The register's edit, before anyone has received it (AllRequisitionsTab2 handleEditRequest).
+        || (resource.data.get('stage', '') == 'Request Receiving'
+          && (drSfrRaisedByMe(resource.data) || drHolds('Site Fund Requisition', ['View All'])
+            || drHolds('Site Fund Requisition 2.Requests', ['View All']))
+          && drChanged().hasOnly(['projectId', 'departmentId', 'amount', 'partyName', 'description', 'date', 'attachments']));
+      // Requisitions are never deleted from the browser.
+    }
+
+    /* ── Vehicle Management and the driver app (src/lib/permissions.ts, "Vehicle Management" and
+     *    "Driver Management"; src/lib/vehicle-management.ts) ──────────────────────────────────────
+     *
+     * The fleet. Every screen inside the Vehicle Management shell (module-layout-shell canViewModule:
+     * View Module, or any grant on one of its sections) reads the registers whole on mount — the
+     * overview, Renewals, Vehicle Health and the reports read every compliance register whatever
+     * the page's own check says — so the registers, drivers and logs are readable by anyone the
+     * shell admits and by nobody else. Writes follow the action each screen checks, and the
+     * cascades a save runs on another register (the vehicle's cached compliance health, the
+     * vehicle ↔ driver assignment, archiving the record a renewal replaces) are narrowed to their
+     * own fields.
+     *
+     * The vehicle list itself is readable by any signed-in user: the driver app picks from it, and
+     * Site Account Statement's expense forms — used by site staff who hold nothing here — read it by
+     * project, by id and whole (use-vehicle-fuel.ts). It names vehicles and their assigned driver,
+     * nothing more. Settings are read the same way (field control, trip tracking, vehicle types).
+     *
+     * The driver app (/driver-management, also in the Android WebView) is used by drivers who hold
+     * no permission at all: being linked to a `vehicleManagementDriver` record is the authority. A
+     * record is the caller's when its `linkedUserId` is their `users` document id, or — for drivers
+     * saved before their login existed — when its `mobileNumber` is the mobile on their `users`
+     * document, both cut to the last ten digits as the app does (hooks.ts useCurrentDriverProfile).
+     * The pages ask for their own records with `driverId == <their driver record>`, and for their
+     * vehicle's papers with `vehicleId == <their vehicle>`, which is theirs when the vehicle's
+     * `assignedDriverId` is their record (Driver Master and Vehicle Master keep the two in step, one
+     * driver per vehicle). Trips carry their GPS track, so only trip managers and the trip's own
+     * driver read them.
+     *
+     * Site Account Statement keeps one fuel log per vehicle-fuel expense at `sas-<expenseId>`, written
+     * after the expense by whoever may write that expense, under that module's own rules.
+     *
+     * Names are `users` document ids (`userPermissions.userDocId`), never the auth uid. Under Switch
+     * User the administrator's own grants apply; a driver's own screens then refuse unless the
+     * administrator holds the registers. Budget: the permissions document (1), a driver record (1),
+     * the caller's `users` document for a mobile match (1), and one of the vehicle, the trip, or the
+     * Site Account expense and its old and new project (≤3) — at most 6 of 10.
+     */
+    function vmPage(page) {
+      return 'Vehicle Management.' + page;
+    }
+
+    function dmPage(page) {
+      return 'Driver Management.' + page;
+    }
+
+    /*
+     * The caller's grants, read once and passed along: a write that tries several grants in turn
+     * would otherwise re-walk the permissions document for each, and the evaluation has a ceiling.
+     */
+    function vmPerms() {
+      return hasPermissions() ? get(permissionsPath()).data.p : {};
+    }
+
+    function vmCan(p, resource, actions) {
+      return p.get(resource, []).hasAny(actions);
+    }
+
+    function vmHolds(resource, actions) {
+      return vmCan(vmPerms(), resource, actions);
+    }
+
+    /** Admitted by the Vehicle Management shell: View Module, or a grant on any of its sections. */
+    function vmFleetUser() {
+      let p = vmPerms();
+      return vmCan(p, 'Vehicle Management', ['View Module']) || p.keys().hasAny([
+        'Vehicle Management.Vehicle Master', 'Vehicle Management.Insurance Management',
+        'Vehicle Management.PUC Management', 'Vehicle Management.Fitness Certificate Management',
+        'Vehicle Management.Road Tax Management', 'Vehicle Management.Permit Management',
+        'Vehicle Management.Maintenance Management', 'Vehicle Management.Fuel Management',
+        'Vehicle Management.Driver Management', 'Vehicle Management.Trip Management',
+        'Vehicle Management.Document Management', 'Vehicle Management.Reports', 'Vehicle Management.Settings'
+      ]);
+    }
+
+    /** The caller's `users` id; '' when unknown, which then matches no one. */
+    function vmMe() {
+      return hasPermissions() ? get(permissionsPath()).data.get('userDocId', '') : '';
+    }
+
+    function vmIsMe(userId) {
+      let me = vmMe();
+      return me != '' && userId == me;
+    }
+
+    function vmChanged() {
+      return request.resource.data.diff(resource.data).affectedKeys();
+    }
+
+    /* ── Who is a driver ── */
+
+    /** A mobile number as the app compares them (normalizeMobile): its digits, the last ten. */
+    function vmLocalMobile(value) {
+      let digits = string(value).replace('[^0-9]', '');
+      return digits.size() > 10 ? digits[digits.size() - 10:digits.size()] : digits;
+    }
+
+    function vmMobileIsMine(value) {
+      let me = vmMe();
+      let local = vmLocalMobile(value);
+      return me != '' && local != '' && exists(/databases/$(database)/documents/users/$(me))
+        && vmLocalMobile(get(/databases/$(database)/documents/users/$(me)).data.get('mobile', '')) == local;
+    }
+
+    /** The driver record is the caller's (useCurrentDriverProfile). */
+    function vmLinked(driver) {
+      return vmIsMe(driver.get('linkedUserId', '')) || vmMobileIsMine(driver.get('mobileNumber', ''));
+    }
+
+    function vmDriverPath(driverId) {
+      return /databases/$(database)/documents/vehicleManagementDriver/$(driverId);
+    }
+
+    /** `driverId` names the caller's own driver record. */
+    function vmIsDriver(driverId) {
+      return driverId is string && driverId != '' && hasPermissions() && exists(vmDriverPath(driverId))
+        && vmLinked(get(vmDriverPath(driverId)).data);
+    }
+
+    function vmVehiclePath(vehicleId) {
+      return /databases/$(database)/documents/vehicleManagementVehicles/$(vehicleId);
+    }
+
+    /** The vehicle is assigned to the caller's driver record. */
+    function vmDrivesVehicle(vehicleId) {
+      return vehicleId is string && vehicleId != '' && hasPermissions() && exists(vmVehiclePath(vehicleId))
+        && vmIsDriver(get(vmVehiclePath(vehicleId)).data.get('assignedDriverId', ''));
+    }
+
+    /** The driver record is the caller's and is assigned this vehicle (as the driver app sees it). */
+    function vmIsDriverOf(driverId, vehicleId) {
+      return vmIsDriver(driverId) && get(vmDriverPath(driverId)).data.get('assignedVehicleId', '') == vehicleId;
+    }
+
+    /** The grants that open a driver-app screen that writes (canAdd / canStartStop). */
+    function vmDriverAppRole(p) {
+      return vmCan(p, 'Driver Management.Driver Fuel', ['Add']) || vmCan(p, 'Vehicle Management.Driver Mobile Fuel', ['Add'])
+        || vmCan(p, 'Vehicle Management.Fuel Management', ['Add'])
+        || vmCan(p, 'Driver Management.Driver Daily Status', ['Add'])
+        || vmCan(p, 'Vehicle Management.Driver Daily Status', ['Add'])
+        || vmCan(p, 'Vehicle Management.Driver Management', ['Add'])
+        || vmCan(p, 'Driver Management.Driver Trips', ['Add']) || vmCan(p, 'Vehicle Management.Driver Mobile Trip', ['Add'])
+        || vmCan(p, 'Vehicle Management.Driver Mobile', ['Add']);
+    }
+
+    /* ── The vehicle list ── */
+
+    /** Saving a compliance record recomputes the vehicle's cached health (compliance-sync.ts). */
+    function vmComplianceWriter(p) {
+      let actions = ['Add', 'Edit', 'Delete', 'Import'];
+      return vmCan(p, 'Vehicle Management.Vehicle Master', actions)
+        || vmCan(p, 'Vehicle Management.Insurance Management', actions)
+        || vmCan(p, 'Vehicle Management.PUC Management', actions)
+        || vmCan(p, 'Vehicle Management.Fitness Certificate Management', actions)
+        || vmCan(p, 'Vehicle Management.Road Tax Management', actions)
+        || vmCan(p, 'Vehicle Management.Permit Management', actions)
+        || vmCan(p, 'Vehicle Management.Document Management', actions);
+    }
+
+    /*
+     * What the driver app writes on the vehicle it drives: where it is and whether it is on a trip
+     * (trips), its odometer (fuel, daily status) and running state (daily status). The page stamps
+     * `updatedByDriverId`; the vehicle's own `assignedDriverId` vouches for pages from before that.
+     * Someone who holds a driver-app grant may be on a vehicle not assigned to them.
+     */
+    function vmDriverAppVehicleUpdate(p, changed, vehicleId) {
+      let next = request.resource.data;
+      return changed.hasOnly([
+          'currentLatitude', 'currentLongitude', 'currentLocationAtIso', 'currentStatus', 'currentOdometerKm',
+          'vehicleStatus', 'updatedAt', 'updatedByDriverId'
+        ])
+        && (!changed.hasAny(['vehicleStatus']) || next.vehicleStatus in ['Active', 'Under Maintenance'])
+        && (!changed.hasAny(['currentStatus']) || next.currentStatus in ['On Trip', 'In Operation'])
+        && (vmDriverAppRole(p)
+          || vmIsDriverOf(next.get('updatedByDriverId', ''), vehicleId)
+          || (!changed.hasAny(['updatedByDriverId']) && vmIsDriver(resource.data.get('assignedDriverId', ''))));
+    }
+
+    function vmVehicleUpdate(vehicleId) {
+      let p = vmPerms();
+      let changed = vmChanged();
+      return vmCan(p, 'Vehicle Management.Vehicle Master', ['Edit'])
+        || (changed.hasOnly(['documentHealthStatus', 'hasExpiredDocuments', 'documentAlertCount'])
+          && vmComplianceWriter(p))
+        // Driver Master assigns and releases the vehicle (driver/page.tsx onAfterSave, onAfterDelete).
+        || (changed.hasOnly(['assignedDriverId', 'assignedDriverName'])
+          && vmCan(p, 'Vehicle Management.Driver Management', ['Add', 'Edit', 'Delete']))
+        || vmDriverAppVehicleUpdate(p, changed, vehicleId);
+    }
+
+    match /vehicleManagementVehicles/{vehicleId} {
+      allow read: if signedIn();
+      allow create: if vmHolds(vmPage('Vehicle Master'), ['Add', 'Import']);
+      allow update: if vmVehicleUpdate(vehicleId);
+      allow delete: if vmHolds(vmPage('Vehicle Master'), ['Delete']);
+    }
+
+    /* ── The compliance registers and the maintenance log ── */
+
+    /** Add archives the record it renews (generic-crud-page, insurance and PUC renewal mode). */
+    function vmRenewalArchive() {
+      return vmChanged().hasOnly(['renewalStatus', 'renewedById', 'renewedAt', 'isArchived', 'updatedAt']);
+    }
+
+    function vmRegisterUpdate(page) {
+      let p = vmPerms();
+      return vmCan(p, vmPage(page), ['Edit']) || (vmCan(p, vmPage(page), ['Add']) && vmRenewalArchive());
+    }
+
+    /** The registers' readers: the fleet, and the driver of the vehicle (driver-mobile/vehicle-details). */
+    function vmRegisterReader(data) {
+      return vmFleetUser() || vmDrivesVehicle(data.get('vehicleId', ''));
+    }
+
+    match /vehicleManagementInsurance/{recordId} {
+      allow read: if vmRegisterReader(resource.data);
+      allow create: if vmHolds(vmPage('Insurance Management'), ['Add', 'Import']);
+      allow update: if vmRegisterUpdate('Insurance Management')
+        // The renewal workflow marks the policy it opened a case for (insurance/workflow/page.tsx).
+        || (vmHolds(vmPage('Insurance Management'), ['Add', 'Edit'])
+          && vmChanged().hasOnly(['workflowCaseId', 'renewalStatus', 'updatedAt']));
+      allow delete: if vmHolds(vmPage('Insurance Management'), ['Delete']);
+    }
+
+    match /vehicleManagementPuc/{recordId} {
+      allow read: if vmRegisterReader(resource.data);
+      allow create: if vmHolds(vmPage('PUC Management'), ['Add', 'Import']);
+      allow update: if vmRegisterUpdate('PUC Management');
+      allow delete: if vmHolds(vmPage('PUC Management'), ['Delete']);
+    }
+
+    match /vehicleManagementFitness/{recordId} {
+      allow read: if vmRegisterReader(resource.data);
+      allow create: if vmHolds(vmPage('Fitness Certificate Management'), ['Add', 'Import']);
+      allow update: if vmRegisterUpdate('Fitness Certificate Management');
+      allow delete: if vmHolds(vmPage('Fitness Certificate Management'), ['Delete']);
+    }
+
+    match /vehicleManagementRoadTax/{recordId} {
+      allow read: if vmRegisterReader(resource.data);
+      allow create: if vmHolds(vmPage('Road Tax Management'), ['Add', 'Import']);
+      allow update: if vmRegisterUpdate('Road Tax Management');
+      allow delete: if vmHolds(vmPage('Road Tax Management'), ['Delete']);
+    }
+
+    match /vehicleManagementPermit/{recordId} {
+      allow read: if vmRegisterReader(resource.data);
+      allow create: if vmHolds(vmPage('Permit Management'), ['Add', 'Import']);
+      allow update: if vmRegisterUpdate('Permit Management');
+      allow delete: if vmHolds(vmPage('Permit Management'), ['Delete']);
+    }
+
+    match /vehicleManagementDocuments/{recordId} {
+      allow read: if vmRegisterReader(resource.data);
+      allow create: if vmHolds(vmPage('Document Management'), ['Add', 'Import']);
+      allow update: if vmRegisterUpdate('Document Management');
+      allow delete: if vmHolds(vmPage('Document Management'), ['Delete']);
+    }
+
+    match /vehicleManagementMaintenanceLogs/{recordId} {
+      allow read: if vmRegisterReader(resource.data);
+      allow create: if vmHolds(vmPage('Maintenance Management'), ['Add', 'Import']);
+      allow update: if vmRegisterUpdate('Maintenance Management');
+      allow delete: if vmHolds(vmPage('Maintenance Management'), ['Delete']);
+    }
+
+    /* ── Fuel: the register, the driver app, and Site Account Statement's expenses ── */
+
+    function vmSasExpensePath(expenseId) {
+      return /databases/$(database)/documents/siteAccountExpenses/$(expenseId);
+    }
+
+    /*
+     * Written or rewritten after its expense saved (syncFuelLog), so the expense is there and names
+     * the project; a move to another project needs the right to write in both, as the expense did.
+     */
+    function vmSasFuelWrite(logId) {
+      let data = request.resource.data;
+      let expenseId = data.get('sasExpenseId', '');
+      return logId.matches('sas-.+') && expenseId is string && expenseId != '' && logId == 'sas-' + expenseId
+        && data.get('source', '') == 'site-account-statement'
+        && hasPermissions() && exists(vmSasExpensePath(expenseId))
+        && get(vmSasExpensePath(expenseId)).data.get('projectId', '') == data.get('sasProjectId', '')
+        && sasLedgerWriter('Expenses', data.get('sasProjectId', ''))
+        && (resource == null || sasLedgerWriter('Expenses', resource.data.get('sasProjectId', '')));
+    }
+
+    /** Removed after its expense is deleted, or when the expense stops being vehicle fuel. */
+    function vmSasFuelDelete(logId) {
+      return logId.matches('sas-.+') && (resource == null
+        || (resource.data.get('source', '') == 'site-account-statement'
+          && (sasHoldsAny('Expenses', ['Delete'])
+            || sasLedgerWriter('Expenses', resource.data.get('sasProjectId', '')))));
+    }
+
+    match /vehicleManagementFuelLogs/{logId} {
+      allow read: if vmRegisterReader(resource.data) || vmIsDriver(resource.data.get('driverId', ''));
+      allow create: if vmHolds(vmPage('Fuel Management'), ['Add', 'Import'])
+        // A driver's own fill-up (driver-mobile/fuel/page.tsx).
+        || (request.resource.data.get('sourceApp', '') == 'Driver Mobile'
+          && vmIsMe(request.resource.data.get('enteredByUserId', ''))
+          && vmIsDriver(request.resource.data.get('driverId', '')))
+        || vmSasFuelWrite(logId);
+      allow update: if vmHolds(vmPage('Fuel Management'), ['Edit']) || vmSasFuelWrite(logId);
+      allow delete: if vmHolds(vmPage('Fuel Management'), ['Delete']) || vmSasFuelDelete(logId);
+    }
+
+    /* ── Drivers ── */
+
+    match /vehicleManagementDriver/{driverId} {
+      // The shell's registers, and the driver app's lookup of the caller's own record
+      // (`linkedUserId == me`, `mobileNumber == mine`, `mobileNumber in [my formats]`).
+      allow read: if vmFleetUser() || vmLinked(resource.data);
+      allow create: if vmHolds(vmPage('Driver Management'), ['Add', 'Import']);
+      allow update: if vmRegisterUpdate('Driver Management')
+        // Vehicle Master assigns its vehicle to a driver, or takes it away.
+        || (vmHolds(vmPage('Vehicle Master'), ['Add', 'Edit']) && vmChanged().hasOnly([
+          'assignedVehicleId', 'assignedVehicleNumber', 'updatedAt', 'updatedBy', 'updatedByName'
+        ]));
+      allow delete: if vmHolds(vmPage('Driver Management'), ['Delete']);
+    }
+
+    /** Append-only: who drove what, written beside every assignment. */
+    match /vehicleManagementDriverAssignments/{entryId} {
+      allow read: if vmFleetUser();
+      allow create: if vmHolds(vmPage('Vehicle Master'), ['Add', 'Edit'])
+        || vmHolds(vmPage('Driver Management'), ['Add', 'Edit', 'Delete']);
+    }
+
+    /** A driver's end-of-day report, filed from the driver app; never edited there. */
+    match /vehicleManagementDriverDailyStatus/{entryId} {
+      allow read: if vmFleetUser() || vmIsDriver(resource.data.get('driverId', ''));
+      allow create: if request.resource.data.get('sourceApp', '') == 'Driver Mobile'
+        && vmIsDriver(request.resource.data.get('driverId', ''));
+    }
+
+    /* ── Trips and their GPS track ── */
+
+    /** Trip Management, from either module (trips/page.tsx, the overview's month figures). */
+    function vmTripManager() {
+      return holdsAnyOf([vmPage('Trip Management'), dmPage('Trip Management')]);
+    }
+
+    function vmTripPath(tripId) {
+      return /databases/$(database)/documents/vehicleManagementTrips/$(tripId);
+    }
+
+    function vmOwnTrip(tripId) {
+      return tripId is string && tripId != '' && hasPermissions() && exists(vmTripPath(tripId))
+        && vmIsDriver(get(vmTripPath(tripId)).data.get('driverId', ''));
+    }
+
+    match /vehicleManagementTrips/{tripId} {
+      // Deleting a vehicle or a driver first checks they have no trips (`limit(1)`).
+      allow read: if vmTripManager() || vmHolds(vmPage('Vehicle Master'), ['Delete'])
+        || vmHolds(vmPage('Driver Management'), ['Delete'])
+        || vmIsDriver(resource.data.get('driverId', ''));
+      // Started by the driver, as themselves.
+      allow create: if request.resource.data.get('tripStatus', '') == 'In Progress'
+        && vmIsMe(request.resource.data.get('linkedUserId', ''))
+        && vmIsDriver(request.resource.data.get('driverId', ''));
+      // Tracked and stopped by its driver; viewing the route corrects its distance (trips/page.tsx,
+      // trip-log/page.tsx) for whoever may see it.
+      allow update: if (vmIsDriver(resource.data.get('driverId', ''))
+          && !vmChanged().hasAny(['driverId', 'linkedUserId', 'createdAt']))
+        || (vmTripManager() && vmChanged().hasOnly(['totalDistanceKm', 'totalPoints', 'updatedAt']));
+    }
+
+    /** Append-only: one point per location tick, on the driver's own trip. */
+    match /vehicleManagementTripLocations/{pointId} {
+      allow read: if vmTripManager() || vmOwnTrip(resource.data.get('tripId', ''));
+      allow create: if vmIsDriver(request.resource.data.get('driverId', ''))
+        && request.resource.data.get('tripId', '') is string && request.resource.data.get('tripId', '') != ''
+        && exists(vmTripPath(request.resource.data.tripId))
+        && get(vmTripPath(request.resource.data.tripId)).data.get('driverId', '')
+          == request.resource.data.driverId;
+    }
+
+    /* ── Employee trip reimbursement (driver-management/employee-trips/page.tsx) ── */
+
+    /** canManageAll: works every claim. Everyone else files and edits their own. */
+    function vmClaimManager() {
+      return vmHolds(dmPage('Employee Trip Log'), ['Edit', 'Delete', 'Approve'])
+        || vmHolds(vmPage('Employee Trip Reimbursement'), ['Edit', 'Delete', 'Approve'])
+        || vmHolds(vmPage('Driver Management'), ['View'])
+        || vmHolds(dmPage('Trip Management'), ['View']);
+    }
+
+    /*
+     * Your own claim, filed as yourself and waiting for a decision: the decision fields are the
+     * approvers', and a decided claim is changed only by them.
+     */
+    match /vehicleManagementEmployeeTrips/{claimId} {
+      allow read: if vmClaimManager() || vmIsMe(resource.data.get('submittedByUserId', ''));
+      allow create: if vmClaimManager()
+        || (vmIsMe(request.resource.data.get('submittedByUserId', ''))
+          && request.resource.data.get('approvalStatus', 'Submitted') == 'Submitted');
+      allow update: if vmClaimManager()
+        || (vmIsMe(resource.data.get('submittedByUserId', ''))
+          && !(resource.data.get('approvalStatus', '') in ['Approved', 'Rejected', 'Reimbursed'])
+          && request.resource.data.get('submittedByUserId', '') == resource.data.get('submittedByUserId', '')
+          && request.resource.data.get('approvalStatus', '') == resource.data.get('approvalStatus', '')
+          && request.resource.data.get('approverRemarks', '') == resource.data.get('approverRemarks', ''));
+      allow delete: if vmClaimManager();
+    }
+
+    /* ── The insurance renewal workflow ── */
+
+    match /vehicleManagementInsuranceWorkflowCases/{caseId} {
+      // The workflow board, and the dashboard on / and /my-work (`assigneeIds array-contains me`).
+      allow read: if holdsAnyOf([vmPage('Insurance Management')])
+        || (vmMe() != '' && resource.data.get('assigneeIds', []).hasAny([vmMe()]));
+      // The expiry scan opens cases, the board's actions move them, a renewal closes them; the
+      // scheduler (api/vehicle-management/insurance-workflow) does the same on the Admin SDK.
+      allow create, update: if vmHolds(vmPage('Insurance Management'), ['Add', 'Edit']);
+    }
+
+    /** Append-only and write-only from the browser: each action, as the person who took it. */
+    match /vehicleManagementInsuranceWorkflowActivities/{entryId} {
+      allow create: if vmHolds(vmPage('Insurance Management'), ['Add', 'Edit'])
+        && vmIsMe(request.resource.data.get('userId', ''));
+    }
+
+    /* ── Settings: read by every form, the driver app and Site Account Statement ── */
+
+    match /vehicleManagementSettings/{settingId} {
+      allow read: if signedIn();
+      allow create, update: if settingId == 'fieldControl'
+        ? vmHolds(vmPage('Settings'), ['Manage Field Control', 'Edit'])
+        : vmHolds(vmPage('Settings'), ['Edit']);
     }
 
     /* ── TRANSITIONAL CATCH-ALL ─────────────────────────────────────────────────────────────────

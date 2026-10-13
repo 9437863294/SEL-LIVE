@@ -17,7 +17,12 @@ import 'server-only';
 
 import { FieldValue, type WriteBatch } from 'firebase-admin/firestore';
 import { getFirebaseAdminAuth, getFirebaseAdminFirestore } from './firebase-admin';
-import { AccessDeniedError, authenticateUserById, type AccessRequestContext } from './access-control-server';
+import {
+  AccessDeniedError,
+  authenticateUserById,
+  forgetAccessConfig,
+  type AccessRequestContext,
+} from './access-control-server';
 import { buildUserPermissionsDoc, USER_PERMISSIONS_COLLECTION } from './access-rules-permissions';
 
 /** Firestore batches cap at 500 writes. */
@@ -94,6 +99,8 @@ export interface SyncSummary {
  */
 export async function syncUserPermissions(userDocIds?: string[]): Promise<SyncSummary> {
   const firestore = getFirebaseAdminFirestore();
+  // A full run follows a role or scope-rule change; resolve against those as saved, not as cached.
+  if (!userDocIds) forgetAccessConfig();
   const users = userDocIds
     ? (await Promise.all(userDocIds.map((id) => firestore.collection('users').doc(id).get()))).filter((s) => s.exists)
     : (await firestore.collection('users').get()).docs;

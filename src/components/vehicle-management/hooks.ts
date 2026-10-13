@@ -186,7 +186,9 @@ export const useCurrentDriverProfile = (enabled = true) => {
       }
       setIsLoading(true);
       try {
-        const [byLinkedUser, byMobile] = await Promise.all([
+        // Settled separately: the rules refuse a mobile lookup when the login's own users document
+        // carries no usable mobile, and that must not cost a driver linked by id their record.
+        const [linkedResult, mobileResult] = await Promise.allSettled([
           getDocs(
             query(collection(db, VEHICLE_COLLECTIONS.driver), where('linkedUserId', '==', user.id))
           ),
@@ -196,10 +198,15 @@ export const useCurrentDriverProfile = (enabled = true) => {
               )
             : Promise.resolve(null),
         ]);
-        if (!byLinkedUser.empty) {
+        const byLinkedUser = linkedResult.status === 'fulfilled' ? linkedResult.value : null;
+        const byMobile = mobileResult.status === 'fulfilled' ? mobileResult.value : null;
+        if (byLinkedUser && !byLinkedUser.empty) {
           const doc = byLinkedUser.docs[0];
           setDriver({ id: doc.id, ...doc.data() });
           return;
+        }
+        if (linkedResult.status === 'rejected' && mobileResult.status === 'rejected') {
+          throw linkedResult.reason;
         }
 
         if (user.mobile) {

@@ -1,6 +1,7 @@
 'use client';
 
 import { useMemo } from 'react';
+import { where } from 'firebase/firestore';
 import GenericCrudPage, { CrudColumnConfig, CrudFieldConfig } from '@/components/vehicle-management/generic-crud-page';
 import { useDepartmentOptions, useProjectOptions } from '@/components/vehicle-management/hooks';
 import { useAuthorization } from '@/hooks/useAuthorization';
@@ -62,6 +63,12 @@ export default function EmployeeTripLogPage() {
     can('Export', 'Vehicle Management.Employee Trip Reimbursement');
 
   const canUseSelfMode = Boolean(user?.id);
+  // Everyone else sees their own claims only, and the rules let them read no more than that.
+  const ownUserId = String(user?.id || '');
+  const ownClaimsOnly = useMemo(
+    () => (canManageAll ? undefined : [where('submittedByUserId', '==', ownUserId)]),
+    [canManageAll, ownUserId]
+  );
   const canView = canViewExplicit || canManageAll || canUseSelfMode;
   const canAdd = canAddPermission || canManageAll || canUseSelfMode;
   const canEdit = canEditPermission || canManageAll || canUseSelfMode;
@@ -180,8 +187,20 @@ export default function EmployeeTripLogPage() {
         const submittedByEmail = String(currentRow?.submittedByEmail || user?.email || '');
         const submittedByMobile = String(currentRow?.submittedByMobile || user?.mobile || '');
 
+        // The decision is the approvers': a claimant's own save files it as Submitted and leaves
+        // an existing decision and its remarks as they stand.
+        const decision = canManageAll
+          ? {}
+          : currentRow
+          ? {
+              approvalStatus: String(currentRow.approvalStatus ?? ''),
+              approverRemarks: String(currentRow.approverRemarks ?? ''),
+            }
+          : { approvalStatus: 'Submitted', approverRemarks: '' };
+
         return {
           ...payload,
+          ...decision,
           totalDistanceKm,
           reimbursementAmount,
           projectName: String(project?.projectName || project?.name || ''),
@@ -192,12 +211,19 @@ export default function EmployeeTripLogPage() {
           submittedByMobile,
         };
       }}
+      queryConstraints={ownClaimsOnly}
+      queryKey={canManageAll ? 'all' : `own:${ownUserId}`}
       onAfterFetch={(rows) => {
         if (canManageAll) return rows;
         const currentUserId = String(user?.id || '');
         if (!currentUserId) return [];
         return rows.filter((row) => String(row.submittedByUserId || '') === currentUserId);
       }}
+      rowLockedReason={(row) =>
+        !canManageAll && ['Approved', 'Rejected', 'Reimbursed'].includes(String(row.approvalStatus || ''))
+          ? 'An approver has decided this claim; only they can change it.'
+          : null
+      }
     />
   );
 }

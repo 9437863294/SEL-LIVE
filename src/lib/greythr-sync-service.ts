@@ -92,6 +92,7 @@ import {
   type SyncedEmployee,
 } from './greythr';
 import { assertNoProtectedFields, pickGreytHRFields } from './greythr-linking';
+import { syncUserPermissions } from './access-permissions-server';
 import { bulkLink } from './greythr-link-service';
 import { fetchCurrentEmployeeRoster } from './greythr-live-roster';
 import { replaceCurrentRosterSnapshot } from './greythr-roster-store';
@@ -941,12 +942,15 @@ export async function runGreytHRSync(options: RunSyncOptions): Promise<GreytHRSy
      * at this point, and a linking hiccup must not roll back an otherwise good sync or advance the
      * watermark past employees this run genuinely wrote.
      */
+    const linkedUserIds: string[] = [];
     if (!options.dryRun && settings.mapping.autoLinkUsers) {
       try {
         const result = await bulkLink(
           { userId: SYNC_ACTOR, userName: 'greytHR sync' },
           db,
         );
+        const failedIds = new Set(result.failed.map((row) => row.userId));
+        linkedUserIds.push(...result.plan.apply.map((entry) => entry.userId).filter((id) => !failedIds.has(id)));
         run.usersAutoLinked = result.linked;
         run.usersLeftForReview = result.plan.skip.length;
         if (result.failed.length) {
@@ -975,6 +979,35 @@ export async function runGreytHRSync(options: RunSyncOptions): Promise<GreytHRSy
         'Automatic user linking is switched off, so newly created logins will not be matched to ' +
           'greytHR employees — and the exit policy cannot act on an unlinked account.',
       );
+    }
+
+    /* ── Rules permissions ── */
+
+    /**
+     * A deactivation, a reactivation, new designation membership or a new link changes what the
+     * Firestore rules should let that person do, so their copy is rewritten now rather than at their
+     * next app load (which a deactivated person never has). One call for the whole run. Never fatal:
+     * everything above is committed, and the person's own next load repairs a miss.
+     */
+    if (!options.dryRun) {
+      const affectedUserIds = [
+        ...new Set([
+          ...userWrites.map((write) => write.id),
+          ...grantWrites.map((write) => write.id),
+          ...linkedUserIds,
+        ]),
+      ];
+      if (affectedUserIds.length) {
+        try {
+          await syncUserPermissions(affectedUserIds);
+        } catch (error) {
+          console.error('[greythr] Writing rules permissions failed', error);
+          warnings.push(
+            `Rules permissions could not be refreshed for ${affectedUserIds.length} account(s): ` +
+              `${error instanceof Error ? error.message : 'unknown error'}. They catch up at each person's next sign-in.`,
+          );
+        }
+      }
     }
 
     const summary = summarizeRun(outcomes, created);

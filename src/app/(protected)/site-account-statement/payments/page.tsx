@@ -410,7 +410,7 @@ export default function PaymentsPage() {
         : 'YYYY-MM-DD  e.g. 2024-07-15',
       validate: (v) => {
         if (!/^\d{4}-\d{2}-\d{2}$/.test(v.trim())) return 'Date must be in YYYY-MM-DD format';
-        const check = dateControl.check(v.trim());
+        const check = dateControl.checkAnyProject(v.trim());
         return check.ok ? null : check.reason ?? 'Date not allowed';
       },
     },
@@ -1242,16 +1242,16 @@ export default function PaymentsPage() {
                 type="date"
                 value={form.receiptDate}
                 onChange={e => setField('receiptDate', e.target.value)}
-                min={dateControl.window.min ?? undefined}
-                max={dateControl.window.max ?? undefined}
+                min={dateControl.windowFor(form.projectId).min ?? undefined}
+                max={dateControl.windowFor(form.projectId).max ?? undefined}
                 aria-invalid={Boolean(dateIssue)}
                 className={cn(dateIssue && 'border-destructive focus-visible:ring-destructive')}
               />
               {/* A typed date walks past the picker's min/max, so the complaint belongs here. */}
               {dateIssue ? (
                 <p className="text-[11px] text-destructive">{dateIssue}</p>
-              ) : dateControl.hint && (
-                <p className="text-[11px] text-muted-foreground">{dateControl.hint}</p>
+              ) : dateControl.hintFor(form.projectId) && (
+                <p className="text-[11px] text-muted-foreground">{dateControl.hintFor(form.projectId)}</p>
               )}
             </div>
             <div className="space-y-1.5">

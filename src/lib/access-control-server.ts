@@ -105,6 +105,17 @@ function loadAccessConfig(): Promise<{ roles: RoleLike[]; scopeGrants: ScopeGran
 }
 
 /**
+ * Drop this instance's copy of roles and scope grants, so the next resolve reads them fresh.
+ *
+ * For `syncUserPermissions()` after a role or scope rule changes: the request that asks for it has
+ * just been authenticated through the cache, so without this the rules would be rewritten from the
+ * roles as they were before the save.
+ */
+export function forgetAccessConfig(): void {
+  accessConfigCache = null;
+}
+
+/**
  * Verify the caller and resolve everything they can do.
  *
  * Four reads: the user document (by uid, falling back to email exactly as `AuthProvider` does — a

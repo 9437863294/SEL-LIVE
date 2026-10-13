@@ -230,7 +230,7 @@ test('New Payment: the voucher transaction, as the screen writes it', async () =
       await tx.get(voucherRef);
       await tx.get(doc(d, 'bankBalanceCounters/paymentVoucher'));
       await tx.get(doc(d, 'bankInstrumentNos', key));
-      await tx.get(doc(d, 'dailyRequisitions/R1'));
+      const r1 = await tx.get(doc(d, 'dailyRequisitions/R1'));
       const expenseRef = doc(collection(d, 'bankExpenses'));
       tx.set(expenseRef, row({ type: 'Debit', isContra: false, bankPaymentId: voucherRef.id, voucherNo: 'BP/2026-27/0004', requisitionId: 'R1' }));
       tx.set(voucherRef, {
@@ -238,7 +238,7 @@ test('New Payment: the voucher transaction, as the screen writes it', async () =
         issueDate: '2026-10-01', lines: [{ lineId: 'L1', requisitionId: 'R1', expenseId: expenseRef.id, amount: 10 }],
         total: 10, status: 'Issued', transferCopyUrl: '', remarks: '', createdById, createdByName: 'P', createdAt: now,
       });
-      tx.update(doc(d, 'dailyRequisitions/R1'), { paidAmount: 10, status: 'Partially Paid', payments: [{ bankPaymentId: voucherRef.id }], lastPaidAt: now });
+      tx.update(doc(d, 'dailyRequisitions/R1'), { paidAmount: 10, status: 'Partially Paid', payments: [...(r1.data()?.payments ?? []), { bankPaymentId: voucherRef.id }], lastPaidAt: now });
       tx.set(doc(d, 'bankInstrumentNos', key), { voucherId: voucherRef.id, voucherNo: 'BP/2026-27/0004', accountId: 'A1', mode: 'Cheque', instrumentNo: '200', createdAt: now });
       tx.set(doc(d, 'bankBalanceCounters/paymentVoucher'), { fy, next });
     });

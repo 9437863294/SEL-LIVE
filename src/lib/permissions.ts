@@ -591,7 +591,8 @@ export const permissionModules = {
     "Maturity Due": ["View"],
     "My Tasks": ["View"],
     Reports: ["View Reports"],
-    Settings: ["View"],
+    // `Edit` saves the approval workflow (`workflows/insurance-workflow`); `View` only opens it.
+    Settings: ["View", "Edit"],
     "Settings.Holders": ["View", "Add", "Edit", "Delete"],
     "Settings.Companies": ["View", "Add", "Edit", "Delete"],
     "Settings.Categories": ["View", "Add", "Edit", "Delete"],

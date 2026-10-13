@@ -2,7 +2,17 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
-import { addDoc, collection, deleteDoc, doc, getDocs, serverTimestamp, updateDoc } from 'firebase/firestore';
+import {
+  addDoc,
+  collection,
+  deleteDoc,
+  doc,
+  getDocs,
+  query as firestoreQuery,
+  serverTimestamp,
+  updateDoc,
+  type QueryConstraint,
+} from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import { storage } from '@/lib/firebase-storage';
 import { getDownloadURL, ref, uploadBytes } from 'firebase/storage';
@@ -163,6 +173,13 @@ interface GenericCrudPageProps {
     currentRow: Record<string, any> | null
   ) => Record<string, any> | Promise<Record<string, any>>;
   onAfterFetch?: (rows: Record<string, any>[]) => Record<string, any>[];
+  /**
+   * Opt-in: narrows the register's read to these constraints (say, a person's own records), for
+   * a caller whose rules allow no more than that. Omitted, the whole collection is read.
+   */
+  queryConstraints?: QueryConstraint[];
+  /** Changes whenever `queryConstraints` would, so the register reloads with the new scope. */
+  queryKey?: string;
   onAfterSave?: (args: {
     id: string;
     mode: 'create' | 'update';
@@ -341,6 +358,8 @@ export default function GenericCrudPage({
   buildMissingRow,
   onBeforeSave,
   onAfterFetch,
+  queryConstraints,
+  queryKey,
   onAfterSave,
   onAfterDelete,
   onBeforeDelete,
@@ -406,7 +425,11 @@ export default function GenericCrudPage({
     setIsLoading(true);
     setLoadError('');
     try {
-      const snap = await getDocs(collection(db, collectionName));
+      const snap = await getDocs(
+        queryConstraints?.length
+          ? firestoreQuery(collection(db, collectionName), ...queryConstraints)
+          : collection(db, collectionName)
+      );
       let mapped: Record<string, any>[] = snap.docs.map((entry) => ({ id: entry.id, ...entry.data() }));
       if (onAfterFetch) {
         mapped = onAfterFetch(mapped);
@@ -440,7 +463,7 @@ export default function GenericCrudPage({
   useEffect(() => {
     loadRows();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [queryKey]);
 
   // Auto-open Add dialog when initialPrefill is provided (Renew Now flow)
   useEffect(() => {

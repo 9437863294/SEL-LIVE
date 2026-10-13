@@ -17,7 +17,7 @@ import {
   accessErrorResponse,
   authenticateAccess,
 } from '@/lib/access-control-server';
-import { canAssignAccess, canManageRoles, checkerFor } from '@/lib/access-control';
+import { canAssignAccess, canManageRoles, canRevokeAccess, checkerFor } from '@/lib/access-control';
 import { syncOwnPermissions, syncUserPermissions } from '@/lib/access-permissions-server';
 
 export const runtime = 'nodejs';
@@ -36,7 +36,12 @@ export async function POST(request: Request) {
     }
 
     const can = checkerFor(context.access);
-    if (!canManageRoles(can) && !canAssignAccess(can)) {
+    // Named users may also be refreshed by the two kinds of administrator who change someone's access
+    // without Assign or Manage Roles: revoke-only administrators (remove, suspend, deactivate) and
+    // User Management editors (base role). The refresh only re-derives what the server already holds.
+    const mayRefreshNamed = scope === 'users'
+      && (canRevokeAccess(can) || can('Edit', 'Settings.User Management'));
+    if (!canManageRoles(can) && !canAssignAccess(can) && !mayRefreshNamed) {
       throw new AccessDeniedError('Refreshing other people’s permissions requires Access Management rights.');
     }
 

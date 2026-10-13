@@ -32,10 +32,12 @@ test('no other settings document is readable signed out', async () => {
   await assertFails(as(env, null).doc('settings/printing').get());
 });
 
-test('deadline calculation can read office hours and holidays signed out, and change neither', async () => {
+test('office hours and holidays are for signed-in users only (deadline code reads them on the Admin SDK)', async () => {
   await seed(env, { 'settings/workingHours': { schedule: {} }, 'holidays/h1': { date: '2026-10-20' } });
-  await assertSucceeds(as(env, null).doc('settings/workingHours').get());
-  await assertSucceeds(as(env, null).collection('holidays').get());
+  await assertFails(as(env, null).doc('settings/workingHours').get());
+  await assertFails(as(env, null).collection('holidays').get());
+  await assertSucceeds(as(env, 'u1').doc('settings/workingHours').get());
+  await assertSucceeds(as(env, 'u1').collection('holidays').get());
   await assertFails(as(env, null).doc('settings/workingHours').set({ schedule: {} }));
   await assertFails(as(env, null).doc('holidays/h2').set({ date: '2026-12-25' }));
   await assertFails(as(env, null).collection('settings').get());

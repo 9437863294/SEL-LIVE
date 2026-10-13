@@ -329,6 +329,8 @@ export default function DriverMobileTripsPage() {
           currentLongitude: lng,
         currentLocationAtIso: nowIso,
         currentStatus: 'On Trip',
+        // Which driver record wrote this: the rules check it is the caller's, assigned this vehicle.
+        updatedByDriverId: String(driver?.id || ''),
         updatedAt: serverTimestamp(),
       });
     }
@@ -521,6 +523,7 @@ export default function DriverMobileTripsPage() {
       if (assignedVehicleId && !isOwnAssignedVehicle) {
         await updateDoc(doc(db, VEHICLE_COLLECTIONS.vehicleMaster, assignedVehicleId), {
           currentStatus: 'In Operation',
+          updatedByDriverId: String(driver?.id || ''),
           updatedAt: serverTimestamp(),
         });
       }

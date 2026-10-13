@@ -7,6 +7,8 @@ import {
   RULES_LOADING,
   RULES_UNAVAILABLE,
   clampDays,
+  dateRuleFor,
+  projectsWithOwnRule,
   describeDateWindow,
   isIsoDate,
   resolveDateControl,
@@ -310,5 +312,50 @@ describe('unresolved rules', () => {
     assert.equal(RULES_UNAVAILABLE.ok, false);
     assert.match(RULES_LOADING.reason, /still loading/);
     assert.match(RULES_UNAVAILABLE.reason, /could not be loaded/);
+  });
+});
+
+describe('a project with a rule of its own', () => {
+  const withProjects = resolveDateControl({
+    enabled: true, backdateDays: 7, futureDays: 0, applyToExpenses: true, applyToPayments: true,
+    projects: {
+      rayagada: { enabled: true, backdateDays: 30, futureDays: 0, applyToExpenses: true, applyToPayments: true },
+      assam: { enabled: false, backdateDays: 7, futureDays: 0, applyToExpenses: true, applyToPayments: true },
+      junk: 'not a rule',
+    },
+  });
+
+  it('uses its own window instead of the all-projects one', () => {
+    const w = resolveDateWindow({ settings: withProjects, kind: 'expense', projectId: 'rayagada', today: TODAY });
+    assert.equal(w.min, '2026-08-16');
+    assert.equal(validateEntryDate({ date: '2026-08-20', settings: withProjects, kind: 'expense', projectId: 'rayagada', today: TODAY }).ok, true);
+  });
+
+  it('can be switched off while every other project stays restricted', () => {
+    assert.equal(validateEntryDate({ date: '2025-01-01', settings: withProjects, kind: 'expense', projectId: 'assam', today: TODAY }).ok, true);
+    assert.equal(validateEntryDate({ date: '2025-01-01', settings: withProjects, kind: 'expense', projectId: 'other', today: TODAY }).ok, false);
+  });
+
+  it('a project without one, or no project chosen, follows all projects', () => {
+    assert.equal(dateRuleFor(withProjects, 'other').source, 'all');
+    assert.equal(dateRuleFor(withProjects).backdateDays, 7);
+    assert.equal(resolveDateWindow({ settings: withProjects, kind: 'expense', today: TODAY }).min, '2026-09-08');
+  });
+
+  it("says the limit is this project's, not everyone's", () => {
+    const r = validateEntryDate({ date: '2026-08-01', settings: withProjects, kind: 'expense', projectId: 'rayagada', today: TODAY });
+    assert.match(r.reason, /on this project/);
+    const all = validateEntryDate({ date: '2026-08-01', settings: withProjects, kind: 'expense', projectId: 'other', today: TODAY });
+    assert.match(all.reason, /for everyone/);
+  });
+
+  it('drops a stored project entry that is not a rule, and lists the real ones', () => {
+    assert.deepEqual(projectsWithOwnRule(withProjects).sort(), ['assam', 'rayagada']);
+  });
+
+  it("still bounds a project rule's day counts", () => {
+    const r = resolveDateControl({ enabled: true, projects: { p: { enabled: true, backdateDays: 999999, futureDays: -4 } } });
+    assert.equal(r.projects.p.backdateDays, MAX_BACKDATE_DAYS);
+    assert.equal(r.projects.p.futureDays, 0);
   });
 });

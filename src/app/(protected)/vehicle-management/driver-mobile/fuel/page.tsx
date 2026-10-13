@@ -241,6 +241,8 @@ export default function DriverMobileFuelPage() {
       if (vehicleId) {
         await updateDoc(doc(db, VEHICLE_COLLECTIONS.vehicleMaster, vehicleId), {
           currentOdometerKm: currentOdometer,
+          // Which driver record wrote this: the rules check it is the caller's, assigned this vehicle.
+          updatedByDriverId: String(driver.id),
           updatedAt: serverTimestamp(),
         });
       }

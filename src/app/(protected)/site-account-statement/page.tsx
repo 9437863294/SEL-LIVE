@@ -437,15 +437,15 @@ function QuickExpenseDialog({
               type="date"
               value={form.expenseDate}
               onChange={e => setF('expenseDate', e.target.value)}
-              min={dateControl.window.min ?? undefined}
-              max={dateControl.window.max ?? undefined}
+              min={dateControl.windowFor(project.id).min ?? undefined}
+              max={dateControl.windowFor(project.id).max ?? undefined}
               aria-invalid={Boolean(dateIssue)}
               className={cn(dateIssue && 'border-destructive focus-visible:ring-destructive')}
             />
             {dateIssue ? (
               <p className="text-[11px] text-destructive">{dateIssue}</p>
-            ) : dateControl.hint && (
-              <p className="text-[11px] text-muted-foreground">{dateControl.hint}</p>
+            ) : dateControl.hintFor(project.id) && (
+              <p className="text-[11px] text-muted-foreground">{dateControl.hintFor(project.id)}</p>
             )}
           </div>
 

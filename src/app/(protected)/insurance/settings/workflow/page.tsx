@@ -73,6 +73,8 @@ export default function InsuranceWorkflowConfigurationPage() {
     const [isSaving, setIsSaving] = useState(false);
     
     const canViewPage = can('View', 'Insurance.Settings');
+    // Viewing the workflow is not changing it: saving needs Edit, and without it the form is read-only.
+    const canEdit = can('Edit', 'Insurance.Settings');
 
     useEffect(() => {
         if (!isAuthLoading) {
@@ -228,7 +230,7 @@ export default function InsuranceWorkflowConfigurationPage() {
     };
 
     const handleSave = async () => {
-        if (!user) return;
+        if (!user || !canEdit) return;
         setIsSaving(true);
         try {
             const workflowRef = doc(db, 'workflows', 'insurance-workflow');
@@ -287,17 +289,23 @@ export default function InsuranceWorkflowConfigurationPage() {
                 backHref="/insurance/settings"
                 backLabel="Back to settings"
                 actions={
-                    <Button onClick={handleSave} disabled={isSaving}>
-                        {isSaving ? <Loader2 className="mr-2 h-4 w-4 animate-spin"/> : <Save className="mr-2 h-4 w-4" />}
-                        Save
-                    </Button>
+                    canEdit ? (
+                        <Button onClick={handleSave} disabled={isSaving}>
+                            {isSaving ? <Loader2 className="mr-2 h-4 w-4 animate-spin"/> : <Save className="mr-2 h-4 w-4" />}
+                            Save
+                        </Button>
+                    ) : undefined
                 }
             />
 
             <Card>
                 <CardHeader>
                     <CardTitle>Workflow Steps</CardTitle>
-                    <CardDescription>Define the approval process, assignees, and turnaround time for each step.</CardDescription>
+                    <CardDescription>
+                        {canEdit
+                            ? 'Define the approval process, assignees, and turnaround time for each step.'
+                            : 'View only. Changing the workflow needs the Insurance Settings Edit permission.'}
+                    </CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-4">
                      {isLoading ? (
@@ -315,11 +323,15 @@ export default function InsuranceWorkflowConfigurationPage() {
                                         <AccordionTrigger className="flex-1 text-base hover:no-underline">
                                             {index + 1}. {step.name}
                                         </AccordionTrigger>
-                                        <Button variant="ghost" size="icon" onClick={() => handleDeleteStep(step.id)}>
-                                            <Trash2 className="h-4 w-4 text-destructive" />
-                                        </Button>
+                                        {canEdit && (
+                                            <Button variant="ghost" size="icon" onClick={() => handleDeleteStep(step.id)}>
+                                                <Trash2 className="h-4 w-4 text-destructive" />
+                                            </Button>
+                                        )}
                                     </div>
                                     <AccordionContent>
+                                        {/* A disabled fieldset turns every input, select and button in the step read-only at once. */}
+                                        <fieldset disabled={!canEdit} className="min-w-0">
                                         <div className="space-y-6 p-4 border-t">
                                             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                                                 <div className="space-y-2">
@@ -520,7 +532,7 @@ export default function InsuranceWorkflowConfigurationPage() {
                                                     value={step.description || ''}
                                                     onChange={(e) => handleStepChange(step.id, 'description', e.target.value)}
                                                     placeholder="Describe what the assignee needs to do at this step..."
-                                                    disabled={!canViewPage}
+                                                    disabled={!canEdit}
                                                     className="resize-none"
                                                     rows={2}
                                                 />
@@ -548,7 +560,7 @@ export default function InsuranceWorkflowConfigurationPage() {
                                                                                 const next = c ? [...current, u.id] : current.filter((id) => id !== u.id);
                                                                                 handleStepChange(step.id, 'notifyUserIds', next);
                                                                             }}
-                                                                            disabled={!canViewPage}
+                                                                            disabled={!canEdit}
                                                                         />
                                                                         <Label htmlFor={`notify-${step.id}-${u.id}`} className="cursor-pointer font-normal text-sm">{u.name}</Label>
                                                                     </div>
@@ -563,7 +575,7 @@ export default function InsuranceWorkflowConfigurationPage() {
                                                     <Select
                                                         value={step.escalationUserId || 'none'}
                                                         onValueChange={(v) => handleStepChange(step.id, 'escalationUserId', v === 'none' ? '' : v)}
-                                                        disabled={!canViewPage}
+                                                        disabled={!canEdit}
                                                     >
                                                         <SelectTrigger>
                                                             <SelectValue placeholder="Select escalation user" />
@@ -583,7 +595,7 @@ export default function InsuranceWorkflowConfigurationPage() {
                                                                     type="number" min={10} max={100} step={10}
                                                                     value={step.escalationThreshold ?? 80}
                                                                     onChange={(e) => handleStepChange(step.id, 'escalationThreshold', Number(e.target.value))}
-                                                                    disabled={!canViewPage}
+                                                                    disabled={!canEdit}
                                                                     className="w-20"
                                                                 />
                                                                 <span className="text-sm text-muted-foreground">%</span>
@@ -596,15 +608,18 @@ export default function InsuranceWorkflowConfigurationPage() {
                                                 </div>
                                             </div>
                                         </div>
+                                        </fieldset>
                                     </AccordionContent>
                                 </AccordionItem>
                             ))}
                         </Accordion>
                      )}
 
-                    <Button variant="outline" onClick={handleAddStep}>
-                        <Plus className="mr-2 h-4 w-4" /> Add Step
-                    </Button>
+                    {canEdit && (
+                        <Button variant="outline" onClick={handleAddStep}>
+                            <Plus className="mr-2 h-4 w-4" /> Add Step
+                        </Button>
+                    )}
                 </CardContent>
             </Card>
         </div>

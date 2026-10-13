@@ -19,7 +19,9 @@ import {
 import {
   RULES_LOADING,
   RULES_UNAVAILABLE,
+  dateRuleFor,
   describeDateWindow,
+  projectsWithOwnRule,
   resolveDateControl,
   resolveDateWindow,
   todayLocal,
@@ -35,16 +37,19 @@ type RuleState = 'loading' | 'ready' | 'error';
 
 export interface DateControl {
   settings: SASDateControlSettings;
-  /** The range anyone may pick for this record type. The same for every user. */
+  /** The all-projects range for this record type. The same for every user. */
   window: DateWindow;
-  /**
-   * A short hint for under the date field, or null when unrestricted.
-   *
-   * Describes the all-projects calendar, which is what the field can say before a project has
-   * even been chosen. A project's own exception shows up in the submit-time message, which is
-   * where it can be precise about which site it is talking about.
-   */
+  /** The all-projects hint for under a date field, or null when unrestricted. */
   hint: string | null;
+  /**
+   * The range for one project — its own Date Control rule when it has one. Forms use this once
+   * a project is chosen, so the picker offers exactly the dates the submit check will accept.
+   */
+  windowFor: (projectId?: string | null) => DateWindow;
+  /** The hint for one project: its window and its closed months. */
+  hintFor: (projectId?: string | null) => string | null;
+  /** Import preview check, before the row's project is known — see the implementation. */
+  checkAnyProject: (date: string) => DateCheck;
   /**
    * Submit-time check for a *new* record's date. `min`/`max` on an input is only a hint.
    *
@@ -170,23 +175,40 @@ export function useDateControl(kind: SASDatedRecord): DateControl {
     [settings, kind, today],
   );
 
-  const hint = useMemo(() => {
-    const windowHint = describeDateWindow(window, settings);
-    const frozen = listClosedPeriods(closure);
+  function windowFor(projectId?: string | null): DateWindow {
+    return resolveDateWindow({ settings, kind, projectId, today });
+  }
+
+  function hintFor(projectId?: string | null): string | null {
+    const windowHint = describeDateWindow(windowFor(projectId), dateRuleFor(settings, projectId));
+    const frozen = listClosedPeriods(closure, projectId ?? undefined);
     if (frozen.length === 0) return windowHint;
     const closedHint = frozen.length === 1
       ? `${frozen[0]} is closed`
       : `${frozen.length} months are closed`;
     return windowHint ? `${windowHint} · ${closedHint}` : closedHint;
-  }, [window, settings, closure]);
+  }
+
+  const hint = hintFor();
+
+  /**
+   * For an import preview, which sees a date before it knows the row's project: passes when the
+   * all-projects rule or any project's own rule would accept it. Each row's save runs `check` with
+   * its project, which is where the date is actually judged.
+   */
+  function checkAnyProject(date: string): DateCheck {
+    const all = check(date);
+    if (all.ok) return all;
+    return projectsWithOwnRule(settings).some(projectId => check(date, projectId).ok) ? { ok: true } : all;
+  }
 
   function check(date: string, projectId?: string): DateCheck {
     const pending = unresolved();
     if (pending) return pending;
     const now = todayLocal();
     // The rolling window first: when both would reject, its message is the more actionable one,
-    // since it names a date the person can actually use.
-    const windowCheck = validateEntryDate({ date, settings, kind, today: now });
+    // since it names a date the person can actually use. It is the project's own rule when it has one.
+    const windowCheck = validateEntryDate({ date, settings, kind, projectId, today: now });
     if (!windowCheck.ok) return windowCheck;
     // Resolved for this exact moment rather than taken from the memo, so a submit made a few
     // seconds after midnight on a trigger day is judged against the month as it now is.
@@ -197,6 +219,9 @@ export function useDateControl(kind: SASDatedRecord): DateControl {
     settings,
     window,
     hint,
+    windowFor,
+    hintFor,
+    checkAnyProject,
     check,
     isLocked: (date, projectId) => isRecordLocked({ date, settings: closure, projectId }),
     checkChange: ({ originalDate, nextDate, action, originalProjectId, nextProjectId }) => {
