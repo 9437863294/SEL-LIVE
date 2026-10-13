@@ -34,9 +34,38 @@ export const BT_COLLECTIONS = {
 /** One configuration document per organisation. */
 export const configRef = (firestore: Firestore, organizationId: string) => firestore.collection(BT_COLLECTIONS.config).doc(organizationId || 'default');
 
+/**
+ * Short-lived per-instance cache for reads every screen repeats: the module settings and the
+ * project / client / user / GST-registration lists behind the lookups. Each Firestore round trip is
+ * the slow part (not the size of the data), so a page that makes several API calls reads these once.
+ * Settings writes clear their entry here at once; anything else edited elsewhere shows within
+ * `CACHE_TTL_MS`. Callers get a copy, never the cached object, so nothing can change it.
+ */
+const CACHE_TTL_MS = 30_000;
+const cache = new Map<string, { at: number; value: Promise<unknown> }>();
+
+async function cached<T>(key: string, load: () => Promise<T>): Promise<T> {
+  const hit = cache.get(key);
+  if (hit && Date.now() - hit.at < CACHE_TTL_MS) return structuredClone((await hit.value) as T);
+  const value = load();
+  cache.set(key, { at: Date.now(), value });
+  try {
+    return structuredClone(await value);
+  } catch (error) {
+    // A failed read is not kept: the next request tries again.
+    if (cache.get(key)?.value === value) cache.delete(key);
+    throw error;
+  }
+}
+
+/** Forget the cached settings after writing them, so the next read is the saved version. */
+export const invalidateConfig = (organizationId: string) => cache.delete(`config:${organizationId || 'default'}`);
+
 export async function loadConfig(organizationId: string): Promise<BillTrackingConfig> {
-  const snapshot = await configRef(db(), organizationId).get();
-  return snapshot.exists ? withConfigDefaults(snapshot.data() as Partial<BillTrackingConfig>) : DEFAULT_CONFIG;
+  return cached(`config:${organizationId || 'default'}`, async () => {
+    const snapshot = await configRef(db(), organizationId).get();
+    return snapshot.exists ? withConfigDefaults(snapshot.data() as Partial<BillTrackingConfig>) : DEFAULT_CONFIG;
+  });
 }
 
 export const nowIso = () => new Date().toISOString();
@@ -93,11 +122,11 @@ const toProjectRecord = (id: string, data: Record<string, unknown>, profile: Pro
  * client, credit days) laid over each. Only projects inside the caller's scope are returned.
  */
 export async function loadProjects(context: Pick<BtContext, 'scope'>, profiles: readonly ProjectProfile[]): Promise<ProjectRecord[]> {
-  const snapshot = await db().collection('projects').get();
+  const docs = await cached('projects', async () => (await db().collection('projects').get()).docs.map((doc) => ({ id: doc.id, data: doc.data() })));
   const profileOf = new Map(profiles.map((profile) => [profile.projectId, profile]));
-  return snapshot.docs
+  return docs
     .filter((doc) => context.scope === null || context.scope.includes(doc.id))
-    .map((doc) => toProjectRecord(doc.id, doc.data(), profileOf.get(doc.id)))
+    .map((doc) => toProjectRecord(doc.id, doc.data, profileOf.get(doc.id)))
     .sort((a, b) => a.name.localeCompare(b.name));
 }
 
@@ -109,6 +138,10 @@ export async function loadProject(projectId: string, profiles: readonly ProjectP
 
 /** The shared `clients` master (Project Management · Clients). */
 export async function loadClients(): Promise<ClientRecord[]> {
+  return cached('clients', loadClientsFresh);
+}
+
+async function loadClientsFresh(): Promise<ClientRecord[]> {
   const snapshot = await db().collection('clients').get();
   return snapshot.docs
     .map((doc) => {
@@ -139,6 +172,10 @@ export interface UserRecord {
 }
 
 export async function loadUsers(): Promise<UserRecord[]> {
+  return cached('users', loadUsersFresh);
+}
+
+async function loadUsersFresh(): Promise<UserRecord[]> {
   const snapshot = await db().collection('users').get();
   return snapshot.docs
     .filter((doc) => doc.data().status !== 'Inactive')
@@ -157,9 +194,11 @@ export async function userName(userId: string | undefined): Promise<string | und
  * maintains (Expenses → GST registrations). Bill Tracking reads it; it never edits it.
  */
 export async function loadGstSetup(): Promise<RegistrationSetup> {
-  const snapshot = await db().collection('expensesSettings').doc('gst-registrations').get();
-  const doc = resolveRegistrationsDoc(snapshot.exists ? snapshot.data() : null);
-  return { registrations: doc.registrations, attribution: doc.attribution, maps: doc.maps };
+  return cached('gst-setup', async () => {
+    const snapshot = await db().collection('expensesSettings').doc('gst-registrations').get();
+    const doc = resolveRegistrationsDoc(snapshot.exists ? snapshot.data() : null);
+    return { registrations: doc.registrations, attribution: doc.attribution, maps: doc.maps };
+  });
 }
 
 /* ── scoped loading ──────────────────────────────────────────────────────── */

@@ -127,9 +127,9 @@ interface Loaded {
 
 /** Loads the FY's in-scope bills once and applies the URL filters. */
 async function load(btContext: BtContext, params: URLSearchParams): Promise<Loaded> {
-  const config = await loadConfig(btContext.organizationId);
   const filters = parseFilters(params, btContext.today);
-  const all = await loadScopedBills(btContext, filters.financialYear);
+  // Settings and bills do not depend on each other: one round trip, not two.
+  const [config, all] = await Promise.all([loadConfig(btContext.organizationId), loadScopedBills(btContext, filters.financialYear)]);
   const context = reportContext(config, filters.asOf);
   return { config, filters, context, all, bills: filterBills(all, filters, context) };
 }
@@ -137,8 +137,9 @@ async function load(btContext: BtContext, params: URLSearchParams): Promise<Load
 /* ── lookups ─────────────────────────────────────────────────────────────── */
 
 export async function lookups(context: BtContext) {
-  const config = await loadConfig(context.organizationId);
-  const [projects, clients, users, gstSetup] = await Promise.all([loadProjects(context, config.projectProfiles), loadClients(), loadUsers(), loadGstSetup()]);
+  // Only the projects need the settings (their billing profiles); the rest load alongside.
+  const configured = loadConfig(context.organizationId).then(async (config) => ({ config, projects: await loadProjects(context, config.projectProfiles) }));
+  const [{ config, projects }, clients, users, gstSetup] = await Promise.all([configured, loadClients(), loadUsers(), loadGstSetup()]);
   const resources = ['Dashboard', 'Bills', 'Collections', 'Retention', 'Follow-ups', 'Targets', 'Import', 'Reports', 'Settings'] as const;
   const actions = ['View', 'Add', 'Edit', 'Delete', 'Verify', 'Approve', 'Override Status', 'Edit After Approval', 'Certify', 'Cancel', 'Hold Unallocated', 'Manage', 'Import', 'Rollback', 'Export', 'Close Month'];
   const permissions: Record<string, string[]> = {};
@@ -302,15 +303,11 @@ export async function invoicesForNote(context: BtContext, params: URLSearchParam
 /* ── bill detail ─────────────────────────────────────────────────────────── */
 
 export async function billDetail(context: BtContext, billId: string) {
-  const config = await loadConfig(context.organizationId);
-  // Anyone named on this bill's workflow may open it, whatever their project grants or Bills · View.
-  const involved = (candidate: Bill) => isInvolved(candidate, config.settings, context.userId);
-  const bill = await loadBill(context, billId, { includeDeleted: true, allow: involved });
-  if (!involved(bill)) context.require('Bills', 'View');
-  const rc = reportContext(config, context.today);
   const firestore = db();
   const byBill = (collection: string) => firestore.collection(collection).where('billId', '==', billId).get();
-  const [collections, followUps, comments, documents, activity, retentionByBill, retentionReleases, notes] = await Promise.all([
+  // The bill's records load alongside the bill and the settings — one round trip instead of three.
+  // Nothing is returned until access to the bill is settled below.
+  const related = Promise.all([
     firestore.collection(BT_COLLECTIONS.collections).where('billIds', 'array-contains', billId).get(),
     byBill(BT_COLLECTIONS.followUps),
     byBill(BT_COLLECTIONS.comments),
@@ -320,6 +317,16 @@ export async function billDetail(context: BtContext, billId: string) {
     firestore.collection(BT_COLLECTIONS.retention).where('retentionBillId', '==', billId).get(),
     firestore.collection(BT_COLLECTIONS.bills).where('againstBillId', '==', billId).get(),
   ]);
+  related.catch(() => undefined);
+  // Scope is checked here rather than in loadBill, because it needs the settings that load alongside.
+  const [config, bill] = await Promise.all([loadConfig(context.organizationId), loadBill(context, billId, { includeDeleted: true, allow: () => true })]);
+  // Anyone named on this bill's workflow may open it, whatever their project grants or Bills · View.
+  if (!isInvolved(bill, config.settings, context.userId)) {
+    context.requireProject(bill.projectId);
+    context.require('Bills', 'View');
+  }
+  const rc = reportContext(config, context.today);
+  const [collections, followUps, comments, documents, activity, retentionByBill, retentionReleases, notes] = await related;
   const docs = <T>(snapshot: FirebaseFirestore.QuerySnapshot) => snapshot.docs.map((doc) => ({ ...(doc.data() as T), id: doc.id }));
   const releases = [...docs<RetentionRelease>(retentionByBill), ...docs<RetentionRelease>(retentionReleases)].filter((release, index, all) => all.findIndex((other) => other.id === release.id) === index);
   const liveNotes = docs<Bill>(notes).filter((note) => !note.isDeleted && (note as Bill & { organizationId?: string }).organizationId === context.organizationId);

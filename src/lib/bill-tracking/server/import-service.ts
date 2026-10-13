@@ -59,7 +59,7 @@ import type {
 } from '../types';
 import { calculationOptions, computeDueDate } from './bills';
 import { BtError, db, type BtContext } from './context';
-import { BT_COLLECTIONS, clean, configRef, loadClients, loadConfig, loadProjects, loadScopedBills, logActivity, nowIso, type ProjectRecord } from './store';
+import { BT_COLLECTIONS, clean, configRef, invalidateConfig, loadClients, loadConfig, loadProjects, loadScopedBills, logActivity, nowIso, type ProjectRecord } from './store';
 
 type StoredBill = Bill & { organizationId: string };
 type StoredJob = BillImportJob & { organizationId: string; columnMap: ImportColumnMap; headerRow: number };
@@ -277,6 +277,7 @@ export async function startImport(context: BtContext, input: ImportPreviewInput,
   }
   if (options.addUnknownBillTypes || mappings.length !== config.projectMappings.length || options.rememberMappings) {
     await configRef(firestore, context.organizationId).set(clean({ ...config, billTypes, projectMappings: mappings, updatedAt: nowIso(), updatedBy: context.userId }), { merge: true });
+    invalidateConfig(context.organizationId);
   }
 
   const jobNumber = await firestore.runTransaction(async (transaction) => {

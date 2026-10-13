@@ -10,7 +10,7 @@ import { validateCategoryConfig } from '../categories.ts';
 import type { ConfigInput } from '../schemas';
 import type { BillTrackingConfig } from '../types';
 import { BtError, db, type BtContext } from './context';
-import { BT_COLLECTIONS, clean, configRef, loadConfig, logActivity, nowIso } from './store';
+import { BT_COLLECTIONS, clean, configRef, invalidateConfig, loadConfig, logActivity, nowIso } from './store';
 
 export async function saveConfig(context: BtContext, input: ConfigInput): Promise<BillTrackingConfig> {
   context.require('Settings', 'Manage');
@@ -39,6 +39,7 @@ export async function saveConfig(context: BtContext, input: ConfigInput): Promis
     projectMappings: input.projectMappings ?? current.projectMappings,
   });
   await configRef(db(), context.organizationId).set(next);
+  invalidateConfig(context.organizationId);
   const changedSettings = Object.keys(input.settings).filter((key) => JSON.stringify((current.settings as unknown as Record<string, unknown>)[key]) !== JSON.stringify((input.settings as Record<string, unknown>)[key]));
   await logActivity(context, {
     entityType: 'settings',

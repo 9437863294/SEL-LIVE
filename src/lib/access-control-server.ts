@@ -69,13 +69,48 @@ export interface AccessRequestContext {
 }
 
 /**
+ * Roles and the scope-grant configuration, read whole by every authenticated request. They change
+ * rarely, and a page that makes three API calls used to read the 30-odd role documents three times
+ * — over a second each from a distant database. Kept per server instance for a short while, so a
+ * role edited in Access Management reaches every API within `ACCESS_CONFIG_TTL_MS`. The user's
+ * own document and grant are always read fresh: deactivation and grant changes apply at once.
+ */
+const ACCESS_CONFIG_TTL_MS = 30_000;
+let accessConfigCache: { at: number; value: Promise<{ roles: RoleLike[]; scopeGrants: ScopeGrantConfig[] }> } | null = null;
+
+function loadAccessConfig(): Promise<{ roles: RoleLike[]; scopeGrants: ScopeGrantConfig[] }> {
+  const now = Date.now();
+  if (accessConfigCache && now - accessConfigCache.at < ACCESS_CONFIG_TTL_MS) return accessConfigCache.value;
+  const firestore = getFirebaseAdminFirestore();
+  const value = Promise.all([
+    firestore.collection('roles').get(),
+    // Optional configuration: an installation that has never opened Access Management has none,
+    // and a permissions error reading it must not turn into a failed request.
+    firestore
+      .collection('accessScopeGrants')
+      .get()
+      .catch(() => null),
+  ]).then(([rolesSnapshot, scopeSnapshot]) => ({
+    roles: rolesSnapshot.docs.map((entry) => ({ id: entry.id, ...entry.data() }) as RoleLike),
+    scopeGrants: scopeSnapshot?.docs.map((entry) => ({ id: entry.id, ...entry.data() }) as ScopeGrantConfig) ?? [],
+  }));
+  accessConfigCache = { at: now, value };
+  // A failed read is not kept: the next request tries again.
+  value.catch(() => {
+    if (accessConfigCache?.value === value) accessConfigCache = null;
+  });
+  return value;
+}
+
+/**
  * Verify the caller and resolve everything they can do.
  *
  * Four reads: the user document (by uid, falling back to email exactly as `AuthProvider` does — a
  * user whose Firestore id is not their Firebase uid is a real state in this database), every role,
  * the caller's grant document, and the scope-grant configuration. Roles are read whole because the
  * resolver needs to look up additional roles by id and the base role by name, and the collection is
- * small.
+ * small; roles and scope grants are shared by every caller, so they are read in parallel with the
+ * user and kept briefly (`loadAccessConfig`).
  */
 export async function authenticateAccess(request: Request): Promise<AccessRequestContext> {
   const header = request.headers.get('authorization') || '';
@@ -84,6 +119,13 @@ export async function authenticateAccess(request: Request): Promise<AccessReques
 
   const decoded = await getFirebaseAdminAuth().verifyIdToken(token);
   const firestore = getFirebaseAdminFirestore();
+  // Roles and scope grants do not depend on who is calling: start them alongside the user lookup.
+  const accessConfig = loadAccessConfig();
+  accessConfig.catch(() => undefined);
+  // The grant is keyed by the user document's id, which is the uid for nearly every user — so read
+  // it now too; `accessContextForUserSnapshot` reads it again only when the ids differ.
+  const grantByUid = firestore.collection('accessGrants').doc(decoded.uid).get();
+  grantByUid.catch(() => undefined);
 
   let userSnapshot = await firestore.collection('users').doc(decoded.uid).get();
   if (!userSnapshot.exists && decoded.email) {
@@ -96,7 +138,7 @@ export async function authenticateAccess(request: Request): Promise<AccessReques
   }
   if (!userSnapshot.exists) throw new AccessDeniedError('The signed-in user is not registered.');
 
-  return accessContextForUserSnapshot(userSnapshot);
+  return accessContextForUserSnapshot(userSnapshot, accessConfig, userSnapshot.id === decoded.uid ? grantByUid : undefined);
 }
 
 /**
@@ -112,6 +154,9 @@ export async function authenticateUserById(userId: string): Promise<AccessReques
 
 async function accessContextForUserSnapshot(
   userSnapshot: DocumentSnapshot,
+  accessConfig: Promise<{ roles: RoleLike[]; scopeGrants: ScopeGrantConfig[] }> = loadAccessConfig(),
+  /** The caller's grant, already being read under this user's id (see `authenticateAccess`). */
+  grantRead?: Promise<DocumentSnapshot>,
 ): Promise<AccessRequestContext> {
   const firestore = getFirebaseAdminFirestore();
   const userData = userSnapshot.data() || {};
@@ -122,24 +167,15 @@ async function accessContextForUserSnapshot(
 
   const userId = userSnapshot.id;
 
-  const [rolesSnapshot, grantSnapshot, scopeSnapshot] = await Promise.all([
-    firestore.collection('roles').get(),
-    firestore.collection('accessGrants').doc(userId).get(),
-    // Optional configuration: an installation that has never opened Access Management has none,
-    // and a permissions error reading it must not turn into a failed request.
-    firestore
-      .collection('accessScopeGrants')
-      .get()
-      .catch(() => null),
+  const [{ roles, scopeGrants }, grantSnapshot] = await Promise.all([
+    accessConfig,
+    grantRead ?? firestore.collection('accessGrants').doc(userId).get(),
   ]);
 
-  const roles = rolesSnapshot.docs.map((entry) => ({ id: entry.id, ...entry.data() }) as RoleLike);
   const grant = normalizeUserAccessGrant(
     userId,
     grantSnapshot.exists ? (grantSnapshot.data() as Record<string, unknown>) : null,
   );
-  const scopeGrants =
-    scopeSnapshot?.docs.map((entry) => ({ id: entry.id, ...entry.data() }) as ScopeGrantConfig) ?? [];
 
   const access = resolveEffectiveAccess({
     user: {
