@@ -22,9 +22,7 @@ before(async () => {
     'projects/p1/jmcEntries/j1': { status: 'Pending' },
     'projects/p1/indents/i1': { status: 'Pending' },
     'projects/p1/bills/b1': { amount: 10 },
-    'paymentObligations/o1': { organizationId: 'default' },
-    'paymentObligations/o1/transactions/t1': { amount: 5 },
-    'siteAccountExpenses/x1': { projectId: 'p1' },
+    'userLogs/x1': { userId: 'u1' },
   });
 });
 after(async () => env?.cleanup());
@@ -65,7 +63,7 @@ test('browser-read-only collections can be read but not written', async () => {
 });
 
 test('the searches across projects still work', async () => {
-  for (const group of ['jmcEntries', 'indents', 'bills', 'transactions']) {
+  for (const group of ['jmcEntries', 'indents', 'bills']) {
     await assertSucceeds(signedIn().collectionGroup(group).get());
   }
   await assertFails(as(env, null).collectionGroup('jmcEntries').get());
@@ -74,14 +72,13 @@ test('the searches across projects still work', async () => {
 test('every other collection is unchanged for signed-in users', async () => {
   await assertSucceeds(signedIn().doc('projects/p1').get());
   await assertSucceeds(signedIn().doc('projects/p1/jmcEntries/j1').update({ status: 'Approved' }));
-  await assertSucceeds(signedIn().collection('siteAccountExpenses').get());
-  await assertSucceeds(signedIn().doc('siteAccountExpenses/x2').set({ projectId: 'p1' }));
-  await assertSucceeds(signedIn().doc('paymentObligations/o1/transactions/t2').set({ amount: 1 }));
+  await assertSucceeds(signedIn().collection('userLogs').get());
+  await assertSucceeds(signedIn().doc('userLogs/x2').set({ userId: 'u1' }));
   await assertSucceeds(signedIn().collection('users').get());
 });
 
 test('and still closed to anyone signed out', async () => {
   await assertFails(as(env, null).doc('projects/p1').get());
-  await assertFails(as(env, null).collection('siteAccountExpenses').get());
-  await assertFails(as(env, null).doc('siteAccountExpenses/x3').set({ projectId: 'p1' }));
+  await assertFails(as(env, null).collection('userLogs').get());
+  await assertFails(as(env, null).doc('userLogs/x3').set({ userId: 'u1' }));
 });

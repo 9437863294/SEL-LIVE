@@ -7,7 +7,8 @@ import path from 'node:path';
 import { initializeTestEnvironment } from '@firebase/rules-unit-testing';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
-export const RULES_PATH = path.resolve(here, '../../firestore.rules');
+// FIRESTORE_RULES_PATH lets a draft ruleset be tested before it is merged into firestore.rules.
+export const RULES_PATH = process.env.FIRESTORE_RULES_PATH || path.resolve(here, '../../firestore.rules');
 
 export async function rulesEnv() {
   const [host, port] = (process.env.FIRESTORE_EMULATOR_HOST || '127.0.0.1:8080').split(':');

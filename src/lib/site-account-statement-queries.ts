@@ -608,6 +608,33 @@ export async function loadScopedLedger(options: {
   };
 }
 
+/**
+ * Every document of a project-keyed collection (budgets, category budgets, approvals, allocations,
+ * tender budgets) within a scope, as `{ id, ...data }`.
+ *
+ * The security rules let a user without All Projects read only the rows of projects they are
+ * attached to, and a rule is not a filter: a query that *could* return another project's row is
+ * refused outright. So these collections cannot be read whole and narrowed in the browser — the
+ * scope has to be in the query, chunked to fit the rules' document-access budget.
+ *
+ * `projectIds` follows `ledgerScopeFor`: `null` reads everything, `[]` reads nothing. `extra` may
+ * add equality filters only; an inequality or ordering alongside `projectId in` needs a composite
+ * index, so ranges are applied by the caller to the rows that come back.
+ */
+export async function fetchProjectScoped<T>(
+  collectionName: string,
+  projectIds: string[] | null,
+  extra: QueryConstraint[] = [],
+): Promise<T[]> {
+  const chunks = chunkScope(projectIds);
+  const snaps = await Promise.all(chunks.map(chunk => getDocs(query(
+    collection(db, collectionName),
+    ...(chunk === null ? [] : [chunk.length === 1 ? where('projectId', '==', chunk[0]) : where('projectId', 'in', chunk)]),
+    ...extra,
+  ))));
+  return snaps.flatMap(snap => snap.docs.map(d => ({ id: d.id, ...d.data() } as T)));
+}
+
 /** Typed conveniences, so call sites read as what they fetch rather than as a generic. */
 export const expensesPage = (scope: SASLedgerScope, options?: { cursor?: SASCursor | null; pageSize?: number }) =>
   fetchLedgerPage<SASExpense>('expenses', scope, options);

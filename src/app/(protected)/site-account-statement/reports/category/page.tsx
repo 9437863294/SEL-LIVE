@@ -7,7 +7,7 @@ import {
   formatINR, PAYMENT_MODES, SAS_COLLECTIONS,
   type SASAttachment, type SASBudget, type SASCategory, type SASCategoryBudget, type SASExpense, type SASProject,
 } from '@/lib/site-account-statement';
-import { loadScopedLedger } from '@/lib/site-account-statement-queries';
+import { fetchProjectScoped, ledgerScopeFor, loadScopedLedger } from '@/lib/site-account-statement-queries';
 import { useAuthorization } from '@/hooks/useAuthorization';
 import { useAuth } from '@/components/auth/AuthProvider';
 import { Button } from '@/components/ui/button';
@@ -166,6 +166,11 @@ export default function CategoryAnalysisPage() {
   async function loadAll() {
     setLoading(true);
     setBudgetLoadError(false);
+    /**
+     * The projects whose budget rows this user may read, `null` for All Projects; the rules release
+     * budget figures project by project. Nothing until the project list has loaded.
+     */
+    let scope: string[] | null = [];
     try {
       // Load expenses, projects, categories first (critical path)
       const [pSnap, catSnap] = await Promise.all([
@@ -175,6 +180,7 @@ export default function CategoryAnalysisPage() {
       const allProjects = pSnap.docs.map(d => ({ id: d.id, ...d.data() } as SASProject));
       setProjects(allProjects.filter(p => p.enabledForSiteAccount));
       setCategories(catSnap.docs.map(d => ({ id: d.id, ...d.data() } as SASCategory)));
+      scope = ledgerScopeFor(allProjects, user?.id, canViewAll);
       // Scoped to the projects this user may see, on the server — this page used to pull the
       // organisation's entire expense collection and filter it in the browser.
       const ledger = await loadScopedLedger({ projects: allProjects, userId: user?.id, canViewAll });
@@ -185,17 +191,13 @@ export default function CategoryAnalysisPage() {
 
     // Load budgets separately so a failure here doesn't break the main report
     try {
-      const [cbSnap, mbSnap] = await Promise.all([
-        getDocs(collection(db, SAS_COLLECTIONS.categoryBudgets)),
-        getDocs(collection(db, SAS_COLLECTIONS.budgets)),
+      const [catBudgetRows, budgetRows] = await Promise.all([
+        fetchProjectScoped<SASCategoryBudget>(SAS_COLLECTIONS.categoryBudgets, scope),
+        fetchProjectScoped<SASBudget>(SAS_COLLECTIONS.budgets, scope),
       ]);
-      setCatBudgets(cbSnap.docs.map(d => ({ id: d.id, ...d.data() } as SASCategoryBudget)));
+      setCatBudgets(catBudgetRows);
       // Keep only monthly-type budgets (period = "YYYY-MM") for the grand-total reference
-      setMonthlyBudgets(
-        mbSnap.docs
-          .map(d => ({ id: d.id, ...d.data() } as SASBudget))
-          .filter(b => b.budgetType === 'monthly')
-      );
+      setMonthlyBudgets(budgetRows.filter(b => b.budgetType === 'monthly'));
     } catch (err) {
       console.error('[CategoryReport] Failed to load category budgets:', err);
       setBudgetLoadError(true);

@@ -11,6 +11,7 @@ import {
 } from '@/lib/site-account-statement';
 import { useFieldControl, validateFieldControlRequirements } from '@/components/site-account-statement/use-field-control';
 import { ControlledField } from '@/components/site-account-statement/controlled-field';
+import { fetchProjectScoped, ledgerScopeFor } from '@/lib/site-account-statement-queries';
 import { useAuth } from '@/components/auth/AuthProvider';
 import { useAuthorization } from '@/hooks/useAuthorization';
 import { useActivityLogger } from '@/hooks/useActivityLogger';
@@ -84,18 +85,23 @@ export default function TenderBudgetSetupPage() {
   const [dialogEnd,       setDialogEnd]       = useState(() => shiftMonth(currentMonthStr(), 11));
   const [dialogNotes,     setDialogNotes]     = useState('');
 
+  // The tender-budget read is scoped by the resolved user and their All-Projects permission, so
+  // a late-arriving profile re-runs the load rather than leaving the page scoped to nothing.
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  useEffect(() => { if (!isAuthLoading) void loadAll(); }, [isAuthLoading]);
+  useEffect(() => { if (!isAuthLoading) void loadAll(); }, [isAuthLoading, user?.id, canViewAll]);
 
   async function loadAll() {
     setLoading(true);
     try {
-      const [pSnap, tbSnap] = await Promise.all([
-        getDocs(query(collection(db, SAS_COLLECTIONS.projects), orderBy('projectName'))),
-        getDocs(collection(db, SAS_COLLECTIONS.tenderBudgets)),
-      ]);
-      setProjects(pSnap.docs.map(d => ({ id: d.id, ...d.data() } as SASProject)).filter(p => p.enabledForSiteAccount && p.status === 'Active'));
-      setTenderBudgets(tbSnap.docs.map(d => ({ id: d.id, ...d.data() } as SASTenderBudget)));
+      const pSnap = await getDocs(query(collection(db, SAS_COLLECTIONS.projects), orderBy('projectName')));
+      const allProjects = pSnap.docs.map(d => ({ id: d.id, ...d.data() } as SASProject));
+      // Tender budgets carry figures, which the rules release project by project: read by scope.
+      const tenderRows = await fetchProjectScoped<SASTenderBudget>(
+        SAS_COLLECTIONS.tenderBudgets,
+        ledgerScopeFor(allProjects, user?.id, canViewAll),
+      );
+      setProjects(allProjects.filter(p => p.enabledForSiteAccount && p.status === 'Active'));
+      setTenderBudgets(tenderRows);
     } finally {
       setLoading(false);
     }

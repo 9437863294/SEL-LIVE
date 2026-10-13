@@ -19,6 +19,7 @@ import { AlertTriangle, CheckCircle2, ChevronLeft, ChevronRight, Clock3, Eye, Fi
 import { db } from '@/lib/firebase';
 import { storage } from '@/lib/firebase-storage';
 import { useAuth } from '@/components/auth/AuthProvider';
+import { useAuthorization } from '@/hooks/useAuthorization';
 import { useToast } from '@/hooks/use-toast';
 import { createExpenseRequest } from '@/ai';
 import type { AccountHead, Department, SubAccountHead } from '@/lib/types';
@@ -67,6 +68,8 @@ import { dispatchNotification } from '@/lib/notifications';
 import { ACTIVITY_MODULES } from '@/lib/activity-modules';
 import { syncRecurringPaymentApprovalInBackground } from '@/lib/recurring-payments-e-approval-service';
 import { PaymentEApprovalCard } from './e-approval-link-card';
+import { subscribeVisibleObligations } from './obligation-subscriptions';
+import { fetchBillCheck } from './bill-check-client';
 
 /** The billing period an obligation was generated with — the fixed point every adjustment is bounded by. */
 const generatedPeriodOf = (payment: PaymentObligation) => ({
@@ -88,6 +91,11 @@ const VERIFICATION_CHECKLIST = [
 
 export default function ProfessionalRecurringWorkflowStage({ stageId }: { stageId: string }) {
   const { user } = useAuth();
+  const { canAccessModule, isLoading: authLoading } = useAuthorization();
+  // A module user reads the whole register; someone here only because a step names them reads only
+  // the obligations that name them (see obligation-subscriptions.ts).
+  const moduleWide = canAccessModule('Recurring Payments');
+  const userId = user?.id || '';
   const { toast } = useToast();
   const { field: submitBillField } = useFieldControl('submitBill');
   const { field: verifyField } = useFieldControl('verifyBill');
@@ -116,6 +124,7 @@ export default function ProfessionalRecurringWorkflowStage({ stageId }: { stageI
     // The listeners are attached only after the reference loads resolve, so an unmount (or an
     // organization change) during those loads must stop them from being attached at all.
     let cancelled = false;
+    if (authLoading) return;
     let stopPayments: () => void = () => undefined;
     let stopSettings: () => void = () => undefined;
     (async () => {
@@ -134,8 +143,8 @@ export default function ProfessionalRecurringWorkflowStage({ stageId }: { stageI
         setSubAccountHeads(subHeadSnap.docs.map(item => ({ id: item.id, ...item.data() } as SubAccountHead)));
         setWorkingHours(calendar.workingHours);
         setHolidays(calendar.holidays);
-        stopPayments = onSnapshot(query(collection(db, RP_COLLECTIONS.payments), where('organizationId', '==', organizationId)), snapshot => {
-          setPayments(visibleObligations(snapshot.docs.map(item => ({ id: item.id, ...item.data() } as PaymentObligation))));
+        stopPayments = subscribeVisibleObligations({ organizationId, userId, moduleWide }, rows => {
+          setPayments(visibleObligations(rows));
           setLoading(false);
         }, () => setLoading(false));
         stopSettings = onSnapshot(doc(db, RP_COLLECTIONS.settings, organizationId.replace(/[^a-zA-Z0-9_-]/g, '_')), snapshot => {
@@ -150,7 +159,7 @@ export default function ProfessionalRecurringWorkflowStage({ stageId }: { stageI
       }
     })();
     return () => { cancelled = true; stopPayments(); stopSettings(); };
-  }, [organizationId, toast]);
+  }, [organizationId, toast, userId, moduleWide, authLoading]);
 
   // The step's configured actions are offered as-is. Every surface that can run one is already
   // restricted to the payment's own assignees — the table dropdown only renders for rows in
@@ -251,14 +260,18 @@ export default function ProfessionalRecurringWorkflowStage({ stageId }: { stageI
     }
 
     setWorking(true);
+    let billCheck: Awaited<ReturnType<typeof fetchBillCheck>> | null = null;
     try {
       // Inside the working state, not before it: this read is slow on a large register, and while it
       // ran the confirm button stayed enabled, so a second click submitted (and uploaded) twice.
       if (action === 'Submit Bill') {
-        const all = await getDocs(query(collection(db, RP_COLLECTIONS.payments), where('organizationId', '==', organizationId)));
         // A deleted obligation must not reserve its bill number — deletion withdraws a record that
         // shouldn't have existed, so the number has to be enterable again on the correct obligation.
-        const duplicate = all.docs.some(item => item.id !== selected.id && item.data().deleted !== true && String(item.data().vendorName).toLowerCase() === selected.vendorName.toLowerCase() && String(item.data().billNumber || '').toLowerCase() === billNumber.toLowerCase());
+        // Someone working the step without a module permission cannot read the other obligations
+        // this compares against; the server makes the same comparison for them.
+        const duplicate = moduleWide
+          ? (await getDocs(query(collection(db, RP_COLLECTIONS.payments), where('organizationId', '==', organizationId)))).docs.some(item => item.id !== selected.id && item.data().deleted !== true && String(item.data().vendorName).toLowerCase() === selected.vendorName.toLowerCase() && String(item.data().billNumber || '').toLowerCase() === billNumber.toLowerCase())
+          : (billCheck = await fetchBillCheck(selected.id, billNumber)).duplicate;
         if (duplicate) throw new Error('Duplicate vendor bill number — this bill number already exists for the selected vendor.');
       }
 
@@ -313,7 +326,8 @@ export default function ProfessionalRecurringWorkflowStage({ stageId }: { stageI
       // waived was never accepted as this vendor's normal charge, so letting it set "previous" or
       // pull the 3/6-cycle average either raised a variance warning on a perfectly ordinary bill or
       // — worse — suppressed one, by dragging the average toward an amount nobody approved.
-      const historicalBills = payments
+      // The same master's earlier cycles; from the server when this user cannot read them all.
+      const historicalBills = (action === 'Submit Bill' && !moduleWide ? (billCheck ?? (billCheck = await fetchBillCheck(selected.id, billNumber))).history : payments)
         .filter(payment => payment.masterId === selected.masterId && payment.id !== selected.id && payment.dueDate < selected.dueDate && Number(payment.billAmount) > 0 && !['Cancelled', 'Rejected', 'Waived'].includes(payment.status))
         .sort((a, b) => b.dueDate.localeCompare(a.dueDate));
       const average = (items: PaymentObligation[]) => items.length ? items.reduce((sum, payment) => sum + Number(payment.billAmount || 0), 0) / items.length : undefined;

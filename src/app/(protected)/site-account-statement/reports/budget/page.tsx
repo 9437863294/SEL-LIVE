@@ -8,7 +8,7 @@ import {
   type SASBudget, type SASBudgetApproval, type SASCategoryBudget,
   type SASExpense, type SASPayment, type SASProject,
 } from '@/lib/site-account-statement';
-import { loadScopedLedger } from '@/lib/site-account-statement-queries';
+import { fetchProjectScoped, ledgerScopeFor, loadScopedLedger } from '@/lib/site-account-statement-queries';
 import {
   currentPeriod,
   describeRange,
@@ -157,14 +157,19 @@ export default function BudgetReportsPage() {
   async function loadAll() {
     setLoading(true);
     setCatBudgetErr(false);
+    /*
+     * The projects whose budget rows this user may read, `null` for All Projects. Budgets carry
+     * figures, which the rules release project by project, so every read below is scoped by it.
+     * Nothing until the project list has loaded.
+     */
+    let scope: string[] | null = [];
     try {
-      const [pSnap, bSnap] = await Promise.all([
-        getDocs(query(collection(db, SAS_COLLECTIONS.projects), orderBy('projectName'))),
-        getDocs(collection(db, SAS_COLLECTIONS.budgets)),
-      ]);
+      const pSnap = await getDocs(query(collection(db, SAS_COLLECTIONS.projects), orderBy('projectName')));
       const allProjects = pSnap.docs.map(d => ({ id: d.id, ...d.data() } as SASProject));
+      scope = ledgerScopeFor(allProjects, user?.id, canViewAll);
+      const budgetRows = await fetchProjectScoped<SASBudget>(SAS_COLLECTIONS.budgets, scope);
       setProjects(allProjects.filter(p => p.enabledForSiteAccount));
-      setBudgets(bSnap.docs.map(d => ({ id: d.id, ...d.data() } as SASBudget)));
+      setBudgets(budgetRows);
       // Scoped to the projects this user may see, on the server — this page used to pull the
       // organisation's entire expense and payment collections and filter them in the browser.
       const ledger = await loadScopedLedger({ projects: allProjects, userId: user?.id, canViewAll });
@@ -176,12 +181,12 @@ export default function BudgetReportsPage() {
 
     // Category budgets and approvals may not exist yet — load separately
     try {
-      const [cbSnap, appSnap] = await Promise.all([
-        getDocs(collection(db, SAS_COLLECTIONS.categoryBudgets)),
-        getDocs(collection(db, SAS_COLLECTIONS.budgetApprovals)),
+      const [catBudgetRows, approvalRows] = await Promise.all([
+        fetchProjectScoped<SASCategoryBudget>(SAS_COLLECTIONS.categoryBudgets, scope),
+        fetchProjectScoped<SASBudgetApproval>(SAS_COLLECTIONS.budgetApprovals, scope),
       ]);
-      setCatBudgets(cbSnap.docs.map(d => ({ id: d.id, ...d.data() } as SASCategoryBudget)));
-      setApprovals(appSnap.docs.map(d => ({ id: d.id, ...d.data() } as SASBudgetApproval)));
+      setCatBudgets(catBudgetRows);
+      setApprovals(approvalRows);
     } catch {
       setCatBudgetErr(true);
     }

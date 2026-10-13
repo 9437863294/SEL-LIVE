@@ -14,7 +14,7 @@ import {
 import { runBudgetAlertChecks } from '@/lib/sas-budget-alerts';
 import { slugify } from '@/lib/print-table-report';
 import { openPrintWindow } from '@/lib/open-print-window';
-import { allExpenses as fetchAllExpenses, allPayments as fetchAllPayments } from '@/lib/site-account-statement-queries';
+import { allExpenses as fetchAllExpenses, allPayments as fetchAllPayments, fetchProjectScoped } from '@/lib/site-account-statement-queries';
 import { useFieldControl, validateFieldControlRequirements } from '@/components/site-account-statement/use-field-control';
 import { useDateControl } from '@/components/site-account-statement/use-date-control';
 import { subCategoryRequirement, validateSubCategoryChoice } from '@/lib/site-account-statement-subcategory-rule';
@@ -779,30 +779,34 @@ export default function SiteAccountDashboardPage() {
 
   async function loadAll() {
     setLoading(true);
+    /** The projects this user may read; nothing until the project list has loaded. */
+    let scopeIds: string[] | null = [];
     try {
       // Projects first — the ledger reads below are scoped to whichever ones this user may see,
       // rather than pulling every expense and payment in the organisation and filtering in the
       // browser.
-      const [pSnap, catSnap, budSnap] = await Promise.all([
+      const [pSnap, catSnap] = await Promise.all([
         getDocs(query(collection(db, SAS_COLLECTIONS.projects))),
         getDocs(query(collection(db, SAS_COLLECTIONS.categories), orderBy('name'))),
-        getDocs(collection(db, SAS_COLLECTIONS.budgets)),
       ]);
       const allProjects = pSnap.docs.map(d => ({ id: d.id, ...d.data() } as SASProject));
       setProjects(allProjects);
       setCategories(catSnap.docs.map(d => ({ id: d.id, ...d.data() } as SASCategory)).filter(c => c.isActive !== false));
-      setBudgets(budSnap.docs.map(d => ({ id: d.id, ...d.data() } as SASBudget)));
 
-      const scopeIds = canViewAll
+      scopeIds = canViewAll
         ? null
         : allProjects
             .filter(p => p.assignedPersonId === user?.id || p.altUserId === user?.id || p.viewerId === user?.id)
             .map(p => p.id);
 
-      const [expenseResult, paymentResult] = await Promise.all([
+      // Budgets carry figures, so the rules only release a project's rows to those attached to it:
+      // read by scope like the ledger, never the whole collection.
+      const [budgetRows, expenseResult, paymentResult] = await Promise.all([
+        fetchProjectScoped<SASBudget>(SAS_COLLECTIONS.budgets, scopeIds),
         fetchAllExpenses({ projectIds: scopeIds }),
         fetchAllPayments({ projectIds: scopeIds }),
       ]);
+      setBudgets(budgetRows);
       setExpenses(expenseResult.rows);
       setPayments(paymentResult.rows);
       setLedgerTruncated(expenseResult.truncated || paymentResult.truncated);
@@ -819,11 +823,14 @@ export default function SiteAccountDashboardPage() {
      * allocation is recorded, and its absence must not blank the dashboard.
      */
     try {
-      const allocSnap = await getDocs(query(
-        collection(db, SAS_COLLECTIONS.budgetAllocations),
-        where('status', '==', 'approved'),
-      ));
-      setAllocations(allocSnap.docs.map(d => ({ id: d.id, ...d.data() } as SASBudgetAllocation)));
+      // A project-scoped read filters on projectId alone, so it needs no composite index; the
+      // status is then applied here.
+      const rows = await fetchProjectScoped<SASBudgetAllocation>(
+        SAS_COLLECTIONS.budgetAllocations,
+        scopeIds,
+        scopeIds === null ? [where('status', '==', 'approved')] : [],
+      );
+      setAllocations(rows.filter(a => a.status === 'approved'));
     } catch { /* no allocations yet */ }
   }
 

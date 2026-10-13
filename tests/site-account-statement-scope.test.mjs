@@ -70,9 +70,9 @@ describe('chunkProjectIds', () => {
 
   it('stays inside the Firestore rules document-access budget', () => {
     // firestore.rules authorises project members with one get() per distinct project, and Firestore
-    // permits 20 document accesses per query — two of which the caller's own user and role
-    // documents consume.
-    assert.ok(SAS_IN_CHUNK <= 18, `SAS_IN_CHUNK is ${SAS_IN_CHUNK}, which would exhaust the rules budget`);
+    // permits 10 document accesses per query — one of which the caller's own userPermissions
+    // document consumes.
+    assert.ok(SAS_IN_CHUNK <= 9, `SAS_IN_CHUNK is ${SAS_IN_CHUNK}, which would exhaust the rules budget`);
   });
 });
 

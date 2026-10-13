@@ -9,10 +9,10 @@ rules_version = '2';
  * From 2025-09-05 to 2026-10-13 the database ran `allow read, write: if true`, open to anyone.
  * These rules are being tightened in stages, each tested in the emulator and published on its own:
  *
- *   Stage 1 (this file): collections only the server touches are closed to every browser, and
+ *   Stage 1: collections only the server touches are closed to every browser, and
  *     collections the browser only reads cannot be written from it. Everything else is still open
  *     to any signed-in user, through the transitional catch-all at the bottom.
- *   Stage 2: per-module rules on the user's resolved permissions (`userPermissions/{authUid}`,
+ *   Stage 2 (under way; see ownRules): per-module rules on the user's resolved permissions (`userPermissions/{authUid}`,
  *     written by the server — see src/lib/access-rules-permissions.ts), module by module, each one
  *     taken out of the catch-all as it gets rules of its own.
  *
@@ -78,9 +78,51 @@ service cloud.firestore {
         'inventoryStockCounts', 'stockLedger',
         'recurringPaymentAutomationLogs', 'recurringPaymentNotificationQueue',
         'userLocationSettings',
-        'windowsActivityEvents', 'windowsDailyActivity', 'windowsHeartbeats', 'windowsNotifications',
+        'windowsActivityEvents', 'windowsDailyActivity', 'windowsNotifications',
         'windowsSessions'
       ];
+    }
+
+    /** Collections with rules of their own (stage 2). The catch-all leaves them alone. */
+    function ownRules(collection) {
+      return collection in [
+        'windowsAgentPolicies', 'windowsAgentVersions', 'windowsAppCatalog', 'windowsAuditLogs',
+        'windowsEnrollmentCodes', 'windowsHeartbeats',
+        'eApprovalAttachments', 'eApprovalComments', 'eApprovalCounters', 'eApprovalDelegations',
+        'eApprovalDepartmentRouting', 'eApprovalHistory', 'eApprovalProjectRouting', 'eApprovalRequests',
+        'eApprovalRules', 'eApprovalSettings', 'eApprovalSignatures', 'eApprovalSteps',
+        'eApprovalTemplates', 'eApprovalTypes', 'eApprovalVersions', 'paymentObligations',
+        'recurringPaymentApprovalRules', 'recurringPaymentAutomationLogs', 'recurringPaymentCategories', 'recurringPaymentMasters',
+        'recurringPaymentNotificationQueue', 'recurringPaymentNotificationRules', 'recurringPaymentSettings', 'recurringPaymentVendors',
+        'siteAccountBudgetAlertConfigs', 'siteAccountBudgetAlertState', 'siteAccountBudgetAllocations', 'siteAccountBudgetApprovals',
+        'siteAccountBudgets', 'siteAccountCategories', 'siteAccountCategoryBudgets', 'siteAccountExpenses',
+        'siteAccountPayments', 'siteAccountProjects', 'siteAccountSettings', 'siteAccountTenderBudgets',
+        'siteFundRequestProjects', 'siteFundRequests'
+      ];
+    }
+
+    /* ── The signed-in user's resolved permissions ──────────────────────────────────────────────
+     *
+     * `userPermissions/{authUid}.p` maps each held resource to its actions, aliases expanded: the
+     * same answer `useAuthorization().can` gives. Only the server writes it (at every app load, on
+     * user creation, and when Access Management asks). One `get()`, cached for the request. No
+     * document, or a deactivated user's empty one, holds nothing.
+     */
+    function permissionsPath() {
+      return /databases/$(database)/documents/userPermissions/$(request.auth.uid);
+    }
+
+    function hasPermissions() {
+      return signedIn() && exists(permissionsPath());
+    }
+
+    function holds(resource, action) {
+      return hasPermissions() && get(permissionsPath()).data.p.get(resource, []).hasAny([action]);
+    }
+
+    /** Any action on any of these resources: how a module decides whether you may open it. */
+    function holdsAnyOf(resources) {
+      return hasPermissions() && get(permissionsPath()).data.p.keys().hasAny(resources);
     }
 
     /* ── Readable before sign-in ─────────────────────────────────────────────────────────────── */
@@ -127,7 +169,845 @@ service cloud.firestore {
     match /{path=**}/rfqAwardApprovals/{id} { allow read: if signedIn(); }
     match /{path=**}/inspectionResultApprovals/{id} { allow read: if signedIn(); }
     match /{path=**}/surveyEntries/{id} { allow read: if signedIn(); }
-    match /{path=**}/transactions/{id} { allow read: if signedIn(); }
+
+    /* ── Windows Agent administration (src/lib/windows-agent-permissions.ts) ────────────────────
+     *
+     * The live board, enrolment codes, policies, the application catalogue, published builds and
+     * the audit trail. Sessions, activity and attendance stay on the catch-all for now: employees
+     * read their own by `userId == users-document id`, which needs its own care.
+     */
+    function windowsAgentUser() {
+      return holdsAnyOf([
+        'Windows Agent', 'Windows Agent.Dashboard', 'Windows Agent.Live Users', 'Windows Agent.Devices',
+        'Windows Agent.Enrollment Codes', 'Windows Agent.Sessions', 'Windows Agent.Activity',
+        'Windows Agent.Attendance', 'Windows Agent.Applications', 'Windows Agent.Reports',
+        'Windows Agent.Notifications', 'Windows Agent.Policies', 'Windows Agent.Agent Versions',
+        'Windows Agent.Audit Logs', 'Windows Agent.Monitoring Policy'
+      ]);
+    }
+
+    /** What every colleague has on screen right now. Its own permission and nothing else. */
+    match /windowsHeartbeats/{deviceId} {
+      allow read: if holds('Windows Agent.Live Users', 'View');
+    }
+
+    /*
+     * A code is the one credential in the module a person types: anyone who could list them could
+     * enrol a machine of their own. The registration count is the server's; lowering it would
+     * reopen an exhausted code.
+     */
+    match /windowsEnrollmentCodes/{code} {
+      allow read: if holds('Windows Agent.Enrollment Codes', 'Create');
+      allow create: if holds('Windows Agent.Enrollment Codes', 'Create')
+        && request.resource.data.get('registrationCount', 0) == 0;
+      allow update: if holds('Windows Agent.Enrollment Codes', 'Create')
+        && request.resource.data.get('registrationCount', 0) == resource.data.get('registrationCount', 0);
+    }
+
+    /** The thresholds activity is measured against: readable by anyone in the module. */
+    match /windowsAgentPolicies/{policyId} {
+      allow read: if windowsAgentUser();
+      allow write: if holds('Windows Agent.Policies', 'Edit');
+    }
+
+    match /windowsAppCatalog/{processKey} {
+      allow read: if windowsAgentUser();
+      allow create, update: if holds('Windows Agent.Applications', 'Categorise');
+    }
+
+    /** Published builds: what every agent installs as SYSTEM. Publishing is a deployment right. */
+    match /windowsAgentVersions/{version} {
+      allow read: if windowsAgentUser();
+      allow create, update: if holds('Windows Agent.Agent Versions', 'Publish');
+    }
+
+    /** Append-only for everybody: an audit trail an administrator can edit is not one. */
+    match /windowsAuditLogs/{entryId} {
+      allow read: if holds('Windows Agent.Audit Logs', 'View');
+      allow create: if windowsAgentUser();
+    }
+
+    /* ── E-Approval (src/lib/permissions.ts, "E-Approval"; src/lib/e-approval-service.ts) ───────────
+     *
+     * Who may see a request is decided by the engine (`canViewEApproval`) from facts the rules
+     * cannot reach: department and project membership come from this module's own routing
+     * documents (not `userPermissions.departmentIds/projectIds`), designations are not in
+     * `userPermissions` at all, a delegate's inbox queries the *delegator's* id, delegations have
+     * auto ids, and past actors are recorded only on the steps. So the request, its steps, history,
+     * comments, attachments and versions are readable by anyone in the module — every queue, the
+     * registers, the reports and the escalation run read them that way — and closed to everyone
+     * else. Writes are where the rules can say more: identities that are stamped, drafts that are
+     * private to their requester, deletions that have their own grants, configuration that has its
+     * own pages.
+     *
+     * Recurring Payments mirrors its obligations here (src/lib/recurring-payments-e-approval-service.ts)
+     * from the browser of whoever opens a payment, with `requesterId` set to the obligation's owner.
+     * Those people need not hold anything in E-Approval, so a request whose `source` points at an
+     * obligation is also open to whoever may work that obligation: any Recurring Payments grant, or
+     * being named on it (the same fields Recurring Payments' own rules accept).
+     *
+     * Names are `users` document ids (`userPermissions.userDocId`), never the auth uid. Budget: the
+     * permissions document (1), the parent request for a child record (1), the linked obligation
+     * (1) — 3 of 10; a transition transaction touches the same three paths for every document.
+     */
+    function eaUser() {
+      return holdsAnyOf([
+        'E-Approval', 'E-Approval.Dashboard', 'E-Approval.Requests', 'E-Approval.Inbox',
+        'E-Approval.Comments', 'E-Approval.Attachments', 'E-Approval.Audit Trail', 'E-Approval.Reversals',
+        'E-Approval.Reports', 'E-Approval.Delegations', 'E-Approval.Settings',
+        'E-Approval.Settings.Approval Types', 'E-Approval.Settings.Workflow Templates',
+        'E-Approval.Settings.Approval Matrix', 'E-Approval.Settings.Department Routing',
+        'E-Approval.Settings.Project Routing', 'E-Approval.Settings.Policies'
+      ]);
+    }
+
+    function eaHolds(page, actions) {
+      return hasPermissions() && get(permissionsPath()).data.p.get('E-Approval.' + page, []).hasAny(actions);
+    }
+
+    /** The caller's `users` id; '' when unknown, which then matches no one. */
+    function eaMe() {
+      return hasPermissions() ? get(permissionsPath()).data.get('userDocId', '') : '';
+    }
+
+    function eaIsMe(userId) {
+      return eaMe() != '' && userId == eaMe();
+    }
+
+    function eaRequest(approvalId) {
+      return /databases/$(database)/documents/eApprovalRequests/$(approvalId);
+    }
+
+    /** A request raised by the Recurring Payments bridge for one obligation. */
+    function eaIsMirror(data) {
+      return data.get('source', null) is map
+        && data.source.get('module', '') == 'Recurring Payments'
+        && data.source.get('recordId', '') is string
+        && data.source.get('recordId', '') != '';
+    }
+
+    function eaRpModuleUser() {
+      return holdsAnyOf([
+        'Recurring Payments', 'Recurring Payments.Dashboard', 'Recurring Payments.Payments',
+        'Recurring Payments.Approvals', 'Recurring Payments.Payment Processing',
+        'Recurring Payments.Recurring Masters', 'Recurring Payments.Vendors',
+        'Recurring Payments.Categories', 'Recurring Payments.Reports', 'Recurring Payments.Settings'
+      ]);
+    }
+
+    /** Named on the obligation: what lets someone with no Recurring Payments grant work it. */
+    function eaRpNamed(obligation) {
+      let me = eaMe();
+      return me != '' && (
+        obligation.get('assignees', []).hasAny([me])
+        || obligation.get('assignedTo', '') == me
+        || obligation.get('backupAssignedTo', '') == me
+        || obligation.get('verifierId', '') == me
+        || obligation.get('approverId', '') == me
+        || obligation.get('accountsProcessorId', '') == me
+        || obligation.get('approvalLevels', []).hasAny([me])
+        || obligation.get('approvalCompletedBy', []).hasAny([me]));
+    }
+
+    /** May run the bridge for this mirrored request: works the obligation it mirrors. */
+    function eaBridge(data) {
+      return eaIsMirror(data) && (eaRpModuleUser() || eaWorksObligation(data.source.recordId));
+    }
+
+    function eaWorksObligation(paymentId) {
+      let obligation = /databases/$(database)/documents/paymentObligations/$(paymentId);
+      return hasPermissions() && exists(obligation) && eaRpNamed(get(obligation).data);
+    }
+
+    function eaBridgeForParent(approvalId) {
+      return exists(eaRequest(approvalId)) && eaBridge(get(eaRequest(approvalId)).data);
+    }
+
+    /** Readers and writers of a request's steps, history and versions. */
+    function eaChildAccess(approvalId) {
+      return eaUser() || (hasPermissions() && eaBridgeForParent(approvalId));
+    }
+
+    /** The caller's own unsubmitted draft. */
+    function eaOwnDraft(approvalId) {
+      return exists(eaRequest(approvalId))
+        && get(eaRequest(approvalId)).data.get('status', '') == 'Draft'
+        && eaIsMe(get(eaRequest(approvalId)).data.get('requesterId', ''));
+    }
+
+    /**
+     * Deleting a request takes its whole record with it (`deleteEApprovalRequest`), child records
+     * first: Requests → Delete for any request, Delete Draft for your own draft.
+     */
+    function eaChildDelete(approvalId) {
+      return eaHolds('Requests', ['Delete'])
+        || (eaHolds('Requests', ['Delete Draft']) && eaOwnDraft(approvalId));
+    }
+
+    function eaUnchanged(fields) {
+      return !request.resource.data.diff(resource.data).affectedKeys().hasAny(fields);
+    }
+
+    match /eApprovalRequests/{approvalId} {
+      // Every register, inbox, report, the dashboards on / and /my-work (which also need View
+      // Module), and the escalation run list requests across the organisation.
+      allow read: if eaUser();
+      // The bridge opens its own request by id, and learns that a deleted one has gone.
+      allow get: if signedIn() && (resource == null || (hasPermissions() && eaBridge(resource.data)));
+
+      // A draft from the form, as its requester; or the bridge's mirror, raised for the obligation's
+      // owner and submitted in the same breath.
+      allow create: if request.resource.data.get('status', '') == 'Draft' && (
+        (eaHolds('Requests', ['Create']) && eaIsMe(request.resource.data.get('requesterId', '')))
+        || (hasPermissions() && eaBridge(request.resource.data)));
+
+      // Transitions are decided by step assignment, which the rules cannot see, so anyone in the
+      // module may move a submitted request. Who raised it and where it belongs never change, a
+      // draft is its requester's alone, and only the bridge repoints a mirror's source.
+      allow update: if eaUnchanged(['requesterId', 'organizationId'])
+        && (eaUser() || (hasPermissions() && eaBridge(resource.data)))
+        && (resource.data.get('status', '') != 'Draft'
+          || eaIsMe(resource.data.get('requesterId', ''))
+          || eaBridge(resource.data))
+        && (eaUnchanged(['source']) || eaBridge(resource.data));
+
+      allow delete: if eaHolds('Requests', ['Delete'])
+        || (eaHolds('Requests', ['Delete Draft']) && resource.data.get('status', '') == 'Draft'
+          && eaIsMe(resource.data.get('requesterId', '')));
+    }
+
+    /*
+     * The workflow. Steps are written by every transition and deleted by a recall, so anyone who may
+     * move a request may write them; they never move to another request.
+     */
+    match /eApprovalSteps/{stepId} {
+      allow read: if eaChildAccess(resource.data.approvalId);
+      allow create: if eaChildAccess(request.resource.data.approvalId);
+      allow update: if eaChildAccess(resource.data.approvalId) && eaUnchanged(['approvalId']);
+      allow delete: if eaUser();
+    }
+
+    /** Append-only: a transition adds entries and nothing edits one. */
+    match /eApprovalHistory/{entryId} {
+      allow read: if eaChildAccess(resource.data.approvalId);
+      allow create: if eaChildAccess(request.resource.data.approvalId);
+      allow delete: if eaChildDelete(resource.data.approvalId);
+    }
+
+    /** Superseded content, written by a material-change resubmission. */
+    match /eApprovalVersions/{versionId} {
+      allow read: if eaChildAccess(resource.data.approvalId);
+      allow create: if eaChildAccess(request.resource.data.approvalId);
+      allow delete: if eaChildDelete(resource.data.approvalId);
+    }
+
+    /** Comments Add to post, as yourself; only the author edits or retracts, and only the text. */
+    match /eApprovalComments/{commentId} {
+      allow read: if eaChildAccess(resource.data.approvalId);
+      allow create: if eaHolds('Comments', ['Add'])
+        && eaIsMe(request.resource.data.get('authorId', ''));
+      allow update: if eaIsMe(resource.data.get('authorId', ''))
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          'body', 'editHistory', 'retracted', 'retractedReason', 'updatedAt', 'updatedBy', 'updatedByName'
+        ]);
+      allow delete: if eaChildDelete(resource.data.approvalId);
+    }
+
+    /*
+     * Files go up with the create form and with every action dialog, not only from the attachment
+     * list, so anyone in the module may add one, as themselves. Never replaced; removed only from
+     * the requester's own draft, or with the request.
+     */
+    match /eApprovalAttachments/{attachmentId} {
+      allow read: if eaChildAccess(resource.data.approvalId);
+      allow create: if eaUser() && eaIsMe(request.resource.data.get('uploadedById', ''));
+      allow delete: if eaChildDelete(resource.data.approvalId) || eaOwnDraft(resource.data.approvalId);
+    }
+
+    /** One saved signature per person, keyed by their `users` id: their own, and nobody else's. */
+    match /eApprovalSignatures/{userId} {
+      allow get, create, update: if eaUser() && eaIsMe(userId);
+    }
+
+    /*
+     * Reference numbers, allocated in a transaction on submission — by the requester, or by the
+     * bridge before its mirror exists, so by whoever is signed in. Nothing secret; the sequence only
+     * moves forward, which is what keeps two approvals from sharing a number.
+     */
+    match /eApprovalCounters/{counterId} {
+      allow get: if signedIn();
+      allow create: if signedIn() && request.resource.data.get('nextSequence', 0) is int
+        && request.resource.data.get('nextSequence', 0) > 1;
+      allow update: if signedIn() && request.resource.data.get('nextSequence', 0) is int
+        && request.resource.data.get('nextSequence', 0) > resource.data.get('nextSequence', 1);
+    }
+
+    /*
+     * Configuration. Settings, routing and delegations are read by the engine for anyone who acts
+     * (the bridge included) and by the work dashboard for every signed-in user; each is written
+     * from its own settings page (`SettingsSection`: Edit or Add on `Settings.<page>`).
+     */
+    match /eApprovalSettings/{organizationId} {
+      allow get: if signedIn();
+      allow write: if eaHolds('Settings.Policies', ['Edit', 'Add']);
+    }
+
+    match /eApprovalDepartmentRouting/{departmentId} {
+      allow read: if signedIn();
+      allow write: if eaHolds('Settings.Department Routing', ['Edit', 'Add']);
+    }
+
+    match /eApprovalProjectRouting/{projectId} {
+      allow read: if signedIn();
+      allow write: if eaHolds('Settings.Project Routing', ['Edit', 'Add']);
+    }
+
+    /** Recurring Payments' bridge settings page lists the approval types too. */
+    match /eApprovalTypes/{typeId} {
+      allow read: if eaUser() || eaRpModuleUser();
+      allow write: if eaHolds('Settings.Approval Types', ['Edit', 'Add', 'Delete']);
+    }
+
+    match /eApprovalTemplates/{templateId} {
+      allow read: if eaUser() || eaRpModuleUser();
+      allow write: if eaHolds('Settings.Workflow Templates', ['Edit', 'Add', 'Delete']);
+    }
+
+    match /eApprovalRules/{ruleId} {
+      allow read: if eaUser() || eaRpModuleUser();
+      allow write: if eaHolds('Settings.Approval Matrix', ['Edit', 'Add', 'Delete']);
+    }
+
+    /*
+     * Your own cover with Delegations Add or Edit; somebody else's needs Manage Others as well
+     * (`canManageEApprovalDelegationFor`), or anyone could route a colleague's approvals to themselves.
+     */
+    function eaMayDelegateFor(fromUserId) {
+      return eaIsMe(fromUserId) || eaHolds('Delegations', ['Manage Others']);
+    }
+
+    match /eApprovalDelegations/{delegationId} {
+      allow read: if signedIn();
+      allow create: if eaHolds('Delegations', ['Add', 'Edit'])
+        && eaMayDelegateFor(request.resource.data.get('fromUserId', ''))
+        && request.resource.data.get('toUserId', '') != request.resource.data.get('fromUserId', '');
+      allow update: if eaHolds('Delegations', ['Add', 'Edit'])
+        && eaMayDelegateFor(resource.data.get('fromUserId', ''))
+        && eaMayDelegateFor(request.resource.data.get('fromUserId', ''))
+        && request.resource.data.get('toUserId', '') != request.resource.data.get('fromUserId', '');
+      allow delete: if eaHolds('Delegations', ['Add', 'Edit', 'Delete'])
+        && eaMayDelegateFor(resource.data.get('fromUserId', ''));
+    }
+
+    /* ── Recurring Payments (src/lib/permissions.ts, "Recurring Payments") ───────────────────────
+     *
+     * Three kinds of people work an obligation, and only the first holds a module permission:
+     *
+     *   - module users: any grant on a Recurring Payments page. They read the whole register, as
+     *     every page in the module does (`where organizationId == org`), and write by the action
+     *     their screen checks.
+     *   - the people the obligation names: its current step `assignees`, the master's owner,
+     *     backup, verifier, approver and processor, and the approvers of its approval rule. Being
+     *     named is the authority to act (see use-assigned-workflow.ts), so they read their own
+     *     obligations — by a query on the naming field — and the current assignees work the step.
+     *   - E-Approval approvers acting on a request that mirrors an obligation: the bridge
+     *     (src/lib/recurring-payments-e-approval-service.ts) moves the payment as them, with no
+     *     Recurring Payments permission at all.
+     *
+     * Names are `users` document ids (`userPermissions.userDocId`), never the auth uid. Budget: the
+     * permissions document (1), the parent obligation for a subcollection (1), the linked
+     * E-Approval request (1) — 3 of 10 per request; a workflow transaction adds 2 per document.
+     */
+    function rpModuleUser() {
+      return holdsAnyOf([
+        'Recurring Payments', 'Recurring Payments.Dashboard', 'Recurring Payments.Payments',
+        'Recurring Payments.Approvals', 'Recurring Payments.Payment Processing',
+        'Recurring Payments.Recurring Masters', 'Recurring Payments.Vendors',
+        'Recurring Payments.Categories', 'Recurring Payments.Reports', 'Recurring Payments.Settings'
+      ]);
+    }
+
+    function rpHolds(page, actions) {
+      return hasPermissions()
+        && get(permissionsPath()).data.p.get('Recurring Payments.' + page, []).hasAny(actions);
+    }
+
+    /** The caller's `users` id; '' when unknown, which then matches no one (blank fields are ''). */
+    function rpMe() {
+      return hasPermissions() ? get(permissionsPath()).data.get('userDocId', '') : '';
+    }
+
+    /** Named on the obligation anywhere a workflow step can resolve its assignees from. */
+    function rpNamed(data) {
+      let me = rpMe();
+      return me != '' && (
+        data.get('assignees', []).hasAny([me])
+        || data.get('assignedTo', '') == me
+        || data.get('backupAssignedTo', '') == me
+        || data.get('verifierId', '') == me
+        || data.get('approverId', '') == me
+        || data.get('accountsProcessorId', '') == me
+        || data.get('approvalLevels', []).hasAny([me])
+        || data.get('approvalCompletedBy', []).hasAny([me]));
+    }
+
+    /** On the obligation's current step: the one who may work it. */
+    function rpAssignee(data) {
+      let me = rpMe();
+      return me != '' && data.get('assignees', []).hasAny([me]);
+    }
+
+    function rpObligation(paymentId) {
+      return /databases/$(database)/documents/paymentObligations/$(paymentId);
+    }
+
+    /** Readers of an obligation's transactions, trail and comments. */
+    function rpParentReader(paymentId) {
+      return rpModuleUser()
+        || (hasPermissions() && exists(rpObligation(paymentId)) && rpNamed(get(rpObligation(paymentId)).data));
+    }
+
+    /** May open E-Approval at all (useEApprovalPermissions().canViewModule). */
+    function rpEApprovalUser() {
+      return hasPermissions() && (
+        get(permissionsPath()).data.p.get('E-Approval', []).hasAny(['View Module'])
+        || get(permissionsPath()).data.p.get('E-Approval.Dashboard', []).hasAny(['View'])
+        || get(permissionsPath()).data.p.get('E-Approval.Inbox', []).hasAny(['View']));
+    }
+
+    /**
+     * Mirrored by a live E-Approval request that points back at this very obligation. The request
+     * is the E-Approval module's record, so an obligation cannot vouch for itself.
+     */
+    function rpMirrored(paymentId, data) {
+      let mirror = data.get('eApproval', {});
+      let requestId = mirror.get('requestId', '');
+      let request = /databases/$(database)/documents/eApprovalRequests/$(requestId);
+      return requestId is string && requestId != '' && mirror.get('detachedAt', null) == null
+        && exists(request)
+        && get(request).data.get('source', {}).get('module', '') == 'Recurring Payments'
+        && get(request).data.get('source', {}).get('recordId', '') == paymentId;
+    }
+
+    /* The changed fields are worked out once per write (`changed`): a diff walks the document. */
+
+    /** What the bridge records about the mirror (`stampMirror`). */
+    function rpMirrorStampOnly(changed) {
+      return changed.hasOnly(['eApproval', 'updatedAt']);
+    }
+
+    /** What the bridge writes when it moves the payment one stage (`advancePayment`). */
+    function rpMirrorAdvanceOnly(changed) {
+      return changed.hasOnly([
+        'workflowHistory', 'workflowStatus', 'status', 'stage', 'currentStepId', 'assignees',
+        'currentApprovalLevel', 'approvalCompletedBy', 'stepEnteredAt', 'workflowDeadline', 'updatedAt'
+      ]) && request.resource.data.get('workflowHistory', []).size()
+        == resource.data.get('workflowHistory', []).size() + 1;
+    }
+
+    function rpObligationUpdate(paymentId, changed) {
+      return !changed.hasAny(['organizationId', 'masterId', 'cycleKey', 'sourceType', 'createdAt']) && (
+        // Hiding (`deleted`) has its own permission, whatever else the write carries.
+        changed.hasAny(['deleted', 'deletedAt', 'deletedBy'])
+          ? rpHolds('Payments', ['Delete'])
+          : (rpPaymentEditor()
+            // The step's own assignee working it (professional-workflow-stage.tsx).
+            || rpAssignee(resource.data)
+            // The bridge keeping the mirror current, from any screen that shows the payment.
+            || ((rpModuleUser() || rpNamed(resource.data)) && (rpMirrorStampOnly(changed)
+              || (rpMirrorAdvanceOnly(changed) && rpMirrored(paymentId, resource.data))))
+            // The bridge acting for an E-Approval approver.
+            || (rpEApprovalUser() && (rpMirrorStampOnly(changed) || rpMirrorAdvanceOnly(changed))
+              && rpMirrored(paymentId, resource.data))));
+    }
+
+    /** Every action a payment screen gates a write to the obligation on. */
+    function rpPaymentEditor() {
+      return rpHolds('Payments', [
+          'Edit', 'Cancel', 'Upload Bill', 'Verify', 'Submit', 'Reopen', 'Reassign', 'Bulk Assign',
+          'Approve', 'Record Payment'
+        ])
+        || rpHolds('Payment Processing', [
+          'Record Payment', 'Edit Transaction', 'Upload Receipt', 'Close Payment', 'Delete Transaction'
+        ])
+        || rpHolds('Approvals', ['Approve', 'Reject', 'Return', 'Delegate', 'Bulk Approve']);
+    }
+
+    function rpRecorder() {
+      return rpHolds('Payments', ['Record Payment']) || rpHolds('Payment Processing', ['Record Payment']);
+    }
+
+    match /paymentObligations/{paymentId} {
+      // A list is allowed when every result is provably the caller's: My Work's
+      // `where assignedTo|verifierId|approverId|accountsProcessorId == me`, and the module's
+      // `where assignees|approvalLevels|approvalCompletedBy array-contains me`.
+      allow read: if rpModuleUser() || rpNamed(resource.data);
+      // The bridge opens the payment by id for an approver who holds nothing here.
+      allow get: if rpEApprovalUser() && rpMirrored(paymentId, resource.data);
+
+      // "Generate now" / "Generate all" (Payments Add), the master form's "Save and generate"
+      // (Recurring Masters Add or Edit), and a manual payment (Payments Add).
+      allow create: if (rpHolds('Payments', ['Add']) || rpHolds('Recurring Masters', ['Add', 'Edit']))
+        && request.resource.data.get('organizationId', '') is string
+        && request.resource.data.get('organizationId', '') != '';
+
+      allow update: if rpObligationUpdate(paymentId, request.resource.data.diff(resource.data).affectedKeys());
+      // Obligations are soft-deleted (`deleted`); their history stays.
+    }
+
+    match /paymentObligations/{paymentId}/transactions/{transactionId} {
+      allow read: if rpParentReader(paymentId);
+      // Recorded from the register (Record Payment) or by the Payment Processing step's assignee,
+      // in the same transaction that moves the payment, so `get` is the payment before it moved.
+      allow create: if request.resource.data.get('paymentId', '') == paymentId && (
+        rpRecorder()
+        || (exists(rpObligation(paymentId)) && rpAssignee(get(rpObligation(paymentId)).data)));
+      // Editing an instalment, or attaching its receipt (payment-detail-page.tsx).
+      allow update: if request.resource.data.get('paymentId', '') == resource.data.get('paymentId', '')
+        && (rpHolds('Payment Processing', ['Edit Transaction', 'Upload Receipt'])
+          || rpHolds('Payments', ['Record Payment']));
+    }
+
+    /* Append-only. Written beside every change to the payment, by whoever was allowed to make it. */
+    match /paymentObligations/{paymentId}/auditLogs/{entryId} {
+      allow read: if rpParentReader(paymentId);
+      allow create: if request.resource.data.get('paymentId', '') == paymentId && (
+        rpParentReader(paymentId)
+        || (rpEApprovalUser() && exists(rpObligation(paymentId))
+          && rpMirrored(paymentId, get(rpObligation(paymentId)).data)));
+    }
+
+    match /paymentObligations/{paymentId}/comments/{commentId} {
+      allow read: if rpParentReader(paymentId);
+      allow create: if rpHolds('Payments', ['Add Comment'])
+        && request.resource.data.get('paymentId', '') == paymentId;
+    }
+
+    /*
+     * The register's searches across every obligation's instalments (payment-mode-report.tsx). Any
+     * other `transactions` group would be matched too; there is none in the code.
+     */
+    match /{path=**}/transactions/{transactionId} {
+      allow read: if rpModuleUser();
+    }
+
+    /*
+     * Per-organization settings and field control. Every step form and the E-Approval bridge read
+     * them, including for people who hold nothing in the module; nothing in them is sensitive.
+     */
+    match /recurringPaymentSettings/{settingsId} {
+      allow read: if signedIn();
+      allow create, update: if settingsId.matches('fieldControl_.*')
+        ? rpHolds('Settings', ['Manage Field Control'])
+        : rpHolds('Settings', ['Edit']);
+    }
+
+    match /recurringPaymentApprovalRules/{ruleId} {
+      allow read: if rpModuleUser();
+      allow create, update: if rpHolds('Settings', ['Edit', 'Manage Approval Rules']);
+    }
+
+    match /recurringPaymentCategories/{categoryId} {
+      allow read: if rpModuleUser();
+      allow create, update: if rpHolds('Categories', ['Add', 'Edit']) || rpHolds('Settings', ['Manage Categories']);
+    }
+
+    /* Letter of Credit's request form lists them as beneficiaries (new-lc-request-form.tsx). */
+    match /recurringPaymentVendors/{vendorId} {
+      allow read: if rpModuleUser()
+        || (hasPermissions()
+          && get(permissionsPath()).data.p.get('Letter of Credit Management.LC Requests', []).hasAny(['Add', 'Edit']));
+      allow create, update: if rpHolds('Vendors', ['Add', 'Edit']);
+    }
+    match /recurringPaymentVendors/{vendorId}/auditLogs/{entryId} {
+      allow read: if rpModuleUser();
+      allow create: if rpHolds('Vendors', ['Add', 'Edit']);
+    }
+
+    /* Masters are archived, never deleted. */
+    match /recurringPaymentMasters/{masterId} {
+      allow read: if rpModuleUser();
+      allow create, update: if rpHolds('Recurring Masters', ['Add', 'Edit', 'Delete', 'Import', 'Activate', 'Pause']);
+    }
+    match /recurringPaymentMasters/{masterId}/auditLogs/{entryId} {
+      allow read: if rpModuleUser();
+      allow create: if rpHolds('Recurring Masters', ['Add', 'Edit', 'Delete', 'Import', 'Activate', 'Pause']);
+    }
+
+    /* Written by the scheduler only (api/recurring-payments/generate). */
+    match /recurringPaymentAutomationLogs/{entryId} {
+      allow read: if rpModuleUser();
+    }
+    match /recurringPaymentNotificationQueue/{entryId} {
+      allow read: if rpModuleUser();
+    }
+    /* Declared in RP_COLLECTIONS and used by nothing. */
+    match /recurringPaymentNotificationRules/{ruleId} {
+      allow read: if rpModuleUser();
+    }
+
+    /* ── Site Account Statement (src/lib/permissions.ts, "Site Account Statement") ────────────────
+     *
+     * A user is attached to a project when its siteAccountProjects document names their `users`
+     * document id as assignedPersonId or altUserId (records transactions) or viewerId (reads only).
+     * `Site Account Statement.All Projects` View lifts the project scope, as it does on every page;
+     * no other grant does — the pages show a View Expenses or View Budget holder only the projects
+     * they are attached to, so the rules do the same.
+     *
+     * Get budget: permissionsPath() costs 1, each distinct project 1. A list query filtered with
+     * `projectId in [...]` is checked once per value, so a chunk may hold at most 9 projects
+     * (SAS_IN_CHUNK, src/lib/site-account-statement-scope.ts); 10 is refused. Writes read at most
+     * the old and new project: 3 calls.
+     *
+     * Month closure and the date window are still enforced only in the browser. The closure
+     * calendar is resolved from manual entries, timed relocks and organisation/project auto-close
+     * rules against the viewer's local day (src/lib/site-account-statement-month-closure.ts);
+     * mirroring that here, in UTC, risks refusing an entry the screen allows.
+     */
+    function sasPage(page) {
+      return 'Site Account Statement.' + page;
+    }
+
+    function sasHoldsAny(page, actions) {
+      return hasPermissions() && get(permissionsPath()).data.p.get(sasPage(page), []).hasAny(actions);
+    }
+
+    function sasAllProjects() {
+      return sasHoldsAny('All Projects', ['View']);
+    }
+
+    function sasProjectPath(projectId) {
+      return /databases/$(database)/documents/siteAccountProjects/$(projectId);
+    }
+
+    /** The project document, when the id names one; guarded so a stray id refuses, not errors. */
+    function sasProjectExists(projectId) {
+      return projectId is string && projectId != '' && hasPermissions() && exists(sasProjectPath(projectId));
+    }
+
+    function sasMe() {
+      return get(permissionsPath()).data.get('userDocId', '');
+    }
+
+    /** Primary or alt user on the project: may record its transactions. */
+    function sasRecorder(projectId) {
+      return sasProjectExists(projectId) && sasMe() != ''
+        && [get(sasProjectPath(projectId)).data.get('assignedPersonId', ''),
+            get(sasProjectPath(projectId)).data.get('altUserId', '')].hasAny([sasMe()]);
+    }
+
+    /** Attached in any role, the viewer included: may read the project's figures. */
+    function sasMember(projectId) {
+      return sasProjectExists(projectId) && sasMe() != ''
+        && [get(sasProjectPath(projectId)).data.get('assignedPersonId', ''),
+            get(sasProjectPath(projectId)).data.get('altUserId', ''),
+            get(sasProjectPath(projectId)).data.get('viewerId', '')].hasAny([sasMe()]);
+    }
+
+    function sasSees(projectId) {
+      return sasAllProjects() || sasMember(projectId);
+    }
+
+    /*
+     * Month Closure counts every project's expenses, receipts and pending allocations for the year
+     * it shows, for anyone the screen admits (month-closure-settings.tsx canView).
+     */
+    function sasMonthClosureReader() {
+      return sasHoldsAny('Month Closure', ['View', 'Close', 'Reopen']) || sasHoldsAny('Project Settings', ['Edit']);
+    }
+
+    /** Renaming a category rewrites it on every project's expenses and category budgets. */
+    function sasCategoryRename(fields) {
+      return sasHoldsAny('Expense Categories', ['Edit'])
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(fields);
+    }
+
+    /** Expenses and Payments: what canWriteToProject allows on those pages. */
+    function sasLedgerWriter(page, projectId) {
+      return sasAllProjects() || sasHoldsAny(page, ['Add', 'Edit']) || sasRecorder(projectId);
+    }
+
+    function sasLedgerUpdate(page) {
+      return sasLedgerWriter(page, resource.data.get('projectId', ''))
+        && sasLedgerWriter(page, request.resource.data.get('projectId', ''));
+    }
+
+    /** Readable by any signed-in user: it carries assignments, no figures, and every page reads it whole. */
+    match /siteAccountProjects/{projectId} {
+      allow read: if signedIn();
+      allow create: if sasHoldsAny('Project Settings', ['Add']);
+      allow update: if sasHoldsAny('Project Settings', ['Edit']);
+      allow delete: if sasHoldsAny('Project Settings', ['Delete']);
+    }
+
+    match /siteAccountCategories/{categoryId} {
+      allow read: if signedIn();
+      allow create: if sasHoldsAny('Expense Categories', ['Add']);
+      allow update: if sasHoldsAny('Expense Categories', ['Edit']);
+      allow delete: if sasHoldsAny('Expense Categories', ['Delete']);
+    }
+
+    match /siteAccountExpenses/{expenseId} {
+      allow read: if sasAllProjects() || sasMonthClosureReader()
+        || sasHoldsAny('Expense Categories', ['Edit', 'Delete'])
+        || sasMember(resource.data.projectId);
+      allow create: if sasLedgerWriter('Expenses', request.resource.data.get('projectId', ''));
+      allow update: if sasCategoryRename(['expenseCategory', 'expenseSubCategory']) || sasLedgerUpdate('Expenses');
+      allow delete: if sasHoldsAny('Expenses', ['Delete']) || sasLedgerWriter('Expenses', resource.data.get('projectId', ''));
+    }
+
+    match /siteAccountPayments/{paymentId} {
+      allow read: if sasAllProjects() || sasMonthClosureReader() || sasMember(resource.data.projectId);
+      allow create: if sasLedgerWriter('Payments', request.resource.data.get('projectId', ''));
+      allow update: if sasLedgerUpdate('Payments');
+      allow delete: if sasHoldsAny('Payments', ['Delete']) || sasLedgerWriter('Payments', resource.data.get('projectId', ''));
+    }
+
+    /* ── Budgets: Budget is the coarse grant, each level has its own (budget/page.tsx typePerm) ─ */
+
+    function sasBudgetLevel(budgetType) {
+      return budgetType == 'total' ? 'Total Budget' : (budgetType == 'fy' ? 'FY Budget' : 'Monthly Budget');
+    }
+
+    /** Add or Edit on Budget or the given level, or primary/alt on the project. */
+    function sasBudgetWriter(level, projectId) {
+      return sasHoldsAny('Budget', ['Add', 'Edit']) || sasHoldsAny(level, ['Add', 'Edit']) || sasRecorder(projectId);
+    }
+
+    function sasBudgetDeleter(level) {
+      return sasHoldsAny('Budget', ['Delete']) || sasHoldsAny(level, ['Delete']);
+    }
+
+    match /siteAccountBudgets/{budgetId} {
+      allow read: if sasSees(resource.data.projectId);
+      allow create: if sasBudgetWriter(sasBudgetLevel(request.resource.data.get('budgetType', '')),
+        request.resource.data.get('projectId', ''));
+      allow update: if sasBudgetWriter(sasBudgetLevel(resource.data.get('budgetType', '')), resource.data.get('projectId', ''))
+        && sasBudgetWriter(sasBudgetLevel(request.resource.data.get('budgetType', '')), request.resource.data.get('projectId', ''));
+      allow delete: if sasBudgetDeleter(sasBudgetLevel(resource.data.get('budgetType', '')));
+    }
+
+    /** budget/category/page.tsx removes a row under Edit, so Edit deletes as well. */
+    match /siteAccountCategoryBudgets/{budgetId} {
+      allow read: if sasAllProjects() || sasHoldsAny('Expense Categories', ['Edit', 'Delete'])
+        || sasMember(resource.data.projectId);
+      allow create: if sasBudgetWriter('Category Budget', request.resource.data.get('projectId', ''));
+      allow update: if sasCategoryRename(['categoryName'])
+        || (sasBudgetWriter('Category Budget', resource.data.get('projectId', ''))
+          && sasBudgetWriter('Category Budget', request.resource.data.get('projectId', '')));
+      allow delete: if sasBudgetDeleter('Category Budget') || sasHoldsAny('Budget', ['Edit'])
+        || sasHoldsAny('Category Budget', ['Edit']);
+    }
+
+    /** The signed approval copy behind a month's budget: the Monthly Budget level's. */
+    match /siteAccountBudgetApprovals/{approvalId} {
+      allow read: if sasSees(resource.data.projectId);
+      allow create: if sasBudgetWriter('Monthly Budget', request.resource.data.get('projectId', ''));
+      allow update: if sasBudgetWriter('Monthly Budget', resource.data.get('projectId', ''))
+        && sasBudgetWriter('Monthly Budget', request.resource.data.get('projectId', ''));
+      allow delete: if sasBudgetDeleter('Monthly Budget');
+    }
+
+    /*
+     * Instalments of a month's budget. Recording one and verifying it are separate on purpose
+     * (budget/page.tsx allocPerm): a project assignment records, only a role verifies. A new row is
+     * always pending, and a verified one is never deleted — it is sent back for review first.
+     */
+    function sasAllocationVerifier() {
+      return sasHoldsAny('Budget Allocation', ['Verify']) || sasHoldsAny('Budget', ['Edit'])
+        || sasHoldsAny('Monthly Budget', ['Edit']);
+    }
+
+    match /siteAccountBudgetAllocations/{allocationId} {
+      allow read: if sasAllProjects() || sasMonthClosureReader() || sasMember(resource.data.projectId);
+      allow create: if request.resource.data.get('status', '') == 'pending'
+        && (sasHoldsAny('Budget Allocation', ['Add']) || sasAllocationVerifier()
+          || sasRecorder(request.resource.data.get('projectId', '')));
+      allow update: if sasAllocationVerifier();
+      allow delete: if resource.data.get('status', '') != 'approved'
+        && (sasHoldsAny('Budget Allocation', ['Delete']) || sasHoldsAny('Budget', ['Delete']));
+    }
+
+    match /siteAccountTenderBudgets/{tenderBudgetId} {
+      allow read: if sasSees(resource.data.projectId);
+      allow create: if sasHoldsAny('Tender Budget', ['Add', 'Edit']) || sasRecorder(request.resource.data.get('projectId', ''));
+      allow update: if sasHoldsAny('Tender Budget', ['Add', 'Edit'])
+        || (sasRecorder(resource.data.get('projectId', '')) && sasRecorder(request.resource.data.get('projectId', '')));
+      allow delete: if sasHoldsAny('Tender Budget', ['Delete']);
+    }
+
+    /*
+     * Alert thresholds and recipients, keyed by project id or `_module_wide_`. Every expense writer
+     * reads both documents after saving (src/lib/sas-budget-alerts.ts); the list is the Budget
+     * Alerts screen's.
+     */
+    match /siteAccountBudgetAlertConfigs/{configId} {
+      allow get: if signedIn();
+      allow list: if sasHoldsAny('Budget Alerts', ['View', 'Edit']) || sasHoldsAny('Project Settings', ['Edit']);
+      allow write: if sasHoldsAny('Budget Alerts', ['Edit']) || sasHoldsAny('Project Settings', ['Edit']);
+    }
+
+    /*
+     * Which alert thresholds have already been sent, written in a transaction by whoever saved the
+     * expense and cleared by whoever changed a budget. Document ids start with the project id
+     * (`<projectId>_<period…>`; auto-ids hold no underscore), which is what a get of a document
+     * that does not exist yet can be checked against.
+     */
+    function sasAlertActor(projectId) {
+      return sasAllProjects()
+        || holdsAnyOf([
+          sasPage('Expenses'), sasPage('Payments'), sasPage('Budget'), sasPage('Total Budget'),
+          sasPage('FY Budget'), sasPage('Monthly Budget'), sasPage('Category Budget'),
+          sasPage('Budget Allocation')
+        ])
+        || sasMember(projectId);
+    }
+
+    match /siteAccountBudgetAlertState/{stateId} {
+      allow get, write: if sasAlertActor(stateId.split('_')[0]);
+      allow list: if sasAlertActor(resource.data.projectId);
+    }
+
+    /** Field, sort and date controls and the closure calendar: read on every page, set in Settings. */
+    match /siteAccountSettings/{settingId} {
+      allow read: if signedIn();
+      allow write: if ((settingId == 'fieldControl' || settingId == 'sortControl')
+          && sasHoldsAny('Field Control', ['Edit']))
+        || (settingId == 'dateControl'
+          && (sasHoldsAny('Date Control', ['Edit']) || sasHoldsAny('Field Control', ['Edit'])))
+        || (settingId == 'monthClosure'
+          && (sasHoldsAny('Month Closure', ['Close', 'Reopen']) || sasHoldsAny('Project Settings', ['Edit'])));
+    }
+
+    /* ── Site Fund Request (src/lib/site-fund-request.ts) ───────────────────────────────────────
+     *
+     * Project access rows are keyed by auto-ids and name the project by `centralProjectId`, so a
+     * rule cannot look a request's project up, and membership cannot be checked here. Requests
+     * therefore stay readable to any signed-in user (as the screens, which filter in the browser,
+     * need); writes are narrowed to what the screens do.
+     */
+    match /siteFundRequestProjects/{rowId} {
+      allow read: if signedIn();
+      allow write: if holds('Site Fund Request.Settings', 'Edit');
+    }
+
+    match /siteFundRequests/{requestId} {
+      allow read: if signedIn();
+      /** Raised as yourself, at the start of the workflow. */
+      allow create: if signedIn() && request.resource.data.get('status', '') == 'Pending'
+        && (request.resource.data.get('raisedById', '') == get(permissionsPath()).data.get('userDocId', '')
+          || holds('Site Fund Request.Requests', 'Add') || holds('Site Fund Request', 'Create Requisition'));
+      /*
+       * Workflow actions belong to the current step's assignees (ViewRequestDialog, stage page).
+       * Before anyone has received it, the request's own details may still be corrected
+       * (AllRequestsTab handleEditRequest, which has no permission check of its own).
+       */
+      allow update: if hasPermissions() && (
+        resource.data.get('assignees', []).hasAny([get(permissionsPath()).data.get('userDocId', '')])
+        || (resource.data.get('stage', '') == 'Request Receiving'
+          && request.resource.data.diff(resource.data).affectedKeys()
+            .hasOnly(['projectId', 'departmentId', 'amount', 'partyName', 'description', 'date', 'attachments'])));
+    }
 
     /* ── TRANSITIONAL CATCH-ALL ─────────────────────────────────────────────────────────────────
      *
@@ -136,8 +1016,9 @@ service cloud.firestore {
      * closed collection's subcollections are closed with it.
      */
     match /{collection}/{document=**} {
-      allow read: if signedIn() && !serverOnly(collection);
-      allow write: if signedIn() && !serverOnly(collection) && !browserReadOnly(collection);
+      allow read: if signedIn() && !serverOnly(collection) && !ownRules(collection);
+      allow write: if signedIn() && !serverOnly(collection) && !browserReadOnly(collection)
+        && !ownRules(collection);
     }
   }
 }

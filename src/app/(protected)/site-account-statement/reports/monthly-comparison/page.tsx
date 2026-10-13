@@ -7,7 +7,7 @@ import {
   formatINR, SAS_COLLECTIONS,
   type SASBudget, type SASExpense, type SASPayment, type SASProject,
 } from '@/lib/site-account-statement';
-import { loadScopedLedger } from '@/lib/site-account-statement-queries';
+import { fetchProjectScoped, ledgerScopeFor, loadScopedLedger } from '@/lib/site-account-statement-queries';
 import { useAuthorization } from '@/hooks/useAuthorization';
 import { useAuth } from '@/components/auth/AuthProvider';
 import { Button } from '@/components/ui/button';
@@ -126,23 +126,26 @@ export default function MonthlyComparisonPage() {
         // Projects first, so the ledger reads below can be bounded to the ones this user may see.
         // The date window was already server-side here; the project scope was not, so a user
         // assigned to one project still received every other project's rows for the window.
-        const [pSnap, budSnap] = await Promise.all([
-          getDocs(query(collection(db, SAS_COLLECTIONS.projects), orderBy('projectName'))),
-          getDocs(query(
-            collection(db, SAS_COLLECTIONS.budgets),
-            where('period', '>=', startYM),
-            where('period', '<=', currYM)
-          )),
-        ]);
+        const pSnap = await getDocs(query(collection(db, SAS_COLLECTIONS.projects), orderBy('projectName')));
+        if (!active) return;
+        const allProjects = pSnap.docs.map(d => ({ id: d.id, ...d.data() } as SASProject));
+
+        // Budgets carry figures, which the rules release project by project, so the read is
+        // scoped like the ledger. The period window stays server-side only for an All-Projects
+        // read: beside `projectId in` it would need a composite index, so a scoped read applies
+        // it to the rows instead.
+        const scope = ledgerScopeFor(allProjects, user?.id, canViewAll);
+        const budgetRows = await fetchProjectScoped<SASBudget>(
+          SAS_COLLECTIONS.budgets,
+          scope,
+          scope === null ? [where('period', '>=', startYM), where('period', '<=', currYM)] : [],
+        );
         if (!active) return;
 
-        const allProjects = pSnap.docs.map(d => ({ id: d.id, ...d.data() } as SASProject));
         setProjects(allProjects.filter(p => p.enabledForSiteAccount));
-        setBudgets(
-          budSnap.docs
-            .map(d => ({ id: d.id, ...d.data() } as SASBudget))
-            .filter(b => b.budgetType === 'monthly')
-        );
+        setBudgets(budgetRows.filter(b =>
+          b.budgetType === 'monthly' && (b.period ?? '') >= startYM && (b.period ?? '') <= currYM
+        ));
 
         const ledger = await loadScopedLedger({
           projects: allProjects,

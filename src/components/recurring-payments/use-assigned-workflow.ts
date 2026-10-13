@@ -26,12 +26,15 @@ export function useAssignedWorkflowSteps() {
 
   useEffect(() => {
     if (!userId) return;
-    // Matches every other page in the module: subscribe on organizationId and filter the
-    // assignee locally, so this needs no extra composite index to be deployed.
+    // On the assignee, not the organization: this runs for everyone who opens the module,
+    // including people whose only access is being assigned, and the security rules let those
+    // read an obligation only when it names them — a query on organizationId would be refused
+    // for them outright. A single-field array-contains needs no composite index; the
+    // organization is filtered locally instead.
     return onSnapshot(
       query(
         collection(db, RP_COLLECTIONS.payments),
-        where("organizationId", "==", organizationId),
+        where("assignees", "array-contains", userId),
       ),
       (snapshot) => {
         setResult({
@@ -46,6 +49,7 @@ export function useAssignedWorkflowSteps() {
                 // sidebar (and, through `hasAssignedWork`, could be the only thing granting a user
                 // the module at all) while the step page itself showed an empty queue.
                 payment.deleted !== true &&
+                payment.organizationId === organizationId &&
                 !!payment.currentStepId &&
                 (payment.assignees || []).includes(userId) &&
                 !["Completed", "Rejected"].includes(payment.workflowStatus || ""),

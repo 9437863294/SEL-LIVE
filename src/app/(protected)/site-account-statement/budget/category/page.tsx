@@ -13,7 +13,7 @@ import {
   type SASExpense,
   type SASProject,
 } from '@/lib/site-account-statement';
-import { loadScopedLedger } from '@/lib/site-account-statement-queries';
+import { fetchProjectScoped, ledgerScopeFor, loadScopedLedger } from '@/lib/site-account-statement-queries';
 import { useFieldControl, validateFieldControlRequirements } from '@/components/site-account-statement/use-field-control';
 import { ControlledField } from '@/components/site-account-statement/controlled-field';
 import { useAuthorization } from '@/hooks/useAuthorization';
@@ -106,12 +106,16 @@ export default function CategoryBudgetPage() {
   async function loadAll() {
     setLoading(true);
     try {
-      const [pSnap, cSnap, cbSnap] = await Promise.all([
+      const [pSnap, cSnap] = await Promise.all([
         getDocs(query(collection(db, SAS_COLLECTIONS.projects))),
         getDocs(query(collection(db, SAS_COLLECTIONS.categories))),
-        getDocs(collection(db, SAS_COLLECTIONS.categoryBudgets)),
       ]);
       const everyProject = pSnap.docs.map(d => ({ id: d.id, ...d.data() } as SASProject));
+      // Category budgets carry figures, which the rules release project by project: read by scope.
+      const catBudgetRows = await fetchProjectScoped<SASCategoryBudget>(
+        SAS_COLLECTIONS.categoryBudgets,
+        ledgerScopeFor(everyProject, user?.id, canViewAll),
+      );
       const allProjects = everyProject
         .filter(p => p.enabledForSiteAccount && p.status === 'Active')
         .sort((a, b) => a.projectName.localeCompare(b.projectName));
@@ -122,7 +126,7 @@ export default function CategoryBudgetPage() {
           .filter(c => c.isActive !== false)
           .sort((a, b) => a.name.localeCompare(b.name))
       );
-      setCatBudgets(cbSnap.docs.map(d => ({ id: d.id, ...d.data() } as SASCategoryBudget)));
+      setCatBudgets(catBudgetRows);
       // Scoped to the projects this user may see, on the server — this page used to pull the
       // organisation's entire expense collection and filter it in the browser.
       const ledger = await loadScopedLedger({ projects: everyProject, userId: user?.id, canViewAll });

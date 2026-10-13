@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { collection, getDocs, orderBy, query } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import { formatINR, SAS_COLLECTIONS, type SASBudget, type SASExpense, type SASPayment, type SASProject } from '@/lib/site-account-statement';
-import { loadScopedLedger } from '@/lib/site-account-statement-queries';
+import { fetchProjectScoped, ledgerScopeFor, loadScopedLedger } from '@/lib/site-account-statement-queries';
 import { useAuthorization } from '@/hooks/useAuthorization';
 import { useSortControl } from '@/components/site-account-statement/use-sort-control';
 import { SortControl } from '@/components/site-account-statement/sort-control';
@@ -88,18 +88,20 @@ export default function ProjectSummaryPage() {
   async function loadAll() {
     setLoading(true);
     try {
-      const [pSnap, budSnap] = await Promise.all([
-        getDocs(query(collection(db, SAS_COLLECTIONS.projects), orderBy('projectName'))),
-        getDocs(collection(db, SAS_COLLECTIONS.budgets)),
-      ]);
+      const pSnap = await getDocs(query(collection(db, SAS_COLLECTIONS.projects), orderBy('projectName')));
       const allProjects = pSnap.docs.map(d => ({ id: d.id, ...d.data() } as SASProject));
+      // Budgets carry figures, which the rules release project by project: read by scope.
+      const budgetRows = await fetchProjectScoped<SASBudget>(
+        SAS_COLLECTIONS.budgets,
+        ledgerScopeFor(allProjects, user?.id, canViewAll),
+      );
       setProjects(allProjects.filter(p => p.enabledForSiteAccount));
       // Scoped to the projects this user may see, on the server — these pages used to pull the
       // organisation's entire expense and payment collections and filter them in the browser.
       const ledger = await loadScopedLedger({ projects: allProjects, userId: user?.id, canViewAll });
       setPayments(ledger.payments);
       setExpenses(ledger.expenses);
-      setBudgets(budSnap.docs.map(d => ({ id: d.id, ...d.data() } as SASBudget)));
+      setBudgets(budgetRows);
     } finally {
       setLoading(false);
     }

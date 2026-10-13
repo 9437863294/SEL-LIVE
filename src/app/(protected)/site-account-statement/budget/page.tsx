@@ -18,7 +18,7 @@ import {
   type SASBudgetAllocation,
 } from '@/lib/site-account-statement-allocations';
 import { resetBudgetAlertState } from '@/lib/sas-budget-alerts';
-import { loadScopedLedger } from '@/lib/site-account-statement-queries';
+import { fetchProjectScoped, ledgerScopeFor, loadScopedLedger } from '@/lib/site-account-statement-queries';
 import { BudgetAllocationsDialog } from '@/components/site-account-statement/budget-allocations-dialog';
 import { useFieldControl, validateFieldControlRequirements } from '@/components/site-account-statement/use-field-control';
 import { ControlledField } from '@/components/site-account-statement/controlled-field';
@@ -243,20 +243,30 @@ export default function SiteFundBudgetPage() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => { if (!isAuthLoading) void loadAll(); }, [isAuthLoading, user?.id, canViewAll]);
 
+  /**
+   * The projects whose budget rows this user may read — `null` for All Projects. The rules release
+   * budget figures project by project, so every read below is scoped by it, never the whole
+   * collection. Kept in a ref so the approval reload after an upload uses the same scope.
+   */
+  const scopeRef = useRef<string[] | null>([]);
+
   async function loadAll() {
     setLoading(true);
     try {
-      const [pSnap, bSnap, cSnap, cbSnap] = await Promise.all([
+      const [pSnap, cSnap] = await Promise.all([
         getDocs(query(collection(db, SAS_COLLECTIONS.projects), orderBy('projectName'))),
-        getDocs(query(collection(db, SAS_COLLECTIONS.budgets))),
         getDocs(query(collection(db, SAS_COLLECTIONS.categories))),
-        getDocs(collection(db, SAS_COLLECTIONS.categoryBudgets)),
       ]);
       const allProjects = pSnap.docs.map(d => ({ id: d.id, ...d.data() } as SASProject));
+      scopeRef.current = ledgerScopeFor(allProjects, user?.id, canViewAll);
+      const [budgetRows, catBudgetRows] = await Promise.all([
+        fetchProjectScoped<SASBudget>(SAS_COLLECTIONS.budgets, scopeRef.current),
+        fetchProjectScoped<SASCategoryBudget>(SAS_COLLECTIONS.categoryBudgets, scopeRef.current),
+      ]);
       setProjects(allProjects.filter(p => p.enabledForSiteAccount && p.status === 'Active'));
-      setAllBudgets(bSnap.docs.map(d => ({ id: d.id, ...d.data() } as SASBudget)));
+      setAllBudgets(budgetRows);
       setCategories(cSnap.docs.map(d => ({ id: d.id, ...d.data() } as SASCategory)).filter(c => c.isActive !== false).sort((a, b) => a.name.localeCompare(b.name)));
-      setAllCatBudgets(cbSnap.docs.map(d => ({ id: d.id, ...d.data() } as SASCategoryBudget)));
+      setAllCatBudgets(catBudgetRows);
       // Scoped to the projects this user may see, on the server — this page used to pull the
       // organisation's entire expense and payment collections and filter them in the browser.
       const ledger = await loadScopedLedger({ projects: allProjects, userId: user?.id, canViewAll });
@@ -267,15 +277,13 @@ export default function SiteFundBudgetPage() {
     }
     // Load budget approvals separately so a missing collection doesn't blank the page
     try {
-      const appSnap = await getDocs(collection(db, SAS_COLLECTIONS.budgetApprovals));
-      setAllApprovals(appSnap.docs.map(d => ({ id: d.id, ...d.data() } as SASBudgetApproval)));
+      setAllApprovals(await fetchProjectScoped<SASBudgetApproval>(SAS_COLLECTIONS.budgetApprovals, scopeRef.current));
     } catch { /* collection may not exist yet */ }
 
     // Same treatment for the allocation ledger: it does not exist until the first instalment is
     // recorded, and an absent collection must not take the whole budget tree down with it.
     try {
-      const allocSnap = await getDocs(collection(db, SAS_COLLECTIONS.budgetAllocations));
-      setAllAllocations(allocSnap.docs.map(d => ({ id: d.id, ...d.data() } as SASBudgetAllocation)));
+      setAllAllocations(await fetchProjectScoped<SASBudgetAllocation>(SAS_COLLECTIONS.budgetAllocations, scopeRef.current));
     } catch { /* collection may not exist yet */ }
   }
 
@@ -883,8 +891,7 @@ export default function SiteFundBudgetPage() {
       }
       toast({ title: 'Uploaded', description: `Approval copy for ${monthLabel(period)} saved.` });
       // Reload approvals only
-      const appSnap = await getDocs(collection(db, SAS_COLLECTIONS.budgetApprovals));
-      setAllApprovals(appSnap.docs.map(d => ({ id: d.id, ...d.data() } as SASBudgetApproval)));
+      setAllApprovals(await fetchProjectScoped<SASBudgetApproval>(SAS_COLLECTIONS.budgetApprovals, scopeRef.current));
     } catch (e: any) {
       toast({ title: 'Upload failed', description: e.message, variant: 'destructive' });
     } finally {

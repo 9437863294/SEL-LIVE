@@ -14,16 +14,17 @@ import type { SASProject } from './site-account-statement';
 /**
  * How many project ids go into one `in` filter.
  *
- * Firestore's own cap is 30, but the security rules bind tighter. A project member without RBAC is
- * authorised per document by looking up that document's project (`sasCanReadProject` in
- * firestore.rules), and Firestore allows at most 20 document-access calls while evaluating a query.
- * Identical lookups are cached and counted once, so the real cost is one call per *distinct* project
- * in the chunk, plus two for the caller's own user and role documents.
+ * Firestore's own cap is 30, but the security rules bind tighter. A user without All Projects is
+ * authorised per document by looking up that document's project (`sasSees` in firestore.rules), and
+ * Firestore allows at most 10 document-access calls while evaluating a query. Identical lookups are
+ * cached and counted once, so the real cost is one call per *distinct* project in the chunk, plus one
+ * for the caller's own `userPermissions` document.
  *
- * 15 keeps that comfortably inside the limit. Raising it past ~18 would make queries start failing
- * for exactly the users the per-project rules exist to serve.
+ * 9 is therefore the most that fits, and the emulator confirms it: a 10-value `in` query is refused
+ * for a member of all ten projects. Raising it would make queries fail for exactly the users the
+ * per-project rules exist to serve.
  */
-export const SAS_IN_CHUNK = 15;
+export const SAS_IN_CHUNK = 9;
 
 /** Rows fetched per page of the expense / payment tables. */
 export const SAS_PAGE_SIZE = 50;
